@@ -1,0 +1,10 @@
+matplotlib
+numpy
+pandas
+PyYAML
+scikit-learn
+seaborn
+ta
+trading-ig
+xgboost
+yfinance
