@@ -1,0 +1,11 @@
+config.yaml
+.venv
+__pycache__
+*.pyc
+*.log
+trade_history.csv
+data/
+stats_export/
+.git
+.github
+.claude
