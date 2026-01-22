@@ -1,14 +1,15 @@
-import pandas as pd
-import ta
+from datetime import datetime
+from trading_ig import IGService
+from xgboost import XGBClassifier
+import json
+import logging
 import numpy as np
 import os
-import yaml
+import pandas as pd
+import ta
 import time
-import logging
 import warnings
-from datetime import datetime
-from xgboost import XGBClassifier
-from trading_ig import IGService
+import yaml
 
 # --- SETUP ---
 logging.basicConfig(
@@ -30,6 +31,8 @@ class IGBot:
         # Profil-Daten laden
         active_p = BASE_CFG.get("active_profile", "demo")
         profile_data = BASE_CFG.get("profiles", {}).get(active_p)
+
+        os.makedirs("stats_export", exist_ok=True)
 
         if not profile_data:
             raise ValueError(f"❌ Profil '{active_p}' nicht in Config gefunden!")
@@ -102,6 +105,55 @@ class IGBot:
             return False
         return True
 
+    def check_margin_availability(self, size, price, epic):
+        """
+        Prüft, ob genug Kapital für die Margin vorhanden ist.
+        Gibt True zurück, wenn der Trade finanziell möglich ist.
+        """
+        try:
+            # 1. Kontodaten abrufen
+            acc = self.ig.fetch_accounts()
+            cfd_acc = acc[acc["accountType"] == "CFD"].iloc[0]
+            available_cash = float(cfd_acc["available"])
+
+            # 2. Ungefähren Margin-Satz bestimmen (Sicherheitswerte)
+            is_index = epic.startswith("IX")
+            # Wir rechnen konservativ: 5% für Indizes, 3.5% für Forex
+            margin_factor = 0.05 if is_index else 0.035
+
+            # 3. Notwendige Margin berechnen
+            # Bei Forex entspricht der Preis oft dem Wert von 1 Lot (z.B. 1.08)
+            # Bei Indizes entspricht 1 Punkt oft 1 EUR (z.B. DAX 18000)
+            total_value = size * price
+            required_margin = total_value * margin_factor
+
+            # 4. Puffer einbauen (10% extra für Gebühren/Slippage)
+            needed_with_buffer = required_margin * 1.10
+
+            if available_cash > needed_with_buffer:
+                return True
+            else:
+                logging.warning(
+                    f"⚠️ Margin-Check fehlgeschlagen: Benötigt ca. {needed_with_buffer:.2f}€, Vorhanden: {available_cash:.2f}€"
+                )
+                return False
+
+        except Exception as e:
+            logging.error(f"Fehler beim Margin-Check: {e}")
+            return False
+
+    def update_bot_status(self, active_epics):
+        """Erstellt eine kleine Status-Datei für das Web-Dashboard."""
+        status_data = {
+            "last_heartbeat": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "RUNNING",
+            "active_pairs_count": len(active_epics),
+            "active_epics": active_epics,
+            "account_mode": BASE_CFG.get("active_profile", "unknown"),
+        }
+        with open("stats_export/bot_status.json", "w") as f:
+            json.dump(status_data, f, indent=4)
+
     def analyze_and_predict(self, df):
         features = ["RSI", "ADX", "SMA_50"]
         model = XGBClassifier(
@@ -159,6 +211,11 @@ class IGBot:
             size = round(
                 max(0.2, (bal * risk) / (dist if not is_jpy else dist / 100)), 1
             )
+
+            # --- MARGIN CHECK INTEGRATION ---
+            if not self.check_margin_availability(size, stats["close"], epic):
+                logging.info(f"🚫 Trade abgebrochen: Nicht genügend Margin für {epic}")
+                return  # Abbrechen, bevor die Order an IG geht
 
             res = self.ig.create_open_position(
                 currency_code="EUR",
@@ -225,6 +282,8 @@ class IGBot:
                 if not self.ig.fetch_open_positions().empty
                 else []
             )
+
+            self.update_bot_status(active_epics)
 
             for name, p in BASE_CFG["pairs"].items():
                 if p["epic"] in active_epics:
