@@ -90,10 +90,13 @@ class IGAccountBot:
 
         # Create account-specific directories
         self.stats_dir = f"stats_export/{self.account_id}"
+        self.logs_dir = f"logs/{self.account_id}"
         os.makedirs(self.stats_dir, exist_ok=True)
+        os.makedirs(self.logs_dir, exist_ok=True)
 
         # Create account-specific logger
-        log_file = self.bot_settings.get("log_file", f"bot_{self.account_id}.log")
+        log_file_name = self.bot_settings.get("log_file", f"bot_{self.account_id}.log")
+        log_file = os.path.join(self.logs_dir, log_file_name)
         self.logger = create_account_logger(self.account_id, log_file)
 
         # Initialize IG service for this account
