@@ -125,11 +125,16 @@ def process_symbol(csv_path):
 
         full_pool = get_feature_columns(df)
 
-        # Bereinige inf/nan Werte in Features (XGBoost verträgt keine inf)
+        # Entferne Features mit inf/nan (XGBoost verträgt keine inf)
+        # Statt künstlich zu füllen, schließen wir problematische Features aus
+        clean_pool = []
         for col in full_pool:
             if col in df.columns:
-                df[col] = df[col].replace([np.inf, -np.inf], np.nan)
-                df[col] = df[col].fillna(df[col].median())
+                has_inf = np.isinf(df[col]).any()
+                nan_ratio = df[col].isna().sum() / len(df)
+                if not has_inf and nan_ratio < 0.1:  # Max 10% NaN erlaubt
+                    clean_pool.append(col)
+        full_pool = clean_pool
 
         a_class, p_val, spread, currencies = get_asset_config(sym)
 
