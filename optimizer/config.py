@@ -65,6 +65,9 @@ ASSET_CONFIG = {
     "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},
     "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},
     "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.030, "currency": ["USD"]},
+    # Crypto
+    "BTCUSD": {"class": "CRYPTO", "point": 1.0, "spread": 50.0, "currency": ["USD"]},
+    "ETHUSD": {"class": "CRYPTO", "point": 0.1, "spread": 2.0, "currency": ["USD"]},
 }
 
 # Grid-Konfiguration pro Klasse (in Spread-Vielfachen)
@@ -86,6 +89,11 @@ CLASS_GRIDS = {
         "tp": [20, 30, 40, 60, 80, 100],
         "sl": [20, 30, 40, 60, 80, 100],          # Symmetrisch
         "ct": [0.52, 0.55, 0.58, 0.62, 0.65, 0.70],
+    },
+    "CRYPTO": {
+        "tp": [20, 30, 50, 80, 120, 200],         # Größere Range wegen hoher Volatilität
+        "sl": [20, 30, 50, 80, 120, 200],
+        "ct": [0.52, 0.55, 0.60, 0.65, 0.70],
     },
 }
 
@@ -124,6 +132,76 @@ MACRO_INDICATORS = {
 # Lookback-Perioden
 LOOKBACKS_HOURS = [1, 2, 4, 8, 12, 24]
 LOOKBACKS_DAYS = [2, 5, 10, 20, 60]
+
+# Feature-Gruppen für systematische Grid-Search
+# Jede Gruppe wird separat mit allen TP/SL/CT Kombinationen getestet
+FEATURE_GROUPS = {
+    "trend": {
+        "name": "Trend Indikatoren",
+        "prefixes": ["trend_", "ichi_"],
+        "description": "ADX, EMA, SMA, MACD, CCI, Aroon, Ichimoku",
+    },
+    "momentum": {
+        "name": "Momentum Indikatoren",
+        "prefixes": ["mom_"],
+        "description": "RSI, Stochastic, Williams %R, ROC, Ultimate Oscillator",
+    },
+    "volatility": {
+        "name": "Volatilität Indikatoren",
+        "prefixes": ["vol_"],
+        "description": "Bollinger Bands, Keltner, Donchian, ATR",
+    },
+    "price_action": {
+        "name": "Price Action",
+        "prefixes": ["pa_"],
+        "description": "Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps",
+    },
+    "time": {
+        "name": "Zeit Features",
+        "prefixes": ["time_", "season_"],
+        "description": "Stunde, Wochentag, Monat, Quartal, Saisonalität",
+    },
+    "macro": {
+        "name": "Makro Indikatoren",
+        "prefixes": ["macro_"],
+        "description": "VIX, Yields, DXY, Indices, Commodities, Sectors",
+    },
+    "dynamics": {
+        "name": "Dynamik & Lags",
+        "prefixes": ["dyn_", "lag_", "accel_"],
+        "description": "Indikator-Änderungen, Lags, Beschleunigung",
+    },
+    "mtf": {
+        "name": "Multi-Timeframe",
+        "prefixes": ["mtf_"],
+        "description": "H4 aggregierte Features",
+    },
+    "cross": {
+        "name": "Cross-Indikator",
+        "prefixes": ["cross_"],
+        "description": "Kombinierte Signale aus mehreren Indikatoren",
+    },
+    # Kombinationen
+    "trend_momentum": {
+        "name": "Trend + Momentum",
+        "prefixes": ["trend_", "ichi_", "mom_"],
+        "description": "Klassische technische Analyse Kombination",
+    },
+    "macro_vol": {
+        "name": "Makro + Volatilität",
+        "prefixes": ["macro_", "vol_"],
+        "description": "Fundamentale + Volatilitäts-basierte Signale",
+    },
+    "full_technical": {
+        "name": "Volle technische Analyse",
+        "prefixes": ["trend_", "ichi_", "mom_", "vol_", "pa_"],
+        "description": "Alle technischen Indikatoren ohne Makro/Zeit",
+    },
+}
+
+# Standard Feature-Gruppen die getestet werden (kann überschrieben werden)
+# Weniger Gruppen = schnellere Optimierung
+DEFAULT_FEATURE_GROUPS = ["trend_momentum", "macro_vol", "full_technical"]
 
 
 def convert_numpy(obj):

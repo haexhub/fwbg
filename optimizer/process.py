@@ -12,10 +12,11 @@ from .config import (
     DATA_PATH, MAX_TRADE_BARS, MIN_TRADES, WALK_FORWARD_FOLDS, OOS_SIZE,
     RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN, CLASS_GRIDS,
     MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
+    FEATURE_GROUPS, DEFAULT_FEATURE_GROUPS,
     get_asset_config
 )
 from .data_loader import load_data_aligned, load_macro_csv
-from .indicators import compute_indicator_pool, get_feature_columns, compute_regime_filter
+from .indicators import compute_indicator_pool, get_feature_columns, compute_regime_filter, filter_features_by_group
 from .simulation import (
     simulate_pro_trade, calculate_sharpe_ratio, calculate_calmar_ratio,
     check_feature_stability
@@ -185,24 +186,43 @@ def process_symbol(csv_path):
         a_class, p_val, spread, currencies = get_asset_config(sym)
 
         grid = CLASS_GRIDS.get(a_class, CLASS_GRIDS["FOREX"])
-        grid_size = len(grid["tp"]) * len(grid["sl"]) * len(grid["ct"])
-        log(1, f"Grid-Search: {len(grid['tp'])}x{len(grid['sl'])}x{len(grid['ct'])} = {grid_size} Kombinationen", sym)
         candidates = []
+        all_grid_results = []  # Alle Kombinationen tracken
 
-        grid_count = 0
-        grid_total = len(grid["tp"]) * len(grid["sl"])
-        for tp in grid["tp"]:
-            for sl in grid["sl"]:
-                grid_count += 1
-                t_grid = time.time()
+        # Feature-Gruppen für Grid-Search (kann via Umgebungsvariable überschrieben werden)
+        custom_groups = os.environ.get("OPTIMIZER_FEATURE_GROUPS", "")
+        if custom_groups:
+            feature_groups_to_test = [g.strip() for g in custom_groups.split(",") if g.strip()]
+        else:
+            feature_groups_to_test = DEFAULT_FEATURE_GROUPS
+        total_combos = len(feature_groups_to_test) * len(grid["tp"]) * len(grid["sl"]) * len(grid["ct"])
+        log(1, f"Grid-Search: {len(feature_groups_to_test)} Feature-Gruppen x {len(grid['tp'])}x{len(grid['sl'])}x{len(grid['ct'])} = {total_combos} Kombinationen", sym)
 
-                # Immer Grid-Fortschritt anzeigen (Level 1)
-                log(1, f"Grid {grid_count}/{grid_total} (TP={tp}, SL={sl})", sym)
+        # Äußere Schleife: Feature-Gruppen
+        for fg_idx, feature_group in enumerate(feature_groups_to_test):
+            # Filtere Features nach Gruppe
+            group_features = filter_features_by_group(full_pool, feature_group)
 
-                # Walk-Forward Validierung
-                folds = walk_forward_split(df)
-                all_trades = []
-                selected_features_long = None
+            if len(group_features) < 3:
+                log(2, f"  Feature-Gruppe '{feature_group}': nur {len(group_features)} Features - übersprungen", sym)
+                continue
+
+            log(1, f"Feature-Gruppe {fg_idx+1}/{len(feature_groups_to_test)}: {feature_group} ({len(group_features)} Features)", sym)
+
+            grid_count = 0
+            grid_total = len(grid["tp"]) * len(grid["sl"])
+
+            for tp in grid["tp"]:
+                for sl in grid["sl"]:
+                    grid_count += 1
+
+                    # Grid-Fortschritt anzeigen (Level 2 für weniger Spam)
+                    log(2, f"  Grid {grid_count}/{grid_total} (TP={tp}, SL={sl})", sym)
+
+                    # Walk-Forward Validierung
+                    folds = walk_forward_split(df)
+                    all_trades = []
+                    selected_features_long = None
                 selected_features_short = None
                 fold_importances_long = []
                 fold_importances_short = []
@@ -257,15 +277,15 @@ def process_symbol(csv_path):
                             n_estimators=100, max_depth=5, n_jobs=1,
                             random_state=42, verbosity=0,
                         )
-                        mod_long.fit(train_df[full_pool], train_targs_long)
+                        mod_long.fit(train_df[group_features], train_targs_long)
                         log(3, f"    XGB Long fit ({time.time()-t_xgb:.1f}s)", sym)
-                        imps_long = pd.Series(mod_long.feature_importances_, index=full_pool)
+                        imps_long = pd.Series(mod_long.feature_importances_, index=group_features)
                         fold_importances_long.append(imps_long.to_dict())
 
                         if fold_idx == 0:
                             plateau_features_long = select_plateau_features(
                                 imps_long.to_dict(),
-                                full_pool,
+                                group_features,
                                 top_n=5,
                                 min_importance=RELEVANCE_THRESHOLD
                             )
@@ -281,15 +301,15 @@ def process_symbol(csv_path):
                             n_estimators=100, max_depth=5, n_jobs=1,
                             random_state=42, verbosity=0,
                         )
-                        mod_short.fit(train_df[full_pool], train_targs_short)
+                        mod_short.fit(train_df[group_features], train_targs_short)
                         log(3, f"    XGB Short fit ({time.time()-t_xgb:.1f}s)", sym)
-                        imps_short = pd.Series(mod_short.feature_importances_, index=full_pool)
+                        imps_short = pd.Series(mod_short.feature_importances_, index=group_features)
                         fold_importances_short.append(imps_short.to_dict())
 
                         if fold_idx == 0:
                             plateau_features_short = select_plateau_features(
                                 imps_short.to_dict(),
-                                full_pool,
+                                group_features,
                                 top_n=5,
                                 min_importance=RELEVANCE_THRESHOLD
                             )
@@ -398,22 +418,42 @@ def process_symbol(csv_path):
                             hour_pnl[h] = hour_pnl.get(h, 0) + t["res"]
                         good_hours = [h for h, pnl in hour_pnl.items() if pnl > 0]
 
-                        candidates.append({
+                        candidate = {
                             "pnl": sum(tr),
                             "tr": tr,
                             "params": (tp, sl, ct),
                             "feats": selected_features,
+                            "feature_group": feature_group,
                             "rrr": rrr,
                             "sharpe": sharpe,
                             "calmar": calmar,
                             "good_hours": good_hours if good_hours else list(range(24)),
+                        }
+                        candidates.append(candidate)
+
+                        # Grid-Results für alle Kombinationen mit genug Trades
+                        all_grid_results.append({
+                            "feature_group": feature_group,
+                            "tp_mult": tp,
+                            "sl_mult": sl,
+                            "conf_thresh": ct,
+                            "rrr": rrr,
+                            "pnl": sum(tr),
+                            "trades": len(tr),
+                            "win_rate": tr.count(1.0) / len(tr),
+                            "sharpe": sharpe,
+                            "calmar": calmar,
+                            "features": selected_features if selected_features else [],
                         })
 
         log(2, f"Grid-Search fertig: {len(candidates)} Kandidaten gefunden ({time.time()-t_start:.1f}s)", sym)
 
+        # grid_results enthält alle Kombinationen mit >= MIN_TRADES
+        grid_results = all_grid_results
+
         if not candidates:
             log(1, f"SKIP - Keine profitablen Kandidaten", sym)
-            return None
+            return {"symbol": sym, "status": "no_candidates", "grid_results": grid_results}
 
         # Sortiere nach kombinierter Metrik
         for c in candidates:
@@ -439,7 +479,7 @@ def process_symbol(csv_path):
         )
 
         if not b:
-            return None
+            return {"symbol": sym, "status": "no_plateau", "grid_results": grid_results}
 
         # Ensemble: Top-3 nach Plateau-Score
         candidates.sort(key=lambda x: x.get("plateau_score", x["score"]), reverse=True)
@@ -448,7 +488,7 @@ def process_symbol(csv_path):
 
         total_score = sum(c.get("plateau_score", c["score"]) for c in ensemble_configs)
         if total_score <= 0:
-            return None
+            return {"symbol": sym, "status": "no_score", "grid_results": grid_results}
         wr = b["tr"].count(1.0) / len(b["tr"]) if b["tr"] else 0
 
         # 1/4 Kelly
@@ -459,7 +499,7 @@ def process_symbol(csv_path):
         fk = max(0, min(0.05, full_kelly / 4))
 
         if fk <= 0:
-            return None
+            return {"symbol": sym, "status": "no_kelly", "grid_results": grid_results}
 
         # Ensemble-Gewichte (basierend auf Plateau-Score)
         ensemble_weights = []
@@ -479,6 +519,7 @@ def process_symbol(csv_path):
 
         result = {
             "symbol": sym,
+            "status": "ok",
             "pnl": b["pnl"],
             "config": {
                 "kelly_risk": fk,
@@ -487,6 +528,7 @@ def process_symbol(csv_path):
                 "tp_mult": b["params"][0],
                 "sl_mult": b["params"][1],
                 "conf_thresh": b["params"][2],
+                "feature_group": b.get("feature_group", "unknown"),
                 "features": b["feats"],
                 "good_hours": b.get("good_hours", list(range(24))),
                 "ensemble": ensemble_weights if ensemble_weights else None,
@@ -498,6 +540,7 @@ def process_symbol(csv_path):
             "sharpe": b["sharpe"],
             "calmar": b["calmar"],
             "currencies": currencies,
+            "grid_results": grid_results,  # Alle getesteten Kombinationen
         }
         log(1, f"OK - WR={wr:.1%} Sharpe={b['sharpe']:.2f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
         return result

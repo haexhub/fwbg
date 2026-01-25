@@ -209,6 +209,35 @@ def get_feature_columns(df):
     return [c for c in df.columns if c not in exclude and not c.startswith("_")]
 
 
+def filter_features_by_group(all_features, group_name):
+    """
+    Filtert Features nach einer Feature-Gruppe aus FEATURE_GROUPS.
+
+    Args:
+        all_features: Liste aller verfügbaren Features
+        group_name: Name der Gruppe (z.B. "trend", "momentum", "trend_momentum")
+
+    Returns:
+        Liste der Features die zur Gruppe gehören
+    """
+    from .config import FEATURE_GROUPS
+
+    if group_name not in FEATURE_GROUPS:
+        return all_features  # Fallback: alle Features
+
+    group = FEATURE_GROUPS[group_name]
+    prefixes = group["prefixes"]
+
+    filtered = []
+    for feat in all_features:
+        for prefix in prefixes:
+            if feat.startswith(prefix):
+                filtered.append(feat)
+                break
+
+    return filtered
+
+
 def compute_regime_filter(df, vix_series=None):
     """
     Berechnet Regime-Filter basierend auf ADX und optional VIX.
