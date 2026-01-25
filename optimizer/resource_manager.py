@@ -24,8 +24,8 @@ class AdaptivePoolManager:
 
     def __init__(
         self,
-        max_cpu_percent: float = 0.95,
-        min_free_ram_percent: float = 0.10,
+        max_cpu_percent: float = 0.70,
+        min_free_ram_percent: float = 0.25,
         check_interval: float = 2.0,
         verbose: bool = True
     ):
@@ -223,9 +223,9 @@ def get_resource_info() -> dict:
 
 
 def calculate_safe_workers(
-    max_cpu_percent: float = 0.95,
-    min_free_ram_percent: float = 0.10,
-    estimated_ram_per_worker_gb: float = 2.0
+    max_cpu_percent: float = 0.70,
+    min_free_ram_percent: float = 0.25,
+    estimated_ram_per_worker_gb: float = 2.5
 ) -> int:
     """
     Berechnet eine sichere Anzahl paralleler Worker.
