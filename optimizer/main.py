@@ -156,11 +156,12 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         print(f"  ... und {len(files) - 10} weitere")
     print()
 
-    # Adaptive Pool: 80% CPU, mindestens 25% RAM freihalten
+    # Adaptive Pool: 80% CPU, 25% RAM Reserve, 4GB pro Worker
     pool_manager = AdaptivePoolManager(
         max_cpu_percent=0.80,
         min_free_ram_percent=0.25,
-        verbose=True  # Zeige Pool-Status
+        ram_per_worker_gb=4.0,  # Peak-RAM pro Worker
+        verbose=True
     )
 
     # Progress-Tracking mit tqdm

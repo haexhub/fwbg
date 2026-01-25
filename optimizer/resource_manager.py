@@ -26,6 +26,7 @@ class AdaptivePoolManager:
         self,
         max_cpu_percent: float = 0.80,
         min_free_ram_percent: float = 0.25,
+        ram_per_worker_gb: float = 4.0,
         check_interval: float = 2.0,
         verbose: bool = True
     ):
@@ -33,18 +34,29 @@ class AdaptivePoolManager:
         Args:
             max_cpu_percent: Maximaler Anteil der CPU-Kerne (0.0-1.0)
             min_free_ram_percent: Minimaler freier RAM-Anteil (0.0-1.0)
+            ram_per_worker_gb: Geschätzter Peak-RAM pro Worker in GB
             check_interval: Sekunden zwischen RAM-Checks
             verbose: Detaillierte Ausgaben
         """
         self.max_cpu_percent = max_cpu_percent
         self.min_free_ram_percent = min_free_ram_percent
+        self.ram_per_worker_gb = ram_per_worker_gb
         self.check_interval = check_interval
         self.verbose = verbose
 
         # Systeminfo
         self.total_cores = mp.cpu_count()
-        self.max_workers = max(1, int(self.total_cores * max_cpu_percent))
         self.total_ram_gb = psutil.virtual_memory().total / (1024**3)
+
+        # Berechne max Workers basierend auf CPU UND RAM
+        cpu_limit = max(1, int(self.total_cores * max_cpu_percent))
+
+        # RAM-Limit: (Gesamt-RAM - Reserve) / RAM pro Worker
+        reserved_ram = self.total_ram_gb * min_free_ram_percent
+        available_for_workers = self.total_ram_gb - reserved_ram
+        ram_limit = max(1, int(available_for_workers / ram_per_worker_gb))
+
+        self.max_workers = min(cpu_limit, ram_limit)
 
         # Stats
         self.peak_workers = 0
@@ -63,16 +75,33 @@ class AdaptivePoolManager:
         """
         Prüft, ob ein neuer Worker gestartet werden kann.
 
+        Berücksichtigt:
+        - Hartes Worker-Limit (basierend auf CPU und RAM)
+        - Aktuell freier RAM
+        - Geschätzter RAM-Bedarf für laufende + neuen Worker
+
         Returns:
-            True wenn: CPU-Limit nicht erreicht UND genug RAM frei
+            True wenn genug Ressourcen für einen weiteren Worker
         """
-        # CPU-Limit prüfen
+        # Hartes Limit prüfen
         if current_workers >= self.max_workers:
             return False
 
-        # RAM-Limit prüfen
-        free_ram = self.get_free_ram_percent()
-        if free_ram < self.min_free_ram_percent:
+        # Berechne benötigten RAM für alle Worker (inkl. neuem)
+        needed_workers = current_workers + 1
+        needed_ram_gb = needed_workers * self.ram_per_worker_gb
+
+        # Verfügbarer RAM für Worker (nach Reserve)
+        reserved_ram = self.total_ram_gb * self.min_free_ram_percent
+        available_ram = self.total_ram_gb - reserved_ram
+
+        if needed_ram_gb > available_ram:
+            self.ram_throttle_count += 1
+            return False
+
+        # Zusätzlich: Aktuellen freien RAM prüfen (falls System schon belastet)
+        current_free = self.get_free_ram_gb()
+        if current_free < (reserved_ram + self.ram_per_worker_gb):
             self.ram_throttle_count += 1
             return False
 
@@ -126,11 +155,12 @@ class AdaptivePoolManager:
         # Status ausgeben
         status = self.get_status()
         self.log(f"System: {status['total_cores']} Cores, {status['total_ram_gb']:.1f} GB RAM")
-        self.log(f"Limits: max {self.max_workers} Workers, min {self.min_free_ram_percent*100:.0f}% free RAM")
+        self.log(f"Limits: max {self.max_workers} Workers (CPU={int(self.total_cores * self.max_cpu_percent)}, RAM={self.ram_per_worker_gb}GB/Worker)")
+        self.log(f"Reserve: {self.min_free_ram_percent*100:.0f}% RAM = {self.total_ram_gb * self.min_free_ram_percent:.1f} GB")
         self.log(f"Aktuell frei: {status['free_ram_gb']:.1f} GB ({status['free_ram_percent']:.0f}%)")
 
-        # Start mit mehr Workern (aggressiver)
-        initial_workers = max(2, min(self.max_workers, len(items)))
+        # Konservativ starten - nie mehr als max_workers
+        initial_workers = min(self.max_workers, len(items))
 
         with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
             # Futures verwalten
