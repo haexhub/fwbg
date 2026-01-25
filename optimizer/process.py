@@ -18,6 +18,10 @@ from .simulation import (
     simulate_pro_trade, calculate_sharpe_ratio, calculate_calmar_ratio,
     check_feature_stability
 )
+from .plateau import (
+    calculate_param_plateau_score, select_plateau_features,
+    select_best_plateau_candidate
+)
 
 
 def walk_forward_split(df, n_folds=WALK_FORWARD_FOLDS, oos_size=OOS_SIZE):
@@ -176,13 +180,16 @@ def process_symbol(csv_path):
                         fold_importances_long.append(imps_long.to_dict())
 
                         if fold_idx == 0:
-                            top_long = imps_long.sort_values(ascending=False).head(10)
-                            atr_f = [f for f in top_long.index if "atr" in f.lower()]
-                            non_atr_f = [f for f in top_long.index if "atr" not in f.lower()]
-                            relevant = [f for f in non_atr_f if top_long[f] > RELEVANCE_THRESHOLD]
-                            if len(relevant) >= 2:
-                                selected_features_long = non_atr_f[:3] + atr_f[:2]
-                                selected_features_long = selected_features_long[:5]
+                            # Plateau-basierte Feature-Auswahl statt nur Top-Importance
+                            # Bevorzugt Features, deren Nachbarn ähnliche Importance haben
+                            plateau_features_long = select_plateau_features(
+                                imps_long.to_dict(),
+                                full_pool,
+                                top_n=5,
+                                min_importance=RELEVANCE_THRESHOLD
+                            )
+                            if len(plateau_features_long) >= 2:
+                                selected_features_long = plateau_features_long
 
                     # === SHORT MODELL ===
                     mod_short = None
@@ -196,13 +203,15 @@ def process_symbol(csv_path):
                         fold_importances_short.append(imps_short.to_dict())
 
                         if fold_idx == 0:
-                            top_short = imps_short.sort_values(ascending=False).head(10)
-                            atr_f = [f for f in top_short.index if "atr" in f.lower()]
-                            non_atr_f = [f for f in top_short.index if "atr" not in f.lower()]
-                            relevant = [f for f in non_atr_f if top_short[f] > RELEVANCE_THRESHOLD]
-                            if len(relevant) >= 2:
-                                selected_features_short = non_atr_f[:3] + atr_f[:2]
-                                selected_features_short = selected_features_short[:5]
+                            # Plateau-basierte Feature-Auswahl
+                            plateau_features_short = select_plateau_features(
+                                imps_short.to_dict(),
+                                full_pool,
+                                top_n=5,
+                                min_importance=RELEVANCE_THRESHOLD
+                            )
+                            if len(plateau_features_short) >= 2:
+                                selected_features_short = plateau_features_short
 
                     # Feature Stability Check
                     if fold_idx == len(folds) - 1:
@@ -319,17 +328,36 @@ def process_symbol(csv_path):
         for c in candidates:
             c["score"] = c["pnl"] * (1 + max(0, c["sharpe"]) / 10)
 
-        candidates.sort(key=lambda x: x["score"], reverse=True)
+        # === PLATEAU-BASIERTE AUSWAHL ===
+        # Statt einfach den höchsten Score zu nehmen, bevorzugen wir
+        # Konfigurationen, deren Nachbarn ähnlich gut performen (Plateau)
+        candidates = calculate_param_plateau_score(
+            candidates,
+            grid["tp"],
+            grid["sl"],
+            grid["ct"]
+        )
 
-        # Ensemble: Top-3
+        # Wähle besten Plateau-Kandidaten
+        b = select_best_plateau_candidate(
+            candidates,
+            grid["tp"],
+            grid["sl"],
+            grid["ct"],
+            min_neighbors=2
+        )
+
+        if not b:
+            return None
+
+        # Ensemble: Top-3 nach Plateau-Score
+        candidates.sort(key=lambda x: x.get("plateau_score", x["score"]), reverse=True)
         top_n = min(3, len(candidates))
         ensemble_configs = candidates[:top_n]
 
-        total_score = sum(c["score"] for c in ensemble_configs)
+        total_score = sum(c.get("plateau_score", c["score"]) for c in ensemble_configs)
         if total_score <= 0:
             return None
-
-        b = ensemble_configs[0]
         wr = b["tr"].count(1.0) / len(b["tr"]) if b["tr"] else 0
 
         # 1/4 Kelly
@@ -342,18 +370,20 @@ def process_symbol(csv_path):
         if fk <= 0:
             return None
 
-        # Ensemble-Gewichte
+        # Ensemble-Gewichte (basierend auf Plateau-Score)
         ensemble_weights = []
         if top_n > 1:
             for c in ensemble_configs[1:]:
                 c_wr = c["tr"].count(1.0) / len(c["tr"]) if c["tr"] else 0
                 c_kelly = max(0, min(0.05, ((c_wr * c["rrr"] - (1 - c_wr)) / c["rrr"]) / 4))
                 if c_kelly > 0:
+                    c_plateau_score = c.get("plateau_score", c["score"])
                     ensemble_weights.append({
                         "tp_mult": c["params"][0],
                         "sl_mult": c["params"][1],
                         "conf_thresh": c["params"][2],
-                        "weight": c["score"] / total_score,
+                        "weight": c_plateau_score / total_score,
+                        "stability": c.get("stability_score", 0),
                     })
 
         return {
