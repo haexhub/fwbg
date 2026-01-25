@@ -2,6 +2,8 @@
 Walk-Forward Optimierung und Symbol-Verarbeitung
 """
 import os
+import sys
+import time
 import numpy as np
 import pandas as pd
 from xgboost import XGBClassifier
@@ -22,6 +24,16 @@ from .plateau import (
     calculate_param_plateau_score, select_plateau_features,
     select_best_plateau_candidate
 )
+
+# Logging-Level: 0=aus, 1=basic, 2=detail, 3=debug
+LOG_LEVEL = int(os.environ.get("OPTIMIZER_LOG", "1"))
+
+
+def log(level, msg, sym=""):
+    """Logging-Funktion mit Level-Kontrolle."""
+    if level <= LOG_LEVEL:
+        prefix = f"[{sym}] " if sym else ""
+        print(f"{prefix}{msg}", file=sys.stderr, flush=True)
 
 
 def walk_forward_split(df, n_folds=WALK_FORWARD_FOLDS, oos_size=OOS_SIZE):
@@ -47,15 +59,26 @@ def walk_forward_split(df, n_folds=WALK_FORWARD_FOLDS, oos_size=OOS_SIZE):
 def process_symbol(csv_path):
     """Verarbeitet ein einzelnes Symbol mit Walk-Forward Optimierung."""
     sym = os.path.basename(csv_path).split("_")[0]
+    t_start = time.time()
+
     if sym in ["VIX", "DXY"]:
+        log(2, "Übersprungen (Makro-Asset)", sym)
         return None
+
+    log(1, "START", sym)
+
     try:
+        t0 = time.time()
         df = load_data_aligned(csv_path)
         if df is None:
+            log(1, "SKIP - Keine Daten", sym)
             return None
+        log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
 
         # === ALLE MAKRO-INDIKATOREN LADEN ===
+        t0 = time.time()
         df["_date"] = df.index.date
+        macro_count = 0
 
         for filename, prefix in MACRO_INDICATORS.items():
             macro_path = f"{DATA_PATH}/{filename}.csv"
@@ -76,12 +99,15 @@ def process_symbol(csv_path):
                     for lb_d in LOOKBACKS_DAYS:
                         df[f"{col_name}_chg_{lb_d}d"] = df[col_name].pct_change(24 * lb_d) * 100
 
+                    macro_count += 1
                 except Exception:
                     pass
 
         df = df.drop(columns=["_date"], errors="ignore")
+        log(2, f"Makro-Indikatoren: {macro_count} geladen ({time.time()-t0:.1f}s)", sym)
 
         # === ABGELEITETE FEATURES (Spreads & Ratios) ===
+        t0 = time.time()
         if "macro_tnx" in df.columns and "macro_irx" in df.columns:
             df["macro_yield_curve_10y_3m"] = df["macro_tnx"] - df["macro_irx"]
         if "macro_tnx" in df.columns and "macro_fvx" in df.columns:
@@ -117,32 +143,58 @@ def process_symbol(csv_path):
         if "macro_fed_rate" in df.columns and "macro_ecb_rate" in df.columns:
             df["macro_rate_diff_usd_eur"] = df["macro_fed_rate"] - df["macro_ecb_rate"]
 
+        log(3, f"Abgeleitete Features berechnet ({time.time()-t0:.1f}s)", sym)
+
+        t0 = time.time()
         df = compute_indicator_pool(df).dropna()
+        log(2, f"Indikatoren berechnet: {len(df)} Zeilen nach dropna ({time.time()-t0:.1f}s)", sym)
+
+        if len(df) < MIN_TRADES * 2:
+            log(1, f"SKIP - Zu wenig Daten nach dropna ({len(df)} < {MIN_TRADES * 2})", sym)
+            return None
 
         # Regime-Filter berechnen
         has_vix = "sent_vix" in df.columns
         df["_regime_ok"] = compute_regime_filter(df, has_vix)
 
         full_pool = get_feature_columns(df)
+        log(2, f"Feature-Pool: {len(full_pool)} Features", sym)
 
         # Entferne Features mit inf/nan (XGBoost verträgt keine inf)
-        # Statt künstlich zu füllen, schließen wir problematische Features aus
+        t0 = time.time()
         clean_pool = []
+        excluded_inf = 0
+        excluded_nan = 0
         for col in full_pool:
             if col in df.columns:
                 has_inf = np.isinf(df[col]).any()
                 nan_ratio = df[col].isna().sum() / len(df)
-                if not has_inf and nan_ratio < 0.1:  # Max 10% NaN erlaubt
+                if has_inf:
+                    excluded_inf += 1
+                elif nan_ratio >= 0.1:
+                    excluded_nan += 1
+                else:
                     clean_pool.append(col)
         full_pool = clean_pool
+        log(2, f"Clean Pool: {len(full_pool)} Features (excl: {excluded_inf} inf, {excluded_nan} nan) ({time.time()-t0:.1f}s)", sym)
+
+        if len(full_pool) < 5:
+            log(1, f"SKIP - Zu wenig saubere Features ({len(full_pool)} < 5)", sym)
+            return None
 
         a_class, p_val, spread, currencies = get_asset_config(sym)
 
         grid = CLASS_GRIDS.get(a_class, CLASS_GRIDS["FOREX"])
+        grid_size = len(grid["tp"]) * len(grid["sl"]) * len(grid["ct"])
+        log(1, f"Grid-Search: {len(grid['tp'])}x{len(grid['sl'])}x{len(grid['ct'])} = {grid_size} Kombinationen", sym)
         candidates = []
 
+        grid_count = 0
         for tp in grid["tp"]:
             for sl in grid["sl"]:
+                grid_count += 1
+                log(3, f"Grid {grid_count}/{len(grid['tp'])*len(grid['sl'])}: TP={tp} SL={sl}", sym)
+
                 # Walk-Forward Validierung
                 folds = walk_forward_split(df)
                 all_trades = []
@@ -152,6 +204,9 @@ def process_symbol(csv_path):
                 fold_importances_short = []
 
                 for fold_idx, (train_df, test_df) in enumerate(folds):
+                    t_fold = time.time()
+                    log(3, f"  Fold {fold_idx+1}/{len(folds)}: Train={len(train_df)}, Test={len(test_df)}", sym)
+
                     # === SEPARATE TARGETS FÜR LONG UND SHORT ===
                     train_targs_long = np.zeros(len(train_df))
                     train_targs_short = np.zeros(len(train_df))
@@ -161,7 +216,9 @@ def process_symbol(csv_path):
                     low_v = train_df["L"].values
                     atr_v = train_df["_atr"].values
 
-                    for i in range(len(train_df) - MAX_TRADE_BARS):
+                    t_sim = time.time()
+                    sim_count = len(train_df) - MAX_TRADE_BARS
+                    for i in range(sim_count):
                         res_long, _ = simulate_pro_trade(
                             cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread
                         )
@@ -172,28 +229,33 @@ def process_symbol(csv_path):
                             train_targs_long[i] = 1
                         if res_short == 1.0:
                             train_targs_short[i] = 1
+                    log(3, f"    Simulation: {sim_count} Trades ({time.time()-t_sim:.1f}s)", sym)
 
                     min_per_direction = MIN_TRADES // 2
-                    has_long = np.count_nonzero(train_targs_long) >= min_per_direction
-                    has_short = np.count_nonzero(train_targs_short) >= min_per_direction
+                    n_long = np.count_nonzero(train_targs_long)
+                    n_short = np.count_nonzero(train_targs_short)
+                    has_long = n_long >= min_per_direction
+                    has_short = n_short >= min_per_direction
+                    log(3, f"    Targets: Long={n_long}, Short={n_short} (min={min_per_direction})", sym)
 
                     if not has_long and not has_short:
+                        log(3, f"    SKIP Fold - zu wenig Targets", sym)
                         continue
 
                     # === LONG MODELL ===
                     mod_long = None
                     if has_long:
+                        t_xgb = time.time()
                         mod_long = XGBClassifier(
                             n_estimators=100, max_depth=5, n_jobs=1,
                             random_state=42, verbosity=0,
                         )
                         mod_long.fit(train_df[full_pool], train_targs_long)
+                        log(3, f"    XGB Long fit ({time.time()-t_xgb:.1f}s)", sym)
                         imps_long = pd.Series(mod_long.feature_importances_, index=full_pool)
                         fold_importances_long.append(imps_long.to_dict())
 
                         if fold_idx == 0:
-                            # Plateau-basierte Feature-Auswahl statt nur Top-Importance
-                            # Bevorzugt Features, deren Nachbarn ähnliche Importance haben
                             plateau_features_long = select_plateau_features(
                                 imps_long.to_dict(),
                                 full_pool,
@@ -202,20 +264,22 @@ def process_symbol(csv_path):
                             )
                             if len(plateau_features_long) >= 2:
                                 selected_features_long = plateau_features_long
+                                log(3, f"    Long Features: {selected_features_long}", sym)
 
                     # === SHORT MODELL ===
                     mod_short = None
                     if has_short:
+                        t_xgb = time.time()
                         mod_short = XGBClassifier(
                             n_estimators=100, max_depth=5, n_jobs=1,
                             random_state=42, verbosity=0,
                         )
                         mod_short.fit(train_df[full_pool], train_targs_short)
+                        log(3, f"    XGB Short fit ({time.time()-t_xgb:.1f}s)", sym)
                         imps_short = pd.Series(mod_short.feature_importances_, index=full_pool)
                         fold_importances_short.append(imps_short.to_dict())
 
                         if fold_idx == 0:
-                            # Plateau-basierte Feature-Auswahl
                             plateau_features_short = select_plateau_features(
                                 imps_short.to_dict(),
                                 full_pool,
@@ -224,6 +288,7 @@ def process_symbol(csv_path):
                             )
                             if len(plateau_features_short) >= 2:
                                 selected_features_short = plateau_features_short
+                                log(3, f"    Short Features: {selected_features_short}", sym)
 
                     # Feature Stability Check
                     if fold_idx == len(folds) - 1:
@@ -292,6 +357,8 @@ def process_symbol(csv_path):
                             if res != 0:
                                 all_trades.append({"res": res, "ct": ct, "hour": hour, "dir": direction})
 
+                    log(3, f"    Fold fertig ({time.time()-t_fold:.1f}s), Trades bisher: {len(all_trades)}", sym)
+
                 # Kombiniere Features
                 selected_features = []
                 if selected_features_long:
@@ -333,7 +400,10 @@ def process_symbol(csv_path):
                             "good_hours": good_hours if good_hours else list(range(24)),
                         })
 
+        log(2, f"Grid-Search fertig: {len(candidates)} Kandidaten gefunden ({time.time()-t_start:.1f}s)", sym)
+
         if not candidates:
+            log(1, f"SKIP - Keine profitablen Kandidaten", sym)
             return None
 
         # Sortiere nach kombinierter Metrik
@@ -398,7 +468,7 @@ def process_symbol(csv_path):
                         "stability": c.get("stability_score", 0),
                     })
 
-        return {
+        result = {
             "symbol": sym,
             "pnl": b["pnl"],
             "config": {
@@ -420,8 +490,12 @@ def process_symbol(csv_path):
             "calmar": b["calmar"],
             "currencies": currencies,
         }
+        log(1, f"OK - WR={wr:.1%} Sharpe={b['sharpe']:.2f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
+        return result
+
     except Exception as e:
-        print(f"Fehler {sym}: {e}")
-        import traceback
-        traceback.print_exc()
+        log(1, f"FEHLER: {e}", sym)
+        if LOG_LEVEL >= 2:
+            import traceback
+            traceback.print_exc()
         return None

@@ -105,11 +105,25 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None):
     print(f"Verfügbar: {res_info['ram_available_gb']:.1f} GB ({res_info['ram_free_percent']:.0f}% frei)")
     print("-" * 60)
 
+    # Log-Level anzeigen
+    import os
+    log_level = int(os.environ.get("OPTIMIZER_LOG", "1"))
+    print(f"Log-Level: {log_level} (OPTIMIZER_LOG=0..3 für mehr/weniger Details)")
+    print("-" * 60)
+
+    # Dateien auflisten
+    print(f"\nVerarbeite {len(files)} Assets:")
+    for i, f in enumerate(files[:10]):
+        print(f"  {i+1}. {os.path.basename(f)}")
+    if len(files) > 10:
+        print(f"  ... und {len(files) - 10} weitere")
+    print()
+
     # Adaptive Pool: 80% CPU, aber immer 20% RAM freihalten
     pool_manager = AdaptivePoolManager(
         max_cpu_percent=0.80,
         min_free_ram_percent=0.20,
-        verbose=False  # tqdm macht die Ausgabe
+        verbose=True  # Zeige Pool-Status
     )
 
     # Progress-Tracking mit tqdm
@@ -119,6 +133,7 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None):
         pbar.n = completed
         pbar.refresh()
 
+    print("\nStarte Verarbeitung...\n")
     raw_results = pool_manager.map_adaptive(
         func=process_symbol,
         items=files,
