@@ -46,5 +46,10 @@
     "folds": 8,
     "oos_size": 4000
   },
+  "resources": {
+    "max_cpu_percent": 0.80,
+    "min_free_ram_percent": 0.25,
+    "ram_per_worker_gb": 4.0
+  },
   "notes": "Erwartet längere Laufzeit (~2.5x) wegen größerem Suchraum. Ermöglicht aber vollständige Exploration aller RRR-Konfigurationen."
 }

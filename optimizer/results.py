@@ -82,6 +82,13 @@ STRATEGY_SCHEMA = {
         "groups": list,    # z.B. ["trend", "momentum"] - None = DEFAULT_FEATURE_GROUPS
     },
 
+    # Ressourcen-Einstellungen
+    "resources": {
+        "max_cpu_percent": float,     # z.B. 0.80 = 80% der CPU-Kerne
+        "min_free_ram_percent": float, # z.B. 0.25 = 25% RAM freihalten
+        "ram_per_worker_gb": float,   # z.B. 4.0 = 4GB pro Worker
+    },
+
     # Notizen
     "notes": str,          # Freitext für zusätzliche Beobachtungen
 }
@@ -158,6 +165,10 @@ def create_strategy_metadata(
     assets_exclude=None,
     assets_classes=None,
     feature_groups=None,
+    # Ressourcen-Einstellungen
+    max_cpu_percent=None,
+    min_free_ram_percent=None,
+    ram_per_worker_gb=None,
 ):
     """
     Erstellt strukturierte Strategie-Metadaten.
@@ -220,6 +231,11 @@ def create_strategy_metadata(
         },
         "feature_groups": {
             "groups": feature_groups,     # z.B. ["trend", "momentum"]
+        },
+        "resources": {
+            "max_cpu_percent": max_cpu_percent,        # z.B. 0.80
+            "min_free_ram_percent": min_free_ram_percent,  # z.B. 0.25
+            "ram_per_worker_gb": ram_per_worker_gb,    # z.B. 4.0
         },
         "notes": notes or "",
     }
