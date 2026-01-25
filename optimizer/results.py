@@ -269,7 +269,8 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
 
 
 def save_run_results(run_path, raw_results, filtered_results, elite_results,
-                     final_assets, table_data, description=None, strategy_metadata=None):
+                     final_assets, table_data, description=None, strategy_metadata=None,
+                     all_results=None):
     """
     Speichert alle Ergebnisse eines Runs.
     """
@@ -306,6 +307,42 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
     if strategy_metadata and not os.path.exists(strategy_path):
         with open(strategy_path, "w") as f:
             json.dump(strategy_metadata, f, indent=2)
+
+    # Detaillierte Grid-Ergebnisse pro Asset speichern
+    if all_results:
+        grid_dir = os.path.join(run_path, "grid_details")
+        os.makedirs(grid_dir, exist_ok=True)
+
+        for r in all_results:
+            if r and r.get("grid_results"):
+                sym = r["symbol"]
+                grid_path = os.path.join(grid_dir, f"{sym}.json")
+                grid_data = {
+                    "symbol": sym,
+                    "status": r.get("status", "unknown"),
+                    "total_combinations": len(r["grid_results"]),
+                    "grid_results": convert_numpy(r["grid_results"]),
+                }
+                # Füge beste Konfiguration hinzu falls erfolgreich
+                if r.get("status") == "ok":
+                    grid_data["selected_config"] = {
+                        "tp_mult": r["config"]["tp_mult"],
+                        "sl_mult": r["config"]["sl_mult"],
+                        "conf_thresh": r["config"]["conf_thresh"],
+                        "kelly_risk": r["config"]["kelly_risk"],
+                        "features": r["config"]["features"],
+                    }
+                    grid_data["selected_metrics"] = {
+                        "pnl": r["pnl"],
+                        "win_rate": r["win_rate"],
+                        "rrr": r["rrr"],
+                        "sharpe": r.get("sharpe", 0),
+                        "calmar": r.get("calmar", 0),
+                        "trades": len(r.get("tr_trace", [])),
+                    }
+
+                with open(grid_path, "w") as f:
+                    json.dump(grid_data, f, indent=2)
 
     # Menschenlesbare Zusammenfassung
     summary_path = os.path.join(run_path, "summary.txt")

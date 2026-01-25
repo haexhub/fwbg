@@ -63,7 +63,7 @@ def filter_correlated_assets(results, threshold=CORR_THRESHOLD):
     return selected
 
 
-def run_optimizer(description=None, save_results=True, strategy_metadata=None):
+def run_optimizer(description=None, save_results=True, strategy_metadata=None, asset_filter=None):
     """
     Führt die Walk-Forward Optimierung aus.
 
@@ -71,9 +71,14 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None):
         description: Optionale Beschreibung für diesen Run
         save_results: Wenn True, werden Ergebnisse in test_results/ gespeichert
         strategy_metadata: Strukturierte Strategie-Metadaten (dict oder via create_strategy_metadata())
+        asset_filter: Liste von Assets die getestet werden sollen (None = alle)
     """
     # Lade nur Dateien für das gewählte Timeframe
     files = sorted(glob.glob(f"{DATA_PATH}/*_{TIMEFRAME}.csv"))
+
+    # Filter nach bestimmten Assets wenn angegeben
+    if asset_filter:
+        files = [f for f in files if any(a in f for a in asset_filter)]
     if not files:
         print(f"Keine Dateien für Timeframe {TIMEFRAME} gefunden!")
         print(f"Verfügbare Dateien: {glob.glob(f'{DATA_PATH}/*.csv')[:5]}...")
@@ -106,7 +111,6 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None):
     print("-" * 60)
 
     # Log-Level anzeigen
-    import os
     log_level = int(os.environ.get("OPTIMIZER_LOG", "1"))
     print(f"Log-Level: {log_level} (OPTIMIZER_LOG=0..3 für mehr/weniger Details)")
     print("-" * 60)
@@ -145,10 +149,19 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None):
     # Stats ausgeben
     stats = pool_manager.get_status()
     print(f"\nPeak Workers: {stats['peak_workers']}, RAM-Throttles: {stats['ram_throttle_count']}")
-    print(f"{len(raw_results)} Assets haben die Optimierung bestanden.")
 
-    # Korrelationsfilter anwenden
-    filtered = filter_correlated_assets(raw_results, CORR_THRESHOLD)
+    # Trenne erfolgreiche von fehlgeschlagenen Ergebnissen
+    all_results = raw_results  # Alle Ergebnisse (inkl. grid_results)
+    successful_results = [r for r in raw_results if r.get("status") == "ok"]
+    failed_results = [r for r in raw_results if r.get("status") != "ok" and r.get("status") is not None]
+
+    print(f"{len(successful_results)} Assets haben die Optimierung bestanden.")
+    if failed_results:
+        for fr in failed_results:
+            print(f"  - {fr['symbol']}: {fr.get('status', 'unknown')} ({len(fr.get('grid_results', []))} Kombinationen getestet)")
+
+    # Korrelationsfilter anwenden (nur auf erfolgreiche)
+    filtered = filter_correlated_assets(successful_results, CORR_THRESHOLD)
     print(f"{len(filtered)} Assets nach Korrelationsfilter.")
 
     # Top 10 auswählen
@@ -299,13 +312,14 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None):
     if save_results and run_path:
         save_run_results(
             run_path=run_path,
-            raw_results=raw_results,
+            raw_results=successful_results,
             filtered_results=filtered,
             elite_results=elite,
             final_assets=final_assets,
             table_data=table_data,
             description=description,
-            strategy_metadata=strategy_metadata
+            strategy_metadata=strategy_metadata,
+            all_results=all_results,  # Alle Ergebnisse inkl. grid_results
         )
         print(f"\nErgebnisse gespeichert in: {run_path}/")
         print(f"Assets-Config:           {run_path}/assets.json")
@@ -443,6 +457,190 @@ def load_strategy_from_file(filepath):
         return None
 
 
+def analyze_reversed_strategies(run_id, top_n=10):
+    """
+    Analysiert die schlechtesten Strategien und zeigt, wie sie umgekehrt performen würden.
+
+    Bei einer Strategie mit sehr niedriger Win-Rate sollte theoretisch das Umkehren
+    (Long->Short, Short->Long) zu einer hohen Win-Rate führen.
+    In der Praxis funktioniert das wegen Spread-Kosten meist nicht.
+    """
+    from .results import load_run
+
+    run_data = load_run(run_id)
+    if not run_data:
+        print(f"Run {run_id} nicht gefunden.")
+        return
+
+    print(f"\n{'='*80}")
+    print(f"UMGEKEHRTE STRATEGIEN ANALYSE - Run: {run_id}")
+    print(f"{'='*80}\n")
+
+    # Sammle alle Grid-Ergebnisse
+    all_grids = []
+    grid_details_path = f"test_results/{run_id}/grid_details"
+    results_path = f"test_results/{run_id}/results.json"
+
+    if os.path.exists(grid_details_path):
+        for filename in os.listdir(grid_details_path):
+            if filename.endswith(".json"):
+                with open(os.path.join(grid_details_path, filename)) as f:
+                    data = json.load(f)
+                    sym = data.get("symbol", filename.replace(".json", ""))
+                    for gr in data.get("grid_results", []):
+                        gr["symbol"] = sym
+                        all_grids.append(gr)
+    elif os.path.exists(results_path):
+        # Fallback: Lade aus results.json (ältere Runs)
+        # HINWEIS: elite_results enthält nur die BESTEN Strategien, nicht die schlechtesten!
+        with open(results_path) as f:
+            results = json.load(f)
+            for r in results.get("elite_results", []):
+                # Extrahiere Grid-ähnliche Daten aus elite_results
+                sym = r.get("symbol", "?")
+                config = r.get("config", {})
+                all_grids.append({
+                    "symbol": sym,
+                    "feature_group": config.get("feature_group", "unknown"),
+                    "tp_mult": config.get("tp_mult", 0),
+                    "sl_mult": config.get("sl_mult", 0),
+                    "conf_thresh": config.get("conf_thresh", 0),
+                    "win_rate": r.get("win_rate", 0),
+                    "pnl": r.get("pnl", 0),
+                    "trades": r.get("trades", 0),
+                    "sharpe": r.get("sharpe", 0),
+                    "rrr": r.get("rrr", 1),
+                })
+        print("HINWEIS: Dieser Run hat keine grid_details.")
+        print("         Es werden nur die Elite-Ergebnisse (BESTE Strategien) analysiert.")
+        print("         Für echte Reverse-Analyse einen neuen Run durchführen.\n")
+
+    if not all_grids:
+        print("Keine Grid-Ergebnisse gefunden.")
+        print("Hinweis: Grid-Details werden erst bei neueren Runs gespeichert.")
+        print("Führe einen neuen Optimizer-Run durch, um --reverse-worst nutzen zu können.")
+        return
+
+    # Sortiere nach PnL (schlechteste zuerst)
+    all_grids.sort(key=lambda x: x.get("pnl", 0))
+
+    worst = all_grids[:top_n]
+
+    print(f"Top {len(worst)} SCHLECHTESTE Strategien (nach PnL):\n")
+
+    table_data = []
+    reversed_table = []
+
+    for w in worst:
+        sym = w.get("symbol", "?")
+        fg = w.get("feature_group", "?")
+        tp = w.get("tp_mult", 0)
+        sl = w.get("sl_mult", 0)
+        ct = w.get("conf_thresh", 0)
+        wr = w.get("win_rate", 0)
+        pnl = w.get("pnl", 0)
+        trades = w.get("trades", 0)
+        sharpe = w.get("sharpe", 0)
+        rrr = w.get("rrr", 1)
+
+        # Original
+        table_data.append([
+            sym, fg[:15], f"{tp}/{sl}", ct, f"{wr:.1%}", trades, f"{pnl:+.1f}", f"{sharpe:.2f}"
+        ])
+
+        # Umgekehrte Berechnung:
+        # Wenn WR = 30%, dann hat die umgekehrte Strategie WR = 70%
+        # Aber: RRR kehrt sich auch um! TP=20/SL=40 -> TP=40/SL=20
+        reversed_wr = 1 - wr
+        reversed_rrr = 1 / rrr if rrr > 0 else 1
+
+        # PnL umkehren: Jeder Win wird Loss, jeder Loss wird Win
+        # Aber mit umgekehrtem RRR!
+        # Original: Win gibt +RRR, Loss gibt -1
+        # Reversed: Original-Win (jetzt Loss) gibt -1/RRR, Original-Loss (jetzt Win) gibt +1
+        # Erwartungswert: reversed_wr * 1 - (1 - reversed_wr) * (1/rrr)
+        #                = reversed_wr - (1-reversed_wr)/rrr
+
+        if trades > 0:
+            # Simuliere umgekehrte Trades
+            # Original hatte: wins = wr * trades, losses = (1-wr) * trades
+            # Reversed: wins = (1-wr) * trades mit RRR=1, losses = wr * trades mit loss=1/rrr
+            wins_count = int((1 - wr) * trades)
+            losses_count = trades - wins_count
+
+            # Bei Umkehrung: wir gewinnen was vorher verloren hat (mit neuem RRR)
+            # und verlieren was vorher gewonnen hat
+            reversed_pnl = wins_count * 1.0 - losses_count * (1 / rrr if rrr > 0 else 1)
+
+            # Sharpe approximieren
+            if trades > 1:
+                # Grobe Approximation
+                avg_return = reversed_pnl / trades
+                # Volatilität bleibt ähnlich
+                reversed_sharpe = avg_return * (trades ** 0.5) * 10  # Grobe Skalierung
+            else:
+                reversed_sharpe = 0
+        else:
+            reversed_pnl = 0
+            reversed_sharpe = 0
+
+        reversed_table.append([
+            sym, fg[:15], f"{sl}/{tp}", ct,  # TP/SL getauscht
+            f"{reversed_wr:.1%}", trades, f"{reversed_pnl:+.1f}", f"{reversed_sharpe:.2f}"
+        ])
+
+    print("ORIGINAL (schlechteste):")
+    print(tabulate(
+        table_data,
+        headers=["Symbol", "Feature-Gruppe", "TP/SL", "CT", "WinRate", "Trades", "PnL", "Sharpe"],
+        tablefmt="psql"
+    ))
+
+    print("\n" + "-"*80)
+    print("\nUMGEKEHRT (Long<->Short, TP<->SL):")
+    print(tabulate(
+        reversed_table,
+        headers=["Symbol", "Feature-Gruppe", "TP/SL", "CT", "WinRate", "Trades", "PnL", "Sharpe"],
+        tablefmt="psql"
+    ))
+
+    print("\n" + "="*80)
+    print("FAZIT:")
+    print("="*80)
+
+    # Vergleiche PnL-Summen
+    orig_pnl = sum(w.get("pnl", 0) for w in worst)
+    # Berechne reversed PnL nochmal sauber
+    rev_pnl = 0
+    for w in worst:
+        wr = w.get("win_rate", 0)
+        trades = w.get("trades", 0)
+        rrr = w.get("rrr", 1)
+        if trades > 0 and rrr > 0:
+            wins_count = int((1 - wr) * trades)
+            losses_count = trades - wins_count
+            rev_pnl += wins_count * 1.0 - losses_count * (1 / rrr)
+
+    print(f"\nOriginal PnL (Summe):   {orig_pnl:+.1f}")
+    print(f"Reversed PnL (Summe):   {rev_pnl:+.1f}")
+
+    if rev_pnl > 0 and orig_pnl < 0:
+        improvement = abs(rev_pnl - orig_pnl)
+        print(f"\n-> Umkehrung verbessert um {improvement:.1f} Punkte!")
+        print("   ABER: Diese Berechnung ignoriert Spread-Kosten beim Umkehren.")
+        print("   In der Realität frisst der Spread oft den Gewinn auf.")
+    elif rev_pnl < orig_pnl:
+        print(f"\n-> Umkehrung macht es SCHLECHTER!")
+        print("   Das liegt an den asymmetrischen Spread-Kosten und RRR-Umkehrung.")
+    else:
+        print(f"\n-> Kein signifikanter Unterschied.")
+
+    print("\nWICHTIG: Umkehrung funktioniert in der Praxis selten, weil:")
+    print("  1. Spread-Kosten bei jedem Trade anfallen (egal ob Long oder Short)")
+    print("  2. RRR sich umkehrt (TP/SL tauschen)")
+    print("  3. Markt-Mikrostruktur asymmetrisch ist")
+
+
 def main():
     """CLI-Einstiegspunkt mit Argument-Parsing."""
     parser = argparse.ArgumentParser(
@@ -458,6 +656,9 @@ Beispiele:
   python -m optimizer --list --category model_test # Nach Kategorie filtern
   python -m optimizer --compare RUN1 RUN2          # Runs vergleichen
   python -m optimizer --no-save                    # Ohne Speichern
+  python -m optimizer --assets EURUSD,GBPUSD       # Nur bestimmte Assets
+  python -m optimizer --features trend,momentum    # Nur bestimmte Feature-Gruppen
+  python -m optimizer --reverse-worst RUN_ID       # Schlechteste Strategien umkehren
 
 Kategorien: baseline, feature_test, model_test, hyperparameter, production, experiment
         """
@@ -472,8 +673,28 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     parser.add_argument("--compare", nargs="+", metavar="RUN_ID", help="Runs vergleichen")
     parser.add_argument("--no-save", action="store_true", help="Ergebnisse nicht in test_results speichern")
     parser.add_argument("--load", type=str, metavar="RUN_ID", help="Details eines Runs anzeigen")
+    parser.add_argument("--assets", type=str, help="Nur bestimmte Assets testen (komma-getrennt, z.B. BTCUSD,ETHUSD)")
+    parser.add_argument("--features", type=str, help="Feature-Gruppen testen (komma-getrennt, z.B. trend,momentum,macro)")
+    parser.add_argument("--list-features", action="store_true", help="Verfügbare Feature-Gruppen anzeigen")
+    parser.add_argument("--reverse-worst", type=str, metavar="RUN_ID", help="Analysiere schlechteste Strategien eines Runs umgekehrt")
+    parser.add_argument("--reverse-n", type=int, default=10, help="Anzahl der schlechtesten Strategien für --reverse-worst (default: 10)")
 
     args = parser.parse_args()
+
+    if args.list_features:
+        from .config import FEATURE_GROUPS, DEFAULT_FEATURE_GROUPS
+        print("\n" + "="*70)
+        print("VERFÜGBARE FEATURE-GRUPPEN")
+        print("="*70 + "\n")
+        for name, group in FEATURE_GROUPS.items():
+            default_mark = " [DEFAULT]" if name in DEFAULT_FEATURE_GROUPS else ""
+            print(f"{name}{default_mark}")
+            print(f"  Name: {group['name']}")
+            print(f"  Prefixes: {', '.join(group['prefixes'])}")
+            print(f"  Beschreibung: {group['description']}")
+            print()
+        print(f"Verwendung: python -m optimizer --features trend,momentum,macro")
+        return
 
     if args.list:
         tags = [t.strip() for t in args.tags.split(",")] if args.tags else None
@@ -518,6 +739,9 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         else:
             print(f"Run {args.load} nicht gefunden.")
 
+    elif args.reverse_worst:
+        analyze_reversed_strategies(args.reverse_worst, top_n=args.reverse_n)
+
     else:
         # Strategie-Metadaten
         strategy_metadata = None
@@ -526,10 +750,20 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         elif args.strategy:
             strategy_metadata = prompt_strategy_metadata()
 
+        # Parse asset filter
+        asset_filter = None
+        if args.assets:
+            asset_filter = [a.strip().upper() for a in args.assets.split(",")]
+
+        # Parse feature groups filter
+        if args.features:
+            os.environ["OPTIMIZER_FEATURE_GROUPS"] = args.features
+
         run_optimizer(
             description=args.description,
             save_results=not args.no_save,
-            strategy_metadata=strategy_metadata
+            strategy_metadata=strategy_metadata,
+            asset_filter=asset_filter
         )
 
 
