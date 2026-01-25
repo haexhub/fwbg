@@ -228,23 +228,42 @@ MACRO_HOURLY = {
 }
 
 
+def safe_get_columns(df):
+    """Sicher Spalten aus DataFrame extrahieren (MultiIndex handling)."""
+    if df is None or len(df) == 0:
+        return []
+    if isinstance(df.columns, pd.MultiIndex):
+        return list(df.columns.get_level_values(0))
+    return list(df.columns)
+
+
 def download_hourly_ohlc(name, ticker, period="2y"):
     """Lädt Hourly OHLC-Daten."""
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df = yf.download(ticker, period=period, interval="1h", auto_adjust=True, progress=False)
-        if df is not None and not df.empty and len(df) > 0:
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            if "Close" in df.columns:
-                df = df[["Open", "High", "Low", "Close"]].copy()
-                df.index.name = "Time"
-                df = df.dropna()
-                if len(df) > 0:
-                    filename = f"{DATA_PATH}/{name}_HOUR.csv"
-                    df.to_csv(filename)
-                    return len(df)
+
+        if df is None or len(df) == 0:
+            return 0
+
+        # Flatten MultiIndex columns
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        cols = list(df.columns)
+        required = ["Open", "High", "Low", "Close"]
+        if not all(c in cols for c in required):
+            return 0
+
+        df = df[required].copy()
+        df.index.name = "Time"
+        df = df.dropna()
+
+        if len(df) > 0:
+            filename = f"{DATA_PATH}/{name}_HOUR.csv"
+            df.to_csv(filename)
+            return len(df)
     except Exception:
         pass
     return 0
@@ -256,17 +275,26 @@ def download_daily_close(name, ticker):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df = yf.download(ticker, period="max", interval="1d", auto_adjust=True, progress=False)
-        if df is not None and not df.empty and len(df) > 0:
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            if "Close" in df.columns:
-                df = df[["Close"]].copy()
-                df.index.name = "Datetime"
-                df = df.dropna()
-                if len(df) > 0:
-                    filename = f"{DATA_PATH}/{name}.csv"
-                    df.to_csv(filename)
-                    return len(df)
+
+        if df is None or len(df) == 0:
+            return 0
+
+        # Flatten MultiIndex columns
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        cols = list(df.columns)
+        if "Close" not in cols:
+            return 0
+
+        df = df[["Close"]].copy()
+        df.index.name = "Datetime"
+        df = df.dropna()
+
+        if len(df) > 0:
+            filename = f"{DATA_PATH}/{name}.csv"
+            df.to_csv(filename)
+            return len(df)
     except Exception:
         pass
     return 0
@@ -278,17 +306,26 @@ def download_hourly_close(name, ticker):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df = yf.download(ticker, period="2y", interval="1h", auto_adjust=True, progress=False)
-        if df is not None and not df.empty and len(df) > 0:
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            if "Close" in df.columns:
-                df = df[["Close"]].copy()
-                df.index.name = "Datetime"
-                df = df.dropna()
-                if len(df) > 0:
-                    filename = f"{DATA_PATH}/{name}.csv"
-                    df.to_csv(filename)
-                    return len(df)
+
+        if df is None or len(df) == 0:
+            return 0
+
+        # Flatten MultiIndex columns
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        cols = list(df.columns)
+        if "Close" not in cols:
+            return 0
+
+        df = df[["Close"]].copy()
+        df.index.name = "Datetime"
+        df = df.dropna()
+
+        if len(df) > 0:
+            filename = f"{DATA_PATH}/{name}.csv"
+            df.to_csv(filename)
+            return len(df)
     except Exception:
         pass
     return 0
