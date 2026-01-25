@@ -1,0 +1,83 @@
+{
+  "id": "demo",
+  "name": "Demo Account",
+  "isActive": true,
+
+  "credentials": {
+    "api_key": "1d9a32c47fc7462bf8812dafbff6d8388b2e1d3f",
+    "username": "haexmas-demo",
+    "password": "Xb6e1HIg8Mq"
+  },
+
+  "bot": {
+    "resolution": "HOUR",
+    "lookback": 1000,
+    "data_source": "stooq",
+    "risk_size": 1
+  },
+
+  "xgb_settings": {
+    "n_estimators": 50,
+    "max_depth": 3,
+    "learning_rate": 0.05,
+    "n_jobs": 1,
+    "random_state": 42,
+    "features": ["momentum.rsi:14", "trend.adx:14", "trend.sma_indicator:50"]
+  },
+
+  "money_management": {
+    "max_risk_pct": 0.02,
+    "kelly_multiplier": 0.2
+  },
+
+  "assets": {
+    "EUR/USD Mini": {
+      "epic": "CS.D.EURUSD.CEAM.IP",
+      "conf_thresh": 0.62,
+      "adx_thresh": 20,
+      "sl_atr_mult": 2.0,
+      "tp_atr_mult": 4.0,
+      "stability": 0.83
+    },
+    "AUD/USD Mini": {
+      "epic": "CS.D.AUDUSD.MINI.IP",
+      "conf_thresh": 0.6,
+      "adx_thresh": 20,
+      "sl_atr_mult": 2.0,
+      "tp_atr_mult": 4.0,
+      "stability": 3
+    },
+    "USD/JPY Mini": {
+      "epic": "CS.D.USDJPY.MINI.IP",
+      "conf_thresh": 0.58,
+      "adx_thresh": 25,
+      "sl_atr_mult": 2.0,
+      "tp_atr_mult": 4.0,
+      "stability": 1
+    },
+    "GBP/USD Mini": {
+      "epic": "CS.D.GBPUSD.MINI.IP",
+      "conf_thresh": 0.6,
+      "adx_thresh": 25,
+      "sl_atr_mult": 2.0,
+      "tp_atr_mult": 4.0,
+      "stability": 0.833
+    },
+    "USD/CHF Mini": {
+      "epic": "CS.D.USDCHF.MINI.IP",
+      "conf_thresh": 0.58,
+      "adx_thresh": 15,
+      "sl_atr_mult": 2.0,
+      "tp_atr_mult": 4.0,
+      "stability": 0.778
+    },
+    "EUR/GBP Mini": {
+      "epic": "CS.D.EURGBP.MINI.IP",
+      "conf_thresh": 0.65,
+      "adx_thresh": 20,
+      "sl_atr_mult": 2.0,
+      "tp_atr_mult": 4.0,
+      "stability": 0.842
+    }
+  }
+}

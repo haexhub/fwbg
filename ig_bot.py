@@ -1,461 +1,240 @@
-from datetime import datetime
-from trading_ig import IGService
-from xgboost import XGBClassifier
-import glob
-import json
-import logging
-import numpy as np
-import os
 import pandas as pd
 import ta
-import threading
+import os
+import json
 import time
-import warnings
+import threading
+import logging
+import sys
+from datetime import datetime
+from xgboost import XGBClassifier
+from trading_ig import IGService
+import yfinance as yf
 
-warnings.simplefilter(action="ignore", category=FutureWarning)
-
-
-def load_account_configs() -> list[dict]:
-    """Load all account configurations from accounts/*.json files."""
-    accounts = []
-    accounts_dir = "accounts"
-
-    if not os.path.exists(accounts_dir):
-        os.makedirs(accounts_dir)
-        return []
-
-    for config_file in glob.glob(os.path.join(accounts_dir, "*.json")):
-        # Skip example files
-        if ".example." in config_file:
-            continue
-
-        try:
-            with open(config_file, "r", encoding="utf-8") as f:
-                config = json.load(f)
-                config["_config_file"] = config_file
-                accounts.append(config)
-        except Exception as e:
-            print(f"Error loading {config_file}: {e}")
-
-    return accounts
+# --- LOGGING SETUP ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - [%(levelname)s] - %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("bot_fortress.log"),
+    ],
+)
+logger = logging.getLogger("FortressBot")
 
 
-def create_account_logger(account_id: str, log_file: str) -> logging.Logger:
-    """Create a dedicated logger for each account with its own log file."""
-    logger = logging.getLogger(f"igbot.{account_id}")
-    logger.setLevel(logging.INFO)
+class EliteBot:
+    SYMBOL_TO_EPIC = {
+        "FTSE100": "IX.D.FTSE.DAILY.IP",
+        "DOW30": "IX.D.DOW.DAILY.IP",
+        "NAS100": "IX.D.NASDAQ.DAILY.IP",
+        "DAX": "IX.D.DAX.DAILY.IP",
+        "EURUSD": "CS.D.EURUSD.TODAY.IP",
+        "GBPUSD": "CS.D.GBPUSD.TODAY.IP",
+        "USDJPY": "CS.D.USDJPY.TODAY.IP",
+        "USDCHF": "CS.D.USDCHF.TODAY.IP",
+        "USDCAD": "CS.D.USDCAD.TODAY.IP",
+        "AUDUSD": "CS.D.AUDUSD.TODAY.IP",
+        "EURCAD": "CS.D.EURCAD.TODAY.IP",
+        "XAUUSD": "CC.D.GOLD.USS.IP",
+        "GOLD": "CC.D.GOLD.USS.IP",
+        "XAGUSD": "CC.D.SILVER.USS.IP",
+        "SILVER": "CC.D.SILVER.USS.IP",
+        "BRENT": "CC.D.LCO.UNC.IP",
+    }
 
-    # Prevent duplicate handlers if logger already exists
-    if logger.handlers:
-        return logger
+    def __init__(self, account_dir):
+        self._stop_event = threading.Event()
+        self.account_dir = account_dir
+        self.TARGET_TZ = "Europe/Berlin"
+        self.load_configurations()
+        self.ig = self.initialize_ig_session()
 
-    log_format = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        logger.info("🧠 Training KI-Modelle...")
+        self.models = {
+            s: self.train_elite_model(s)
+            for s in self.assets.keys()
+            if self.train_elite_model(s) is not None
+        }
+        logger.info(f"🏰 Bot 6.6 scharf. {len(self.models)} Assets geladen.")
 
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(log_format)
-    logger.addHandler(console_handler)
+    def load_configurations(self):
+        with open(f"{self.account_dir}/account_info.json", "r") as f:
+            self.account_info = json.load(f)
+        with open(f"{self.account_dir}/assets.json", "r") as f:
+            self.assets = json.load(f)
 
-    # File handler (account-specific log file)
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(log_format)
-    logger.addHandler(file_handler)
-
-    return logger
-
-
-class IGAccountBot:
-    """
-    Bot instance for a single IG account.
-    Each account runs independently with its own:
-    - Configuration (credentials, strategy, pairs, etc.)
-    - IG API session
-    - Log file
-    - Trade history
-    - Status file
-    """
-
-    def __init__(self, config: dict):
-        self.config = config
-        self.account_id = config["id"]
-        self.account_name = config["name"]
-        self.credentials = config["credentials"]
-        self.bot_settings = config.get("bot", {})
-        self.xgb_settings = config.get("xgb_settings", {})
-        self.money_management = config.get("money_management", {})
-        self.strategy = config.get("strategy", {})
-        self.pairs = config.get("pairs", {})
-
-        # Create account-specific directories
-        self.stats_dir = f"stats_export/{self.account_id}"
-        self.logs_dir = f"logs/{self.account_id}"
-        os.makedirs(self.stats_dir, exist_ok=True)
-        os.makedirs(self.logs_dir, exist_ok=True)
-
-        # Create account-specific logger
-        log_file_name = self.bot_settings.get("log_file", f"bot_{self.account_id}.log")
-        log_file = os.path.join(self.logs_dir, log_file_name)
-        self.logger = create_account_logger(self.account_id, log_file)
-
-        # Initialize IG service for this account
-        self.ig = IGService(
-            self.credentials["username"],
-            self.credentials["password"],
-            self.credentials["api_key"],
-            self.credentials["acc_type"],
+    def initialize_ig_session(self):
+        creds = self.account_info["credentials"]
+        ig = IGService(
+            creds["username"], creds["password"], creds["api_key"], creds["env"].upper()
         )
-        self.ig.create_session()
+        try:
+            ig.create_session()
+            return ig
+        except Exception as e:
+            logger.error(f"❌ Login gescheitert: {e}")
+            sys.exit(1)
 
-        self.logger.info(f"Account initialized: {self.credentials['acc_type']}")
-
-    def show_startup_summary(self):
-        """Zeigt eine Übersicht der Risiko-Parameter beim Start."""
-        max_risk = self.money_management.get("max_risk_pct", 0.02)
-        kelly_m = self.money_management.get("kelly_multiplier", 0.2)
-
-        print("\n" + "=" * 50)
-        print(f"🛡️  PRE-FLIGHT CHECK: [{self.account_name.upper()}]")
-        print("=" * 50)
-        print(f"Account Type:          {self.credentials.get('acc_type', 'UNKNOWN')}")
-        print(f"Max. Risiko pro Trade: {max_risk * 100:.1f}% vom Kapital")
-        print(f"Kelly-Multiplikator:   {kelly_m:.2f} (Vorsicht-Faktor)")
-        print("-" * 50)
-        print(f"{'Paar':<15} | {'Stabilität':<10} | {'Risk-Gewichtung':<15}")
-        print("-" * 50)
-
-        for name, p in self.pairs.items():
-            stab = p.get("stability", 80.0)
-            stab_factor = min(max(0.5, stab / 100.0), 1.25)
-            eff_risk = max_risk * stab_factor
-            print(f"{name:<15} | {stab:>9.1f}% | x{stab_factor:.2f} ({eff_risk * 100:.2f}%)")
-
-        print("=" * 50)
-        print("🤖 Bot wartet auf Signale...\n")
-
-    def get_market_data(self, epic):
-        """Lädt Marktdaten aus der lokalen CSV-Datei und berechnet Indikatoren."""
-        safe_epic = epic.replace(".", "_")
-        source = self.bot_settings.get("data_source", "stooq")
-        file_path = f"data/{source}/{safe_epic}.csv"
-
-        if not os.path.exists(file_path):
+    def load_data_aligned(self, path, is_sentiment=False):
+        try:
+            df_raw = pd.read_csv(path)
+            start = 1 if str(df_raw.iloc[0, 0]).isdigit() else 0
+            df = (
+                df_raw.iloc[
+                    :, [start, start + 1, start + 2, start + 3, start + 4]
+                ].copy()
+                if len(df_raw.columns) >= 5
+                else df_raw.iloc[:, [start, start + 1]].copy()
+            )
+            df.columns = (
+                ["T", "O", "H", "L", "C"] if len(df.columns) == 5 else ["T", "C"]
+            )
+            if "O" not in df.columns:
+                df["O"] = df["H"] = df["L"] = df["C"]
+            df["T"] = pd.to_datetime(df["T"])
+            if is_sentiment:
+                if df["T"].dt.tz is None:
+                    df["T"] = df["T"].dt.tz_localize("UTC")
+                df["T"] = df["T"].dt.tz_convert(self.TARGET_TZ)
+            else:
+                if df["T"].dt.tz is None:
+                    df["T"] = df["T"].dt.tz_localize(
+                        self.TARGET_TZ, ambiguous="infer", nonexistent="shift_forward"
+                    )
+            df["T"] = df["T"].dt.tz_localize(None)
+            return df.set_index("T")
+        except Exception:
             return None
 
-        df = pd.read_csv(file_path, index_col=0, parse_dates=True)
-        df["RSI"] = ta.momentum.rsi(df["Close"], 14)
-        df["ADX"] = ta.trend.adx(df["High"], df["Low"], df["Close"], 14)
-        df["ATR"] = ta.volatility.average_true_range(
-            df["High"], df["Low"], df["Close"], 14
-        )
-        df["SMA_50"] = ta.trend.sma_indicator(df["Close"], 50)
-        df["Target"] = (
-            np.log(df["Close"] / df["Close"].shift(1)).shift(-1) > 0
-        ).astype(int)
-        return df.dropna()
+    def calculate_indicators(self, df, feats):
+        if "trend_adx" in feats:
+            df["trend_adx"] = ta.trend.adx(df["H"], df["L"], df["C"])
+        if "trend_cci" in feats:
+            df["trend_cci"] = ta.trend.cci(df["H"], df["L"], df["C"])
+        if "trend_ema" in feats:
+            df["trend_ema"] = (df["C"] - ta.trend.ema_indicator(df["C"], 50)) / df["C"]
+        if "mom_rsi" in feats:
+            df["mom_rsi"] = ta.momentum.rsi(df["C"])
+        if "mom_uo" in feats:
+            df["mom_uo"] = ta.momentum.ultimate_oscillator(df["H"], df["L"], df["C"])
+        if "vol_atr" in feats:
+            df["vol_atr"] = ta.volatility.average_true_range(df["H"], df["L"], df["C"])
+        if "vol_bbh" in feats:
+            df["vol_bbh"] = (ta.volatility.bollinger_hband(df["C"]) - df["C"]) / df["C"]
+        if "time_hr" in feats:
+            df["time_hr"] = df.index.hour
+        return df
 
-    def is_market_regime_ok(self, df, name):
-        """Prüft, ob das Marktregime für Trading geeignet ist."""
-        current_atr = df["ATR"].iloc[-1]
-        hist_atr_mean = df["ATR"].tail(100).mean()
-        if current_atr > (hist_atr_mean * 2.5) or df["ADX"].iloc[-1] < 12:
-            self.logger.warning(f"⚠️ Regime-Block {name}: Volatilität oder Trend unpassend.")
-            return False
-        return True
+    def train_elite_model(self, symbol):
+        try:
+            cfg = self.assets[symbol]
+            df = self.load_data_aligned(f"./data/forexsb/{symbol}_HOUR.csv")
+            for s in ["VIX", "DXY"]:
+                if f"sent_{s.lower()}" in cfg["features"]:
+                    s_path = f"./data/forexsb/{s.upper()}_HOUR.csv"
+                    s_df = self.load_data_aligned(s_path, True)
+                    df = df.join(
+                        s_df["C"].rename(f"sent_{s.lower()}"), how="left"
+                    ).fillna(0)
+            df = self.calculate_indicators(df, cfg["features"])
+            df["Target"] = (df["C"].shift(-1) > df["C"]).astype(int)
+            df = df.dropna()
+            m = XGBClassifier(
+                n_estimators=100, max_depth=5, n_jobs=-1, random_state=42, verbosity=0
+            )
+            m.fit(df[cfg["features"]], df["Target"])
+            return m
+        except Exception:
+            return None
 
-    def check_margin_availability(self, size, price, epic):
-        """
-        Prüft, ob genug Kapital für die Margin vorhanden ist.
-        Gibt True zurück, wenn der Trade finanziell möglich ist.
-        """
+    def execute_order(self, symbol, direction, prob):
+        cfg = self.assets[symbol]
+        epic = self.SYMBOL_TO_EPIC.get(symbol)
+        if not epic:
+            return
+
         try:
             acc = self.ig.fetch_accounts()
-            cfd_acc = acc[acc["accountType"] == "CFD"].iloc[0]
-            available_cash = float(cfd_acc["available"])
+            balance = float(acc.loc[0, "balance"])
+            # Maximale Positionsgröße begrenzen (Anti-Wahnsinn-Sicherung)
+            risk_cash = min(balance * cfg["kelly_risk"], balance * 0.05)
 
-            is_index = epic.startswith("IX")
-            margin_factor = 0.05 if is_index else 0.035
-            total_value = size * price
-            required_margin = total_value * margin_factor
-            needed_with_buffer = required_margin * 1.10
+            df = self.load_data_aligned(f"./data/forexsb/{symbol}_HOUR.csv").tail(50)
+            atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"]).iloc[-1]
 
-            if available_cash > needed_with_buffer:
-                return True
-            else:
-                self.logger.warning(
-                    f"⚠️ Margin-Check fehlgeschlagen: Benötigt ca. {needed_with_buffer:.2f}€, Vorhanden: {available_cash:.2f}€"
-                )
-                return False
+            # Korrekte Berechnung der Pips/Punkte Distanz
+            # sl_dist_pts ist die absolute Differenz in Broker-Einheiten
+            sl_dist_pts = max(10, int((atr * cfg["sl_mult"]) / cfg["point_value"]))
+            limit_dist_pts = int((atr * cfg["tp_mult"]) / cfg["point_value"])
 
-        except Exception as e:
-            self.logger.error(f"Fehler beim Margin-Check: {e}")
-            return False
+            # Normierte Size Berechnung: Risk_Cash / (Distanz_in_Punkten)
+            # IG verlangt bei vielen Indizes 1.0 pro Punkt, bei FX 10.0 pro Pip
+            size = round(risk_cash / sl_dist_pts, 2)
+            size = max(self.account_info["money_management"]["min_lot_size"], size)
 
-    def update_bot_status(self, active_epics):
-        """Erstellt eine Status-Datei für das Web-Dashboard."""
-        status_data = {
-            "last_heartbeat": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "status": "RUNNING",
-            "active_pairs_count": len(active_epics),
-            "active_epics": active_epics,
-            "account_id": self.account_id,
-            "account_name": self.account_name,
-            "account_mode": self.credentials.get("acc_type", "unknown"),
-        }
-        with open(f"{self.stats_dir}/bot_status.json", "w") as f:
-            json.dump(status_data, f, indent=4)
-
-    def analyze_and_predict(self, df):
-        """Trainiert das XGBoost-Modell und gibt eine Wahrscheinlichkeit zurück."""
-        features = ["RSI", "ADX", "SMA_50"]
-
-        xgb_params = {
-            "n_estimators": self.xgb_settings.get("n_estimators", 50),
-            "max_depth": self.xgb_settings.get("max_depth", 3),
-            "learning_rate": self.xgb_settings.get("learning_rate", 0.05),
-            "n_jobs": self.xgb_settings.get("n_jobs", -1),
-            "random_state": self.xgb_settings.get("random_state", 42),
-            "verbosity": 0,
-        }
-
-        model = XGBClassifier(**xgb_params)
-        model.fit(df.tail(1000)[features], df.tail(1000)["Target"])
-        prob = model.predict_proba(df.iloc[[-1]][features])[0, 1]
-        return prob, {"atr": df["ATR"].iloc[-1], "close": df["Close"].iloc[-1]}
-
-    def sync_open_positions(self):
-        """Prüft, ob IG-Trades geschlossen wurden und loggt das Ergebnis."""
-        try:
-            ig_pos = self.ig.fetch_open_positions()
-            active_ids = ig_pos["dealId"].tolist() if not ig_pos.empty else []
-
-            trade_history_file = f"{self.stats_dir}/trade_history.csv"
-
-            if not os.path.exists(trade_history_file):
-                return
-
-            df = pd.read_csv(trade_history_file)
-            mask_just_closed = (df["pnl"] == 0) & (~df["deal_id"].isin(active_ids))
-
-            if mask_just_closed.any():
-                history = self.ig.fetch_transaction_history(max_results=30)
-                for idx, row in df[mask_just_closed].iterrows():
-                    match = history[history["dealId"] == row["deal_id"]]
-                    df.at[idx, "pnl"] = (
-                        float(match.iloc[0]["profitAndLoss"])
-                        if not match.empty
-                        else 0.01
-                    )
-                df.to_csv(trade_history_file, index=False)
-                self.logger.info("🏁 Trade-Historie synchronisiert.")
-        except Exception as e:
-            self.logger.error(f"Sync-Fehler: {e}")
-
-    def execute_trade(self, epic, signal, stats, prob, pair_config):
-        """Führt einen Trade aus mit Kelly-Sizing und Risikomanagement."""
-        try:
-            p = pair_config
-            b = p["tp_atr_mult"] / p["sl_atr_mult"]
-            kelly = prob - ((1 - prob) / b)
-            if kelly <= 0:
-                return
-
-            stab_f = min(max(0.5, p.get("stability", 80.0) / 100.0), 1.25)
-            risk = min(
-                kelly * self.money_management.get("kelly_multiplier", 0.2) * stab_f,
-                self.money_management.get("max_risk_pct", 0.02),
+            logger.info(
+                f"🚀 {direction} {symbol} | Epic: {epic} | Size: {size} | SL: {sl_dist_pts}"
             )
 
-            acc = self.ig.fetch_accounts()
-            bal = float(acc[acc["accountType"] == "CFD"].iloc[0]["balance"])
-
-            is_jpy = "JPY" in epic
-            dist = max(p["sl_atr_mult"] * stats["atr"], 12.0 if is_jpy else 0.0012)
-
-            min_size = self.bot_settings.get("risk_size", 0.5)
-            size = round(
-                max(min_size, (bal * risk) / (dist if not is_jpy else dist / 100)), 1
-            )
-
-            if not self.check_margin_availability(size, stats["close"], epic):
-                self.logger.info(f"🚫 Trade abgebrochen: Nicht genügend Margin für {epic}")
-                return
-
-            res = self.ig.create_open_position(
-                currency_code="EUR",
-                direction=signal,
+            # KORREKTE IG METHODE: create_open_position
+            response = self.ig.create_open_position(
+                currency_code=self.account_info["metadata"]["currency"],
+                direction=direction,
                 epic=epic,
                 expiry="DFB",
                 order_type="MARKET",
                 size=size,
-                force_open=False,
                 guaranteed_stop=False,
-            )
-            deal_id = (
-                res.get("dealId")
-                if isinstance(res, dict)
-                else getattr(res, "dealId", None)
+                stop_distance=sl_dist_pts,
+                limit_distance=limit_dist_pts,
             )
 
-            if deal_id:
-                time.sleep(2)
-                exec_p = float(res.get("level", stats["close"]))
-                sl = round(
-                    exec_p - dist if signal == "BUY" else exec_p + dist,
-                    2 if is_jpy else 4,
-                )
-                tp = round(
-                    exec_p + (p["tp_atr_mult"] * stats["atr"])
-                    if signal == "BUY"
-                    else exec_p - (p["tp_atr_mult"] * stats["atr"]),
-                    2 if is_jpy else 4,
-                )
-                self.ig.update_open_position(
-                    deal_id=deal_id, limit_level=tp, stop_level=sl
-                )
+            if response and "dealReference" in response:
+                logger.info(f"✅ Order platziert! Ref: {response['dealReference']}")
+            else:
+                logger.error(f"❌ Abgelehnt: {response}")
 
-                trade_history_file = f"{self.stats_dir}/trade_history.csv"
-                log_df = pd.DataFrame(
-                    [
-                        {
-                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "epic": epic,
-                            "deal_id": deal_id,
-                            "signal": signal,
-                            "size": size,
-                            "pnl": 0,
-                        }
-                    ]
-                )
-                log_df.to_csv(
-                    trade_history_file,
-                    mode="a",
-                    index=False,
-                    header=not os.path.exists(trade_history_file),
-                )
-                self.logger.info(f"✅ {signal} @ {exec_p} | SL: {sl} | TP: {tp}")
         except Exception as e:
-            self.logger.error(f"Execution Error {epic}: {e}")
+            logger.error(f"❌ Fehler bei {symbol}: {e}")
 
     def run(self):
-        """Main loop for this account - runs continuously in its own thread."""
-        self.show_startup_summary()
+        while not self._stop_event.is_set():
+            if datetime.now().weekday() < 5:
+                # Sentiment Refresh (Fix für float Warning)
+                tickers = {"vix": "^VIX", "dxy": "DX-Y.NYB"}
+                current_sent = {}
+                for k, v in tickers.items():
+                    data = yf.download(v, period="1d", interval="1h", progress=False)
+                    if not data.empty:
+                        current_sent[k] = float(data["Close"].iloc[-1])
 
-        while True:
-            # Re-load config to check if still active
-            try:
-                with open(self.config["_config_file"], "r", encoding="utf-8") as f:
-                    current_config = json.load(f)
-                    if not current_config.get("isActive", True):
-                        self.logger.info("Account deactivated, pausing...")
-                        self.update_bot_status([])
-                        time.sleep(60)
+                for sym, cfg in self.assets.items():
+                    if sym not in self.models:
                         continue
-            except Exception:
-                pass
+                    try:
+                        df = (
+                            self.load_data_aligned(f"./data/forexsb/{sym}_HOUR.csv")
+                            .tail(100)
+                            .copy()
+                        )
+                        for k, v in current_sent.items():
+                            if f"sent_{k}" in cfg["features"]:
+                                df[f"sent_{k}"] = v
 
-            self.logger.info("--- 🔄 Scan ---")
-            self.sync_open_positions()
+                        df = self.calculate_indicators(df, cfg["features"])
+                        prob = self.models[sym].predict_proba(
+                            df[cfg["features"]].iloc[[-1]]
+                        )[0, 1]
 
-            try:
-                open_pos = self.ig.fetch_open_positions()
-                active_epics = open_pos["epic"].tolist() if not open_pos.empty else []
-            except Exception as e:
-                self.logger.error(f"Failed to fetch positions: {e}")
-                active_epics = []
-
-            self.update_bot_status(active_epics)
-
-            for name, pair_config in self.pairs.items():
-                epic = pair_config["epic"]
-                if epic in active_epics:
-                    continue
-
-                df = self.get_market_data(epic)
-                if df is None or not self.is_market_regime_ok(df, name):
-                    continue
-
-                # Use pair-specific thresholds, fallback to strategy defaults
-                conf_thresh = pair_config.get(
-                    "conf_thresh", self.strategy.get("conf_thresh", 0.55)
-                )
-
-                prob, stats = self.analyze_and_predict(df)
-                if prob >= conf_thresh:
-                    self.execute_trade(epic, "BUY", stats, prob, pair_config)
-                elif prob <= (1 - conf_thresh):
-                    self.execute_trade(epic, "SELL", stats, prob, pair_config)
-
+                        if prob >= cfg["conf_thresh"]:
+                            self.execute_order(sym, "BUY", prob)
+                        elif prob <= (1 - cfg["conf_thresh"]):
+                            self.execute_order(sym, "SELL", prob)
+                    except Exception:
+                        continue
             time.sleep(300)
 
 
-class MultiAccountBot:
-    """
-    Main bot that manages multiple IG accounts.
-    Each active account runs in its own thread for parallel execution.
-    """
-
-    def __init__(self):
-        self.accounts: list[IGAccountBot] = []
-        self.threads: list[threading.Thread] = []
-        os.makedirs("stats_export", exist_ok=True)
-
-    def _initialize_accounts(self):
-        """Initialize bot instances for all active accounts."""
-        configs = load_account_configs()
-
-        print("\n" + "=" * 60)
-        print("🛡️  MULTI-ACCOUNT BOT STARTING")
-        print("=" * 60)
-
-        if not configs:
-            print("  ⚠️  No account configs found in accounts/ directory")
-            print("  Create accounts/*.json files (see accounts/demo.example.json)")
-            print("=" * 60)
-            raise ValueError("No account configurations found")
-
-        for config in configs:
-            account_id = config.get("id", "unknown")
-            account_name = config.get("name", account_id)
-
-            if not config.get("isActive", True):
-                print(f"  ⏸️  Skipping inactive account: {account_name}")
-                continue
-
-            try:
-                account_bot = IGAccountBot(config)
-                self.accounts.append(account_bot)
-                print(f"  ✅ Initialized: {account_name} ({config.get('credentials', {}).get('acc_type', 'UNKNOWN')})")
-            except Exception as e:
-                print(f"  ❌ Failed to initialize {account_name}: {e}")
-
-        print("=" * 60)
-
-        if not self.accounts:
-            raise ValueError("No active accounts found! Set isActive: true in account configs")
-
-        print(f"\n🚀 Starting {len(self.accounts)} account(s) in parallel...\n")
-
-    def run(self):
-        """Start all account bots in parallel threads."""
-        self._initialize_accounts()
-
-        for account in self.accounts:
-            thread = threading.Thread(
-                target=account.run,
-                name=f"bot-{account.account_id}",
-                daemon=True
-            )
-            self.threads.append(thread)
-            thread.start()
-
-        try:
-            while True:
-                time.sleep(60)
-        except KeyboardInterrupt:
-            print("\n🛑 Shutting down...")
-
-
 if __name__ == "__main__":
-    MultiAccountBot().run()
+    EliteBot("accounts/main_demo").run()

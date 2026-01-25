@@ -1,14 +1,20 @@
 import yfinance as yf
 import pandas as pd
-import yaml
+import json
+import glob
 import os
 import time
 import random
 import requests
 import io
+import warnings
+from datetime import datetime, timedelta
 
-# Konfiguration
-START_DATE = "2015-01-01"
+warnings.simplefilter(action="ignore", category=FutureWarning)
+
+# Defaults
+START_DATE_DEFAULT = "2015-01-01"
+LOCAL_TZ = "Europe/Berlin"
 
 
 def setup_folders():
@@ -16,76 +22,105 @@ def setup_folders():
         os.makedirs(f"data/{src}", exist_ok=True)
 
 
-def fetch_stooq_direct(mapping):
-    print("\n--- ⚪ Starte Stooq Direct-Download ---")
+def extract_symbol(epic):
+    parts = epic.split(".")
+    return parts[2].upper() if len(parts) >= 3 else epic.upper()
+
+
+def check_and_convert_tz(df, name):
+    if df.empty:
+        return df
+    try:
+        if df.index.tz is not None:
+            df.index = df.index.tz_convert(LOCAL_TZ).tz_localize(None)
+        else:
+            df.index = (
+                df.index.tz_localize("UTC").tz_convert(LOCAL_TZ).tz_localize(None)
+            )
+    except Exception as e:
+        print(f"⚠️ TZ-Sync Warnung {name}: {e}")
+    return df
+
+
+def fetch_stooq(epic, resolution):
+    if "HOUR" in resolution or "MINUTE" in resolution:
+        print(
+            f"⏩ Stooq übersprungen für {epic}: Stooq bietet kostenlos nur DAY-Daten."
+        )
+        return
+
+    symbol = extract_symbol(epic).lower()
+    url = f"https://stooq.com/q/d/l/?s={symbol}&i=d"
     headers = {"User-Agent": "Mozilla/5.0"}
+    filename = f"{epic.replace('.', '_')}_{resolution}.csv"
+    path = f"data/stooq/{filename}"
 
-    for epic, yahoo_ticker in mapping.items():
-        # Stooq Ticker Format: eurusd, usdjpy, etc. (kleingeschrieben, ohne =X)
-        stooq_ticker = yahoo_ticker.replace("=X", "").lower()
-        safe_name = epic.replace(".", "_")
-
-        # Direkter CSV-Download Link von Stooq
-        url = f"https://stooq.com/q/d/l/?s={stooq_ticker}&i=d"
-
-        try:
-            response = requests.get(url, headers=headers)
-            if response.status_code == 200:
-                df = pd.read_csv(io.StringIO(response.text))
-
-                if not df.empty and len(df) > 100:
-                    # Stooq Spalten: Date, Open, High, Low, Close, Volume
-                    df["Date"] = pd.to_datetime(df["Date"])
-                    df.set_index("Date", inplace=True)
-                    df = df.sort_index()
-
-                    # Nur die benötigten Spalten speichern
-                    clean_df = df[["Open", "High", "Low", "Close"]]
-                    clean_df.to_csv(f"data/stooq/{safe_name}.csv")
-                    print(f"✅ Stooq: {stooq_ticker.upper()} ({len(clean_df)} Zeilen)")
-                else:
-                    print(
-                        f"⚠️ Stooq: {stooq_ticker.upper()} lieferte keine ausreichenden Daten."
-                    )
-            else:
-                print(
-                    f"❌ Stooq Server Fehler für {stooq_ticker}: Status {response.status_code}"
-                )
-
-        except Exception as e:
-            print(f"❌ Fehler bei Stooq-Download {stooq_ticker}: {e}")
-
-        time.sleep(random.randint(2, 4))  # Freundlich bleiben
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code == 200:
+            df = pd.read_csv(io.StringIO(response.text))
+            if not df.empty and "Close" in df.columns:
+                df["Date"] = pd.to_datetime(df["Date"])
+                df.set_index("Date", inplace=True)
+                df = check_and_convert_tz(df, symbol)
+                df[["Open", "High", "Low", "Close"]].to_csv(path)
+                print(f"✅ Stooq: {filename}")
+    except Exception as e:
+        print(f"❌ Stooq Fehler {symbol}: {e}")
 
 
-def fetch_yahoo_safe(mapping):
-    print("\n--- 🔵 Starte Yahoo Safe-Fetch ---")
-    for epic, ticker in mapping.items():
-        safe_name = epic.replace(".", "_")
-        try:
-            df = yf.download(ticker, start=START_DATE, progress=False, auto_adjust=True)
-            if not df.empty:
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
+def fetch_yahoo(epic, resolution):
+    symbol = extract_symbol(epic)
+    ticker = f"{symbol}=X" if len(symbol) == 6 else symbol
 
-                clean_df = df[["Open", "High", "Low", "Close"]].dropna()
-                clean_df.to_csv(f"data/yahoo/{safe_name}.csv")
-                print(f"✅ Yahoo: {ticker} ({len(clean_df)} Zeilen)")
-            else:
-                print(f"⚠️ Yahoo: {ticker} leer.")
-        except Exception as e:
-            print(f"❌ Yahoo Fehler bei {ticker}: {e}")
+    # --- YAHOO LIMIT LOGIK ---
+    if "HOUR" in resolution:
+        interval = "1h"
+        # Yahoo erlaubt max 730 Tage für 1h
+        start = (datetime.now() - timedelta(days=729)).strftime("%Y-%m-%d")
+    elif "MINUTE_15" in resolution:
+        interval = "15m"
+        # Yahoo erlaubt max 60 Tage für 15m
+        start = (datetime.now() - timedelta(days=59)).strftime("%Y-%m-%d")
+    else:
+        interval = "1d"
+        start = START_DATE_DEFAULT
 
-        time.sleep(random.randint(3, 6))
+    filename = f"{epic.replace('.', '_')}_{resolution}.csv"
+    path = f"data/yahoo/{filename}"
+
+    try:
+        df = yf.download(
+            ticker, start=start, interval=interval, progress=False, auto_adjust=True
+        )
+        if not df.empty:
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df = check_and_convert_tz(df, ticker)
+            df[["Open", "High", "Low", "Close"]].dropna().to_csv(path)
+            print(f"✅ Yahoo: {filename} (Start: {start})")
+        else:
+            print(f"⚠️ Yahoo: {ticker} lieferte keine Daten für {interval}.")
+    except Exception as e:
+        print(f"❌ Yahoo Fehler {ticker}: {e}")
 
 
 if __name__ == "__main__":
     setup_folders()
-    with open("mapping.yaml", "r") as f:
-        m = yaml.safe_load(f).get("markets", {})
+    targets = set()
+    for acc_path in glob.glob("accounts/*.json"):
+        with open(acc_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            bot_cfg = data.get("bot", {})
+            for name, a_cfg in data.get("assets", {}).items():
+                # Falls Asset keine eigene Source hat, nimm Bot-Source
+                src = a_cfg.get("data_source", bot_cfg.get("data_source", "yahoo"))
+                res = a_cfg.get("resolution", bot_cfg.get("resolution", "HOUR"))
+                targets.add((src, a_cfg["epic"], res))
 
-    # Erst Stooq, dann Yahoo
-    fetch_stooq_direct(m)
-    print("\n⏳ Pause zwischen den Quellen...")
-    time.sleep(10)
-    fetch_yahoo_safe(m)
+    for src, epic, res in targets:
+        if src.lower() == "stooq":
+            fetch_stooq(epic, res)
+        else:
+            fetch_yahoo(epic, res)
+        time.sleep(random.randint(1, 3))

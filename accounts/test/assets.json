@@ -1,0 +1,86 @@
+{
+    "EURUSD": {
+        "kelly_risk": 0.01,
+        "point_value": 0.0001,
+        "spread": 0.00006,
+        "tp_mult": 50,
+        "sl_mult": 30,
+        "conf_thresh": 0.55,
+        "features": [
+            "test_feature_1",
+            "test_feature_2"
+        ],
+        "good_hours": [
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+        ],
+        "ensemble": [
+            {
+                "tp_mult": 50,
+                "sl_mult": 30,
+                "conf_thresh": 0.58,
+                "weight": 0.5
+            }
+        ],
+        "dd_scaling": {
+            "5": 0.75,
+            "10": 0.5,
+            "15": 0.25
+        }
+    },
+    "TEMP_DELETE_TEST_1769352992733": {
+        "kelly_risk": 0.01,
+        "point_value": 0.0001,
+        "spread": 0.0001,
+        "tp_mult": 40,
+        "sl_mult": 20,
+        "conf_thresh": 0.55,
+        "features": [],
+        "good_hours": [],
+        "ensemble": [],
+        "dd_scaling": {}
+    },
+    "TEMP_DELETE_TEST_1769353079941": {
+        "kelly_risk": 0.01,
+        "point_value": 0.0001,
+        "spread": 0.0001,
+        "tp_mult": 40,
+        "sl_mult": 20,
+        "conf_thresh": 0.55,
+        "features": [],
+        "good_hours": [],
+        "ensemble": [],
+        "dd_scaling": {}
+    },
+    "TEMP_DELETE_TEST_1769353126443": {
+        "kelly_risk": 0.01,
+        "point_value": 0.0001,
+        "spread": 0.0001,
+        "tp_mult": 40,
+        "sl_mult": 20,
+        "conf_thresh": 0.55,
+        "features": [],
+        "good_hours": [],
+        "ensemble": [],
+        "dd_scaling": {}
+    },
+    "TEMP_DELETE_TEST_1769353288674": {
+        "kelly_risk": 0.01,
+        "point_value": 0.0001,
+        "spread": 0.0001,
+        "tp_mult": 40,
+        "sl_mult": 20,
+        "conf_thresh": 0.55,
+        "features": [],
+        "good_hours": [],
+        "ensemble": [],
+        "dd_scaling": {}
+    }
+}
