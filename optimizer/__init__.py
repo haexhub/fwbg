@@ -58,6 +58,14 @@ from .resource_manager import (
     calculate_safe_workers
 )
 
+from .plateau import (
+    calculate_param_plateau_score,
+    select_plateau_features,
+    select_best_plateau_candidate,
+    find_feature_neighbors,
+    calculate_feature_plateau_score
+)
+
 __all__ = [
     # Config
     'ACCOUNT_NAME', 'DATA_PATH', 'BASE_PATH', 'EXPORT_FILE', 'PLOT_PATH',
@@ -80,4 +88,8 @@ __all__ = [
     'list_runs', 'load_run', 'compare_runs', 'create_strategy_metadata',
     # Resource Manager
     'AdaptivePoolManager', 'get_resource_info', 'calculate_safe_workers',
+    # Plateau
+    'calculate_param_plateau_score', 'select_plateau_features',
+    'select_best_plateau_candidate', 'find_feature_neighbors',
+    'calculate_feature_plateau_score',
 ]
