@@ -63,7 +63,7 @@ def filter_correlated_assets(results, threshold=CORR_THRESHOLD):
     return selected
 
 
-def run_optimizer(description=None, save_results=True, strategy_metadata=None, asset_filter=None):
+def run_optimizer(description=None, save_results=True, strategy_metadata=None, asset_filter=None, feature_groups=None):
     """
     Führt die Walk-Forward Optimierung aus.
 
@@ -72,9 +72,42 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         save_results: Wenn True, werden Ergebnisse in test_results/ gespeichert
         strategy_metadata: Strukturierte Strategie-Metadaten (dict oder via create_strategy_metadata())
         asset_filter: Liste von Assets die getestet werden sollen (None = alle)
+        feature_groups: Liste von Feature-Gruppen die getestet werden sollen (None = default)
     """
     # Lade nur Dateien für das gewählte Timeframe
     files = sorted(glob.glob(f"{DATA_PATH}/*_{TIMEFRAME}.csv"))
+
+    # Strategy-Metadaten auswerten für Filter
+    if strategy_metadata:
+        # Assets aus Strategy
+        strat_assets = strategy_metadata.get("assets", {})
+        if strat_assets:
+            # Filter: nur diese Assets
+            if strat_assets.get("filter"):
+                asset_filter = asset_filter or []
+                asset_filter.extend(strat_assets["filter"])
+            # Exclude: diese Assets ausschließen
+            if strat_assets.get("exclude"):
+                exclude_assets = strat_assets["exclude"]
+                files = [f for f in files if not any(a in f for a in exclude_assets)]
+            # Classes: nur bestimmte Asset-Klassen
+            if strat_assets.get("classes"):
+                from .config import ASSET_CONFIG
+                allowed_classes = strat_assets["classes"]
+                files = [f for f in files if any(
+                    ASSET_CONFIG.get(os.path.basename(f).split("_")[0], {}).get("class") in allowed_classes
+                    for _ in [1]  # Workaround für list comprehension
+                )]
+
+        # Feature-Gruppen aus Strategy
+        strat_features = strategy_metadata.get("feature_groups", {})
+        if strat_features and strat_features.get("groups"):
+            feature_groups = feature_groups or []
+            feature_groups.extend(strat_features["groups"])
+
+    # Feature-Gruppen setzen (für Worker-Prozesse via Environment)
+    if feature_groups:
+        os.environ["OPTIMIZER_FEATURE_GROUPS"] = ",".join(feature_groups)
 
     # Filter nach bestimmten Assets wenn angegeben
     if asset_filter:
@@ -123,9 +156,9 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         print(f"  ... und {len(files) - 10} weitere")
     print()
 
-    # Adaptive Pool: 70% CPU, mindestens 25% RAM freihalten
+    # Adaptive Pool: 80% CPU, mindestens 25% RAM freihalten
     pool_manager = AdaptivePoolManager(
-        max_cpu_percent=0.70,
+        max_cpu_percent=0.80,
         min_free_ram_percent=0.25,
         verbose=True  # Zeige Pool-Status
     )
