@@ -3,12 +3,75 @@ Adaptive Resource Manager für den Optimizer.
 Steuert die Anzahl paralleler Prozesse basierend auf RAM-Verfügbarkeit.
 """
 import os
+import sys
 import time
+import signal
+import atexit
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable, List, Any, Optional
 
 import psutil
+
+# Globale Referenz auf aktiven Executor für Cleanup
+_active_executor = None
+_active_futures = []
+
+
+def _cleanup_workers():
+    """Beendet alle aktiven Worker-Prozesse."""
+    global _active_executor, _active_futures
+
+    if _active_futures:
+        print("\n[ResourceManager] Beende laufende Worker...")
+        for future in _active_futures:
+            future.cancel()
+        _active_futures.clear()
+
+    if _active_executor:
+        try:
+            _active_executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+        _active_executor = None
+
+    # Zombie-Prozesse aufräumen
+    _kill_orphan_workers()
+
+
+def _kill_orphan_workers():
+    """Beendet verwaiste Python-Prozesse die zum Optimizer gehören."""
+    current_pid = os.getpid()
+    try:
+        current_process = psutil.Process(current_pid)
+        children = current_process.children(recursive=True)
+        for child in children:
+            try:
+                child.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        # Kurz warten, dann SIGKILL für hartnäckige Prozesse
+        gone, alive = psutil.wait_procs(children, timeout=2)
+        for p in alive:
+            try:
+                p.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except Exception:
+        pass
+
+
+def _signal_handler(signum, frame):
+    """Handler für SIGINT/SIGTERM."""
+    print("\n[ResourceManager] Abbruch-Signal empfangen, räume auf...")
+    _cleanup_workers()
+    sys.exit(1)
+
+
+# Signal-Handler registrieren
+signal.signal(signal.SIGINT, _signal_handler)
+signal.signal(signal.SIGTERM, _signal_handler)
+atexit.register(_cleanup_workers)
 
 
 class AdaptivePoolManager:
@@ -162,7 +225,11 @@ class AdaptivePoolManager:
         # Konservativ starten - nie mehr als max_workers
         initial_workers = min(self.max_workers, len(items))
 
+        global _active_executor, _active_futures
+
         with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+            _active_executor = executor
+
             # Futures verwalten
             futures = {}
             items_iter = iter(enumerate(items))
@@ -174,6 +241,7 @@ class AdaptivePoolManager:
                     idx, item = next(items_iter)
                     future = executor.submit(func, item)
                     futures[future] = idx
+                    _active_futures.append(future)
                     active_count += 1
                 except StopIteration:
                     break
@@ -217,6 +285,7 @@ class AdaptivePoolManager:
                         idx, item = next(items_iter)
                         future = executor.submit(func, item)
                         futures[future] = idx
+                        _active_futures.append(future)
                         active_count += 1
 
                         if active_count > self.peak_workers:
@@ -228,6 +297,11 @@ class AdaptivePoolManager:
                 if self.ram_throttle_count > 0 and self.ram_throttle_count % 10 == 0:
                     free_gb = self.get_free_ram_gb()
                     self.log(f"RAM-Throttling aktiv: {free_gb:.1f} GB frei, {active_count} aktive Worker")
+
+            # Cleanup nach erfolgreicher Beendigung
+            _active_futures.clear()
+
+        _active_executor = None
 
         # Finale Stats
         final_status = self.get_status()
