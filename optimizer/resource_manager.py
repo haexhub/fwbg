@@ -24,8 +24,8 @@ class AdaptivePoolManager:
 
     def __init__(
         self,
-        max_cpu_percent: float = 0.80,
-        min_free_ram_percent: float = 0.20,
+        max_cpu_percent: float = 0.95,
+        min_free_ram_percent: float = 0.10,
         check_interval: float = 2.0,
         verbose: bool = True
     ):
@@ -129,8 +129,8 @@ class AdaptivePoolManager:
         self.log(f"Limits: max {self.max_workers} Workers, min {self.min_free_ram_percent*100:.0f}% free RAM")
         self.log(f"Aktuell frei: {status['free_ram_gb']:.1f} GB ({status['free_ram_percent']:.0f}%)")
 
-        # Start mit konservativer Worker-Anzahl
-        initial_workers = max(1, min(self.max_workers // 2, 4))
+        # Start mit mehr Workern (aggressiver)
+        initial_workers = max(2, min(self.max_workers, len(items)))
 
         with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
             # Futures verwalten
@@ -223,9 +223,9 @@ def get_resource_info() -> dict:
 
 
 def calculate_safe_workers(
-    max_cpu_percent: float = 0.80,
-    min_free_ram_percent: float = 0.20,
-    estimated_ram_per_worker_gb: float = 3.0
+    max_cpu_percent: float = 0.95,
+    min_free_ram_percent: float = 0.10,
+    estimated_ram_per_worker_gb: float = 2.0
 ) -> int:
     """
     Berechnet eine sichere Anzahl paralleler Worker.

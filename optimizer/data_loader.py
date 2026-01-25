@@ -31,11 +31,12 @@ def load_data_aligned(path, is_sentiment=False):
                 df["T"] = df["T"].dt.tz_localize("UTC")
             df["T"] = df["T"].dt.tz_convert(TARGET_TZ)
         else:
-            if df["T"].dt.tz is None:
-                df["T"] = df["T"].dt.tz_localize(
-                    TARGET_TZ, ambiguous="infer", nonexistent="shift_forward"
-                )
-        df["T"] = df["T"].dt.tz_localize(None)
+            # Keine TZ-Lokalisierung - behandle Daten als naive Timestamps
+            # Das vermeidet DST-Probleme (ambiguous/nonexistent times)
+            pass
+        # Stelle sicher dass der Index keine TZ hat
+        if df["T"].dt.tz is not None:
+            df["T"] = df["T"].dt.tz_localize(None)
         return df.set_index("T")
     except Exception as e:
         print(f"Fehler beim Laden von {path}: {e}")
