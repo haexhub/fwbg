@@ -1,0 +1,145 @@
+"""
+Konfiguration für den Optimizer
+"""
+import os
+import numpy as np
+
+# Zielordner für diesen Account
+ACCOUNT_NAME = os.environ.get("ACCOUNT_NAME", "main_demo")
+DATA_PATH = "./data/forexsb"
+BASE_PATH = f"accounts/{ACCOUNT_NAME}"
+EXPORT_FILE = f"{BASE_PATH}/assets.json"
+PLOT_PATH = f"{BASE_PATH}/plots"
+
+CORR_THRESHOLD = 0.75
+RELEVANCE_THRESHOLD = 0.02  # 2% Hürde
+TARGET_TZ = "Europe/Berlin"
+MIN_TRADES = 200  # Minimum Trades für statistische Signifikanz
+FEATURE_STABILITY_MIN = 3  # Feature muss in min. 3 von 5 Folds relevant sein
+
+# Timeframe-abhängige Parameter
+TIMEFRAME = os.environ.get("TIMEFRAME", "HOUR")
+
+TIMEFRAME_CONFIG = {
+    "HOUR": {"bars_per_hour": 1, "max_trade_bars": 48, "window_size": 35000, "oos_size": 4000},
+    "MINUTE_15": {"bars_per_hour": 4, "max_trade_bars": 96, "window_size": 50000, "oos_size": 8000},
+    "MINUTE_5": {"bars_per_hour": 12, "max_trade_bars": 144, "window_size": 80000, "oos_size": 16000},
+    "MINUTE_1": {"bars_per_hour": 60, "max_trade_bars": 240, "window_size": 100000, "oos_size": 20000},
+    "DAY": {"bars_per_hour": 1/24, "max_trade_bars": 20, "window_size": 2000, "oos_size": 500},
+}
+
+tf_cfg = TIMEFRAME_CONFIG.get(TIMEFRAME, TIMEFRAME_CONFIG["HOUR"])
+WINDOW_SIZE = tf_cfg["window_size"]
+OOS_SIZE = tf_cfg["oos_size"]
+MAX_TRADE_BARS = tf_cfg["max_trade_bars"]
+WALK_FORWARD_FOLDS = 8
+
+# Regime-Filter Thresholds
+VIX_HIGH = 25
+ADX_MIN = 20
+
+# Asset-Klassifizierung und Spread-Kosten
+ASSET_CONFIG = {
+    # FOREX - Majors
+    "EURUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00010, "currency": ["EUR", "USD"]},
+    "GBPUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00012, "currency": ["GBP", "USD"]},
+    "USDJPY": {"class": "FOREX", "point": 0.01, "spread": 0.010, "currency": ["USD", "JPY"]},
+    "USDCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00015, "currency": ["USD", "CHF"]},
+    "USDCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00015, "currency": ["USD", "CAD"]},
+    "AUDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00012, "currency": ["AUD", "USD"]},
+    "NZDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00015, "currency": ["NZD", "USD"]},
+    # FOREX - Crosses
+    "EURGBP": {"class": "FOREX", "point": 0.0001, "spread": 0.00015, "currency": ["EUR", "GBP"]},
+    "EURCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00020, "currency": ["EUR", "CAD"]},
+    "EURCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00018, "currency": ["EUR", "CHF"]},
+    "EURNZD": {"class": "FOREX", "point": 0.0001, "spread": 0.00025, "currency": ["EUR", "NZD"]},
+    # Indizes
+    "DAX": {"class": "INDEX", "point": 1.0, "spread": 1.5, "currency": ["EUR"]},
+    "DOW30": {"class": "INDEX", "point": 1.0, "spread": 2.0, "currency": ["USD"]},
+    "SPX500": {"class": "INDEX", "point": 0.1, "spread": 0.5, "currency": ["USD"]},
+    "NAS100": {"class": "INDEX", "point": 0.1, "spread": 1.0, "currency": ["USD"]},
+    "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 1.5, "currency": ["GBP"]},
+    # Commodities
+    "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.30, "currency": ["USD"]},
+    "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.30, "currency": ["USD"]},
+    "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},
+    "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},
+    "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.030, "currency": ["USD"]},
+}
+
+# Grid-Konfiguration pro Klasse (in Spread-Vielfachen)
+# TP und SL sind jetzt symmetrisch - KI entscheidet ob RRR > 1 oder < 1 besser ist
+# Kleine TP + große SL = hohe Winrate, niedriges RRR (Scalping-Stil)
+# Große TP + kleine SL = niedrige Winrate, hohes RRR (Trend-Stil)
+CLASS_GRIDS = {
+    "FOREX": {
+        "tp": [15, 20, 25, 30, 40, 50, 60, 80],   # Symmetrisch mit SL
+        "sl": [15, 20, 25, 30, 40, 50, 60, 80],   # Symmetrisch mit TP
+        "ct": [0.52, 0.55, 0.58, 0.60, 0.65, 0.70],
+    },
+    "INDEX": {
+        "tp": [20, 30, 50, 70, 100, 150],
+        "sl": [20, 30, 50, 70, 100, 150],         # Symmetrisch
+        "ct": [0.52, 0.55, 0.60, 0.65, 0.70],
+    },
+    "COMMODITY": {
+        "tp": [20, 30, 40, 60, 80, 100],
+        "sl": [20, 30, 40, 60, 80, 100],          # Symmetrisch
+        "ct": [0.52, 0.55, 0.58, 0.62, 0.65, 0.70],
+    },
+}
+
+# Makro-Indikatoren für Daily-Daten
+MACRO_INDICATORS = {
+    "VIX_DAY": "vix",
+    "VVIX_DAY": "vvix",
+    "SKEW_DAY": "skew",
+    "VXN_DAY": "vxn",
+    "TNX_DAY": "tnx",
+    "TYX_DAY": "tyx",
+    "FVX_DAY": "fvx",
+    "IRX_DAY": "irx",
+    "DXY_DAY": "dxy",
+    "GOLD_FUT_DAY": "gold_fut",
+    "OIL_FUT_DAY": "oil",
+    "SILVER_FUT_DAY": "silver_fut",
+    "SPX_DAY": "spx",
+    "NASDAQ_DAY": "nasdaq",
+    "DOW_DAY": "dow",
+    "RUSSELL_DAY": "russell",
+    "NIKKEI_DAY": "nikkei",
+    "HANGSENG_DAY": "hangseng",
+    "FTSE_DAY": "ftse_idx",
+    "DAX_IDX_DAY": "dax_idx",
+    "XLF_DAY": "xlf",
+    "XLE_DAY": "xle",
+    "XLK_DAY": "xlk",
+    "XLU_DAY": "xlu",
+    "XLP_DAY": "xlp",
+    "TLT_DAY": "tlt",
+    "HYG_DAY": "hyg",
+    "LQD_DAY": "lqd",
+}
+
+# Lookback-Perioden
+LOOKBACKS_HOURS = [1, 2, 4, 8, 12, 24]
+LOOKBACKS_DAYS = [2, 5, 10, 20, 60]
+
+
+def convert_numpy(obj):
+    """Konvertiert numpy-Typen zu Python-nativen Typen für JSON-Serialisierung."""
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, dict):
+        return {k: convert_numpy(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy(v) for v in obj]
+    return obj
+
+
+def get_asset_config(sym):
+    """Holt Asset-Konfiguration oder Default-Werte."""
+    cfg = ASSET_CONFIG.get(sym, {"class": "FOREX", "point": 0.0001, "spread": 0.00020, "currency": ["USD"]})
+    return cfg["class"], cfg["point"], cfg["spread"], cfg["currency"]

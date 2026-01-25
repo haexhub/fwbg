@@ -1,10 +1,13 @@
+holidays
 matplotlib
 numpy
 pandas
+psutil
 PyYAML
 scikit-learn
 seaborn
 ta
+tabulate
 trading-ig
 xgboost
 yfinance

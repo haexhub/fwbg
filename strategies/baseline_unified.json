@@ -1,0 +1,39 @@
+{
+  "name": "Baseline Unified Model",
+  "description": "Standard-Konfiguration mit einem unified XGBoost-Modell für beide Trade-Richtungen",
+  "category": "baseline",
+  "tags": ["unified", "xgboost", "macro"],
+  "hypothesis": "Baseline für Vergleiche - unified Modell mit allen Makro-Indikatoren",
+  "expected_outcome": "Referenzwert für zukünftige Experimente",
+  "baseline_run": null,
+  "changes": [],
+  "model": {
+    "type": "xgboost",
+    "architecture": "unified",
+    "hyperparameters": {
+      "n_estimators": 100,
+      "max_depth": 5,
+      "random_state": 42
+    }
+  },
+  "features": {
+    "technical_indicators": true,
+    "macro_indicators": true,
+    "time_features": true,
+    "multi_timeframe": true,
+    "custom_features": [],
+    "feature_selection": "importance_based"
+  },
+  "simulation": {
+    "tp_sl_basis": "spread_multiple",
+    "trailing_stop": true,
+    "slippage_model": "fixed",
+    "regime_filter": true
+  },
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000
+  },
+  "notes": "470 Features: ~100 technische + ~370 Makro-Lookbacks"
+}

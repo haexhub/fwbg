@@ -1,0 +1,45 @@
+{
+  "name": "Separate Long/Short Modelle",
+  "description": "Trainiert separate XGBoost-Modelle für Long und Short Trades anstatt eines unified Modells",
+  "category": "model_test",
+  "tags": ["long_short", "xgboost", "macro"],
+  "hypothesis": "Separate Modelle für Long und Short sollten besser performen, da unterschiedliche Marktbedingungen für profitable Long vs Short Trades relevant sind",
+  "expected_outcome": "Höhere Sharpe Ratio und mehr profitable Assets durch spezialisierte Modelle",
+  "baseline_run": null,
+  "changes": [
+    {
+      "component": "model",
+      "before": "unified (1 Modell für beide Richtungen)",
+      "after": "long_short_separate (2 Modelle)"
+    }
+  ],
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "hyperparameters": {
+      "n_estimators": 100,
+      "max_depth": 5,
+      "random_state": 42
+    }
+  },
+  "features": {
+    "technical_indicators": true,
+    "macro_indicators": true,
+    "time_features": true,
+    "multi_timeframe": true,
+    "custom_features": [],
+    "feature_selection": "importance_based"
+  },
+  "simulation": {
+    "tp_sl_basis": "spread_multiple",
+    "trailing_stop": true,
+    "slippage_model": "fixed",
+    "regime_filter": true
+  },
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000
+  },
+  "notes": ""
+}
