@@ -124,6 +124,13 @@ def process_symbol(csv_path):
         df["_regime_ok"] = compute_regime_filter(df, has_vix)
 
         full_pool = get_feature_columns(df)
+
+        # Bereinige inf/nan Werte in Features (XGBoost verträgt keine inf)
+        for col in full_pool:
+            if col in df.columns:
+                df[col] = df[col].replace([np.inf, -np.inf], np.nan)
+                df[col] = df[col].fillna(df[col].median())
+
         a_class, p_val, spread, currencies = get_asset_config(sym)
 
         grid = CLASS_GRIDS.get(a_class, CLASS_GRIDS["FOREX"])
