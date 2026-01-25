@@ -191,18 +191,13 @@ def process_symbol(csv_path):
 
         grid_count = 0
         grid_total = len(grid["tp"]) * len(grid["sl"])
-        last_progress = 0
         for tp in grid["tp"]:
             for sl in grid["sl"]:
                 grid_count += 1
+                t_grid = time.time()
 
-                # Progress alle 10% auf Level 1 ausgeben
-                progress_pct = int(grid_count / grid_total * 100)
-                if progress_pct >= last_progress + 10:
-                    log(1, f"Grid {progress_pct}% ({grid_count}/{grid_total})", sym)
-                    last_progress = progress_pct
-
-                log(3, f"Grid {grid_count}/{grid_total}: TP={tp} SL={sl}", sym)
+                # Immer Grid-Fortschritt anzeigen (Level 1)
+                log(1, f"Grid {grid_count}/{grid_total} (TP={tp}, SL={sl})", sym)
 
                 # Walk-Forward Validierung
                 folds = walk_forward_split(df)
@@ -214,7 +209,7 @@ def process_symbol(csv_path):
 
                 for fold_idx, (train_df, test_df) in enumerate(folds):
                     t_fold = time.time()
-                    log(3, f"  Fold {fold_idx+1}/{len(folds)}: Train={len(train_df)}, Test={len(test_df)}", sym)
+                    log(1, f"  Fold {fold_idx+1}/{len(folds)}", sym)
 
                     # === SEPARATE TARGETS FÜR LONG UND SHORT ===
                     train_targs_long = np.zeros(len(train_df))
@@ -366,7 +361,7 @@ def process_symbol(csv_path):
                             if res != 0:
                                 all_trades.append({"res": res, "ct": ct, "hour": hour, "dir": direction})
 
-                    log(3, f"    Fold fertig ({time.time()-t_fold:.1f}s), Trades bisher: {len(all_trades)}", sym)
+                    log(1, f"    done ({time.time()-t_fold:.1f}s)", sym)
 
                 # Kombiniere Features
                 selected_features = []
