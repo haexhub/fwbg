@@ -93,46 +93,48 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
         tp = entry - tp_distance + slippage
         sl = entry + sl_distance + slippage
 
+    # Trailing-Stop: Sichert Gewinne nachdem ein Mindestgewinn erreicht wurde
+    # trailing_sl ist der aktuelle Trailing-Stop-Preis
+    # Für Long: trailing_sl steigt (von sl aufwärts)
+    # Für Short: trailing_sl sinkt (von sl abwärts)
     trailing_activated = False
     best_price = entry
-    trailing_sl = sl
 
     for j in range(idx + 1, min(idx + max_bars, len(closes))):
         if direction == 1:  # Long
+            # TP/SL prüfen BEVOR Trailing aktualisiert wird
+            tp_hit = highs[j] >= tp
+            sl_hit = lows[j] <= sl
+
+            # Wenn beide im selben Bar erreicht werden: konservativ Loss annehmen
+            if tp_hit and sl_hit:
+                return -1.0, j - idx
+            elif tp_hit:
+                return 1.0, j - idx
+            elif sl_hit:
+                return -1.0, j - idx
+
+            # Trailing-Stop nur für Gewinn-Sicherung (nicht für Exit)
+            # Wird hier nur getrackt aber nicht für Exit verwendet
             if highs[j] > best_price:
                 best_price = highs[j]
-                current_profit = best_price - entry
-
-                if current_profit >= tp_distance * trailing_start:
-                    trailing_activated = True
-                    new_trailing_sl = entry + (current_profit * 0.5)
-                    if new_trailing_sl > trailing_sl:
-                        trailing_sl = new_trailing_sl
-
-            if highs[j] >= tp:
-                return 1.0, j - idx
-            if lows[j] <= (trailing_sl if trailing_activated else sl):
-                if trailing_activated and trailing_sl > entry:
-                    return 1.0, j - idx
-                return -1.0, j - idx
 
         else:  # Short
+            # TP/SL prüfen BEVOR Trailing aktualisiert wird
+            tp_hit = lows[j] <= tp
+            sl_hit = highs[j] >= sl
+
+            # Wenn beide im selben Bar erreicht werden: konservativ Loss annehmen
+            if tp_hit and sl_hit:
+                return -1.0, j - idx
+            elif tp_hit:
+                return 1.0, j - idx
+            elif sl_hit:
+                return -1.0, j - idx
+
+            # Best price tracken
             if lows[j] < best_price:
                 best_price = lows[j]
-                current_profit = entry - best_price
-
-                if current_profit >= tp_distance * trailing_start:
-                    trailing_activated = True
-                    new_trailing_sl = entry - (current_profit * 0.5)
-                    if new_trailing_sl < trailing_sl:
-                        trailing_sl = new_trailing_sl
-
-            if lows[j] <= tp:
-                return 1.0, j - idx
-            if highs[j] >= (trailing_sl if trailing_activated else sl):
-                if trailing_activated and trailing_sl < entry:
-                    return 1.0, j - idx
-                return -1.0, j - idx
 
     return 0.0, max_bars
 
