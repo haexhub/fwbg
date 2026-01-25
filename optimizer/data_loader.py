@@ -42,15 +42,43 @@ def load_data_aligned(path, is_sentiment=False):
         return None
 
 
+def load_macro_csv(path):
+    """
+    Lädt eine Makro-CSV-Datei mit flexibler Spalten-Erkennung.
+    Unterstützt: DATE, Datetime, Time als Index-Spalte.
+    """
+    if not os.path.exists(path):
+        return None
+
+    try:
+        raw_df = pd.read_csv(path, nrows=1)
+        cols = list(raw_df.columns)
+
+        # Finde Datums-Spalte (case-insensitive)
+        date_col = None
+        for candidate in ["DATE", "Datetime", "datetime", "Time", "time", "Date"]:
+            if candidate in cols:
+                date_col = candidate
+                break
+
+        if not date_col:
+            return None
+
+        macro_df = pd.read_csv(path, parse_dates=[date_col], index_col=date_col)
+        return macro_df
+    except Exception:
+        return None
+
+
 def load_macro_indicators(df):
     """Lädt alle Makro-Indikatoren und fügt sie zum DataFrame hinzu."""
     df["_date"] = df.index.date
 
     for filename, prefix in MACRO_INDICATORS.items():
         macro_path = f"{DATA_PATH}/{filename}.csv"
-        if os.path.exists(macro_path):
+        macro_df = load_macro_csv(macro_path)
+        if macro_df is not None:
             try:
-                macro_df = pd.read_csv(macro_path, parse_dates=["DATE"], index_col="DATE")
                 macro_lookup = macro_df["Close"].to_dict()
 
                 col_name = f"macro_{prefix}"
@@ -65,7 +93,7 @@ def load_macro_indicators(df):
                 for lb_d in LOOKBACKS_DAYS:
                     df[f"{col_name}_chg_{lb_d}d"] = df[col_name].pct_change(24 * lb_d) * 100
 
-            except Exception:
+            except Exception as e:
                 pass
 
     df = df.drop(columns=["_date"], errors="ignore")
