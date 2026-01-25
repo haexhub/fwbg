@@ -8,6 +8,7 @@ scikit-learn
 seaborn
 ta
 tabulate
+tqdm
 trading-ig
 xgboost
 yfinance
