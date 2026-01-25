@@ -7,8 +7,9 @@ import pandas as pd
 from .config import MAX_TRADE_BARS, RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN, DATA_PATH
 
 
-# Cache für 15-Min-Daten (wird einmal pro Symbol geladen)
-_m15_cache = {}
+# Cache für Sub-Stunden-Daten (wird einmal pro Symbol geladen)
+_m15_cache = {}  # 15-Min-Daten
+_m30_cache = {}  # 30-Min-Daten
 
 
 def calculate_sharpe_ratio(returns, risk_free_rate=0.0):
@@ -69,44 +70,64 @@ def check_feature_stability(fold_importances, threshold=RELEVANCE_THRESHOLD):
     return stable_features
 
 
-def load_m15_data(symbol):
-    """Lädt 15-Min-Daten für ein Symbol (mit Caching)."""
-    if symbol in _m15_cache:
-        return _m15_cache[symbol]
+def load_sub_hourly_data(symbol):
+    """
+    Lädt Sub-Stunden-Daten für ein Symbol (mit Caching).
+    Versucht zuerst 15-Min, dann 30-Min als Fallback.
 
-    m15_path = f"{DATA_PATH}/{symbol}_MINUTE_15.csv"
-    try:
-        df = pd.read_csv(m15_path, parse_dates=["Time"], index_col="Time")
-        _m15_cache[symbol] = df
-        return df
-    except Exception:
-        _m15_cache[symbol] = None
+    Returns: (DataFrame, resolution) oder (None, None)
+    """
+    # Versuche 15-Min-Daten
+    if symbol not in _m15_cache:
+        m15_path = f"{DATA_PATH}/{symbol}_MINUTE_15.csv"
+        try:
+            df = pd.read_csv(m15_path, parse_dates=["Time"], index_col="Time")
+            _m15_cache[symbol] = df
+        except Exception:
+            _m15_cache[symbol] = None
+
+    if _m15_cache[symbol] is not None:
+        return _m15_cache[symbol], 15
+
+    # Fallback: 30-Min-Daten
+    if symbol not in _m30_cache:
+        m30_path = f"{DATA_PATH}/{symbol}_MINUTE_30.csv"
+        try:
+            df = pd.read_csv(m30_path, parse_dates=["Time"], index_col="Time")
+            _m30_cache[symbol] = df
+        except Exception:
+            _m30_cache[symbol] = None
+
+    if _m30_cache[symbol] is not None:
+        return _m30_cache[symbol], 30
+
+    return None, None
+
+
+def resolve_tp_sl_collision(symbol, hour_timestamp, direction, tp, sl):
+    """
+    Bei gleichzeitigem TP/SL Hit: Schaut in Sub-Stunden-Daten um die Reihenfolge zu bestimmen.
+    Nutzt 15-Min-Daten wenn verfügbar, sonst 30-Min als Fallback.
+
+    Returns: 1.0 (TP zuerst), -1.0 (SL zuerst), None (keine Daten)
+    """
+    sub_df, resolution = load_sub_hourly_data(symbol)
+    if sub_df is None:
         return None
 
-
-def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
-    """
-    Bei gleichzeitigem TP/SL Hit: Schaut in 15-Min-Daten um die Reihenfolge zu bestimmen.
-
-    Returns: 1.0 (TP zuerst), -1.0 (SL zuerst), None (keine M15-Daten)
-    """
-    m15_df = load_m15_data(symbol)
-    if m15_df is None:
-        return None
-
-    # Finde die 4 15-Min-Bars innerhalb der Stunde
+    # Finde die Sub-Stunden-Bars innerhalb der Stunde
     hour_start = hour_timestamp
     hour_end = hour_timestamp + pd.Timedelta(hours=1)
 
     try:
-        m15_bars = m15_df.loc[hour_start:hour_end]
-        if len(m15_bars) == 0:
+        sub_bars = sub_df.loc[hour_start:hour_end]
+        if len(sub_bars) == 0:
             return None
     except Exception:
         return None
 
-    # Gehe durch die 15-Min-Bars und prüfe was zuerst passiert
-    for _, bar in m15_bars.iterrows():
+    # Gehe durch die Bars und prüfe was zuerst passiert
+    for _, bar in sub_bars.iterrows():
         if direction == 1:  # Long
             tp_hit = bar["H"] >= tp
             sl_hit = bar["L"] <= sl
@@ -115,15 +136,21 @@ def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
             sl_hit = bar["H"] >= sl
 
         if tp_hit and sl_hit:
-            # Auch im 15-Min-Bar beide erreicht - konservativ Loss
+            # Auch im Sub-Bar beide erreicht - konservativ Loss
             return -1.0
         elif tp_hit:
             return 1.0
         elif sl_hit:
             return -1.0
 
-    # Keines erreicht in M15 (sollte nicht passieren)
+    # Keines erreicht (sollte nicht passieren)
     return None
+
+
+# Alias für Abwärtskompatibilität
+def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
+    """Alias für resolve_tp_sl_collision (Abwärtskompatibilität)."""
+    return resolve_tp_sl_collision(symbol, hour_timestamp, direction, tp, sl)
 
 
 def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, spread,
@@ -165,9 +192,9 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
             sl_hit = lows[j] <= sl
 
             if tp_hit and sl_hit:
-                # Beide im selben Bar - versuche M15 Lookup
+                # Beide im selben Bar - versuche Sub-Stunden Lookup
                 if timestamps is not None and symbol is not None:
-                    result = resolve_tp_sl_collision_m15(symbol, timestamps[j], direction, tp, sl)
+                    result = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp, sl)
                     if result is not None:
                         return result, j - idx
                 # Fallback: konservativ Loss
@@ -182,9 +209,9 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
             sl_hit = highs[j] >= sl
 
             if tp_hit and sl_hit:
-                # Beide im selben Bar - versuche M15 Lookup
+                # Beide im selben Bar - versuche Sub-Stunden Lookup
                 if timestamps is not None and symbol is not None:
-                    result = resolve_tp_sl_collision_m15(symbol, timestamps[j], direction, tp, sl)
+                    result = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp, sl)
                     if result is not None:
                         return result, j - idx
                 # Fallback: konservativ Loss
