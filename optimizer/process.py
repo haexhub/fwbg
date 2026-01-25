@@ -190,10 +190,19 @@ def process_symbol(csv_path):
         candidates = []
 
         grid_count = 0
+        grid_total = len(grid["tp"]) * len(grid["sl"])
+        last_progress = 0
         for tp in grid["tp"]:
             for sl in grid["sl"]:
                 grid_count += 1
-                log(3, f"Grid {grid_count}/{len(grid['tp'])*len(grid['sl'])}: TP={tp} SL={sl}", sym)
+
+                # Progress alle 10% auf Level 1 ausgeben
+                progress_pct = int(grid_count / grid_total * 100)
+                if progress_pct >= last_progress + 10:
+                    log(1, f"Grid {progress_pct}% ({grid_count}/{grid_total})", sym)
+                    last_progress = progress_pct
+
+                log(3, f"Grid {grid_count}/{grid_total}: TP={tp} SL={sl}", sym)
 
                 # Walk-Forward Validierung
                 folds = walk_forward_split(df)
