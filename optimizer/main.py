@@ -308,14 +308,11 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None):
             strategy_metadata=strategy_metadata
         )
         print(f"\nErgebnisse gespeichert in: {run_path}/")
-
-    # Auch ins Account-Verzeichnis exportieren (für den Bot)
-    os.makedirs(BASE_PATH, exist_ok=True)
-    with open(EXPORT_FILE, "w") as f:
-        json.dump(convert_numpy(final_assets), f, indent=4)
+        print(f"Assets-Config:           {run_path}/assets.json")
+        print(f"\nUm die Ergebnisse zu aktivieren:")
+        print(f"  cp {run_path}/assets.json {EXPORT_FILE}")
 
     n_profitable = len(final_assets)
-    print(f"\n{n_profitable} profitable Assets in {EXPORT_FILE} exportiert.")
 
     return {
         "run_id": run_id,
