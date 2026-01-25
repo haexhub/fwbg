@@ -12,7 +12,7 @@ from .config import (
     MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
     get_asset_config
 )
-from .data_loader import load_data_aligned
+from .data_loader import load_data_aligned, load_macro_csv
 from .indicators import compute_indicator_pool, get_feature_columns, compute_regime_filter
 from .simulation import (
     simulate_pro_trade, calculate_sharpe_ratio, calculate_calmar_ratio,
@@ -59,9 +59,9 @@ def process_symbol(csv_path):
 
         for filename, prefix in MACRO_INDICATORS.items():
             macro_path = f"{DATA_PATH}/{filename}.csv"
-            if os.path.exists(macro_path):
+            macro_df = load_macro_csv(macro_path)
+            if macro_df is not None:
                 try:
-                    macro_df = pd.read_csv(macro_path, parse_dates=["DATE"], index_col="DATE")
                     macro_lookup = macro_df["Close"].to_dict()
 
                     col_name = f"macro_{prefix}"

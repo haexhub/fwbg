@@ -3,6 +3,7 @@ matplotlib
 numpy
 pandas
 psutil
+pytest
 PyYAML
 scikit-learn
 seaborn
