@@ -62,23 +62,45 @@ def repair_and_import(timeframes=None):
             clean_name = SYMBOL_MAP.get(raw_name, raw_name)
 
             try:
-                # Schritt 1: Datei roh einlesen, um das Trennzeichen-Problem zu umgehen
-                # Wir überspringen die allererste Zeile (wo oft der Asset-Name steht)
-                df = pd.read_csv(file_path, skiprows=1, header=None)
+                # Erst Header lesen um Format zu erkennen
+                df_header = pd.read_csv(file_path, nrows=0)
+                header_cols = list(df_header.columns)
 
-                # Schritt 2: Wenn die Datei einen Index am Anfang hat (0, 1, 2...),
-                # dann sind unsere Daten in den Spalten 1 bis 6.
-                # Wir prüfen dynamisch, wie viele Spalten wir haben.
-                if df.shape[1] >= 7:
-                    df = df.iloc[:, [1, 2, 3, 4, 5, 6]]
+                # Spezialfall: Simple Format (T,C) - z.B. VIX
+                if header_cols == ["T", "C"] or (len(header_cols) == 2 and "T" in header_cols):
+                    df = pd.read_csv(file_path)
+                    df.columns = ["Time", "Close"]
+                    df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
+                    df = df.dropna(subset=["Time"])
+                    # Für einfache Close-only Dateien: Open=High=Low=Close, Volume=0
+                    df["Open"] = df["Close"]
+                    df["High"] = df["Close"]
+                    df["Low"] = df["Close"]
+                    df["Volume"] = 0
+                    df = df[["Time", "Open", "High", "Low", "Close", "Volume"]]
+
                 else:
-                    df = df.iloc[:, [0, 1, 2, 3, 4, 5]]
+                    # Standard ForexSB Format
+                    # Schritt 1: Datei roh einlesen, um das Trennzeichen-Problem zu umgehen
+                    # Wir überspringen die allererste Zeile (wo oft der Asset-Name steht)
+                    df = pd.read_csv(file_path, skiprows=1, header=None)
 
-                df.columns = ["Time", "Open", "High", "Low", "Close", "Volume"]
+                    # Schritt 2: Wenn die Datei einen Index am Anfang hat (0, 1, 2...),
+                    # dann sind unsere Daten in den Spalten 1 bis 6.
+                    # Wir prüfen dynamisch, wie viele Spalten wir haben.
+                    if df.shape[1] >= 7:
+                        df = df.iloc[:, [1, 2, 3, 4, 5, 6]]
+                    elif df.shape[1] >= 6:
+                        df = df.iloc[:, [0, 1, 2, 3, 4, 5]]
+                    else:
+                        print(f"⚠️ Überspringe {raw_name}: nur {df.shape[1]} Spalten")
+                        continue
 
-                # Schritt 3: Zeitformat säubern
-                df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
-                df = df.dropna(subset=["Time"])
+                    df.columns = ["Time", "Open", "High", "Low", "Close", "Volume"]
+
+                    # Schritt 3: Zeitformat säubern
+                    df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
+                    df = df.dropna(subset=["Time"])
 
                 target_path = os.path.join(TARGET_DIR, f"{clean_name}_{output_suffix}.csv")
                 df.to_csv(target_path, index=False)
