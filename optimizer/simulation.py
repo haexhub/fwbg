@@ -70,6 +70,41 @@ def check_feature_stability(fold_importances, threshold=RELEVANCE_THRESHOLD):
     return stable_features
 
 
+def _load_ohlc_csv(path):
+    """
+    Lädt eine OHLC CSV-Datei mit flexibler Format-Erkennung.
+    Unterstützt:
+    - Mit Header: Time,Open,High,Low,Close,Volume
+    - Ohne Header (MetaTrader): datetime,O,H,L,C,V
+    """
+    try:
+        # Prüfe ob Header existiert
+        with open(path, "r") as f:
+            first_line = f.readline()
+
+        if "Time" in first_line or "Open" in first_line:
+            # Hat Header
+            df = pd.read_csv(path, parse_dates=["Time"], index_col="Time")
+        else:
+            # Kein Header (MetaTrader Format)
+            df = pd.read_csv(
+                path,
+                names=["Time", "O", "H", "L", "C", "V"],
+                parse_dates=["Time"],
+                index_col="Time"
+            )
+            # Rename columns to match expected format
+            df.columns = ["Open", "High", "Low", "Close", "Volume"]
+
+        # Rename columns to single letters for consistency (H, L, etc.)
+        if "High" in df.columns:
+            df = df.rename(columns={"Open": "O", "High": "H", "Low": "L", "Close": "C", "Volume": "V"})
+
+        return df
+    except Exception:
+        return None
+
+
 def load_sub_hourly_data(symbol):
     """
     Lädt Sub-Stunden-Daten für ein Symbol (mit Caching).
@@ -80,11 +115,7 @@ def load_sub_hourly_data(symbol):
     # Versuche 15-Min-Daten
     if symbol not in _m15_cache:
         m15_path = f"{DATA_PATH}/{symbol}_MINUTE_15.csv"
-        try:
-            df = pd.read_csv(m15_path, parse_dates=["Time"], index_col="Time")
-            _m15_cache[symbol] = df
-        except Exception:
-            _m15_cache[symbol] = None
+        _m15_cache[symbol] = _load_ohlc_csv(m15_path)
 
     if _m15_cache[symbol] is not None:
         return _m15_cache[symbol], 15
@@ -92,11 +123,7 @@ def load_sub_hourly_data(symbol):
     # Fallback: 30-Min-Daten
     if symbol not in _m30_cache:
         m30_path = f"{DATA_PATH}/{symbol}_MINUTE_30.csv"
-        try:
-            df = pd.read_csv(m30_path, parse_dates=["Time"], index_col="Time")
-            _m30_cache[symbol] = df
-        except Exception:
-            _m30_cache[symbol] = None
+        _m30_cache[symbol] = _load_ohlc_csv(m30_path)
 
     if _m30_cache[symbol] is not None:
         return _m30_cache[symbol], 30
