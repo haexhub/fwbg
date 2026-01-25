@@ -219,15 +219,18 @@ def process_symbol(csv_path):
                     hgh_v = train_df["H"].values
                     low_v = train_df["L"].values
                     atr_v = train_df["_atr"].values
+                    timestamps = train_df.index.values  # Für M15-Lookup
 
                     t_sim = time.time()
                     sim_count = len(train_df) - MAX_TRADE_BARS
                     for i in range(sim_count):
                         res_long, _ = simulate_pro_trade(
-                            cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread
+                            cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread,
+                            timestamps=timestamps, symbol=sym
                         )
                         res_short, _ = simulate_pro_trade(
-                            cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, spread
+                            cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, spread,
+                            timestamps=timestamps, symbol=sym
                         )
                         if res_long == 1.0:
                             train_targs_long[i] = 1
@@ -319,6 +322,7 @@ def process_symbol(csv_path):
                     test_low = test_df["L"].values
                     test_atr = test_df["_atr"].values
                     test_regime = test_df["_regime_ok"].values
+                    test_timestamps = test_df.index.values  # Für M15-Lookup
 
                     probs_long = None
                     probs_short = None
@@ -356,7 +360,8 @@ def process_symbol(csv_path):
                             if direction:
                                 res, _ = simulate_pro_trade(
                                     test_cls, test_hgh, test_low, test_atr,
-                                    i, direction, tp, sl, spread
+                                    i, direction, tp, sl, spread,
+                                    timestamps=test_timestamps, symbol=sym
                                 )
                             if res != 0:
                                 all_trades.append({"res": res, "ct": ct, "hour": hour, "dir": direction})
