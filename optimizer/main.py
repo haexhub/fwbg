@@ -109,6 +109,22 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     if feature_groups:
         os.environ["OPTIMIZER_FEATURE_GROUPS"] = ",".join(feature_groups)
 
+    # Ressourcen-Einstellungen aus Strategy (oder Defaults)
+    resource_settings = {
+        "max_cpu_percent": 0.80,
+        "min_free_ram_percent": 0.25,
+        "ram_per_worker_gb": 4.0,
+    }
+    if strategy_metadata:
+        strat_resources = strategy_metadata.get("resources", {})
+        if strat_resources:
+            if strat_resources.get("max_cpu_percent") is not None:
+                resource_settings["max_cpu_percent"] = strat_resources["max_cpu_percent"]
+            if strat_resources.get("min_free_ram_percent") is not None:
+                resource_settings["min_free_ram_percent"] = strat_resources["min_free_ram_percent"]
+            if strat_resources.get("ram_per_worker_gb") is not None:
+                resource_settings["ram_per_worker_gb"] = strat_resources["ram_per_worker_gb"]
+
     # Filter nach bestimmten Assets wenn angegeben
     if asset_filter:
         files = [f for f in files if any(a in f for a in asset_filter)]
@@ -156,11 +172,11 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         print(f"  ... und {len(files) - 10} weitere")
     print()
 
-    # Adaptive Pool: 80% CPU, 25% RAM Reserve, 4GB pro Worker
+    # Adaptive Pool mit Einstellungen aus Strategy oder Defaults
     pool_manager = AdaptivePoolManager(
-        max_cpu_percent=0.80,
-        min_free_ram_percent=0.25,
-        ram_per_worker_gb=4.0,  # Peak-RAM pro Worker
+        max_cpu_percent=resource_settings["max_cpu_percent"],
+        min_free_ram_percent=resource_settings["min_free_ram_percent"],
+        ram_per_worker_gb=resource_settings["ram_per_worker_gb"],
         verbose=True
     )
 
@@ -712,6 +728,10 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     parser.add_argument("--list-features", action="store_true", help="Verfügbare Feature-Gruppen anzeigen")
     parser.add_argument("--reverse-worst", type=str, metavar="RUN_ID", help="Analysiere schlechteste Strategien eines Runs umgekehrt")
     parser.add_argument("--reverse-n", type=int, default=10, help="Anzahl der schlechtesten Strategien für --reverse-worst (default: 10)")
+    # Ressourcen-Einstellungen
+    parser.add_argument("--cpu", type=float, help="Max CPU-Auslastung (0.0-1.0, z.B. 0.80 für 80%%)")
+    parser.add_argument("--ram-reserve", type=float, help="Min freier RAM-Anteil (0.0-1.0, z.B. 0.25 für 25%%)")
+    parser.add_argument("--ram-per-worker", type=float, help="RAM pro Worker in GB (z.B. 4.0)")
 
     args = parser.parse_args()
 
@@ -784,6 +804,18 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         elif args.strategy:
             strategy_metadata = prompt_strategy_metadata()
 
+        # CLI-Ressourcen-Einstellungen in Strategy überschreiben
+        if strategy_metadata is None:
+            strategy_metadata = {}
+        if "resources" not in strategy_metadata:
+            strategy_metadata["resources"] = {}
+        if args.cpu is not None:
+            strategy_metadata["resources"]["max_cpu_percent"] = args.cpu
+        if args.ram_reserve is not None:
+            strategy_metadata["resources"]["min_free_ram_percent"] = args.ram_reserve
+        if args.ram_per_worker is not None:
+            strategy_metadata["resources"]["ram_per_worker_gb"] = args.ram_per_worker
+
         # Parse asset filter
         asset_filter = None
         if args.assets:
@@ -796,7 +828,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         run_optimizer(
             description=args.description,
             save_results=not args.no_save,
-            strategy_metadata=strategy_metadata,
+            strategy_metadata=strategy_metadata if strategy_metadata else None,
             asset_filter=asset_filter
         )
 
