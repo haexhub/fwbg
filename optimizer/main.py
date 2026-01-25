@@ -123,10 +123,10 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         print(f"  ... und {len(files) - 10} weitere")
     print()
 
-    # Adaptive Pool: 80% CPU, aber immer 20% RAM freihalten
+    # Adaptive Pool: 70% CPU, mindestens 25% RAM freihalten
     pool_manager = AdaptivePoolManager(
-        max_cpu_percent=0.80,
-        min_free_ram_percent=0.20,
+        max_cpu_percent=0.70,
+        min_free_ram_percent=0.25,
         verbose=True  # Zeige Pool-Status
     )
 
