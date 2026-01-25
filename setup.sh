@@ -231,16 +231,21 @@ MACRO_HOURLY = {
 def download_hourly_ohlc(name, ticker, period="2y"):
     """Lädt Hourly OHLC-Daten."""
     try:
-        df = yf.download(ticker, period=period, interval="1h", auto_adjust=True, progress=False)
-        if not df.empty:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df = yf.download(ticker, period=period, interval="1h", auto_adjust=True, progress=False)
+        if df is not None and not df.empty and len(df) > 0:
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
-            df = df[["Open", "High", "Low", "Close"]].copy()
-            df.index.name = "Time"
-            filename = f"{DATA_PATH}/{name}_HOUR.csv"
-            df.to_csv(filename)
-            return len(df)
-    except Exception as e:
+            if "Close" in df.columns:
+                df = df[["Open", "High", "Low", "Close"]].copy()
+                df.index.name = "Time"
+                df = df.dropna()
+                if len(df) > 0:
+                    filename = f"{DATA_PATH}/{name}_HOUR.csv"
+                    df.to_csv(filename)
+                    return len(df)
+    except Exception:
         pass
     return 0
 
@@ -248,16 +253,21 @@ def download_hourly_ohlc(name, ticker, period="2y"):
 def download_daily_close(name, ticker):
     """Lädt Daily Close-Daten."""
     try:
-        df = yf.download(ticker, period="max", interval="1d", auto_adjust=True, progress=False)
-        if not df.empty:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df = yf.download(ticker, period="max", interval="1d", auto_adjust=True, progress=False)
+        if df is not None and not df.empty and len(df) > 0:
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
-            df = df[["Close"]].copy()
-            df.index.name = "Datetime"
-            filename = f"{DATA_PATH}/{name}.csv"
-            df.to_csv(filename)
-            return len(df)
-    except Exception as e:
+            if "Close" in df.columns:
+                df = df[["Close"]].copy()
+                df.index.name = "Datetime"
+                df = df.dropna()
+                if len(df) > 0:
+                    filename = f"{DATA_PATH}/{name}.csv"
+                    df.to_csv(filename)
+                    return len(df)
+    except Exception:
         pass
     return 0
 
@@ -265,16 +275,21 @@ def download_daily_close(name, ticker):
 def download_hourly_close(name, ticker):
     """Lädt Hourly Close-Daten."""
     try:
-        df = yf.download(ticker, period="2y", interval="1h", auto_adjust=True, progress=False)
-        if not df.empty:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df = yf.download(ticker, period="2y", interval="1h", auto_adjust=True, progress=False)
+        if df is not None and not df.empty and len(df) > 0:
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
-            df = df[["Close"]].copy()
-            df.index.name = "Datetime"
-            filename = f"{DATA_PATH}/{name}.csv"
-            df.to_csv(filename)
-            return len(df)
-    except Exception as e:
+            if "Close" in df.columns:
+                df = df[["Close"]].copy()
+                df.index.name = "Datetime"
+                df = df.dropna()
+                if len(df) > 0:
+                    filename = f"{DATA_PATH}/{name}.csv"
+                    df.to_csv(filename)
+                    return len(df)
+    except Exception:
         pass
     return 0
 
