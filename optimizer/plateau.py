@@ -4,16 +4,14 @@ Plateau-Erkennung für robuste Parameter- und Feature-Auswahl.
 Statt Spitzen/Ausreißer zu wählen, bevorzugen wir stabile Plateaus,
 bei denen ähnliche Konfigurationen ähnliche Ergebnisse liefern.
 """
+
 import re
 import numpy as np
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Optional
 
 
 def calculate_param_plateau_score(
-    candidates: List[Dict],
-    grid_tp: List[int],
-    grid_sl: List[int],
-    grid_ct: List[float]
+    candidates: List[Dict], grid_tp: List[int], grid_sl: List[int], grid_ct: List[float]
 ) -> List[Dict]:
     """
     Berechnet für jeden Kandidaten einen Plateau-Score basierend auf Nachbar-Performance.
@@ -105,7 +103,9 @@ def calculate_param_plateau_score(
             c["neighbor_count"] = len(neighbors)
             c["stability_score"] = stability
             c["plateau_penalty"] = plateau_penalty
-            c["plateau_score"] = own_score * (0.5 + 0.3 * stability + 0.2 * plateau_penalty)
+            c["plateau_score"] = own_score * (
+                0.5 + 0.3 * stability + 0.2 * plateau_penalty
+            )
         else:
             # Zu wenig Nachbarn - Penalty für Rand-Konfigurationen
             c["neighbor_mean"] = 0
@@ -137,17 +137,17 @@ def find_feature_neighbors(feature_name: str, all_features: List[str]) -> List[s
     # Matches: rsi_14, ema_20, atr_14, macro_vix_chg_24h, macro_vix_chg_5d, etc.
     # Reihenfolge wichtig: spezifischere Patterns zuerst!
     patterns = [
-        (r'_(\d+)h$', 'h'),            # Stunden am Ende: chg_24h
-        (r'_(\d+)d$', 'd'),            # Tage am Ende: chg_5d
-        (r'_(\d+)_', '_'),             # Mittendrin: sma_20_slope
-        (r'_(\d+)$', ''),              # Suffix: rsi_14, ema_20
+        (r"_(\d+)h$", "h"),  # Stunden am Ende: chg_24h
+        (r"_(\d+)d$", "d"),  # Tage am Ende: chg_5d
+        (r"_(\d+)_", "_"),  # Mittendrin: sma_20_slope
+        (r"_(\d+)$", ""),  # Suffix: rsi_14, ema_20
     ]
 
     for pattern, suffix in patterns:
         match = re.search(pattern, feature_name)
         if match:
             current_value = int(match.group(1))
-            prefix = feature_name[:match.start(1)]
+            prefix = feature_name[: match.start(1)]
 
             # Definiere Nachbar-Werte basierend auf Größenordnung
             if current_value <= 5:
@@ -174,7 +174,7 @@ def find_feature_neighbors(feature_name: str, all_features: List[str]) -> List[s
 def calculate_feature_plateau_score(
     feature_importances: Dict[str, float],
     all_features: List[str],
-    min_neighbors: int = 1
+    min_neighbors: int = 1,
 ) -> Dict[str, Dict]:
     """
     Berechnet Plateau-Scores für Features basierend auf Nachbar-Importance.
@@ -195,9 +195,7 @@ def calculate_feature_plateau_score(
     for feat, importance in feature_importances.items():
         neighbors = find_feature_neighbors(feat, all_features)
         neighbor_importances = [
-            feature_importances.get(n, 0)
-            for n in neighbors
-            if n in feature_importances
+            feature_importances.get(n, 0) for n in neighbors if n in feature_importances
         ]
 
         if len(neighbor_importances) >= min_neighbors:
@@ -213,7 +211,9 @@ def calculate_feature_plateau_score(
             plateau_factor = 1.0 / (1.0 + relative_diff * 0.5)
 
             # Kombinierter Score
-            plateau_score = importance * (0.6 + 0.25 * stability + 0.15 * plateau_factor)
+            plateau_score = importance * (
+                0.6 + 0.25 * stability + 0.15 * plateau_factor
+            )
 
             results[feat] = {
                 "importance": importance,
@@ -222,7 +222,7 @@ def calculate_feature_plateau_score(
                 "stability": stability,
                 "plateau_factor": plateau_factor,
                 "plateau_score": plateau_score,
-                "is_plateau": stability > 0.5 and plateau_factor > 0.6
+                "is_plateau": stability > 0.5 and plateau_factor > 0.6,
             }
         else:
             # Keine Nachbarn gefunden - leichte Penalty
@@ -233,7 +233,7 @@ def calculate_feature_plateau_score(
                 "stability": 0.5,
                 "plateau_factor": 0.5,
                 "plateau_score": importance * 0.8,
-                "is_plateau": False
+                "is_plateau": False,
             }
 
     return results
@@ -243,7 +243,7 @@ def select_plateau_features(
     feature_importances: Dict[str, float],
     all_features: List[str],
     top_n: int = 5,
-    min_importance: float = 0.01
+    min_importance: float = 0.01,
 ) -> List[str]:
     """
     Wählt Features basierend auf Plateau-Scores statt nur Importance.
@@ -268,9 +268,7 @@ def select_plateau_features(
 
     # Nach Plateau-Score sortieren
     sorted_features = sorted(
-        plateau_results.items(),
-        key=lambda x: x[1]["plateau_score"],
-        reverse=True
+        plateau_results.items(), key=lambda x: x[1]["plateau_score"], reverse=True
     )
 
     return [f[0] for f in sorted_features[:top_n]]
@@ -281,7 +279,7 @@ def select_best_plateau_candidate(
     grid_tp: List[int],
     grid_sl: List[int],
     grid_ct: List[float],
-    min_neighbors: int = 2
+    min_neighbors: int = 2,
 ) -> Optional[Dict]:
     """
     Wählt den besten Kandidaten basierend auf Plateau-Score.
@@ -302,7 +300,9 @@ def select_best_plateau_candidate(
 
     # Nach Plateau-Score sortieren
     # Aber nur Kandidaten mit genug Nachbarn berücksichtigen
-    valid_candidates = [c for c in candidates if c.get("neighbor_count", 0) >= min_neighbors]
+    valid_candidates = [
+        c for c in candidates if c.get("neighbor_count", 0) >= min_neighbors
+    ]
 
     if valid_candidates:
         valid_candidates.sort(key=lambda x: x["plateau_score"], reverse=True)
