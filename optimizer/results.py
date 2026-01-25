@@ -70,6 +70,18 @@ STRATEGY_SCHEMA = {
         "oos_ratio": float,
     },
 
+    # Asset-Filter
+    "assets": {
+        "filter": list,    # z.B. ["EURUSD", "GBPUSD"] - None = alle Assets
+        "exclude": list,   # z.B. ["BTCUSD"] - Assets die ausgeschlossen werden
+        "classes": list,   # z.B. ["FOREX", "INDEX"] - Asset-Klassen filtern
+    },
+
+    # Feature-Gruppen
+    "feature_groups": {
+        "groups": list,    # z.B. ["trend", "momentum"] - None = DEFAULT_FEATURE_GROUPS
+    },
+
     # Notizen
     "notes": str,          # Freitext für zusätzliche Beobachtungen
 }
@@ -141,6 +153,11 @@ def create_strategy_metadata(
     regime_filter=True,
     validation_method="walk_forward",
     notes=None,
+    # Neue Parameter für Asset- und Feature-Filter
+    assets_filter=None,
+    assets_exclude=None,
+    assets_classes=None,
+    feature_groups=None,
 ):
     """
     Erstellt strukturierte Strategie-Metadaten.
@@ -195,6 +212,14 @@ def create_strategy_metadata(
             "method": validation_method,
             "folds": WALK_FORWARD_FOLDS,
             "oos_size": OOS_SIZE,
+        },
+        "assets": {
+            "filter": assets_filter,      # z.B. ["EURUSD", "GBPUSD"]
+            "exclude": assets_exclude,    # z.B. ["BTCUSD"]
+            "classes": assets_classes,    # z.B. ["FOREX", "INDEX"]
+        },
+        "feature_groups": {
+            "groups": feature_groups,     # z.B. ["trend", "momentum"]
         },
         "notes": notes or "",
     }
