@@ -1,7 +1,8 @@
 """Tests für die Trade-Simulation."""
 import numpy as np
+import pandas as pd
 import pytest
-from optimizer.simulation import simulate_pro_trade, calculate_sharpe_ratio
+from optimizer.simulation import simulate_pro_trade, calculate_sharpe_ratio, resolve_tp_sl_collision_m15, _m15_cache
 
 
 class TestSimulateTrade:
@@ -130,3 +131,34 @@ class TestSharpeRatio:
         returns = [-0.01, -0.02, -0.015, -0.025]
         sharpe = calculate_sharpe_ratio(returns)
         assert sharpe < 0
+
+
+class TestM15Lookup:
+    """Tests für den 15-Minuten-Daten Lookup bei TP/SL Kollision."""
+
+    def test_m15_lookup_returns_none_without_data(self):
+        """Ohne M15-Daten sollte None zurückgegeben werden."""
+        # Clear cache
+        _m15_cache.clear()
+        result = resolve_tp_sl_collision_m15("NONEXISTENT", pd.Timestamp("2024-01-01 10:00"), 1, 1.1, 0.9)
+        assert result is None
+
+    def test_simulation_with_timestamps_and_symbol(self):
+        """Simulation sollte mit timestamps und symbol Parametern funktionieren."""
+        closes = np.array([1.0] * 100)
+        highs = np.array([1.0] * 100)
+        lows = np.array([1.0] * 100)
+        atrs = np.array([0.01] * 100)
+
+        # Klarer TP hit
+        highs[1] = 1.05
+        lows[1] = 1.01
+
+        # Mit Timestamps (aber ohne echte M15 Daten - Fallback)
+        timestamps = pd.date_range("2024-01-01", periods=100, freq="h").values
+
+        res, _ = simulate_pro_trade(
+            closes, highs, lows, atrs, 0, 1, 1.0, 1.0, 0.01,
+            timestamps=timestamps, symbol="TEST"
+        )
+        assert res == 1.0  # Sollte trotzdem funktionieren

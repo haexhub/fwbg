@@ -2,8 +2,13 @@
 Trade-Simulation und Metriken
 """
 import numpy as np
+import pandas as pd
 
-from .config import MAX_TRADE_BARS, RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN
+from .config import MAX_TRADE_BARS, RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN, DATA_PATH
+
+
+# Cache für 15-Min-Daten (wird einmal pro Symbol geladen)
+_m15_cache = {}
 
 
 def calculate_sharpe_ratio(returns, risk_free_rate=0.0):
@@ -64,13 +69,74 @@ def check_feature_stability(fold_importances, threshold=RELEVANCE_THRESHOLD):
     return stable_features
 
 
-def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, spread, max_bars=None, trailing_start=0.5):
+def load_m15_data(symbol):
+    """Lädt 15-Min-Daten für ein Symbol (mit Caching)."""
+    if symbol in _m15_cache:
+        return _m15_cache[symbol]
+
+    m15_path = f"{DATA_PATH}/{symbol}_MINUTE_15.csv"
+    try:
+        df = pd.read_csv(m15_path, parse_dates=["Time"], index_col="Time")
+        _m15_cache[symbol] = df
+        return df
+    except Exception:
+        _m15_cache[symbol] = None
+        return None
+
+
+def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
     """
-    Simuliert einen Trade mit Trailing Stop.
+    Bei gleichzeitigem TP/SL Hit: Schaut in 15-Min-Daten um die Reihenfolge zu bestimmen.
+
+    Returns: 1.0 (TP zuerst), -1.0 (SL zuerst), None (keine M15-Daten)
+    """
+    m15_df = load_m15_data(symbol)
+    if m15_df is None:
+        return None
+
+    # Finde die 4 15-Min-Bars innerhalb der Stunde
+    hour_start = hour_timestamp
+    hour_end = hour_timestamp + pd.Timedelta(hours=1)
+
+    try:
+        m15_bars = m15_df.loc[hour_start:hour_end]
+        if len(m15_bars) == 0:
+            return None
+    except Exception:
+        return None
+
+    # Gehe durch die 15-Min-Bars und prüfe was zuerst passiert
+    for _, bar in m15_bars.iterrows():
+        if direction == 1:  # Long
+            tp_hit = bar["H"] >= tp
+            sl_hit = bar["L"] <= sl
+        else:  # Short
+            tp_hit = bar["L"] <= tp
+            sl_hit = bar["H"] >= sl
+
+        if tp_hit and sl_hit:
+            # Auch im 15-Min-Bar beide erreicht - konservativ Loss
+            return -1.0
+        elif tp_hit:
+            return 1.0
+        elif sl_hit:
+            return -1.0
+
+    # Keines erreicht in M15 (sollte nicht passieren)
+    return None
+
+
+def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, spread,
+                       max_bars=None, trailing_start=0.5, timestamps=None, symbol=None):
+    """
+    Simuliert einen Trade.
 
     - Trade läuft bis TP oder SL erreicht wird (kein Timeout-Exit!)
-    - Trailing Stop aktiviert sich wenn Gewinn >= trailing_start * TP erreicht
-    - Trailing Stop sichert 50% des erreichten Gewinns
+    - Bei gleichzeitigem TP/SL im selben Bar: Schaut in 15-Min-Daten (falls verfügbar)
+
+    Args:
+        timestamps: Optional - Array von Timestamps für M15-Lookup
+        symbol: Optional - Symbol-Name für M15-Lookup
 
     Returns: (result, bars_held) - result: 1.0=Win, -1.0=Loss, 0.0=Invalid
     """
@@ -93,48 +159,40 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
         tp = entry - tp_distance + slippage
         sl = entry + sl_distance + slippage
 
-    # Trailing-Stop: Sichert Gewinne nachdem ein Mindestgewinn erreicht wurde
-    # trailing_sl ist der aktuelle Trailing-Stop-Preis
-    # Für Long: trailing_sl steigt (von sl aufwärts)
-    # Für Short: trailing_sl sinkt (von sl abwärts)
-    trailing_activated = False
-    best_price = entry
-
     for j in range(idx + 1, min(idx + max_bars, len(closes))):
         if direction == 1:  # Long
-            # TP/SL prüfen BEVOR Trailing aktualisiert wird
             tp_hit = highs[j] >= tp
             sl_hit = lows[j] <= sl
 
-            # Wenn beide im selben Bar erreicht werden: konservativ Loss annehmen
             if tp_hit and sl_hit:
+                # Beide im selben Bar - versuche M15 Lookup
+                if timestamps is not None and symbol is not None:
+                    result = resolve_tp_sl_collision_m15(symbol, timestamps[j], direction, tp, sl)
+                    if result is not None:
+                        return result, j - idx
+                # Fallback: konservativ Loss
                 return -1.0, j - idx
             elif tp_hit:
                 return 1.0, j - idx
             elif sl_hit:
                 return -1.0, j - idx
 
-            # Trailing-Stop nur für Gewinn-Sicherung (nicht für Exit)
-            # Wird hier nur getrackt aber nicht für Exit verwendet
-            if highs[j] > best_price:
-                best_price = highs[j]
-
         else:  # Short
-            # TP/SL prüfen BEVOR Trailing aktualisiert wird
             tp_hit = lows[j] <= tp
             sl_hit = highs[j] >= sl
 
-            # Wenn beide im selben Bar erreicht werden: konservativ Loss annehmen
             if tp_hit and sl_hit:
+                # Beide im selben Bar - versuche M15 Lookup
+                if timestamps is not None and symbol is not None:
+                    result = resolve_tp_sl_collision_m15(symbol, timestamps[j], direction, tp, sl)
+                    if result is not None:
+                        return result, j - idx
+                # Fallback: konservativ Loss
                 return -1.0, j - idx
             elif tp_hit:
                 return 1.0, j - idx
             elif sl_hit:
                 return -1.0, j - idx
-
-            # Best price tracken
-            if lows[j] < best_price:
-                best_price = lows[j]
 
     return 0.0, max_bars
 
