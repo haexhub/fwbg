@@ -70,11 +70,11 @@ class EliteBot:
 
     # Suchbegriffe für dynamische EPIC-Suche
     SYMBOL_SEARCH_TERMS = {
-        "GOLD": "Gold",
-        "XAUUSD": "Gold",
-        "SILVER": "Silver",
-        "XAGUSD": "Silver",
-        "BRENT": "Brent",
+        "GOLD": "Spot Gold",
+        "XAUUSD": "Spot Gold",
+        "SILVER": "Spot Silver",
+        "XAGUSD": "Spot Silver",
+        "BRENT": "Oil Brent",
     }
 
     def __init__(self, account_dir):
