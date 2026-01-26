@@ -13,7 +13,9 @@ import yfinance as yf
 
 # --- LOGGING SETUP ---
 LOG_DIR = os.environ.get("LOG_DIR", "logs")
+STATS_DIR = os.environ.get("STATS_DIR", "stats_export")
 os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(STATS_DIR, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +51,7 @@ class EliteBot:
     def __init__(self, account_dir):
         self._stop_event = threading.Event()
         self.account_dir = account_dir
+        self.account_id = os.path.basename(account_dir)
         self.TARGET_TZ = "Europe/Berlin"
         self.load_configurations()
         self.ig = self.initialize_ig_session()
@@ -60,12 +63,31 @@ class EliteBot:
             if self.train_elite_model(s) is not None
         }
         logger.info(f"🏰 Bot 6.6 scharf. {len(self.models)} Assets geladen.")
+        self.write_status("RUNNING")
 
     def load_configurations(self):
         with open(f"{self.account_dir}/account_info.json", "r") as f:
             self.account_info = json.load(f)
         with open(f"{self.account_dir}/assets.json", "r") as f:
             self.assets = json.load(f)
+
+    def write_status(self, status):
+        """Write bot status for dashboard heartbeat monitoring."""
+        status_dir = os.path.join(STATS_DIR, self.account_id)
+        os.makedirs(status_dir, exist_ok=True)
+        status_file = os.path.join(status_dir, "bot_status.json")
+
+        status_data = {
+            "last_heartbeat": datetime.now().isoformat(),
+            "status": status,
+            "active_pairs_count": len(self.models) if hasattr(self, "models") else 0,
+            "active_epics": list(self.models.keys()) if hasattr(self, "models") else [],
+            "account_id": self.account_id,
+            "account_mode": self.account_info.get("credentials", {}).get("env", "DEMO"),
+        }
+
+        with open(status_file, "w") as f:
+            json.dump(status_data, f, indent=2)
 
     def initialize_ig_session(self):
         creds = self.account_info["credentials"]
@@ -203,6 +225,7 @@ class EliteBot:
 
     def run(self):
         while not self._stop_event.is_set():
+            self.write_status("RUNNING")
             if datetime.now().weekday() < 5:
                 # Sentiment Refresh (Fix für float Warning)
                 tickers = {"vix": "^VIX", "dxy": "DX-Y.NYB"}

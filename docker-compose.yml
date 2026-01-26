@@ -8,10 +8,11 @@ services:
       - fwbg-accounts:/app/accounts
       - fwbg-data:/app/data
       - fwbg-logs:/app/logs
-      - fwbg-stats:/app/stats_export
+      - fwbg-stats:/app/data/stats_export
     environment:
       - TZ=Europe/Berlin
       - LOG_DIR=/app/logs
+      - STATS_DIR=/app/data/stats_export
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     logging:
@@ -31,6 +32,7 @@ services:
       - fwbg-accounts:/app/accounts
       - fwbg-data:/app/data
       - fwbg-logs:/app/logs
+      - fwbg-stats:/app/data/stats_export
     environment:
       - TZ=Europe/Berlin
       - DATA_PATH=/app/data
