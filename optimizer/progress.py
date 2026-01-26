@@ -131,9 +131,13 @@ class ProgressTracker:
     def _clear_lines(self):
         """Löscht die zuletzt geschriebenen Zeilen."""
         if self._last_line_count > 0:
-            # Cursor hoch und Zeilen löschen
+            # Cursor hoch bewegen und jede Zeile löschen
+            # \033[F = Cursor eine Zeile hoch + an Zeilenanfang
+            # \033[K = Rest der Zeile löschen
+            sys.stdout.write(f"\033[{self._last_line_count}F")  # N Zeilen hoch
             for _ in range(self._last_line_count):
-                sys.stdout.write("\033[A\033[K")
+                sys.stdout.write("\033[K\n")  # Zeile löschen, nächste Zeile
+            sys.stdout.write(f"\033[{self._last_line_count}F")  # Wieder hoch
             sys.stdout.flush()
             self._last_line_count = 0
 
