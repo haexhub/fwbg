@@ -328,7 +328,19 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         else:
             annual_return = -100
 
-        is_profitable = sharpe >= 1.0 and annual_return > 0 and max_dd < 0.6
+        # Monte Carlo Statistiken
+        mc_stats = e.get("monte_carlo", {})
+        p_value = mc_stats.get("p_value", 1.0)
+        fold_stability = e.get("fold_stability", 0)
+
+        # Erweiterte Profitabilitätsprüfung inkl. Monte Carlo
+        is_profitable = (
+            sharpe >= 1.0 and
+            annual_return > 0 and
+            max_dd < 0.6 and
+            mc_stats.get("is_significant", False) and
+            fold_stability >= 0.5  # Mindestens 50% der Folds profitabel
+        )
 
         if is_profitable:
             export_config = {k: v for k, v in e["config"].items()}
@@ -347,6 +359,8 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
             len(e["tr_trace"]),
             f"{annual_return:+.0f}%/y",
             f"{max_dd_pct:.0f}%",
+            f"{p_value:.3f}",
+            f"{fold_stability:.0%}",
             status,
         ])
 
@@ -354,7 +368,7 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         "\n"
         + tabulate(
             table_data,
-            headers=["Asset", "Kelly", "WinRate", "RRR", "Sharpe", "Calmar", "Trades", "Return", "MaxDD", "Status"],
+            headers=["Asset", "Kelly", "WinRate", "RRR", "Sharpe", "Calmar", "Trades", "Return", "MaxDD", "p-val", "Folds", "Status"],
             tablefmt="psql"
         )
     )

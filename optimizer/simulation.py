@@ -297,3 +297,147 @@ def calculate_annual_return(returns, kelly_risk, rrr, total_bars, bars_per_year=
 
     annual_return = ((1 + total_return) ** (1 / years) - 1) * 100
     return annual_return
+
+
+def monte_carlo_permutation_test(trades, n_permutations=1000, random_seed=42):
+    """
+    Monte Carlo Signifikanz-Test für Trading-Strategien.
+
+    Prüft ob die beobachtete Win-Rate signifikant besser ist als eine
+    zufällige Strategie (50% Win-Rate) mittels Bootstrap.
+
+    Args:
+        trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
+        n_permutations: Anzahl Bootstrap-Samples
+        random_seed: Seed für Reproduzierbarkeit
+
+    Returns:
+        dict mit:
+            - p_value: P-Wert (< 0.05 = signifikant besser als Zufall)
+            - observed_pnl: Beobachtete PnL
+            - observed_win_rate: Beobachtete Win-Rate
+            - mean_random_pnl: Durchschnittliche PnL bei 50% Win-Rate
+            - percentile: In welchem Perzentil die beobachtete PnL liegt
+            - is_significant: True wenn p < 0.05
+    """
+    if len(trades) < 10:
+        return {
+            "p_value": 1.0,
+            "observed_pnl": sum(trades),
+            "observed_win_rate": 0.5,
+            "mean_random_pnl": 0.0,
+            "percentile": 50.0,
+            "is_significant": False,
+            "n_permutations": 0,
+        }
+
+    np.random.seed(random_seed)
+    trades_arr = np.array(trades)
+    n_trades = len(trades_arr)
+    observed_pnl = np.sum(trades_arr)
+    observed_wins = np.sum(trades_arr > 0)
+    observed_wr = observed_wins / n_trades
+
+    # Null-Hypothese: 50% Win-Rate (Zufall)
+    # Generiere Bootstrap-Samples mit 50% Win-Rate
+    random_pnls = []
+    for _ in range(n_permutations):
+        # Simuliere n_trades mit 50% Win-Rate
+        random_wins = np.sum(np.random.random(n_trades) > 0.5)
+        random_losses = n_trades - random_wins
+        random_pnl = random_wins * 1.0 + random_losses * (-1.0)
+        random_pnls.append(random_pnl)
+
+    random_pnls = np.array(random_pnls)
+
+    # P-Wert: Anteil der zufälligen PnLs die >= beobachtete PnL sind
+    # (einseitiger Test: ist die Strategie besser als 50% Win-Rate?)
+    p_value = (np.sum(random_pnls >= observed_pnl) + 1) / (n_permutations + 1)
+
+    # Perzentil
+    percentile = 100 * (np.sum(random_pnls < observed_pnl) / n_permutations)
+
+    return {
+        "p_value": p_value,
+        "observed_pnl": float(observed_pnl),
+        "observed_win_rate": float(observed_wr),
+        "mean_random_pnl": float(np.mean(random_pnls)),
+        "std_random_pnl": float(np.std(random_pnls)),
+        "percentile": percentile,
+        "is_significant": p_value < 0.05,
+        "n_permutations": n_permutations,
+    }
+
+
+def monte_carlo_equity_simulation(trades, kelly_risk, rrr, n_simulations=1000, random_seed=42):
+    """
+    Monte Carlo Simulation der Equity-Kurve mit zufälligen Trade-Reihenfolgen.
+
+    Berechnet Konfidenzintervalle für die finale Equity basierend auf
+    verschiedenen möglichen Trade-Reihenfolgen.
+
+    Args:
+        trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
+        kelly_risk: Risk pro Trade (z.B. 0.02 = 2%)
+        rrr: Risk-Reward-Ratio
+        n_simulations: Anzahl der Simulationen
+        random_seed: Seed für Reproduzierbarkeit
+
+    Returns:
+        dict mit:
+            - median_equity: Median der finalen Equities
+            - p5_equity: 5. Perzentil (Worst Case)
+            - p95_equity: 95. Perzentil (Best Case)
+            - bankruptcy_rate: Anteil der Simulationen die Bankrott gehen
+            - observed_equity: Equity mit originaler Reihenfolge
+    """
+    if len(trades) < 10:
+        return {
+            "median_equity": 100.0,
+            "p5_equity": 100.0,
+            "p95_equity": 100.0,
+            "bankruptcy_rate": 0.0,
+            "observed_equity": 100.0,
+            "n_simulations": 0,
+        }
+
+    np.random.seed(random_seed)
+    trades_arr = np.array(trades)
+
+    def simulate_equity(trade_sequence):
+        equity = 100.0
+        for t in trade_sequence:
+            if t > 0:
+                equity *= 1 + (kelly_risk * rrr)
+            else:
+                equity *= 1 - kelly_risk
+            if equity <= 0:
+                return 0.0
+        return equity
+
+    # Originale Equity
+    observed_equity = simulate_equity(trades_arr)
+
+    # Monte Carlo Simulationen
+    final_equities = []
+    bankruptcies = 0
+    for _ in range(n_simulations):
+        permuted = np.random.permutation(trades_arr)
+        final_eq = simulate_equity(permuted)
+        final_equities.append(final_eq)
+        if final_eq <= 0:
+            bankruptcies += 1
+
+    final_equities = np.array(final_equities)
+
+    return {
+        "median_equity": float(np.median(final_equities)),
+        "mean_equity": float(np.mean(final_equities)),
+        "p5_equity": float(np.percentile(final_equities, 5)),
+        "p25_equity": float(np.percentile(final_equities, 25)),
+        "p75_equity": float(np.percentile(final_equities, 75)),
+        "p95_equity": float(np.percentile(final_equities, 95)),
+        "bankruptcy_rate": bankruptcies / n_simulations,
+        "observed_equity": float(observed_equity),
+        "n_simulations": n_simulations,
+    }
