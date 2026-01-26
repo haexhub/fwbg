@@ -143,20 +143,28 @@ class EliteBot:
                     time.sleep(0.5)
                     results = self.ig.search_markets(search_term)
                     if results is not None and not results.empty:
-                        # Suche nach passendem Markt (Spot/Cash, kein Future)
+                        # Suche nach CFD Spot-Markt (kein Knock-Out, kein Future)
                         for _, row in results.iterrows():
                             epic = row.get("epic", "")
                             name = row.get("instrumentName", "").lower()
-                            # Bevorzuge Spot/Cash Märkte
-                            if "spot" in name or "cash" in name or "usd" in name.lower():
+                            # Vermeide Knock-Outs (KA.), Turbos, Mini Futures
+                            if epic.startswith("KA.") or epic.startswith("KB."):
+                                continue
+                            if "knock" in name or "turbo" in name or "mini" in name:
+                                continue
+                            # Bevorzuge Spot/CFD Märkte
+                            if "spot" in name or "cfd" in name or epic.startswith("CC.") or epic.startswith("CS."):
                                 self.SYMBOL_TO_EPIC[symbol] = epic
-                                logger.info(f"📍 {symbol} -> {epic}")
+                                logger.info(f"📍 {symbol} -> {epic} ({name})")
                                 break
                         else:
-                            # Fallback: nimm ersten Treffer
-                            epic = results.iloc[0]["epic"]
-                            self.SYMBOL_TO_EPIC[symbol] = epic
-                            logger.info(f"📍 {symbol} -> {epic} (fallback)")
+                            # Zweiter Durchlauf: nimm ersten nicht-KO Treffer
+                            for _, row in results.iterrows():
+                                epic = row.get("epic", "")
+                                if not epic.startswith("KA.") and not epic.startswith("KB."):
+                                    self.SYMBOL_TO_EPIC[symbol] = epic
+                                    logger.info(f"📍 {symbol} -> {epic} (fallback)")
+                                    break
                 except Exception as e:
                     logger.warning(f"⚠️ EPIC-Suche für {symbol} fehlgeschlagen: {e}")
 
