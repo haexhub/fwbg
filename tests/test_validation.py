@@ -329,6 +329,345 @@ class TestFoldStability:
         assert stability == 0.0, f"Keine profitablen Folds sollte 0% sein, ist {stability}"
 
 
+class TestEquityDrawdownConsistency:
+    """
+    Tests die sicherstellen, dass Equity-Kurve und Drawdown-Berechnung konsistent sind.
+
+    Problem das wir verhindern wollen:
+    - Drawdown-Chart zeigt 80% DD, aber Equity-Kurve zeigt keinen entsprechenden Einbruch
+    - Dies wäre ein Bug in der Berechnung
+    """
+
+    def test_drawdown_matches_equity_curve(self):
+        """Der berechnete Drawdown muss zur Equity-Kurve passen."""
+        from optimizer.main import simulate_equity
+
+        # Trades mit bekanntem Muster
+        trades = [1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
+        kelly_risk = 0.10
+        rrr = 1.0
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+        eq = result["equity_curve"]
+        dd = result["drawdowns"]
+
+        # Für jeden Punkt: Prüfe ob der Drawdown zur Equity passt
+        peak = eq[0]
+        for i in range(1, len(eq)):
+            if eq[i] > peak:
+                peak = eq[i]
+
+            # Berechne erwarteten Drawdown an diesem Punkt
+            expected_dd_pct = (peak - eq[i]) / peak * 100 if peak > 0 else 0
+            actual_dd_pct = dd[i]
+
+            assert abs(expected_dd_pct - actual_dd_pct) < 0.01, \
+                f"Trade {i}: DD stimmt nicht! Erwartet {expected_dd_pct:.2f}%, bekommen {actual_dd_pct:.2f}%"
+
+    def test_max_drawdown_is_maximum_of_drawdowns(self):
+        """max_drawdown muss dem Maximum der drawdowns-Liste entsprechen."""
+        from optimizer.main import simulate_equity
+
+        trades = [1.0, 1.0, -1.0, -1.0, -1.0, 1.0, 1.0, -1.0]
+        kelly_risk = 0.15
+        rrr = 1.5
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+
+        max_from_list = max(result["drawdowns"]) / 100  # Liste ist in Prozent
+        max_from_result = result["max_drawdown"]
+
+        assert abs(max_from_list - max_from_result) < 0.0001, \
+            f"max_drawdown ({max_from_result:.4f}) != max(drawdowns) ({max_from_list:.4f})"
+
+    def test_drawdown_at_peak_is_zero(self):
+        """An einem neuen Peak muss der Drawdown 0 sein."""
+        from optimizer.main import simulate_equity
+
+        # Nur Gewinne = jeder Punkt ist ein neuer Peak
+        trades = [1.0, 1.0, 1.0, 1.0, 1.0]
+        kelly_risk = 0.10
+        rrr = 1.0
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+
+        # Alle Drawdowns sollten 0 sein (jeder Trade ist ein neuer Peak)
+        for i, dd in enumerate(result["drawdowns"]):
+            assert dd == 0.0, f"Trade {i}: Bei steigender Equity sollte DD=0 sein, ist {dd:.2f}%"
+
+    def test_drawdown_increases_during_loss_streak(self):
+        """Während einer Verlustserie muss der Drawdown steigen."""
+        from optimizer.main import simulate_equity
+
+        # Erst Gewinne (Peak bilden), dann Verluste
+        trades = [1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0]
+        kelly_risk = 0.10
+        rrr = 1.0
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+        dd = result["drawdowns"]
+
+        # Nach den 3 Gewinnen beginnen die Verluste (Index 4, 5, 6, 7)
+        # Drawdown sollte monoton steigen
+        for i in range(4, len(dd)):
+            assert dd[i] > dd[i-1], \
+                f"Drawdown sollte während Verlustserie steigen: dd[{i}]={dd[i]:.2f}% <= dd[{i-1}]={dd[i-1]:.2f}%"
+
+    def test_equity_drop_magnitude_matches_drawdown(self):
+        """Ein 50% Drawdown bedeutet, dass die Equity auf 50% des Peaks gefallen ist."""
+        from optimizer.main import simulate_equity
+
+        # Konstruiere einen Fall mit bekanntem Drawdown
+        # 10 Verluste bei 10% Kelly: (0.9)^10 = 0.3487 → ~65% DD
+        trades = [-1.0] * 10
+        kelly_risk = 0.10
+        rrr = 1.0
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+
+        # Peak ist 100 (Start-Equity)
+        peak = 100.0
+        final = result["final_equity"]
+        max_dd = result["max_drawdown"]
+
+        # Erwarteter Drawdown: 1 - (0.9)^10
+        expected_dd = 1 - (0.9 ** 10)
+
+        assert abs(max_dd - expected_dd) < 0.0001, \
+            f"Erwarteter DD {expected_dd:.4f}, bekommen {max_dd:.4f}"
+
+        # Equity sollte bei peak * (1 - max_dd) sein
+        expected_equity = peak * (1 - max_dd)
+        assert abs(final - expected_equity) < 0.01, \
+            f"Equity sollte {expected_equity:.2f} sein, ist {final:.2f}"
+
+    def test_large_drawdown_requires_long_loss_streak(self):
+        """Ein 80% DD bei 1.67% Kelly benötigt ~100 aufeinanderfolgende Verluste."""
+        import math
+
+        kelly_risk = 0.0167  # 1.67%
+        target_dd = 0.82     # 82% Drawdown
+
+        # Berechne benötigte Verluste für diesen DD
+        # (1 - kelly)^n = 1 - target_dd
+        # n = log(1 - target_dd) / log(1 - kelly)
+        required_losses = math.log(1 - target_dd) / math.log(1 - kelly_risk)
+
+        # Bei 1.67% Kelly braucht man ~102 aufeinanderfolgende Verluste für 82% DD
+        assert required_losses > 100, \
+            f"82% DD bei 1.67% Kelly benötigt {required_losses:.0f} Verluste (erwartet >100)"
+
+    def test_statistical_plausibility_of_loss_streak(self):
+        """Prüft ob eine lange Verlustserie statistisch plausibel ist."""
+        import math
+
+        win_rate = 0.817     # 81.7% Win Rate
+        n_trades = 17500     # Anzahl Trades
+        loss_streak = 102    # Für 82% DD bei 1.67% Kelly
+
+        # Wahrscheinlichkeit einer einzelnen Verlustserie dieser Länge
+        p_loss = 1 - win_rate
+        p_streak = p_loss ** loss_streak
+
+        # Erwartete Anzahl solcher Streaks in n_trades
+        expected_streaks = n_trades * p_streak
+
+        # Bei 81.7% WR ist eine 102er Verlustserie praktisch unmöglich
+        assert expected_streaks < 1e-50, \
+            f"Eine {loss_streak}er Verlustserie bei {win_rate:.1%} WR sollte unmöglich sein, " \
+            f"aber erwartete Anzahl ist {expected_streaks:.2e}"
+
+    def test_expected_max_loss_streak(self):
+        """Berechnet die erwartete längste Verlustserie."""
+        import math
+
+        win_rate = 0.817
+        n_trades = 17500
+        p_loss = 1 - win_rate
+
+        # Erwartete längste Verlustserie bei n Bernoulli-Trials
+        # Approximation: log(n) / (-log(1-p))
+        expected_max_streak = math.log(n_trades) / (-math.log(1 - p_loss))
+
+        # Bei 81.7% WR und 17500 Trades erwarten wir ~48 aufeinanderfolgende Verluste
+        assert 40 < expected_max_streak < 60, \
+            f"Erwartete max Verlustserie sollte ~48 sein, ist {expected_max_streak:.0f}"
+
+
+class TestSyntheticEquityScenarios:
+    """
+    Tests mit synthetischen Trade-Sequenzen, bei denen wir das exakte Ergebnis kennen.
+    Diese Tests stellen sicher, dass die Equity-Simulation korrekt ist.
+    """
+
+    def test_only_wins_exponential_growth(self):
+        """Nur Gewinne sollten zu exponentiellem Wachstum führen."""
+        from optimizer.main import simulate_equity
+
+        # 100 Gewinne bei 5% Kelly und RRR=2
+        trades = [1.0] * 100
+        kelly_risk = 0.05
+        rrr = 2.0
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+
+        # Erwartete Equity: 100 * (1 + 0.05*2)^100 = 100 * 1.1^100
+        expected = 100 * (1.1 ** 100)
+        assert abs(result["final_equity"] - expected) < expected * 0.0001, \
+            f"Erwartet {expected:.2f}, bekommen {result['final_equity']:.2f}"
+
+        # Kein Drawdown bei nur Gewinnen
+        assert result["max_drawdown"] == 0, "Nur Gewinne sollten 0% DD haben"
+
+    def test_only_losses_geometric_decay(self):
+        """Nur Verluste sollten zu geometrischem Verfall führen."""
+        from optimizer.main import simulate_equity
+
+        # 20 Verluste bei 10% Kelly
+        trades = [-1.0] * 20
+        kelly_risk = 0.10
+        rrr = 1.0  # RRR irrelevant bei Verlusten
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+
+        # Erwartete Equity: 100 * 0.9^20
+        expected = 100 * (0.9 ** 20)
+        assert abs(result["final_equity"] - expected) < 0.01, \
+            f"Erwartet {expected:.4f}, bekommen {result['final_equity']:.4f}"
+
+        # Max DD = 1 - 0.9^20
+        expected_dd = 1 - (0.9 ** 20)
+        assert abs(result["max_drawdown"] - expected_dd) < 0.0001, \
+            f"Erwartet DD {expected_dd:.4f}, bekommen {result['max_drawdown']:.4f}"
+
+    def test_win_loss_alternating_pattern(self):
+        """Wechselnde Wins/Losses sollten vorhersagbare Equity ergeben."""
+        from optimizer.main import simulate_equity
+
+        # Win, Loss, Win, Loss... (10x)
+        trades = [1.0, -1.0] * 10
+        kelly_risk = 0.10
+        rrr = 1.0
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+
+        # Bei RRR=1: Win multipliziert mit 1.1, Loss mit 0.9
+        # Nach 10 Paaren: 100 * (1.1 * 0.9)^10 = 100 * 0.99^10
+        expected = 100 * (0.99 ** 10)
+        assert abs(result["final_equity"] - expected) < 0.01, \
+            f"Erwartet {expected:.4f}, bekommen {result['final_equity']:.4f}"
+
+    def test_recovery_after_drawdown(self):
+        """Equity kann sich nach Drawdown erholen, aber DD bleibt bestehen."""
+        from optimizer.main import simulate_equity
+
+        # 5 Verluste, dann 20 Gewinne
+        trades = [-1.0] * 5 + [1.0] * 20
+        kelly_risk = 0.10
+        rrr = 2.0
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+
+        # Nach 5 Verlusten: 100 * 0.9^5 = 59.05
+        # Max DD an diesem Punkt: 1 - 0.9^5 = 0.4095 (40.95%)
+        expected_dd = 1 - (0.9 ** 5)
+        assert abs(result["max_drawdown"] - expected_dd) < 0.01, \
+            f"Max DD sollte {expected_dd:.2%} sein, ist {result['max_drawdown']:.2%}"
+
+        # Nach 20 Gewinnen sollte Equity über Startwert sein
+        after_losses = 100 * (0.9 ** 5)
+        final = after_losses * (1.2 ** 20)
+        assert abs(result["final_equity"] - final) < final * 0.0001, \
+            f"Erwartet {final:.2f}, bekommen {result['final_equity']:.2f}"
+
+    def test_known_rrr_asymmetry(self):
+        """Bei RRR < 1 ist das Risiko asymmetrisch - mehr Verlust als Gewinn."""
+        from optimizer.main import simulate_equity
+
+        # RRR = 0.5 bedeutet: Gewinn = 5%, Verlust = 10%
+        # Bei 50/50 Win Rate sollte Equity sinken
+        trades = [1.0, -1.0] * 50
+        kelly_risk = 0.10
+        rrr = 0.5
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+
+        # Win: 1.05, Loss: 0.9
+        # Nach 50 Paaren: 100 * (1.05 * 0.9)^50
+        expected = 100 * ((1.05 * 0.9) ** 50)
+        assert abs(result["final_equity"] - expected) < expected * 0.001, \
+            f"Erwartet {expected:.2f}, bekommen {result['final_equity']:.2f}"
+
+        # Equity sollte gesunken sein
+        assert result["final_equity"] < 100, \
+            f"Bei RRR=0.5 und 50% WR sollte Equity sinken, ist {result['final_equity']:.2f}"
+
+    def test_high_rrr_compensates_low_winrate(self):
+        """Bei hohem RRR kann niedrige Win Rate kompensiert werden."""
+        from optimizer.main import simulate_equity
+
+        # 30% Win Rate, aber RRR = 3 (Gewinn = 30%, Verlust = 10%)
+        wins = [1.0] * 30
+        losses = [-1.0] * 70
+        trades = []
+        # Mische für realistisches Szenario
+        import random
+        random.seed(42)
+        trades = wins + losses
+        random.shuffle(trades)
+
+        kelly_risk = 0.10
+        rrr = 3.0
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+
+        # Erwartung: 30 Wins x 1.3, 70 Losses x 0.9
+        # = 100 * 1.3^30 * 0.9^70
+        import math
+        expected = 100 * (1.3 ** 30) * (0.9 ** 70)
+        # Bei shuffling variiert das Ergebnis nicht, nur die Equity-Kurve
+        assert abs(result["final_equity"] - expected) < expected * 0.0001, \
+            f"Erwartet {expected:.2f}, bekommen {result['final_equity']:.2f}"
+
+    def test_drawdown_visual_consistency(self):
+        """
+        Stellt sicher, dass der Drawdown-Chart zur Equity-Kurve passt.
+
+        Wenn die Equity von 100 auf 50 fällt, muss der DD 50% zeigen.
+        Wenn die Equity dann auf 75 steigt, bleibt DD bei 50% (nicht bei neuen Peak).
+        """
+        from optimizer.main import simulate_equity
+
+        # Konstruiere eine spezifische Sequenz
+        # Start: 100
+        # 5 Gewinne: 100 * 1.1^5 = 161.05 (neuer Peak)
+        # 10 Verluste: 161.05 * 0.9^10 = 56.17 (DD = 65.1%)
+        # 3 Gewinne: 56.17 * 1.1^3 = 74.76 (immer noch unter Peak, DD = 53.6%)
+        trades = [1.0] * 5 + [-1.0] * 10 + [1.0] * 3
+        kelly_risk = 0.10
+        rrr = 1.0
+
+        result = simulate_equity(trades, kelly_risk, rrr)
+        eq = result["equity_curve"]
+        dd = result["drawdowns"]
+
+        # Peak nach 5 Gewinnen
+        peak_after_5 = 100 * (1.1 ** 5)
+        assert abs(eq[5] - peak_after_5) < 0.01, f"Peak sollte {peak_after_5:.2f} sein"
+
+        # Equity nach 10 Verlusten (Position 15)
+        equity_after_loss = peak_after_5 * (0.9 ** 10)
+        expected_dd_pct = (1 - equity_after_loss / peak_after_5) * 100
+
+        # DD an Position 15 prüfen
+        assert abs(dd[15] - expected_dd_pct) < 0.1, \
+            f"DD an Position 15 sollte {expected_dd_pct:.1f}% sein, ist {dd[15]:.1f}%"
+
+        # Max DD sollte an Position 15 sein (tiefster Punkt)
+        assert result["max_drawdown"] * 100 == max(dd), \
+            "Max DD stimmt nicht mit DD-Liste überein"
+
+
 class TestDataLeakagePrevention:
     """
     Tests die sicherstellen dass kein Data Leakage stattfindet.

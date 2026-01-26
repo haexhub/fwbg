@@ -2,7 +2,6 @@
 Walk-Forward Optimierung und Symbol-Verarbeitung
 """
 import os
-import sys
 import time
 import numpy as np
 import pandas as pd
@@ -12,7 +11,7 @@ from .config import (
     DATA_PATH, MAX_TRADE_BARS, MIN_TRADES, WALK_FORWARD_FOLDS, OOS_SIZE,
     RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN, CLASS_GRIDS,
     MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
-    FEATURE_GROUPS, DEFAULT_FEATURE_GROUPS,
+    DEFAULT_FEATURE_GROUPS,
     get_asset_config
 )
 from .data_loader import load_data_aligned, load_macro_csv
@@ -25,16 +24,9 @@ from .plateau import (
     calculate_param_plateau_score, select_plateau_features,
     select_best_plateau_candidate
 )
-
-# Logging-Level: 0=aus, 1=basic, 2=detail, 3=debug
-LOG_LEVEL = int(os.environ.get("OPTIMIZER_LOG", "1"))
-
-
-def log(level, msg, sym=""):
-    """Logging-Funktion mit Level-Kontrolle."""
-    if level <= LOG_LEVEL:
-        prefix = f"[{sym}] " if sym else ""
-        print(f"{prefix}{msg}", file=sys.stderr, flush=True)
+from .progress import report_progress, report_done
+from .logging_utils import log
+from .fold_worker import process_fold
 
 
 def walk_forward_split(df, n_folds=WALK_FORWARD_FOLDS, oos_size=OOS_SIZE):
@@ -248,40 +240,45 @@ def process_symbol(csv_path):
             log(1, f"Feature-Gruppe {fg_idx+1}/{len(feature_groups_to_test)}: {feature_group} ({len(group_features)} Features)", sym)
 
             grid_count = 0
-            grid_total = len(grid["tp"]) * len(grid["sl"])
+            grid_per_fg = len(grid["tp"]) * len(grid["sl"])
+            # Gesamte Grid-Kombinationen = Feature-Gruppen * TP * SL
+            total_grid_combos = len(feature_groups_to_test) * grid_per_fg
+            # Offset für aktuelle Feature-Gruppe
+            grid_offset = fg_idx * grid_per_fg
 
             for tp in grid["tp"]:
                 for sl in grid["sl"]:
                     grid_count += 1
+                    global_grid_pos = grid_offset + grid_count
 
                     # Grid-Fortschritt anzeigen (Level 2 für weniger Spam)
-                    log(2, f"  Grid {grid_count}/{grid_total} (TP={tp}, SL={sl})", sym)
+                    log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl})", sym)
 
                     # Walk-Forward Validierung mit Train/Val/Test Split
                     folds = walk_forward_split(df)
                     all_oos_trades = []  # Nur echte OOS Trades (nach CT-Optimierung)
                     selected_features_long = None
-                selected_features_short = None
-                fold_importances_long = []
-                fold_importances_short = []
-                fold_performances = []  # Track per-fold performance
+                    selected_features_short = None
+                    fold_importances_long = []
+                    fold_importances_short = []
+                    fold_performances = []  # Track per-fold performance
 
-                for fold_idx, (train_df, val_df, test_df) in enumerate(folds):
+                    # === PHASE 1: Fold 0 zuerst ausführen (Feature-Auswahl) ===
+                    train_df_0, val_df_0, test_df_0 = folds[0]
                     t_fold = time.time()
-                    log(1, f"  Fold {fold_idx+1}/{len(folds)}", sym)
+                    log(1, f"  Fold 1/{len(folds)} (Feature-Auswahl)", sym)
+                    report_progress(sym, 1, len(folds), "train", global_grid_pos, total_grid_combos)
 
-                    # === SEPARATE TARGETS FÜR LONG UND SHORT ===
-                    train_targs_long = np.zeros(len(train_df))
-                    train_targs_short = np.zeros(len(train_df))
+                    # Targets für Fold 0
+                    train_targs_long_0 = np.zeros(len(train_df_0))
+                    train_targs_short_0 = np.zeros(len(train_df_0))
+                    cls_v = train_df_0["C"].values
+                    hgh_v = train_df_0["H"].values
+                    low_v = train_df_0["L"].values
+                    atr_v = train_df_0["_atr"].values
+                    timestamps = train_df_0.index.values
 
-                    cls_v = train_df["C"].values
-                    hgh_v = train_df["H"].values
-                    low_v = train_df["L"].values
-                    atr_v = train_df["_atr"].values
-                    timestamps = train_df.index.values  # Für M15-Lookup
-
-                    t_sim = time.time()
-                    sim_count = len(train_df) - MAX_TRADE_BARS
+                    sim_count = len(train_df_0) - MAX_TRADE_BARS
                     for i in range(sim_count):
                         res_long, _ = simulate_pro_trade(
                             cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread,
@@ -292,211 +289,129 @@ def process_symbol(csv_path):
                             timestamps=timestamps, symbol=sym
                         )
                         if res_long == 1.0:
-                            train_targs_long[i] = 1
+                            train_targs_long_0[i] = 1
                         if res_short == 1.0:
-                            train_targs_short[i] = 1
-                    log(3, f"    Simulation: {sim_count} Trades ({time.time()-t_sim:.1f}s)", sym)
+                            train_targs_short_0[i] = 1
 
                     min_per_direction = MIN_TRADES // 2
-                    n_long = np.count_nonzero(train_targs_long)
-                    n_short = np.count_nonzero(train_targs_short)
+                    n_long = np.count_nonzero(train_targs_long_0)
+                    n_short = np.count_nonzero(train_targs_short_0)
                     has_long = n_long >= min_per_direction
                     has_short = n_short >= min_per_direction
-                    log(3, f"    Targets: Long={n_long}, Short={n_short} (min={min_per_direction})", sym)
 
                     if not has_long and not has_short:
-                        log(3, f"    SKIP Fold - zu wenig Targets", sym)
+                        log(3, f"    SKIP - Fold 0 hat zu wenig Targets", sym)
                         continue
 
-                    # === LONG MODELL ===
-                    mod_long = None
+                    # Long-Modell für Feature-Auswahl
                     if has_long:
-                        t_xgb = time.time()
-                        mod_long = XGBClassifier(
+                        mod_long_0 = XGBClassifier(
                             n_estimators=100, max_depth=5, n_jobs=1,
                             random_state=42, verbosity=0,
                         )
-                        mod_long.fit(train_df[group_features], train_targs_long)
-                        log(3, f"    XGB Long fit ({time.time()-t_xgb:.1f}s)", sym)
-                        imps_long = pd.Series(mod_long.feature_importances_, index=group_features)
+                        mod_long_0.fit(train_df_0[group_features], train_targs_long_0)
+                        imps_long = pd.Series(mod_long_0.feature_importances_, index=group_features)
                         fold_importances_long.append(imps_long.to_dict())
 
-                        if fold_idx == 0:
-                            plateau_features_long = select_plateau_features(
-                                imps_long.to_dict(),
-                                group_features,
-                                top_n=5,
-                                min_importance=RELEVANCE_THRESHOLD
-                            )
-                            if len(plateau_features_long) >= 2:
-                                selected_features_long = plateau_features_long
-                                log(3, f"    Long Features: {selected_features_long}", sym)
+                        plateau_features_long = select_plateau_features(
+                            imps_long.to_dict(), group_features,
+                            top_n=5, min_importance=RELEVANCE_THRESHOLD
+                        )
+                        if len(plateau_features_long) >= 2:
+                            selected_features_long = plateau_features_long
+                            log(3, f"    Long Features: {selected_features_long}", sym)
 
-                    # === SHORT MODELL ===
-                    mod_short = None
+                    # Short-Modell für Feature-Auswahl
                     if has_short:
-                        t_xgb = time.time()
-                        mod_short = XGBClassifier(
+                        mod_short_0 = XGBClassifier(
                             n_estimators=100, max_depth=5, n_jobs=1,
                             random_state=42, verbosity=0,
                         )
-                        mod_short.fit(train_df[group_features], train_targs_short)
-                        log(3, f"    XGB Short fit ({time.time()-t_xgb:.1f}s)", sym)
-                        imps_short = pd.Series(mod_short.feature_importances_, index=group_features)
+                        mod_short_0.fit(train_df_0[group_features], train_targs_short_0)
+                        imps_short = pd.Series(mod_short_0.feature_importances_, index=group_features)
                         fold_importances_short.append(imps_short.to_dict())
 
-                        if fold_idx == 0:
-                            plateau_features_short = select_plateau_features(
-                                imps_short.to_dict(),
-                                group_features,
-                                top_n=5,
-                                min_importance=RELEVANCE_THRESHOLD
-                            )
-                            if len(plateau_features_short) >= 2:
-                                selected_features_short = plateau_features_short
-                                log(3, f"    Short Features: {selected_features_short}", sym)
+                        plateau_features_short = select_plateau_features(
+                            imps_short.to_dict(), group_features,
+                            top_n=5, min_importance=RELEVANCE_THRESHOLD
+                        )
+                        if len(plateau_features_short) >= 2:
+                            selected_features_short = plateau_features_short
+                            log(3, f"    Short Features: {selected_features_short}", sym)
 
-                    # Feature Stability Check
-                    if fold_idx == len(folds) - 1:
-                        if selected_features_long and len(fold_importances_long) >= FEATURE_STABILITY_MIN:
-                            stable = check_feature_stability(fold_importances_long)
-                            selected_features_long = [f for f in selected_features_long if f in stable]
-                            if len(selected_features_long) < 2:
-                                selected_features_long = None
-                        if selected_features_short and len(fold_importances_short) >= FEATURE_STABILITY_MIN:
-                            stable = check_feature_stability(fold_importances_short)
-                            selected_features_short = [f for f in selected_features_short if f in stable]
-                            if len(selected_features_short) < 2:
-                                selected_features_short = None
-
-                    # Re-Training mit selected features
-                    if selected_features_long and mod_long:
-                        mod_long.fit(train_df[selected_features_long], train_targs_long)
-                    if selected_features_short and mod_short:
-                        mod_short.fit(train_df[selected_features_short], train_targs_short)
-
-                    # === VALIDATION SET: CT-Optimierung ===
-                    # CT wird auf Validation-Daten optimiert, NICHT auf OOS!
-                    val_cls = val_df["C"].values
-                    val_hgh = val_df["H"].values
-                    val_low = val_df["L"].values
-                    val_atr = val_df["_atr"].values
-                    val_regime = val_df["_regime_ok"].values
-                    val_timestamps = val_df.index.values
-
-                    probs_long_val = None
-                    probs_short_val = None
-                    long_win_idx = None
-                    short_win_idx = None
-
-                    if selected_features_long and mod_long:
-                        probs_long_val = mod_long.predict_proba(val_df[selected_features_long])
-                        if 1 in mod_long.classes_:
-                            long_win_idx = np.where(mod_long.classes_ == 1)[0][0]
-                        else:
-                            probs_long_val = None
-
-                    if selected_features_short and mod_short:
-                        probs_short_val = mod_short.predict_proba(val_df[selected_features_short])
-                        if 1 in mod_short.classes_:
-                            short_win_idx = np.where(mod_short.classes_ == 1)[0][0]
-                        else:
-                            probs_short_val = None
-
-                    # Teste alle CTs auf VALIDATION Set (nicht OOS!)
-                    val_trades_by_ct = {ct: [] for ct in grid["ct"]}
-                    for ct in grid["ct"]:
-                        for i in range(len(val_df) - MAX_TRADE_BARS):
-                            if not val_regime[i]:
-                                continue
-
-                            direction = None
-                            if probs_long_val is not None and probs_long_val[i, long_win_idx] >= ct:
-                                direction = 1
-                            elif probs_short_val is not None and probs_short_val[i, short_win_idx] >= ct:
-                                direction = -1
-
-                            if direction:
-                                res, _ = simulate_pro_trade(
-                                    val_cls, val_hgh, val_low, val_atr,
-                                    i, direction, tp, sl, spread,
-                                    timestamps=val_timestamps, symbol=sym
-                                )
-                                if res != 0:
-                                    val_trades_by_ct[ct].append(res)
-
-                    # Wähle besten CT basierend auf Validation-Performance
-                    best_ct = None
-                    best_val_pnl = float("-inf")
-                    for ct, trades in val_trades_by_ct.items():
-                        if len(trades) >= 10:  # Minimum Trades für CT-Auswahl
-                            pnl = sum(trades)
-                            if pnl > best_val_pnl:
-                                best_val_pnl = pnl
-                                best_ct = ct
-
-                    if best_ct is None:
-                        log(3, f"    SKIP Fold - kein valider CT auf Validation", sym)
+                    if not selected_features_long and not selected_features_short:
+                        log(3, f"    SKIP - keine Features ausgewählt", sym)
                         continue
 
-                    log(3, f"    Best CT auf Validation: {best_ct} (PnL={best_val_pnl:.1f})", sym)
+                    # Fold 0 mit process_fold ausführen (mit den neuen Features)
+                    shared_config = {
+                        "sym": sym,
+                        "tp": tp,
+                        "sl": sl,
+                        "spread": spread,
+                        "group_features": group_features,
+                        "grid_ct": grid["ct"],
+                        "global_grid_pos": global_grid_pos,
+                        "total_grid_combos": total_grid_combos,
+                        "total_folds": len(folds),
+                    }
 
-                    # === OOS PREDICTION mit fixem CT ===
-                    # Jetzt wird NUR der beste CT auf echten OOS-Daten getestet
-                    test_cls = test_df["C"].values
-                    test_hgh = test_df["H"].values
-                    test_low = test_df["L"].values
-                    test_atr = test_df["_atr"].values
-                    test_regime = test_df["_regime_ok"].values
-                    test_timestamps = test_df.index.values
+                    fold_0_result = process_fold(
+                        0, (train_df_0, val_df_0, test_df_0),
+                        shared_config, selected_features_long, selected_features_short
+                    )
 
-                    probs_long_oos = None
-                    probs_short_oos = None
+                    if not fold_0_result.get("skipped", True):
+                        all_oos_trades.extend(fold_0_result.get("oos_trades", []))
+                        if fold_0_result.get("importances_long"):
+                            fold_importances_long.append(fold_0_result["importances_long"])
+                        if fold_0_result.get("importances_short"):
+                            fold_importances_short.append(fold_0_result["importances_short"])
+                        if fold_0_result.get("fold_pnl") is not None:
+                            fold_performances.append({
+                                "fold": 0,
+                                "ct": fold_0_result.get("best_ct"),
+                                "trades": len(fold_0_result.get("oos_trades", [])),
+                                "pnl": fold_0_result.get("fold_pnl", 0),
+                                "win_rate": fold_0_result.get("fold_wr", 0),
+                            })
 
-                    if selected_features_long and mod_long:
-                        probs_long_oos = mod_long.predict_proba(test_df[selected_features_long])
+                    log(1, f"    Fold 1 done ({time.time()-t_fold:.1f}s)", sym)
 
-                    if selected_features_short and mod_short:
-                        probs_short_oos = mod_short.predict_proba(test_df[selected_features_short])
-
-                    fold_oos_trades = []
-                    for i in range(len(test_df) - MAX_TRADE_BARS):
-                        if not test_regime[i]:
-                            continue
-
-                        res = 0
-                        hour = test_df.index[i].hour
-                        direction = None
-
-                        # NUR mit dem auf Validation optimierten CT
-                        if probs_long_oos is not None and probs_long_oos[i, long_win_idx] >= best_ct:
-                            direction = 1
-                        elif probs_short_oos is not None and probs_short_oos[i, short_win_idx] >= best_ct:
-                            direction = -1
-
-                        if direction:
-                            res, _ = simulate_pro_trade(
-                                test_cls, test_hgh, test_low, test_atr,
-                                i, direction, tp, sl, spread,
-                                timestamps=test_timestamps, symbol=sym
+                    # === PHASE 2: Folds 1-7 sequentiell ausführen ===
+                    remaining_folds = folds[1:]
+                    if remaining_folds and (selected_features_long or selected_features_short):
+                        for fold_idx, fold_data in enumerate(remaining_folds):
+                            result = process_fold(
+                                fold_idx + 1, fold_data,
+                                shared_config, selected_features_long, selected_features_short
                             )
-                        if res != 0:
-                            fold_oos_trades.append({"res": res, "ct": best_ct, "hour": hour, "dir": direction})
-                            all_oos_trades.append({"res": res, "ct": best_ct, "hour": hour, "dir": direction})
+                            if not result.get("skipped", True):
+                                all_oos_trades.extend(result.get("oos_trades", []))
+                                if result.get("importances_long"):
+                                    fold_importances_long.append(result["importances_long"])
+                                if result.get("importances_short"):
+                                    fold_importances_short.append(result["importances_short"])
+                                if result.get("fold_pnl") is not None:
+                                    fold_performances.append({
+                                        "fold": result["fold_idx"],
+                                        "ct": result.get("best_ct"),
+                                        "trades": len(result.get("oos_trades", [])),
+                                        "pnl": result.get("fold_pnl", 0),
+                                        "win_rate": result.get("fold_wr", 0),
+                                    })
 
-                    # Track Fold-Performance
-                    if fold_oos_trades:
-                        fold_pnl = sum(t["res"] for t in fold_oos_trades)
-                        fold_wr = sum(1 for t in fold_oos_trades if t["res"] > 0) / len(fold_oos_trades)
-                        fold_performances.append({
-                            "fold": fold_idx,
-                            "ct": best_ct,
-                            "trades": len(fold_oos_trades),
-                            "pnl": fold_pnl,
-                            "win_rate": fold_wr,
-                        })
-
-                    log(1, f"    done ({time.time()-t_fold:.1f}s)", sym)
+                    # Feature Stability Check (nach allen Folds)
+                    if selected_features_long and len(fold_importances_long) >= FEATURE_STABILITY_MIN:
+                        stable = check_feature_stability(fold_importances_long)
+                        selected_features_long = [f for f in selected_features_long if f in stable]
+                        if len(selected_features_long) < 2:
+                            selected_features_long = None
+                    if selected_features_short and len(fold_importances_short) >= FEATURE_STABILITY_MIN:
+                        stable = check_feature_stability(fold_importances_short)
+                        selected_features_short = [f for f in selected_features_short if f in stable]
+                        if len(selected_features_short) < 2:
+                            selected_features_short = None
 
                 # Kombiniere Features
                 selected_features = []
@@ -579,6 +494,7 @@ def process_symbol(csv_path):
 
         if not candidates:
             log(1, f"SKIP - Keine profitablen Kandidaten", sym)
+            report_done(sym, "no_candidates")
             return {"symbol": sym, "status": "no_candidates", "grid_results": grid_results}
 
         # Sortiere nach kombinierter Metrik
@@ -605,6 +521,7 @@ def process_symbol(csv_path):
         )
 
         if not b:
+            report_done(sym, "no_plateau")
             return {"symbol": sym, "status": "no_plateau", "grid_results": grid_results}
 
         # Ensemble: Top-3 nach Plateau-Score
@@ -614,6 +531,7 @@ def process_symbol(csv_path):
 
         total_score = sum(c.get("plateau_score", c["score"]) for c in ensemble_configs)
         if total_score <= 0:
+            report_done(sym, "no_score")
             return {"symbol": sym, "status": "no_score", "grid_results": grid_results}
         wr = b["tr"].count(1.0) / len(b["tr"]) if b["tr"] else 0
 
@@ -625,6 +543,7 @@ def process_symbol(csv_path):
         fk = max(0, min(0.05, full_kelly / 4))
 
         if fk <= 0:
+            report_done(sym, "no_kelly")
             return {"symbol": sym, "status": "no_kelly", "grid_results": grid_results}
 
         # === MONTE CARLO TESTS ===
@@ -640,6 +559,7 @@ def process_symbol(csv_path):
         # Filtere nicht-signifikante Ergebnisse
         if not mc_perm["is_significant"]:
             log(1, f"SKIP - Nicht signifikant (p={mc_perm['p_value']:.3f} >= 0.05)", sym)
+            report_done(sym, "not_significant")
             return {
                 "symbol": sym,
                 "status": "not_significant",
@@ -706,6 +626,7 @@ def process_symbol(csv_path):
             "fold_performances": b.get("fold_performances", []),
         }
         log(1, f"OK - WR={wr:.1%} Sharpe={b['sharpe']:.2f} p={mc_perm['p_value']:.3f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
+        report_done(sym, "ok")
         return result
 
     except Exception as e:
@@ -713,4 +634,5 @@ def process_symbol(csv_path):
         if LOG_LEVEL >= 2:
             import traceback
             traceback.print_exc()
+        report_done(sym, "error")
         return None

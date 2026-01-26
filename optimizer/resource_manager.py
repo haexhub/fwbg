@@ -9,13 +9,28 @@ import signal
 import atexit
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Callable, List, Any, Optional
+from typing import Callable, List, Any, Optional, Dict
 
 import psutil
 
 # Globale Referenz auf aktiven Executor für Cleanup
 _active_executor = None
 _active_futures = []
+
+# Shared Progress-Dict für Worker-Initialisierung
+_shared_progress_dict = None
+
+
+def _init_worker(progress_dict):
+    """Initializer für Worker-Prozesse - setzt das Progress-Dict."""
+    global _shared_progress_dict
+    _shared_progress_dict = progress_dict
+    # Importiere und setze in progress.py
+    try:
+        from .progress import set_progress_dict
+        set_progress_dict(progress_dict)
+    except ImportError:
+        pass
 
 
 def _cleanup_workers():
@@ -91,7 +106,8 @@ class AdaptivePoolManager:
         min_free_ram_percent: float = 0.25,
         ram_per_worker_gb: float = 4.0,
         check_interval: float = 2.0,
-        verbose: bool = True
+        verbose: bool = True,
+        progress_dict: Optional[Dict] = None
     ):
         """
         Args:
@@ -100,12 +116,14 @@ class AdaptivePoolManager:
             ram_per_worker_gb: Geschätzter Peak-RAM pro Worker in GB
             check_interval: Sekunden zwischen RAM-Checks
             verbose: Detaillierte Ausgaben
+            progress_dict: Shared dict für Progress-Tracking (von multiprocessing.Manager)
         """
         self.max_cpu_percent = max_cpu_percent
         self.min_free_ram_percent = min_free_ram_percent
         self.ram_per_worker_gb = ram_per_worker_gb
         self.check_interval = check_interval
         self.verbose = verbose
+        self.progress_dict = progress_dict
 
         # Systeminfo
         self.total_cores = mp.cpu_count()
@@ -227,7 +245,13 @@ class AdaptivePoolManager:
 
         global _active_executor, _active_futures
 
-        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+        # Erstelle Executor mit Initializer für Progress-Tracking
+        executor_kwargs = {"max_workers": self.max_workers}
+        if self.progress_dict is not None:
+            executor_kwargs["initializer"] = _init_worker
+            executor_kwargs["initargs"] = (self.progress_dict,)
+
+        with ProcessPoolExecutor(**executor_kwargs) as executor:
             _active_executor = executor
 
             # Futures verwalten

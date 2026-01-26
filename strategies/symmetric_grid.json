@@ -47,10 +47,10 @@
     "oos_size": 4000
   },
   "assets": {
-    "classes": ["FOREX", "INDEX", "COMMODITY"]
+    "classes": ["CRYPTO"]
   },
   "resources": {
-    "max_cpu_percent": 0.80,
+    "max_cpu_percent": 0.8,
     "min_free_ram_percent": 0.25,
     "ram_per_worker_gb": 4.0
   },

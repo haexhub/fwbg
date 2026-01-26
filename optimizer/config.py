@@ -210,6 +210,8 @@ def convert_numpy(obj):
         return int(obj)
     elif isinstance(obj, (np.floating, np.float64, np.float32)):
         return float(obj)
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
     elif isinstance(obj, dict):
         return {k: convert_numpy(v) for k, v in obj.items()}
     elif isinstance(obj, list):
