@@ -31,7 +31,7 @@ from .progress import init_progress_tracking, shutdown_progress_tracking
 warnings.filterwarnings("ignore")
 
 
-def simulate_equity(trades, kelly_risk, rrr, start_equity=100.0):
+def simulate_equity(trades, kelly_risk, rrr, start_equity=100.0, compound_cap=1e6):
     """
     Simuliert die Equity-Kurve basierend auf Trade-Ergebnissen.
 
@@ -40,6 +40,8 @@ def simulate_equity(trades, kelly_risk, rrr, start_equity=100.0):
         kelly_risk: Risk pro Trade als Anteil des Kapitals (z.B. 0.02 = 2%)
         rrr: Risk-Reward-Ratio (z.B. 2.0 = TP ist 2x SL)
         start_equity: Startkapital (default: 100.0)
+        compound_cap: Ab diesem Equity-Wert wird nicht mehr kompoundiert,
+                     sondern mit fixer Positionsgröße weitergehandelt (default: 1e6)
 
     Returns:
         dict mit:
@@ -55,12 +57,15 @@ def simulate_equity(trades, kelly_risk, rrr, start_equity=100.0):
     drawdowns = [0.0]
 
     for trade_result in trades:
+        # Effektive Equity für Positionsberechnung (gecappt)
+        effective_equity = min(equity, compound_cap)
+
         if trade_result > 0:
-            # Gewinn: Kelly * RRR
-            equity *= 1 + (kelly_risk * rrr)
+            # Gewinn: Kelly * RRR (basierend auf effektiver Equity)
+            equity += effective_equity * kelly_risk * rrr
         else:
-            # Verlust: Kelly
-            equity *= 1 - kelly_risk
+            # Verlust: Kelly (basierend auf effektiver Equity)
+            equity -= effective_equity * kelly_risk
 
         equity_curve.append(equity)
 
