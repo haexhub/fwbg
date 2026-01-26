@@ -333,6 +333,7 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
             "config": r["config"],
             "currencies": r.get("currencies", []),
             "tr_trace": r["tr_trace"],  # Trade-Sequenz für Analyse speichern
+            "trades_detailed": r.get("trades_detailed", []),  # Volle Trade-Details
             "monte_carlo": r.get("monte_carlo", {}),
             "fold_stability": r.get("fold_stability", 0),
         } for r in elite_results]),

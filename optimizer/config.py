@@ -60,9 +60,7 @@ ASSET_CONFIG = {
     "NAS100": {"class": "INDEX", "point": 0.1, "spread": 1.0, "currency": ["USD"]},
     "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 1.5, "currency": ["GBP"]},
     # Commodities
-    "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.30, "currency": ["USD"]},
     "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.30, "currency": ["USD"]},
-    "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},
     "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},
     "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.030, "currency": ["USD"]},
     # Crypto
