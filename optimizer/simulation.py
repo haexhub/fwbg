@@ -262,7 +262,7 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
                        max_bars=None, trailing_start=0.5, timestamps=None, symbol=None,
                        opens=None):
     """
-    Simuliert einen Trade.
+    Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
     - Signal bei Bar idx, Entry bei Open von Bar idx+1 (kein Look-Ahead!)
     - Trade läuft bis TP oder SL erreicht wird (kein Timeout-Exit!)
@@ -282,7 +282,20 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
         timestamps: Optional - Array von Timestamps für M15-Lookup
         symbol: Optional - Symbol-Name für M15-Lookup
 
-    Returns: (result, bars_held) - result: 1.0=Win, -1.0=Loss, 0.0=Invalid
+    Returns:
+        dict mit Trade-Details oder None bei ungültigem Trade:
+            - result: 1.0=Win, -1.0=Loss
+            - direction: "LONG" oder "SHORT"
+            - signal_idx, entry_idx, exit_idx: Bar-Indizes
+            - signal_time, entry_time, exit_time: Zeitstempel (falls vorhanden)
+            - entry_price_raw: Preis vor Kosten
+            - entry_price: Effektiver Entry inkl. Spread+Slippage
+            - exit_price: Exit-Preis (TP oder SL Level)
+            - tp_level, sl_level: TP/SL Levels
+            - spread, slippage, total_cost: Kosten
+            - tp_distance, sl_distance: Distanzen in Preiseinheiten
+            - pnl_raw: PnL vor Positionsgrößen-Berechnung
+            - bars_held: Dauer in Bars
     """
     if max_bars is None:
         max_bars = MAX_TRADE_BARS
@@ -290,7 +303,7 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
     # Entry bei idx+1 (nächster Bar nach Signal)
     entry_idx = idx + 1
     if entry_idx + max_bars >= len(closes):
-        return 0.0, 0
+        return None
 
     tp_distance = spread * tp_m
     sl_distance = spread * sl_m
@@ -312,6 +325,39 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
         tp = entry - tp_distance + slippage
         sl = entry + sl_distance + slippage
 
+    # Hilfsfunktion für Rückgabe
+    def make_result(result, exit_idx, exit_price):
+        bars_held = exit_idx - entry_idx
+
+        # Berechne PnL in Pips/Points
+        if direction == 1:
+            pnl_raw = exit_price - entry
+        else:
+            pnl_raw = entry - exit_price
+
+        return {
+            "result": result,
+            "direction": "LONG" if direction == 1 else "SHORT",
+            "signal_idx": idx,
+            "entry_idx": entry_idx,
+            "exit_idx": exit_idx,
+            "bars_held": bars_held,
+            "signal_time": str(timestamps[idx]) if timestamps is not None else None,
+            "entry_time": str(timestamps[entry_idx]) if timestamps is not None else None,
+            "exit_time": str(timestamps[exit_idx]) if timestamps is not None else None,
+            "entry_price_raw": float(entry_price),
+            "entry_price": float(entry),
+            "exit_price": float(exit_price),
+            "tp_level": float(tp),
+            "sl_level": float(sl),
+            "spread": float(spread),
+            "slippage": float(slippage),
+            "total_cost": float(spread + slippage),
+            "tp_distance": float(tp_distance),
+            "sl_distance": float(sl_distance),
+            "pnl_raw": float(pnl_raw),
+        }
+
     for j in range(entry_idx, min(entry_idx + max_bars, len(closes))):
         if direction == 1:  # Long
             tp_hit = highs[j] >= tp
@@ -322,13 +368,14 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
                 if timestamps is not None and symbol is not None:
                     result = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp, sl)
                     if result is not None:
-                        return result, j - entry_idx
+                        exit_price = tp if result > 0 else sl
+                        return make_result(result, j, exit_price)
                 # Fallback: konservativ Loss
-                return -1.0, j - entry_idx
+                return make_result(-1.0, j, sl)
             elif tp_hit:
-                return 1.0, j - entry_idx
+                return make_result(1.0, j, tp)
             elif sl_hit:
-                return -1.0, j - entry_idx
+                return make_result(-1.0, j, sl)
 
         else:  # Short
             tp_hit = lows[j] <= tp
@@ -339,15 +386,17 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
                 if timestamps is not None and symbol is not None:
                     result = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp, sl)
                     if result is not None:
-                        return result, j - entry_idx
+                        exit_price = tp if result > 0 else sl
+                        return make_result(result, j, exit_price)
                 # Fallback: konservativ Loss
-                return -1.0, j - entry_idx
+                return make_result(-1.0, j, sl)
             elif tp_hit:
-                return 1.0, j - entry_idx
+                return make_result(1.0, j, tp)
             elif sl_hit:
-                return -1.0, j - entry_idx
+                return make_result(-1.0, j, sl)
 
-    return 0.0, max_bars
+    # Timeout - kein TP/SL erreicht
+    return None
 
 
 def calculate_max_drawdown(returns, kelly_risk, rrr):

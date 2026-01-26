@@ -282,17 +282,17 @@ def process_symbol(csv_path):
 
                     sim_count = len(train_df_0) - MAX_TRADE_BARS
                     for i in range(sim_count):
-                        res_long, _ = simulate_pro_trade(
+                        trade_long = simulate_pro_trade(
                             cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread,
                             timestamps=timestamps, symbol=sym, opens=opn_v
                         )
-                        res_short, _ = simulate_pro_trade(
+                        trade_short = simulate_pro_trade(
                             cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, spread,
                             timestamps=timestamps, symbol=sym, opens=opn_v
                         )
-                        if res_long == 1.0:
+                        if trade_long and trade_long["result"] == 1.0:
                             train_targs_long_0[i] = 1
-                        if res_short == 1.0:
+                        if trade_short and trade_short["result"] == 1.0:
                             train_targs_short_0[i] = 1
 
                     min_per_direction = MIN_TRADES // 2
@@ -426,7 +426,7 @@ def process_symbol(csv_path):
                     continue
 
                 # Aggregiere OOS-Trades (CT wurde bereits auf Validation optimiert)
-                tr = [t["res"] for t in all_oos_trades]
+                tr = [t["result"] for t in all_oos_trades]
                 if len(tr) >= MIN_TRADES:
                     rrr = tp / sl
 
@@ -447,7 +447,7 @@ def process_symbol(csv_path):
                     hour_pnl = {}
                     for t in all_oos_trades:
                         h = t["hour"]
-                        hour_pnl[h] = hour_pnl.get(h, 0) + t["res"]
+                        hour_pnl[h] = hour_pnl.get(h, 0) + t["result"]
                     good_hours = [h for h, pnl in hour_pnl.items() if pnl > 0]
 
                     # Fold-Stabilität prüfen (alle Folds sollten profitabel sein)
@@ -457,6 +457,7 @@ def process_symbol(csv_path):
                     candidate = {
                         "pnl": sum(tr),
                         "tr": tr,
+                        "trades_detailed": all_oos_trades.copy(),  # Volle Trade-Details
                         "params": (tp, sl, best_ct),
                         "feats": selected_features,
                         "feature_group": feature_group,
@@ -651,6 +652,7 @@ def process_symbol(csv_path):
                 },
             },
             "tr_trace": b["tr"],
+            "trades_detailed": b.get("trades_detailed", []),  # Volle Trade-Details mit Zeiten, Preisen etc.
             "rrr": b["rrr"],
             "win_rate": wr,
             "sharpe": b["sharpe"],

@@ -79,17 +79,17 @@ def process_fold(
 
     sim_count = len(train_df) - MAX_TRADE_BARS
     for i in range(sim_count):
-        res_long, _ = simulate_pro_trade(
+        trade_long = simulate_pro_trade(
             cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread,
             timestamps=timestamps, symbol=sym, opens=opn_v
         )
-        res_short, _ = simulate_pro_trade(
+        trade_short = simulate_pro_trade(
             cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, spread,
             timestamps=timestamps, symbol=sym, opens=opn_v
         )
-        if res_long == 1.0:
+        if trade_long and trade_long["result"] == 1.0:
             train_targs_long[i] = 1
-        if res_short == 1.0:
+        if trade_short and trade_short["result"] == 1.0:
             train_targs_short[i] = 1
 
     min_per_direction = MIN_TRADES // 2
@@ -172,14 +172,14 @@ def process_fold(
                 direction = -1
 
             if direction:
-                res, _ = simulate_pro_trade(
+                trade = simulate_pro_trade(
                     val_cls, val_hgh, val_low, val_atr,
                     i, direction, tp, sl, spread,
                     timestamps=val_timestamps, symbol=sym,
                     opens=val_opn
                 )
-                if res != 0:
-                    val_trades_by_ct[ct].append(res)
+                if trade:
+                    val_trades_by_ct[ct].append(trade["result"])
 
     # Wähle besten CT
     best_ct = None
@@ -233,18 +233,21 @@ def process_fold(
             direction = -1
 
         if direction:
-            res, _ = simulate_pro_trade(
+            trade = simulate_pro_trade(
                 test_cls, test_hgh, test_low, test_atr,
                 i, direction, tp, sl, spread,
                 timestamps=test_timestamps, symbol=sym,
                 opens=test_opn
             )
-            if res != 0:
-                fold_oos_trades.append({"res": res, "ct": best_ct, "hour": hour, "dir": direction})
+            if trade:
+                # Füge zusätzliche Kontext-Infos hinzu
+                trade["ct"] = best_ct
+                trade["hour"] = hour
+                fold_oos_trades.append(trade)
 
     # Ergebnis
-    fold_pnl = sum(t["res"] for t in fold_oos_trades) if fold_oos_trades else 0
-    fold_wr = sum(1 for t in fold_oos_trades if t["res"] > 0) / len(fold_oos_trades) if fold_oos_trades else 0
+    fold_pnl = sum(t["result"] for t in fold_oos_trades) if fold_oos_trades else 0
+    fold_wr = sum(1 for t in fold_oos_trades if t["result"] > 0) / len(fold_oos_trades) if fold_oos_trades else 0
 
     log(2, f"    Fold {fold_idx+1} done ({time.time()-t_fold:.1f}s, {len(fold_oos_trades)} trades)", sym)
 
