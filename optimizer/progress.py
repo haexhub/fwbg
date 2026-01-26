@@ -9,6 +9,8 @@ import threading
 from multiprocessing import Manager
 from typing import Optional, Dict, Any, List
 
+from .logging_utils import set_progress_ui_active
+
 # Globaler Progress-Manager (wird in main.py initialisiert)
 _progress_manager: Optional["ProgressTracker"] = None
 _progress_dict: Optional[Dict] = None
@@ -106,6 +108,9 @@ class ProgressTracker:
         self.start_time = time.time()
         self._stop_event.clear()
 
+        # Detail-Logs unterdrücken während Progress-UI aktiv
+        set_progress_ui_active(True)
+
         # Display-Thread starten
         self._display_thread = threading.Thread(target=self._display_loop, daemon=True)
         self._display_thread.start()
@@ -127,6 +132,8 @@ class ProgressTracker:
             self._display_thread.join(timeout=1)
         # Letzte Zeilen löschen
         self._clear_lines()
+        # Detail-Logs wieder erlauben
+        set_progress_ui_active(False)
 
     def _clear_lines(self):
         """Löscht die zuletzt geschriebenen Zeilen."""
