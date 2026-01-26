@@ -1,171 +1,218 @@
 {
-    "NAS100": {
-        "kelly_risk": 0.020412414523193156,
-        "point_value": 0.1,
-        "spread": 1.0,
-        "tp_mult": 50,
-        "sl_mult": 70,
-        "conf_thresh": 0.65,
-        "features": [
-            "macro_nasdaq_chg_12h",
-            "macro_xlk_chg_12h",
-            "vol_atr",
-            "macro_ecb_chg_180d"
-        ],
-        "good_hours": [
-            18,
-            19,
-            20,
-            22,
-            23,
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            16,
-            17,
-            21
-        ],
-        "ensemble": [
-            {
-                "tp_mult": 50,
-                "sl_mult": 70,
-                "conf_thresh": 0.7,
-                "weight": 0.334960410885342
-            },
-            {
-                "tp_mult": 50,
-                "sl_mult": 70,
-                "conf_thresh": 0.6,
-                "weight": 0.32712350717614885
-            }
-        ],
-        "dd_scaling": {
-            "10": 0.5,
-            "20": 0.25
-        }
+  "BRENT": {
+    "kelly_risk": 0.0018398437500000001,
+    "point_value": 0.01,
+    "spread": 0.03,
+    "tp_mult": 30,
+    "sl_mult": 100,
+    "conf_thresh": 0.5,
+    "feature_group": "full_technical",
+    "features": [
+      "ichi_senkou_a",
+      "ichi_senkou_b",
+      "ichi_kijun",
+      "trend_ema_dist_200",
+      "trend_sma_dist_200",
+      "vol_atr",
+      "ichi_tenkan"
+    ],
+    "good_hours": [
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      0
+    ],
+    "ensemble": [
+      {
+        "tp_mult": 20,
+        "sl_mult": 100,
+        "conf_thresh": 0.5,
+        "weight": 0.32877457107503216,
+        "stability": 0.5
+      },
+      {
+        "tp_mult": 20,
+        "sl_mult": 100,
+        "conf_thresh": 0.5,
+        "weight": 0.3272572114134854,
+        "stability": 0.5
+      }
+    ],
+    "dd_scaling": {
+      "10": 0.5,
+      "20": 0.25
     },
-    "EURCHF": {
-        "kelly_risk": 0.020412414523193156,
-        "point_value": 0.0001,
-        "spread": 0.00018,
-        "tp_mult": 50,
-        "sl_mult": 40,
-        "conf_thresh": 0.52,
-        "features": [
-            "vol_kc_wband",
-            "vol_atr_pct_21",
-            "vol_atr"
-        ],
-        "good_hours": [
-            19,
-            23,
-            0,
-            1,
-            5,
-            14,
-            15,
-            16,
-            17,
-            20,
-            2,
-            3,
-            4,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13,
-            18,
-            21,
-            22
-        ],
-        "ensemble": [
-            {
-                "tp_mult": 50,
-                "sl_mult": 40,
-                "conf_thresh": 0.55,
-                "weight": 0.33971565183191005
-            },
-            {
-                "tp_mult": 50,
-                "sl_mult": 40,
-                "conf_thresh": 0.58,
-                "weight": 0.2902606413869278
-            }
-        ],
-        "dd_scaling": {
-            "10": 0.5,
-            "20": 0.25
-        }
+    "circuit_breaker": {
+      "pause_after_losses": 3,
+      "pause_bars": 10,
+      "enabled": true
     },
-    "FTSE100": {
-        "kelly_risk": 0.020412414523193156,
-        "point_value": 1.0,
-        "spread": 1.5,
-        "tp_mult": 150,
-        "sl_mult": 70,
-        "conf_thresh": 0.65,
-        "features": [
-            "vol_atr_pct_21",
-            "vol_atr_pct_14",
-            "macro_vix"
-        ],
-        "good_hours": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            8,
-            9,
-            12,
-            7,
-            10,
-            11,
-            0,
-            14,
-            15,
-            16,
-            17,
-            18,
-            20,
-            23,
-            21
-        ],
-        "ensemble": [
-            {
-                "tp_mult": 150,
-                "sl_mult": 70,
-                "conf_thresh": 0.7,
-                "weight": 0.33060653006524454
-            },
-            {
-                "tp_mult": 150,
-                "sl_mult": 70,
-                "conf_thresh": 0.6,
-                "weight": 0.31544616109788165
-            }
-        ],
-        "dd_scaling": {
-            "10": 0.5,
-            "20": 0.25
-        }
+    "kelly_adjustment": {
+      "original_kelly": 0.05,
+      "scale_factor": 0.07359375,
+      "target_dd": 0.3
     }
+  },
+  "GOLD": {
+    "kelly_risk": 0.00203125,
+    "point_value": 0.1,
+    "spread": 0.3,
+    "tp_mult": 40,
+    "sl_mult": 100,
+    "conf_thresh": 0.5,
+    "feature_group": "macro_vol",
+    "features": [
+      "macro_hyg",
+      "macro_gold_fut_chg_12h",
+      "macro_fed_rate"
+    ],
+    "good_hours": [
+      0,
+      11,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      23,
+      22
+    ],
+    "ensemble": [
+      {
+        "tp_mult": 30,
+        "sl_mult": 100,
+        "conf_thresh": 0.5,
+        "weight": 0.3081471502803209,
+        "stability": 0.7920056830314867
+      },
+      {
+        "tp_mult": 30,
+        "sl_mult": 100,
+        "conf_thresh": 0.5,
+        "weight": 0.2892715741237489,
+        "stability": 0.7920056830314867
+      }
+    ],
+    "dd_scaling": {
+      "10": 0.5,
+      "20": 0.25
+    },
+    "circuit_breaker": {
+      "pause_after_losses": 3,
+      "pause_bars": 5,
+      "enabled": true
+    },
+    "kelly_adjustment": {
+      "original_kelly": 0.05,
+      "scale_factor": 0.08125,
+      "target_dd": 0.3
+    }
+  },
+  "XAGUSD": {
+    "kelly_risk": 0.0035625000000000006,
+    "point_value": 0.01,
+    "spread": 0.02,
+    "tp_mult": 30,
+    "sl_mult": 100,
+    "conf_thresh": 0.5,
+    "feature_group": "trend_momentum",
+    "features": [
+      "ichi_kijun",
+      "trend_ema_dist_50",
+      "ichi_tenkan",
+      "ichi_senkou_a",
+      "ichi_senkou_b",
+      "trend_ema_dist_200",
+      "trend_sma_dist_200"
+    ],
+    "good_hours": [
+      17,
+      18,
+      19,
+      20,
+      22,
+      23,
+      0,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      21
+    ],
+    "ensemble": [
+      {
+        "tp_mult": 20,
+        "sl_mult": 100,
+        "conf_thresh": 0.5,
+        "weight": 0.3232255132469351,
+        "stability": 0.5
+      },
+      {
+        "tp_mult": 20,
+        "sl_mult": 100,
+        "conf_thresh": 0.5,
+        "weight": 0.2765416221906092,
+        "stability": 0.5
+      }
+    ],
+    "dd_scaling": {
+      "10": 0.5,
+      "20": 0.25
+    },
+    "circuit_breaker": {
+      "pause_after_losses": 3,
+      "pause_bars": 15,
+      "enabled": true
+    },
+    "kelly_adjustment": {
+      "original_kelly": 0.05,
+      "scale_factor": 0.14250000000000002,
+      "target_dd": 0.3
+    }
+  }
 }
