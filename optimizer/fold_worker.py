@@ -70,6 +70,7 @@ def process_fold(
     train_targs_long = np.zeros(len(train_df))
     train_targs_short = np.zeros(len(train_df))
 
+    opn_v = train_df["O"].values
     cls_v = train_df["C"].values
     hgh_v = train_df["H"].values
     low_v = train_df["L"].values
@@ -80,11 +81,11 @@ def process_fold(
     for i in range(sim_count):
         res_long, _ = simulate_pro_trade(
             cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread,
-            timestamps=timestamps, symbol=sym
+            timestamps=timestamps, symbol=sym, opens=opn_v
         )
         res_short, _ = simulate_pro_trade(
             cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, spread,
-            timestamps=timestamps, symbol=sym
+            timestamps=timestamps, symbol=sym, opens=opn_v
         )
         if res_long == 1.0:
             train_targs_long[i] = 1
@@ -130,6 +131,7 @@ def process_fold(
         shared_config.get("total_grid_combos", 1)
     )
 
+    val_opn = val_df["O"].values
     val_cls = val_df["C"].values
     val_hgh = val_df["H"].values
     val_low = val_df["L"].values
@@ -173,7 +175,8 @@ def process_fold(
                 res, _ = simulate_pro_trade(
                     val_cls, val_hgh, val_low, val_atr,
                     i, direction, tp, sl, spread,
-                    timestamps=val_timestamps, symbol=sym
+                    timestamps=val_timestamps, symbol=sym,
+                    opens=val_opn
                 )
                 if res != 0:
                     val_trades_by_ct[ct].append(res)
@@ -199,6 +202,7 @@ def process_fold(
         shared_config.get("total_grid_combos", 1)
     )
 
+    test_opn = test_df["O"].values
     test_cls = test_df["C"].values
     test_hgh = test_df["H"].values
     test_low = test_df["L"].values
@@ -232,7 +236,8 @@ def process_fold(
             res, _ = simulate_pro_trade(
                 test_cls, test_hgh, test_low, test_atr,
                 i, direction, tp, sl, spread,
-                timestamps=test_timestamps, symbol=sym
+                timestamps=test_timestamps, symbol=sym,
+                opens=test_opn
             )
             if res != 0:
                 fold_oos_trades.append({"res": res, "ct": best_ct, "hour": hour, "dir": direction})

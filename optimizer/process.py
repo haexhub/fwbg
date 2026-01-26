@@ -272,6 +272,7 @@ def process_symbol(csv_path):
                     # Targets für Fold 0
                     train_targs_long_0 = np.zeros(len(train_df_0))
                     train_targs_short_0 = np.zeros(len(train_df_0))
+                    opn_v = train_df_0["O"].values
                     cls_v = train_df_0["C"].values
                     hgh_v = train_df_0["H"].values
                     low_v = train_df_0["L"].values
@@ -282,11 +283,11 @@ def process_symbol(csv_path):
                     for i in range(sim_count):
                         res_long, _ = simulate_pro_trade(
                             cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread,
-                            timestamps=timestamps, symbol=sym
+                            timestamps=timestamps, symbol=sym, opens=opn_v
                         )
                         res_short, _ = simulate_pro_trade(
                             cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, spread,
-                            timestamps=timestamps, symbol=sym
+                            timestamps=timestamps, symbol=sym, opens=opn_v
                         )
                         if res_long == 1.0:
                             train_targs_long_0[i] = 1
