@@ -231,7 +231,7 @@ class ProgressTracker:
         filled = min(filled, bar_width_inner)  # Nicht über 100%
         bar = "█" * filled + "░" * (bar_width_inner - filled)
 
-        progress_line = f" [{bar}] {total_progress:.1f}/{self.total_assets} ({pct:.0f}%)"
+        progress_line = f" [{bar}] {total_progress:.2f}/{self.total_assets} ({pct:.1f}%)"
         lines.append(f"║{progress_line:<{box_width}}║")
 
         # Zeit-Info
