@@ -332,6 +332,9 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
             "trades": len(r["tr_trace"]),
             "config": r["config"],
             "currencies": r.get("currencies", []),
+            "tr_trace": r["tr_trace"],  # Trade-Sequenz für Analyse speichern
+            "monte_carlo": r.get("monte_carlo", {}),
+            "fold_stability": r.get("fold_stability", 0),
         } for r in elite_results]),
     }
 
@@ -504,12 +507,13 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
 
         if table_data:
             f.write(f"ELITE ASSETS\n")
-            f.write(f"{'-'*85}\n")
-            f.write(f"{'Asset':<10} {'Kelly':>8} {'WinRate':>8} {'RRR':>6} {'Sharpe':>7} {'Calmar':>7} {'Trades':>7} {'Return':>10} {'MaxDD':>6} {'Status':>6}\n")
-            f.write(f"{'-'*85}\n")
+            f.write(f"{'-'*105}\n")
+            f.write(f"{'Asset':<10} {'Kelly':>8} {'WinRate':>8} {'RRR':>6} {'Sharpe':>7} {'Calmar':>7} {'Trades':>7} {'Return':>10} {'MaxDD':>6} {'p-val':>6} {'Folds':>6} {'Status':>6}\n")
+            f.write(f"{'-'*105}\n")
 
             for row in table_data:
-                f.write(f"{row[0]:<10} {row[1]:>8} {row[2]:>8} {row[3]:>6} {row[4]:>7} {row[5]:>7} {row[6]:>7} {row[7]:>10} {row[8]:>6} {row[9]:>6}\n")
+                # row hat 12 Spalten: Asset, Kelly, WinRate, RRR, Sharpe, Calmar, Trades, Return, MaxDD, p-val, Folds, Status
+                f.write(f"{row[0]:<10} {row[1]:>8} {row[2]:>8} {row[3]:>6} {row[4]:>7} {row[5]:>7} {row[6]:>7} {row[7]:>10} {row[8]:>6} {row[9]:>6} {row[10]:>6} {row[11]:>6}\n")
 
         f.write(f"\n")
         f.write(f"PROFITABLE ASSETS\n")

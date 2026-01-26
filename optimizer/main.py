@@ -26,6 +26,7 @@ from .results import (
     list_runs, load_run, compare_runs, create_strategy_metadata
 )
 from .resource_manager import AdaptivePoolManager, get_resource_info
+from .progress import init_progress_tracking
 
 warnings.filterwarnings("ignore")
 
@@ -227,29 +228,38 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         print(f"  ... und {len(files) - 10} weitere")
     print()
 
+    # Progress-Tracking initialisieren
+    progress_tracker, progress_dict = init_progress_tracking()
+
+    # Asset-Namen für Progress-Tracking extrahieren
+    asset_names = [os.path.basename(f).split("_")[0] for f in files]
+
     # Adaptive Pool mit Einstellungen aus Strategy oder Defaults
     pool_manager = AdaptivePoolManager(
         max_cpu_percent=resource_settings["max_cpu_percent"],
         min_free_ram_percent=resource_settings["min_free_ram_percent"],
         ram_per_worker_gb=resource_settings["ram_per_worker_gb"],
-        verbose=True
+        verbose=True,
+        progress_dict=progress_dict
     )
 
-    # Progress-Tracking mit tqdm
-    pbar = tqdm(total=len(files), desc="Assets", dynamic_ncols=True)
-
+    # Progress-Callback für den Tracker
     def update_progress(completed, total):
-        pbar.n = completed
-        pbar.refresh()
+        progress_tracker.update_completed(completed)
 
     print("\nStarte Verarbeitung...\n")
+
+    # Progress-Tracker starten (zeigt Live-Status mit Asset-Namen)
+    progress_tracker.start(len(files), asset_names)
+
     raw_results = pool_manager.map_adaptive(
         func=process_symbol,
         items=files,
         progress_callback=update_progress
     )
 
-    pbar.close()
+    # Progress-Tracker stoppen
+    progress_tracker.stop()
 
     # Stats ausgeben
     stats = pool_manager.get_status()
@@ -299,14 +309,15 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         ax1.set_yscale("log")  # Logarithmische Y-Achse
         ax1.set_title(
             f"{e['symbol']} | WR: {e['win_rate']:.1%} | RRR: {rrr:.2f} | "
-            f"Sharpe: {e.get('sharpe', 0):.2f} | Calmar: {e.get('calmar', 0):.2f}"
+            f"Sharpe: {e.get('sharpe', 0):.2f} | MaxDD: {max_dd_pct:.0f}%"
         )
-        ax1.set_ylabel("Equity (log)")
+        ax1.set_ylabel("Kapital (log, Start=100)")
+        ax1.set_xlabel("")  # Keine X-Achse für oberen Plot (wird vom unteren übernommen)
         ax1.grid(True, alpha=0.3)
 
         ax2.fill_between(range(len(drawdowns)), drawdowns, color="red", alpha=0.5)
         ax2.set_xlabel("Trade #")
-        ax2.set_ylabel("Drawdown %")
+        ax2.set_ylabel("Drawdown (%)")
         ax2.set_ylim(max(drawdowns) * 1.1 if drawdowns else 1, 0)
         ax2.grid(True, alpha=0.3)
 
