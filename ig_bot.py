@@ -12,6 +12,13 @@ from datetime import datetime, timedelta
 from xgboost import XGBClassifier
 from trading_ig import IGService
 
+# Streaming imports (optional - only used in streaming mode)
+try:
+    from ig_streaming import StreamingManager, StreamingCacheManager
+    STREAMING_AVAILABLE = True
+except ImportError:
+    STREAMING_AVAILABLE = False
+
 # Optimizer-Module für konsistente Feature-Berechnung
 from optimizer.indicators import compute_indicator_pool
 from optimizer.data_loader import load_macro_indicators, load_interest_rates
@@ -71,7 +78,7 @@ class EliteBot:
         "BRENT": "CC.D.LCO.UNC.IP",
     }
 
-    def __init__(self, account_dir):
+    def __init__(self, account_dir, use_streaming=True):
         self._stop_event = threading.Event()
         self.account_dir = account_dir
         self.account_id = os.path.basename(account_dir)
@@ -79,25 +86,33 @@ class EliteBot:
         self.load_configurations()
         self.ig = self.initialize_ig_session()
 
-        # Cache für OHLC-Daten und berechnete Features pro Symbol
-        self.ohlc_cache = {}  # {symbol: DataFrame mit OHLC}
-        self.features_cache = {}  # {symbol: DataFrame mit Features}
-        self.last_bar_time = {}  # {symbol: letzter Timestamp}
+        # Cache for OHLC data and computed features per symbol
+        self.ohlc_cache = {}  # {symbol: DataFrame with OHLC}
+        self.features_cache = {}  # {symbol: DataFrame with features}
+        self.last_bar_time = {}  # {symbol: last timestamp}
 
-        # Slippage-Warnungen für Dashboard (max. 20 Einträge)
-        self.slippage_warnings = []  # [{symbol, timestamp, expected, actual, slippage_pct}]
+        # Slippage warnings for dashboard (max 20 entries)
+        self.slippage_warnings = []
 
-        # Tracking für Cache-Updates (verhindert wiederholte Versuche in gleicher Stunde)
-        self.last_cache_update_hour = None  # Letzte Stunde in der Update versucht wurde
+        # Tracking for cache updates (prevents repeated attempts in same hour)
+        self.last_cache_update_hour = None
 
-        logger.info("🧠 Training KI-Modelle...")
+        # Streaming mode
+        self.use_streaming = use_streaming and STREAMING_AVAILABLE
+        self.streaming_manager = None
+        self.cache_manager = None
+        self.last_signal_hour = {}  # Prevents multiple signals per hour per symbol
+
+        logger.info("🧠 Training ML models...")
         self.models = {}
         for s in self.assets.keys():
             model = self.train_elite_model(s)
             if model is not None:
                 self.models[s] = model
             time.sleep(1)
-        logger.info(f"🏰 Bot 7.0 (Cache-First) scharf. {len(self.models)} Assets geladen.")
+
+        mode_str = "Streaming" if self.use_streaming else "Polling"
+        logger.info(f"🏰 Bot 8.0 ({mode_str}) ready. {len(self.models)} assets loaded.")
         self.write_status("RUNNING")
 
     def load_configurations(self):
@@ -656,12 +671,156 @@ class EliteBot:
         if updates_needed > 0:
             logger.info(f"📊 Cache-Update: {updates_done}/{updates_needed} Assets aktualisiert")
 
+    def on_streaming_candle(self, symbol, candle_time, candle_data):
+        """
+        Callback from streaming when a new H1 candle is complete.
+        Immediately checks for signals and executes orders.
+        """
+        if symbol not in self.models:
+            return
+
+        cfg = self.assets.get(symbol)
+        if not cfg:
+            return
+
+        current_hour = candle_time.replace(minute=0, second=0, microsecond=0)
+
+        # Prevent multiple signals in the same hour
+        if self.last_signal_hour.get(symbol) == current_hour:
+            return
+
+        try:
+            # Recompute features with new candle
+            ohlc_df = self.ohlc_cache.get(symbol)
+            if ohlc_df is None or len(ohlc_df) < 100:
+                logger.warning(f"⚠️ {symbol}: Not enough data for prediction ({len(ohlc_df) if ohlc_df is not None else 0} candles)")
+                return
+
+            # Compute indicators
+            df = ohlc_df.copy()
+            df = compute_indicator_pool(df)
+            df = load_macro_indicators(df)
+            df = load_interest_rates(df)
+
+            # Update features cache
+            self.features_cache[symbol] = df
+
+            # Check for required features
+            missing = [f for f in cfg["features"] if f not in df.columns]
+            if missing:
+                logger.warning(f"⚠️ {symbol}: Missing features: {missing[:5]}...")
+                return
+
+            # Make prediction
+            prob = self.models[symbol].predict_proba(df[cfg["features"]].iloc[[-1]])[0, 1]
+
+            # Calculate ATR from cache
+            cached_atr = None
+            if len(ohlc_df) >= 14:
+                cached_atr = ta.volatility.average_true_range(
+                    ohlc_df["H"], ohlc_df["L"], ohlc_df["C"]
+                ).iloc[-1]
+
+            # Check for signal
+            direction = None
+            if prob >= cfg["conf_thresh"]:
+                direction = "BUY"
+            elif prob <= (1 - cfg["conf_thresh"]):
+                direction = "SELL"
+
+            if direction:
+                logger.info(f"🎯 {symbol} SIGNAL: {direction} (prob={prob:.3f}, thresh={cfg['conf_thresh']})")
+                self.last_signal_hour[symbol] = current_hour
+
+                if cached_atr is not None:
+                    self.execute_order_fast(symbol, direction, prob, cached_atr)
+                else:
+                    self.execute_order(symbol, direction, prob)
+
+        except Exception as e:
+            logger.error(f"❌ {symbol} streaming signal check failed: {e}")
+
+    def run_streaming(self):
+        """
+        Main loop using WebSocket streaming for real-time candle data.
+        Candles are received via callbacks, no polling needed.
+        """
+        if not STREAMING_AVAILABLE:
+            logger.error("❌ Streaming not available. Install trading-ig with streaming support.")
+            return self.run()  # Fallback to polling
+
+        # Initialize feature cache
+        logger.info("📊 Initializing feature cache for all assets...")
+        for sym in self.models.keys():
+            try:
+                if sym in self.ohlc_cache:
+                    self.get_features_for_prediction(sym)
+            except Exception as e:
+                logger.warning(f"⚠️ Feature cache for {sym} failed: {e}")
+
+        # Build epics map for streaming
+        epics_map = {}
+        for symbol in self.models.keys():
+            epic = self.SYMBOL_TO_EPIC.get(symbol)
+            if epic:
+                epics_map[symbol] = epic
+            else:
+                logger.warning(f"⚠️ No EPIC mapping for {symbol}")
+
+        if not epics_map:
+            logger.error("❌ No valid EPICs to stream")
+            return
+
+        # Initialize streaming
+        self.cache_manager = StreamingCacheManager(self)
+        self.streaming_manager = StreamingManager(self.ig, self.cache_manager, epics_map)
+
+        try:
+            self.streaming_manager.start()
+            logger.info(f"📡 Streaming mode active for {len(epics_map)} symbols")
+
+            # Main loop just monitors health and handles restarts
+            while not self._stop_event.is_set():
+                if check_restart_signal():
+                    logger.info("🔄 Restart signal detected, restarting bot...")
+                    self.write_status("RESTARTING")
+                    self.streaming_manager.stop()
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+                self.write_status("RUNNING")
+
+                # Log streaming status periodically
+                if self.streaming_manager.is_connected:
+                    cache_stats = self.cache_manager.get_cache_stats()
+                    total_candles = sum(s["count"] for s in cache_stats.values())
+                    logger.debug(f"📊 Streaming healthy: {len(cache_stats)} symbols, {total_candles} candles cached")
+
+                time.sleep(60)
+
+        except KeyboardInterrupt:
+            logger.info("⏹️ Shutdown requested")
+        finally:
+            if self.streaming_manager:
+                self.streaming_manager.stop()
+            self.write_status("STOPPED")
+
     def run(self):
         """
-        Hauptloop mit Cache-First Architektur:
-        1. Signale aus Cache prüfen (schnell, keine API-Calls)
-        2. Bei Signal: Order SOFORT absetzen
-        3. Cache im Hintergrund updaten
+        Main loop - uses streaming if available, otherwise polling.
+        """
+        if self.use_streaming:
+            return self.run_streaming()
+
+        # Legacy polling mode
+        logger.info("📊 Running in polling mode (streaming disabled)")
+        self._run_polling()
+
+    def _run_polling(self):
+        """
+        Legacy polling loop with Cache-First architecture:
+        1. Check signals from cache (fast, no API calls)
+        2. On signal: Execute order IMMEDIATELY
+        3. Update cache in background
         """
         # Initiales Cache-Füllen beim Start (bereits durch train_elite_model passiert)
         logger.info("📊 Initialisiere Feature-Cache für alle Assets...")

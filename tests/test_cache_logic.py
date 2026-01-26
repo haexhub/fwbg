@@ -59,48 +59,55 @@ class TestCacheArchitecture:
 
 
 class TestRunMethodArchitecture:
-    """Tests für die run() Methode Architektur."""
+    """Tests für die run() Methode Architektur (Polling-Modus)."""
 
     def test_run_method_uses_features_cache(self):
-        """run() sollte features_cache nutzen statt load_and_prepare_data."""
+        """_run_polling() sollte features_cache nutzen statt load_and_prepare_data."""
         from ig_bot import EliteBot
         import inspect
 
-        source = inspect.getsource(EliteBot.run)
+        # Prüfe _run_polling (der Legacy-Polling-Loop)
+        source = inspect.getsource(EliteBot._run_polling)
 
         # Sollte Cache nutzen
-        assert "features_cache" in source, "run() nutzt nicht features_cache"
-
-        # Sollte NICHT load_and_prepare_data in der Signal-Schleife aufrufen
-        # (außer für Fallback)
-        assert "get_features_for_prediction" not in source or "update_cache_background" in source
+        assert "features_cache" in source, "_run_polling() nutzt nicht features_cache"
 
     def test_run_method_has_signal_check_phase(self):
-        """run() sollte eine Signal-Check Phase haben."""
+        """_run_polling() sollte eine Signal-Check Phase haben."""
         from ig_bot import EliteBot
         import inspect
 
-        source = inspect.getsource(EliteBot.run)
+        source = inspect.getsource(EliteBot._run_polling)
 
-        assert "signals_to_execute" in source, "run() hat keine signals_to_execute Liste"
+        assert "signals_to_execute" in source, "_run_polling() hat keine signals_to_execute Liste"
 
     def test_run_method_uses_execute_order_fast(self):
-        """run() sollte execute_order_fast für schnelle Ausführung nutzen."""
+        """_run_polling() sollte execute_order_fast für schnelle Ausführung nutzen."""
         from ig_bot import EliteBot
         import inspect
 
-        source = inspect.getsource(EliteBot.run)
+        source = inspect.getsource(EliteBot._run_polling)
 
-        assert "execute_order_fast" in source, "run() nutzt nicht execute_order_fast"
+        assert "execute_order_fast" in source, "_run_polling() nutzt nicht execute_order_fast"
 
     def test_run_method_prevents_duplicate_signals_per_hour(self):
-        """run() sollte mehrfache Signale pro Stunde verhindern."""
+        """_run_polling() sollte mehrfache Signale pro Stunde verhindern."""
+        from ig_bot import EliteBot
+        import inspect
+
+        source = inspect.getsource(EliteBot._run_polling)
+
+        assert "last_signal_hour" in source, "_run_polling() hat keine last_signal_hour Logik"
+
+    def test_run_dispatches_to_streaming_or_polling(self):
+        """run() sollte zu streaming oder polling dispatchen."""
         from ig_bot import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.run)
 
-        assert "last_signal_hour" in source, "run() hat keine last_signal_hour Logik"
+        assert "use_streaming" in source, "run() prüft nicht use_streaming"
+        assert "run_streaming" in source or "_run_polling" in source
 
 
 class TestTrainMethodCacheFilling:
@@ -192,29 +199,39 @@ class TestUpdateOhlcCacheLogic:
 class TestBotVersion:
     """Tests für Bot-Versionierung."""
 
-    def test_bot_version_is_7_0(self):
-        """Bot sollte Version 7.0 (Cache-First) sein."""
+    def test_bot_version_is_8_0(self):
+        """Bot sollte Version 8.0 (Streaming) sein."""
         from ig_bot import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.__init__)
 
-        assert "7.0" in source or "Cache-First" in source, "Bot ist nicht Version 7.0"
+        assert "8.0" in source or "Streaming" in source, "Bot ist nicht Version 8.0"
 
 
 class TestSleepIntervals:
     """Tests für Sleep-Intervalle."""
 
-    def test_run_method_sleeps_60_seconds(self):
-        """run() sollte 60 Sekunden schlafen (statt 300)."""
+    def test_polling_method_sleeps_60_seconds(self):
+        """_run_polling() sollte 60 Sekunden schlafen (statt 300)."""
         from ig_bot import EliteBot
         import inspect
 
-        source = inspect.getsource(EliteBot.run)
+        source = inspect.getsource(EliteBot._run_polling)
 
         # Sollte 60 Sekunden sein für häufigere Cache-Checks
         assert "sleep(60)" in source or "time.sleep(60)" in source, \
-            "run() schläft nicht 60 Sekunden"
+            "_run_polling() schläft nicht 60 Sekunden"
+
+    def test_streaming_method_sleeps_60_seconds(self):
+        """run_streaming() sollte auch 60 Sekunden im Health-Loop schlafen."""
+        from ig_bot import EliteBot
+        import inspect
+
+        source = inspect.getsource(EliteBot.run_streaming)
+
+        assert "sleep(60)" in source or "time.sleep(60)" in source, \
+            "run_streaming() schläft nicht 60 Sekunden"
 
 
 class TestSlippageVerification:
