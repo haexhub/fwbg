@@ -151,24 +151,7 @@ class ProgressTracker:
         lines = []
         box_width = 74
 
-        # Gesamtfortschritt berechnen
-        elapsed = time.time() - self.start_time if self.start_time else 0
-        pct = (self.completed_assets / self.total_assets * 100) if self.total_assets > 0 else 0
-
-        # ETA berechnen
-        if self.completed_assets > 0 and self.completed_assets < self.total_assets:
-            per_asset = elapsed / self.completed_assets
-            remaining = (self.total_assets - self.completed_assets) * per_asset
-            eta_str = self._format_time(remaining)
-        else:
-            eta_str = "--:--"
-
-        elapsed_str = self._format_time(elapsed)
-
-        # === HEADER mit Status-Zusammenfassung ===
-        lines.append(f"╔{'═' * box_width}╗")
-
-        # Aktive Worker ermitteln
+        # Aktive Worker ermitteln (früh, für ETA-Berechnung)
         try:
             workers = dict(self.shared_dict)
         except Exception:
@@ -181,6 +164,18 @@ class ProgressTracker:
         }
         active_count = len(active_workers)
         pending_count = self.total_assets - self.completed_assets - active_count
+
+        # Gesamtfortschritt berechnen
+        elapsed = time.time() - self.start_time if self.start_time else 0
+        pct = (self.completed_assets / self.total_assets * 100) if self.total_assets > 0 else 0
+
+        # ETA berechnen basierend auf Gesamt-Fortschritt (inkl. Grid-Progress)
+        eta_str = self._calculate_eta(elapsed, active_workers)
+
+        elapsed_str = self._format_time(elapsed)
+
+        # === HEADER mit Status-Zusammenfassung ===
+        lines.append(f"╔{'═' * box_width}╗")
 
         # Status-Zeile: Done | Active | Pending
         status_line = f"Done: {self.completed_assets}  |  Active: {active_count}  |  Pending: {max(0, pending_count)}"
@@ -249,6 +244,46 @@ class ProgressTracker:
         sys.stdout.flush()
 
         self._last_line_count = len(lines)
+
+    def _calculate_eta(self, elapsed: float, active_workers: Dict) -> str:
+        """
+        Berechnet ETA basierend auf Gesamt-Fortschritt.
+
+        Berücksichtigt:
+        - Fertige Assets (completed_assets)
+        - Grid-Fortschritt der aktiven Worker
+        """
+        if elapsed < 5:  # Mindestens 5 Sekunden für sinnvolle Schätzung
+            return "--:--"
+
+        if self.total_assets == 0:
+            return "--:--"
+
+        # Berechne Gesamt-Fortschritt als Dezimalzahl
+        # completed_assets zählen voll, aktive Worker anteilig nach Grid-Progress
+        total_progress = float(self.completed_assets)
+
+        for info in active_workers.values():
+            grid_pos = info.get("grid_pos", 0)
+            grid_total = info.get("grid_total", 1)
+            if grid_total > 0:
+                # Anteiliger Fortschritt dieses Workers
+                total_progress += grid_pos / grid_total
+
+        if total_progress < 0.01:  # Noch kein messbarer Fortschritt
+            return "--:--"
+
+        # Zeit pro "Asset-Einheit"
+        time_per_unit = elapsed / total_progress
+
+        # Verbleibende "Asset-Einheiten"
+        remaining_units = self.total_assets - total_progress
+
+        if remaining_units <= 0:
+            return "00:00"
+
+        remaining_time = remaining_units * time_per_unit
+        return self._format_time(remaining_time)
 
     @staticmethod
     def _format_time(seconds: float) -> str:
