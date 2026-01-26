@@ -225,30 +225,50 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     for e in elite:
         e["config"]["kelly_risk"] *= shield
 
-        # Equity Plot mit Drawdown
-        cap, eq = 100.0, [100.0]
-        peak = 100.0
-        drawdowns = [0.0]
-        for r in e["tr_trace"]:
-            cap *= 1 + (
-                e["config"]["kelly_risk"] * e["rrr"]
-                if r > 0
-                else -e["config"]["kelly_risk"]
-            )
-            eq.append(cap)
-            if cap > peak:
-                peak = cap
-            drawdowns.append((peak - cap) / peak * 100)
+        # Equity-Simulation (einheitlich für Plot und Bewertung)
+        kelly = e["config"]["kelly_risk"]
+        rrr = e["rrr"]
 
+        equity = 100.0
+        eq = [equity]
+        peak = equity
+        max_dd = 0
+        drawdowns = [0.0]
+
+        for r in e["tr_trace"]:
+            if r > 0:
+                equity *= 1 + (kelly * rrr)
+            else:
+                equity *= 1 - kelly
+
+            eq.append(equity)
+
+            if equity > peak:
+                peak = equity
+            dd = (peak - equity) / peak if peak > 0 else 0
+            if dd > max_dd:
+                max_dd = dd
+            drawdowns.append(dd * 100)
+
+            if equity <= 0:
+                equity = 0
+                max_dd = 1.0
+                break
+
+        final_equity = equity
+        max_dd_pct = max_dd * 100
+
+        # Equity Plot mit Drawdown (logarithmisch)
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), height_ratios=[3, 1])
 
         ax1.plot(eq, color="blue", linewidth=1.5)
         ax1.fill_between(range(len(eq)), eq, alpha=0.3)
+        ax1.set_yscale("log")  # Logarithmische Y-Achse
         ax1.set_title(
-            f"{e['symbol']} | WR: {e['win_rate']:.1%} | RRR: {e['rrr']:.2f} | "
+            f"{e['symbol']} | WR: {e['win_rate']:.1%} | RRR: {rrr:.2f} | "
             f"Sharpe: {e.get('sharpe', 0):.2f} | Calmar: {e.get('calmar', 0):.2f}"
         )
-        ax1.set_ylabel("Equity")
+        ax1.set_ylabel("Equity (log)")
         ax1.grid(True, alpha=0.3)
 
         ax2.fill_between(range(len(drawdowns)), drawdowns, color="red", alpha=0.5)
@@ -264,45 +284,6 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         # Profitabilitätsprüfung
         sharpe = e.get("sharpe", 0)
         wr = e["win_rate"]
-        rrr = e["rrr"]
-
-        # Equity-Simulation
-        START_EQUITY = 1000.0
-        SAFETY_MARGIN = 0.10
-
-        equity = START_EQUITY
-        kelly = e["config"]["kelly_risk"]
-        max_dd = 0
-        peak = equity
-
-        random.seed(42)
-        conservative_trades = []
-        for res in e["tr_trace"]:
-            if res > 0 and random.random() < SAFETY_MARGIN:
-                conservative_trades.append(-1.0)
-            else:
-                conservative_trades.append(res)
-
-        for res in conservative_trades:
-            risk_amount = equity * kelly
-            if res > 0:
-                equity += risk_amount * rrr
-            else:
-                equity -= risk_amount
-
-            if equity > peak:
-                peak = equity
-            dd = (peak - equity) / peak if peak > 0 else 0
-            if dd > max_dd:
-                max_dd = dd
-
-            if equity <= 0:
-                equity = 0
-                max_dd = 1.0
-                break
-
-        final_equity = equity
-        max_dd_pct = max_dd * 100
 
         # Jahresrendite berechnen
         bars_per_year = 24 * 250 if TIMEFRAME == "HOUR" else 96 * 250
@@ -310,7 +291,7 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         years = total_oos_bars / bars_per_year if bars_per_year > 0 else 1
 
         if final_equity > 0 and years > 0:
-            annual_return = ((final_equity / START_EQUITY) ** (1 / years) - 1) * 100
+            annual_return = ((final_equity / 100.0) ** (1 / years) - 1) * 100
         else:
             annual_return = -100
 
