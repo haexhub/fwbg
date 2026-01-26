@@ -28,11 +28,11 @@ services:
       - "3000:3000"
     volumes:
       - fwbg-accounts:/app/accounts
-      - fwbg-stats:/app/stats_export
+      - fwbg-data:/app/data
       - fwbg-logs:/app/logs
     environment:
       - TZ=Europe/Berlin
-      - DATA_PATH=/app/stats_export
+      - DATA_PATH=/app/data
       - ACCOUNTS_PATH=/app/accounts
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
