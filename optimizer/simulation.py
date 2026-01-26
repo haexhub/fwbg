@@ -181,14 +181,26 @@ def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
 
 
 def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, spread,
-                       max_bars=None, trailing_start=0.5, timestamps=None, symbol=None):
+                       max_bars=None, trailing_start=0.5, timestamps=None, symbol=None,
+                       opens=None):
     """
     Simuliert einen Trade.
 
+    - Signal bei Bar idx, Entry bei Open von Bar idx+1 (kein Look-Ahead!)
     - Trade läuft bis TP oder SL erreicht wird (kein Timeout-Exit!)
     - Bei gleichzeitigem TP/SL im selben Bar: Schaut in 15-Min-Daten (falls verfügbar)
 
     Args:
+        closes: Close-Preise Array
+        highs: High-Preise Array
+        lows: Low-Preise Array
+        atrs: ATR-Werte Array
+        idx: Index des Signal-Bars
+        direction: 1 für Long, -1 für Short
+        tp_m: Take-Profit Multiplikator (in Spreads)
+        sl_m: Stop-Loss Multiplikator (in Spreads)
+        spread: Spread des Assets
+        opens: Optional - Open-Preise Array für realistischen Entry
         timestamps: Optional - Array von Timestamps für M15-Lookup
         symbol: Optional - Symbol-Name für M15-Lookup
 
@@ -197,23 +209,32 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
     if max_bars is None:
         max_bars = MAX_TRADE_BARS
 
-    if idx + max_bars >= len(closes):
+    # Entry bei idx+1 (nächster Bar nach Signal)
+    entry_idx = idx + 1
+    if entry_idx + max_bars >= len(closes):
         return 0.0, 0
 
     tp_distance = spread * tp_m
     sl_distance = spread * sl_m
     slippage = spread * 0.5
 
+    # Entry: Open des nächsten Bars (realistisch, kein Look-Ahead)
+    # Fallback auf Close falls Opens nicht verfügbar
+    if opens is not None:
+        entry_price = opens[entry_idx]
+    else:
+        entry_price = closes[idx]  # Fallback (weniger realistisch)
+
     if direction == 1:  # Long
-        entry = closes[idx] + spread + slippage
+        entry = entry_price + spread + slippage
         tp = entry + tp_distance - slippage
         sl = entry - sl_distance - slippage
     else:  # Short
-        entry = closes[idx] - spread - slippage
+        entry = entry_price - spread - slippage
         tp = entry - tp_distance + slippage
         sl = entry + sl_distance + slippage
 
-    for j in range(idx + 1, min(idx + max_bars, len(closes))):
+    for j in range(entry_idx, min(entry_idx + max_bars, len(closes))):
         if direction == 1:  # Long
             tp_hit = highs[j] >= tp
             sl_hit = lows[j] <= sl
@@ -223,13 +244,13 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
                 if timestamps is not None and symbol is not None:
                     result = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp, sl)
                     if result is not None:
-                        return result, j - idx
+                        return result, j - entry_idx
                 # Fallback: konservativ Loss
-                return -1.0, j - idx
+                return -1.0, j - entry_idx
             elif tp_hit:
-                return 1.0, j - idx
+                return 1.0, j - entry_idx
             elif sl_hit:
-                return -1.0, j - idx
+                return -1.0, j - entry_idx
 
         else:  # Short
             tp_hit = lows[j] <= tp
@@ -240,13 +261,13 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
                 if timestamps is not None and symbol is not None:
                     result = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp, sl)
                     if result is not None:
-                        return result, j - idx
+                        return result, j - entry_idx
                 # Fallback: konservativ Loss
-                return -1.0, j - idx
+                return -1.0, j - entry_idx
             elif tp_hit:
-                return 1.0, j - idx
+                return 1.0, j - entry_idx
             elif sl_hit:
-                return -1.0, j - idx
+                return -1.0, j - entry_idx
 
     return 0.0, max_bars
 
