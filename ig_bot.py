@@ -28,6 +28,20 @@ logging.basicConfig(
 logger = logging.getLogger("FortressBot")
 
 
+RESTART_FILE = os.path.join(STATS_DIR, "restart_signal")
+
+
+def check_restart_signal():
+    """Check if a restart signal file exists and remove it."""
+    if os.path.exists(RESTART_FILE):
+        try:
+            os.remove(RESTART_FILE)
+            return True
+        except Exception:
+            pass
+    return False
+
+
 class EliteBot:
     SYMBOL_TO_EPIC = {
         "FTSE100": "IX.D.FTSE.DAILY.IP",
@@ -225,6 +239,13 @@ class EliteBot:
 
     def run(self):
         while not self._stop_event.is_set():
+            # Check for restart signal
+            if check_restart_signal():
+                logger.info("🔄 Restart signal detected, restarting bot...")
+                self.write_status("RESTARTING")
+                # Re-execute the script
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+
             self.write_status("RUNNING")
             if datetime.now().weekday() < 5:
                 # Sentiment Refresh (Fix für float Warning)
