@@ -19,7 +19,7 @@ from .data_loader import load_data_aligned, load_macro_csv
 from .indicators import compute_indicator_pool, get_feature_columns, compute_regime_filter, filter_features_by_group
 from .simulation import (
     simulate_pro_trade, calculate_sharpe_ratio, calculate_calmar_ratio,
-    check_feature_stability
+    check_feature_stability, monte_carlo_permutation_test, monte_carlo_equity_simulation
 )
 from .plateau import (
     calculate_param_plateau_score, select_plateau_features,
@@ -38,21 +38,59 @@ def log(level, msg, sym=""):
 
 
 def walk_forward_split(df, n_folds=WALK_FORWARD_FOLDS, oos_size=OOS_SIZE):
-    """Generiert Walk-Forward Fenster: [(train_df, test_df), ...]"""
+    """
+    Generiert Walk-Forward Fenster: [(train_df, val_df, test_df), ...]
+
+    Jeder Fold hat (60/20/20 Split relativ zum verfügbaren Bereich):
+    - train_df: Für Modell-Training (~60%)
+    - val_df: Für Hyperparameter-Optimierung (~20%, z.B. Confidence Threshold)
+    - test_df: Für finale Out-of-Sample Evaluation (~20%, KEINE Parameterauswahl!)
+
+    Args:
+        df: DataFrame mit allen Daten
+        n_folds: Anzahl der Walk-Forward Folds
+        oos_size: Größe des OOS-Fensters pro Fold (definiert die 20% OOS)
+    """
     total_len = len(df)
     min_train = total_len - (n_folds * oos_size)
 
-    if min_train < oos_size * 2:
-        # Nicht genug Daten für Walk-Forward, fallback auf Single Split
-        split_idx = total_len - oos_size
-        return [(df.iloc[:split_idx], df.iloc[split_idx:])]
+    # Validation-Größe = gleich wie OOS für 60/20/20 Split
+    val_size = oos_size
+
+    if min_train < oos_size * 3:
+        # Nicht genug Daten für Walk-Forward mit 60/20/20
+        # Fallback: 60/20/20 auf gesamten Datensatz
+        test_size = int(total_len * 0.2)
+        val_size = int(total_len * 0.2)
+        train_size = total_len - test_size - val_size
+
+        train_df = df.iloc[:train_size].copy()
+        val_df = df.iloc[train_size:train_size + val_size].copy()
+        test_df = df.iloc[train_size + val_size:].copy()
+        return [(train_df, val_df, test_df)]
 
     folds = []
     for i in range(n_folds):
+        # OOS (Test) Bereich
         test_end = total_len - (i * oos_size)
         test_start = test_end - oos_size
-        train_end = test_start
-        folds.append((df.iloc[:train_end].copy(), df.iloc[test_start:test_end].copy()))
+
+        # Validation Bereich (gleich groß wie OOS, direkt davor)
+        val_end = test_start
+        val_start = val_end - val_size
+
+        # Training Bereich (alles davor)
+        train_end = val_start
+
+        if train_end < oos_size:
+            # Nicht genug Daten für diesen Fold
+            continue
+
+        train_df = df.iloc[:train_end].copy()
+        val_df = df.iloc[val_start:val_end].copy()
+        test_df = df.iloc[test_start:test_end].copy()
+
+        folds.append((train_df, val_df, test_df))
 
     return list(reversed(folds))  # Chronologisch sortieren
 
@@ -219,15 +257,16 @@ def process_symbol(csv_path):
                     # Grid-Fortschritt anzeigen (Level 2 für weniger Spam)
                     log(2, f"  Grid {grid_count}/{grid_total} (TP={tp}, SL={sl})", sym)
 
-                    # Walk-Forward Validierung
+                    # Walk-Forward Validierung mit Train/Val/Test Split
                     folds = walk_forward_split(df)
-                    all_trades = []
+                    all_oos_trades = []  # Nur echte OOS Trades (nach CT-Optimierung)
                     selected_features_long = None
                 selected_features_short = None
                 fold_importances_long = []
                 fold_importances_short = []
+                fold_performances = []  # Track per-fold performance
 
-                for fold_idx, (train_df, test_df) in enumerate(folds):
+                for fold_idx, (train_df, val_df, test_df) in enumerate(folds):
                     t_fold = time.time()
                     log(1, f"  Fold {fold_idx+1}/{len(folds)}", sym)
 
@@ -336,55 +375,126 @@ def process_symbol(csv_path):
                     if selected_features_short and mod_short:
                         mod_short.fit(train_df[selected_features_short], train_targs_short)
 
-                    # === OOS PREDICTION ===
+                    # === VALIDATION SET: CT-Optimierung ===
+                    # CT wird auf Validation-Daten optimiert, NICHT auf OOS!
+                    val_cls = val_df["C"].values
+                    val_hgh = val_df["H"].values
+                    val_low = val_df["L"].values
+                    val_atr = val_df["_atr"].values
+                    val_regime = val_df["_regime_ok"].values
+                    val_timestamps = val_df.index.values
+
+                    probs_long_val = None
+                    probs_short_val = None
+                    long_win_idx = None
+                    short_win_idx = None
+
+                    if selected_features_long and mod_long:
+                        probs_long_val = mod_long.predict_proba(val_df[selected_features_long])
+                        if 1 in mod_long.classes_:
+                            long_win_idx = np.where(mod_long.classes_ == 1)[0][0]
+                        else:
+                            probs_long_val = None
+
+                    if selected_features_short and mod_short:
+                        probs_short_val = mod_short.predict_proba(val_df[selected_features_short])
+                        if 1 in mod_short.classes_:
+                            short_win_idx = np.where(mod_short.classes_ == 1)[0][0]
+                        else:
+                            probs_short_val = None
+
+                    # Teste alle CTs auf VALIDATION Set (nicht OOS!)
+                    val_trades_by_ct = {ct: [] for ct in grid["ct"]}
+                    for ct in grid["ct"]:
+                        for i in range(len(val_df) - MAX_TRADE_BARS):
+                            if not val_regime[i]:
+                                continue
+
+                            direction = None
+                            if probs_long_val is not None and probs_long_val[i, long_win_idx] >= ct:
+                                direction = 1
+                            elif probs_short_val is not None and probs_short_val[i, short_win_idx] >= ct:
+                                direction = -1
+
+                            if direction:
+                                res, _ = simulate_pro_trade(
+                                    val_cls, val_hgh, val_low, val_atr,
+                                    i, direction, tp, sl, spread,
+                                    timestamps=val_timestamps, symbol=sym
+                                )
+                                if res != 0:
+                                    val_trades_by_ct[ct].append(res)
+
+                    # Wähle besten CT basierend auf Validation-Performance
+                    best_ct = None
+                    best_val_pnl = float("-inf")
+                    for ct, trades in val_trades_by_ct.items():
+                        if len(trades) >= 10:  # Minimum Trades für CT-Auswahl
+                            pnl = sum(trades)
+                            if pnl > best_val_pnl:
+                                best_val_pnl = pnl
+                                best_ct = ct
+
+                    if best_ct is None:
+                        log(3, f"    SKIP Fold - kein valider CT auf Validation", sym)
+                        continue
+
+                    log(3, f"    Best CT auf Validation: {best_ct} (PnL={best_val_pnl:.1f})", sym)
+
+                    # === OOS PREDICTION mit fixem CT ===
+                    # Jetzt wird NUR der beste CT auf echten OOS-Daten getestet
                     test_cls = test_df["C"].values
                     test_hgh = test_df["H"].values
                     test_low = test_df["L"].values
                     test_atr = test_df["_atr"].values
                     test_regime = test_df["_regime_ok"].values
-                    test_timestamps = test_df.index.values  # Für M15-Lookup
+                    test_timestamps = test_df.index.values
 
-                    probs_long = None
-                    probs_short = None
-                    long_win_idx = None
-                    short_win_idx = None
+                    probs_long_oos = None
+                    probs_short_oos = None
 
                     if selected_features_long and mod_long:
-                        probs_long = mod_long.predict_proba(test_df[selected_features_long])
-                        if 1 in mod_long.classes_:
-                            long_win_idx = np.where(mod_long.classes_ == 1)[0][0]
-                        else:
-                            probs_long = None
+                        probs_long_oos = mod_long.predict_proba(test_df[selected_features_long])
 
                     if selected_features_short and mod_short:
-                        probs_short = mod_short.predict_proba(test_df[selected_features_short])
-                        if 1 in mod_short.classes_:
-                            short_win_idx = np.where(mod_short.classes_ == 1)[0][0]
-                        else:
-                            probs_short = None
+                        probs_short_oos = mod_short.predict_proba(test_df[selected_features_short])
 
-                    for ct in grid["ct"]:
-                        for i in range(len(test_df) - MAX_TRADE_BARS):
-                            if not test_regime[i]:
-                                continue
+                    fold_oos_trades = []
+                    for i in range(len(test_df) - MAX_TRADE_BARS):
+                        if not test_regime[i]:
+                            continue
 
-                            res = 0
-                            hour = test_df.index[i].hour
-                            direction = None
+                        res = 0
+                        hour = test_df.index[i].hour
+                        direction = None
 
-                            if probs_long is not None and probs_long[i, long_win_idx] >= ct:
-                                direction = 1
-                            elif probs_short is not None and probs_short[i, short_win_idx] >= ct:
-                                direction = -1
+                        # NUR mit dem auf Validation optimierten CT
+                        if probs_long_oos is not None and probs_long_oos[i, long_win_idx] >= best_ct:
+                            direction = 1
+                        elif probs_short_oos is not None and probs_short_oos[i, short_win_idx] >= best_ct:
+                            direction = -1
 
-                            if direction:
-                                res, _ = simulate_pro_trade(
-                                    test_cls, test_hgh, test_low, test_atr,
-                                    i, direction, tp, sl, spread,
-                                    timestamps=test_timestamps, symbol=sym
-                                )
-                            if res != 0:
-                                all_trades.append({"res": res, "ct": ct, "hour": hour, "dir": direction})
+                        if direction:
+                            res, _ = simulate_pro_trade(
+                                test_cls, test_hgh, test_low, test_atr,
+                                i, direction, tp, sl, spread,
+                                timestamps=test_timestamps, symbol=sym
+                            )
+                        if res != 0:
+                            fold_oos_trades.append({"res": res, "ct": best_ct, "hour": hour, "dir": direction})
+                            all_oos_trades.append({"res": res, "ct": best_ct, "hour": hour, "dir": direction})
+
+                    # Track Fold-Performance
+                    if fold_oos_trades:
+                        fold_pnl = sum(t["res"] for t in fold_oos_trades)
+                        fold_wr = sum(1 for t in fold_oos_trades if t["res"] > 0) / len(fold_oos_trades)
+                        fold_performances.append({
+                            "fold": fold_idx,
+                            "ct": best_ct,
+                            "trades": len(fold_oos_trades),
+                            "pnl": fold_pnl,
+                            "win_rate": fold_wr,
+                        })
 
                     log(1, f"    done ({time.time()-t_fold:.1f}s)", sym)
 
@@ -398,53 +508,69 @@ def process_symbol(csv_path):
                 if not selected_features:
                     continue
 
-                # Aggregiere pro Confidence-Threshold
-                for ct in grid["ct"]:
-                    trades_ct = [t for t in all_trades if t["ct"] == ct]
-                    tr = [t["res"] for t in trades_ct]
-                    if len(tr) >= MIN_TRADES:
-                        rrr = tp / sl
-                        preliminary_kelly = max(0, min(0.05, (
-                            (tr.count(1.0) / len(tr) * rrr - (1 - tr.count(1.0) / len(tr))) / rrr
-                        ) / 4)) if len(tr) > 0 else 0.01
+                # Aggregiere OOS-Trades (CT wurde bereits auf Validation optimiert)
+                tr = [t["res"] for t in all_oos_trades]
+                if len(tr) >= MIN_TRADES:
+                    rrr = tp / sl
 
-                        trade_returns = [preliminary_kelly * rrr if r > 0 else -preliminary_kelly for r in tr]
-                        sharpe = calculate_sharpe_ratio(trade_returns)
-                        calmar = calculate_calmar_ratio(tr, preliminary_kelly, rrr)
+                    # Bestimme den am häufigsten gewählten CT über alle Folds
+                    ct_counts = {}
+                    for t in all_oos_trades:
+                        ct_counts[t["ct"]] = ct_counts.get(t["ct"], 0) + 1
+                    best_ct = max(ct_counts.keys(), key=lambda x: ct_counts[x]) if ct_counts else grid["ct"][0]
 
-                        hour_pnl = {}
-                        for t in trades_ct:
-                            h = t["hour"]
-                            hour_pnl[h] = hour_pnl.get(h, 0) + t["res"]
-                        good_hours = [h for h, pnl in hour_pnl.items() if pnl > 0]
+                    preliminary_kelly = max(0, min(0.05, (
+                        (tr.count(1.0) / len(tr) * rrr - (1 - tr.count(1.0) / len(tr))) / rrr
+                    ) / 4)) if len(tr) > 0 else 0.01
 
-                        candidate = {
-                            "pnl": sum(tr),
-                            "tr": tr,
-                            "params": (tp, sl, ct),
-                            "feats": selected_features,
-                            "feature_group": feature_group,
-                            "rrr": rrr,
-                            "sharpe": sharpe,
-                            "calmar": calmar,
-                            "good_hours": good_hours if good_hours else list(range(24)),
-                        }
-                        candidates.append(candidate)
+                    trade_returns = [preliminary_kelly * rrr if r > 0 else -preliminary_kelly for r in tr]
+                    sharpe = calculate_sharpe_ratio(trade_returns)
+                    calmar = calculate_calmar_ratio(tr, preliminary_kelly, rrr)
 
-                        # Grid-Results für alle Kombinationen mit genug Trades
-                        all_grid_results.append({
-                            "feature_group": feature_group,
-                            "tp_mult": tp,
-                            "sl_mult": sl,
-                            "conf_thresh": ct,
-                            "rrr": rrr,
-                            "pnl": sum(tr),
-                            "trades": len(tr),
-                            "win_rate": tr.count(1.0) / len(tr),
-                            "sharpe": sharpe,
-                            "calmar": calmar,
-                            "features": selected_features if selected_features else [],
-                        })
+                    hour_pnl = {}
+                    for t in all_oos_trades:
+                        h = t["hour"]
+                        hour_pnl[h] = hour_pnl.get(h, 0) + t["res"]
+                    good_hours = [h for h, pnl in hour_pnl.items() if pnl > 0]
+
+                    # Fold-Stabilität prüfen (alle Folds sollten profitabel sein)
+                    profitable_folds = sum(1 for fp in fold_performances if fp["pnl"] > 0)
+                    fold_stability = profitable_folds / len(fold_performances) if fold_performances else 0
+
+                    candidate = {
+                        "pnl": sum(tr),
+                        "tr": tr,
+                        "params": (tp, sl, best_ct),
+                        "feats": selected_features,
+                        "feature_group": feature_group,
+                        "rrr": rrr,
+                        "sharpe": sharpe,
+                        "calmar": calmar,
+                        "good_hours": good_hours if good_hours else list(range(24)),
+                        "fold_performances": fold_performances,
+                        "fold_stability": fold_stability,
+                    }
+                    candidates.append(candidate)
+
+                    # Grid-Results
+                    all_grid_results.append({
+                        "feature_group": feature_group,
+                        "tp_mult": tp,
+                        "sl_mult": sl,
+                        "conf_thresh": best_ct,
+                        "rrr": rrr,
+                        "pnl": sum(tr),
+                        "trades": len(tr),
+                        "win_rate": tr.count(1.0) / len(tr),
+                        "sharpe": sharpe,
+                        "calmar": calmar,
+                        "features": selected_features if selected_features else [],
+                        "fold_stability": fold_stability,
+                    })
+
+                # Reset für nächste TP/SL Kombination
+                all_oos_trades = []
+                fold_performances = []
 
         log(2, f"Grid-Search fertig: {len(candidates)} Kandidaten gefunden ({time.time()-t_start:.1f}s)", sym)
 
@@ -501,6 +627,30 @@ def process_symbol(csv_path):
         if fk <= 0:
             return {"symbol": sym, "status": "no_kelly", "grid_results": grid_results}
 
+        # === MONTE CARLO TESTS ===
+        # Prüfe ob Ergebnisse statistisch signifikant sind
+        t_mc = time.time()
+        mc_perm = monte_carlo_permutation_test(b["tr"], n_permutations=1000)
+        mc_equity = monte_carlo_equity_simulation(b["tr"], fk, rrr, n_simulations=500)
+
+        log(2, f"Monte Carlo: p={mc_perm['p_value']:.3f}, "
+               f"Equity median={mc_equity['median_equity']:.1f}, "
+               f"bankruptcy={mc_equity['bankruptcy_rate']:.1%} ({time.time()-t_mc:.1f}s)", sym)
+
+        # Filtere nicht-signifikante Ergebnisse
+        if not mc_perm["is_significant"]:
+            log(1, f"SKIP - Nicht signifikant (p={mc_perm['p_value']:.3f} >= 0.05)", sym)
+            return {
+                "symbol": sym,
+                "status": "not_significant",
+                "p_value": mc_perm["p_value"],
+                "grid_results": grid_results
+            }
+
+        # Warne bei hoher Bankruptcy-Rate
+        if mc_equity["bankruptcy_rate"] > 0.1:
+            log(1, f"WARNUNG: {mc_equity['bankruptcy_rate']:.1%} Bankruptcy-Rate in MC-Simulation", sym)
+
         # Ensemble-Gewichte (basierend auf Plateau-Score)
         ensemble_weights = []
         if top_n > 1:
@@ -541,8 +691,21 @@ def process_symbol(csv_path):
             "calmar": b["calmar"],
             "currencies": currencies,
             "grid_results": grid_results,  # Alle getesteten Kombinationen
+            # Monte Carlo Statistiken
+            "monte_carlo": {
+                "p_value": mc_perm["p_value"],
+                "is_significant": mc_perm["is_significant"],
+                "percentile": mc_perm["percentile"],
+                "equity_median": mc_equity["median_equity"],
+                "equity_p5": mc_equity["p5_equity"],
+                "equity_p95": mc_equity["p95_equity"],
+                "bankruptcy_rate": mc_equity["bankruptcy_rate"],
+            },
+            # Fold-Stabilität
+            "fold_stability": b.get("fold_stability", 0),
+            "fold_performances": b.get("fold_performances", []),
         }
-        log(1, f"OK - WR={wr:.1%} Sharpe={b['sharpe']:.2f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
+        log(1, f"OK - WR={wr:.1%} Sharpe={b['sharpe']:.2f} p={mc_perm['p_value']:.3f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
         return result
 
     except Exception as e:
