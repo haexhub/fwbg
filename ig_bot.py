@@ -87,6 +87,9 @@ class EliteBot:
         # Slippage-Warnungen für Dashboard (max. 20 Einträge)
         self.slippage_warnings = []  # [{symbol, timestamp, expected, actual, slippage_pct}]
 
+        # Tracking für Cache-Updates (verhindert wiederholte Versuche in gleicher Stunde)
+        self.last_cache_update_hour = None  # Letzte Stunde in der Update versucht wurde
+
         logger.info("🧠 Training KI-Modelle...")
         self.models = {}
         for s in self.assets.keys():
@@ -610,12 +613,18 @@ class EliteBot:
         """
         Aktualisiert den Cache für alle Symbole im Hintergrund.
         Optimiert für Rate Limiting bei vielen Assets:
-        - Prüft erst ob Update überhaupt nötig (ohne API-Call)
+        - Nur einmal pro Stunde versuchen (nicht jede Minute wiederholen)
         - Längere Pause zwischen echten API-Calls (3s)
         - Nur Symbole updaten die wirklich neue Daten brauchen
         """
         now = datetime.now()
         current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+        # Haben wir in dieser Stunde bereits ein Update durchgeführt?
+        if self.last_cache_update_hour == current_hour:
+            return  # Bereits versucht, nicht nochmal
+
+        updates_done = 0
         updates_needed = 0
 
         for sym in self.models.keys():
@@ -623,13 +632,15 @@ class EliteBot:
                 # Schnelle Prüfung: Braucht dieses Symbol ein Update?
                 last_time = self.last_bar_time.get(sym)
                 if last_time is not None and last_time >= current_hour:
-                    # Cache ist aktuell - kein API-Call nötig
+                    # Cache ist bereits aktuell
                     continue
 
                 updates_needed += 1
-                self.update_ohlc_cache(sym)
-                # Berechne auch Features neu
-                self.get_features_for_prediction(sym)
+                success = self.update_ohlc_cache(sym)
+                if success:
+                    # Berechne auch Features neu
+                    self.get_features_for_prediction(sym)
+                    updates_done += 1
 
                 # Längere Pause zwischen API-Calls (IG erlaubt ~60/min)
                 # Bei 30 Assets mit 3s Pause = 90s Gesamtzeit
@@ -639,8 +650,11 @@ class EliteBot:
                 logger.warning(f"⚠️ Cache-Update für {sym} fehlgeschlagen: {e}")
                 time.sleep(3)  # Auch bei Fehler pausieren
 
+        # Markiere dass wir in dieser Stunde bereits versucht haben
+        self.last_cache_update_hour = current_hour
+
         if updates_needed > 0:
-            logger.info(f"📊 Cache-Update abgeschlossen: {updates_needed} Assets aktualisiert")
+            logger.info(f"📊 Cache-Update: {updates_done}/{updates_needed} Assets aktualisiert")
 
     def run(self):
         """
