@@ -22,6 +22,84 @@ def calculate_sharpe_ratio(returns, risk_free_rate=0.0):
     return np.mean(excess_returns) / np.std(excess_returns) * np.sqrt(252 * 6)
 
 
+def calculate_equity_smoothness(trades, kelly_risk, rrr, window_size=50):
+    """
+    Berechnet einen Smoothness-Score für die Equity-Kurve.
+
+    Höherer Score = glattere Equity-Kurve mit kleineren Sprüngen.
+    Basiert auf der Varianz der rollenden Returns.
+
+    Args:
+        trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
+        kelly_risk: Risk pro Trade
+        rrr: Risk-Reward-Ratio
+        window_size: Fenster für rollende Berechnung
+
+    Returns:
+        dict mit:
+            - smoothness_score: 0-1 Score (1 = perfekt glatt)
+            - return_volatility: Standardabweichung der Returns
+            - max_single_move: Größter einzelner Move (positiv oder negativ)
+            - sortino_ratio: Sortino Ratio (nur Downside-Volatilität)
+    """
+    if len(trades) < window_size:
+        return {
+            "smoothness_score": 0.5,
+            "return_volatility": 0.0,
+            "max_single_move": 0.0,
+            "sortino_ratio": 0.0,
+        }
+
+    # Berechne Trade-Returns
+    returns = []
+    for t in trades:
+        if t > 0:
+            returns.append(kelly_risk * rrr)
+        else:
+            returns.append(-kelly_risk)
+
+    returns = np.array(returns)
+
+    # Basis-Metriken
+    return_volatility = np.std(returns)
+    max_single_move = max(abs(np.max(returns)), abs(np.min(returns)))
+
+    # Sortino Ratio (nur negative Returns für Downside-Volatilität)
+    negative_returns = returns[returns < 0]
+    if len(negative_returns) > 0:
+        downside_std = np.std(negative_returns)
+        mean_return = np.mean(returns)
+        sortino = mean_return / downside_std if downside_std > 0 else 0
+    else:
+        sortino = float('inf') if np.mean(returns) > 0 else 0
+
+    # Rollende Varianz der Returns
+    rolling_vars = []
+    for i in range(len(returns) - window_size):
+        window = returns[i:i + window_size]
+        rolling_vars.append(np.var(window))
+
+    if rolling_vars:
+        # Konsistenz: niedrige Varianz der rollenden Varianz = konsistent glatt
+        consistency = 1.0 / (1.0 + np.std(rolling_vars) * 100)
+    else:
+        consistency = 0.5
+
+    # Smoothness Score: Kombination aus niedriger Volatilität und Konsistenz
+    # Normalisiere Volatilität auf 0-1 Skala (5% Kelly = ~5% max single move)
+    vol_score = 1.0 / (1.0 + return_volatility * 10)
+
+    smoothness_score = (vol_score * 0.5 + consistency * 0.5)
+
+    return {
+        "smoothness_score": float(smoothness_score),
+        "return_volatility": float(return_volatility),
+        "max_single_move": float(max_single_move),
+        "sortino_ratio": float(min(sortino, 10.0)),  # Cap bei 10
+        "consistency": float(consistency),
+    }
+
+
 def calculate_calmar_ratio(returns, kelly_risk, rrr):
     """Berechnet Calmar Ratio (Return / Max Drawdown)."""
     if not returns:
@@ -461,4 +539,238 @@ def monte_carlo_equity_simulation(trades, kelly_risk, rrr, n_simulations=1000, r
         "bankruptcy_rate": bankruptcies / n_simulations,
         "observed_equity": float(observed_equity),
         "n_simulations": n_simulations,
+    }
+
+
+def adjust_kelly_for_target_dd(trades, base_kelly, rrr, target_max_dd=0.30):
+    """
+    Passt den Kelly-Faktor an, um einen Ziel-Max-Drawdown zu erreichen.
+
+    Args:
+        trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
+        base_kelly: Basis Kelly-Faktor (z.B. 0.05)
+        rrr: Risk-Reward-Ratio
+        target_max_dd: Gewünschter maximaler Drawdown (z.B. 0.30 = 30%)
+
+    Returns:
+        dict mit:
+            - adjusted_kelly: Angepasster Kelly-Faktor
+            - original_dd: Max DD mit Basis-Kelly
+            - adjusted_dd: Max DD mit angepasstem Kelly
+            - scale_factor: Skalierungsfaktor (adjusted_kelly / base_kelly)
+    """
+    if not trades or base_kelly <= 0:
+        return {
+            "adjusted_kelly": base_kelly,
+            "original_dd": 0.0,
+            "adjusted_dd": 0.0,
+            "scale_factor": 1.0,
+        }
+
+    # Berechne Max DD mit Basis-Kelly
+    original_dd = calculate_max_drawdown(trades, base_kelly, rrr)
+
+    if original_dd <= target_max_dd:
+        # DD ist bereits unter Ziel - keine Anpassung nötig
+        return {
+            "adjusted_kelly": base_kelly,
+            "original_dd": original_dd,
+            "adjusted_dd": original_dd,
+            "scale_factor": 1.0,
+        }
+
+    # Binäre Suche nach dem optimalen Kelly
+    low_kelly = 0.001
+    high_kelly = base_kelly
+
+    for _ in range(20):  # Max 20 Iterationen
+        mid_kelly = (low_kelly + high_kelly) / 2
+        mid_dd = calculate_max_drawdown(trades, mid_kelly, rrr)
+
+        if mid_dd > target_max_dd:
+            high_kelly = mid_kelly
+        else:
+            low_kelly = mid_kelly
+
+        if abs(mid_dd - target_max_dd) < 0.01:  # 1% Toleranz
+            break
+
+    adjusted_kelly = low_kelly
+    adjusted_dd = calculate_max_drawdown(trades, adjusted_kelly, rrr)
+
+    return {
+        "adjusted_kelly": adjusted_kelly,
+        "original_dd": original_dd,
+        "adjusted_dd": adjusted_dd,
+        "scale_factor": adjusted_kelly / base_kelly if base_kelly > 0 else 1.0,
+    }
+
+
+def simulate_with_circuit_breaker(trades, kelly_risk, rrr, pause_after_losses, pause_bars):
+    """
+    Simuliert Trading mit Circuit Breaker - pausiert nach N Verlusten in Serie.
+
+    Args:
+        trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
+        kelly_risk: Risk pro Trade
+        rrr: Risk-Reward-Ratio
+        pause_after_losses: Nach wie vielen Verlusten in Serie pausieren (0 = deaktiviert)
+        pause_bars: Wie viele Trades/Bars pausiert wird
+
+    Returns:
+        dict mit:
+            - trades_taken: Anzahl tatsächlich ausgeführter Trades
+            - trades_skipped: Anzahl übersprungener Trades
+            - pauses_triggered: Anzahl ausgelöster Pausen
+            - final_equity: End-Equity
+            - max_drawdown: Max Drawdown
+            - win_rate: Effektive Win-Rate (nur ausgeführte Trades)
+            - filtered_trades: Liste der tatsächlich ausgeführten Trades
+    """
+    if not trades or pause_after_losses <= 0:
+        # Circuit Breaker deaktiviert - normale Simulation
+        dd = calculate_max_drawdown(trades, kelly_risk, rrr) if trades else 0.0
+        wr = sum(1 for t in trades if t > 0) / len(trades) if trades else 0.0
+
+        # Berechne finale Equity
+        equity = 100.0
+        for t in trades:
+            if t > 0:
+                equity *= 1 + (kelly_risk * rrr)
+            else:
+                equity *= 1 - kelly_risk
+
+        return {
+            "trades_taken": len(trades),
+            "trades_skipped": 0,
+            "pauses_triggered": 0,
+            "final_equity": equity,
+            "max_drawdown": dd,
+            "win_rate": wr,
+            "filtered_trades": trades,
+        }
+
+    # Mit Circuit Breaker
+    equity = 100.0
+    peak = equity
+    max_dd = 0.0
+
+    consecutive_losses = 0
+    pause_remaining = 0
+    pauses_triggered = 0
+
+    filtered_trades = []
+    trades_skipped = 0
+
+    for trade in trades:
+        # Prüfe ob wir noch in einer Pause sind
+        if pause_remaining > 0:
+            pause_remaining -= 1
+            trades_skipped += 1
+            continue
+
+        # Trade ausführen
+        filtered_trades.append(trade)
+
+        if trade > 0:
+            equity *= 1 + (kelly_risk * rrr)
+            consecutive_losses = 0
+        else:
+            equity *= 1 - kelly_risk
+            consecutive_losses += 1
+
+            # Circuit Breaker auslösen?
+            if consecutive_losses >= pause_after_losses:
+                pause_remaining = pause_bars
+                pauses_triggered += 1
+                consecutive_losses = 0  # Reset nach Pause
+
+        # Drawdown tracken
+        if equity > peak:
+            peak = equity
+        dd = (peak - equity) / peak if peak > 0 else 0
+        if dd > max_dd:
+            max_dd = dd
+
+        # Bankrott?
+        if equity <= 0:
+            max_dd = 1.0
+            break
+
+    wr = sum(1 for t in filtered_trades if t > 0) / len(filtered_trades) if filtered_trades else 0.0
+
+    return {
+        "trades_taken": len(filtered_trades),
+        "trades_skipped": trades_skipped,
+        "pauses_triggered": pauses_triggered,
+        "final_equity": equity,
+        "max_drawdown": max_dd,
+        "win_rate": wr,
+        "filtered_trades": filtered_trades,
+    }
+
+
+def find_optimal_circuit_breaker(trades, kelly_risk, rrr,
+                                  loss_range=(3, 10),
+                                  pause_range=(5, 50)):
+    """
+    Findet die optimalen Circuit Breaker Parameter durch Grid-Search.
+
+    Args:
+        trades: Liste von Trade-Ergebnissen
+        kelly_risk: Risk pro Trade
+        rrr: Risk-Reward-Ratio
+        loss_range: (min, max) Verluste vor Pause
+        pause_range: (min, max) Pause-Länge
+
+    Returns:
+        dict mit optimalen Parametern und Metriken
+    """
+    if not trades:
+        return {
+            "optimal_pause_after_losses": 0,
+            "optimal_pause_bars": 0,
+            "improvement": 0.0,
+            "baseline_dd": 0.0,
+            "optimized_dd": 0.0,
+        }
+
+    # Baseline ohne Circuit Breaker
+    baseline = simulate_with_circuit_breaker(trades, kelly_risk, rrr, 0, 0)
+    baseline_dd = baseline["max_drawdown"]
+    baseline_equity = baseline["final_equity"]
+
+    best_score = baseline_equity / (1 + baseline_dd)  # Rendite/Risiko Verhältnis
+    best_params = (0, 0)
+    best_result = baseline
+
+    # Grid-Search
+    for pause_after in range(loss_range[0], loss_range[1] + 1):
+        for pause_bars in range(pause_range[0], pause_range[1] + 1, 5):  # 5er Schritte
+            result = simulate_with_circuit_breaker(
+                trades, kelly_risk, rrr, pause_after, pause_bars
+            )
+
+            # Score: Maximiere Rendite bei minimiertem DD
+            # Bestrafe zu viele übersprungene Trades
+            skip_penalty = 1 - (result["trades_skipped"] / len(trades)) * 0.5
+            score = (result["final_equity"] / (1 + result["max_drawdown"])) * skip_penalty
+
+            if score > best_score:
+                best_score = score
+                best_params = (pause_after, pause_bars)
+                best_result = result
+
+    return {
+        "optimal_pause_after_losses": best_params[0],
+        "optimal_pause_bars": best_params[1],
+        "baseline_dd": baseline_dd,
+        "baseline_equity": baseline_equity,
+        "optimized_dd": best_result["max_drawdown"],
+        "optimized_equity": best_result["final_equity"],
+        "trades_taken": best_result["trades_taken"],
+        "trades_skipped": best_result["trades_skipped"],
+        "pauses_triggered": best_result["pauses_triggered"],
+        "improvement": (best_result["final_equity"] - baseline_equity) / baseline_equity if baseline_equity > 0 else 0,
+        "dd_reduction": baseline_dd - best_result["max_drawdown"],
     }
