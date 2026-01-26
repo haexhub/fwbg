@@ -132,7 +132,7 @@ class EliteBot:
             # resolution: HOUR, numPoints: max 10000
             response = self.ig.fetch_historical_prices_by_epic(
                 epic=epic,
-                resolution="HOUR",
+                resolution="1H",
                 numpoints=num_points,
             )
 
