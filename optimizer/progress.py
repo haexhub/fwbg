@@ -165,12 +165,13 @@ class ProgressTracker:
         active_count = len(active_workers)
         pending_count = self.total_assets - self.completed_assets - active_count
 
-        # Gesamtfortschritt berechnen
+        # Gesamtfortschritt berechnen (inkl. Grid-Progress der aktiven Worker)
         elapsed = time.time() - self.start_time if self.start_time else 0
-        pct = (self.completed_assets / self.total_assets * 100) if self.total_assets > 0 else 0
+        total_progress = self._calculate_total_progress(active_workers)
+        pct = (total_progress / self.total_assets * 100) if self.total_assets > 0 else 0
 
-        # ETA berechnen basierend auf Gesamt-Fortschritt (inkl. Grid-Progress)
-        eta_str = self._calculate_eta(elapsed, active_workers)
+        # ETA berechnen basierend auf Gesamt-Fortschritt
+        eta_str = self._calculate_eta(elapsed, total_progress)
 
         elapsed_str = self._format_time(elapsed)
 
@@ -224,12 +225,13 @@ class ProgressTracker:
         # === PROGRESS BAR (unten) ===
         lines.append(f"╠{'═' * box_width}╣")
 
-        # Progress-Bar
+        # Progress-Bar (nutzt total_progress inkl. Grid-Fortschritt)
         bar_width_inner = 40
-        filled = int(bar_width_inner * self.completed_assets / self.total_assets) if self.total_assets > 0 else 0
+        filled = int(bar_width_inner * total_progress / self.total_assets) if self.total_assets > 0 else 0
+        filled = min(filled, bar_width_inner)  # Nicht über 100%
         bar = "█" * filled + "░" * (bar_width_inner - filled)
 
-        progress_line = f" [{bar}] {self.completed_assets}/{self.total_assets} ({pct:.0f}%)"
+        progress_line = f" [{bar}] {total_progress:.1f}/{self.total_assets} ({pct:.0f}%)"
         lines.append(f"║{progress_line:<{box_width}}║")
 
         # Zeit-Info
@@ -245,32 +247,30 @@ class ProgressTracker:
 
         self._last_line_count = len(lines)
 
-    def _calculate_eta(self, elapsed: float, active_workers: Dict) -> str:
+    def _calculate_total_progress(self, active_workers: Dict) -> float:
         """
-        Berechnet ETA basierend auf Gesamt-Fortschritt.
+        Berechnet Gesamt-Fortschritt als Dezimalzahl.
 
         Berücksichtigt:
-        - Fertige Assets (completed_assets)
-        - Grid-Fortschritt der aktiven Worker
+        - Fertige Assets (zählen zu 100%)
+        - Grid-Fortschritt der aktiven Worker (anteilig)
         """
-        if elapsed < 5:  # Mindestens 5 Sekunden für sinnvolle Schätzung
-            return "--:--"
-
-        if self.total_assets == 0:
-            return "--:--"
-
-        # Berechne Gesamt-Fortschritt als Dezimalzahl
-        # completed_assets zählen voll, aktive Worker anteilig nach Grid-Progress
         total_progress = float(self.completed_assets)
 
         for info in active_workers.values():
             grid_pos = info.get("grid_pos", 0)
             grid_total = info.get("grid_total", 1)
             if grid_total > 0:
-                # Anteiliger Fortschritt dieses Workers
                 total_progress += grid_pos / grid_total
 
-        if total_progress < 0.01:  # Noch kein messbarer Fortschritt
+        return total_progress
+
+    def _calculate_eta(self, elapsed: float, total_progress: float) -> str:
+        """Berechnet ETA basierend auf Gesamt-Fortschritt."""
+        if elapsed < 5:  # Mindestens 5 Sekunden für sinnvolle Schätzung
+            return "--:--"
+
+        if self.total_assets == 0 or total_progress < 0.01:
             return "--:--"
 
         # Zeit pro "Asset-Einheit"
