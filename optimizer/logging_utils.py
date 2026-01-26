@@ -26,8 +26,8 @@ def log(level, msg, sym=""):
         msg: Nachricht
         sym: Symbol-Prefix (optional)
     """
-    # Unterdrücke Level 2+ Logs wenn Progress-UI aktiv
-    if os.environ.get("_OPTIMIZER_PROGRESS_UI") and level >= 2:
+    # Unterdrücke alle Detail-Logs (Level 1+) wenn Progress-UI aktiv
+    if os.environ.get("_OPTIMIZER_PROGRESS_UI") and level >= 1:
         return
 
     if level <= LOG_LEVEL:
