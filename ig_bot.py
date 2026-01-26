@@ -239,5 +239,58 @@ class EliteBot:
             time.sleep(300)
 
 
+def discover_accounts(accounts_dir="accounts"):
+    """Discover all account directories that contain required config files."""
+    accounts = []
+    if not os.path.exists(accounts_dir):
+        logger.warning(f"⚠️ Accounts directory '{accounts_dir}' does not exist")
+        return accounts
+
+    for name in os.listdir(accounts_dir):
+        account_path = os.path.join(accounts_dir, name)
+        if os.path.isdir(account_path):
+            # Check if required config files exist
+            account_info = os.path.join(account_path, "account_info.json")
+            assets_file = os.path.join(account_path, "assets.json")
+            if os.path.exists(account_info) and os.path.exists(assets_file):
+                accounts.append(account_path)
+            else:
+                logger.warning(f"⚠️ Skipping '{name}': missing account_info.json or assets.json")
+
+    return accounts
+
+
+def run_bot_for_account(account_path):
+    """Run a bot instance for a specific account."""
+    try:
+        bot = EliteBot(account_path)
+        bot.run()
+    except Exception as e:
+        logger.error(f"❌ Bot for {account_path} crashed: {e}")
+
+
 if __name__ == "__main__":
-    EliteBot("accounts/main_demo").run()
+    accounts = discover_accounts()
+
+    if not accounts:
+        logger.error("❌ No valid accounts found in 'accounts/' directory")
+        logger.info("💡 Each account needs: account_info.json and assets.json")
+        sys.exit(1)
+
+    logger.info(f"🔍 Found {len(accounts)} account(s): {accounts}")
+
+    if len(accounts) == 1:
+        # Single account - run directly
+        run_bot_for_account(accounts[0])
+    else:
+        # Multiple accounts - run in parallel threads
+        threads = []
+        for account_path in accounts:
+            t = threading.Thread(target=run_bot_for_account, args=(account_path,), daemon=True)
+            t.start()
+            threads.append(t)
+            logger.info(f"🚀 Started bot for {account_path}")
+
+        # Wait for all threads
+        for t in threads:
+            t.join()
