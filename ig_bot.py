@@ -405,10 +405,70 @@ class EliteBot:
             logger.error(f"❌ {symbol} Training fehlgeschlagen: {e}")
             return None
 
+    def verify_execution_price(self, symbol, deal_reference, expected_price, max_slippage_pct=0.5):
+        """
+        Prüft ob der tatsächliche Ausführungspreis im akzeptablen Rahmen liegt.
+
+        Args:
+            symbol: Trading-Symbol
+            deal_reference: IG Deal Reference
+            expected_price: Erwarteter Preis (aus Cache)
+            max_slippage_pct: Maximale akzeptable Slippage in Prozent (default 0.5%)
+
+        Returns:
+            tuple: (is_ok, actual_price, slippage_pct)
+        """
+        try:
+            # Hole Deal-Bestätigung von IG
+            confirmation = self.ig.fetch_deal_by_deal_reference(deal_reference)
+
+            if confirmation is None:
+                logger.warning(f"⚠️ Keine Deal-Bestätigung für {deal_reference}")
+                return (False, None, None)
+
+            # Extrahiere tatsächlichen Ausführungspreis
+            actual_price = confirmation.get("level") or confirmation.get("openLevel")
+            deal_status = confirmation.get("dealStatus")
+            reason = confirmation.get("reason", "")
+
+            if deal_status != "ACCEPTED":
+                logger.error(f"❌ Deal abgelehnt: {deal_status} - {reason}")
+                return (False, actual_price, None)
+
+            if actual_price is None:
+                logger.warning("⚠️ Kein Ausführungspreis in Bestätigung")
+                return (False, None, None)
+
+            actual_price = float(actual_price)
+
+            # Berechne Slippage
+            if expected_price and expected_price > 0:
+                slippage_pct = abs(actual_price - expected_price) / expected_price * 100
+            else:
+                slippage_pct = 0.0
+
+            # Prüfe ob Slippage akzeptabel
+            if slippage_pct > max_slippage_pct:
+                logger.warning(
+                    f"⚠️ HOHE SLIPPAGE für {symbol}: {slippage_pct:.2f}% "
+                    f"(erwartet: {expected_price:.5f}, tatsächlich: {actual_price:.5f})"
+                )
+                return (False, actual_price, slippage_pct)
+
+            logger.info(
+                f"✅ {symbol} Slippage OK: {slippage_pct:.3f}% "
+                f"(erwartet: {expected_price:.5f}, tatsächlich: {actual_price:.5f})"
+            )
+            return (True, actual_price, slippage_pct)
+
+        except Exception as e:
+            logger.error(f"❌ Fehler bei Slippage-Check für {symbol}: {e}")
+            return (False, None, None)
+
     def execute_order_fast(self, symbol, direction, prob, cached_atr):
         """
         Schnelle Order-Ausführung ohne API-Calls für Preisdaten.
-        ATR kommt aus dem Cache.
+        ATR kommt aus dem Cache. Prüft Slippage nach Ausführung.
         """
         cfg = self.assets[symbol]
         epic = self.SYMBOL_TO_EPIC.get(symbol)
@@ -432,8 +492,13 @@ class EliteBot:
             size = round(risk_cash / sl_dist_pts, 2)
             size = max(self.account_info["money_management"]["min_lot_size"], size)
 
+            # Erwarteter Preis aus Cache (letzter Close)
+            ohlc_df = self.ohlc_cache.get(symbol)
+            expected_price = float(ohlc_df["C"].iloc[-1]) if ohlc_df is not None else None
+
             logger.info(
-                f"🚀 {direction} {symbol} | Epic: {epic} | Size: {size} | SL: {sl_dist_pts} | Prob: {prob:.2f}"
+                f"🚀 {direction} {symbol} | Epic: {epic} | Size: {size} | "
+                f"SL: {sl_dist_pts} | Prob: {prob:.2f} | Expected: {expected_price}"
             )
 
             # Market Order - sofort ausführen
@@ -450,7 +515,19 @@ class EliteBot:
             )
 
             if response and "dealReference" in response:
-                logger.info(f"✅ Order platziert! Ref: {response['dealReference']}")
+                deal_ref = response["dealReference"]
+                logger.info(f"📝 Order gesendet! Ref: {deal_ref}")
+
+                # SLIPPAGE CHECK: Prüfe ob Ausführungspreis akzeptabel
+                time.sleep(0.5)  # Kurz warten auf Deal-Bestätigung
+                is_ok, actual_price, slippage = self.verify_execution_price(
+                    symbol, deal_ref, expected_price, max_slippage_pct=1.0
+                )
+
+                if is_ok:
+                    logger.info(f"✅ Order bestätigt! {symbol} @ {actual_price}")
+                else:
+                    logger.warning(f"⚠️ Order-Warnung für {symbol}: Slippage={slippage}%")
             else:
                 logger.error(f"❌ Abgelehnt: {response}")
 

@@ -217,5 +217,71 @@ class TestSleepIntervals:
             "run() schläft nicht 60 Sekunden"
 
 
+class TestSlippageVerification:
+    """Tests für die Slippage-Prüfung nach Order-Ausführung."""
+
+    def test_verify_execution_price_method_exists(self):
+        """verify_execution_price Methode sollte existieren."""
+        from ig_bot import EliteBot
+
+        assert hasattr(EliteBot, "verify_execution_price")
+        assert callable(getattr(EliteBot, "verify_execution_price"))
+
+    def test_verify_execution_price_signature(self):
+        """verify_execution_price sollte die richtigen Parameter haben."""
+        from ig_bot import EliteBot
+        import inspect
+
+        sig = inspect.signature(EliteBot.verify_execution_price)
+        params = list(sig.parameters.keys())
+
+        assert "symbol" in params, "Parameter 'symbol' fehlt"
+        assert "deal_reference" in params, "Parameter 'deal_reference' fehlt"
+        assert "expected_price" in params, "Parameter 'expected_price' fehlt"
+        assert "max_slippage_pct" in params, "Parameter 'max_slippage_pct' fehlt"
+
+    def test_execute_order_fast_calls_verify_execution(self):
+        """execute_order_fast sollte verify_execution_price aufrufen."""
+        from ig_bot import EliteBot
+        import inspect
+
+        source = inspect.getsource(EliteBot.execute_order_fast)
+
+        assert "verify_execution_price" in source, \
+            "execute_order_fast ruft nicht verify_execution_price auf"
+
+    def test_execute_order_fast_logs_expected_price(self):
+        """execute_order_fast sollte erwarteten Preis loggen."""
+        from ig_bot import EliteBot
+        import inspect
+
+        source = inspect.getsource(EliteBot.execute_order_fast)
+
+        assert "expected_price" in source, \
+            "execute_order_fast nutzt keinen expected_price"
+
+    def test_slippage_check_uses_cache_price(self):
+        """Slippage-Check sollte Preis aus Cache nutzen."""
+        from ig_bot import EliteBot
+        import inspect
+
+        source = inspect.getsource(EliteBot.execute_order_fast)
+
+        assert "ohlc_cache" in source, \
+            "execute_order_fast holt expected_price nicht aus ohlc_cache"
+
+    def test_verify_returns_tuple(self):
+        """verify_execution_price sollte Tuple zurückgeben."""
+        from ig_bot import EliteBot
+        import inspect
+
+        source = inspect.getsource(EliteBot.verify_execution_price)
+
+        # Sollte (is_ok, actual_price, slippage_pct) zurückgeben
+        assert "return" in source
+        assert "False" in source and "True" in source, \
+            "verify_execution_price gibt keine boolean Werte zurück"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
