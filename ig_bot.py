@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import ta
 import os
 import json
@@ -6,10 +7,14 @@ import time
 import threading
 import logging
 import sys
-from datetime import datetime
+import yfinance as yf
+from datetime import datetime, timedelta
 from xgboost import XGBClassifier
 from trading_ig import IGService
-import yfinance as yf
+
+# Optimizer-Module für konsistente Feature-Berechnung
+from optimizer.indicators import compute_indicator_pool
+from optimizer.data_loader import load_macro_indicators, load_interest_rates
 
 # --- LOGGING SETUP ---
 LOG_DIR = os.environ.get("LOG_DIR", "logs")
@@ -115,76 +120,138 @@ class EliteBot:
             logger.error(f"❌ Login gescheitert: {e}")
             sys.exit(1)
 
-    def load_data_aligned(self, path, is_sentiment=False):
-        try:
-            df_raw = pd.read_csv(path)
-            start = 1 if str(df_raw.iloc[0, 0]).isdigit() else 0
-            df = (
-                df_raw.iloc[
-                    :, [start, start + 1, start + 2, start + 3, start + 4]
-                ].copy()
-                if len(df_raw.columns) >= 5
-                else df_raw.iloc[:, [start, start + 1]].copy()
-            )
-            df.columns = (
-                ["T", "O", "H", "L", "C"] if len(df.columns) == 5 else ["T", "C"]
-            )
-            if "O" not in df.columns:
-                df["O"] = df["H"] = df["L"] = df["C"]
-            df["T"] = pd.to_datetime(df["T"])
-            if is_sentiment:
-                if df["T"].dt.tz is None:
-                    df["T"] = df["T"].dt.tz_localize("UTC")
-                df["T"] = df["T"].dt.tz_convert(self.TARGET_TZ)
-            else:
-                if df["T"].dt.tz is None:
-                    df["T"] = df["T"].dt.tz_localize(
-                        self.TARGET_TZ, ambiguous="infer", nonexistent="shift_forward"
-                    )
-            df["T"] = df["T"].dt.tz_localize(None)
-            return df.set_index("T")
-        except Exception:
+    def fetch_ig_historical(self, symbol, num_points=2000):
+        """Holt historische OHLC-Daten von der IG API."""
+        epic = self.SYMBOL_TO_EPIC.get(symbol)
+        if not epic:
+            logger.warning(f"⚠️ Kein EPIC für {symbol}")
             return None
 
-    def calculate_indicators(self, df, feats):
-        if "trend_adx" in feats:
-            df["trend_adx"] = ta.trend.adx(df["H"], df["L"], df["C"])
-        if "trend_cci" in feats:
-            df["trend_cci"] = ta.trend.cci(df["H"], df["L"], df["C"])
-        if "trend_ema" in feats:
-            df["trend_ema"] = (df["C"] - ta.trend.ema_indicator(df["C"], 50)) / df["C"]
-        if "mom_rsi" in feats:
-            df["mom_rsi"] = ta.momentum.rsi(df["C"])
-        if "mom_uo" in feats:
-            df["mom_uo"] = ta.momentum.ultimate_oscillator(df["H"], df["L"], df["C"])
-        if "vol_atr" in feats:
-            df["vol_atr"] = ta.volatility.average_true_range(df["H"], df["L"], df["C"])
-        if "vol_bbh" in feats:
-            df["vol_bbh"] = (ta.volatility.bollinger_hband(df["C"]) - df["C"]) / df["C"]
-        if "time_hr" in feats:
-            df["time_hr"] = df.index.hour
-        return df
+        try:
+            # IG API: fetch_historical_prices_by_epic
+            # resolution: HOUR, numPoints: max 10000
+            response = self.ig.fetch_historical_prices_by_epic(
+                epic=epic,
+                resolution="HOUR",
+                numpoints=num_points,
+            )
+
+            if response is None or "prices" not in response:
+                logger.warning(f"⚠️ Keine Daten von IG für {symbol}")
+                return None
+
+            prices = response["prices"]
+            if not prices:
+                return None
+
+            # Konvertiere zu DataFrame
+            data = []
+            for p in prices:
+                # IG gibt bid/ask - wir nehmen den Midpoint
+                snap = p.get("snapshotTimeUTC") or p.get("snapshotTime")
+                o = (p["openPrice"]["bid"] + p["openPrice"]["ask"]) / 2
+                h = (p["highPrice"]["bid"] + p["highPrice"]["ask"]) / 2
+                low = (p["lowPrice"]["bid"] + p["lowPrice"]["ask"]) / 2
+                c = (p["closePrice"]["bid"] + p["closePrice"]["ask"]) / 2
+                data.append({"T": snap, "O": o, "H": h, "L": low, "C": c})
+
+            df = pd.DataFrame(data)
+            df["T"] = pd.to_datetime(df["T"])
+            df = df.set_index("T").sort_index()
+
+            return df
+
+        except Exception as e:
+            logger.warning(f"⚠️ IG API Fehler für {symbol}: {e}")
+            return None
+
+    def fetch_macro_data(self):
+        """Holt aktuelle Makro-Daten von yfinance."""
+        macro_tickers = {
+            "macro_vix": "^VIX",
+            "macro_hyg": "HYG",
+            "macro_gold_fut": "GC=F",
+            "macro_tlt": "TLT",
+            "macro_dxy": "DX-Y.NYB",
+        }
+
+        macro_data = {}
+        for name, ticker in macro_tickers.items():
+            try:
+                data = yf.download(ticker, period="60d", interval="1d", progress=False)
+                if not data.empty:
+                    # Letzter Wert und Changes
+                    macro_data[name] = float(data["Close"].iloc[-1])
+                    if len(data) > 1:
+                        macro_data[f"{name}_chg_12h"] = float(
+                            (data["Close"].iloc[-1] - data["Close"].iloc[-2]) / data["Close"].iloc[-2] * 100
+                        )
+            except Exception:
+                pass
+
+        return macro_data
+
+    def load_and_prepare_data(self, symbol):
+        """
+        Lädt Live-Daten von IG API und berechnet alle Features wie der Optimizer.
+        """
+        try:
+            # Lade OHLC-Daten von IG API
+            df = self.fetch_ig_historical(symbol)
+            if df is None or df.empty:
+                return None
+
+            # Berechne alle technischen Indikatoren (Ichimoku, EMA, etc.)
+            df = compute_indicator_pool(df)
+
+            # Lade Makro-Indikatoren aus CSV (für historische Daten)
+            df = load_macro_indicators(df)
+
+            # Lade Zinsdaten
+            df = load_interest_rates(df)
+
+            # Aktualisiere mit Live-Makro-Daten für die letzte Zeile
+            macro_live = self.fetch_macro_data()
+            for key, value in macro_live.items():
+                if key in df.columns:
+                    df.loc[df.index[-1], key] = value
+
+            return df
+
+        except Exception as e:
+            logger.warning(f"⚠️ Fehler beim Laden von {symbol}: {e}")
+            return None
 
     def train_elite_model(self, symbol):
+        """Trainiert Modell mit Optimizer-Features."""
         try:
             cfg = self.assets[symbol]
-            df = self.load_data_aligned(f"./data/forexsb/{symbol}_HOUR.csv")
-            for s in ["VIX", "DXY"]:
-                if f"sent_{s.lower()}" in cfg["features"]:
-                    s_path = f"./data/forexsb/{s.upper()}_HOUR.csv"
-                    s_df = self.load_data_aligned(s_path, True)
-                    df = df.join(
-                        s_df["C"].rename(f"sent_{s.lower()}"), how="left"
-                    ).fillna(0)
-            df = self.calculate_indicators(df, cfg["features"])
+            df = self.load_and_prepare_data(symbol)
+            if df is None:
+                logger.warning(f"⚠️ Keine Daten für {symbol}")
+                return None
+
+            # Prüfe ob alle Features vorhanden sind
+            missing = [f for f in cfg["features"] if f not in df.columns]
+            if missing:
+                logger.warning(f"⚠️ {symbol}: Fehlende Features: {missing}")
+                return None
+
             df["Target"] = (df["C"].shift(-1) > df["C"]).astype(int)
-            df = df.dropna()
+            df = df.dropna(subset=cfg["features"] + ["Target"])
+
+            if len(df) < 1000:
+                logger.warning(f"⚠️ {symbol}: Zu wenig Daten ({len(df)} Zeilen)")
+                return None
+
             m = XGBClassifier(
                 n_estimators=100, max_depth=5, n_jobs=-1, random_state=42, verbosity=0
             )
             m.fit(df[cfg["features"]], df["Target"])
+            logger.info(f"✅ {symbol} trainiert mit {len(df)} Samples")
             return m
-        except Exception:
+        except Exception as e:
+            logger.error(f"❌ {symbol} Training fehlgeschlagen: {e}")
             return None
 
     def execute_order(self, symbol, direction, prob):
@@ -199,7 +266,10 @@ class EliteBot:
             # Maximale Positionsgröße begrenzen (Anti-Wahnsinn-Sicherung)
             risk_cash = min(balance * cfg["kelly_risk"], balance * 0.05)
 
-            df = self.load_data_aligned(f"./data/forexsb/{symbol}_HOUR.csv").tail(50)
+            df = self.fetch_ig_historical(symbol, num_points=100)
+            if df is None:
+                logger.error(f"❌ Keine Daten für {symbol}")
+                return
             atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"]).iloc[-1]
 
             # Korrekte Berechnung der Pips/Punkte Distanz
@@ -248,28 +318,22 @@ class EliteBot:
 
             self.write_status("RUNNING")
             if datetime.now().weekday() < 5:
-                # Sentiment Refresh (Fix für float Warning)
-                tickers = {"vix": "^VIX", "dxy": "DX-Y.NYB"}
-                current_sent = {}
-                for k, v in tickers.items():
-                    data = yf.download(v, period="1d", interval="1h", progress=False)
-                    if not data.empty:
-                        current_sent[k] = float(data["Close"].iloc[-1])
-
                 for sym, cfg in self.assets.items():
                     if sym not in self.models:
                         continue
                     try:
-                        df = (
-                            self.load_data_aligned(f"./data/forexsb/{sym}_HOUR.csv")
-                            .tail(100)
-                            .copy()
-                        )
-                        for k, v in current_sent.items():
-                            if f"sent_{k}" in cfg["features"]:
-                                df[f"sent_{k}"] = v
+                        # Lade Daten mit Optimizer-Logik
+                        df = self.load_and_prepare_data(sym)
+                        if df is None or len(df) < 100:
+                            continue
 
-                        df = self.calculate_indicators(df, cfg["features"])
+                        df = df.tail(500).copy()  # Genug Daten für Indikatoren
+
+                        # Prüfe Features
+                        missing = [f for f in cfg["features"] if f not in df.columns]
+                        if missing:
+                            continue
+
                         prob = self.models[sym].predict_proba(
                             df[cfg["features"]].iloc[[-1]]
                         )[0, 1]
@@ -278,7 +342,8 @@ class EliteBot:
                             self.execute_order(sym, "BUY", prob)
                         elif prob <= (1 - cfg["conf_thresh"]):
                             self.execute_order(sym, "SELL", prob)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"⚠️ {sym} Prediction fehler: {e}")
                         continue
             time.sleep(300)
 
