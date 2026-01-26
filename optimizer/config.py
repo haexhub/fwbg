@@ -68,6 +68,8 @@ ASSET_CONFIG = {
     # Crypto
     "BTCUSD": {"class": "CRYPTO", "point": 1.0, "spread": 50.0, "currency": ["USD"]},
     "ETHUSD": {"class": "CRYPTO", "point": 0.1, "spread": 2.0, "currency": ["USD"]},
+    # Test
+    "TESTUSD": {"class": "TEST", "point": 0.0001, "spread": 0.00010, "currency": ["USD"]},
 }
 
 # Grid-Konfiguration pro Klasse (in Spread-Vielfachen)
@@ -94,6 +96,11 @@ CLASS_GRIDS = {
         "tp": [20, 30, 50, 80, 120, 200],         # Größere Range wegen hoher Volatilität
         "sl": [20, 30, 50, 80, 120, 200],
         "ct": [0.52, 0.55, 0.60, 0.65, 0.70],
+    },
+    "TEST": {
+        "tp": [20, 40],
+        "sl": [20, 40],
+        "ct": [0.55, 0.60],
     },
 }
 
