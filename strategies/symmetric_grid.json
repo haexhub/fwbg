@@ -47,7 +47,7 @@
     "oos_size": 4000
   },
   "assets": {
-    "classes": ["CRYPTO"]
+    "classes": ["COMMODITY"]
   },
   "resources": {
     "max_cpu_percent": 0.8,
