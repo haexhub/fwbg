@@ -30,6 +30,61 @@ from .resource_manager import AdaptivePoolManager, get_resource_info
 warnings.filterwarnings("ignore")
 
 
+def simulate_equity(trades, kelly_risk, rrr, start_equity=100.0):
+    """
+    Simuliert die Equity-Kurve basierend auf Trade-Ergebnissen.
+
+    Args:
+        trades: Liste von Trade-Ergebnissen (>0 = Gewinn, <=0 = Verlust)
+        kelly_risk: Risk pro Trade als Anteil des Kapitals (z.B. 0.02 = 2%)
+        rrr: Risk-Reward-Ratio (z.B. 2.0 = TP ist 2x SL)
+        start_equity: Startkapital (default: 100.0)
+
+    Returns:
+        dict mit:
+            - equity_curve: Liste der Equity-Werte
+            - final_equity: Endkapital
+            - max_drawdown: Maximaler Drawdown (0.0-1.0)
+            - drawdowns: Liste der Drawdown-Werte in Prozent
+    """
+    equity = start_equity
+    equity_curve = [equity]
+    peak = equity
+    max_dd = 0
+    drawdowns = [0.0]
+
+    for trade_result in trades:
+        if trade_result > 0:
+            # Gewinn: Kelly * RRR
+            equity *= 1 + (kelly_risk * rrr)
+        else:
+            # Verlust: Kelly
+            equity *= 1 - kelly_risk
+
+        equity_curve.append(equity)
+
+        # Drawdown berechnen
+        if equity > peak:
+            peak = equity
+        dd = (peak - equity) / peak if peak > 0 else 0
+        if dd > max_dd:
+            max_dd = dd
+        drawdowns.append(dd * 100)
+
+        # Bankrott-Check
+        if equity <= 0:
+            equity = 0
+            max_dd = 1.0
+            break
+
+    return {
+        "equity_curve": equity_curve,
+        "final_equity": equity,
+        "max_drawdown": max_dd,
+        "drawdowns": drawdowns,
+    }
+
+
 def filter_correlated_assets(results, threshold=CORR_THRESHOLD):
     """
     Filtert Assets mit zu hoher Währungskorrelation.
@@ -225,38 +280,16 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     for e in elite:
         e["config"]["kelly_risk"] *= shield
 
-        # Equity-Simulation (einheitlich für Plot und Bewertung)
+        # Equity-Simulation via Hilfsfunktion
         kelly = e["config"]["kelly_risk"]
         rrr = e["rrr"]
+        sim = simulate_equity(e["tr_trace"], kelly, rrr)
 
-        equity = 100.0
-        eq = [equity]
-        peak = equity
-        max_dd = 0
-        drawdowns = [0.0]
-
-        for r in e["tr_trace"]:
-            if r > 0:
-                equity *= 1 + (kelly * rrr)
-            else:
-                equity *= 1 - kelly
-
-            eq.append(equity)
-
-            if equity > peak:
-                peak = equity
-            dd = (peak - equity) / peak if peak > 0 else 0
-            if dd > max_dd:
-                max_dd = dd
-            drawdowns.append(dd * 100)
-
-            if equity <= 0:
-                equity = 0
-                max_dd = 1.0
-                break
-
-        final_equity = equity
+        eq = sim["equity_curve"]
+        final_equity = sim["final_equity"]
+        max_dd = sim["max_drawdown"]
         max_dd_pct = max_dd * 100
+        drawdowns = sim["drawdowns"]
 
         # Equity Plot mit Drawdown (logarithmisch)
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), height_ratios=[3, 1])
