@@ -48,12 +48,14 @@ def check_restart_signal():
 
 
 class EliteBot:
-    # Default EPICs - werden zur Laufzeit aktualisiert falls nötig
+    # CFD EPICs - keine Knock-Outs, keine Optionen
     SYMBOL_TO_EPIC = {
+        # Indizes CFDs
         "FTSE100": "IX.D.FTSE.DAILY.IP",
         "DOW30": "IX.D.DOW.DAILY.IP",
         "NAS100": "IX.D.NASDAQ.DAILY.IP",
         "DAX": "IX.D.DAX.DAILY.IP",
+        # Forex CFDs
         "EURUSD": "CS.D.EURUSD.TODAY.IP",
         "GBPUSD": "CS.D.GBPUSD.TODAY.IP",
         "USDJPY": "CS.D.USDJPY.TODAY.IP",
@@ -61,20 +63,12 @@ class EliteBot:
         "USDCAD": "CS.D.USDCAD.TODAY.IP",
         "AUDUSD": "CS.D.AUDUSD.TODAY.IP",
         "EURCAD": "CS.D.EURCAD.TODAY.IP",
-        "XAUUSD": "CS.D.USCGC.TODAY.IP",
-        "GOLD": "CS.D.USCGC.TODAY.IP",
-        "XAGUSD": "CS.D.USCSI.TODAY.IP",
-        "SILVER": "CS.D.USCSI.TODAY.IP",
-        "BRENT": "EN.D.LCO.MONTH2.IP",
-    }
-
-    # Suchbegriffe für dynamische EPIC-Suche
-    SYMBOL_SEARCH_TERMS = {
-        "GOLD": "Spot Gold",
-        "XAUUSD": "Spot Gold",
-        "SILVER": "Spot Silver",
-        "XAGUSD": "Spot Silver",
-        "BRENT": "Oil Brent",
+        # Commodities CFDs (Spot)
+        "XAUUSD": "CS.D.CFDGOLD.CFD.IP",
+        "GOLD": "CS.D.CFDGOLD.CFD.IP",
+        "XAGUSD": "CS.D.CFDSILVER.CFD.IP",
+        "SILVER": "CS.D.CFDSILVER.CFD.IP",
+        "BRENT": "CC.D.LCO.UNC.IP",
     }
 
     def __init__(self, account_dir):
@@ -84,9 +78,6 @@ class EliteBot:
         self.TARGET_TZ = "Europe/Berlin"
         self.load_configurations()
         self.ig = self.initialize_ig_session()
-
-        # Suche korrekte EPICs für Commodities
-        self.resolve_epics()
 
         logger.info("🧠 Training KI-Modelle...")
         self.models = {}
@@ -133,40 +124,6 @@ class EliteBot:
         except Exception as e:
             logger.error(f"❌ Login gescheitert: {e}")
             sys.exit(1)
-
-    def resolve_epics(self):
-        """Sucht korrekte EPICs für Commodities via IG API."""
-        for symbol in self.assets.keys():
-            if symbol in self.SYMBOL_SEARCH_TERMS:
-                search_term = self.SYMBOL_SEARCH_TERMS[symbol]
-                try:
-                    time.sleep(0.5)
-                    results = self.ig.search_markets(search_term)
-                    if results is not None and not results.empty:
-                        # Suche nach CFD Spot-Markt (kein Knock-Out, kein Future)
-                        for _, row in results.iterrows():
-                            epic = row.get("epic", "")
-                            name = row.get("instrumentName", "").lower()
-                            # Vermeide Knock-Outs (KA.), Turbos, Mini Futures
-                            if epic.startswith("KA.") or epic.startswith("KB."):
-                                continue
-                            if "knock" in name or "turbo" in name or "mini" in name:
-                                continue
-                            # Bevorzuge Spot/CFD Märkte
-                            if "spot" in name or "cfd" in name or epic.startswith("CC.") or epic.startswith("CS."):
-                                self.SYMBOL_TO_EPIC[symbol] = epic
-                                logger.info(f"📍 {symbol} -> {epic} ({name})")
-                                break
-                        else:
-                            # Zweiter Durchlauf: nimm ersten nicht-KO Treffer
-                            for _, row in results.iterrows():
-                                epic = row.get("epic", "")
-                                if not epic.startswith("KA.") and not epic.startswith("KB."):
-                                    self.SYMBOL_TO_EPIC[symbol] = epic
-                                    logger.info(f"📍 {symbol} -> {epic} (fallback)")
-                                    break
-                except Exception as e:
-                    logger.warning(f"⚠️ EPIC-Suche für {symbol} fehlgeschlagen: {e}")
 
     def fetch_ig_historical(self, symbol, num_points=2000):
         """Holt historische OHLC-Daten von der IG API."""
