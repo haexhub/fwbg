@@ -125,33 +125,43 @@ class EliteBot:
             logger.error(f"❌ Login gescheitert: {e}")
             sys.exit(1)
 
-    def fetch_ig_historical(self, symbol, num_points=2000):
+    def fetch_ig_historical(self, symbol, num_points=1000):
         """Holt historische OHLC-Daten von der IG API."""
         epic = self.SYMBOL_TO_EPIC.get(symbol)
         if not epic:
             logger.warning(f"⚠️ Kein EPIC für {symbol}")
             return None
 
-        # Rate limiting
-        time.sleep(0.5)
+        # Rate limiting - IG API erlaubt ~60 requests/min
+        time.sleep(2)
+
+        # Retry-Logik bei Rate Limiting (403)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = self.ig.fetch_historical_prices_by_epic(
+                    epic=epic,
+                    resolution="1H",
+                    numpoints=num_points,
+                )
+                break  # Erfolg
+            except Exception as e:
+                if "403" in str(e) and attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 10  # 10s, 20s, 30s
+                    logger.warning(f"⚠️ Rate limit für {symbol}, warte {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                raise
+
+        if response is None or "prices" not in response:
+            logger.warning(f"⚠️ Keine Daten von IG für {symbol}")
+            return None
+
+        prices = response["prices"]
+        if not prices:
+            return None
 
         try:
-            # IG API: fetch_historical_prices_by_epic
-            # resolution: HOUR, numPoints: max 10000
-            response = self.ig.fetch_historical_prices_by_epic(
-                epic=epic,
-                resolution="1H",
-                numpoints=num_points,
-            )
-
-            if response is None or "prices" not in response:
-                logger.warning(f"⚠️ Keine Daten von IG für {symbol}")
-                return None
-
-            prices = response["prices"]
-            if not prices:
-                return None
-
             # Konvertiere zu DataFrame
             data = []
             for p in prices:
