@@ -234,6 +234,9 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     # Asset-Namen für Progress-Tracking extrahieren
     asset_names = [os.path.basename(f).split("_")[0] for f in files]
 
+    # Detail-Logs unterdrücken während Progress-UI aktiv (vor Pool-Start!)
+    os.environ["_OPTIMIZER_PROGRESS_UI"] = "1"
+
     # Adaptive Pool mit Einstellungen aus Strategy oder Defaults
     pool_manager = AdaptivePoolManager(
         max_cpu_percent=resource_settings["max_cpu_percent"],
@@ -260,6 +263,9 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
 
     # Progress-Tracker stoppen
     progress_tracker.stop()
+
+    # Detail-Logs wieder erlauben
+    os.environ.pop("_OPTIMIZER_PROGRESS_UI", None)
 
     # Stats ausgeben
     stats = pool_manager.get_status()
