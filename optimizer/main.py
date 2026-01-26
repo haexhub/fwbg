@@ -310,16 +310,17 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         max_dd_pct = max_dd * 100
         drawdowns = sim["drawdowns"]
 
-        # Equity Plot mit Drawdown (lineare Skala für korrekte DD-Visualisierung)
+        # Equity Plot mit Drawdown (logarithmisch)
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), height_ratios=[3, 1])
 
         ax1.plot(eq, color="blue", linewidth=1.5)
         ax1.fill_between(range(len(eq)), eq, alpha=0.3)
+        ax1.set_yscale("log")  # Logarithmische Y-Achse
         ax1.set_title(
             f"{e['symbol']} | WR: {e['win_rate']:.1%} | RRR: {rrr:.2f} | "
             f"Sharpe: {e.get('sharpe', 0):.2f} | MaxDD: {max_dd_pct:.0f}%"
         )
-        ax1.set_ylabel("Kapital (Start=100)")
+        ax1.set_ylabel("Kapital (log, Start=100)")
         ax1.set_xlabel("")  # Keine X-Achse für oberen Plot (wird vom unteren übernommen)
         ax1.grid(True, alpha=0.3)
 
