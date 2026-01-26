@@ -48,6 +48,7 @@ def check_restart_signal():
 
 
 class EliteBot:
+    # Default EPICs - werden zur Laufzeit aktualisiert falls nötig
     SYMBOL_TO_EPIC = {
         "FTSE100": "IX.D.FTSE.DAILY.IP",
         "DOW30": "IX.D.DOW.DAILY.IP",
@@ -60,11 +61,20 @@ class EliteBot:
         "USDCAD": "CS.D.USDCAD.TODAY.IP",
         "AUDUSD": "CS.D.AUDUSD.TODAY.IP",
         "EURCAD": "CS.D.EURCAD.TODAY.IP",
-        "XAUUSD": "CC.D.GOLD.USS.IP",
-        "GOLD": "CC.D.GOLD.USS.IP",
-        "XAGUSD": "CC.D.SILVER.USS.IP",
-        "SILVER": "CC.D.SILVER.USS.IP",
-        "BRENT": "CC.D.LCO.UNC.IP",
+        "XAUUSD": "CS.D.USCGC.TODAY.IP",
+        "GOLD": "CS.D.USCGC.TODAY.IP",
+        "XAGUSD": "CS.D.USCSI.TODAY.IP",
+        "SILVER": "CS.D.USCSI.TODAY.IP",
+        "BRENT": "EN.D.LCO.MONTH2.IP",
+    }
+
+    # Suchbegriffe für dynamische EPIC-Suche
+    SYMBOL_SEARCH_TERMS = {
+        "GOLD": "Gold",
+        "XAUUSD": "Gold",
+        "SILVER": "Silver",
+        "XAGUSD": "Silver",
+        "BRENT": "Brent",
     }
 
     def __init__(self, account_dir):
@@ -75,13 +85,15 @@ class EliteBot:
         self.load_configurations()
         self.ig = self.initialize_ig_session()
 
+        # Suche korrekte EPICs für Commodities
+        self.resolve_epics()
+
         logger.info("🧠 Training KI-Modelle...")
         self.models = {}
         for s in self.assets.keys():
             model = self.train_elite_model(s)
             if model is not None:
                 self.models[s] = model
-            # Rate limiting: 1 Sekunde Pause zwischen Assets
             time.sleep(1)
         logger.info(f"🏰 Bot 6.6 scharf. {len(self.models)} Assets geladen.")
         self.write_status("RUNNING")
@@ -121,6 +133,32 @@ class EliteBot:
         except Exception as e:
             logger.error(f"❌ Login gescheitert: {e}")
             sys.exit(1)
+
+    def resolve_epics(self):
+        """Sucht korrekte EPICs für Commodities via IG API."""
+        for symbol in self.assets.keys():
+            if symbol in self.SYMBOL_SEARCH_TERMS:
+                search_term = self.SYMBOL_SEARCH_TERMS[symbol]
+                try:
+                    time.sleep(0.5)
+                    results = self.ig.search_markets(search_term)
+                    if results is not None and not results.empty:
+                        # Suche nach passendem Markt (Spot/Cash, kein Future)
+                        for _, row in results.iterrows():
+                            epic = row.get("epic", "")
+                            name = row.get("instrumentName", "").lower()
+                            # Bevorzuge Spot/Cash Märkte
+                            if "spot" in name or "cash" in name or "usd" in name.lower():
+                                self.SYMBOL_TO_EPIC[symbol] = epic
+                                logger.info(f"📍 {symbol} -> {epic}")
+                                break
+                        else:
+                            # Fallback: nimm ersten Treffer
+                            epic = results.iloc[0]["epic"]
+                            self.SYMBOL_TO_EPIC[symbol] = epic
+                            logger.info(f"📍 {symbol} -> {epic} (fallback)")
+                except Exception as e:
+                    logger.warning(f"⚠️ EPIC-Suche für {symbol} fehlgeschlagen: {e}")
 
     def fetch_ig_historical(self, symbol, num_points=2000):
         """Holt historische OHLC-Daten von der IG API."""
