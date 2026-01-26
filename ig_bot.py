@@ -76,11 +76,13 @@ class EliteBot:
         self.ig = self.initialize_ig_session()
 
         logger.info("🧠 Training KI-Modelle...")
-        self.models = {
-            s: self.train_elite_model(s)
-            for s in self.assets.keys()
-            if self.train_elite_model(s) is not None
-        }
+        self.models = {}
+        for s in self.assets.keys():
+            model = self.train_elite_model(s)
+            if model is not None:
+                self.models[s] = model
+            # Rate limiting: 1 Sekunde Pause zwischen Assets
+            time.sleep(1)
         logger.info(f"🏰 Bot 6.6 scharf. {len(self.models)} Assets geladen.")
         self.write_status("RUNNING")
 
@@ -126,6 +128,9 @@ class EliteBot:
         if not epic:
             logger.warning(f"⚠️ Kein EPIC für {symbol}")
             return None
+
+        # Rate limiting
+        time.sleep(0.5)
 
         try:
             # IG API: fetch_historical_prices_by_epic
