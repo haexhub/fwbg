@@ -609,16 +609,38 @@ class EliteBot:
     def update_cache_background(self):
         """
         Aktualisiert den Cache für alle Symbole im Hintergrund.
-        Wird nach den Signalprüfungen ausgeführt.
+        Optimiert für Rate Limiting bei vielen Assets:
+        - Prüft erst ob Update überhaupt nötig (ohne API-Call)
+        - Längere Pause zwischen echten API-Calls (3s)
+        - Nur Symbole updaten die wirklich neue Daten brauchen
         """
+        now = datetime.now()
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        updates_needed = 0
+
         for sym in self.models.keys():
             try:
+                # Schnelle Prüfung: Braucht dieses Symbol ein Update?
+                last_time = self.last_bar_time.get(sym)
+                if last_time is not None and last_time >= current_hour:
+                    # Cache ist aktuell - kein API-Call nötig
+                    continue
+
+                updates_needed += 1
                 self.update_ohlc_cache(sym)
-                # Berechne auch Features neu wenn nötig
+                # Berechne auch Features neu
                 self.get_features_for_prediction(sym)
+
+                # Längere Pause zwischen API-Calls (IG erlaubt ~60/min)
+                # Bei 30 Assets mit 3s Pause = 90s Gesamtzeit
+                time.sleep(3)
+
             except Exception as e:
                 logger.warning(f"⚠️ Cache-Update für {sym} fehlgeschlagen: {e}")
-            time.sleep(1)  # Kleine Pause zwischen Symbolen
+                time.sleep(3)  # Auch bei Fehler pausieren
+
+        if updates_needed > 0:
+            logger.info(f"📊 Cache-Update abgeschlossen: {updates_needed} Assets aktualisiert")
 
     def run(self):
         """
@@ -710,7 +732,8 @@ class EliteBot:
 
                 # PHASE 3: Cache im Hintergrund aktualisieren
                 # Nur einmal pro Stunde, kurz nach der vollen Stunde
-                if now.minute < 10:  # In den ersten 10 Minuten jeder Stunde
+                # Die update_cache_background Methode prüft selbst ob Updates nötig sind
+                if now.minute < 5:  # In den ersten 5 Minuten jeder Stunde
                     self.update_cache_background()
 
             # Kurzer Sleep - wir prüfen öfter, aber Signale nur 1x pro Stunde
