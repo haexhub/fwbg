@@ -12,12 +12,15 @@ from trading_ig import IGService
 import yfinance as yf
 
 # --- LOGGING SETUP ---
+LOG_DIR = os.environ.get("LOG_DIR", "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - [%(levelname)s] - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("bot_fortress.log"),
+        logging.FileHandler(os.path.join(LOG_DIR, "bot.log")),
     ],
 )
 logger = logging.getLogger("FortressBot")

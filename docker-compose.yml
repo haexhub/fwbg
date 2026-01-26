@@ -11,6 +11,7 @@ services:
       - fwbg-stats:/app/stats_export
     environment:
       - TZ=Europe/Berlin
+      - LOG_DIR=/app/logs
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     logging:

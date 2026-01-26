@@ -61,7 +61,9 @@ ASSET_CONFIG = {
     "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 1.5, "currency": ["GBP"]},
     # Commodities
     "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.30, "currency": ["USD"]},
+    "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.30, "currency": ["USD"]},  # Andere Zeitzone, 2h mehr/Tag
     "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},
+    "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},  # Andere Zeitzone
     "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.030, "currency": ["USD"]},
     # Crypto
     "BTCUSD": {"class": "CRYPTO", "point": 1.0, "spread": 50.0, "currency": ["USD"]},
