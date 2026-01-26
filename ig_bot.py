@@ -84,6 +84,9 @@ class EliteBot:
         self.features_cache = {}  # {symbol: DataFrame mit Features}
         self.last_bar_time = {}  # {symbol: letzter Timestamp}
 
+        # Slippage-Warnungen für Dashboard (max. 20 Einträge)
+        self.slippage_warnings = []  # [{symbol, timestamp, expected, actual, slippage_pct}]
+
         logger.info("🧠 Training KI-Modelle...")
         self.models = {}
         for s in self.assets.keys():
@@ -113,6 +116,7 @@ class EliteBot:
             "active_epics": list(self.models.keys()) if hasattr(self, "models") else [],
             "account_id": self.account_id,
             "account_mode": self.account_info.get("credentials", {}).get("env", "DEMO"),
+            "slippage_warnings": self.slippage_warnings if hasattr(self, "slippage_warnings") else [],
         }
 
         with open(status_file, "w") as f:
@@ -528,6 +532,20 @@ class EliteBot:
                     logger.info(f"✅ Order bestätigt! {symbol} @ {actual_price}")
                 else:
                     logger.warning(f"⚠️ Order-Warnung für {symbol}: Slippage={slippage}%")
+                    # Slippage-Warnung für Dashboard speichern
+                    self.slippage_warnings.append({
+                        "symbol": symbol,
+                        "timestamp": datetime.now().isoformat(),
+                        "expected_price": expected_price,
+                        "actual_price": actual_price,
+                        "slippage_pct": slippage,
+                        "direction": direction,
+                    })
+                    # Max 20 Warnungen behalten
+                    if len(self.slippage_warnings) > 20:
+                        self.slippage_warnings = self.slippage_warnings[-20:]
+                    # Status sofort aktualisieren
+                    self.write_status("RUNNING")
             else:
                 logger.error(f"❌ Abgelehnt: {response}")
 
