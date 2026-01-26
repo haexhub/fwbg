@@ -79,6 +79,11 @@ class EliteBot:
         self.load_configurations()
         self.ig = self.initialize_ig_session()
 
+        # Cache für OHLC-Daten und berechnete Features pro Symbol
+        self.ohlc_cache = {}  # {symbol: DataFrame mit OHLC}
+        self.features_cache = {}  # {symbol: DataFrame mit Features}
+        self.last_bar_time = {}  # {symbol: letzter Timestamp}
+
         logger.info("🧠 Training KI-Modelle...")
         self.models = {}
         for s in self.assets.keys():
@@ -86,7 +91,7 @@ class EliteBot:
             if model is not None:
                 self.models[s] = model
             time.sleep(1)
-        logger.info(f"🏰 Bot 6.6 scharf. {len(self.models)} Assets geladen.")
+        logger.info(f"🏰 Bot 7.0 (Cache-First) scharf. {len(self.models)} Assets geladen.")
         self.write_status("RUNNING")
 
     def load_configurations(self):
@@ -137,6 +142,7 @@ class EliteBot:
 
         # Retry-Logik bei Rate Limiting (403)
         max_retries = 3
+        response = None
         for attempt in range(max_retries):
             try:
                 response = self.ig.fetch_historical_prices_by_epic(
@@ -182,6 +188,108 @@ class EliteBot:
         except Exception as e:
             logger.warning(f"⚠️ IG API Fehler für {symbol}: {e}")
             return None
+
+    def update_ohlc_cache(self, symbol):
+        """
+        Inkrementelles Update: Holt nur neue Kerzen seit dem letzten Update.
+        Beim ersten Aufruf werden alle historischen Daten geladen.
+        """
+        if symbol not in self.ohlc_cache:
+            # Erster Aufruf: Lade alle historischen Daten
+            logger.info(f"📊 {symbol}: Lade initiale historische Daten...")
+            df = self.fetch_ig_historical(symbol, num_points=1000)
+            if df is not None and not df.empty:
+                self.ohlc_cache[symbol] = df
+                self.last_bar_time[symbol] = df.index[-1]
+                return True
+            return False
+
+        # Inkrementelles Update: Nur neue Kerzen holen
+        last_time = self.last_bar_time.get(symbol)
+        if last_time is None:
+            return False
+
+        # Prüfe ob eine neue Stunde begonnen hat
+        now = datetime.now()
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+        # Wenn wir noch in der gleichen Stunde sind, kein Update nötig
+        if last_time >= current_hour:
+            return True  # Cache ist aktuell
+
+        # Hole nur die letzten paar Bars (sicherheitshalber etwas mehr)
+        hours_since_last = max(2, int((now - last_time).total_seconds() / 3600) + 2)
+        num_new_bars = min(hours_since_last, 24)  # Max 24 Bars auf einmal
+
+        logger.info(f"📊 {symbol}: Hole {num_new_bars} neue Kerzen...")
+        new_df = self.fetch_ig_historical(symbol, num_points=num_new_bars)
+
+        if new_df is None or new_df.empty:
+            return False
+
+        # Merge: Alte Daten behalten, neue anhängen/überschreiben
+        cached_df = self.ohlc_cache[symbol]
+
+        # Kombiniere und entferne Duplikate (neue Daten haben Vorrang)
+        combined = pd.concat([cached_df, new_df])
+        combined = combined[~combined.index.duplicated(keep='last')]
+        combined = combined.sort_index()
+
+        # Behalte nur die letzten 1000 Bars (Memory-Limit)
+        if len(combined) > 1000:
+            combined = combined.tail(1000)
+
+        self.ohlc_cache[symbol] = combined
+        self.last_bar_time[symbol] = combined.index[-1]
+
+        return True
+
+    def get_features_for_prediction(self, symbol):
+        """
+        Holt aktuelle Features für Prediction.
+        Nutzt Cache wenn möglich, berechnet Indikatoren nur bei neuen Daten.
+        """
+        # Update OHLC Cache (inkrementell)
+        if not self.update_ohlc_cache(symbol):
+            return None
+
+        ohlc_df = self.ohlc_cache[symbol]
+        if ohlc_df is None or len(ohlc_df) < 100:
+            return None
+
+        # Prüfe ob wir neue Features berechnen müssen
+        last_ohlc_time = ohlc_df.index[-1]
+        cached_features = self.features_cache.get(symbol)
+
+        if cached_features is not None and len(cached_features) > 0:
+            last_feature_time = cached_features.index[-1]
+            if last_feature_time >= last_ohlc_time:
+                # Features sind aktuell
+                return cached_features
+
+        # Berechne Features neu (nur wenn nötig)
+        logger.info(f"🔄 {symbol}: Berechne Indikatoren...")
+        df = ohlc_df.copy()
+
+        # Berechne alle technischen Indikatoren
+        df = compute_indicator_pool(df)
+
+        # Lade Makro-Indikatoren aus CSV
+        df = load_macro_indicators(df)
+
+        # Lade Zinsdaten
+        df = load_interest_rates(df)
+
+        # Aktualisiere mit Live-Makro-Daten für die letzte Zeile
+        macro_live = self.fetch_macro_data()
+        for key, value in macro_live.items():
+            if key in df.columns:
+                df.loc[df.index[-1], key] = value
+
+        # Cache Features
+        self.features_cache[symbol] = df
+
+        return df
 
     def fetch_macro_data(self):
         """Holt aktuelle Makro-Daten von yfinance."""
@@ -241,13 +349,38 @@ class EliteBot:
             return None
 
     def train_elite_model(self, symbol):
-        """Trainiert Modell mit Optimizer-Features."""
+        """
+        Trainiert Modell mit Optimizer-Features.
+        Füllt gleichzeitig den OHLC- und Feature-Cache.
+        """
         try:
             cfg = self.assets[symbol]
-            df = self.load_and_prepare_data(symbol)
-            if df is None:
+
+            # Lade OHLC und fülle Cache
+            logger.info(f"📊 {symbol}: Lade historische Daten...")
+            ohlc_df = self.fetch_ig_historical(symbol, num_points=1000)
+            if ohlc_df is None or ohlc_df.empty:
                 logger.warning(f"⚠️ Keine Daten für {symbol}")
                 return None
+
+            # Cache füllen
+            self.ohlc_cache[symbol] = ohlc_df
+            self.last_bar_time[symbol] = ohlc_df.index[-1]
+
+            # Features berechnen
+            df = ohlc_df.copy()
+            df = compute_indicator_pool(df)
+            df = load_macro_indicators(df)
+            df = load_interest_rates(df)
+
+            # Aktualisiere mit Live-Makro-Daten für die letzte Zeile
+            macro_live = self.fetch_macro_data()
+            for key, value in macro_live.items():
+                if key in df.columns:
+                    df.loc[df.index[-1], key] = value
+
+            # Feature-Cache füllen
+            self.features_cache[symbol] = df
 
             # Prüfe ob alle Features vorhanden sind
             missing = [f for f in cfg["features"] if f not in df.columns]
@@ -256,23 +389,76 @@ class EliteBot:
                 return None
 
             df["Target"] = (df["C"].shift(-1) > df["C"]).astype(int)
-            df = df.dropna(subset=cfg["features"] + ["Target"])
+            df_train = df.dropna(subset=cfg["features"] + ["Target"])
 
-            if len(df) < 1000:
-                logger.warning(f"⚠️ {symbol}: Zu wenig Daten ({len(df)} Zeilen)")
+            if len(df_train) < 500:  # Reduziert von 1000 - wir haben nur 1000 Bars
+                logger.warning(f"⚠️ {symbol}: Zu wenig Daten ({len(df_train)} Zeilen)")
                 return None
 
             m = XGBClassifier(
                 n_estimators=100, max_depth=5, n_jobs=-1, random_state=42, verbosity=0
             )
-            m.fit(df[cfg["features"]], df["Target"])
-            logger.info(f"✅ {symbol} trainiert mit {len(df)} Samples")
+            m.fit(df_train[cfg["features"]], df_train["Target"])
+            logger.info(f"✅ {symbol} trainiert mit {len(df_train)} Samples, Cache gefüllt")
             return m
         except Exception as e:
             logger.error(f"❌ {symbol} Training fehlgeschlagen: {e}")
             return None
 
+    def execute_order_fast(self, symbol, direction, prob, cached_atr):
+        """
+        Schnelle Order-Ausführung ohne API-Calls für Preisdaten.
+        ATR kommt aus dem Cache.
+        """
+        cfg = self.assets[symbol]
+        epic = self.SYMBOL_TO_EPIC.get(symbol)
+        if not epic:
+            return
+
+        try:
+            acc = self.ig.fetch_accounts()
+            balance = float(acc.loc[0, "balance"])
+            # Maximale Positionsgröße begrenzen (Anti-Wahnsinn-Sicherung)
+            risk_cash = min(balance * cfg["kelly_risk"], balance * 0.05)
+
+            # ATR aus Cache - kein API-Call nötig!
+            atr = cached_atr
+
+            # Korrekte Berechnung der Pips/Punkte Distanz
+            sl_dist_pts = max(10, int((atr * cfg["sl_mult"]) / cfg["point_value"]))
+            limit_dist_pts = int((atr * cfg["tp_mult"]) / cfg["point_value"])
+
+            # Normierte Size Berechnung
+            size = round(risk_cash / sl_dist_pts, 2)
+            size = max(self.account_info["money_management"]["min_lot_size"], size)
+
+            logger.info(
+                f"🚀 {direction} {symbol} | Epic: {epic} | Size: {size} | SL: {sl_dist_pts} | Prob: {prob:.2f}"
+            )
+
+            # Market Order - sofort ausführen
+            response = self.ig.create_open_position(
+                currency_code=self.account_info["metadata"]["currency"],
+                direction=direction,
+                epic=epic,
+                expiry="DFB",
+                order_type="MARKET",
+                size=size,
+                guaranteed_stop=False,
+                stop_distance=sl_dist_pts,
+                limit_distance=limit_dist_pts,
+            )
+
+            if response and "dealReference" in response:
+                logger.info(f"✅ Order platziert! Ref: {response['dealReference']}")
+            else:
+                logger.error(f"❌ Abgelehnt: {response}")
+
+        except Exception as e:
+            logger.error(f"❌ Fehler bei {symbol}: {e}")
+
     def execute_order(self, symbol, direction, prob):
+        """Legacy-Methode - nutzt API-Call für ATR (langsamer)."""
         cfg = self.assets[symbol]
         epic = self.SYMBOL_TO_EPIC.get(symbol)
         if not epic:
@@ -325,45 +511,115 @@ class EliteBot:
         except Exception as e:
             logger.error(f"❌ Fehler bei {symbol}: {e}")
 
+    def update_cache_background(self):
+        """
+        Aktualisiert den Cache für alle Symbole im Hintergrund.
+        Wird nach den Signalprüfungen ausgeführt.
+        """
+        for sym in self.models.keys():
+            try:
+                self.update_ohlc_cache(sym)
+                # Berechne auch Features neu wenn nötig
+                self.get_features_for_prediction(sym)
+            except Exception as e:
+                logger.warning(f"⚠️ Cache-Update für {sym} fehlgeschlagen: {e}")
+            time.sleep(1)  # Kleine Pause zwischen Symbolen
+
     def run(self):
+        """
+        Hauptloop mit Cache-First Architektur:
+        1. Signale aus Cache prüfen (schnell, keine API-Calls)
+        2. Bei Signal: Order SOFORT absetzen
+        3. Cache im Hintergrund updaten
+        """
+        # Initiales Cache-Füllen beim Start (bereits durch train_elite_model passiert)
+        logger.info("📊 Initialisiere Feature-Cache für alle Assets...")
+        for sym in self.models.keys():
+            try:
+                # Cache wurde beim Training gefüllt, aber Features noch nicht
+                if sym in self.ohlc_cache:
+                    self.get_features_for_prediction(sym)
+            except Exception as e:
+                logger.warning(f"⚠️ Feature-Cache für {sym} fehlgeschlagen: {e}")
+
+        last_signal_hour = {}  # Verhindert mehrfache Signale pro Stunde
+
         while not self._stop_event.is_set():
             # Check for restart signal
             if check_restart_signal():
                 logger.info("🔄 Restart signal detected, restarting bot...")
                 self.write_status("RESTARTING")
-                # Re-execute the script
                 os.execv(sys.executable, [sys.executable] + sys.argv)
 
             self.write_status("RUNNING")
-            if datetime.now().weekday() < 5:
+            now = datetime.now()
+            current_hour = now.replace(minute=0, second=0, microsecond=0)
+
+            # Nur an Werktagen handeln
+            if now.weekday() < 5:
+                signals_to_execute = []
+
+                # PHASE 1: Signale aus Cache prüfen (SCHNELL - keine API-Calls)
                 for sym, cfg in self.assets.items():
                     if sym not in self.models:
                         continue
+
+                    # Verhindere mehrfache Signale in derselben Stunde
+                    if last_signal_hour.get(sym) == current_hour:
+                        continue
+
                     try:
-                        # Lade Daten mit Optimizer-Logik
-                        df = self.load_and_prepare_data(sym)
+                        # Nutze gecachte Features (kein API-Call!)
+                        df = self.features_cache.get(sym)
                         if df is None or len(df) < 100:
                             continue
-
-                        df = df.tail(500).copy()  # Genug Daten für Indikatoren
 
                         # Prüfe Features
                         missing = [f for f in cfg["features"] if f not in df.columns]
                         if missing:
                             continue
 
+                        # Prediction aus Cache
                         prob = self.models[sym].predict_proba(
                             df[cfg["features"]].iloc[[-1]]
                         )[0, 1]
 
+                        # ATR aus Cache für schnelle Order-Ausführung
+                        ohlc_df = self.ohlc_cache.get(sym)
+                        if ohlc_df is not None and len(ohlc_df) >= 14:
+                            cached_atr = ta.volatility.average_true_range(
+                                ohlc_df["H"], ohlc_df["L"], ohlc_df["C"]
+                            ).iloc[-1]
+                        else:
+                            cached_atr = None
+
+                        # Signal erkannt?
                         if prob >= cfg["conf_thresh"]:
-                            self.execute_order(sym, "BUY", prob)
+                            signals_to_execute.append((sym, "BUY", prob, cached_atr))
+                            last_signal_hour[sym] = current_hour
                         elif prob <= (1 - cfg["conf_thresh"]):
-                            self.execute_order(sym, "SELL", prob)
+                            signals_to_execute.append((sym, "SELL", prob, cached_atr))
+                            last_signal_hour[sym] = current_hour
+
                     except Exception as e:
-                        logger.warning(f"⚠️ {sym} Prediction fehler: {e}")
+                        logger.warning(f"⚠️ {sym} Signal-Check fehlgeschlagen: {e}")
                         continue
-            time.sleep(300)
+
+                # PHASE 2: Orders SOFORT ausführen (minimale Latenz)
+                for sym, direction, prob, cached_atr in signals_to_execute:
+                    if cached_atr is not None:
+                        self.execute_order_fast(sym, direction, prob, cached_atr)
+                    else:
+                        # Fallback: Legacy-Methode mit API-Call
+                        self.execute_order(sym, direction, prob)
+
+                # PHASE 3: Cache im Hintergrund aktualisieren
+                # Nur einmal pro Stunde, kurz nach der vollen Stunde
+                if now.minute < 10:  # In den ersten 10 Minuten jeder Stunde
+                    self.update_cache_background()
+
+            # Kurzer Sleep - wir prüfen öfter, aber Signale nur 1x pro Stunde
+            time.sleep(60)  # Jede Minute prüfen (statt 5 Minuten)
 
 
 def discover_accounts(accounts_dir="accounts"):
