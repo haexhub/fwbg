@@ -18,7 +18,8 @@ from .data_loader import load_data_aligned, load_macro_csv
 from .indicators import compute_indicator_pool, get_feature_columns, compute_regime_filter, filter_features_by_group
 from .simulation import (
     simulate_pro_trade, calculate_sharpe_ratio, calculate_calmar_ratio,
-    check_feature_stability, monte_carlo_permutation_test, monte_carlo_equity_simulation
+    check_feature_stability, monte_carlo_permutation_test, monte_carlo_equity_simulation,
+    adjust_kelly_for_target_dd, find_optimal_circuit_breaker, calculate_equity_smoothness
 )
 from .plateau import (
     calculate_param_plateau_score, select_plateau_features,
@@ -498,9 +499,20 @@ def process_symbol(csv_path):
             report_done(sym, "no_candidates")
             return {"symbol": sym, "status": "no_candidates", "grid_results": grid_results}
 
-        # Sortiere nach kombinierter Metrik
+        # Sortiere nach kombinierter Metrik mit Smoothness-Bonus
         for c in candidates:
-            c["score"] = c["pnl"] * (1 + max(0, c["sharpe"]) / 10)
+            # Berechne Smoothness für jeden Kandidaten
+            preliminary_kelly = max(0, min(0.05, (
+                (c["tr"].count(1.0) / len(c["tr"]) * c["rrr"] - (1 - c["tr"].count(1.0) / len(c["tr"]))) / c["rrr"]
+            ) / 4)) if len(c["tr"]) > 0 else 0.01
+
+            smoothness = calculate_equity_smoothness(c["tr"], preliminary_kelly, c["rrr"])
+            c["smoothness"] = smoothness
+
+            # Score: PnL * Sharpe-Bonus * Smoothness-Bonus
+            # Smoothness-Bonus: 0.8 bis 1.2 basierend auf Score
+            smoothness_bonus = 0.8 + (smoothness["smoothness_score"] * 0.4)
+            c["score"] = c["pnl"] * (1 + max(0, c["sharpe"]) / 10) * smoothness_bonus
 
         # === PLATEAU-BASIERTE AUSWAHL ===
         # Statt einfach den höchsten Score zu nehmen, bevorzugen wir
@@ -572,6 +584,27 @@ def process_symbol(csv_path):
         if mc_equity["bankruptcy_rate"] > 0.1:
             log(1, f"WARNUNG: {mc_equity['bankruptcy_rate']:.1%} Bankruptcy-Rate in MC-Simulation", sym)
 
+        # === KELLY-ANPASSUNG FÜR ZIEL-DRAWDOWN ===
+        # Passe Kelly an, um Max DD auf ~30% zu begrenzen
+        kelly_adjustment = adjust_kelly_for_target_dd(b["tr"], fk, rrr, target_max_dd=0.30)
+        if kelly_adjustment["scale_factor"] < 1.0:
+            log(2, f"Kelly angepasst: {fk*100:.2f}% -> {kelly_adjustment['adjusted_kelly']*100:.2f}% "
+                   f"(DD: {kelly_adjustment['original_dd']*100:.0f}% -> {kelly_adjustment['adjusted_dd']*100:.0f}%)", sym)
+            fk = kelly_adjustment["adjusted_kelly"]
+
+        # === CIRCUIT BREAKER OPTIMIERUNG ===
+        # Finde optimale Pause-Parameter
+        circuit_breaker = find_optimal_circuit_breaker(
+            b["tr"], fk, rrr,
+            loss_range=(3, 8),      # Pausiere nach 3-8 Verlusten
+            pause_range=(5, 30)     # Pause für 5-30 Trades
+        )
+
+        if circuit_breaker["optimal_pause_after_losses"] > 0:
+            log(2, f"Circuit Breaker: Pause nach {circuit_breaker['optimal_pause_after_losses']} Verlusten "
+                   f"für {circuit_breaker['optimal_pause_bars']} Trades "
+                   f"(DD: {circuit_breaker['baseline_dd']*100:.0f}% -> {circuit_breaker['optimized_dd']*100:.0f}%)", sym)
+
         # Ensemble-Gewichte (basierend auf Plateau-Score)
         ensemble_weights = []
         if top_n > 1:
@@ -604,6 +637,18 @@ def process_symbol(csv_path):
                 "good_hours": b.get("good_hours", list(range(24))),
                 "ensemble": ensemble_weights if ensemble_weights else None,
                 "dd_scaling": {"10": 0.5, "20": 0.25},
+                # Circuit Breaker Parameter (von KI optimiert)
+                "circuit_breaker": {
+                    "pause_after_losses": circuit_breaker["optimal_pause_after_losses"],
+                    "pause_bars": circuit_breaker["optimal_pause_bars"],
+                    "enabled": circuit_breaker["optimal_pause_after_losses"] > 0,
+                },
+                # Kelly-Anpassung Info
+                "kelly_adjustment": {
+                    "original_kelly": kelly_adjustment["adjusted_kelly"] / kelly_adjustment["scale_factor"] if kelly_adjustment["scale_factor"] > 0 else fk,
+                    "scale_factor": kelly_adjustment["scale_factor"],
+                    "target_dd": 0.30,
+                },
             },
             "tr_trace": b["tr"],
             "rrr": b["rrr"],
@@ -625,8 +670,13 @@ def process_symbol(csv_path):
             # Fold-Stabilität
             "fold_stability": b.get("fold_stability", 0),
             "fold_performances": b.get("fold_performances", []),
+            # Equity-Smoothness
+            "smoothness": b.get("smoothness", {}),
         }
-        log(1, f"OK - WR={wr:.1%} Sharpe={b['sharpe']:.2f} p={mc_perm['p_value']:.3f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
+
+        smoothness_info = b.get("smoothness", {})
+        smoothness_score = smoothness_info.get("smoothness_score", 0)
+        log(1, f"OK - WR={wr:.1%} Sharpe={b['sharpe']:.2f} Smooth={smoothness_score:.2f} p={mc_perm['p_value']:.3f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
         report_done(sym, "ok")
         return result
 
