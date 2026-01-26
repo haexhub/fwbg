@@ -26,7 +26,7 @@ from .results import (
     list_runs, load_run, compare_runs, create_strategy_metadata
 )
 from .resource_manager import AdaptivePoolManager, get_resource_info
-from .progress import init_progress_tracking
+from .progress import init_progress_tracking, shutdown_progress_tracking
 
 warnings.filterwarnings("ignore")
 
@@ -263,6 +263,9 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
 
     # Progress-Tracker stoppen
     progress_tracker.stop()
+
+    # Manager-Prozess beenden (verhindert dass Programm hängt)
+    shutdown_progress_tracking()
 
     # Detail-Logs wieder erlauben
     os.environ.pop("_OPTIMIZER_PROGRESS_UI", None)

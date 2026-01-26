@@ -14,15 +14,29 @@ from .logging_utils import set_progress_ui_active
 # Globaler Progress-Manager (wird in main.py initialisiert)
 _progress_manager: Optional["ProgressTracker"] = None
 _progress_dict: Optional[Dict] = None
+_mp_manager = None  # multiprocessing.Manager Instanz
 
 
 def init_progress_tracking():
     """Initialisiert das Progress-Tracking (muss im Main-Prozess aufgerufen werden)."""
-    global _progress_manager, _progress_dict
-    manager = Manager()
-    _progress_dict = manager.dict()
+    global _progress_manager, _progress_dict, _mp_manager
+    _mp_manager = Manager()
+    _progress_dict = _mp_manager.dict()
     _progress_manager = ProgressTracker(_progress_dict)
     return _progress_manager, _progress_dict
+
+
+def shutdown_progress_tracking():
+    """Beendet das Progress-Tracking und den Manager-Prozess."""
+    global _mp_manager, _progress_dict, _progress_manager
+    if _mp_manager is not None:
+        try:
+            _mp_manager.shutdown()
+        except Exception:
+            pass
+        _mp_manager = None
+    _progress_dict = None
+    _progress_manager = None
 
 
 def set_progress_dict(shared_dict: Dict):
