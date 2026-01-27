@@ -21,6 +21,7 @@ from .config import (
     convert_numpy
 )
 from .process import process_symbol
+from .progress import SimpleProgressTracker
 from .results import (
     generate_run_id, create_run_directory, save_run_results,
     list_runs, load_run, compare_runs, create_strategy_metadata
@@ -236,7 +237,6 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     asset_names = [os.path.basename(f).split("_")[0] for f in files]
 
     # Adaptive Pool mit Einstellungen aus Strategy oder Defaults
-    # HINWEIS: Progress-Dict deaktiviert wegen Deadlock mit ProcessPoolExecutor
     pool_manager = AdaptivePoolManager(
         max_cpu_percent=resource_settings["max_cpu_percent"],
         min_free_ram_percent=resource_settings["min_free_ram_percent"],
@@ -245,12 +245,14 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         progress_dict=None  # Kein shared dict - verhindert Deadlock
     )
 
-    # Einfacher Progress-Callback
+    # Progress-Tracker im Hauptprozess (kein shared state nötig)
+    progress_tracker = SimpleProgressTracker(len(files), asset_names)
+
     def update_progress(completed, total):
-        pct = completed / total * 100 if total > 0 else 0
-        print(f"\rFortschritt: {completed}/{total} ({pct:.0f}%)   ", end="", flush=True)
+        progress_tracker.update_completed(completed)
 
     print(f"\nStarte Verarbeitung von {len(files)} Assets...\n")
+    progress_tracker.start()
 
     raw_results = pool_manager.map_adaptive(
         func=process_symbol,
@@ -258,7 +260,7 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         progress_callback=update_progress
     )
 
-    print()  # Newline nach Progress
+    progress_tracker.stop()
 
     # Stats ausgeben
     stats = pool_manager.get_status()
