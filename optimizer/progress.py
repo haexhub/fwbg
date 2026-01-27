@@ -183,7 +183,6 @@ class ProgressTracker:
             workers = dict(self.worker_status)
 
         elapsed = time.time() - self.start_time if self.start_time else 0
-        pct = (completed / self.total_assets * 100) if self.total_assets > 0 else 0
 
         # Aktive Worker filtern (nur die letzten 30 Sekunden)
         now = time.time()
@@ -192,8 +191,11 @@ class ProgressTracker:
             if now - info.get("time", 0) < 30
         }
 
-        # ETA berechnen (inkl. Grid-Fortschritt)
+        # Gesamt-Fortschritt berechnen (inkl. Grid-Fortschritt der aktiven Worker)
         total_progress = self._calculate_total_progress(completed, active_workers)
+        pct = (total_progress / self.total_assets * 100) if self.total_assets > 0 else 0
+
+        # ETA berechnen (inkl. Grid-Fortschritt)
         eta_str = self._calculate_eta(elapsed, total_progress)
         elapsed_str = self._format_time(elapsed)
 
