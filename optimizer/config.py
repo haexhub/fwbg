@@ -38,6 +38,12 @@ WALK_FORWARD_FOLDS = 8
 VIX_HIGH = 25
 ADX_MIN = 20
 
+# Label-Generierung (OHNE Look-Ahead Bias!)
+# Methoden: "trend", "mean_reversion", "momentum", "breakout"
+LABEL_METHOD = os.environ.get("OPTIMIZER_LABEL_METHOD", "trend")
+LABEL_LOOKBACK = int(os.environ.get("OPTIMIZER_LABEL_LOOKBACK", "24"))  # Bars
+LABEL_THRESHOLD = float(os.environ.get("OPTIMIZER_LABEL_THRESHOLD", "0.3"))  # % Preisänderung
+
 # Asset-Klassifizierung und Spread-Kosten (verdoppelt für konservative Simulation)
 ASSET_CONFIG = {
     # FOREX - Majors

@@ -1,12 +1,13 @@
 """
 Fold-Worker für parallelisierte Walk-Forward Validierung.
 """
+import os
 import time
 import numpy as np
 from xgboost import XGBClassifier
 
 from .config import MAX_TRADE_BARS, MIN_TRADES
-from .simulation import simulate_pro_trade
+from .simulation import simulate_pro_trade, generate_combined_labels
 from .progress import report_progress
 from .logging_utils import log
 
@@ -66,31 +67,19 @@ def process_fold(
         shared_config.get("total_grid_combos", 1)
     )
 
-    # === TARGETS BERECHNEN ===
-    train_targs_long = np.zeros(len(train_df))
-    train_targs_short = np.zeros(len(train_df))
+    # === TARGETS BERECHNEN (OHNE LOOK-AHEAD BIAS!) ===
+    # Wir verwenden jetzt Labels basierend auf VERGANGENEN Trends,
+    # nicht auf zukünftigen Trade-Ergebnissen.
+    label_method = os.environ.get("OPTIMIZER_LABEL_METHOD", "trend")
+    label_lookback = int(os.environ.get("OPTIMIZER_LABEL_LOOKBACK", "24"))
+    label_threshold = float(os.environ.get("OPTIMIZER_LABEL_THRESHOLD", "0.3"))
 
-    opn_v = train_df["O"].values
-    cls_v = train_df["C"].values
-    hgh_v = train_df["H"].values
-    low_v = train_df["L"].values
-    atr_v = train_df["_atr"].values
-    timestamps = train_df.index.values
-
-    sim_count = len(train_df) - MAX_TRADE_BARS
-    for i in range(sim_count):
-        trade_long = simulate_pro_trade(
-            cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread,
-            timestamps=timestamps, symbol=sym, opens=opn_v
-        )
-        trade_short = simulate_pro_trade(
-            cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, spread,
-            timestamps=timestamps, symbol=sym, opens=opn_v
-        )
-        if trade_long and trade_long["result"] == 1.0:
-            train_targs_long[i] = 1
-        if trade_short and trade_short["result"] == 1.0:
-            train_targs_short[i] = 1
+    train_targs_long, train_targs_short = generate_combined_labels(
+        train_df,
+        method=label_method,
+        lookback=label_lookback,
+        threshold_pct=label_threshold
+    )
 
     min_per_direction = MIN_TRADES // 2
     n_long = np.count_nonzero(train_targs_long)
