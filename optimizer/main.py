@@ -315,8 +315,13 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         max_dd_pct = max_dd * 100
         drawdowns = sim["drawdowns"]
 
-        # Equity Plot mit Drawdown (logarithmisch)
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), height_ratios=[3, 1])
+        # Gewinn pro Trade berechnen (aus Equity-Kurve)
+        profit_per_trade = []
+        for i in range(1, len(eq)):
+            profit_per_trade.append(eq[i] - eq[i - 1])
+
+        # Equity Plot mit Drawdown und Profit per Trade (logarithmisch)
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 9), height_ratios=[3, 1, 1])
 
         ax1.plot(eq, color="blue", linewidth=1.5)
         ax1.fill_between(range(len(eq)), eq, alpha=0.3)
@@ -326,14 +331,22 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
             f"Sharpe: {e.get('sharpe', 0):.2f} | MaxDD: {max_dd_pct:.0f}%"
         )
         ax1.set_ylabel("Kapital (log, Start=100)")
-        ax1.set_xlabel("")  # Keine X-Achse für oberen Plot (wird vom unteren übernommen)
+        ax1.set_xlabel("")
         ax1.grid(True, alpha=0.3)
 
         ax2.fill_between(range(len(drawdowns)), drawdowns, color="red", alpha=0.5)
-        ax2.set_xlabel("Trade #")
         ax2.set_ylabel("Drawdown (%)")
         ax2.set_ylim(max(drawdowns) * 1.1 if drawdowns else 1, 0)
+        ax2.set_xlabel("")
         ax2.grid(True, alpha=0.3)
+
+        # Profit per Trade als Bar-Chart (grün = Gewinn, rot = Verlust)
+        colors = ["green" if p > 0 else "red" for p in profit_per_trade]
+        ax3.bar(range(len(profit_per_trade)), profit_per_trade, color=colors, alpha=0.7, width=1.0)
+        ax3.axhline(y=0, color="black", linewidth=0.5)
+        ax3.set_xlabel("Trade #")
+        ax3.set_ylabel("Gewinn/Trade")
+        ax3.grid(True, alpha=0.3)
 
         plt.tight_layout()
         plt.savefig(f"{plots_path}/{e['symbol']}.png", dpi=100)
