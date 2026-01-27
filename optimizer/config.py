@@ -38,38 +38,38 @@ WALK_FORWARD_FOLDS = 8
 VIX_HIGH = 25
 ADX_MIN = 20
 
-# Asset-Klassifizierung und Spread-Kosten
+# Asset-Klassifizierung und Spread-Kosten (verdoppelt für konservative Simulation)
 ASSET_CONFIG = {
     # FOREX - Majors
-    "EURUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00010, "currency": ["EUR", "USD"]},
-    "GBPUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00012, "currency": ["GBP", "USD"]},
-    "USDJPY": {"class": "FOREX", "point": 0.01, "spread": 0.010, "currency": ["USD", "JPY"]},
-    "USDCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00015, "currency": ["USD", "CHF"]},
-    "USDCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00015, "currency": ["USD", "CAD"]},
-    "AUDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00012, "currency": ["AUD", "USD"]},
-    "NZDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00015, "currency": ["NZD", "USD"]},
+    "EURUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00020, "currency": ["EUR", "USD"]},
+    "GBPUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00024, "currency": ["GBP", "USD"]},
+    "USDJPY": {"class": "FOREX", "point": 0.01, "spread": 0.020, "currency": ["USD", "JPY"]},
+    "USDCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["USD", "CHF"]},
+    "USDCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["USD", "CAD"]},
+    "AUDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00024, "currency": ["AUD", "USD"]},
+    "NZDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["NZD", "USD"]},
     # FOREX - Crosses
-    "EURGBP": {"class": "FOREX", "point": 0.0001, "spread": 0.00015, "currency": ["EUR", "GBP"]},
-    "EURCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00020, "currency": ["EUR", "CAD"]},
-    "EURCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00018, "currency": ["EUR", "CHF"]},
-    "EURNZD": {"class": "FOREX", "point": 0.0001, "spread": 0.00025, "currency": ["EUR", "NZD"]},
+    "EURGBP": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["EUR", "GBP"]},
+    "EURCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00040, "currency": ["EUR", "CAD"]},
+    "EURCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00036, "currency": ["EUR", "CHF"]},
+    "EURNZD": {"class": "FOREX", "point": 0.0001, "spread": 0.00050, "currency": ["EUR", "NZD"]},
     # Indizes
-    "DAX": {"class": "INDEX", "point": 1.0, "spread": 1.5, "currency": ["EUR"]},
-    "DOW30": {"class": "INDEX", "point": 1.0, "spread": 2.0, "currency": ["USD"]},
-    "SPX500": {"class": "INDEX", "point": 0.1, "spread": 0.5, "currency": ["USD"]},
-    "NAS100": {"class": "INDEX", "point": 0.1, "spread": 1.0, "currency": ["USD"]},
-    "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 1.5, "currency": ["GBP"]},
+    "DAX": {"class": "INDEX", "point": 1.0, "spread": 3.0, "currency": ["EUR"]},
+    "DOW30": {"class": "INDEX", "point": 1.0, "spread": 4.0, "currency": ["USD"]},
+    "SPX500": {"class": "INDEX", "point": 0.1, "spread": 1.0, "currency": ["USD"]},
+    "NAS100": {"class": "INDEX", "point": 0.1, "spread": 2.0, "currency": ["USD"]},
+    "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 3.0, "currency": ["GBP"]},
     # Commodities
-    "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.30, "currency": ["USD"]},
-    "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.30, "currency": ["USD"]},  # Andere Zeitzone, 2h mehr/Tag
-    "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},
-    "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.020, "currency": ["USD"]},  # Andere Zeitzone
-    "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.030, "currency": ["USD"]},
+    "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},
+    "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},  # Andere Zeitzone, 2h mehr/Tag
+    "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},
+    "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},  # Andere Zeitzone
+    "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.060, "currency": ["USD"]},
     # Crypto
-    "BTCUSD": {"class": "CRYPTO", "point": 1.0, "spread": 50.0, "currency": ["USD"]},
-    "ETHUSD": {"class": "CRYPTO", "point": 0.1, "spread": 2.0, "currency": ["USD"]},
+    "BTCUSD": {"class": "CRYPTO", "point": 1.0, "spread": 100.0, "currency": ["USD"]},
+    "ETHUSD": {"class": "CRYPTO", "point": 0.1, "spread": 4.0, "currency": ["USD"]},
     # Test
-    "TESTUSD": {"class": "TEST", "point": 0.0001, "spread": 0.00010, "currency": ["USD"]},
+    "TESTUSD": {"class": "TEST", "point": 0.0001, "spread": 0.00020, "currency": ["USD"]},
 }
 
 # Grid-Konfiguration pro Klasse (in Spread-Vielfachen)
