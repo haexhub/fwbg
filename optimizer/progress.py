@@ -39,8 +39,13 @@ class SimpleProgressTracker:
         self.start_time = None
         self._stop_event = threading.Event()
         self._display_thread = None
-        self._last_line_count = 0
         self._lock = threading.Lock()
+        self._use_box = self._supports_ansi()
+
+    def _supports_ansi(self) -> bool:
+        """Prüft ob Terminal ANSI-Codes unterstützt."""
+        # Einfache Heuristik: TTY = ANSI Support
+        return hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
 
     def start(self):
         """Startet das Progress-Display."""
@@ -66,20 +71,11 @@ class SimpleProgressTracker:
         self._stop_event.set()
         if self._display_thread:
             self._display_thread.join(timeout=1)
-        # Letzte Zeilen löschen
-        self._clear_lines()
+        # Finale newline
+        sys.stdout.write("\n")
+        sys.stdout.flush()
         # Detail-Logs wieder erlauben
         set_progress_ui_active(False)
-
-    def _clear_lines(self):
-        """Löscht die zuletzt geschriebenen Zeilen."""
-        if self._last_line_count > 0:
-            sys.stdout.write(f"\033[{self._last_line_count}F")
-            for _ in range(self._last_line_count):
-                sys.stdout.write("\033[K\n")
-            sys.stdout.write(f"\033[{self._last_line_count}F")
-            sys.stdout.flush()
-            self._last_line_count = 0
 
     def _display_loop(self):
         """Haupt-Display-Loop (läuft im Thread)."""
@@ -88,15 +84,10 @@ class SimpleProgressTracker:
             time.sleep(0.5)
 
     def _render(self):
-        """Rendert den aktuellen Status."""
-        self._clear_lines()
-
+        """Rendert den aktuellen Status als einzeilige Progressbar."""
         with self._lock:
             completed = self.completed_assets
             completed_symbols = self.completed_symbols[:]
-
-        lines = []
-        box_width = 74
 
         elapsed = time.time() - self.start_time if self.start_time else 0
         pct = (completed / self.total_assets * 100) if self.total_assets > 0 else 0
@@ -106,49 +97,27 @@ class SimpleProgressTracker:
         eta_str = self._calculate_eta(elapsed, completed)
         elapsed_str = self._format_time(elapsed)
 
-        # === HEADER ===
-        lines.append(f"╔{'═' * box_width}╗")
+        # Progress bar
+        bar_width = 30
+        filled = int(bar_width * completed / self.total_assets) if self.total_assets > 0 else 0
+        filled = min(filled, bar_width)
+        bar = "█" * filled + "░" * (bar_width - filled)
 
-        # Status-Zeile
-        status_line = f"Done: {completed}  |  Pending: {pending}  |  Total: {self.total_assets}"
-        lines.append(f"║ {status_line:^{box_width-2}} ║")
-
-        # === RECENT COMPLETIONS ===
-        lines.append(f"╠{'═' * box_width}╣")
-
+        # Letzte fertige Assets
         if completed_symbols:
-            # Zeige die letzten 3 fertigen Assets
-            recent = completed_symbols[-3:]
-            recent_str = "  ".join(f"✓ {s}" for s in recent)
-            if len(recent_str) > box_width - 4:
-                recent_str = recent_str[:box_width-7] + "..."
-            lines.append(f"║ {recent_str:<{box_width-2}} ║")
+            recent = completed_symbols[-2:]
+            recent_str = " ".join(f"✓{s}" for s in recent)
         else:
-            lines.append(f"║ {'Processing...':<{box_width-2}} ║")
+            recent_str = "..."
 
-        # === PROGRESS BAR ===
-        lines.append(f"╠{'═' * box_width}╣")
+        # Einzeilige Ausgabe mit \r
+        line = f"\r[{bar}] {pct:5.1f}% | {completed}/{self.total_assets} | {elapsed_str} | ETA: {eta_str} | {recent_str}"
 
-        bar_width_inner = 50
-        filled = int(bar_width_inner * completed / self.total_assets) if self.total_assets > 0 else 0
-        filled = min(filled, bar_width_inner)
-        bar = "█" * filled + "░" * (bar_width_inner - filled)
+        # Zeile auf Terminalbreite begrenzen und mit Leerzeichen auffüllen
+        line = line[:100].ljust(100)
 
-        progress_line = f" [{bar}] {pct:.1f}%"
-        lines.append(f"║{progress_line:<{box_width}}║")
-
-        # Zeit-Info
-        time_line = f" Elapsed: {elapsed_str}  |  ETA: {eta_str}"
-        lines.append(f"║{time_line:<{box_width}}║")
-
-        lines.append(f"╚{'═' * box_width}╝")
-
-        # Ausgeben
-        output = "\n".join(lines)
-        sys.stdout.write(output + "\n")
+        sys.stdout.write(line)
         sys.stdout.flush()
-
-        self._last_line_count = len(lines)
 
     def _calculate_eta(self, elapsed: float, completed: int) -> str:
         """Berechnet ETA basierend auf bisherigem Fortschritt."""
