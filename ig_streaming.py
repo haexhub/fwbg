@@ -159,7 +159,7 @@ class StreamingManager:
             )
 
             listener = CandleListener(self.cache_manager, symbol)
-            subscription.addlistener(listener)
+            subscription.addListener(listener)
 
             self.stream_service.subscribe(subscription)
             self.subscriptions[symbol] = subscription
