@@ -21,7 +21,7 @@ from .config import (
     convert_numpy
 )
 from .process import process_symbol
-from .progress import SimpleProgressTracker
+from .progress import ProgressTracker, init_progress_queue
 from .results import (
     generate_run_id, create_run_directory, save_run_results,
     list_runs, load_run, compare_runs, create_strategy_metadata
@@ -236,17 +236,20 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     # Asset-Namen für Progress-Tracking extrahieren
     asset_names = [os.path.basename(f).split("_")[0] for f in files]
 
+    # Progress-Queue für Worker-Kommunikation (deadlock-frei)
+    progress_queue = init_progress_queue()
+
     # Adaptive Pool mit Einstellungen aus Strategy oder Defaults
     pool_manager = AdaptivePoolManager(
         max_cpu_percent=resource_settings["max_cpu_percent"],
         min_free_ram_percent=resource_settings["min_free_ram_percent"],
         ram_per_worker_gb=resource_settings["ram_per_worker_gb"],
         verbose=True,
-        progress_dict=None  # Kein shared dict - verhindert Deadlock
+        progress_queue=progress_queue
     )
 
-    # Progress-Tracker im Hauptprozess (kein shared state nötig)
-    progress_tracker = SimpleProgressTracker(len(files), asset_names)
+    # Progress-Tracker im Hauptprozess mit Queue für Worker-Updates
+    progress_tracker = ProgressTracker(len(files), asset_names, queue=progress_queue)
 
     def update_progress(completed, total):
         progress_tracker.update_completed(completed)
