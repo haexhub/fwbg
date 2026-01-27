@@ -19,7 +19,8 @@ from .indicators import compute_indicator_pool, get_feature_columns, compute_reg
 from .simulation import (
     simulate_pro_trade, calculate_sharpe_ratio, calculate_calmar_ratio,
     check_feature_stability, monte_carlo_permutation_test, monte_carlo_equity_simulation,
-    adjust_kelly_for_target_dd, find_optimal_circuit_breaker, calculate_equity_smoothness
+    adjust_kelly_for_target_dd, find_optimal_circuit_breaker, calculate_equity_smoothness,
+    generate_combined_labels
 )
 from .plateau import (
     calculate_param_plateau_score, select_plateau_features,
@@ -270,30 +271,18 @@ def process_symbol(csv_path):
                     log(1, f"  Fold 1/{len(folds)} (Feature-Auswahl)", sym)
                     report_progress(sym, 1, len(folds), "train", global_grid_pos, total_grid_combos)
 
-                    # Targets für Fold 0
-                    train_targs_long_0 = np.zeros(len(train_df_0))
-                    train_targs_short_0 = np.zeros(len(train_df_0))
-                    opn_v = train_df_0["O"].values
-                    cls_v = train_df_0["C"].values
-                    hgh_v = train_df_0["H"].values
-                    low_v = train_df_0["L"].values
-                    atr_v = train_df_0["_atr"].values
-                    timestamps = train_df_0.index.values
+                    # Targets für Fold 0 (OHNE LOOK-AHEAD BIAS!)
+                    # Wir verwenden Labels basierend auf VERGANGENEN Trends
+                    label_method = os.environ.get("OPTIMIZER_LABEL_METHOD", "trend")
+                    label_lookback = int(os.environ.get("OPTIMIZER_LABEL_LOOKBACK", "24"))
+                    label_threshold = float(os.environ.get("OPTIMIZER_LABEL_THRESHOLD", "0.3"))
 
-                    sim_count = len(train_df_0) - MAX_TRADE_BARS
-                    for i in range(sim_count):
-                        trade_long = simulate_pro_trade(
-                            cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread,
-                            timestamps=timestamps, symbol=sym, opens=opn_v
-                        )
-                        trade_short = simulate_pro_trade(
-                            cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, spread,
-                            timestamps=timestamps, symbol=sym, opens=opn_v
-                        )
-                        if trade_long and trade_long["result"] == 1.0:
-                            train_targs_long_0[i] = 1
-                        if trade_short and trade_short["result"] == 1.0:
-                            train_targs_short_0[i] = 1
+                    train_targs_long_0, train_targs_short_0 = generate_combined_labels(
+                        train_df_0,
+                        method=label_method,
+                        lookback=label_lookback,
+                        threshold_pct=label_threshold
+                    )
 
                     min_per_direction = MIN_TRADES // 2
                     n_long = np.count_nonzero(train_targs_long_0)

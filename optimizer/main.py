@@ -775,7 +775,10 @@ Beispiele:
   python -m optimizer --assets EURUSD,GBPUSD       # Nur bestimmte Assets
   python -m optimizer --features trend,momentum    # Nur bestimmte Feature-Gruppen
   python -m optimizer --reverse-worst RUN_ID       # Schlechteste Strategien umkehren
+  python -m optimizer --label-method trend         # Label-Methode wählen
+  python -m optimizer --label-lookback 48          # Lookback für Labels
 
+Label-Methoden: trend, mean_reversion, momentum, breakout
 Kategorien: baseline, feature_test, model_test, hyperparameter, production, experiment
         """
     )
@@ -798,6 +801,11 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     parser.add_argument("--cpu", type=float, help="Max CPU-Auslastung (0.0-1.0, z.B. 0.80 für 80%%)")
     parser.add_argument("--ram-reserve", type=float, help="Min freier RAM-Anteil (0.0-1.0, z.B. 0.25 für 25%%)")
     parser.add_argument("--ram-per-worker", type=float, help="RAM pro Worker in GB (z.B. 4.0)")
+    # Label-Generierung (ohne Look-Ahead Bias)
+    parser.add_argument("--label-method", type=str, choices=["trend", "mean_reversion", "momentum", "breakout"],
+                        help="Label-Methode: trend (Default), mean_reversion, momentum, breakout")
+    parser.add_argument("--label-lookback", type=int, help="Lookback-Perioden für Label-Generierung (Default: 24)")
+    parser.add_argument("--label-threshold", type=float, help="Schwelle für Label in %% (Default: 0.3)")
 
     args = parser.parse_args()
 
@@ -890,6 +898,14 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         # Parse feature groups filter
         if args.features:
             os.environ["OPTIMIZER_FEATURE_GROUPS"] = args.features
+
+        # Label-Generierung Parameter (ohne Look-Ahead Bias)
+        if args.label_method:
+            os.environ["OPTIMIZER_LABEL_METHOD"] = args.label_method
+        if args.label_lookback:
+            os.environ["OPTIMIZER_LABEL_LOOKBACK"] = str(args.label_lookback)
+        if args.label_threshold:
+            os.environ["OPTIMIZER_LABEL_THRESHOLD"] = str(args.label_threshold)
 
         run_optimizer(
             description=args.description,
