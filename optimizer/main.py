@@ -26,7 +26,6 @@ from .results import (
     list_runs, load_run, compare_runs, create_strategy_metadata
 )
 from .resource_manager import AdaptivePoolManager, get_resource_info
-from .progress import init_progress_tracking, shutdown_progress_tracking
 
 warnings.filterwarnings("ignore")
 
@@ -233,32 +232,25 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         print(f"  ... und {len(files) - 10} weitere")
     print()
 
-    # Progress-Tracking initialisieren
-    progress_tracker, progress_dict = init_progress_tracking()
-
     # Asset-Namen für Progress-Tracking extrahieren
     asset_names = [os.path.basename(f).split("_")[0] for f in files]
 
-    # Detail-Logs unterdrücken während Progress-UI aktiv (vor Pool-Start!)
-    os.environ["_OPTIMIZER_PROGRESS_UI"] = "1"
-
     # Adaptive Pool mit Einstellungen aus Strategy oder Defaults
+    # HINWEIS: Progress-Dict deaktiviert wegen Deadlock mit ProcessPoolExecutor
     pool_manager = AdaptivePoolManager(
         max_cpu_percent=resource_settings["max_cpu_percent"],
         min_free_ram_percent=resource_settings["min_free_ram_percent"],
         ram_per_worker_gb=resource_settings["ram_per_worker_gb"],
         verbose=True,
-        progress_dict=progress_dict
+        progress_dict=None  # Kein shared dict - verhindert Deadlock
     )
 
-    # Progress-Callback für den Tracker
+    # Einfacher Progress-Callback
     def update_progress(completed, total):
-        progress_tracker.update_completed(completed)
+        pct = completed / total * 100 if total > 0 else 0
+        print(f"\rFortschritt: {completed}/{total} ({pct:.0f}%)   ", end="", flush=True)
 
-    print("\nStarte Verarbeitung...\n")
-
-    # Progress-Tracker starten (zeigt Live-Status mit Asset-Namen)
-    progress_tracker.start(len(files), asset_names)
+    print(f"\nStarte Verarbeitung von {len(files)} Assets...\n")
 
     raw_results = pool_manager.map_adaptive(
         func=process_symbol,
@@ -266,14 +258,7 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         progress_callback=update_progress
     )
 
-    # Progress-Tracker stoppen
-    progress_tracker.stop()
-
-    # Manager-Prozess beenden (verhindert dass Programm hängt)
-    shutdown_progress_tracking()
-
-    # Detail-Logs wieder erlauben
-    os.environ.pop("_OPTIMIZER_PROGRESS_UI", None)
+    print()  # Newline nach Progress
 
     # Stats ausgeben
     stats = pool_manager.get_status()
