@@ -14,7 +14,7 @@ PLOT_PATH = f"{BASE_PATH}/plots"
 CORR_THRESHOLD = 0.75
 RELEVANCE_THRESHOLD = 0.02  # 2% Hürde
 TARGET_TZ = "Europe/Berlin"
-MIN_TRADES = 200  # Minimum Trades für statistische Signifikanz
+MIN_TRADES = 50  # Minimum Trades für statistische Signifikanz (realistisch bei sequentiellem Trading)
 FEATURE_STABILITY_MIN = 3  # Feature muss in min. 3 von 5 Folds relevant sein
 
 # Timeframe-abhängige Parameter

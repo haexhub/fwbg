@@ -336,6 +336,8 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
             "trades_detailed": r.get("trades_detailed", []),  # Volle Trade-Details
             "monte_carlo": r.get("monte_carlo", {}),
             "fold_stability": r.get("fold_stability", 0),
+            "nested_cv": r.get("nested_cv", {}),  # Nested CV Info
+            "smoothness": r.get("smoothness", {}),  # Equity-Smoothness
         } for r in elite_results]),
     }
 
@@ -353,14 +355,24 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
         with open(strategy_path, "w") as f:
             json.dump(strategy_metadata, f, indent=2)
 
-    # Detaillierte Grid-Ergebnisse pro Asset speichern
+    # Detaillierte Ergebnisse pro Asset speichern
     if all_results:
+        # Grid-Details (wie bisher)
         grid_dir = os.path.join(run_path, "grid_details")
         os.makedirs(grid_dir, exist_ok=True)
 
+        # NEU: Asset-Details mit allen Trade-Infos
+        assets_dir = os.path.join(run_path, "assets")
+        os.makedirs(assets_dir, exist_ok=True)
+
         for r in all_results:
-            if r and r.get("grid_results"):
-                sym = r["symbol"]
+            if not r:
+                continue
+
+            sym = r["symbol"]
+
+            # Grid-Ergebnisse (kompakt, ohne Trade-Details)
+            if r.get("grid_results"):
                 grid_path = os.path.join(grid_dir, f"{sym}.json")
                 grid_data = {
                     "symbol": sym,
@@ -368,7 +380,6 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
                     "total_combinations": len(r["grid_results"]),
                     "grid_results": convert_numpy(r["grid_results"]),
                 }
-                # Füge beste Konfiguration hinzu falls erfolgreich
                 if r.get("status") == "ok":
                     grid_data["selected_config"] = {
                         "tp_mult": r["config"]["tp_mult"],
@@ -385,9 +396,68 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
                         "calmar": r.get("calmar", 0),
                         "trades": len(r.get("tr_trace", [])),
                     }
-
                 with open(grid_path, "w") as f:
                     json.dump(grid_data, f, indent=2)
+
+            # NEU: Unterordner pro Asset mit separaten Kandidaten-Dateien
+            if r.get("status") == "ok":
+                asset_dir = os.path.join(assets_dir, sym)
+                os.makedirs(asset_dir, exist_ok=True)
+
+                # Beste Kandidat (Rang 1) - mit vollen Trade-Details
+                best_path = os.path.join(asset_dir, "candidate_1.json")
+                best_data = {
+                    "symbol": sym,
+                    "rank": 1,
+                    "status": r.get("status"),
+                    "config": convert_numpy(r.get("config", {})),
+                    "metrics": {
+                        "pnl": r.get("pnl", 0),
+                        "win_rate": r.get("win_rate", 0),
+                        "rrr": r.get("rrr", 0),
+                        "sharpe": r.get("sharpe", 0),
+                        "calmar": r.get("calmar", 0),
+                        "trades_count": len(r.get("tr_trace", [])),
+                    },
+                    "nested_cv": convert_numpy(r.get("nested_cv", {})),
+                    "smoothness": convert_numpy(r.get("smoothness", {})),
+                    "monte_carlo": convert_numpy(r.get("monte_carlo", {})),
+                    "tr_trace": r.get("tr_trace", []),
+                    "trades_detailed": convert_numpy(r.get("trades_detailed", [])),
+                }
+                with open(best_path, "w") as f:
+                    json.dump(best_data, f, indent=2)
+
+                # Top-N Kandidaten (Rang 2-5) - ohne Trade-Details (nur Inner CV Metriken)
+                top_candidates = r.get("top_candidates", [])
+                for candidate in top_candidates:
+                    rank = candidate.get("rank", 0)
+                    if rank <= 1:
+                        continue  # Rang 1 bereits gespeichert
+
+                    candidate_path = os.path.join(asset_dir, f"candidate_{rank}.json")
+                    candidate_data = {
+                        "symbol": sym,
+                        "rank": rank,
+                        "status": "candidate",  # Noch nicht auf Holdout evaluiert
+                        "config": {
+                            "tp_mult": candidate["params"][0],
+                            "sl_mult": candidate["params"][1],
+                            "conf_thresh": candidate["params"][2],
+                            "feature_group": candidate.get("feature_group", "unknown"),
+                            "features": candidate.get("feats", []),
+                        },
+                        "metrics": {
+                            "rrr": candidate.get("rrr", 0),
+                            "inner_val_pnl": candidate.get("inner_val_pnl", 0),
+                            "est_annual_return": candidate.get("est_annual_return", 0),
+                            "plateau_score": candidate.get("plateau_score", 0),
+                        },
+                        # Hinweis: Keine Trade-Details - nur Inner CV Ergebnisse
+                        "note": "Kandidat basierend auf Inner CV - nicht auf Holdout evaluiert",
+                    }
+                    with open(candidate_path, "w") as f:
+                        json.dump(candidate_data, f, indent=2)
 
     # Menschenlesbare Zusammenfassung
     summary_path = os.path.join(run_path, "summary.txt")

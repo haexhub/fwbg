@@ -5,34 +5,33 @@ import os
 import time
 import numpy as np
 import pandas as pd
-from xgboost import XGBClassifier
 
 from .config import (
-    DATA_PATH, MAX_TRADE_BARS, MIN_TRADES, WALK_FORWARD_FOLDS, OOS_SIZE,
-    RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN, CLASS_GRIDS,
-    MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
-    DEFAULT_FEATURE_GROUPS,
-    get_asset_config
+    DATA_PATH, MIN_TRADES, WALK_FORWARD_FOLDS, OOS_SIZE,
+    CLASS_GRIDS, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
+    DEFAULT_FEATURE_GROUPS, get_asset_config
 )
 from .data_loader import load_data_aligned, load_macro_csv
 from .indicators import compute_indicator_pool, get_feature_columns, compute_regime_filter, filter_features_by_group
 from .simulation import (
-    simulate_pro_trade, calculate_sharpe_ratio, calculate_calmar_ratio,
-    check_feature_stability, monte_carlo_permutation_test, monte_carlo_equity_simulation,
+    calculate_sharpe_ratio, calculate_calmar_ratio,
+    monte_carlo_permutation_test, monte_carlo_equity_simulation,
     adjust_kelly_for_target_dd, find_optimal_circuit_breaker, calculate_equity_smoothness
 )
-from .plateau import (
-    calculate_param_plateau_score, select_plateau_features,
-    select_best_plateau_candidate
-)
+from .plateau import calculate_param_plateau_score, select_best_plateau_candidate
 from .progress import report_progress, report_done
 from .logging_utils import log
-from .fold_worker import process_fold
+from .nested_cv import (
+    nested_cv_split, run_inner_cv, evaluate_on_holdout
+)
 
 
 def walk_forward_split(df, n_folds=WALK_FORWARD_FOLDS, oos_size=OOS_SIZE):
     """
     Generiert Walk-Forward Fenster: [(train_df, val_df, test_df), ...]
+
+    DEPRECATED: Nutze nested_cv_split() für unbiased Evaluation.
+    Diese Funktion wird nur noch für Abwärtskompatibilität beibehalten.
 
     Jeder Fold hat (60/20/20 Split relativ zum verfügbaren Bereich):
     - train_df: Für Modell-Training (~60%)
@@ -95,7 +94,7 @@ def process_symbol(csv_path):
 
     if sym in ["VIX", "DXY"]:
         log(2, "Übersprungen (Makro-Asset)", sym)
-        return None
+        return {"symbol": sym, "status": "macro_asset"}
 
     log(1, "START", sym)
 
@@ -104,7 +103,7 @@ def process_symbol(csv_path):
         df = load_data_aligned(csv_path)
         if df is None:
             log(1, "SKIP - Keine Daten", sym)
-            return None
+            return {"symbol": sym, "status": "no_data"}
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
 
         # === ALLE MAKRO-INDIKATOREN LADEN ===
@@ -183,7 +182,7 @@ def process_symbol(csv_path):
 
         if len(df) < MIN_TRADES * 2:
             log(1, f"SKIP - Zu wenig Daten nach dropna ({len(df)} < {MIN_TRADES * 2})", sym)
-            return None
+            return {"symbol": sym, "status": "insufficient_data", "rows": len(df)}
 
         # Regime-Filter berechnen
         has_vix = "sent_vix" in df.columns
@@ -212,7 +211,7 @@ def process_symbol(csv_path):
 
         if len(full_pool) < 5:
             log(1, f"SKIP - Zu wenig saubere Features ({len(full_pool)} < 5)", sym)
-            return None
+            return {"symbol": sym, "status": "insufficient_features", "features": len(full_pool)}
 
         a_class, p_val, spread, currencies = get_asset_config(sym)
 
@@ -229,6 +228,15 @@ def process_symbol(csv_path):
         total_combos = len(feature_groups_to_test) * len(grid["tp"]) * len(grid["sl"]) * len(grid["ct"])
         log(1, f"Grid-Search: {len(feature_groups_to_test)} Feature-Gruppen x {len(grid['tp'])}x{len(grid['sl'])}x{len(grid['ct'])} = {total_combos} Kombinationen", sym)
 
+        # === NESTED CV: Holdout Split ===
+        # Die letzten 20% werden KOMPLETT zurückgehalten für finale Evaluation
+        cv_split = nested_cv_split(df, holdout_ratio=0.20, n_inner_folds=5)
+        inner_folds = cv_split["inner_folds"]
+        holdout_df = cv_split["holdout_df"]
+        inner_df = cv_split["inner_df"]
+
+        log(1, f"Nested CV: {len(inner_df)} Inner / {len(holdout_df)} Holdout (nie gesehen während Grid-Search)", sym)
+
         # Äußere Schleife: Feature-Gruppen
         for fg_idx, feature_group in enumerate(feature_groups_to_test):
             # Filtere Features nach Gruppe
@@ -242,9 +250,7 @@ def process_symbol(csv_path):
 
             grid_count = 0
             grid_per_fg = len(grid["tp"]) * len(grid["sl"])
-            # Gesamte Grid-Kombinationen = Feature-Gruppen * TP * SL
             total_grid_combos = len(feature_groups_to_test) * grid_per_fg
-            # Offset für aktuelle Feature-Gruppe
             grid_offset = fg_idx * grid_per_fg
 
             for tp in grid["tp"]:
@@ -252,247 +258,44 @@ def process_symbol(csv_path):
                     grid_count += 1
                     global_grid_pos = grid_offset + grid_count
 
-                    # Grid-Fortschritt anzeigen (Level 2 für weniger Spam)
                     log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl})", sym)
 
-                    # Walk-Forward Validierung mit Train/Val/Test Split
-                    folds = walk_forward_split(df)
-                    all_oos_trades = []  # Nur echte OOS Trades (nach CT-Optimierung)
-                    selected_features_long = None
-                    selected_features_short = None
-                    fold_importances_long = []
-                    fold_importances_short = []
-                    fold_performances = []  # Track per-fold performance
-
-                    # === PHASE 1: Fold 0 zuerst ausführen (Feature-Auswahl) ===
-                    train_df_0, val_df_0, test_df_0 = folds[0]
-                    t_fold = time.time()
-                    log(1, f"  Fold 1/{len(folds)} (Feature-Auswahl)", sym)
-                    report_progress(sym, 1, len(folds), "train", global_grid_pos, total_grid_combos)
-
-                    # Targets für Fold 0
-                    train_targs_long_0 = np.zeros(len(train_df_0))
-                    train_targs_short_0 = np.zeros(len(train_df_0))
-                    opn_v = train_df_0["O"].values
-                    cls_v = train_df_0["C"].values
-                    hgh_v = train_df_0["H"].values
-                    low_v = train_df_0["L"].values
-                    atr_v = train_df_0["_atr"].values
-                    timestamps = train_df_0.index.values
-
-                    sim_count = len(train_df_0) - MAX_TRADE_BARS
-                    for i in range(sim_count):
-                        trade_long = simulate_pro_trade(
-                            cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, spread,
-                            timestamps=timestamps, symbol=sym, opens=opn_v
-                        )
-                        trade_short = simulate_pro_trade(
-                            cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, spread,
-                            timestamps=timestamps, symbol=sym, opens=opn_v
-                        )
-                        if trade_long and trade_long["result"] == 1.0:
-                            train_targs_long_0[i] = 1
-                        if trade_short and trade_short["result"] == 1.0:
-                            train_targs_short_0[i] = 1
-
-                    min_per_direction = MIN_TRADES // 2
-                    n_long = np.count_nonzero(train_targs_long_0)
-                    n_short = np.count_nonzero(train_targs_short_0)
-                    has_long = n_long >= min_per_direction
-                    has_short = n_short >= min_per_direction
-
-                    if not has_long and not has_short:
-                        log(3, f"    SKIP - Fold 0 hat zu wenig Targets", sym)
-                        continue
-
-                    # Long-Modell für Feature-Auswahl
-                    if has_long:
-                        mod_long_0 = XGBClassifier(
-                            n_estimators=100, max_depth=5, n_jobs=1,
-                            random_state=42, verbosity=0,
-                        )
-                        mod_long_0.fit(train_df_0[group_features], train_targs_long_0)
-                        imps_long = pd.Series(mod_long_0.feature_importances_, index=group_features)
-                        fold_importances_long.append(imps_long.to_dict())
-
-                        plateau_features_long = select_plateau_features(
-                            imps_long.to_dict(), group_features,
-                            top_n=5, min_importance=RELEVANCE_THRESHOLD
-                        )
-                        if len(plateau_features_long) >= 2:
-                            selected_features_long = plateau_features_long
-                            log(3, f"    Long Features: {selected_features_long}", sym)
-
-                    # Short-Modell für Feature-Auswahl
-                    if has_short:
-                        mod_short_0 = XGBClassifier(
-                            n_estimators=100, max_depth=5, n_jobs=1,
-                            random_state=42, verbosity=0,
-                        )
-                        mod_short_0.fit(train_df_0[group_features], train_targs_short_0)
-                        imps_short = pd.Series(mod_short_0.feature_importances_, index=group_features)
-                        fold_importances_short.append(imps_short.to_dict())
-
-                        plateau_features_short = select_plateau_features(
-                            imps_short.to_dict(), group_features,
-                            top_n=5, min_importance=RELEVANCE_THRESHOLD
-                        )
-                        if len(plateau_features_short) >= 2:
-                            selected_features_short = plateau_features_short
-                            log(3, f"    Short Features: {selected_features_short}", sym)
-
-                    if not selected_features_long and not selected_features_short:
-                        log(3, f"    SKIP - keine Features ausgewählt", sym)
-                        continue
-
-                    # Fold 0 mit process_fold ausführen (mit den neuen Features)
-                    shared_config = {
-                        "sym": sym,
-                        "tp": tp,
-                        "sl": sl,
-                        "spread": spread,
-                        "group_features": group_features,
-                        "grid_ct": grid["ct"],
-                        "global_grid_pos": global_grid_pos,
-                        "total_grid_combos": total_grid_combos,
-                        "total_folds": len(folds),
-                    }
-
-                    fold_0_result = process_fold(
-                        0, (train_df_0, val_df_0, test_df_0),
-                        shared_config, selected_features_long, selected_features_short
+                    # === INNER CV: Grid-Search auf Inner Folds ===
+                    inner_result = run_inner_cv(
+                        inner_folds, group_features, tp, sl, spread, sym,
+                        grid["ct"], global_grid_pos, total_grid_combos
                     )
 
-                    if not fold_0_result.get("skipped", True):
-                        all_oos_trades.extend(fold_0_result.get("oos_trades", []))
-                        if fold_0_result.get("importances_long"):
-                            fold_importances_long.append(fold_0_result["importances_long"])
-                        if fold_0_result.get("importances_short"):
-                            fold_importances_short.append(fold_0_result["importances_short"])
-                        if fold_0_result.get("fold_pnl") is not None:
-                            fold_performances.append({
-                                "fold": 0,
-                                "ct": fold_0_result.get("best_ct"),
-                                "trades": len(fold_0_result.get("oos_trades", [])),
-                                "pnl": fold_0_result.get("fold_pnl", 0),
-                                "win_rate": fold_0_result.get("fold_wr", 0),
-                            })
+                    if not inner_result["success"]:
+                        continue
 
-                    log(1, f"    Fold 1 done ({time.time()-t_fold:.1f}s)", sym)
-
-                    # === PHASE 2: Folds 1-7 sequentiell ausführen ===
-                    remaining_folds = folds[1:]
-                    if remaining_folds and (selected_features_long or selected_features_short):
-                        for fold_idx, fold_data in enumerate(remaining_folds):
-                            result = process_fold(
-                                fold_idx + 1, fold_data,
-                                shared_config, selected_features_long, selected_features_short
-                            )
-                            if not result.get("skipped", True):
-                                all_oos_trades.extend(result.get("oos_trades", []))
-                                if result.get("importances_long"):
-                                    fold_importances_long.append(result["importances_long"])
-                                if result.get("importances_short"):
-                                    fold_importances_short.append(result["importances_short"])
-                                if result.get("fold_pnl") is not None:
-                                    fold_performances.append({
-                                        "fold": result["fold_idx"],
-                                        "ct": result.get("best_ct"),
-                                        "trades": len(result.get("oos_trades", [])),
-                                        "pnl": result.get("fold_pnl", 0),
-                                        "win_rate": result.get("fold_wr", 0),
-                                    })
-
-                    # Feature Stability Check (nach allen Folds)
-                    if selected_features_long and len(fold_importances_long) >= FEATURE_STABILITY_MIN:
-                        stable = check_feature_stability(fold_importances_long)
-                        selected_features_long = [f for f in selected_features_long if f in stable]
-                        if len(selected_features_long) < 2:
-                            selected_features_long = None
-                    if selected_features_short and len(fold_importances_short) >= FEATURE_STABILITY_MIN:
-                        stable = check_feature_stability(fold_importances_short)
-                        selected_features_short = [f for f in selected_features_short if f in stable]
-                        if len(selected_features_short) < 2:
-                            selected_features_short = None
-
-                # Kombiniere Features
-                selected_features = []
-                if selected_features_long:
-                    selected_features.extend(selected_features_long)
-                if selected_features_short:
-                    selected_features.extend([f for f in selected_features_short if f not in selected_features])
-
-                if not selected_features:
-                    continue
-
-                # Aggregiere OOS-Trades (CT wurde bereits auf Validation optimiert)
-                tr = [t["result"] for t in all_oos_trades]
-                if len(tr) >= MIN_TRADES:
+                    # Kandidat speichern (noch OHNE Holdout-Evaluation!)
                     rrr = tp / sl
-
-                    # Bestimme den am häufigsten gewählten CT über alle Folds
-                    ct_counts = {}
-                    for t in all_oos_trades:
-                        ct_counts[t["ct"]] = ct_counts.get(t["ct"], 0) + 1
-                    best_ct = max(ct_counts.keys(), key=lambda x: ct_counts[x]) if ct_counts else grid["ct"][0]
-
-                    preliminary_kelly = max(0, min(0.05, (
-                        (tr.count(1.0) / len(tr) * rrr - (1 - tr.count(1.0) / len(tr))) / rrr
-                    ) / 4)) if len(tr) > 0 else 0.01
-
-                    trade_returns = [preliminary_kelly * rrr if r > 0 else -preliminary_kelly for r in tr]
-                    sharpe = calculate_sharpe_ratio(trade_returns)
-                    calmar = calculate_calmar_ratio(tr, preliminary_kelly, rrr)
-
-                    hour_pnl = {}
-                    for t in all_oos_trades:
-                        h = t["hour"]
-                        hour_pnl[h] = hour_pnl.get(h, 0) + t["result"]
-                    good_hours = [h for h, pnl in hour_pnl.items() if pnl > 0]
-
-                    # Fold-Stabilität prüfen (alle Folds sollten profitabel sein)
-                    profitable_folds = sum(1 for fp in fold_performances if fp["pnl"] > 0)
-                    fold_stability = profitable_folds / len(fold_performances) if fold_performances else 0
-
                     candidate = {
-                        "pnl": sum(tr),
-                        "tr": tr,
-                        "trades_detailed": all_oos_trades.copy(),  # Volle Trade-Details
-                        "params": (tp, sl, best_ct),
-                        "feats": selected_features,
+                        "inner_val_pnl": inner_result["avg_val_pnl"],
+                        "params": (tp, sl, inner_result["best_ct"]),
+                        "feats": inner_result["selected_features"],
                         "feature_group": feature_group,
                         "rrr": rrr,
-                        "sharpe": sharpe,
-                        "calmar": calmar,
-                        "good_hours": good_hours if good_hours else list(range(24)),
-                        "fold_performances": fold_performances,
-                        "fold_stability": fold_stability,
+                        "selected_features_long": inner_result["selected_features_long"],
+                        "selected_features_short": inner_result["selected_features_short"],
+                        "fold_stability": inner_result.get("fold_stability", 0),
                     }
                     candidates.append(candidate)
 
-                    # Grid-Results
                     all_grid_results.append({
                         "feature_group": feature_group,
                         "tp_mult": tp,
                         "sl_mult": sl,
-                        "conf_thresh": best_ct,
+                        "conf_thresh": inner_result["best_ct"],
                         "rrr": rrr,
-                        "pnl": sum(tr),
-                        "trades": len(tr),
-                        "win_rate": tr.count(1.0) / len(tr),
-                        "sharpe": sharpe,
-                        "calmar": calmar,
-                        "features": selected_features if selected_features else [],
-                        "fold_stability": fold_stability,
+                        "inner_val_pnl": inner_result["avg_val_pnl"],
+                        "fold_stability": inner_result.get("fold_stability", 0),
+                        "features": inner_result["selected_features"],
                     })
 
-                # Reset für nächste TP/SL Kombination
-                all_oos_trades = []
-                fold_performances = []
+        log(2, f"Inner CV fertig: {len(candidates)} Kandidaten ({time.time()-t_start:.1f}s)", sym)
 
-        log(2, f"Grid-Search fertig: {len(candidates)} Kandidaten gefunden ({time.time()-t_start:.1f}s)", sym)
-
-        # grid_results enthält alle Kombinationen mit >= MIN_TRADES
         grid_results = all_grid_results
 
         if not candidates:
@@ -500,24 +303,11 @@ def process_symbol(csv_path):
             report_done(sym, "no_candidates")
             return {"symbol": sym, "status": "no_candidates", "grid_results": grid_results}
 
-        # Sortiere nach kombinierter Metrik mit Smoothness-Bonus
+        # === PLATEAU-BASIERTE AUSWAHL (basierend auf Inner CV PnL) ===
+        # Sortiere nach Inner Validation PnL für Plateau-Berechnung
         for c in candidates:
-            # Berechne Smoothness für jeden Kandidaten
-            preliminary_kelly = max(0, min(0.05, (
-                (c["tr"].count(1.0) / len(c["tr"]) * c["rrr"] - (1 - c["tr"].count(1.0) / len(c["tr"]))) / c["rrr"]
-            ) / 4)) if len(c["tr"]) > 0 else 0.01
+            c["score"] = c["inner_val_pnl"]
 
-            smoothness = calculate_equity_smoothness(c["tr"], preliminary_kelly, c["rrr"])
-            c["smoothness"] = smoothness
-
-            # Score: PnL * Sharpe-Bonus * Smoothness-Bonus
-            # Smoothness-Bonus: 0.8 bis 1.2 basierend auf Score
-            smoothness_bonus = 0.8 + (smoothness["smoothness_score"] * 0.4)
-            c["score"] = c["pnl"] * (1 + max(0, c["sharpe"]) / 10) * smoothness_bonus
-
-        # === PLATEAU-BASIERTE AUSWAHL ===
-        # Statt einfach den höchsten Score zu nehmen, bevorzugen wir
-        # Konfigurationen, deren Nachbarn ähnlich gut performen (Plateau)
         candidates = calculate_param_plateau_score(
             candidates,
             grid["tp"],
@@ -535,19 +325,104 @@ def process_symbol(csv_path):
         )
 
         if not b:
+            # Fallback: Bester nach Inner Val PnL
+            candidates.sort(key=lambda x: x["inner_val_pnl"], reverse=True)
+            b = candidates[0] if candidates else None
+
+        if not b:
             report_done(sym, "no_plateau")
             return {"symbol": sym, "status": "no_plateau", "grid_results": grid_results}
 
-        # Ensemble: Top-3 nach Plateau-Score
-        candidates.sort(key=lambda x: x.get("plateau_score", x["score"]), reverse=True)
-        top_n = min(3, len(candidates))
-        ensemble_configs = candidates[:top_n]
+        # === TOP-N KANDIDATEN SAMMELN (für Vergleich) ===
+        # Sortiere alle Kandidaten nach Inner Val PnL und behalte Top 5
+        # mit unterschiedlichen RRR-Werten für Diversität
+        TOP_N = 5
+        MIN_ANNUAL_RETURN = 10.0  # Mindestens 10%/Jahr
+        candidates.sort(key=lambda x: x.get("inner_val_pnl", 0), reverse=True)
 
-        total_score = sum(c.get("plateau_score", c["score"]) for c in ensemble_configs)
-        if total_score <= 0:
-            report_done(sym, "no_score")
-            return {"symbol": sym, "status": "no_score", "grid_results": grid_results}
-        wr = b["tr"].count(1.0) / len(b["tr"]) if b["tr"] else 0
+        # Berechne Inner CV Zeitraum für Jahresrendite-Schätzung
+        n_inner_folds = len(inner_folds)
+        inner_val_size = len(inner_folds[0][1]) if inner_folds else OOS_SIZE
+        inner_total_bars = n_inner_folds * inner_val_size
+        bars_per_year = 24 * 250 if os.environ.get("TIMEFRAME", "HOUR") == "HOUR" else 96 * 250
+        inner_years = inner_total_bars / bars_per_year if bars_per_year > 0 else 1
+
+        def estimate_annual_return(inner_val_pnl):
+            """Schätzt Jahresrendite aus Inner CV PnL."""
+            if inner_val_pnl <= 0 or inner_years <= 0:
+                return -100
+            final_equity = 100 + inner_val_pnl
+            return ((final_equity / 100.0) ** (1 / inner_years) - 1) * 100
+
+        # Sammle Top-N mit RRR-Diversität und Mindest-Rendite
+        top_candidates_for_export = []
+        seen_rrr = set()
+        skipped_low_return = 0
+        for c in candidates:
+            # Prüfe Mindest-Rendite
+            est_return = estimate_annual_return(c.get("inner_val_pnl", 0))
+            if est_return < MIN_ANNUAL_RETURN:
+                skipped_low_return += 1
+                continue
+
+            rrr_bucket = round(c["rrr"], 1)  # Bucket auf 0.1 gerundet
+            if rrr_bucket not in seen_rrr or len(top_candidates_for_export) < 3:
+                top_candidates_for_export.append({
+                    "rank": len(top_candidates_for_export) + 1,
+                    "params": c["params"],
+                    "rrr": c["rrr"],
+                    "inner_val_pnl": c.get("inner_val_pnl", 0),
+                    "est_annual_return": est_return,
+                    "feature_group": c.get("feature_group", "unknown"),
+                    "feats": c.get("feats", []),
+                    "plateau_score": c.get("plateau_score", 0),
+                    "selected_features_long": c.get("selected_features_long", []),
+                    "selected_features_short": c.get("selected_features_short", []),
+                })
+                seen_rrr.add(rrr_bucket)
+            if len(top_candidates_for_export) >= TOP_N:
+                break
+
+        if skipped_low_return > 0:
+            log(2, f"  {skipped_low_return} Kandidaten übersprungen (< {MIN_ANNUAL_RETURN}%/Jahr)", sym)
+        log(2, f"Top-{len(top_candidates_for_export)} Kandidaten gesammelt (RRR: {[c['rrr'] for c in top_candidates_for_export]})", sym)
+
+        # === HOLDOUT EVALUATION ===
+        # JETZT erst evaluieren wir auf dem Holdout-Set (nie vorher gesehen!)
+        log(1, f"Holdout-Evaluation für besten Kandidaten (TP={b['params'][0]}, SL={b['params'][1]}, CT={b['params'][2]:.2f})", sym)
+
+        holdout_result = evaluate_on_holdout(holdout_df, inner_df, b, spread, sym)
+
+        if holdout_result["n_trades"] < MIN_TRADES:
+            log(1, f"SKIP - Zu wenig Holdout-Trades ({holdout_result['n_trades']} < {MIN_TRADES})", sym)
+            report_done(sym, "insufficient_holdout_trades")
+            return {"symbol": sym, "status": "insufficient_holdout_trades", "grid_results": grid_results}
+
+        # Füge Holdout-Ergebnisse zum Kandidaten hinzu
+        b["tr"] = holdout_result["trades"]
+        b["trades_detailed"] = holdout_result["trades_detailed"]
+        b["pnl"] = holdout_result["pnl"]
+        b["holdout_win_rate"] = holdout_result["win_rate"]
+
+        # Berechne Metriken auf Holdout-Trades
+        wr = holdout_result["win_rate"]
+        tr = holdout_result["trades"]
+
+        preliminary_kelly = max(0, min(0.05, (
+            (wr * b["rrr"] - (1 - wr)) / b["rrr"]
+        ) / 4)) if wr > 0 else 0.01
+
+        trade_returns = [preliminary_kelly * b["rrr"] if r > 0 else -preliminary_kelly for r in tr]
+        b["sharpe"] = calculate_sharpe_ratio(trade_returns)
+        b["calmar"] = calculate_calmar_ratio(tr, preliminary_kelly, b["rrr"])
+        b["smoothness"] = calculate_equity_smoothness(tr, preliminary_kelly, b["rrr"])
+
+        # Good hours aus Holdout
+        hour_pnl = {}
+        for t in holdout_result["trades_detailed"]:
+            h = t["hour"]
+            hour_pnl[h] = hour_pnl.get(h, 0) + t["result"]
+        b["good_hours"] = [h for h, pnl in hour_pnl.items() if pnl > 0] or list(range(24))
 
         # 1/4 Kelly
         p = wr
@@ -606,20 +481,21 @@ def process_symbol(csv_path):
                    f"für {circuit_breaker['optimal_pause_bars']} Trades "
                    f"(DD: {circuit_breaker['baseline_dd']*100:.0f}% -> {circuit_breaker['optimized_dd']*100:.0f}%)", sym)
 
-        # Ensemble-Gewichte (basierend auf Plateau-Score)
+        # Ensemble-Gewichte (Top-3 nach Inner Val PnL, ohne den Besten)
         ensemble_weights = []
-        if top_n > 1:
-            for c in ensemble_configs[1:]:
-                c_wr = c["tr"].count(1.0) / len(c["tr"]) if c["tr"] else 0
-                c_kelly = max(0, min(0.05, ((c_wr * c["rrr"] - (1 - c_wr)) / c["rrr"]) / 4))
-                if c_kelly > 0:
-                    c_plateau_score = c.get("plateau_score", c["score"])
+        candidates.sort(key=lambda x: x.get("inner_val_pnl", 0), reverse=True)
+        top_candidates = [c for c in candidates[:3] if c != b]
+        total_inner_pnl = sum(c.get("inner_val_pnl", 0) for c in top_candidates) + b.get("inner_val_pnl", 0)
+
+        if total_inner_pnl > 0:
+            for c in top_candidates:
+                c_inner_pnl = c.get("inner_val_pnl", 0)
+                if c_inner_pnl > 0:
                     ensemble_weights.append({
                         "tp_mult": c["params"][0],
                         "sl_mult": c["params"][1],
                         "conf_thresh": c["params"][2],
-                        "weight": c_plateau_score / total_score,
-                        "stability": c.get("stability_score", 0),
+                        "weight": c_inner_pnl / total_inner_pnl,
                     })
 
         result = {
@@ -659,6 +535,10 @@ def process_symbol(csv_path):
             "calmar": b["calmar"],
             "currencies": currencies,
             "grid_results": grid_results,  # Alle getesteten Kombinationen
+            # Top-N Kandidaten für Export (mit RRR-Diversität)
+            "top_candidates": top_candidates_for_export,
+            # Fold-Stabilität (aus Inner CV)
+            "fold_stability": b.get("fold_stability", 0),
             # Monte Carlo Statistiken
             "monte_carlo": {
                 "p_value": mc_perm["p_value"],
@@ -669,23 +549,28 @@ def process_symbol(csv_path):
                 "equity_p95": mc_equity["p95_equity"],
                 "bankruptcy_rate": mc_equity["bankruptcy_rate"],
             },
-            # Fold-Stabilität
-            "fold_stability": b.get("fold_stability", 0),
-            "fold_performances": b.get("fold_performances", []),
             # Equity-Smoothness
             "smoothness": b.get("smoothness", {}),
+            # Nested CV Info
+            "nested_cv": {
+                "inner_samples": len(inner_df),
+                "holdout_samples": len(holdout_df),
+                "inner_val_pnl": b.get("inner_val_pnl", 0),
+                "holdout_pnl": holdout_result["pnl"],
+                "fold_stability": b.get("fold_stability", 0),
+            },
         }
 
         smoothness_info = b.get("smoothness", {})
         smoothness_score = smoothness_info.get("smoothness_score", 0)
-        log(1, f"OK - WR={wr:.1%} Sharpe={b['sharpe']:.2f} Smooth={smoothness_score:.2f} p={mc_perm['p_value']:.3f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
+        log(1, f"OK (Holdout) - WR={wr:.1%} Sharpe={b['sharpe']:.2f} Smooth={smoothness_score:.2f} "
+               f"p={mc_perm['p_value']:.3f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
         report_done(sym, "ok")
         return result
 
     except Exception as e:
         log(1, f"FEHLER: {e}", sym)
-        if LOG_LEVEL >= 2:
-            import traceback
-            traceback.print_exc()
+        import traceback
+        traceback.print_exc()
         report_done(sym, "error")
-        return None
+        return {"symbol": sym, "status": "error", "error": str(e)}

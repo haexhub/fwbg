@@ -281,13 +281,21 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
 
     # Trenne erfolgreiche von fehlgeschlagenen Ergebnissen
     all_results = raw_results  # Alle Ergebnisse (inkl. grid_results)
-    successful_results = [r for r in raw_results if r.get("status") == "ok"]
-    failed_results = [r for r in raw_results if r.get("status") != "ok" and r.get("status") is not None]
+    successful_results = [r for r in raw_results if r and r.get("status") == "ok"]
+    failed_results = [r for r in raw_results if r and r.get("status") != "ok"]
+    none_results = sum(1 for r in raw_results if r is None)
 
     print(f"{len(successful_results)} Assets haben die Optimierung bestanden.")
-    if failed_results:
+
+    # Zeige übersprungene Assets immer an
+    if failed_results or none_results:
+        print(f"\nÜbersprungene Assets ({len(failed_results) + none_results}):")
         for fr in failed_results:
-            print(f"  - {fr['symbol']}: {fr.get('status', 'unknown')} ({len(fr.get('grid_results', []))} Kombinationen getestet)")
+            status = fr.get('status', 'unknown')
+            grid_count = len(fr.get('grid_results', []))
+            print(f"  - {fr['symbol']}: {status}" + (f" ({grid_count} Kombinationen getestet)" if grid_count else ""))
+        if none_results:
+            print(f"  - {none_results}x Fehler (None zurückgegeben)")
 
     # Korrelationsfilter anwenden (nur auf erfolgreiche)
     filtered = filter_correlated_assets(successful_results, CORR_THRESHOLD)
@@ -341,11 +349,14 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         ax2.grid(True, alpha=0.3)
 
         # Profit per Trade als Bar-Chart (grün = Gewinn, rot = Verlust)
+        # Symmetrisch-logarithmische Skala für bessere Lesbarkeit
         colors = ["green" if p > 0 else "red" for p in profit_per_trade]
         ax3.bar(range(len(profit_per_trade)), profit_per_trade, color=colors, alpha=0.7, width=1.0)
         ax3.axhline(y=0, color="black", linewidth=0.5)
         ax3.set_xlabel("Trade #")
-        ax3.set_ylabel("Gewinn/Trade")
+        ax3.set_ylabel("Gewinn/Trade (symlog)")
+        # symlog: logarithmisch für große Werte, linear nahe 0
+        ax3.set_yscale("symlog", linthresh=0.1)
         ax3.grid(True, alpha=0.3)
 
         plt.tight_layout()
@@ -372,9 +383,10 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         fold_stability = e.get("fold_stability", 0)
 
         # Erweiterte Profitabilitätsprüfung inkl. Monte Carlo
+        MIN_ANNUAL_RETURN = 10  # Mindestens 10%/Jahr
         is_profitable = (
             sharpe >= 1.0 and
-            annual_return > 0 and
+            annual_return >= MIN_ANNUAL_RETURN and
             max_dd < 0.6 and
             mc_stats.get("is_significant", False) and
             fold_stability >= 0.5  # Mindestens 50% der Folds profitabel
