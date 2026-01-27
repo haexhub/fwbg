@@ -78,6 +78,63 @@ class EliteBot:
         "BRENT": "CC.D.LCO.UNC.IP",
     }
 
+    # yfinance Ticker Mapping (Fallback wenn IG rate-limited)
+    SYMBOL_TO_YFINANCE = {
+        # Forex Majors
+        "EURUSD": "EURUSD=X",
+        "GBPUSD": "GBPUSD=X",
+        "USDJPY": "USDJPY=X",
+        "USDCHF": "USDCHF=X",
+        "USDCAD": "USDCAD=X",
+        "AUDUSD": "AUDUSD=X",
+        "NZDUSD": "NZDUSD=X",
+        # Forex Crosses EUR
+        "EURCAD": "EURCAD=X",
+        "EURCHF": "EURCHF=X",
+        "EURGBP": "EURGBP=X",
+        "EURJPY": "EURJPY=X",
+        "EURAUD": "EURAUD=X",
+        "EURNZD": "EURNZD=X",
+        # Forex Crosses GBP
+        "GBPAUD": "GBPAUD=X",
+        "GBPCAD": "GBPCAD=X",
+        "GBPCHF": "GBPCHF=X",
+        "GBPJPY": "GBPJPY=X",
+        "GBPNZD": "GBPNZD=X",
+        # Forex Crosses AUD
+        "AUDCAD": "AUDCAD=X",
+        "AUDCHF": "AUDCHF=X",
+        "AUDJPY": "AUDJPY=X",
+        "AUDNZD": "AUDNZD=X",
+        # Forex Crosses NZD
+        "NZDCAD": "NZDCAD=X",
+        "NZDCHF": "NZDCHF=X",
+        "NZDJPY": "NZDJPY=X",
+        # Forex Crosses CAD/CHF
+        "CADCHF": "CADCHF=X",
+        "CADJPY": "CADJPY=X",
+        "CHFJPY": "CHFJPY=X",
+        # Indizes
+        "FTSE100": "^FTSE",
+        "DOW30": "^DJI",
+        "NAS100": "^NDX",
+        "DAX": "^GDAXI",
+        "SPX500": "^GSPC",
+        # Commodities
+        "XAUUSD": "GC=F",
+        "GOLD": "GC=F",
+        "XAGUSD": "SI=F",
+        "SILVER": "SI=F",
+        "BRENT": "BZ=F",
+        "WTI": "CL=F",
+        # Crypto
+        "BTCUSD": "BTC-USD",
+        "ETHUSD": "ETH-USD",
+        # Volatility
+        "VIX": "^VIX",
+        "DXY": "DX-Y.NYB",
+    }
+
     def __init__(self, account_dir, use_streaming=True):
         self._stop_event = threading.Event()
         self.account_dir = account_dir
@@ -152,12 +209,65 @@ class EliteBot:
             logger.error(f"❌ Login gescheitert: {e}")
             sys.exit(1)
 
+    def fetch_yfinance_historical(self, symbol, num_points=1000):
+        """Fallback: Holt historische OHLC-Daten von yfinance wenn IG rate-limited."""
+        ticker = self.SYMBOL_TO_YFINANCE.get(symbol)
+        if not ticker:
+            logger.warning(f"⚠️ Kein yfinance Ticker für {symbol}")
+            return None
+
+        try:
+            # Berechne Zeitraum basierend auf num_points (H1 Kerzen)
+            # 1000 Stunden = ~42 Tage, aber yfinance hat nur 60 Tage bei 1h
+            days_needed = min((num_points // 24) + 5, 60)
+
+            logger.info(f"📊 {symbol}: Lade von yfinance ({ticker})...")
+            data = yf.download(
+                ticker,
+                period=f"{days_needed}d",
+                interval="1h",
+                progress=False,
+                auto_adjust=True
+            )
+
+            if data is None or data.empty:
+                logger.warning(f"⚠️ Keine yfinance Daten für {symbol}")
+                return None
+
+            # Handle MultiIndex columns (yfinance returns MultiIndex for single ticker)
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+
+            # Rename columns to match our format
+            df = data.rename(columns={
+                "Open": "O",
+                "High": "H",
+                "Low": "L",
+                "Close": "C"
+            })[["O", "H", "L", "C"]]
+
+            # Entferne Timezone-Info falls vorhanden
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+
+            # Limit to requested number of points
+            if len(df) > num_points:
+                df = df.tail(num_points)
+
+            logger.info(f"✅ {symbol}: {len(df)} Kerzen von yfinance geladen")
+            return df
+
+        except Exception as e:
+            logger.warning(f"⚠️ yfinance Fehler für {symbol}: {e}")
+            return None
+
     def fetch_ig_historical(self, symbol, num_points=1000):
-        """Holt historische OHLC-Daten von der IG API."""
+        """Holt historische OHLC-Daten von der IG API (mit yfinance Fallback)."""
         epic = self.SYMBOL_TO_EPIC.get(symbol)
         if not epic:
             logger.warning(f"⚠️ Kein EPIC für {symbol}")
-            return None
+            # Fallback zu yfinance
+            return self.fetch_yfinance_historical(symbol, num_points)
 
         # Rate limiting - IG API erlaubt ~60 requests/min
         time.sleep(2)
@@ -165,6 +275,7 @@ class EliteBot:
         # Retry-Logik bei Rate Limiting (403)
         max_retries = 3
         response = None
+        ig_failed = False
         for attempt in range(max_retries):
             try:
                 response = self.ig.fetch_historical_prices_by_epic(
@@ -174,20 +285,31 @@ class EliteBot:
                 )
                 break  # Erfolg
             except Exception as e:
-                if "403" in str(e) and attempt < max_retries - 1:
+                error_str = str(e)
+                # Rate limit oder historisches Daten-Limit
+                if "exceeded-account-historical-data-allowance" in error_str:
+                    logger.warning(f"⚠️ IG historical data limit für {symbol}, nutze yfinance...")
+                    ig_failed = True
+                    break
+                if "403" in error_str and attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 10  # 10s, 20s, 30s
                     logger.warning(f"⚠️ Rate limit für {symbol}, warte {wait_time}s...")
                     time.sleep(wait_time)
                     continue
-                raise
+                ig_failed = True
+                break
+
+        # Fallback zu yfinance bei IG-Fehler
+        if ig_failed:
+            return self.fetch_yfinance_historical(symbol, num_points)
 
         if response is None or "prices" not in response:
-            logger.warning(f"⚠️ Keine Daten von IG für {symbol}")
-            return None
+            logger.warning(f"⚠️ Keine Daten von IG für {symbol}, versuche yfinance...")
+            return self.fetch_yfinance_historical(symbol, num_points)
 
         prices = response["prices"]
         if not prices:
-            return None
+            return self.fetch_yfinance_historical(symbol, num_points)
 
         try:
             # Konvertiere zu DataFrame
@@ -209,7 +331,7 @@ class EliteBot:
 
         except Exception as e:
             logger.warning(f"⚠️ IG API Fehler für {symbol}: {e}")
-            return None
+            return self.fetch_yfinance_historical(symbol, num_points)
 
     def update_ohlc_cache(self, symbol):
         """
