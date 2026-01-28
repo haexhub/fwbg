@@ -263,12 +263,23 @@ def evaluate_on_validation(
     """
     Evaluiert Modelle auf Validation-Set und findet besten CT.
 
+    Bei separate_long_short=True werden separate CTs für Long und Short optimiert.
+
     Returns:
         (best_ct, best_pnl, trades_by_ct)
+        Bei separate_long_short: best_ct ist ein Tuple (ct_long, ct_short)
     """
     probs_long, long_win_idx = _get_probs(mod_long, val_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, val_df, features_short)
 
+    # Separate CT-Optimierung wenn aktiviert
+    if ctx.separate_long_short:
+        return _evaluate_separate_ct(
+            val_df, probs_long, probs_short, long_win_idx, short_win_idx,
+            tp, sl, ctx
+        )
+
+    # Standard: Gemeinsamer CT für Long und Short
     best_ct = None
     best_pnl = float("-inf")
     trades_by_ct = {}
@@ -290,6 +301,114 @@ def evaluate_on_validation(
     return best_ct, best_pnl, trades_by_ct
 
 
+def _evaluate_separate_ct(
+    val_df: pd.DataFrame,
+    probs_long: Optional[np.ndarray],
+    probs_short: Optional[np.ndarray],
+    long_win_idx: Optional[int],
+    short_win_idx: Optional[int],
+    tp: int,
+    sl: int,
+    ctx: SimulationContext
+) -> Tuple[Optional[tuple], float, Dict]:
+    """
+    Optimiert CT separat für Long und Short Trades.
+
+    Verwendet 2D-Grid-Search über alle CT-Kombinationen.
+
+    Returns:
+        ((ct_long, ct_short), best_pnl, trades_info)
+    """
+    best_ct_pair = None
+    best_pnl = float("-inf")
+    trades_info = {"long": {}, "short": {}, "combined": {}}
+
+    # Grid für Long und Short CTs
+    long_cts = ctx.long_grid_ct if ctx.long_grid_ct else ctx.grid_ct
+    short_cts = ctx.short_grid_ct if ctx.short_grid_ct else ctx.grid_ct
+
+    # 2D Grid-Search: Alle Kombinationen von (ct_long, ct_short)
+    for ct_long in long_cts:
+        for ct_short in short_cts:
+            result = simulate_trades_sequential_separate_ct(
+                val_df, probs_long, probs_short, long_win_idx, short_win_idx,
+                ct_long, ct_short, tp, sl, ctx, return_detailed=False
+            )
+            trades = result["trades"]
+            n_trades = len(trades)
+
+            if n_trades >= 10:
+                pnl = sum(trades)
+                if pnl > best_pnl:
+                    best_pnl = pnl
+                    best_ct_pair = (ct_long, ct_short)
+
+    return best_ct_pair, best_pnl, trades_info
+
+
+def simulate_trades_sequential_separate_ct(
+    df: pd.DataFrame,
+    probs_long: Optional[np.ndarray],
+    probs_short: Optional[np.ndarray],
+    long_win_idx: Optional[int],
+    short_win_idx: Optional[int],
+    ct_long: float,
+    ct_short: float,
+    tp: int,
+    sl: int,
+    ctx: SimulationContext,
+    return_detailed: bool = False,
+) -> Dict[str, Any]:
+    """
+    Simuliert Trades mit separaten CT-Thresholds für Long und Short.
+    """
+    opn = df["O"].values
+    cls = df["C"].values
+    hgh = df["H"].values
+    low = df["L"].values
+    atr = df["_atr"].values
+    regime = df["_regime_ok"].values
+    timestamps = df.index.values
+
+    trades = []
+    trades_detailed = [] if return_detailed else None
+    next_allowed_entry = 0
+
+    for i in range(len(df) - ctx.max_trade_bars):
+        if i < next_allowed_entry:
+            continue
+
+        if not regime[i]:
+            continue
+
+        direction = None
+        # Separate CT-Thresholds für Long und Short
+        if probs_long is not None and probs_long[i, long_win_idx] >= ct_long:
+            direction = 1
+        elif probs_short is not None and probs_short[i, short_win_idx] >= ct_short:
+            direction = -1
+
+        if direction:
+            trade = simulate_pro_trade(
+                cls, hgh, low, atr, i, direction, tp, sl, ctx.spread,
+                timestamps=timestamps, symbol=ctx.symbol, opens=opn,
+                max_bars=ctx.max_trade_bars
+            )
+            if trade:
+                trades.append(trade["result"])
+                next_allowed_entry = trade["exit_idx"] + 1
+
+                if return_detailed:
+                    trade["ct"] = ct_long if direction == 1 else ct_short
+                    trade["hour"] = df.index[i].hour
+                    trades_detailed.append(trade)
+
+    result = {"trades": trades}
+    if return_detailed:
+        result["trades_detailed"] = trades_detailed
+    return result
+
+
 def run_inner_cv(
     inner_folds: List[Tuple[pd.DataFrame, pd.DataFrame]],
     group_features: List[str],
@@ -304,6 +423,7 @@ def run_inner_cv(
 
     Returns:
         dict mit success, avg_val_pnl, best_ct, selected_features etc.
+        Bei separate_long_short: best_ct ist ein Tuple (ct_long, ct_short)
     """
     inner_val_pnls = []
     selected_features_long = None
@@ -360,16 +480,26 @@ def run_inner_cv(
     profitable_folds = sum(1 for pnl in inner_val_pnls if pnl > 0)
     fold_stability = profitable_folds / len(inner_val_pnls) if inner_val_pnls else 0
 
-    return {
+    # Bester CT (kann Tuple sein bei separate_long_short)
+    best_ct = max(best_ct_votes.keys(), key=lambda x: best_ct_votes[x])
+
+    result = {
         "success": True,
         "avg_val_pnl": np.mean(inner_val_pnls),
-        "best_ct": max(best_ct_votes.keys(), key=lambda x: best_ct_votes[x]),
+        "best_ct": best_ct,
         "selected_features_long": selected_features_long,
         "selected_features_short": selected_features_short,
         "selected_features": selected_features,
         "fold_stability": fold_stability,
         "fold_pnls": inner_val_pnls,
     }
+
+    # Bei separater Optimierung: Extrahiere ct_long und ct_short
+    if ctx.separate_long_short and isinstance(best_ct, tuple):
+        result["ct_long"] = best_ct[0]
+        result["ct_short"] = best_ct[1]
+
+    return result
 
 
 def evaluate_on_holdout(
@@ -384,6 +514,7 @@ def evaluate_on_holdout(
 
     Returns:
         dict mit trades, trades_detailed, pnl, win_rate, n_trades
+        Bei separate_long_short: zusätzlich long_stats und short_stats
     """
     tp, sl, ct = candidate["params"]
     features_long = candidate.get("selected_features_long")
@@ -400,20 +531,48 @@ def evaluate_on_holdout(
     probs_long, long_win_idx = _get_probs(mod_long, holdout_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, holdout_df, features_short)
 
-    result = simulate_trades_sequential(
-        holdout_df, probs_long, probs_short, long_win_idx, short_win_idx,
-        ct, tp, sl, ctx, return_detailed=True
-    )
+    # Prüfe ob CT ein Tuple ist (separate Long/Short CTs)
+    if isinstance(ct, tuple):
+        ct_long, ct_short = ct
+        result = simulate_trades_sequential_separate_ct(
+            holdout_df, probs_long, probs_short, long_win_idx, short_win_idx,
+            ct_long, ct_short, tp, sl, ctx, return_detailed=True
+        )
+    else:
+        result = simulate_trades_sequential(
+            holdout_df, probs_long, probs_short, long_win_idx, short_win_idx,
+            ct, tp, sl, ctx, return_detailed=True
+        )
 
     trades = result["trades"]
     trades_detailed = result["trades_detailed"]
     pnl = sum(trades) if trades else 0
     win_rate = trades.count(1.0) / len(trades) if trades else 0
 
-    return {
+    output = {
         "trades": trades,
         "trades_detailed": trades_detailed,
         "pnl": pnl,
         "win_rate": win_rate,
         "n_trades": len(trades),
     }
+
+    # Bei separater Optimierung: Statistiken pro Richtung hinzufügen
+    if ctx.separate_long_short and trades_detailed:
+        long_trades = [t for t in trades_detailed if t.get("direction") == "LONG"]
+        short_trades = [t for t in trades_detailed if t.get("direction") == "SHORT"]
+
+        output["long_stats"] = {
+            "n_trades": len(long_trades),
+            "wins": sum(1 for t in long_trades if t.get("result") == 1.0),
+            "pnl": sum(t.get("result", 0) for t in long_trades),
+            "win_rate": sum(1 for t in long_trades if t.get("result") == 1.0) / len(long_trades) if long_trades else 0,
+        }
+        output["short_stats"] = {
+            "n_trades": len(short_trades),
+            "wins": sum(1 for t in short_trades if t.get("result") == 1.0),
+            "pnl": sum(t.get("result", 0) for t in short_trades),
+            "win_rate": sum(1 for t in short_trades if t.get("result") == 1.0) / len(short_trades) if short_trades else 0,
+        }
+
+    return output

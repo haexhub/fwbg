@@ -366,6 +366,24 @@ def run_optimizer(
         for i in range(1, len(eq)):
             profit_per_trade.append(eq[i] - eq[i - 1])
 
+        # Trade-Richtungen aus trades_detailed extrahieren
+        trades_detailed = e.get("trades_detailed", [])
+        trade_directions = []
+        for td in trades_detailed:
+            trade_directions.append(td.get("direction", "LONG"))
+
+        # Long/Short Statistiken berechnen
+        long_trades = [i for i, d in enumerate(trade_directions) if d == "LONG"]
+        short_trades = [i for i, d in enumerate(trade_directions) if d == "SHORT"]
+        n_long = len(long_trades)
+        n_short = len(short_trades)
+
+        # Win Rates pro Richtung
+        long_wins = sum(1 for i in long_trades if i < len(profit_per_trade) and profit_per_trade[i] > 0)
+        short_wins = sum(1 for i in short_trades if i < len(profit_per_trade) and profit_per_trade[i] > 0)
+        long_wr = long_wins / n_long if n_long > 0 else 0
+        short_wr = short_wins / n_short if n_short > 0 else 0
+
         # Equity Plot mit Drawdown und Profit per Trade (logarithmisch)
         fig, (ax1, ax2, ax3) = plt.subplots(
             3, 1, figsize=(10, 9), height_ratios=[3, 1, 1]
@@ -376,9 +394,17 @@ def run_optimizer(
         ax1.set_yscale("log")  # Logarithmische Y-Achse
         # Formatiere Y-Achse als Integer (100, 200, 500, 1000, etc.)
         ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.0f}" if x >= 1 else f"{x:.2f}"))
+        # CT-Werte für Titel (separate oder gemeinsam)
+        config = e.get("config", {})
+        if config.get("separate_long_short") and config.get("ct_long") != config.get("ct_short"):
+            ct_str = f"CT: L={config.get('ct_long', 0):.2f}/S={config.get('ct_short', 0):.2f}"
+        else:
+            ct_str = f"CT: {config.get('conf_thresh', 0):.2f}"
+
         ax1.set_title(
             f"{e['symbol']} | WR: {e['win_rate']:.1%} | RRR: {rrr:.2f} | "
-            f"Sharpe: {e.get('sharpe', 0):.2f} | MaxDD: {max_dd_pct:.0f}%"
+            f"Sharpe: {e.get('sharpe', 0):.2f} | MaxDD: {max_dd_pct:.0f}%\n"
+            f"Long: {n_long} ({long_wr:.0%}) | Short: {n_short} ({short_wr:.0%}) | {ct_str}"
         )
         ax1.set_ylabel("Kapital (log, Start=100)")
         ax1.set_xlabel("")
@@ -390,8 +416,19 @@ def run_optimizer(
         ax2.set_xlabel("")
         ax2.grid(True, alpha=0.3)
 
-        # Profit per Trade als Bar-Chart (grün = Gewinn, rot = Verlust)
-        colors = ["green" if p > 0 else "red" for p in profit_per_trade]
+        # Profit per Trade als Bar-Chart mit Long/Short Unterscheidung
+        # Long: grün (win) / hellrot (loss), Short: blau (win) / orange (loss)
+        colors = []
+        for i, p in enumerate(profit_per_trade):
+            if i < len(trade_directions):
+                is_long = trade_directions[i] == "LONG"
+                if p > 0:
+                    colors.append("green" if is_long else "blue")
+                else:
+                    colors.append("lightcoral" if is_long else "orange")
+            else:
+                colors.append("green" if p > 0 else "red")
+
         ax3.bar(
             range(len(profit_per_trade)),
             profit_per_trade,
@@ -400,7 +437,7 @@ def run_optimizer(
             width=1.0,
         )
         ax3.axhline(y=0, color="black", linewidth=0.5)
-        ax3.set_xlabel("Trade #")
+        ax3.set_xlabel("Trade # (grün/rot=Long, blau/orange=Short)")
         ax3.set_ylabel("Gewinn/Trade")
 
         # Symmetrische Y-Achse für bessere Lesbarkeit
@@ -465,6 +502,9 @@ def run_optimizer(
         else:
             status = "SKIP"
 
+        # Long/Short Info für Tabelle
+        long_short_str = f"{n_long}L/{n_short}S"
+
         table_data.append(
             [
                 e["symbol"],
@@ -474,6 +514,7 @@ def run_optimizer(
                 f"{sharpe:.2f}",
                 f"{e.get('calmar', 0):.2f}",
                 len(e["tr_trace"]),
+                long_short_str,
                 f"{annual_return:+.0f}%/y",
                 f"{max_dd_pct:.0f}%",
                 f"{p_value:.3f}",
@@ -494,6 +535,7 @@ def run_optimizer(
                 "Sharpe",
                 "Calmar",
                 "Trades",
+                "L/S",
                 "Return",
                 "MaxDD",
                 "p-val",
