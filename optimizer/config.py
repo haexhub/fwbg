@@ -22,10 +22,11 @@ TIMEFRAME = os.environ.get("TIMEFRAME", "HOUR")
 
 TIMEFRAME_CONFIG = {
     "HOUR": {"bars_per_hour": 1, "max_trade_bars": 48, "window_size": 35000, "oos_size": 4000},
+    "HOUR_SWING": {"bars_per_hour": 1, "max_trade_bars": 480, "window_size": 35000, "oos_size": 4000},  # 20 Tage max
     "MINUTE_15": {"bars_per_hour": 4, "max_trade_bars": 96, "window_size": 50000, "oos_size": 8000},
     "MINUTE_5": {"bars_per_hour": 12, "max_trade_bars": 144, "window_size": 80000, "oos_size": 16000},
     "MINUTE_1": {"bars_per_hour": 60, "max_trade_bars": 240, "window_size": 100000, "oos_size": 20000},
-    "DAY": {"bars_per_hour": 1/24, "max_trade_bars": 20, "window_size": 2000, "oos_size": 500},
+    "DAY": {"bars_per_hour": 1/24, "max_trade_bars": 60, "window_size": 2000, "oos_size": 500},  # 60 Tage max für Swing
 }
 
 tf_cfg = TIMEFRAME_CONFIG.get(TIMEFRAME, TIMEFRAME_CONFIG["HOUR"])
@@ -38,62 +39,68 @@ WALK_FORWARD_FOLDS = 8
 VIX_HIGH = 25
 ADX_MIN = 20
 
-# Asset-Klassifizierung und Spread-Kosten (verdoppelt für konservative Simulation)
+# Asset-Klassifizierung und Spread-Kosten
+# Spreads from IG Demo Account (Jan 2026)
 ASSET_CONFIG = {
     # FOREX - Majors
-    "EURUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00020, "currency": ["EUR", "USD"]},
-    "GBPUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00024, "currency": ["GBP", "USD"]},
-    "USDJPY": {"class": "FOREX", "point": 0.01, "spread": 0.020, "currency": ["USD", "JPY"]},
-    "USDCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["USD", "CHF"]},
-    "USDCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["USD", "CAD"]},
-    "AUDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00024, "currency": ["AUD", "USD"]},
-    "NZDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["NZD", "USD"]},
+    "EURUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00018, "currency": ["EUR", "USD"]},      # 1.8 pips
+    "GBPUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00058, "currency": ["GBP", "USD"]},      # 5.8 pips
+    "USDJPY": {"class": "FOREX", "point": 0.01, "spread": 0.060, "currency": ["USD", "JPY"]},          # 6.0 pips
+    "USDCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00029, "currency": ["USD", "CHF"]},      # 2.9 pips
+    "USDCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00035, "currency": ["USD", "CAD"]},      # 3.5 pips
+    "AUDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["AUD", "USD"]},      # 3.0 pips
+    "NZDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00093, "currency": ["NZD", "USD"]},      # 9.3 pips
     # FOREX - Crosses
-    "EURGBP": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["EUR", "GBP"]},
-    "EURCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00040, "currency": ["EUR", "CAD"]},
-    "EURCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00036, "currency": ["EUR", "CHF"]},
-    "EURNZD": {"class": "FOREX", "point": 0.0001, "spread": 0.00050, "currency": ["EUR", "NZD"]},
-    # Indizes
-    "DAX": {"class": "INDEX", "point": 1.0, "spread": 3.0, "currency": ["EUR"]},
-    "DOW30": {"class": "INDEX", "point": 1.0, "spread": 4.0, "currency": ["USD"]},
-    "SPX500": {"class": "INDEX", "point": 0.1, "spread": 1.0, "currency": ["USD"]},
-    "NAS100": {"class": "INDEX", "point": 0.1, "spread": 2.0, "currency": ["USD"]},
-    "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 3.0, "currency": ["GBP"]},
+    "EURGBP": {"class": "FOREX", "point": 0.0001, "spread": 0.00040, "currency": ["EUR", "GBP"]},      # 4.0 pips
+    "EURCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00117, "currency": ["EUR", "CAD"]},      # 11.7 pips
+    "EURCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["EUR", "CHF"]},      # 3.0 pips
+    "EURNZD": {"class": "FOREX", "point": 0.0001, "spread": 0.00180, "currency": ["EUR", "NZD"]},      # 18.0 pips
+    # Indices
+    "DAX": {"class": "INDEX", "point": 1.0, "spread": 7.0, "currency": ["EUR"]},                       # 7.0 points
+    "DOW30": {"class": "INDEX", "point": 1.0, "spread": 4.8, "currency": ["USD"]},                     # 4.8 points
+    "SPX500": {"class": "INDEX", "point": 0.1, "spread": 0.6, "currency": ["USD"]},                    # 0.6 points (6 pips)
+    "NAS100": {"class": "INDEX", "point": 0.1, "spread": 2.0, "currency": ["USD"]},                    # ~2.0 points (estimated)
+    "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 4.0, "currency": ["GBP"]},                   # 4.0 points
     # Commodities
-    "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},
-    "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},  # Andere Zeitzone, 2h mehr/Tag
-    "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},
-    "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},  # Andere Zeitzone
-    "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.060, "currency": ["USD"]},
+    "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},               # ~0.60 USD (estimated)
+    "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},                 # ~0.60 USD (estimated)
+    "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},             # ~0.04 USD (estimated)
+    "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},             # ~0.04 USD (estimated)
+    "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.078, "currency": ["USD"]},              # 7.8 cents
     # Crypto
-    "BTCUSD": {"class": "CRYPTO", "point": 1.0, "spread": 100.0, "currency": ["USD"]},
-    "ETHUSD": {"class": "CRYPTO", "point": 0.1, "spread": 4.0, "currency": ["USD"]},
+    "BTCUSD": {"class": "CRYPTO", "point": 1.0, "spread": 581.0, "currency": ["USD"]},                 # 581 USD
+    "ETHUSD": {"class": "CRYPTO", "point": 0.1, "spread": 4.0, "currency": ["USD"]},                   # ~4.0 USD (estimated)
     # Test
-    "TESTUSD": {"class": "TEST", "point": 0.0001, "spread": 0.00020, "currency": ["USD"]},
+    "TESTUSD": {"class": "TEST", "point": 0.0001, "spread": 0.00018, "currency": ["USD"]},
 }
 
 # Grid-Konfiguration pro Klasse (in Spread-Vielfachen)
 # TP und SL sind jetzt symmetrisch - KI entscheidet ob RRR > 1 oder < 1 besser ist
 # Kleine TP + große SL = hohe Winrate, niedriges RRR (Scalping-Stil)
 # Große TP + kleine SL = niedrige Winrate, hohes RRR (Trend-Stil)
+#
+# HINWEIS: Diese Grids sind die Defaults. Für Swing-Trading oder andere Stile
+# verwende Strategy-Dateien in strategies/*.json (z.B. swing_trading.json)
+
 CLASS_GRIDS = {
+    # === SCALPING GRIDS (Standard) ===
     "FOREX": {
-        "tp": [15, 20, 25, 30, 40, 50, 60, 80],   # Symmetrisch mit SL
-        "sl": [15, 20, 25, 30, 40, 50, 60, 80],   # Symmetrisch mit TP
-        "ct": [0.50, 0.52, 0.55, 0.58, 0.60, 0.65, 0.70],  # CT ab 0.50
+        "tp": [15, 20, 25, 30, 40, 50, 60, 80],
+        "sl": [15, 20, 25, 30, 40, 50, 60, 80],
+        "ct": [0.50, 0.52, 0.55, 0.58, 0.60, 0.65, 0.70],
     },
     "INDEX": {
         "tp": [20, 30, 50, 70, 100, 150],
-        "sl": [20, 30, 50, 70, 100, 150],         # Symmetrisch
+        "sl": [20, 30, 50, 70, 100, 150],
         "ct": [0.50, 0.52, 0.55, 0.60, 0.65, 0.70],
     },
     "COMMODITY": {
         "tp": [20, 30, 40, 60, 80, 100],
-        "sl": [20, 30, 40, 60, 80, 100],          # Symmetrisch
+        "sl": [20, 30, 40, 60, 80, 100],
         "ct": [0.50, 0.52, 0.55, 0.58, 0.62, 0.65, 0.70],
     },
     "CRYPTO": {
-        "tp": [20, 30, 50, 80, 120, 200],         # Größere Range wegen hoher Volatilität
+        "tp": [20, 30, 50, 80, 120, 200],
         "sl": [20, 30, 50, 80, 120, 200],
         "ct": [0.50, 0.52, 0.55, 0.60, 0.65, 0.70],
     },
@@ -101,6 +108,37 @@ CLASS_GRIDS = {
         "tp": [20, 40],
         "sl": [20, 40],
         "ct": [0.50, 0.55, 0.60],
+    },
+}
+
+# === SWING TRADING GRIDS ===
+# Für längerfristige Trades (Tage bis Wochen)
+# TP bis 1000x Spread = bei EURUSD (0.0002 Spread) ca. 200 Pips = 2% Bewegung
+SWING_GRIDS = {
+    "FOREX": {
+        "tp": [100, 150, 200, 300, 500, 750, 1000],  # Bis 1000x Spread
+        "sl": [50, 75, 100, 150, 200, 300],          # Engere SL für besseres RRR
+        "ct": [0.55, 0.60, 0.65, 0.70, 0.75],        # Höhere CT für Qualität
+    },
+    "INDEX": {
+        "tp": [100, 200, 300, 500, 750, 1000],
+        "sl": [50, 100, 150, 200, 300],
+        "ct": [0.55, 0.60, 0.65, 0.70, 0.75],
+    },
+    "COMMODITY": {
+        "tp": [100, 200, 300, 500, 750, 1000],
+        "sl": [50, 100, 150, 200, 300],
+        "ct": [0.55, 0.60, 0.65, 0.70, 0.75],
+    },
+    "CRYPTO": {
+        "tp": [200, 400, 600, 1000, 1500, 2000],     # Crypto braucht größere Range
+        "sl": [100, 200, 300, 500],
+        "ct": [0.55, 0.60, 0.65, 0.70],
+    },
+    "TEST": {
+        "tp": [100, 200],
+        "sl": [50, 100],
+        "ct": [0.55, 0.60],
     },
 }
 
@@ -226,7 +264,3 @@ def convert_numpy(obj):
     return obj
 
 
-def get_asset_config(sym):
-    """Holt Asset-Konfiguration oder Default-Werte."""
-    cfg = ASSET_CONFIG.get(sym, {"class": "FOREX", "point": 0.0001, "spread": 0.00020, "currency": ["USD"]})
-    return cfg["class"], cfg["point"], cfg["spread"], cfg["currency"]

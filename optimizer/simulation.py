@@ -12,14 +12,34 @@ _m15_cache = {}  # 15-Min-Daten
 _m30_cache = {}  # 30-Min-Daten
 
 
-def calculate_sharpe_ratio(returns, risk_free_rate=0.0):
-    """Berechnet annualisierte Sharpe Ratio aus Trade-Returns."""
+def calculate_sharpe_ratio(returns, risk_free_rate=0.0, trades_per_year=None):
+    """
+    Berechnet annualisierte Sharpe Ratio aus Trade-Returns.
+
+    Args:
+        returns: Liste von Trade-Returns
+        risk_free_rate: Risikofreier Zinssatz (Default: 0)
+        trades_per_year: Anzahl Trades pro Jahr für Annualisierung.
+                        Wenn None, wird sqrt(len(returns)) verwendet (konservativ)
+
+    Returns:
+        Annualisierte Sharpe Ratio
+    """
     if len(returns) < 2:
         return 0.0
     excess_returns = np.array(returns) - risk_free_rate
     if np.std(excess_returns) == 0:
         return 0.0
-    return np.mean(excess_returns) / np.std(excess_returns) * np.sqrt(252 * 6)
+
+    # Annualisierungsfaktor basierend auf tatsächlicher Trade-Frequenz
+    # Wenn nicht angegeben: konservativ sqrt(n_trades) verwenden
+    if trades_per_year is None:
+        # Konservative Schätzung: Trades im Sample entsprechen einem Jahr
+        annualization = np.sqrt(len(returns))
+    else:
+        annualization = np.sqrt(trades_per_year)
+
+    return np.mean(excess_returns) / np.std(excess_returns) * annualization
 
 
 def calculate_equity_smoothness(trades, kelly_risk, rrr, window_size=50):

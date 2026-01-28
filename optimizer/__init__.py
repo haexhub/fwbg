@@ -5,8 +5,16 @@ from .config import (
     ACCOUNT_NAME, DATA_PATH, BASE_PATH, EXPORT_FILE, PLOT_PATH,
     TIMEFRAME, WALK_FORWARD_FOLDS, OOS_SIZE, MAX_TRADE_BARS,
     ASSET_CONFIG, CLASS_GRIDS, MIN_TRADES, CORR_THRESHOLD,
-    get_asset_config, convert_numpy
+    convert_numpy
 )
+
+# Neue Konfigurationsklassen
+from .strategy_config import (
+    StrategyConfig, GridConfig, SimulationParams,
+    ValidationParams, FilterParams, FeatureParams
+)
+from .asset_config import AssetConfig, AssetRegistry, get_asset
+from .simulation_context import SimulationContext
 
 from .data_loader import (
     load_data_aligned,
@@ -71,7 +79,12 @@ __all__ = [
     'ACCOUNT_NAME', 'DATA_PATH', 'BASE_PATH', 'EXPORT_FILE', 'PLOT_PATH',
     'TIMEFRAME', 'WALK_FORWARD_FOLDS', 'OOS_SIZE', 'MAX_TRADE_BARS',
     'ASSET_CONFIG', 'CLASS_GRIDS', 'MIN_TRADES', 'CORR_THRESHOLD',
-    'get_asset_config', 'convert_numpy',
+    'convert_numpy',
+    # Konfigurationsklassen
+    'StrategyConfig', 'GridConfig', 'SimulationParams',
+    'ValidationParams', 'FilterParams', 'FeatureParams',
+    'AssetConfig', 'AssetRegistry', 'get_asset',
+    'SimulationContext',
     # Data
     'load_data_aligned', 'load_macro_indicators', 'load_interest_rates',
     # Indicators
