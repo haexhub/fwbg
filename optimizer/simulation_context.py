@@ -48,6 +48,10 @@ class SimulationContext:
     # Flag für separate L/S Optimierung
     separate_long_short: bool = False
 
+    # Trade-Richtungen: aktivierte Richtungen
+    long_enabled: bool = True
+    short_enabled: bool = True
+
     # Feature-Gruppen
     feature_groups: List[str] = None
 
@@ -88,6 +92,8 @@ class SimulationContext:
             short_grid_sl=short_sl,
             short_grid_ct=short_ct,
             separate_long_short=grid.separate_long_short,
+            long_enabled=strategy.model.long_enabled,
+            short_enabled=strategy.model.short_enabled,
             feature_groups=strategy.features.preferred_groups,
         )
 

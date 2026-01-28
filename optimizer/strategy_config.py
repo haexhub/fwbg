@@ -97,10 +97,16 @@ class ModelConfig:
         "max_depth": 5,
         "random_state": 42
     })
+    # Trade-Richtungen: ["long", "short"] oder nur ["long"] / ["short"]
+    trade_directions: List[str] = field(default_factory=lambda: ["long", "short"])
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
         """Erstellt ModelConfig aus Dictionary."""
+        # Normalisiere trade_directions zu lowercase
+        directions = data.get("trade_directions", ["long", "short"])
+        if isinstance(directions, list):
+            directions = [d.lower() for d in directions]
         return cls(
             type=data.get("type", "xgboost"),
             architecture=data.get("architecture", "unified"),
@@ -109,12 +115,23 @@ class ModelConfig:
                 "max_depth": 5,
                 "random_state": 42
             }),
+            trade_directions=directions,
         )
 
     @property
     def is_long_short_separate(self) -> bool:
         """Prüft ob separate Long/Short Modelle trainiert werden sollen."""
         return self.architecture == "long_short_separate"
+
+    @property
+    def long_enabled(self) -> bool:
+        """Prüft ob Long-Trades aktiviert sind."""
+        return "long" in self.trade_directions
+
+    @property
+    def short_enabled(self) -> bool:
+        """Prüft ob Short-Trades aktiviert sind."""
+        return "short" in self.trade_directions
 
 
 @dataclass
