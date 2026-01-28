@@ -67,7 +67,7 @@
   "resources": {
     "max_cpu_percent": 80,
     "min_free_ram_percent": 20,
-    "ram_per_worker_gb": 4
+    "ram_per_worker_gb": 3
   },
   "notes": "Scalping-Strategien mit symmetrischem Grid. Alle RRR-Werte erlaubt (auch asymmetrische wie TP=20/SL=100)."
 }

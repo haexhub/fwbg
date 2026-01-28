@@ -83,7 +83,7 @@
   "resources": {
     "max_cpu_percent": 80,
     "min_free_ram_percent": 20,
-    "ram_per_worker_gb": 4
+    "ram_per_worker_gb": 3
   },
   "notes": "Swing-Trading sucht nach größeren Marktbewegungen. Die höheren TP-Ziele (bis 1000x Spread) entsprechen bei EURUSD ca. 200 Pips oder 2% Preisbewegung. Min RRR von 1.0 filtert Scalping-Strategien aus."
 }
