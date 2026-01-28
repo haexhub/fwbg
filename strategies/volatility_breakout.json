@@ -1,0 +1,58 @@
+{
+  "name": "Volatility Breakout Strategy",
+  "description": "Handelt wenn Volatilitaet steigt, nutzt VIX und ATR als Filter",
+  "category": "volatility",
+  "tags": ["volatility", "vix", "atr", "regime_based"],
+  "hypothesis": "Hohe Volatilitaet bietet groessere Chancen, aber auch Risiken - gezielte Trades bei Vol-Expansion",
+  "expected_outcome": "Variable Win-Rate abhaengig vom Marktregime, RRR 1.0-3.0",
+
+  "grids": {
+    "FOREX": {
+      "tp": [40, 60, 100, 150, 200],
+      "sl": [30, 50, 70, 100],
+      "ct": [0.58, 0.62, 0.68, 0.72]
+    },
+    "INDEX": {
+      "tp": [60, 100, 180, 280, 400],
+      "sl": [40, 70, 120, 180],
+      "ct": [0.58, 0.62, 0.68, 0.72]
+    },
+    "COMMODITY": {
+      "tp": [50, 100, 160, 240, 350],
+      "sl": [40, 70, 110, 160],
+      "ct": [0.58, 0.62, 0.68, 0.72]
+    },
+    "CRYPTO": {
+      "tp": [100, 250, 450, 750, 1200],
+      "sl": [80, 150, 280, 450],
+      "ct": [0.55, 0.60, 0.68]
+    }
+  },
+
+  "simulation": {
+    "max_trade_bars": 96,
+    "tp_sl_basis": "spread_multiple",
+    "trailing_stop": true,
+    "slippage_model": "fixed",
+    "regime_filter": true
+  },
+
+  "filters": {
+    "min_rrr": 0.8,
+    "min_trades": 40,
+    "min_annual_return": 15.0
+  },
+
+  "features": {
+    "preferred_groups": ["volatility", "macro_vol", "dynamics"]
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "holdout_ratio": 0.20
+  },
+
+  "notes": "Volatilitaets-Strategien profitieren von Marktturbulenzen. VIX-Spikes sind oft gute Einstiegspunkte."
+}

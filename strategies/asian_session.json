@@ -1,0 +1,58 @@
+{
+  "name": "Asian Session Strategy",
+  "description": "Optimiert fuer die asiatische Handelszeit (00:00-08:00 UTC), niedrigere Volatilitaet",
+  "category": "session",
+  "tags": ["asian_session", "time_based", "range_trading", "low_volatility"],
+  "hypothesis": "Asiatische Session hat andere Charakteristik - mehr Range-Trading, weniger Trends",
+  "expected_outcome": "Konsistente kleine Gewinne, Win-Rate 55-70%",
+
+  "grids": {
+    "FOREX": {
+      "tp": [15, 20, 25, 35, 45],
+      "sl": [20, 30, 40, 50, 60],
+      "ct": [0.55, 0.60, 0.65, 0.70]
+    },
+    "INDEX": {
+      "tp": [20, 35, 50, 70, 100],
+      "sl": [30, 50, 70, 100, 140],
+      "ct": [0.55, 0.60, 0.65, 0.70]
+    },
+    "COMMODITY": {
+      "tp": [20, 30, 45, 65, 90],
+      "sl": [25, 40, 60, 85, 120],
+      "ct": [0.55, 0.60, 0.65, 0.70]
+    },
+    "CRYPTO": {
+      "tp": [30, 60, 100, 160],
+      "sl": [50, 90, 150, 230],
+      "ct": [0.55, 0.60, 0.65]
+    }
+  },
+
+  "simulation": {
+    "max_trade_bars": 48,
+    "tp_sl_basis": "spread_multiple",
+    "trailing_stop": false,
+    "slippage_model": "fixed",
+    "regime_filter": false
+  },
+
+  "filters": {
+    "min_rrr": 0.0,
+    "min_trades": 50,
+    "min_annual_return": 10.0
+  },
+
+  "features": {
+    "preferred_groups": ["time", "price_action", "volatility"]
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "holdout_ratio": 0.20
+  },
+
+  "notes": "Asiatische Session ideal fuer JPY-Paare und AUD. Time-Features besonders wichtig."
+}

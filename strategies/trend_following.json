@@ -1,0 +1,58 @@
+{
+  "name": "Trend Following Strategy",
+  "description": "Klassisches Trendfolge-System, reitet etablierte Trends",
+  "category": "trend",
+  "tags": ["trend_following", "momentum", "moving_averages", "patience"],
+  "hypothesis": "Trends persistieren laenger als erwartet - The trend is your friend",
+  "expected_outcome": "Niedrige Win-Rate (35-45%) bei sehr hoher RRR (2.0-5.0)",
+
+  "grids": {
+    "FOREX": {
+      "tp": [80, 120, 180, 250, 350, 500],
+      "sl": [40, 60, 80, 100],
+      "ct": [0.55, 0.60, 0.65, 0.70]
+    },
+    "INDEX": {
+      "tp": [100, 150, 250, 400, 600],
+      "sl": [50, 80, 120, 180],
+      "ct": [0.55, 0.60, 0.65, 0.70]
+    },
+    "COMMODITY": {
+      "tp": [100, 180, 280, 400, 600],
+      "sl": [50, 80, 120, 180],
+      "ct": [0.55, 0.60, 0.65, 0.70]
+    },
+    "CRYPTO": {
+      "tp": [200, 400, 700, 1200, 2000],
+      "sl": [100, 200, 350, 500],
+      "ct": [0.55, 0.60, 0.65]
+    }
+  },
+
+  "simulation": {
+    "max_trade_bars": 240,
+    "tp_sl_basis": "spread_multiple",
+    "trailing_stop": true,
+    "slippage_model": "fixed",
+    "regime_filter": true
+  },
+
+  "filters": {
+    "min_rrr": 1.5,
+    "min_trades": 30,
+    "min_annual_return": 18.0
+  },
+
+  "features": {
+    "preferred_groups": ["trend_momentum", "trend", "mtf"]
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "holdout_ratio": 0.20
+  },
+
+  "notes": "Trend Following erfordert psychische Staerke bei Verlustserie. Grosse Gewinne kompensieren viele kleine Verluste."
+}

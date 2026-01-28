@@ -1,0 +1,58 @@
+{
+  "name": "High Confidence Strategy",
+  "description": "Nur Trades bei sehr hoher Modell-Konfidenz, wenige aber sichere Trades",
+  "category": "selective",
+  "tags": ["high_confidence", "selective", "quality_over_quantity"],
+  "hypothesis": "Weniger ist mehr - nur bei starken Signalen handeln reduziert Fehlsignale",
+  "expected_outcome": "Sehr hohe Win-Rate (70-85%) bei wenigen Trades",
+
+  "grids": {
+    "FOREX": {
+      "tp": [25, 35, 50, 70, 100],
+      "sl": [25, 35, 50, 70, 100],
+      "ct": [0.70, 0.75, 0.80, 0.85]
+    },
+    "INDEX": {
+      "tp": [40, 60, 90, 130, 180],
+      "sl": [40, 60, 90, 130, 180],
+      "ct": [0.70, 0.75, 0.80, 0.85]
+    },
+    "COMMODITY": {
+      "tp": [35, 55, 80, 120, 170],
+      "sl": [35, 55, 80, 120, 170],
+      "ct": [0.70, 0.75, 0.80, 0.85]
+    },
+    "CRYPTO": {
+      "tp": [60, 120, 200, 320],
+      "sl": [60, 120, 200, 320],
+      "ct": [0.70, 0.75, 0.80]
+    }
+  },
+
+  "simulation": {
+    "max_trade_bars": 72,
+    "tp_sl_basis": "spread_multiple",
+    "trailing_stop": false,
+    "slippage_model": "fixed",
+    "regime_filter": true
+  },
+
+  "filters": {
+    "min_rrr": 0.0,
+    "min_trades": 25,
+    "min_annual_return": 10.0
+  },
+
+  "features": {
+    "preferred_groups": ["full_technical", "trend_momentum", "cross"]
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "holdout_ratio": 0.20
+  },
+
+  "notes": "High Confidence erfordert Geduld. Symmetrische TP/SL da RRR weniger wichtig bei hoher Win-Rate."
+}
