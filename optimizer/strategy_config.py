@@ -21,10 +21,14 @@ class GridConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GridConfig":
         """Erstellt GridConfig aus Dictionary."""
+        # Default-Werte explizit, da dataclass default_factory keine Klassenattribute erstellt
+        default_tp = [15, 20, 25, 30, 40, 50, 60, 80]
+        default_sl = [15, 20, 25, 30, 40, 50, 60, 80]
+        default_ct = [0.50, 0.52, 0.55, 0.58, 0.60, 0.65, 0.70]
         return cls(
-            tp=data.get("tp", cls.tp),
-            sl=data.get("sl", cls.sl),
-            ct=data.get("ct", cls.ct),
+            tp=data.get("tp", default_tp),
+            sl=data.get("sl", default_sl),
+            ct=data.get("ct", default_ct),
         )
 
     def total_combinations(self) -> int:
