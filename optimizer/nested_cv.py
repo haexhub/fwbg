@@ -69,9 +69,9 @@ def simulate_trades_sequential(
             continue
 
         direction = None
-        if probs_long is not None and probs_long[i, long_win_idx] >= ct:
+        if ctx.long_enabled and probs_long is not None and probs_long[i, long_win_idx] >= ct:
             direction = 1
-        elif probs_short is not None and probs_short[i, short_win_idx] >= ct:
+        elif ctx.short_enabled and probs_short is not None and probs_short[i, short_win_idx] >= ct:
             direction = -1
 
         if direction:
@@ -178,8 +178,9 @@ def compute_targets(
     min_per_direction = ctx.min_trades // 2
     n_long = np.count_nonzero(targets_long)
     n_short = np.count_nonzero(targets_short)
-    has_long = n_long >= min_per_direction
-    has_short = n_short >= min_per_direction
+    # Respektiere trade_directions Einstellung
+    has_long = ctx.long_enabled and n_long >= min_per_direction
+    has_short = ctx.short_enabled and n_short >= min_per_direction
 
     return targets_long, targets_short, has_long, has_short
 
@@ -383,9 +384,9 @@ def simulate_trades_sequential_separate_ct(
 
         direction = None
         # Separate CT-Thresholds für Long und Short
-        if probs_long is not None and probs_long[i, long_win_idx] >= ct_long:
+        if ctx.long_enabled and probs_long is not None and probs_long[i, long_win_idx] >= ct_long:
             direction = 1
-        elif probs_short is not None and probs_short[i, short_win_idx] >= ct_short:
+        elif ctx.short_enabled and probs_short is not None and probs_short[i, short_win_idx] >= ct_short:
             direction = -1
 
         if direction:
