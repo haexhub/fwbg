@@ -285,8 +285,9 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
     - Signal bei Bar idx, Entry bei Open von Bar idx+1 (kein Look-Ahead!)
-    - Trade läuft bis TP oder SL erreicht wird (kein Timeout-Exit!)
+    - Trade läuft bis TP oder SL erreicht wird
     - Bei gleichzeitigem TP/SL im selben Bar: Schaut in 15-Min-Daten (falls verfügbar)
+    - Bei Timeout: Schließt zum Close-Preis und wertet als Win/Loss
 
     Args:
         closes: Close-Preise Array
@@ -310,7 +311,7 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
             - signal_time, entry_time, exit_time: Zeitstempel (falls vorhanden)
             - entry_price_raw: Preis vor Kosten
             - entry_price: Effektiver Entry inkl. Spread+Slippage
-            - exit_price: Exit-Preis (TP oder SL Level)
+            - exit_price: Exit-Preis (TP, SL, oder Close bei Timeout)
             - tp_level, sl_level: TP/SL Levels
             - spread, slippage, total_cost: Kosten
             - tp_distance, sl_distance: Distanzen in Preiseinheiten
@@ -416,7 +417,21 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
                 return make_result(-1.0, j, sl)
 
     # Timeout - kein TP/SL erreicht
-    return None
+    # Schließe zum Close-Preis und werte als Win/Loss
+    # So lernt das Model, dass Signale die ins Timeout laufen oft schlecht sind
+    timeout_idx = min(entry_idx + max_bars - 1, len(closes) - 1)
+    exit_price = closes[timeout_idx]
+
+    # Berechne PnL
+    if direction == 1:  # Long
+        pnl = exit_price - entry
+    else:  # Short
+        pnl = entry - exit_price
+
+    # Win wenn Profit > 0, sonst Loss
+    result = 1.0 if pnl > 0 else -1.0
+
+    return make_result(result, timeout_idx, exit_price)
 
 
 def calculate_max_drawdown(returns, kelly_risk, rrr):

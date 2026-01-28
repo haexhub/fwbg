@@ -13,7 +13,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.ticker import ScalarFormatter, FuncFormatter
+from matplotlib.ticker import FuncFormatter
 from tabulate import tabulate
 
 from .config import (
@@ -374,9 +374,8 @@ def run_optimizer(
         ax1.plot(eq, color="blue", linewidth=1.5)
         ax1.fill_between(range(len(eq)), eq, alpha=0.3)
         ax1.set_yscale("log")  # Logarithmische Y-Achse
-        # Normale Zahlenformatierung statt Exponentialdarstellung
-        ax1.yaxis.set_major_formatter(ScalarFormatter())
-        ax1.yaxis.get_major_formatter().set_scientific(False)
+        # Formatiere Y-Achse als Integer (100, 200, 500, 1000, etc.)
+        ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.0f}" if x >= 1 else f"{x:.2f}"))
         ax1.set_title(
             f"{e['symbol']} | WR: {e['win_rate']:.1%} | RRR: {rrr:.2f} | "
             f"Sharpe: {e.get('sharpe', 0):.2f} | MaxDD: {max_dd_pct:.0f}%"
@@ -403,8 +402,27 @@ def run_optimizer(
         ax3.axhline(y=0, color="black", linewidth=0.5)
         ax3.set_xlabel("Trade #")
         ax3.set_ylabel("Gewinn/Trade")
-        # Normale lineare Skala mit Dezimalzahlen
-        ax3.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.1f}"))
+
+        # Symmetrische Y-Achse für bessere Lesbarkeit
+        if profit_per_trade:
+            max_abs = max(abs(min(profit_per_trade)), abs(max(profit_per_trade)))
+            ax3.set_ylim(-max_abs * 1.1, max_abs * 1.1)
+
+        # Durchschnittlichen Gewinn/Verlust als horizontale Linien
+        wins = [p for p in profit_per_trade if p > 0]
+        losses = [p for p in profit_per_trade if p < 0]
+        if wins:
+            avg_win = sum(wins) / len(wins)
+            ax3.axhline(y=avg_win, color="green", linestyle="--", alpha=0.7, linewidth=1)
+            ax3.text(len(profit_per_trade) * 0.02, avg_win, f"Ø Win: {avg_win:.2f}",
+                     fontsize=8, color="green", va="bottom")
+        if losses:
+            avg_loss = sum(losses) / len(losses)
+            ax3.axhline(y=avg_loss, color="red", linestyle="--", alpha=0.7, linewidth=1)
+            ax3.text(len(profit_per_trade) * 0.02, avg_loss, f"Ø Loss: {avg_loss:.2f}",
+                     fontsize=8, color="red", va="top")
+
+        ax3.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.2f}"))
         ax3.grid(True, alpha=0.3)
 
         plt.tight_layout()
