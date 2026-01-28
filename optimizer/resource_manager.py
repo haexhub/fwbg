@@ -120,8 +120,9 @@ class AdaptivePoolManager:
             progress_dict: DEPRECATED - nicht mehr verwendet
             progress_queue: multiprocessing.Queue für Progress-Updates
         """
-        self.max_cpu_percent = max_cpu_percent
-        self.min_free_ram_percent = min_free_ram_percent
+        # Normalisiere Prozent-Werte: 80 -> 0.80, 0.80 -> 0.80
+        self.max_cpu_percent = max_cpu_percent / 100 if max_cpu_percent > 1 else max_cpu_percent
+        self.min_free_ram_percent = min_free_ram_percent / 100 if min_free_ram_percent > 1 else min_free_ram_percent
         self.ram_per_worker_gb = ram_per_worker_gb
         self.check_interval = check_interval
         self.verbose = verbose
@@ -132,12 +133,12 @@ class AdaptivePoolManager:
         self.total_ram_gb = psutil.virtual_memory().total / (1024**3)
 
         # Berechne max Workers basierend auf CPU UND RAM
-        cpu_limit = max(1, int(self.total_cores * max_cpu_percent))
+        cpu_limit = max(1, int(self.total_cores * self.max_cpu_percent))
 
         # RAM-Limit: (Gesamt-RAM - Reserve) / RAM pro Worker
-        reserved_ram = self.total_ram_gb * min_free_ram_percent
+        reserved_ram = self.total_ram_gb * self.min_free_ram_percent
         available_for_workers = self.total_ram_gb - reserved_ram
-        ram_limit = max(1, int(available_for_workers / ram_per_worker_gb))
+        ram_limit = max(1, int(available_for_workers / self.ram_per_worker_gb))
 
         self.max_workers = min(cpu_limit, ram_limit)
 
