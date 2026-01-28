@@ -1,6 +1,7 @@
 """
 Hauptprogramm für den Walk-Forward Optimizer
 """
+
 import os
 import glob
 import json
@@ -9,21 +10,33 @@ import argparse
 from functools import partial
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter, FuncFormatter
 from tabulate import tabulate
 
 from .config import (
-    ACCOUNT_NAME, DATA_PATH, EXPORT_FILE, PLOT_PATH,
-    TIMEFRAME, WALK_FORWARD_FOLDS, OOS_SIZE, CORR_THRESHOLD,
+    ACCOUNT_NAME,
+    DATA_PATH,
+    EXPORT_FILE,
+    PLOT_PATH,
+    TIMEFRAME,
+    WALK_FORWARD_FOLDS,
+    OOS_SIZE,
+    CORR_THRESHOLD,
 )
 from .strategy_config import StrategyConfig
 from .process import process_symbol
 from .progress import ProgressTracker, init_progress_queue
 from .results import (
-    generate_run_id, create_run_directory, save_run_results,
-    list_runs, load_run, compare_runs, create_strategy_metadata
+    generate_run_id,
+    create_run_directory,
+    save_run_results,
+    list_runs,
+    load_run,
+    compare_runs,
+    create_strategy_metadata,
 )
 from .resource_manager import AdaptivePoolManager, get_resource_info
 
@@ -108,10 +121,7 @@ def filter_correlated_assets(results, threshold=CORR_THRESHOLD):
             selected.append(r)
             continue
 
-        max_exposure = max(
-            (currency_exposure.get(c, 0) for c in currencies),
-            default=0
-        )
+        max_exposure = max((currency_exposure.get(c, 0) for c in currencies), default=0)
 
         max_allowed = int(1 / (1 - threshold)) if threshold < 1 else 10
 
@@ -123,7 +133,13 @@ def filter_correlated_assets(results, threshold=CORR_THRESHOLD):
     return selected
 
 
-def run_optimizer(description=None, save_results=True, strategy_metadata=None, asset_filter=None, feature_groups=None):
+def run_optimizer(
+    description=None,
+    save_results=True,
+    strategy_metadata=None,
+    asset_filter=None,
+    feature_groups=None,
+):
     """
     Führt die Walk-Forward Optimierung aus.
 
@@ -153,11 +169,19 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
             # Classes: nur bestimmte Asset-Klassen
             if strat_assets.get("classes"):
                 from .config import ASSET_CONFIG
+
                 allowed_classes = strat_assets["classes"]
-                files = [f for f in files if any(
-                    ASSET_CONFIG.get(os.path.basename(f).split("_")[0], {}).get("class") in allowed_classes
-                    for _ in [1]  # Workaround für list comprehension
-                )]
+                files = [
+                    f
+                    for f in files
+                    if any(
+                        ASSET_CONFIG.get(os.path.basename(f).split("_")[0], {}).get(
+                            "class"
+                        )
+                        in allowed_classes
+                        for _ in [1]  # Workaround für list comprehension
+                    )
+                ]
 
     # Strategy-Config für Worker erstellen
     if strategy_metadata:
@@ -186,11 +210,17 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         strat_resources = strategy_metadata.get("resources", {})
         if strat_resources:
             if strat_resources.get("max_cpu_percent") is not None:
-                resource_settings["max_cpu_percent"] = strat_resources["max_cpu_percent"]
+                resource_settings["max_cpu_percent"] = strat_resources[
+                    "max_cpu_percent"
+                ]
             if strat_resources.get("min_free_ram_percent") is not None:
-                resource_settings["min_free_ram_percent"] = strat_resources["min_free_ram_percent"]
+                resource_settings["min_free_ram_percent"] = strat_resources[
+                    "min_free_ram_percent"
+                ]
             if strat_resources.get("ram_per_worker_gb") is not None:
-                resource_settings["ram_per_worker_gb"] = strat_resources["ram_per_worker_gb"]
+                resource_settings["ram_per_worker_gb"] = strat_resources[
+                    "ram_per_worker_gb"
+                ]
 
     # Filter nach bestimmten Assets wenn angegeben
     if asset_filter:
@@ -203,7 +233,9 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     # Run-ID und Verzeichnis erstellen
     run_id = generate_run_id(description)
     if save_results:
-        run_path, plots_path = create_run_directory(run_id, description, strategy_metadata)
+        run_path, plots_path = create_run_directory(
+            run_id, description, strategy_metadata
+        )
         print(f"\nRun ID: {run_id}")
         print(f"Results: {run_path}/")
         if strategy_metadata:
@@ -222,8 +254,12 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
 
     # Ressourcen-Info anzeigen
     res_info = get_resource_info()
-    print(f"System: {res_info['cpu_cores']} Cores, {res_info['ram_total_gb']:.1f} GB RAM")
-    print(f"Verfügbar: {res_info['ram_available_gb']:.1f} GB ({res_info['ram_free_percent']:.0f}% frei)")
+    print(
+        f"System: {res_info['cpu_cores']} Cores, {res_info['ram_total_gb']:.1f} GB RAM"
+    )
+    print(
+        f"Verfügbar: {res_info['ram_available_gb']:.1f} GB ({res_info['ram_free_percent']:.0f}% frei)"
+    )
     print("-" * 60)
 
     # Log-Level anzeigen
@@ -234,7 +270,7 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     # Dateien auflisten
     print(f"\nVerarbeite {len(files)} Assets:")
     for i, f in enumerate(files[:10]):
-        print(f"  {i+1}. {os.path.basename(f)}")
+        print(f"  {i + 1}. {os.path.basename(f)}")
     if len(files) > 10:
         print(f"  ... und {len(files) - 10} weitere")
     print()
@@ -251,7 +287,7 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         min_free_ram_percent=resource_settings["min_free_ram_percent"],
         ram_per_worker_gb=resource_settings["ram_per_worker_gb"],
         verbose=True,
-        progress_queue=progress_queue
+        progress_queue=progress_queue,
     )
 
     # Progress-Tracker im Hauptprozess mit Queue für Worker-Updates
@@ -267,16 +303,16 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     worker_func = partial(process_symbol, strategy=strategy)
 
     raw_results = pool_manager.map_adaptive(
-        func=worker_func,
-        items=files,
-        progress_callback=update_progress
+        func=worker_func, items=files, progress_callback=update_progress
     )
 
     progress_tracker.stop()
 
     # Stats ausgeben
     stats = pool_manager.get_status()
-    print(f"\nPeak Workers: {stats['peak_workers']}, RAM-Throttles: {stats['ram_throttle_count']}")
+    print(
+        f"\nPeak Workers: {stats['peak_workers']}, RAM-Throttles: {stats['ram_throttle_count']}"
+    )
 
     # Trenne erfolgreiche von fehlgeschlagenen Ergebnissen
     all_results = raw_results  # Alle Ergebnisse (inkl. grid_results)
@@ -290,9 +326,12 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     if failed_results or none_results:
         print(f"\nÜbersprungene Assets ({len(failed_results) + none_results}):")
         for fr in failed_results:
-            status = fr.get('status', 'unknown')
-            grid_count = len(fr.get('grid_results', []))
-            print(f"  - {fr['symbol']}: {status}" + (f" ({grid_count} Kombinationen getestet)" if grid_count else ""))
+            status = fr.get("status", "unknown")
+            grid_count = len(fr.get("grid_results", []))
+            print(
+                f"  - {fr['symbol']}: {status}"
+                + (f" ({grid_count} Kombinationen getestet)" if grid_count else "")
+            )
         if none_results:
             print(f"  - {none_results}x Fehler (None zurückgegeben)")
 
@@ -328,7 +367,9 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
             profit_per_trade.append(eq[i] - eq[i - 1])
 
         # Equity Plot mit Drawdown und Profit per Trade (logarithmisch)
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 9), height_ratios=[3, 1, 1])
+        fig, (ax1, ax2, ax3) = plt.subplots(
+            3, 1, figsize=(10, 9), height_ratios=[3, 1, 1]
+        )
 
         ax1.plot(eq, color="blue", linewidth=1.5)
         ax1.fill_between(range(len(eq)), eq, alpha=0.3)
@@ -352,7 +393,13 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
 
         # Profit per Trade als Bar-Chart (grün = Gewinn, rot = Verlust)
         colors = ["green" if p > 0 else "red" for p in profit_per_trade]
-        ax3.bar(range(len(profit_per_trade)), profit_per_trade, color=colors, alpha=0.7, width=1.0)
+        ax3.bar(
+            range(len(profit_per_trade)),
+            profit_per_trade,
+            color=colors,
+            alpha=0.7,
+            width=1.0,
+        )
         ax3.axhline(y=0, color="black", linewidth=0.5)
         ax3.set_xlabel("Trade #")
         ax3.set_ylabel("Gewinn/Trade")
@@ -386,11 +433,11 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         # Erweiterte Profitabilitätsprüfung inkl. Monte Carlo
         MIN_ANNUAL_RETURN = 10  # Mindestens 10%/Jahr
         is_profitable = (
-            sharpe >= 1.0 and
-            annual_return >= MIN_ANNUAL_RETURN and
-            max_dd < 0.6 and
-            mc_stats.get("is_significant", False) and
-            fold_stability >= 0.5  # Mindestens 50% der Folds profitabel
+            sharpe >= 1.0
+            and annual_return >= MIN_ANNUAL_RETURN
+            and max_dd < 0.6
+            and mc_stats.get("is_significant", False)
+            and fold_stability >= 0.5  # Mindestens 50% der Folds profitabel
         )
 
         if is_profitable:
@@ -400,27 +447,42 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         else:
             status = "SKIP"
 
-        table_data.append([
-            e["symbol"],
-            f"{e['config']['kelly_risk'] * 100:.2f}%",
-            f"{wr:.1%}",
-            f"{rrr:.2f}",
-            f"{sharpe:.2f}",
-            f"{e.get('calmar', 0):.2f}",
-            len(e["tr_trace"]),
-            f"{annual_return:+.0f}%/y",
-            f"{max_dd_pct:.0f}%",
-            f"{p_value:.3f}",
-            f"{fold_stability:.0%}",
-            status,
-        ])
+        table_data.append(
+            [
+                e["symbol"],
+                f"{e['config']['kelly_risk'] * 100:.2f}%",
+                f"{wr:.1%}",
+                f"{rrr:.2f}",
+                f"{sharpe:.2f}",
+                f"{e.get('calmar', 0):.2f}",
+                len(e["tr_trace"]),
+                f"{annual_return:+.0f}%/y",
+                f"{max_dd_pct:.0f}%",
+                f"{p_value:.3f}",
+                f"{fold_stability:.0%}",
+                status,
+            ]
+        )
 
     print(
         "\n"
         + tabulate(
             table_data,
-            headers=["Asset", "Kelly", "WinRate", "RRR", "Sharpe", "Calmar", "Trades", "Return", "MaxDD", "p-val", "Folds", "Status"],
-            tablefmt="psql"
+            headers=[
+                "Asset",
+                "Kelly",
+                "WinRate",
+                "RRR",
+                "Sharpe",
+                "Calmar",
+                "Trades",
+                "Return",
+                "MaxDD",
+                "p-val",
+                "Folds",
+                "Status",
+            ],
+            tablefmt="psql",
         )
     )
 
@@ -435,7 +497,9 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
             for c in e.get("currencies", []):
                 all_currencies[c] = all_currencies.get(c, 0) + 1
     if all_currencies:
-        print(f"\nWährungs-Exposure (nur profitable): {dict(sorted(all_currencies.items(), key=lambda x: -x[1]))}")
+        print(
+            f"\nWährungs-Exposure (nur profitable): {dict(sorted(all_currencies.items(), key=lambda x: -x[1]))}"
+        )
 
     # Ergebnisse speichern
     if save_results and run_path:
@@ -452,7 +516,7 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         )
         print(f"\nErgebnisse gespeichert in: {run_path}/")
         print(f"Assets-Config:           {run_path}/assets.json")
-        print(f"\nUm die Ergebnisse zu aktivieren:")
+        print("\nUm die Ergebnisse zu aktivieren:")
         print(f"  cp {run_path}/assets.json {EXPORT_FILE}")
 
     n_profitable = len(final_assets)
@@ -473,24 +537,28 @@ def show_runs():
         print("Keine Test-Runs gefunden.")
         return
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("VORHANDENE TEST-RUNS")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     table_data = []
     for r in runs:
-        table_data.append([
-            r["run_id"],
-            r.get("timeframe", "?"),
-            r.get("profitable_count", "?"),
-            r.get("description", "-")[:40] if r.get("description") else "-",
-        ])
+        table_data.append(
+            [
+                r["run_id"],
+                r.get("timeframe", "?"),
+                r.get("profitable_count", "?"),
+                r.get("description", "-")[:40] if r.get("description") else "-",
+            ]
+        )
 
-    print(tabulate(
-        table_data,
-        headers=["Run ID", "Timeframe", "Profitable", "Description"],
-        tablefmt="psql"
-    ))
+    print(
+        tabulate(
+            table_data,
+            headers=["Run ID", "Timeframe", "Profitable", "Description"],
+            tablefmt="psql",
+        )
+    )
 
 
 def show_comparison(run_ids):
@@ -501,44 +569,61 @@ def show_comparison(run_ids):
         print("Keine Runs zum Vergleichen gefunden.")
         return
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("RUN-VERGLEICH")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     table_data = []
     for r in comparison["runs"]:
         stats = r.get("elite_stats", {})
-        table_data.append([
-            r["run_id"],
-            r.get("timeframe", "?"),
-            r.get("profitable_count", 0),
-            f"{stats.get('avg_sharpe', 0):.2f}",
-            f"{stats.get('avg_win_rate', 0):.1%}",
-            stats.get("total_trades", 0),
-            r.get("description", "-")[:30] if r.get("description") else "-",
-        ])
+        table_data.append(
+            [
+                r["run_id"],
+                r.get("timeframe", "?"),
+                r.get("profitable_count", 0),
+                f"{stats.get('avg_sharpe', 0):.2f}",
+                f"{stats.get('avg_win_rate', 0):.1%}",
+                stats.get("total_trades", 0),
+                r.get("description", "-")[:30] if r.get("description") else "-",
+            ]
+        )
 
-    print(tabulate(
-        table_data,
-        headers=["Run ID", "TF", "Profitable", "Avg Sharpe", "Avg WR", "Trades", "Description"],
-        tablefmt="psql"
-    ))
+    print(
+        tabulate(
+            table_data,
+            headers=[
+                "Run ID",
+                "TF",
+                "Profitable",
+                "Avg Sharpe",
+                "Avg WR",
+                "Trades",
+                "Description",
+            ],
+            tablefmt="psql",
+        )
+    )
 
     print(f"\nAlle profitablen Symbole: {', '.join(comparison['all_symbols'])}")
 
 
 def prompt_strategy_metadata():
     """Interaktive Eingabe von Strategie-Metadaten."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("STRATEGIE-METADATEN")
-    print("="*60)
+    print("=" * 60)
     print("(Enter drücken um Feld zu überspringen)\n")
 
     name = input("Strategie-Name: ").strip() or None
     if not name:
         return None
 
-    category = input("Kategorie [baseline/feature_test/model_test/hyperparameter/production]: ").strip() or "experiment"
+    category = (
+        input(
+            "Kategorie [baseline/feature_test/model_test/hyperparameter/production]: "
+        ).strip()
+        or "experiment"
+    )
     tags_input = input("Tags (komma-getrennt): ").strip()
     tags = [t.strip() for t in tags_input.split(",")] if tags_input else []
 
@@ -559,7 +644,10 @@ def prompt_strategy_metadata():
 
     # Modell
     print("\nModell-Konfiguration:")
-    model_arch = input("  Architektur [unified/long_short_separate/ensemble]: ").strip() or "unified"
+    model_arch = (
+        input("  Architektur [unified/long_short_separate/ensemble]: ").strip()
+        or "unified"
+    )
 
     notes = input("\nNotizen: ").strip() or None
 
@@ -601,9 +689,9 @@ def analyze_reversed_strategies(run_id, top_n=10):
         print(f"Run {run_id} nicht gefunden.")
         return
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"UMGEKEHRTE STRATEGIEN ANALYSE - Run: {run_id}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     # Sammle alle Grid-Ergebnisse
     all_grids = []
@@ -628,26 +716,32 @@ def analyze_reversed_strategies(run_id, top_n=10):
                 # Extrahiere Grid-ähnliche Daten aus elite_results
                 sym = r.get("symbol", "?")
                 config = r.get("config", {})
-                all_grids.append({
-                    "symbol": sym,
-                    "feature_group": config.get("feature_group", "unknown"),
-                    "tp_mult": config.get("tp_mult", 0),
-                    "sl_mult": config.get("sl_mult", 0),
-                    "conf_thresh": config.get("conf_thresh", 0),
-                    "win_rate": r.get("win_rate", 0),
-                    "pnl": r.get("pnl", 0),
-                    "trades": r.get("trades", 0),
-                    "sharpe": r.get("sharpe", 0),
-                    "rrr": r.get("rrr", 1),
-                })
+                all_grids.append(
+                    {
+                        "symbol": sym,
+                        "feature_group": config.get("feature_group", "unknown"),
+                        "tp_mult": config.get("tp_mult", 0),
+                        "sl_mult": config.get("sl_mult", 0),
+                        "conf_thresh": config.get("conf_thresh", 0),
+                        "win_rate": r.get("win_rate", 0),
+                        "pnl": r.get("pnl", 0),
+                        "trades": r.get("trades", 0),
+                        "sharpe": r.get("sharpe", 0),
+                        "rrr": r.get("rrr", 1),
+                    }
+                )
         print("HINWEIS: Dieser Run hat keine grid_details.")
-        print("         Es werden nur die Elite-Ergebnisse (BESTE Strategien) analysiert.")
+        print(
+            "         Es werden nur die Elite-Ergebnisse (BESTE Strategien) analysiert."
+        )
         print("         Für echte Reverse-Analyse einen neuen Run durchführen.\n")
 
     if not all_grids:
         print("Keine Grid-Ergebnisse gefunden.")
         print("Hinweis: Grid-Details werden erst bei neueren Runs gespeichert.")
-        print("Führe einen neuen Optimizer-Run durch, um --reverse-worst nutzen zu können.")
+        print(
+            "Führe einen neuen Optimizer-Run durch, um --reverse-worst nutzen zu können."
+        )
         return
 
     # Sortiere nach PnL (schlechteste zuerst)
@@ -673,9 +767,18 @@ def analyze_reversed_strategies(run_id, top_n=10):
         rrr = w.get("rrr", 1)
 
         # Original
-        table_data.append([
-            sym, fg[:15], f"{tp}/{sl}", ct, f"{wr:.1%}", trades, f"{pnl:+.1f}", f"{sharpe:.2f}"
-        ])
+        table_data.append(
+            [
+                sym,
+                fg[:15],
+                f"{tp}/{sl}",
+                ct,
+                f"{wr:.1%}",
+                trades,
+                f"{pnl:+.1f}",
+                f"{sharpe:.2f}",
+            ]
+        )
 
         # Umgekehrte Berechnung:
         # Wenn WR = 30%, dann hat die umgekehrte Strategie WR = 70%
@@ -705,36 +808,66 @@ def analyze_reversed_strategies(run_id, top_n=10):
                 # Grobe Approximation
                 avg_return = reversed_pnl / trades
                 # Volatilität bleibt ähnlich
-                reversed_sharpe = avg_return * (trades ** 0.5) * 10  # Grobe Skalierung
+                reversed_sharpe = avg_return * (trades**0.5) * 10  # Grobe Skalierung
             else:
                 reversed_sharpe = 0
         else:
             reversed_pnl = 0
             reversed_sharpe = 0
 
-        reversed_table.append([
-            sym, fg[:15], f"{sl}/{tp}", ct,  # TP/SL getauscht
-            f"{reversed_wr:.1%}", trades, f"{reversed_pnl:+.1f}", f"{reversed_sharpe:.2f}"
-        ])
+        reversed_table.append(
+            [
+                sym,
+                fg[:15],
+                f"{sl}/{tp}",
+                ct,  # TP/SL getauscht
+                f"{reversed_wr:.1%}",
+                trades,
+                f"{reversed_pnl:+.1f}",
+                f"{reversed_sharpe:.2f}",
+            ]
+        )
 
     print("ORIGINAL (schlechteste):")
-    print(tabulate(
-        table_data,
-        headers=["Symbol", "Feature-Gruppe", "TP/SL", "CT", "WinRate", "Trades", "PnL", "Sharpe"],
-        tablefmt="psql"
-    ))
+    print(
+        tabulate(
+            table_data,
+            headers=[
+                "Symbol",
+                "Feature-Gruppe",
+                "TP/SL",
+                "CT",
+                "WinRate",
+                "Trades",
+                "PnL",
+                "Sharpe",
+            ],
+            tablefmt="psql",
+        )
+    )
 
-    print("\n" + "-"*80)
+    print("\n" + "-" * 80)
     print("\nUMGEKEHRT (Long<->Short, TP<->SL):")
-    print(tabulate(
-        reversed_table,
-        headers=["Symbol", "Feature-Gruppe", "TP/SL", "CT", "WinRate", "Trades", "PnL", "Sharpe"],
-        tablefmt="psql"
-    ))
+    print(
+        tabulate(
+            reversed_table,
+            headers=[
+                "Symbol",
+                "Feature-Gruppe",
+                "TP/SL",
+                "CT",
+                "WinRate",
+                "Trades",
+                "PnL",
+                "Sharpe",
+            ],
+            tablefmt="psql",
+        )
+    )
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("FAZIT:")
-    print("="*80)
+    print("=" * 80)
 
     # Vergleiche PnL-Summen
     orig_pnl = sum(w.get("pnl", 0) for w in worst)
@@ -758,10 +891,10 @@ def analyze_reversed_strategies(run_id, top_n=10):
         print("   ABER: Diese Berechnung ignoriert Spread-Kosten beim Umkehren.")
         print("   In der Realität frisst der Spread oft den Gewinn auf.")
     elif rev_pnl < orig_pnl:
-        print(f"\n-> Umkehrung macht es SCHLECHTER!")
+        print("\n-> Umkehrung macht es SCHLECHTER!")
         print("   Das liegt an den asymmetrischen Spread-Kosten und RRR-Umkehrung.")
     else:
-        print(f"\n-> Kein signifikanter Unterschied.")
+        print("\n-> Kein signifikanter Unterschied.")
 
     print("\nWICHTIG: Umkehrung funktioniert in der Praxis selten, weil:")
     print("  1. Spread-Kosten bei jedem Trade anfallen (egal ob Long oder Short)")
@@ -789,35 +922,89 @@ Beispiele:
   python -m optimizer --reverse-worst RUN_ID       # Schlechteste Strategien umkehren
 
 Kategorien: baseline, feature_test, model_test, hyperparameter, production, experiment
-        """
+        """,
     )
 
-    parser.add_argument("-d", "--description", type=str, help="Beschreibung für diesen Run")
-    parser.add_argument("--strategy", action="store_true", help="Interaktive Strategie-Metadaten-Eingabe")
-    parser.add_argument("--strategy-file", type=str, metavar="FILE", help="Strategie-Metadaten aus JSON-Datei laden")
-    parser.add_argument("--list", action="store_true", help="Alle vorhandenen Runs anzeigen")
+    parser.add_argument(
+        "-d", "--description", type=str, help="Beschreibung für diesen Run"
+    )
+    parser.add_argument(
+        "--strategy",
+        action="store_true",
+        help="Interaktive Strategie-Metadaten-Eingabe",
+    )
+    parser.add_argument(
+        "--strategy-file",
+        type=str,
+        metavar="FILE",
+        help="Strategie-Metadaten aus JSON-Datei laden",
+    )
+    parser.add_argument(
+        "--list", action="store_true", help="Alle vorhandenen Runs anzeigen"
+    )
     parser.add_argument("--category", type=str, help="Filtert --list nach Kategorie")
-    parser.add_argument("--tags", type=str, help="Filtert --list nach Tags (komma-getrennt)")
-    parser.add_argument("--compare", nargs="+", metavar="RUN_ID", help="Runs vergleichen")
-    parser.add_argument("--no-save", action="store_true", help="Ergebnisse nicht in test_results speichern")
-    parser.add_argument("--load", type=str, metavar="RUN_ID", help="Details eines Runs anzeigen")
-    parser.add_argument("--assets", type=str, help="Nur bestimmte Assets testen (komma-getrennt, z.B. BTCUSD,ETHUSD)")
-    parser.add_argument("--features", type=str, help="Feature-Gruppen testen (komma-getrennt, z.B. trend,momentum,macro)")
-    parser.add_argument("--list-features", action="store_true", help="Verfügbare Feature-Gruppen anzeigen")
-    parser.add_argument("--reverse-worst", type=str, metavar="RUN_ID", help="Analysiere schlechteste Strategien eines Runs umgekehrt")
-    parser.add_argument("--reverse-n", type=int, default=10, help="Anzahl der schlechtesten Strategien für --reverse-worst (default: 10)")
+    parser.add_argument(
+        "--tags", type=str, help="Filtert --list nach Tags (komma-getrennt)"
+    )
+    parser.add_argument(
+        "--compare", nargs="+", metavar="RUN_ID", help="Runs vergleichen"
+    )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Ergebnisse nicht in test_results speichern",
+    )
+    parser.add_argument(
+        "--load", type=str, metavar="RUN_ID", help="Details eines Runs anzeigen"
+    )
+    parser.add_argument(
+        "--assets",
+        type=str,
+        help="Nur bestimmte Assets testen (komma-getrennt, z.B. BTCUSD,ETHUSD)",
+    )
+    parser.add_argument(
+        "--features",
+        type=str,
+        help="Feature-Gruppen testen (komma-getrennt, z.B. trend,momentum,macro)",
+    )
+    parser.add_argument(
+        "--list-features",
+        action="store_true",
+        help="Verfügbare Feature-Gruppen anzeigen",
+    )
+    parser.add_argument(
+        "--reverse-worst",
+        type=str,
+        metavar="RUN_ID",
+        help="Analysiere schlechteste Strategien eines Runs umgekehrt",
+    )
+    parser.add_argument(
+        "--reverse-n",
+        type=int,
+        default=10,
+        help="Anzahl der schlechtesten Strategien für --reverse-worst (default: 10)",
+    )
     # Ressourcen-Einstellungen
-    parser.add_argument("--cpu", type=float, help="Max CPU-Auslastung (0.0-1.0, z.B. 0.80 für 80%%)")
-    parser.add_argument("--ram-reserve", type=float, help="Min freier RAM-Anteil (0.0-1.0, z.B. 0.25 für 25%%)")
-    parser.add_argument("--ram-per-worker", type=float, help="RAM pro Worker in GB (z.B. 4.0)")
+    parser.add_argument(
+        "--cpu", type=float, help="Max CPU-Auslastung (0.0-1.0, z.B. 0.80 für 80%%)"
+    )
+    parser.add_argument(
+        "--ram-reserve",
+        type=float,
+        help="Min freier RAM-Anteil (0.0-1.0, z.B. 0.25 für 25%%)",
+    )
+    parser.add_argument(
+        "--ram-per-worker", type=float, help="RAM pro Worker in GB (z.B. 4.0)"
+    )
 
     args = parser.parse_args()
 
     if args.list_features:
         from .config import FEATURE_GROUPS, DEFAULT_FEATURE_GROUPS
-        print("\n" + "="*70)
+
+        print("\n" + "=" * 70)
         print("VERFÜGBARE FEATURE-GRUPPEN")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
         for name, group in FEATURE_GROUPS.items():
             default_mark = " [DEFAULT]" if name in DEFAULT_FEATURE_GROUPS else ""
             print(f"{name}{default_mark}")
@@ -825,7 +1012,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             print(f"  Prefixes: {', '.join(group['prefixes'])}")
             print(f"  Beschreibung: {group['description']}")
             print()
-        print(f"Verwendung: python -m optimizer --features trend,momentum,macro")
+        print("Verwendung: python -m optimizer --features trend,momentum,macro")
         return
 
     if args.list:
@@ -836,30 +1023,36 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             print("Keine Test-Runs gefunden.")
             return
 
-        print(f"\n{'='*100}")
+        print(f"\n{'=' * 100}")
         print("VORHANDENE TEST-RUNS")
         if args.category:
             print(f"(Gefiltert nach Kategorie: {args.category})")
         if tags:
             print(f"(Gefiltert nach Tags: {tags})")
-        print(f"{'='*100}\n")
+        print(f"{'=' * 100}\n")
 
         table_data = []
         for r in runs:
-            table_data.append([
-                r["run_id"][:20],
-                r.get("timeframe", "?"),
-                r.get("category", "-")[:12] if r.get("category") else "-",
-                r.get("strategy_name", "-")[:20] if r.get("strategy_name") else "-",
-                r.get("profitable_count", "?"),
-                r.get("model_architecture", "-")[:10] if r.get("model_architecture") else "-",
-            ])
+            table_data.append(
+                [
+                    r["run_id"][:20],
+                    r.get("timeframe", "?"),
+                    r.get("category", "-")[:12] if r.get("category") else "-",
+                    r.get("strategy_name", "-")[:20] if r.get("strategy_name") else "-",
+                    r.get("profitable_count", "?"),
+                    r.get("model_architecture", "-")[:10]
+                    if r.get("model_architecture")
+                    else "-",
+                ]
+            )
 
-        print(tabulate(
-            table_data,
-            headers=["Run ID", "TF", "Kategorie", "Strategie", "OK", "Architektur"],
-            tablefmt="psql"
-        ))
+        print(
+            tabulate(
+                table_data,
+                headers=["Run ID", "TF", "Kategorie", "Strategie", "OK", "Architektur"],
+                tablefmt="psql",
+            )
+        )
 
     elif args.compare:
         show_comparison(args.compare)
@@ -909,7 +1102,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             save_results=not args.no_save,
             strategy_metadata=strategy_metadata if strategy_metadata else None,
             asset_filter=asset_filter,
-            feature_groups=feature_groups
+            feature_groups=feature_groups,
         )
 
 
