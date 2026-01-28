@@ -338,6 +338,7 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
             "fold_stability": r.get("fold_stability", 0),
             "nested_cv": r.get("nested_cv", {}),  # Nested CV Info
             "smoothness": r.get("smoothness", {}),  # Equity-Smoothness
+            "long_short_stats": r.get("long_short_stats", {}),  # Separate L/S Statistiken
         } for r in elite_results]),
     }
 

@@ -300,18 +300,31 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                         "selected_features_short": inner_result["selected_features_short"],
                         "fold_stability": inner_result.get("fold_stability", 0),
                     }
+
+                    # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
+                    if ctx.separate_long_short and "ct_long" in inner_result:
+                        candidate["ct_long"] = inner_result["ct_long"]
+                        candidate["ct_short"] = inner_result["ct_short"]
+
                     candidates.append(candidate)
 
-                    all_grid_results.append({
+                    # Grid-Result mit CT (kann Tuple sein)
+                    conf_thresh = inner_result["best_ct"]
+                    grid_result = {
                         "feature_group": feature_group,
                         "tp_mult": tp,
                         "sl_mult": sl,
-                        "conf_thresh": inner_result["best_ct"],
+                        "conf_thresh": conf_thresh,
                         "rrr": rrr,
                         "inner_val_pnl": inner_result["avg_val_pnl"],
                         "fold_stability": inner_result.get("fold_stability", 0),
                         "features": inner_result["selected_features"],
-                    })
+                    }
+                    # Bei separater Optimierung: CTs aufschlüsseln für Grid-Results
+                    if isinstance(conf_thresh, tuple):
+                        grid_result["ct_long"] = conf_thresh[0]
+                        grid_result["ct_short"] = conf_thresh[1]
+                    all_grid_results.append(grid_result)
 
         log(2, f"Inner CV fertig: {len(candidates)} Kandidaten ({time.time()-t_start:.1f}s)", sym)
 
@@ -408,7 +421,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # === HOLDOUT EVALUATION ===
         # JETZT erst evaluieren wir auf dem Holdout-Set (nie vorher gesehen!)
-        log(1, f"Holdout-Evaluation für besten Kandidaten (TP={b['params'][0]}, SL={b['params'][1]}, CT={b['params'][2]:.2f})", sym)
+        ct_param = b['params'][2]
+        if isinstance(ct_param, tuple):
+            ct_str = f"CT_L={ct_param[0]:.2f}/CT_S={ct_param[1]:.2f}"
+        else:
+            ct_str = f"CT={ct_param:.2f}"
+        log(1, f"Holdout-Evaluation für besten Kandidaten (TP={b['params'][0]}, SL={b['params'][1]}, {ct_str})", sym)
 
         holdout_result = evaluate_on_holdout(holdout_df, inner_df, b, ctx)
 
@@ -521,6 +539,15 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                         "weight": c_inner_pnl / total_inner_pnl,
                     })
 
+        # CT-Werte extrahieren (kann Tuple sein bei separate_long_short)
+        ct_value = b["params"][2]
+        if isinstance(ct_value, tuple):
+            ct_long, ct_short = ct_value
+            ct_display = ct_long  # Für Kompatibilität mit altem Code
+        else:
+            ct_long = ct_short = ct_value
+            ct_display = ct_value
+
         result = {
             "symbol": sym,
             "status": "ok",
@@ -531,7 +558,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "spread": ctx.spread,
                 "tp_mult": b["params"][0],
                 "sl_mult": b["params"][1],
-                "conf_thresh": b["params"][2],
+                "conf_thresh": ct_display,
+                # Separate CTs bei long_short_separate
+                "ct_long": ct_long,
+                "ct_short": ct_short,
+                "separate_long_short": ctx.separate_long_short,
                 "feature_group": b.get("feature_group", "unknown"),
                 "features": b["feats"],
                 "good_hours": b.get("good_hours", list(range(24))),
@@ -583,6 +614,25 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "fold_stability": b.get("fold_stability", 0),
             },
         }
+
+        # Bei separater L/S Optimierung: Statistiken pro Richtung hinzufügen
+        if ctx.separate_long_short:
+            long_stats = holdout_result.get("long_stats", {})
+            short_stats = holdout_result.get("short_stats", {})
+            result["long_short_stats"] = {
+                "long": {
+                    "n_trades": long_stats.get("n_trades", 0),
+                    "win_rate": long_stats.get("win_rate", 0),
+                    "pnl": long_stats.get("pnl", 0),
+                    "ct": ct_long,
+                },
+                "short": {
+                    "n_trades": short_stats.get("n_trades", 0),
+                    "win_rate": short_stats.get("win_rate", 0),
+                    "pnl": short_stats.get("pnl", 0),
+                    "ct": ct_short,
+                },
+            }
 
         smoothness_info = b.get("smoothness", {})
         smoothness_score = smoothness_info.get("smoothness_score", 0)

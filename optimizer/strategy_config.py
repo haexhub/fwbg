@@ -13,10 +13,28 @@ from .config import CLASS_GRIDS
 
 @dataclass
 class GridConfig:
-    """Konfiguration für TP/SL/CT Grid-Search."""
+    """Konfiguration für TP/SL/CT Grid-Search.
+
+    Unterstützt separate Grids für Long und Short Trades.
+    Wenn long_*/short_* nicht gesetzt sind, werden die gemeinsamen Werte verwendet.
+    """
+    # Gemeinsame Grids (werden verwendet wenn keine separaten L/S Grids definiert)
     tp: List[int] = field(default_factory=lambda: [15, 20, 25, 30, 40, 50, 60, 80])
     sl: List[int] = field(default_factory=lambda: [15, 20, 25, 30, 40, 50, 60, 80])
     ct: List[float] = field(default_factory=lambda: [0.50, 0.52, 0.55, 0.58, 0.60, 0.65, 0.70])
+
+    # Separate Grids für Long (None = verwende gemeinsame Werte)
+    long_tp: List[int] = None
+    long_sl: List[int] = None
+    long_ct: List[float] = None
+
+    # Separate Grids für Short (None = verwende gemeinsame Werte)
+    short_tp: List[int] = None
+    short_sl: List[int] = None
+    short_ct: List[float] = None
+
+    # Flag ob separate L/S Optimierung aktiv ist
+    separate_long_short: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GridConfig":
@@ -25,15 +43,78 @@ class GridConfig:
         default_tp = [15, 20, 25, 30, 40, 50, 60, 80]
         default_sl = [15, 20, 25, 30, 40, 50, 60, 80]
         default_ct = [0.50, 0.52, 0.55, 0.58, 0.60, 0.65, 0.70]
+
+        # Prüfe ob separate L/S Grids definiert sind
+        has_separate = any(k in data for k in ["long_tp", "long_sl", "short_tp", "short_sl"])
+
         return cls(
             tp=data.get("tp", default_tp),
             sl=data.get("sl", default_sl),
             ct=data.get("ct", default_ct),
+            long_tp=data.get("long_tp"),
+            long_sl=data.get("long_sl"),
+            long_ct=data.get("long_ct"),
+            short_tp=data.get("short_tp"),
+            short_sl=data.get("short_sl"),
+            short_ct=data.get("short_ct"),
+            separate_long_short=data.get("separate_long_short", has_separate),
+        )
+
+    def get_long_grid(self) -> tuple:
+        """Gibt (tp, sl, ct) Grid für Long Trades zurück."""
+        return (
+            self.long_tp if self.long_tp is not None else self.tp,
+            self.long_sl if self.long_sl is not None else self.sl,
+            self.long_ct if self.long_ct is not None else self.ct,
+        )
+
+    def get_short_grid(self) -> tuple:
+        """Gibt (tp, sl, ct) Grid für Short Trades zurück."""
+        return (
+            self.short_tp if self.short_tp is not None else self.tp,
+            self.short_sl if self.short_sl is not None else self.sl,
+            self.short_ct if self.short_ct is not None else self.ct,
         )
 
     def total_combinations(self) -> int:
         """Berechnet Gesamtzahl der Grid-Kombinationen."""
+        if self.separate_long_short:
+            long_tp, long_sl, long_ct = self.get_long_grid()
+            short_tp, short_sl, short_ct = self.get_short_grid()
+            # Separate Optimierung: Long + Short Kombinationen
+            return (len(long_tp) * len(long_sl) * len(long_ct) +
+                    len(short_tp) * len(short_sl) * len(short_ct))
         return len(self.tp) * len(self.sl) * len(self.ct)
+
+
+@dataclass
+class ModelConfig:
+    """Konfiguration für das ML-Modell."""
+    type: str = "xgboost"
+    architecture: str = "unified"  # "unified", "long_short_separate", "ensemble"
+    hyperparameters: Dict[str, Any] = field(default_factory=lambda: {
+        "n_estimators": 100,
+        "max_depth": 5,
+        "random_state": 42
+    })
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
+        """Erstellt ModelConfig aus Dictionary."""
+        return cls(
+            type=data.get("type", "xgboost"),
+            architecture=data.get("architecture", "unified"),
+            hyperparameters=data.get("hyperparameters", {
+                "n_estimators": 100,
+                "max_depth": 5,
+                "random_state": 42
+            }),
+        )
+
+    @property
+    def is_long_short_separate(self) -> bool:
+        """Prüft ob separate Long/Short Modelle trainiert werden sollen."""
+        return self.architecture == "long_short_separate"
 
 
 @dataclass
@@ -135,6 +216,7 @@ class StrategyConfig:
 
     # Sub-Konfigurationen
     grids: Dict[str, GridConfig] = field(default_factory=dict)
+    model: ModelConfig = field(default_factory=ModelConfig)
     simulation: SimulationParams = field(default_factory=SimulationParams)
     validation: ValidationParams = field(default_factory=ValidationParams)
     filters: FilterParams = field(default_factory=FilterParams)
@@ -151,8 +233,14 @@ class StrategyConfig:
         # Grids pro Asset-Klasse parsen
         grids = {}
         grids_data = data.get("grids", {})
+        model_config = ModelConfig.from_dict(data.get("model", {}))
+
         for asset_class, grid_data in grids_data.items():
-            grids[asset_class] = GridConfig.from_dict(grid_data)
+            grid = GridConfig.from_dict(grid_data)
+            # Separate L/S Optimierung wenn model.architecture = long_short_separate
+            if model_config.is_long_short_separate:
+                grid.separate_long_short = True
+            grids[asset_class] = grid
 
         return cls(
             name=data.get("name", "Default Strategy"),
@@ -160,6 +248,7 @@ class StrategyConfig:
             category=data.get("category", "default"),
             tags=data.get("tags", []),
             grids=grids,
+            model=model_config,
             simulation=SimulationParams.from_dict(data.get("simulation", {})),
             validation=ValidationParams.from_dict(data.get("validation", {})),
             filters=FilterParams.from_dict(data.get("filters", {})),
@@ -229,6 +318,11 @@ class StrategyConfig:
             "category": self.category,
             "tags": self.tags,
             "grids": {k: {"tp": v.tp, "sl": v.sl, "ct": v.ct} for k, v in self.grids.items()},
+            "model": {
+                "type": self.model.type,
+                "architecture": self.model.architecture,
+                "hyperparameters": self.model.hyperparameters,
+            },
             "simulation": {
                 "max_trade_bars": self.simulation.max_trade_bars,
                 "tp_sl_basis": self.simulation.tp_sl_basis,

@@ -11,7 +11,7 @@ from .config import (
 # Neue Konfigurationsklassen
 from .strategy_config import (
     StrategyConfig, GridConfig, SimulationParams,
-    ValidationParams, FilterParams, FeatureParams
+    ValidationParams, FilterParams, FeatureParams, ModelConfig
 )
 from .asset_config import AssetConfig, AssetRegistry, get_asset
 from .simulation_context import SimulationContext
@@ -82,7 +82,7 @@ __all__ = [
     'convert_numpy',
     # Konfigurationsklassen
     'StrategyConfig', 'GridConfig', 'SimulationParams',
-    'ValidationParams', 'FilterParams', 'FeatureParams',
+    'ValidationParams', 'FilterParams', 'FeatureParams', 'ModelConfig',
     'AssetConfig', 'AssetRegistry', 'get_asset',
     'SimulationContext',
     # Data

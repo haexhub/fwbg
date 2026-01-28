@@ -32,13 +32,24 @@ class SimulationContext:
     min_trades: int
     min_rrr: float
 
-    # Grid für dieses Asset
+    # Gemeinsames Grid für dieses Asset (für combined Optimierung)
     grid_tp: List[int]
     grid_sl: List[int]
     grid_ct: List[float]
 
+    # Separate Grids für Long/Short (None = verwende gemeinsames Grid)
+    long_grid_tp: List[int] = None
+    long_grid_sl: List[int] = None
+    long_grid_ct: List[float] = None
+    short_grid_tp: List[int] = None
+    short_grid_sl: List[int] = None
+    short_grid_ct: List[float] = None
+
+    # Flag für separate L/S Optimierung
+    separate_long_short: bool = False
+
     # Feature-Gruppen
-    feature_groups: List[str]
+    feature_groups: List[str] = None
 
     @classmethod
     def create(cls, asset: "AssetConfig", strategy: "StrategyConfig") -> "SimulationContext":
@@ -50,6 +61,13 @@ class SimulationContext:
             strategy: StrategyConfig mit allen Strategie-Parametern
         """
         grid = strategy.get_grid_for_class(asset.asset_class)
+
+        # Separate L/S Grids wenn aktiviert
+        long_tp, long_sl, long_ct = None, None, None
+        short_tp, short_sl, short_ct = None, None, None
+        if grid.separate_long_short:
+            long_tp, long_sl, long_ct = grid.get_long_grid()
+            short_tp, short_sl, short_ct = grid.get_short_grid()
 
         return cls(
             symbol=asset.symbol,
@@ -63,16 +81,45 @@ class SimulationContext:
             grid_tp=grid.tp,
             grid_sl=grid.sl,
             grid_ct=grid.ct,
+            long_grid_tp=long_tp,
+            long_grid_sl=long_sl,
+            long_grid_ct=long_ct,
+            short_grid_tp=short_tp,
+            short_grid_sl=short_sl,
+            short_grid_ct=short_ct,
+            separate_long_short=grid.separate_long_short,
             feature_groups=strategy.features.preferred_groups,
         )
+
+    def get_long_grid(self) -> tuple:
+        """Gibt (tp, sl, ct) Grid für Long Trades zurück."""
+        if self.separate_long_short and self.long_grid_tp is not None:
+            return (self.long_grid_tp, self.long_grid_sl, self.long_grid_ct)
+        return (self.grid_tp, self.grid_sl, self.grid_ct)
+
+    def get_short_grid(self) -> tuple:
+        """Gibt (tp, sl, ct) Grid für Short Trades zurück."""
+        if self.separate_long_short and self.short_grid_tp is not None:
+            return (self.short_grid_tp, self.short_grid_sl, self.short_grid_ct)
+        return (self.grid_tp, self.grid_sl, self.grid_ct)
 
     def total_grid_combinations(self) -> int:
         """Berechnet Gesamtzahl der Grid-Kombinationen (TP x SL x Feature-Gruppen).
 
         Hinweis: CT wird innerhalb von run_inner_cv getestet, nicht in der äußeren Schleife.
         """
+        if self.separate_long_short:
+            long_tp, long_sl, _ = self.get_long_grid()
+            short_tp, short_sl, _ = self.get_short_grid()
+            long_combos = len(long_tp) * len(long_sl)
+            short_combos = len(short_tp) * len(short_sl)
+            return (long_combos + short_combos) * len(self.feature_groups)
         return len(self.grid_tp) * len(self.grid_sl) * len(self.feature_groups)
 
     def grid_combinations_per_feature_group(self) -> int:
         """Berechnet Grid-Kombinationen pro Feature-Gruppe."""
+        if self.separate_long_short:
+            long_tp, long_sl, _ = self.get_long_grid()
+            short_tp, short_sl, _ = self.get_short_grid()
+            return len(long_tp) * len(long_sl) + len(short_tp) * len(short_sl)
         return len(self.grid_tp) * len(self.grid_sl)
