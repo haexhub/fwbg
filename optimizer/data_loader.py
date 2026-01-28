@@ -94,7 +94,7 @@ def load_macro_indicators(df):
                 for lb_d in LOOKBACKS_DAYS:
                     df[f"{col_name}_chg_{lb_d}d"] = df[col_name].pct_change(24 * lb_d) * 100
 
-            except Exception as e:
+            except Exception:
                 pass
 
     df = df.drop(columns=["_date"], errors="ignore")

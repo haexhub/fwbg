@@ -52,7 +52,7 @@
   "resources": {
     "max_cpu_percent": 0.8,
     "min_free_ram_percent": 0.25,
-    "ram_per_worker_gb": 4.0
+    "ram_per_worker_gb": 3.0
   },
   "notes": "Erwartet längere Laufzeit (~2.5x) wegen größerem Suchraum. Ermöglicht aber vollständige Exploration aller RRR-Konfigurationen."
 }

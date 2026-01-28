@@ -8,7 +8,7 @@ import time
 import signal
 import atexit
 import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from typing import Callable, List, Any, Optional, Dict
 
 import psutil
@@ -334,7 +334,6 @@ class AdaptivePoolManager:
         _active_executor = None
 
         # Finale Stats
-        final_status = self.get_status()
         self.log(f"Fertig: {completed} Items, Peak {self.peak_workers} Workers")
         if self.ram_throttle_count > 0:
             self.log(f"RAM-Throttling wurde {self.ram_throttle_count}x aktiviert")

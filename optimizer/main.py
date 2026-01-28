@@ -4,22 +4,21 @@ Hauptprogramm für den Walk-Forward Optimizer
 import os
 import glob
 import json
-import random
 import warnings
 import argparse
-import multiprocessing as mp
+from functools import partial
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter, FuncFormatter
 from tabulate import tabulate
-from tqdm import tqdm
 
 from .config import (
-    ACCOUNT_NAME, DATA_PATH, BASE_PATH, EXPORT_FILE, PLOT_PATH,
+    ACCOUNT_NAME, DATA_PATH, EXPORT_FILE, PLOT_PATH,
     TIMEFRAME, WALK_FORWARD_FOLDS, OOS_SIZE, CORR_THRESHOLD,
-    convert_numpy
 )
+from .strategy_config import StrategyConfig
 from .process import process_symbol
 from .progress import ProgressTracker, init_progress_queue
 from .results import (
@@ -160,15 +159,22 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
                     for _ in [1]  # Workaround für list comprehension
                 )]
 
-        # Feature-Gruppen aus Strategy
-        strat_features = strategy_metadata.get("feature_groups", {})
-        if strat_features and strat_features.get("groups"):
-            feature_groups = feature_groups or []
-            feature_groups.extend(strat_features["groups"])
+    # Strategy-Config für Worker erstellen
+    if strategy_metadata:
+        # CLI feature_groups überschreiben Strategy-Config
+        if feature_groups:
+            if "features" not in strategy_metadata:
+                strategy_metadata["features"] = {}
+            strategy_metadata["features"]["preferred_groups"] = feature_groups
 
-    # Feature-Gruppen setzen (für Worker-Prozesse via Environment)
-    if feature_groups:
-        os.environ["OPTIMIZER_FEATURE_GROUPS"] = ",".join(feature_groups)
+        strategy = StrategyConfig.from_dict(strategy_metadata)
+    elif feature_groups:
+        # Nur feature_groups via CLI, keine Strategy-Datei
+        strategy = StrategyConfig()
+        strategy.features.preferred_groups = feature_groups
+    else:
+        # Default Strategy
+        strategy = StrategyConfig()
 
     # Ressourcen-Einstellungen aus Strategy (oder Defaults)
     resource_settings = {
@@ -257,8 +263,11 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
     print(f"\nStarte Verarbeitung von {len(files)} Assets...\n")
     progress_tracker.start()
 
+    # Worker-Funktion mit Strategy-Config via partial wrappen
+    worker_func = partial(process_symbol, strategy=strategy)
+
     raw_results = pool_manager.map_adaptive(
-        func=process_symbol,
+        func=worker_func,
         items=files,
         progress_callback=update_progress
     )
@@ -324,6 +333,9 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         ax1.plot(eq, color="blue", linewidth=1.5)
         ax1.fill_between(range(len(eq)), eq, alpha=0.3)
         ax1.set_yscale("log")  # Logarithmische Y-Achse
+        # Normale Zahlenformatierung statt Exponentialdarstellung
+        ax1.yaxis.set_major_formatter(ScalarFormatter())
+        ax1.yaxis.get_major_formatter().set_scientific(False)
         ax1.set_title(
             f"{e['symbol']} | WR: {e['win_rate']:.1%} | RRR: {rrr:.2f} | "
             f"Sharpe: {e.get('sharpe', 0):.2f} | MaxDD: {max_dd_pct:.0f}%"
@@ -339,14 +351,13 @@ def run_optimizer(description=None, save_results=True, strategy_metadata=None, a
         ax2.grid(True, alpha=0.3)
 
         # Profit per Trade als Bar-Chart (grün = Gewinn, rot = Verlust)
-        # Symmetrisch-logarithmische Skala für bessere Lesbarkeit
         colors = ["green" if p > 0 else "red" for p in profit_per_trade]
         ax3.bar(range(len(profit_per_trade)), profit_per_trade, color=colors, alpha=0.7, width=1.0)
         ax3.axhline(y=0, color="black", linewidth=0.5)
         ax3.set_xlabel("Trade #")
-        ax3.set_ylabel("Gewinn/Trade (symlog)")
-        # symlog: logarithmisch für große Werte, linear nahe 0
-        ax3.set_yscale("symlog", linthresh=0.1)
+        ax3.set_ylabel("Gewinn/Trade")
+        # Normale lineare Skala mit Dezimalzahlen
+        ax3.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.1f}"))
         ax3.grid(True, alpha=0.3)
 
         plt.tight_layout()
@@ -670,7 +681,6 @@ def analyze_reversed_strategies(run_id, top_n=10):
         # Wenn WR = 30%, dann hat die umgekehrte Strategie WR = 70%
         # Aber: RRR kehrt sich auch um! TP=20/SL=40 -> TP=40/SL=20
         reversed_wr = 1 - wr
-        reversed_rrr = 1 / rrr if rrr > 0 else 1
 
         # PnL umkehren: Jeder Win wird Loss, jeder Loss wird Win
         # Aber mit umgekehrtem RRR!
@@ -890,14 +900,16 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             asset_filter = [a.strip().upper() for a in args.assets.split(",")]
 
         # Parse feature groups filter
+        feature_groups = None
         if args.features:
-            os.environ["OPTIMIZER_FEATURE_GROUPS"] = args.features
+            feature_groups = [g.strip() for g in args.features.split(",") if g.strip()]
 
         run_optimizer(
             description=args.description,
             save_results=not args.no_save,
             strategy_metadata=strategy_metadata if strategy_metadata else None,
-            asset_filter=asset_filter
+            asset_filter=asset_filter,
+            feature_groups=feature_groups
         )
 
 

@@ -396,6 +396,9 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
                         "calmar": r.get("calmar", 0),
                         "trades": len(r.get("tr_trace", [])),
                     }
+                    # Top-5 Kandidaten für einfachen Zugriff
+                    if r.get("top_candidates"):
+                        grid_data["top_candidates"] = convert_numpy(r["top_candidates"])
                 with open(grid_path, "w") as f:
                     json.dump(grid_data, f, indent=2)
 

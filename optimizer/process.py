@@ -7,10 +7,12 @@ import numpy as np
 import pandas as pd
 
 from .config import (
-    DATA_PATH, MIN_TRADES, WALK_FORWARD_FOLDS, OOS_SIZE,
-    CLASS_GRIDS, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
-    DEFAULT_FEATURE_GROUPS, get_asset_config
+    DATA_PATH, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
+    OOS_SIZE, tf_cfg, MIN_TRADES, WALK_FORWARD_FOLDS
 )
+from .strategy_config import StrategyConfig
+from .asset_config import get_asset
+from .simulation_context import SimulationContext
 from .data_loader import load_data_aligned, load_macro_csv
 from .indicators import compute_indicator_pool, get_feature_columns, compute_regime_filter, filter_features_by_group
 from .simulation import (
@@ -19,7 +21,7 @@ from .simulation import (
     adjust_kelly_for_target_dd, find_optimal_circuit_breaker, calculate_equity_smoothness
 )
 from .plateau import calculate_param_plateau_score, select_best_plateau_candidate
-from .progress import report_progress, report_done
+from .progress import report_done
 from .logging_utils import log
 from .nested_cv import (
     nested_cv_split, run_inner_cv, evaluate_on_holdout
@@ -87,8 +89,14 @@ def walk_forward_split(df, n_folds=WALK_FORWARD_FOLDS, oos_size=OOS_SIZE):
     return list(reversed(folds))  # Chronologisch sortieren
 
 
-def process_symbol(csv_path):
-    """Verarbeitet ein einzelnes Symbol mit Walk-Forward Optimierung."""
+def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
+    """
+    Verarbeitet ein einzelnes Symbol mit Walk-Forward Optimierung.
+
+    Args:
+        csv_path: Pfad zur CSV-Datei
+        strategy: StrategyConfig mit allen Strategie-Parametern
+    """
     sym = os.path.basename(csv_path).split("_")[0]
     t_start = time.time()
 
@@ -213,20 +221,26 @@ def process_symbol(csv_path):
             log(1, f"SKIP - Zu wenig saubere Features ({len(full_pool)} < 5)", sym)
             return {"symbol": sym, "status": "insufficient_features", "features": len(full_pool)}
 
-        a_class, p_val, spread, currencies = get_asset_config(sym)
+        # Asset-Konfiguration laden
+        asset = get_asset(sym)
 
-        grid = CLASS_GRIDS.get(a_class, CLASS_GRIDS["FOREX"])
+        # SimulationContext erstellen (wird durch alle Funktionen gereicht)
+        ctx = SimulationContext.create(asset, strategy)
+
+        # Kurzreferenzen für lokale Verwendung
+        grid = strategy.get_grid_for_class(asset.asset_class)
+
         candidates = []
         all_grid_results = []  # Alle Kombinationen tracken
 
-        # Feature-Gruppen für Grid-Search (kann via Umgebungsvariable überschrieben werden)
-        custom_groups = os.environ.get("OPTIMIZER_FEATURE_GROUPS", "")
-        if custom_groups:
-            feature_groups_to_test = [g.strip() for g in custom_groups.split(",") if g.strip()]
-        else:
-            feature_groups_to_test = DEFAULT_FEATURE_GROUPS
-        total_combos = len(feature_groups_to_test) * len(grid["tp"]) * len(grid["sl"]) * len(grid["ct"])
-        log(1, f"Grid-Search: {len(feature_groups_to_test)} Feature-Gruppen x {len(grid['tp'])}x{len(grid['sl'])}x{len(grid['ct'])} = {total_combos} Kombinationen", sym)
+        # Feature-Gruppen aus Strategy-Config
+        feature_groups_to_test = ctx.feature_groups
+        total_combos = ctx.total_grid_combinations()
+        log(1, f"Grid-Search: {len(feature_groups_to_test)} Feature-Gruppen x {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} = {total_combos} Kombinationen", sym)
+        if ctx.min_rrr > 0:
+            log(1, f"Min RRR Filter: {ctx.min_rrr} (Scalping-Strategien mit RRR < {ctx.min_rrr} werden gefiltert)", sym)
+        if ctx.max_trade_bars:
+            log(1, f"Max Trade Bars: {ctx.max_trade_bars} ({ctx.max_trade_bars / 24:.0f} Tage)", sym)
 
         # === NESTED CV: Holdout Split ===
         # Die letzten 20% werden KOMPLETT zurückgehalten für finale Evaluation
@@ -249,28 +263,33 @@ def process_symbol(csv_path):
             log(1, f"Feature-Gruppe {fg_idx+1}/{len(feature_groups_to_test)}: {feature_group} ({len(group_features)} Features)", sym)
 
             grid_count = 0
-            grid_per_fg = len(grid["tp"]) * len(grid["sl"])
-            total_grid_combos = len(feature_groups_to_test) * grid_per_fg
+            grid_per_fg = ctx.grid_combinations_per_feature_group()
+            total_grid_combos = ctx.total_grid_combinations()
             grid_offset = fg_idx * grid_per_fg
 
-            for tp in grid["tp"]:
-                for sl in grid["sl"]:
+            for tp in grid.tp:
+                for sl in grid.sl:
                     grid_count += 1
                     global_grid_pos = grid_offset + grid_count
 
-                    log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl})", sym)
+                    # RRR-Filter: Überspringe Kombinationen mit zu niedrigem RRR
+                    rrr = tp / sl
+                    if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
+                        log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                        continue
+
+                    log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}, RRR={rrr:.2f})", sym)
 
                     # === INNER CV: Grid-Search auf Inner Folds ===
                     inner_result = run_inner_cv(
-                        inner_folds, group_features, tp, sl, spread, sym,
-                        grid["ct"], global_grid_pos, total_grid_combos
+                        inner_folds, group_features, tp, sl, ctx,
+                        global_grid_pos, total_grid_combos
                     )
 
                     if not inner_result["success"]:
                         continue
 
                     # Kandidat speichern (noch OHNE Holdout-Evaluation!)
-                    rrr = tp / sl
                     candidate = {
                         "inner_val_pnl": inner_result["avg_val_pnl"],
                         "params": (tp, sl, inner_result["best_ct"]),
@@ -310,17 +329,17 @@ def process_symbol(csv_path):
 
         candidates = calculate_param_plateau_score(
             candidates,
-            grid["tp"],
-            grid["sl"],
-            grid["ct"]
+            grid.tp,
+            grid.sl,
+            grid.ct
         )
 
         # Wähle besten Plateau-Kandidaten
         b = select_best_plateau_candidate(
             candidates,
-            grid["tp"],
-            grid["sl"],
-            grid["ct"],
+            grid.tp,
+            grid.sl,
+            grid.ct,
             min_neighbors=2
         )
 
@@ -344,7 +363,7 @@ def process_symbol(csv_path):
         n_inner_folds = len(inner_folds)
         inner_val_size = len(inner_folds[0][1]) if inner_folds else OOS_SIZE
         inner_total_bars = n_inner_folds * inner_val_size
-        bars_per_year = 24 * 250 if os.environ.get("TIMEFRAME", "HOUR") == "HOUR" else 96 * 250
+        bars_per_year = tf_cfg["bars_per_hour"] * 24 * 250  # 250 Trading-Tage pro Jahr
         inner_years = inner_total_bars / bars_per_year if bars_per_year > 0 else 1
 
         def estimate_annual_return(inner_val_pnl):
@@ -391,10 +410,10 @@ def process_symbol(csv_path):
         # JETZT erst evaluieren wir auf dem Holdout-Set (nie vorher gesehen!)
         log(1, f"Holdout-Evaluation für besten Kandidaten (TP={b['params'][0]}, SL={b['params'][1]}, CT={b['params'][2]:.2f})", sym)
 
-        holdout_result = evaluate_on_holdout(holdout_df, inner_df, b, spread, sym)
+        holdout_result = evaluate_on_holdout(holdout_df, inner_df, b, ctx)
 
-        if holdout_result["n_trades"] < MIN_TRADES:
-            log(1, f"SKIP - Zu wenig Holdout-Trades ({holdout_result['n_trades']} < {MIN_TRADES})", sym)
+        if holdout_result["n_trades"] < ctx.min_trades:
+            log(1, f"SKIP - Zu wenig Holdout-Trades ({holdout_result['n_trades']} < {ctx.min_trades})", sym)
             report_done(sym, "insufficient_holdout_trades")
             return {"symbol": sym, "status": "insufficient_holdout_trades", "grid_results": grid_results}
 
@@ -413,7 +432,11 @@ def process_symbol(csv_path):
         ) / 4)) if wr > 0 else 0.01
 
         trade_returns = [preliminary_kelly * b["rrr"] if r > 0 else -preliminary_kelly for r in tr]
-        b["sharpe"] = calculate_sharpe_ratio(trade_returns)
+
+        # Trades pro Jahr = (Anzahl Trades / Anzahl Bars) * Bars pro Jahr
+        holdout_bars = len(holdout_df)
+        trades_per_year = (len(tr) / holdout_bars) * bars_per_year if holdout_bars > 0 else len(tr)
+        b["sharpe"] = calculate_sharpe_ratio(trade_returns, trades_per_year=trades_per_year)
         b["calmar"] = calculate_calmar_ratio(tr, preliminary_kelly, b["rrr"])
         b["smoothness"] = calculate_equity_smoothness(tr, preliminary_kelly, b["rrr"])
 
@@ -504,8 +527,8 @@ def process_symbol(csv_path):
             "pnl": b["pnl"],
             "config": {
                 "kelly_risk": fk,
-                "point_value": p_val,
-                "spread": spread,
+                "point_value": asset.point,
+                "spread": ctx.spread,
                 "tp_mult": b["params"][0],
                 "sl_mult": b["params"][1],
                 "conf_thresh": b["params"][2],
@@ -533,7 +556,7 @@ def process_symbol(csv_path):
             "win_rate": wr,
             "sharpe": b["sharpe"],
             "calmar": b["calmar"],
-            "currencies": currencies,
+            "currencies": asset.currencies,
             "grid_results": grid_results,  # Alle getesteten Kombinationen
             # Top-N Kandidaten für Export (mit RRR-Diversität)
             "top_candidates": top_candidates_for_export,
