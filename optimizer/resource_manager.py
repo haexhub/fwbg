@@ -16,15 +16,21 @@ import psutil
 # Globale Referenz auf aktiven Executor für Cleanup
 _active_executor = None
 _active_futures = []
+_worker_pids = set()  # Track worker PIDs explicitly
+_cleanup_in_progress = False
 
 # Shared Progress-Queue für Worker-Initialisierung
 _shared_progress_queue = None
 
 
 def _init_worker(progress_queue):
-    """Initializer für Worker-Prozesse - setzt die Progress-Queue."""
+    """Initializer für Worker-Prozesse - setzt die Progress-Queue und ignoriert SIGINT."""
     global _shared_progress_queue
     _shared_progress_queue = progress_queue
+
+    # Worker sollen SIGINT ignorieren - nur der Hauptprozess soll es behandeln
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
     # Importiere und setze in progress.py
     try:
         from .progress import set_progress_queue
@@ -35,45 +41,101 @@ def _init_worker(progress_queue):
 
 def _cleanup_workers():
     """Beendet alle aktiven Worker-Prozesse."""
-    global _active_executor, _active_futures
+    global _active_executor, _active_futures, _worker_pids, _cleanup_in_progress
 
-    if _active_futures:
-        print("\n[ResourceManager] Beende laufende Worker...", file=sys.stderr)
-        for future in _active_futures:
-            future.cancel()
-        _active_futures.clear()
+    # Verhindere rekursive Cleanups
+    if _cleanup_in_progress:
+        return
+    _cleanup_in_progress = True
 
-    if _active_executor:
+    try:
+        if _active_futures:
+            print("\n[ResourceManager] Beende laufende Worker...", file=sys.stderr)
+            for future in _active_futures:
+                try:
+                    future.cancel()
+                except Exception:
+                    pass
+            _active_futures.clear()
+
+        if _active_executor:
+            try:
+                _active_executor.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                pass
+            _active_executor = None
+
+        # Alle bekannten Worker-PIDs beenden
+        _kill_worker_pids()
+
+        # Zusätzlich: Alle Kindprozesse des aktuellen Prozesses beenden
+        _kill_child_processes()
+    finally:
+        _cleanup_in_progress = False
+
+
+def _kill_worker_pids():
+    """Beendet alle explizit getrackten Worker-PIDs."""
+    global _worker_pids
+
+    for pid in list(_worker_pids):
         try:
-            _active_executor.shutdown(wait=False, cancel_futures=True)
-        except Exception:
+            proc = psutil.Process(pid)
+            proc.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
-        _active_executor = None
 
-    # Zombie-Prozesse aufräumen
-    _kill_orphan_workers()
+    # Kurz warten
+    time.sleep(0.5)
+
+    # SIGKILL für hartnäckige Prozesse
+    for pid in list(_worker_pids):
+        try:
+            proc = psutil.Process(pid)
+            if proc.is_running():
+                proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    _worker_pids.clear()
 
 
-def _kill_orphan_workers():
-    """Beendet verwaiste Python-Prozesse die zum Optimizer gehören."""
+def _kill_child_processes():
+    """Beendet alle Kindprozesse des aktuellen Prozesses."""
     current_pid = os.getpid()
     try:
         current_process = psutil.Process(current_pid)
         children = current_process.children(recursive=True)
+
+        if not children:
+            return
+
+        # Erst SIGTERM
         for child in children:
             try:
                 child.terminate()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-        # Kurz warten, dann SIGKILL für hartnäckige Prozesse
-        gone, alive = psutil.wait_procs(children, timeout=2)
+
+        # Warte max 3 Sekunden auf sauberes Beenden
+        gone, alive = psutil.wait_procs(children, timeout=3)
+
+        # SIGKILL für hartnäckige Prozesse
         for p in alive:
             try:
                 p.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-    except Exception:
-        pass
+
+        # Finale Prüfung
+        if alive:
+            time.sleep(0.5)
+            gone, still_alive = psutil.wait_procs(alive, timeout=1)
+            if still_alive:
+                print(f"[ResourceManager] WARNUNG: {len(still_alive)} Prozesse konnten nicht beendet werden",
+                      file=sys.stderr)
+    except Exception as e:
+        print(f"[ResourceManager] Fehler beim Beenden von Kindprozessen: {e}", file=sys.stderr)
 
 
 def _signal_handler(signum, frame):
@@ -83,10 +145,17 @@ def _signal_handler(signum, frame):
     sys.exit(1)
 
 
-# Signal-Handler registrieren
-signal.signal(signal.SIGINT, _signal_handler)
-signal.signal(signal.SIGTERM, _signal_handler)
-atexit.register(_cleanup_workers)
+def _register_signal_handlers():
+    """Registriert Signal-Handler nur im Hauptprozess."""
+    # Nur im Hauptprozess registrieren
+    if mp.current_process().name == 'MainProcess':
+        signal.signal(signal.SIGINT, _signal_handler)
+        signal.signal(signal.SIGTERM, _signal_handler)
+        atexit.register(_cleanup_workers)
+
+
+# Signal-Handler beim Import registrieren (nur im Hauptprozess)
+_register_signal_handlers()
 
 
 class AdaptivePoolManager:
@@ -145,6 +214,16 @@ class AdaptivePoolManager:
         # Stats
         self.peak_workers = 0
         self.ram_throttle_count = 0
+
+    def _update_worker_pids(self, executor):
+        """Speichert die PIDs der Worker-Prozesse für Cleanup."""
+        global _worker_pids
+        try:
+            # ProcessPoolExecutor hat ein internes _processes dict
+            if hasattr(executor, '_processes') and executor._processes:
+                _worker_pids.update(executor._processes.keys())
+        except Exception:
+            pass
 
     def get_free_ram_percent(self) -> float:
         """Gibt den Anteil des freien RAMs zurück (0.0-1.0)."""
@@ -250,10 +329,15 @@ class AdaptivePoolManager:
         # Konservativ starten - nie mehr als max_workers
         initial_workers = min(self.max_workers, len(items))
 
-        global _active_executor, _active_futures
+        global _active_executor, _active_futures, _worker_pids
 
         # Erstelle Executor mit Initializer für Progress-Tracking
-        executor_kwargs = {"max_workers": self.max_workers}
+        # Verwende 'spawn' Kontext für sauberes Prozess-Management
+        mp_context = mp.get_context('spawn')
+        executor_kwargs = {
+            "max_workers": self.max_workers,
+            "mp_context": mp_context
+        }
         if self.progress_queue is not None:
             executor_kwargs["initializer"] = _init_worker
             executor_kwargs["initargs"] = (self.progress_queue,)
@@ -276,6 +360,9 @@ class AdaptivePoolManager:
                     active_count += 1
                 except StopIteration:
                     break
+
+            # Track Worker PIDs für Cleanup
+            self._update_worker_pids(executor)
 
             self.peak_workers = active_count
 
@@ -329,8 +416,12 @@ class AdaptivePoolManager:
                     free_gb = self.get_free_ram_gb()
                     self.log(f"RAM-Throttling aktiv: {free_gb:.1f} GB frei, {active_count} aktive Worker")
 
+                # Periodisch Worker-PIDs aktualisieren
+                self._update_worker_pids(executor)
+
             # Cleanup nach erfolgreicher Beendigung
             _active_futures.clear()
+            _worker_pids.clear()
 
         _active_executor = None
 

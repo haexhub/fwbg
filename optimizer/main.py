@@ -203,8 +203,8 @@ def run_optimizer(
     # Ressourcen-Einstellungen aus Strategy (oder Defaults)
     resource_settings = {
         "max_cpu_percent": 0.80,
-        "min_free_ram_percent": 0.25,
-        "ram_per_worker_gb": 4.0,
+        "min_free_ram_percent": 0.20,
+        "ram_per_worker_gb": 3.0,
     }
     if strategy_metadata:
         strat_resources = strategy_metadata.get("resources", {})
