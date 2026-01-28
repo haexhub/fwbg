@@ -1,0 +1,58 @@
+{
+  "name": "Macro Driven Strategy",
+  "description": "Nutzt makrooekonomische Indikatoren (VIX, Yields, DXY) als primaere Signalquelle",
+  "category": "macro",
+  "tags": ["macro", "fundamental", "vix", "yields", "intermarket"],
+  "hypothesis": "Makro-Faktoren treiben langfristige Marktbewegungen",
+  "expected_outcome": "Weniger aber qualitativ hochwertige Trades, RRR 1.5-4.0",
+
+  "grids": {
+    "FOREX": {
+      "tp": [60, 100, 150, 220, 320],
+      "sl": [40, 60, 90, 130],
+      "ct": [0.60, 0.65, 0.70, 0.75]
+    },
+    "INDEX": {
+      "tp": [80, 150, 250, 380, 550],
+      "sl": [50, 90, 150, 220],
+      "ct": [0.60, 0.65, 0.70, 0.75]
+    },
+    "COMMODITY": {
+      "tp": [70, 130, 210, 320, 480],
+      "sl": [50, 85, 140, 210],
+      "ct": [0.60, 0.65, 0.70, 0.75]
+    },
+    "CRYPTO": {
+      "tp": [150, 350, 600, 1000, 1600],
+      "sl": [100, 220, 380, 600],
+      "ct": [0.60, 0.65, 0.70]
+    }
+  },
+
+  "simulation": {
+    "max_trade_bars": 168,
+    "tp_sl_basis": "spread_multiple",
+    "trailing_stop": true,
+    "slippage_model": "fixed",
+    "regime_filter": true
+  },
+
+  "filters": {
+    "min_rrr": 1.2,
+    "min_trades": 35,
+    "min_annual_return": 15.0
+  },
+
+  "features": {
+    "preferred_groups": ["macro", "macro_vol", "dynamics"]
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "holdout_ratio": 0.20
+  },
+
+  "notes": "Makro-Strategien benoetigen aktuelle Daten. Yields und VIX sind fuehrende Indikatoren fuer Risk-On/Risk-Off."
+}

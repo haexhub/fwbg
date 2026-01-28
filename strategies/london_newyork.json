@@ -1,0 +1,58 @@
+{
+  "name": "London/New York Overlap Strategy",
+  "description": "Fokus auf die Ueberlappung London/NY (12:00-16:00 UTC), hoechste Liquiditaet",
+  "category": "session",
+  "tags": ["london_session", "newyork_session", "overlap", "high_volatility"],
+  "hypothesis": "Die Ueberlappung bietet beste Liquiditaet und staerkste Bewegungen",
+  "expected_outcome": "Groessere Bewegungen, RRR 1.0-2.5",
+
+  "grids": {
+    "FOREX": {
+      "tp": [30, 50, 75, 110, 160],
+      "sl": [25, 40, 60, 85, 120],
+      "ct": [0.55, 0.60, 0.65, 0.70]
+    },
+    "INDEX": {
+      "tp": [50, 90, 140, 210, 300],
+      "sl": [40, 70, 110, 160, 230],
+      "ct": [0.55, 0.60, 0.65, 0.70]
+    },
+    "COMMODITY": {
+      "tp": [45, 80, 125, 190, 270],
+      "sl": [35, 65, 100, 150, 210],
+      "ct": [0.55, 0.60, 0.65, 0.70]
+    },
+    "CRYPTO": {
+      "tp": [80, 170, 300, 480],
+      "sl": [60, 130, 230, 370],
+      "ct": [0.55, 0.60, 0.65]
+    }
+  },
+
+  "simulation": {
+    "max_trade_bars": 72,
+    "tp_sl_basis": "spread_multiple",
+    "trailing_stop": true,
+    "slippage_model": "fixed",
+    "regime_filter": true
+  },
+
+  "filters": {
+    "min_rrr": 0.8,
+    "min_trades": 60,
+    "min_annual_return": 15.0
+  },
+
+  "features": {
+    "preferred_groups": ["trend_momentum", "volatility", "time"]
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "holdout_ratio": 0.20
+  },
+
+  "notes": "London/NY Overlap ist die aktivste Zeit. EUR/USD, GBP/USD und Indizes besonders aktiv."
+}
