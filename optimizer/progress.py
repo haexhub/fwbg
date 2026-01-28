@@ -93,7 +93,13 @@ class ProgressTracker:
     Progress-Tracker mit Queue-basierter Worker-Kommunikation.
 
     Zeigt Echtzeit-Fortschritt für alle aktiven Worker an.
+    Unterstützt sowohl TTY (interaktiv) als auch Nicht-TTY (Log-Datei) Ausgabe.
     """
+
+    # Konfiguration für die Anzeige
+    MAX_DISPLAY_LINES = 15  # Maximale Zeilen für Worker-Status
+    UPDATE_INTERVAL_TTY = 0.5  # Update-Intervall für TTY
+    UPDATE_INTERVAL_NON_TTY = 30.0  # Update-Intervall für Nicht-TTY (Log)
 
     def __init__(self, total_assets: int, asset_names: Optional[List[str]] = None, queue: Optional[Queue] = None):
         self.total_assets = total_assets
@@ -107,6 +113,9 @@ class ProgressTracker:
         self._display_thread = None
         self._queue_thread = None
         self._lock = threading.Lock()
+        self._is_tty = sys.stdout.isatty()
+        self._last_render_time = 0
+        self._last_display_lines = 0  # Anzahl der zuletzt angezeigten Zeilen
 
     def start(self):
         """Startet das Progress-Display."""
@@ -142,8 +151,12 @@ class ProgressTracker:
 
         # Finale Ausgabe
         elapsed = time.time() - self.start_time if self.start_time else 0
-        self._clear_line()
-        print(f"Verarbeitung abgeschlossen: {self.completed_assets}/{self.total_assets} in {self._format_time(elapsed)}")
+
+        if self._is_tty:
+            # Lösche das Multi-Line-Display
+            self._clear_display()
+
+        print(f"\nVerarbeitung abgeschlossen: {self.completed_assets}/{self.total_assets} in {self._format_time(elapsed)}")
         sys.stdout.flush()
 
         # Detail-Logs wieder erlauben
@@ -164,16 +177,26 @@ class ProgressTracker:
             except Exception:
                 break
 
-    def _clear_line(self):
-        """Löscht die aktuelle Zeile."""
-        sys.stdout.write("\r\033[K")
-        sys.stdout.flush()
+    def _clear_display(self):
+        """Löscht das gesamte Display (Multi-Line)."""
+        if self._is_tty and self._last_display_lines > 0:
+            # Cursor hoch und Zeilen löschen
+            sys.stdout.write(f"\033[{self._last_display_lines}A")  # Cursor hoch
+            for _ in range(self._last_display_lines):
+                sys.stdout.write("\033[2K\033[1B")  # Zeile löschen, Cursor runter
+            sys.stdout.write(f"\033[{self._last_display_lines}A")  # Cursor zurück
+            sys.stdout.flush()
 
     def _display_loop(self):
         """Haupt-Display-Loop (läuft im Thread)."""
+        update_interval = self.UPDATE_INTERVAL_TTY if self._is_tty else self.UPDATE_INTERVAL_NON_TTY
+
         while not self._stop_event.is_set():
-            self._render()
-            time.sleep(0.5)
+            now = time.time()
+            if now - self._last_render_time >= update_interval:
+                self._render()
+                self._last_render_time = now
+            time.sleep(0.1)  # Kurzes Sleep für Queue-Updates
 
     def _render(self):
         """Rendert den aktuellen Status."""
@@ -199,42 +222,89 @@ class ProgressTracker:
         eta_str = self._calculate_eta(elapsed, total_progress)
         elapsed_str = self._format_time(elapsed)
 
+        if self._is_tty:
+            self._render_tty(completed, total_progress, pct, elapsed_str, eta_str, active_workers, completed_symbols)
+        else:
+            self._render_non_tty(completed, pct, elapsed_str, eta_str, active_workers)
+
+    def _render_tty(self, completed: int, total_progress: float, pct: float,
+                    elapsed_str: str, eta_str: str, active_workers: Dict, completed_symbols: List[str]):
+        """Rendert für TTY mit Multi-Line Display und Cursor-Steuerung."""
+        lines = []
+
         # Progress bar
-        bar_width = 25
+        bar_width = 40
         filled = int(bar_width * total_progress / self.total_assets) if self.total_assets > 0 else 0
         filled = min(filled, bar_width)
         bar = "█" * filled + "░" * (bar_width - filled)
 
+        # Header-Zeile
+        lines.append(f"╔══════════════════════════════════════════════════════════════════╗")
+        lines.append(f"║ [{bar}] {pct:5.1f}%")
+        lines.append(f"║ Assets: {completed}/{self.total_assets} | Zeit: {elapsed_str} | ETA: {eta_str}")
+        lines.append(f"╠══════════════════════════════════════════════════════════════════╣")
+
+        # Worker-Status (max. MAX_DISPLAY_LINES Zeilen)
+        if active_workers:
+            worker_list = sorted(active_workers.items(), key=lambda x: x[1].get("symbol", ""))
+            for i, (pid, info) in enumerate(worker_list[:self.MAX_DISPLAY_LINES - 6]):
+                sym = info.get("symbol", "?")
+                grid_pos = info.get("grid_pos", 0)
+                grid_total = info.get("grid_total", 0)
+
+                if grid_total > 0:
+                    worker_pct = int(grid_pos / grid_total * 100)
+                    worker_bar_width = 20
+                    worker_filled = int(worker_bar_width * grid_pos / grid_total)
+                    worker_bar = "▓" * worker_filled + "░" * (worker_bar_width - worker_filled)
+                    lines.append(f"║  {sym:<10} [{worker_bar}] {worker_pct:3d}%")
+                else:
+                    lines.append(f"║  {sym:<10} [starting...]")
+
+            if len(worker_list) > self.MAX_DISPLAY_LINES - 6:
+                lines.append(f"║  ... und {len(worker_list) - (self.MAX_DISPLAY_LINES - 6)} weitere Worker")
+        else:
+            lines.append(f"║  Starte Worker...")
+
+        # Kürzlich fertige Assets
+        if completed_symbols:
+            recent = completed_symbols[-3:]
+            lines.append(f"╠══════════════════════════════════════════════════════════════════╣")
+            lines.append(f"║ Fertig: " + ", ".join(f"✓{s}" for s in recent))
+
+        lines.append(f"╚══════════════════════════════════════════════════════════════════╝")
+
+        # Altes Display löschen
+        self._clear_display()
+
+        # Neues Display ausgeben
+        output = "\n".join(lines)
+        sys.stdout.write(output + "\n")
+        sys.stdout.flush()
+
+        self._last_display_lines = len(lines)
+
+    def _render_non_tty(self, completed: int, pct: float, elapsed_str: str,
+                        eta_str: str, active_workers: Dict):
+        """Rendert für Nicht-TTY (Log-Datei) - kompakte einzeilige Ausgabe."""
         # Worker-Status zusammenfassen
         if active_workers:
             worker_info = []
             for pid, info in sorted(active_workers.items(), key=lambda x: x[1].get("symbol", "")):
-                sym = info.get("symbol", "?")[:6]
+                sym = info.get("symbol", "?")[:8]
                 grid_pos = info.get("grid_pos", 0)
                 grid_total = info.get("grid_total", 0)
                 if grid_total > 0:
                     grid_pct = int(grid_pos / grid_total * 100)
                     worker_info.append(f"{sym}:{grid_pct}%")
-                else:
-                    worker_info.append(f"{sym}")
-            workers_str = " ".join(worker_info[:4])  # Max 4 Worker anzeigen
-            if len(active_workers) > 4:
-                workers_str += f" +{len(active_workers)-4}"
-        elif completed_symbols:
-            recent = completed_symbols[-2:]
-            workers_str = " ".join(f"✓{s}" for s in recent)
+            workers_str = " ".join(worker_info[:6])  # Max 6 Worker anzeigen
+            if len(active_workers) > 6:
+                workers_str += f" +{len(active_workers)-6}"
         else:
             workers_str = "starting..."
 
-        # Einzeilige Ausgabe
-        line = f"[{bar}] {pct:5.1f}% | {completed}/{self.total_assets} | {elapsed_str} | ETA: {eta_str} | {workers_str}"
-
-        # Zeile auf max 100 Zeichen begrenzen
-        if len(line) > 100:
-            line = line[:97] + "..."
-
-        self._clear_line()
-        sys.stdout.write(line)
+        # Kompakte Ausgabe für Logs
+        print(f"[PROGRESS] {pct:5.1f}% | {completed}/{self.total_assets} | {elapsed_str} | ETA: {eta_str} | {workers_str}")
         sys.stdout.flush()
 
     def _calculate_total_progress(self, completed: int, active_workers: Dict) -> float:
