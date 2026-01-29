@@ -8,7 +8,7 @@ import subprocess
 from datetime import datetime
 
 from .config import (
-    ACCOUNT_NAME, TIMEFRAME, WALK_FORWARD_FOLDS, OOS_SIZE, MAX_TRADE_BARS,
+    ACCOUNT_NAME, TIMEFRAME, WALK_FORWARD_FOLDS, OOS_SIZE,
     CORR_THRESHOLD, MIN_TRADES, RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN,
     CLASS_GRIDS, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
     convert_numpy
@@ -284,7 +284,6 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
         "timeframe": TIMEFRAME,
         "walk_forward_folds": WALK_FORWARD_FOLDS,
         "oos_size": OOS_SIZE,
-        "max_trade_bars": MAX_TRADE_BARS,
         "corr_threshold": CORR_THRESHOLD,
         "min_trades": MIN_TRADES,
         "relevance_threshold": RELEVANCE_THRESHOLD,
@@ -564,7 +563,6 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
         f.write(f"{'='*70}\n\n")
         f.write(f"Walk-Forward Folds: {WALK_FORWARD_FOLDS}\n")
         f.write(f"OOS Size:           {OOS_SIZE}\n")
-        f.write(f"Max Trade Bars:     {MAX_TRADE_BARS}\n")
         f.write(f"Min Trades:         {MIN_TRADES}\n")
         f.write(f"Corr Threshold:     {CORR_THRESHOLD}\n")
         f.write(f"Macro Indicators:   {len(MACRO_INDICATORS)}\n")
@@ -582,13 +580,13 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
 
         if table_data:
             f.write(f"ELITE ASSETS\n")
-            f.write(f"{'-'*105}\n")
-            f.write(f"{'Asset':<10} {'Kelly':>8} {'WinRate':>8} {'RRR':>6} {'Sharpe':>7} {'Calmar':>7} {'Trades':>7} {'Return':>10} {'MaxDD':>6} {'p-val':>6} {'Folds':>6} {'Status':>6}\n")
-            f.write(f"{'-'*105}\n")
+            f.write(f"{'-'*120}\n")
+            f.write(f"{'Asset':<10} {'Kelly':>8} {'WinRate':>8} {'RRR':>6} {'Sharpe':>7} {'Calmar':>7} {'Trades':>7} {'L/S':>12} {'Return':>10} {'MaxDD':>6} {'p-val':>6} {'Folds':>6} {'Status':>6}\n")
+            f.write(f"{'-'*120}\n")
 
             for row in table_data:
-                # row hat 12 Spalten: Asset, Kelly, WinRate, RRR, Sharpe, Calmar, Trades, Return, MaxDD, p-val, Folds, Status
-                f.write(f"{row[0]:<10} {row[1]:>8} {row[2]:>8} {row[3]:>6} {row[4]:>7} {row[5]:>7} {row[6]:>7} {row[7]:>10} {row[8]:>6} {row[9]:>6} {row[10]:>6} {row[11]:>6}\n")
+                # row hat 13 Spalten: Asset, Kelly, WinRate, RRR, Sharpe, Calmar, Trades, L/S, Return, MaxDD, p-val, Folds, Status
+                f.write(f"{row[0]:<10} {row[1]:>8} {row[2]:>8} {row[3]:>6} {row[4]:>7} {row[5]:>7} {row[6]:>7} {row[7]:>12} {row[8]:>10} {row[9]:>6} {row[10]:>6} {row[11]:>6} {row[12]:>6}\n")
 
         f.write(f"\n")
         f.write(f"PROFITABLE ASSETS\n")
@@ -600,12 +598,11 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
             f.write(f"  (keine)\n")
 
 
-def list_runs(category=None, tags=None):
+def list_runs(tags=None):
     """
     Listet alle vorhandenen Test-Runs auf.
 
     Args:
-        category: Filtert nach Kategorie (optional)
         tags: Filtert nach Tags (optional, Liste)
     """
     if not os.path.exists(RESULTS_BASE_PATH):
@@ -633,7 +630,6 @@ def list_runs(category=None, tags=None):
                 with open(strategy_path) as f:
                     strategy = json.load(f)
                     run_info["strategy_name"] = strategy.get("name")
-                    run_info["category"] = strategy.get("category")
                     run_info["tags"] = strategy.get("tags", [])
                     run_info["hypothesis"] = strategy.get("hypothesis")
                     run_info["model_architecture"] = strategy.get("model", {}).get("architecture")
@@ -646,8 +642,6 @@ def list_runs(category=None, tags=None):
                     run_info["profitable_count"] = len(assets)
 
             # Filter anwenden
-            if category and run_info.get("category") != category:
-                continue
             if tags:
                 run_tags = run_info.get("tags", [])
                 if not any(t in run_tags for t in tags):

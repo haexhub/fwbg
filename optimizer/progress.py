@@ -324,13 +324,15 @@ class ProgressTracker:
         if elapsed < 10 or total_progress < 0.1:
             return "--:--"
 
-        time_per_unit = elapsed / total_progress
-        remaining = self.total_assets - total_progress
+        # total_progress ist der Fortschritt in "Asset-Einheiten" (0 bis total_assets)
+        # Berechne verbleibende Zeit: elapsed / progress * remaining
+        remaining_progress = self.total_assets - total_progress
 
-        if remaining <= 0:
+        if remaining_progress <= 0:
             return "00:00"
 
-        remaining_time = remaining * time_per_unit
+        # Zeit pro Fortschritts-Einheit * verbleibender Fortschritt
+        remaining_time = (elapsed / total_progress) * remaining_progress
         return self._format_time(remaining_time)
 
     @staticmethod

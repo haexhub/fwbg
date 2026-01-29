@@ -30,6 +30,7 @@ def simulate_trades_sequential(
     sl: int,
     ctx: SimulationContext,
     return_detailed: bool = False,
+    timeout_bars: int = None,
 ) -> Dict[str, Any]:
     """
     Simuliert Trades sequentiell (nur ein Trade gleichzeitig).
@@ -45,6 +46,7 @@ def simulate_trades_sequential(
         sl: Stop-Loss Multiplikator
         ctx: SimulationContext mit allen Parametern
         return_detailed: Wenn True, auch volle Trade-Details zurückgeben
+        timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
 
     Returns:
         dict mit trades und optional trades_detailed
@@ -61,7 +63,8 @@ def simulate_trades_sequential(
     trades_detailed = [] if return_detailed else None
     next_allowed_entry = 0
 
-    for i in range(len(df) - ctx.max_trade_bars):
+    # Simuliere bis zum vorletzten Bar (letzter Bar kann kein Entry sein)
+    for i in range(len(df) - 1):
         if i < next_allowed_entry:
             continue
 
@@ -78,7 +81,8 @@ def simulate_trades_sequential(
             trade = simulate_pro_trade(
                 cls, hgh, low, atr, i, direction, tp, sl, ctx.spread,
                 timestamps=timestamps, symbol=ctx.symbol, opens=opn,
-                max_bars=ctx.max_trade_bars
+                max_bars=ctx.max_trade_bars,  # None = kein Limit
+                timeout_bars=timeout_bars  # Time-based Exit
             )
             if trade:
                 trades.append(trade["result"])
@@ -140,10 +144,18 @@ def compute_targets(
     df: pd.DataFrame,
     tp: int,
     sl: int,
-    ctx: SimulationContext
+    ctx: SimulationContext,
+    timeout_bars: int = None
 ) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
     """
     Berechnet Long/Short Targets für einen DataFrame.
+
+    Args:
+        df: DataFrame mit OHLC-Daten
+        tp: Take-Profit Multiplikator
+        sl: Stop-Loss Multiplikator
+        ctx: SimulationContext
+        timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
 
     Returns:
         (targets_long, targets_short, has_long, has_short)
@@ -158,17 +170,19 @@ def compute_targets(
     atr_v = df["_atr"].values
     timestamps = df.index.values
 
-    sim_count = len(df) - ctx.max_trade_bars
-    for i in range(sim_count):
+    # Simuliere bis zum vorletzten Bar (letzter Bar kann kein Entry sein)
+    for i in range(len(df) - 1):
         trade_long = simulate_pro_trade(
             cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, ctx.spread,
             timestamps=timestamps, symbol=ctx.symbol, opens=opn_v,
-            max_bars=ctx.max_trade_bars
+            max_bars=ctx.max_trade_bars,  # None = kein Limit
+            timeout_bars=timeout_bars  # Time-based Exit
         )
         trade_short = simulate_pro_trade(
             cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, ctx.spread,
             timestamps=timestamps, symbol=ctx.symbol, opens=opn_v,
-            max_bars=ctx.max_trade_bars
+            max_bars=ctx.max_trade_bars,  # None = kein Limit
+            timeout_bars=timeout_bars  # Time-based Exit
         )
         if trade_long and trade_long["result"] == 1.0:
             targets_long[i] = 1
@@ -259,12 +273,16 @@ def evaluate_on_validation(
     features_short: Optional[List[str]],
     tp: int,
     sl: int,
-    ctx: SimulationContext
+    ctx: SimulationContext,
+    timeout_bars: int = None,
 ) -> Tuple[Optional[float], float, Dict[float, List[float]]]:
     """
     Evaluiert Modelle auf Validation-Set und findet besten CT.
 
     Bei separate_long_short=True werden separate CTs für Long und Short optimiert.
+
+    Args:
+        timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
 
     Returns:
         (best_ct, best_pnl, trades_by_ct)
@@ -277,7 +295,7 @@ def evaluate_on_validation(
     if ctx.separate_long_short:
         return _evaluate_separate_ct(
             val_df, probs_long, probs_short, long_win_idx, short_win_idx,
-            tp, sl, ctx
+            tp, sl, ctx, timeout_bars
         )
 
     # Standard: Gemeinsamer CT für Long und Short
@@ -288,7 +306,7 @@ def evaluate_on_validation(
     for ct in ctx.grid_ct:
         result = simulate_trades_sequential(
             val_df, probs_long, probs_short, long_win_idx, short_win_idx,
-            ct, tp, sl, ctx, return_detailed=False
+            ct, tp, sl, ctx, return_detailed=False, timeout_bars=timeout_bars
         )
         ct_trades = result["trades"]
         trades_by_ct[ct] = ct_trades
@@ -310,12 +328,16 @@ def _evaluate_separate_ct(
     short_win_idx: Optional[int],
     tp: int,
     sl: int,
-    ctx: SimulationContext
+    ctx: SimulationContext,
+    timeout_bars: int = None,
 ) -> Tuple[Optional[tuple], float, Dict]:
     """
     Optimiert CT separat für Long und Short Trades.
 
     Verwendet 2D-Grid-Search über alle CT-Kombinationen.
+
+    Args:
+        timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
 
     Returns:
         ((ct_long, ct_short), best_pnl, trades_info)
@@ -333,7 +355,8 @@ def _evaluate_separate_ct(
         for ct_short in short_cts:
             result = simulate_trades_sequential_separate_ct(
                 val_df, probs_long, probs_short, long_win_idx, short_win_idx,
-                ct_long, ct_short, tp, sl, ctx, return_detailed=False
+                ct_long, ct_short, tp, sl, ctx, return_detailed=False,
+                timeout_bars=timeout_bars
             )
             trades = result["trades"]
             n_trades = len(trades)
@@ -359,9 +382,13 @@ def simulate_trades_sequential_separate_ct(
     sl: int,
     ctx: SimulationContext,
     return_detailed: bool = False,
+    timeout_bars: int = None,
 ) -> Dict[str, Any]:
     """
     Simuliert Trades mit separaten CT-Thresholds für Long und Short.
+
+    Args:
+        timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
     """
     opn = df["O"].values
     cls = df["C"].values
@@ -375,7 +402,8 @@ def simulate_trades_sequential_separate_ct(
     trades_detailed = [] if return_detailed else None
     next_allowed_entry = 0
 
-    for i in range(len(df) - ctx.max_trade_bars):
+    # Simuliere bis zum vorletzten Bar (letzter Bar kann kein Entry sein)
+    for i in range(len(df) - 1):
         if i < next_allowed_entry:
             continue
 
@@ -393,7 +421,8 @@ def simulate_trades_sequential_separate_ct(
             trade = simulate_pro_trade(
                 cls, hgh, low, atr, i, direction, tp, sl, ctx.spread,
                 timestamps=timestamps, symbol=ctx.symbol, opens=opn,
-                max_bars=ctx.max_trade_bars
+                max_bars=ctx.max_trade_bars,  # None = kein Limit
+                timeout_bars=timeout_bars  # Time-based Exit
             )
             if trade:
                 trades.append(trade["result"])
@@ -418,9 +447,13 @@ def run_inner_cv(
     ctx: SimulationContext,
     global_grid_pos: int,
     total_grid_combos: int,
+    timeout_bars: int = None,
 ) -> Dict[str, Any]:
     """
     Führt Inner Cross-Validation für eine Grid-Kombination durch.
+
+    Args:
+        timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
 
     Returns:
         dict mit success, avg_val_pnl, best_ct, selected_features etc.
@@ -434,7 +467,7 @@ def run_inner_cv(
     for fold_idx, (train_df, val_df) in enumerate(inner_folds):
         report_progress(ctx.symbol, fold_idx + 1, len(inner_folds), "inner_cv", global_grid_pos, total_grid_combos)
 
-        targets_long, targets_short, has_long, has_short = compute_targets(train_df, tp, sl, ctx)
+        targets_long, targets_short, has_long, has_short = compute_targets(train_df, tp, sl, ctx, timeout_bars)
 
         if not has_long and not has_short:
             continue
@@ -459,7 +492,7 @@ def run_inner_cv(
         best_fold_ct, best_fold_pnl, _ = evaluate_on_validation(
             val_df, mod_long, mod_short,
             selected_features_long, selected_features_short,
-            tp, sl, ctx
+            tp, sl, ctx, timeout_bars
         )
 
         if best_fold_ct:
@@ -518,10 +551,11 @@ def evaluate_on_holdout(
         Bei separate_long_short: zusätzlich long_stats und short_stats
     """
     tp, sl, ct = candidate["params"]
+    timeout_bars = candidate.get("timeout_bars")  # Time-based Exit
     features_long = candidate.get("selected_features_long")
     features_short = candidate.get("selected_features_short")
 
-    targets_long, targets_short, has_long, has_short = compute_targets(inner_df, tp, sl, ctx)
+    targets_long, targets_short, has_long, has_short = compute_targets(inner_df, tp, sl, ctx, timeout_bars)
 
     mod_long = train_model(inner_df, targets_long, features_long, ctx.min_trades) if has_long and features_long else None
     mod_short = train_model(inner_df, targets_short, features_short, ctx.min_trades) if has_short and features_short else None
@@ -537,12 +571,13 @@ def evaluate_on_holdout(
         ct_long, ct_short = ct
         result = simulate_trades_sequential_separate_ct(
             holdout_df, probs_long, probs_short, long_win_idx, short_win_idx,
-            ct_long, ct_short, tp, sl, ctx, return_detailed=True
+            ct_long, ct_short, tp, sl, ctx, return_detailed=True,
+            timeout_bars=timeout_bars
         )
     else:
         result = simulate_trades_sequential(
             holdout_df, probs_long, probs_short, long_win_idx, short_win_idx,
-            ct, tp, sl, ctx, return_detailed=True
+            ct, tp, sl, ctx, return_detailed=True, timeout_bars=timeout_bars
         )
 
     trades = result["trades"]

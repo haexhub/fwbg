@@ -234,7 +234,8 @@ class AdaptivePoolManager:
         self,
         func: Callable,
         items: List[Any],
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        result_callback: Optional[Callable[[Any], None]] = None
     ) -> List[Any]:
         """
         Verarbeitet Items mit adaptiver Worker-Anzahl.
@@ -246,6 +247,7 @@ class AdaptivePoolManager:
             func: Funktion die auf jedes Item angewendet wird
             items: Liste der zu verarbeitenden Items
             progress_callback: Optional callback(completed, total)
+            result_callback: Optional callback(result) - wird für jedes fertige Ergebnis aufgerufen
 
         Returns:
             Liste der Ergebnisse (None-Werte werden gefiltert)
@@ -322,6 +324,12 @@ class AdaptivePoolManager:
                         result = future.result()
                         if result is not None:
                             results.append(result)
+                            # Callback für jedes fertige Ergebnis
+                            if result_callback:
+                                try:
+                                    result_callback(result)
+                                except Exception as cb_err:
+                                    self.log(f"Result-Callback Fehler: {cb_err}")
                     except Exception as e:
                         self.log(f"Worker-Fehler: {e}")
 

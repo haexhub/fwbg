@@ -239,8 +239,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         log(1, f"Grid-Search: {len(feature_groups_to_test)} Feature-Gruppen x {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} = {total_combos} Kombinationen", sym)
         if ctx.min_rrr > 0:
             log(1, f"Min RRR Filter: {ctx.min_rrr} (Scalping-Strategien mit RRR < {ctx.min_rrr} werden gefiltert)", sym)
-        if ctx.max_trade_bars:
-            log(1, f"Max Trade Bars: {ctx.max_trade_bars} ({ctx.max_trade_bars / 24:.0f} Tage)", sym)
 
         # === NESTED CV: Holdout Split ===
         # Die letzten 20% werden KOMPLETT zurückgehalten für finale Evaluation
@@ -267,63 +265,71 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             total_grid_combos = ctx.total_grid_combinations()
             grid_offset = fg_idx * grid_per_fg
 
+            # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
+            timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
+
             for tp in grid.tp:
                 for sl in grid.sl:
-                    grid_count += 1
-                    global_grid_pos = grid_offset + grid_count
+                    for timeout_bars in timeout_values:
+                        grid_count += 1
+                        global_grid_pos = grid_offset + grid_count
 
-                    # RRR-Filter: Überspringe Kombinationen mit zu niedrigem RRR
-                    rrr = tp / sl
-                    if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                        log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
-                        continue
+                        # RRR-Filter: Überspringe Kombinationen mit zu niedrigem RRR
+                        rrr = tp / sl
+                        if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
+                            log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                            continue
 
-                    log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}, RRR={rrr:.2f})", sym)
+                        timeout_str = f", TO={timeout_bars}" if timeout_bars else ""
+                        log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}, RRR={rrr:.2f}{timeout_str})", sym)
 
-                    # === INNER CV: Grid-Search auf Inner Folds ===
-                    inner_result = run_inner_cv(
-                        inner_folds, group_features, tp, sl, ctx,
-                        global_grid_pos, total_grid_combos
-                    )
+                        # === INNER CV: Grid-Search auf Inner Folds ===
+                        inner_result = run_inner_cv(
+                            inner_folds, group_features, tp, sl, ctx,
+                            global_grid_pos, total_grid_combos,
+                            timeout_bars=timeout_bars
+                        )
 
-                    if not inner_result["success"]:
-                        continue
+                        if not inner_result["success"]:
+                            continue
 
-                    # Kandidat speichern (noch OHNE Holdout-Evaluation!)
-                    candidate = {
-                        "inner_val_pnl": inner_result["avg_val_pnl"],
-                        "params": (tp, sl, inner_result["best_ct"]),
-                        "feats": inner_result["selected_features"],
-                        "feature_group": feature_group,
-                        "rrr": rrr,
-                        "selected_features_long": inner_result["selected_features_long"],
-                        "selected_features_short": inner_result["selected_features_short"],
-                        "fold_stability": inner_result.get("fold_stability", 0),
-                    }
+                        # Kandidat speichern (noch OHNE Holdout-Evaluation!)
+                        candidate = {
+                            "inner_val_pnl": inner_result["avg_val_pnl"],
+                            "params": (tp, sl, inner_result["best_ct"]),
+                            "timeout_bars": timeout_bars,  # Time-based Exit
+                            "feats": inner_result["selected_features"],
+                            "feature_group": feature_group,
+                            "rrr": rrr,
+                            "selected_features_long": inner_result["selected_features_long"],
+                            "selected_features_short": inner_result["selected_features_short"],
+                            "fold_stability": inner_result.get("fold_stability", 0),
+                        }
 
-                    # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
-                    if ctx.separate_long_short and "ct_long" in inner_result:
-                        candidate["ct_long"] = inner_result["ct_long"]
-                        candidate["ct_short"] = inner_result["ct_short"]
+                        # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
+                        if ctx.separate_long_short and "ct_long" in inner_result:
+                            candidate["ct_long"] = inner_result["ct_long"]
+                            candidate["ct_short"] = inner_result["ct_short"]
 
-                    candidates.append(candidate)
+                        candidates.append(candidate)
 
-                    # Grid-Result mit CT (kann Tuple sein)
-                    conf_thresh = inner_result["best_ct"]
-                    grid_result = {
-                        "feature_group": feature_group,
-                        "tp_mult": tp,
-                        "sl_mult": sl,
-                        "conf_thresh": conf_thresh,
-                        "rrr": rrr,
-                        "inner_val_pnl": inner_result["avg_val_pnl"],
-                        "fold_stability": inner_result.get("fold_stability", 0),
-                        "features": inner_result["selected_features"],
-                    }
-                    # Bei separater Optimierung: CTs aufschlüsseln für Grid-Results
-                    if isinstance(conf_thresh, tuple):
-                        grid_result["ct_long"] = conf_thresh[0]
-                        grid_result["ct_short"] = conf_thresh[1]
+                        # Grid-Result mit CT (kann Tuple sein)
+                        conf_thresh = inner_result["best_ct"]
+                        grid_result = {
+                            "feature_group": feature_group,
+                            "tp_mult": tp,
+                            "sl_mult": sl,
+                            "timeout_bars": timeout_bars,
+                            "conf_thresh": conf_thresh,
+                            "rrr": rrr,
+                            "inner_val_pnl": inner_result["avg_val_pnl"],
+                            "fold_stability": inner_result.get("fold_stability", 0),
+                            "features": inner_result["selected_features"],
+                        }
+                        # Bei separater Optimierung: CTs aufschlüsseln für Grid-Results
+                        if isinstance(conf_thresh, tuple):
+                            grid_result["ct_long"] = conf_thresh[0]
+                            grid_result["ct_short"] = conf_thresh[1]
                     all_grid_results.append(grid_result)
 
         log(2, f"Inner CV fertig: {len(candidates)} Kandidaten ({time.time()-t_start:.1f}s)", sym)
@@ -369,7 +375,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Sortiere alle Kandidaten nach Inner Val PnL und behalte Top 5
         # mit unterschiedlichen RRR-Werten für Diversität
         TOP_N = 5
-        MIN_ANNUAL_RETURN = 10.0  # Mindestens 10%/Jahr
+        MIN_ANNUAL_RETURN = strategy.filters.min_annual_return  # Aus Strategie-Config
         candidates.sort(key=lambda x: x.get("inner_val_pnl", 0), reverse=True)
 
         # Berechne Inner CV Zeitraum für Jahresrendite-Schätzung
@@ -463,7 +469,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         for t in holdout_result["trades_detailed"]:
             h = t["hour"]
             hour_pnl[h] = hour_pnl.get(h, 0) + t["result"]
-        b["good_hours"] = [h for h, pnl in hour_pnl.items() if pnl > 0] or list(range(24))
+        b["good_hours"] = sorted([h for h, pnl in hour_pnl.items() if pnl > 0]) or list(range(24))
 
         # 1/4 Kelly
         p = wr
@@ -474,7 +480,24 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         if fk <= 0:
             report_done(sym, "no_kelly")
-            return {"symbol": sym, "status": "no_kelly", "grid_results": grid_results}
+            # Speichere trotzdem Holdout-Info für Analyse
+            return {
+                "symbol": sym,
+                "status": "no_kelly",
+                "grid_results": grid_results,
+                "best_candidate": {
+                    "params": {"tp": b["params"][0], "sl": b["params"][1], "ct": b["params"][2]},
+                    "rrr": b["rrr"],
+                    "inner_val_pnl": b.get("inner_val_pnl", 0),
+                },
+                "holdout_result": {
+                    "win_rate": wr,
+                    "n_trades": holdout_result["n_trades"],
+                    "pnl": holdout_result["pnl"],
+                    "full_kelly": full_kelly,
+                    "reason": f"Kelly <= 0 (WR={wr*100:.1f}%, RRR={rrr:.2f}, benötigt WR >= {1/(rrr+1)*100:.1f}%)"
+                }
+            }
 
         # === MONTE CARLO TESTS ===
         # Prüfe ob Ergebnisse statistisch signifikant sind
