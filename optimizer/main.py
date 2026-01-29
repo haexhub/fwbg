@@ -133,6 +133,54 @@ def filter_correlated_assets(results, threshold=CORR_THRESHOLD):
     return selected
 
 
+def _create_incremental_plot(result, plots_path):
+    """
+    Erstellt einen einfachen Equity-Plot für ein einzelnes Asset.
+    Wird während der Verarbeitung für jedes profitable Asset aufgerufen.
+    """
+    sym = result.get("symbol", "?")
+    config = result.get("config", {})
+    trades = result.get("tr_trace", [])
+
+    if not trades:
+        return
+
+    kelly = config.get("kelly_risk", 0.01)
+    rrr = result.get("rrr", 1.0)
+
+    # Equity simulieren
+    eq_result = simulate_equity(trades, kelly, rrr)
+    eq = eq_result["equity_curve"]
+    drawdowns = eq_result["drawdowns"]
+    max_dd = eq_result["max_drawdown"]
+
+    # Plot erstellen
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), height_ratios=[3, 1])
+
+    ax1.plot(eq, color="blue", linewidth=1.5)
+    ax1.fill_between(range(len(eq)), eq, alpha=0.3)
+    ax1.set_yscale("log")
+    ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x)}" if x >= 1 else f"{x:.2f}"))
+
+    ct_val = config.get("conf_thresh", 0)
+    ax1.set_title(
+        f"{sym} | WR: {result.get('win_rate', 0):.1%} | RRR: {rrr:.2f} | "
+        f"MaxDD: {max_dd*100:.0f}% | CT: {ct_val:.2f}"
+    )
+    ax1.set_ylabel("Kapital (log)")
+    ax1.grid(True, alpha=0.3)
+
+    ax2.fill_between(range(len(drawdowns)), drawdowns, color="red", alpha=0.5)
+    ax2.set_ylabel("Drawdown (%)")
+    ax2.set_ylim(max(drawdowns) * 1.1 if drawdowns else 1, 0)
+    ax2.set_xlabel("Trade #")
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(f"{plots_path}/{sym}.png", dpi=100)
+    plt.close()
+
+
 def run_optimizer(
     description=None,
     save_results=True,
@@ -296,6 +344,75 @@ def run_optimizer(
     def update_progress(completed, total):
         progress_tracker.update_completed(completed)
 
+    # Callback für inkrementelle Ergebnis-Speicherung
+    def on_result_ready(result):
+        """Wird nach jedem fertigen Asset aufgerufen."""
+        if not result or not save_results or not run_path:
+            return
+
+        sym = result.get("symbol", "?")
+        status = result.get("status", "unknown")
+
+        # Grid-Details sofort speichern
+        grid_details_path = os.path.join(run_path, "grid_details")
+        os.makedirs(grid_details_path, exist_ok=True)
+        grid_file = os.path.join(grid_details_path, f"{sym}.json")
+
+        grid_data = {
+            "symbol": sym,
+            "status": status,
+            "total_combinations": len(result.get("grid_results", [])),
+            "grid_results": result.get("grid_results", []),
+        }
+        # Holdout-Info bei no_kelly hinzufügen
+        if result.get("holdout_result"):
+            grid_data["holdout_result"] = result["holdout_result"]
+        if result.get("best_candidate"):
+            grid_data["best_candidate"] = result["best_candidate"]
+
+        with open(grid_file, "w") as f:
+            json.dump(grid_data, f, indent=2)
+
+        # Zusammenfassung ausgeben
+        if status == "ok":
+            config = result.get("config", {})
+            tp = config.get("tp_mult", "?")
+            sl = config.get("sl_mult", "?")
+            ct = config.get("conf_thresh", "?")
+            wr = result.get("win_rate", 0)
+            rrr = result.get("rrr", 0)
+            trades = len(result.get("tr_trace", []))
+            pnl = result.get("pnl", 0)
+
+            # Kelly und Expectancy berechnen
+            kelly_raw = (wr * rrr - (1 - wr)) / rrr if rrr > 0 else 0
+
+            print(f"\n{'='*60}")
+            print(f"✓ {sym} - PROFITABLE")
+            print(f"{'='*60}")
+            print(f"  Parameter: TP={tp}, SL={sl}, CT={ct:.2f}")
+            print(f"  Performance: WR={wr:.1%}, RRR={rrr:.2f}, Trades={trades}")
+            print(f"  PnL={pnl:.1f}, Kelly={kelly_raw:.4f}")
+
+            # Plot erstellen
+            if result.get("tr_trace"):
+                try:
+                    _create_incremental_plot(result, plots_path)
+                    print(f"  Plot: {plots_path}/{sym}.png")
+                except Exception as e:
+                    print(f"  Plot-Fehler: {e}")
+        else:
+            grid_count = len(result.get("grid_results", []))
+            print(f"\n✗ {sym} - {status} ({grid_count} Kombinationen getestet)")
+            # Bei no_kelly: Holdout-Details anzeigen
+            if status == "no_kelly" and result.get("holdout_result"):
+                hr = result["holdout_result"]
+                bc = result.get("best_candidate", {})
+                params = bc.get("params", {})
+                print(f"  Best Candidate: TP={params.get('tp')}, SL={params.get('sl')}, CT={params.get('ct')}")
+                print(f"  Holdout: WR={hr['win_rate']:.1%}, Trades={hr['n_trades']}, PnL={hr['pnl']:.1f}")
+                print(f"  {hr['reason']}")
+
     print(f"\nStarte Verarbeitung von {len(files)} Assets...\n")
     progress_tracker.start()
 
@@ -303,7 +420,10 @@ def run_optimizer(
     worker_func = partial(process_symbol, strategy=strategy)
 
     raw_results = pool_manager.map_adaptive(
-        func=worker_func, items=files, progress_callback=update_progress
+        func=worker_func,
+        items=files,
+        progress_callback=update_progress,
+        result_callback=on_result_ready
     )
 
     progress_tracker.stop()
@@ -392,8 +512,9 @@ def run_optimizer(
         ax1.plot(eq, color="blue", linewidth=1.5)
         ax1.fill_between(range(len(eq)), eq, alpha=0.3)
         ax1.set_yscale("log")  # Logarithmische Y-Achse
-        # Formatiere Y-Achse als Integer (100, 200, 500, 1000, etc.)
-        ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.0f}" if x >= 1 else f"{x:.2f}"))
+        # Formatiere Y-Achse als Integer (100, 200, 500, 1000, etc.) - KEINE scientific notation
+        ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x)}" if x >= 1 else f"{x:.2f}"))
+        ax1.ticklabel_format(style='plain', axis='y', useOffset=False)
         # CT-Werte für Titel (separate oder gemeinsam)
         config = e.get("config", {})
         if config.get("separate_long_short") and config.get("ct_long") != config.get("ct_short"):
@@ -1000,11 +1121,10 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         help="Strategie-Metadaten aus JSON-Datei laden",
     )
     parser.add_argument(
-        "--list", action="store_true", help="Alle vorhandenen Runs anzeigen"
+        "--list", action="store_true", help="Alle vorhandenen Runs anzeigen (optional mit --tags)"
     )
-    parser.add_argument("--category", type=str, help="Filtert --list nach Kategorie")
     parser.add_argument(
-        "--tags", type=str, help="Filtert --list nach Tags (komma-getrennt)"
+        "--tags", type=str, help="Runs nach Tags filtern und auflisten (komma-getrennt)"
     )
     parser.add_argument(
         "--compare", nargs="+", metavar="RUN_ID", help="Runs vergleichen"
@@ -1075,9 +1195,10 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         print("Verwendung: python -m optimizer --features trend,momentum,macro")
         return
 
-    if args.list:
+    # --tags impliziert --list
+    if args.tags or args.list:
         tags = [t.strip() for t in args.tags.split(",")] if args.tags else None
-        runs = list_runs(category=args.category, tags=tags)
+        runs = list_runs(tags=tags)
 
         if not runs:
             print("Keine Test-Runs gefunden.")
@@ -1085,31 +1206,31 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
 
         print(f"\n{'=' * 100}")
         print("VORHANDENE TEST-RUNS")
-        if args.category:
-            print(f"(Gefiltert nach Kategorie: {args.category})")
         if tags:
             print(f"(Gefiltert nach Tags: {tags})")
         print(f"{'=' * 100}\n")
 
         table_data = []
         for r in runs:
+            run_tags = r.get("tags", [])
+            tags_str = ", ".join(run_tags[:3]) if run_tags else "-"
             table_data.append(
                 [
                     r["run_id"][:20],
                     r.get("timeframe", "?"),
-                    r.get("category", "-")[:12] if r.get("category") else "-",
                     r.get("strategy_name", "-")[:20] if r.get("strategy_name") else "-",
                     r.get("profitable_count", "?"),
                     r.get("model_architecture", "-")[:10]
                     if r.get("model_architecture")
                     else "-",
+                    tags_str[:25],
                 ]
             )
 
         print(
             tabulate(
                 table_data,
-                headers=["Run ID", "TF", "Kategorie", "Strategie", "OK", "Architektur"],
+                headers=["Run ID", "TF", "Strategie", "OK", "Architektur", "Tags"],
                 tablefmt="psql",
             )
         )

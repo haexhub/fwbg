@@ -3,7 +3,7 @@ Optimizer Module für Walk-Forward Strategie-Optimierung
 """
 from .config import (
     ACCOUNT_NAME, DATA_PATH, BASE_PATH, EXPORT_FILE, PLOT_PATH,
-    TIMEFRAME, WALK_FORWARD_FOLDS, OOS_SIZE, MAX_TRADE_BARS,
+    TIMEFRAME, WALK_FORWARD_FOLDS, OOS_SIZE,
     ASSET_CONFIG, CLASS_GRIDS, MIN_TRADES, CORR_THRESHOLD,
     convert_numpy
 )
@@ -77,7 +77,7 @@ from .plateau import (
 __all__ = [
     # Config
     'ACCOUNT_NAME', 'DATA_PATH', 'BASE_PATH', 'EXPORT_FILE', 'PLOT_PATH',
-    'TIMEFRAME', 'WALK_FORWARD_FOLDS', 'OOS_SIZE', 'MAX_TRADE_BARS',
+    'TIMEFRAME', 'WALK_FORWARD_FOLDS', 'OOS_SIZE',
     'ASSET_CONFIG', 'CLASS_GRIDS', 'MIN_TRADES', 'CORR_THRESHOLD',
     'convert_numpy',
     # Konfigurationsklassen

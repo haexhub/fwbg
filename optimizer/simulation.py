@@ -4,7 +4,7 @@ Trade-Simulation und Metriken
 import numpy as np
 import pandas as pd
 
-from .config import MAX_TRADE_BARS, RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN, DATA_PATH
+from .config import RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN, DATA_PATH
 
 
 # Cache für Sub-Stunden-Daten (wird einmal pro Symbol geladen)
@@ -280,7 +280,7 @@ def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
 
 def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, spread,
                        max_bars=None, trailing_start=0.5, timestamps=None, symbol=None,
-                       opens=None):
+                       opens=None, timeout_bars=None):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
@@ -318,13 +318,15 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
             - pnl_raw: PnL vor Positionsgrößen-Berechnung
             - bars_held: Dauer in Bars
     """
-    if max_bars is None:
-        max_bars = MAX_TRADE_BARS
-
     # Entry bei idx+1 (nächster Bar nach Signal)
     entry_idx = idx + 1
-    if entry_idx + max_bars >= len(closes):
+    if entry_idx >= len(closes):
         return None
+
+    # max_bars bestimmt wie weit wir maximal simulieren
+    # None oder sehr hohe Werte = bis zum Ende der Daten
+    if max_bars is None or max_bars > len(closes) - entry_idx:
+        max_bars = len(closes) - entry_idx
 
     tp_distance = spread * tp_m
     sl_distance = spread * sl_m
@@ -416,22 +418,28 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
             elif sl_hit:
                 return make_result(-1.0, j, sl)
 
-    # Timeout - kein TP/SL erreicht
-    # Schließe zum Close-Preis und werte als Win/Loss
-    # So lernt das Model, dass Signale die ins Timeout laufen oft schlecht sind
-    timeout_idx = min(entry_idx + max_bars - 1, len(closes) - 1)
-    exit_price = closes[timeout_idx]
+    # Kein TP/SL erreicht bis zum Ende der verfügbaren Daten
+    # Wenn timeout_bars gesetzt ist, schließe zum Close-Preis
+    if timeout_bars is not None:
+        timeout_idx = min(entry_idx + timeout_bars - 1, len(closes) - 1)
+        if timeout_idx >= entry_idx:
+            exit_price = closes[timeout_idx]
 
-    # Berechne PnL
-    if direction == 1:  # Long
-        pnl = exit_price - entry
-    else:  # Short
-        pnl = entry - exit_price
+            # Berechne ob Gewinn oder Verlust
+            if direction == 1:  # Long
+                pnl = exit_price - entry
+            else:  # Short
+                pnl = entry - exit_price
 
-    # Win wenn Profit > 0, sonst Loss
-    result = 1.0 if pnl > 0 else -1.0
+            result = 1.0 if pnl > 0 else -1.0
 
-    return make_result(result, timeout_idx, exit_price)
+            trade_result = make_result(result, timeout_idx, exit_price)
+            trade_result["exit_reason"] = "timeout"
+            trade_result["timeout_bars"] = timeout_bars
+            return trade_result
+
+    # Kein Timeout - Trade wird ignoriert
+    return None
 
 
 def calculate_max_drawdown(returns, kelly_risk, rrr):
