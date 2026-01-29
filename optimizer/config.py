@@ -21,18 +21,17 @@ FEATURE_STABILITY_MIN = 3  # Feature muss in min. 3 von 5 Folds relevant sein
 TIMEFRAME = os.environ.get("TIMEFRAME", "HOUR")
 
 TIMEFRAME_CONFIG = {
-    "HOUR": {"bars_per_hour": 1, "max_trade_bars": 48, "window_size": 35000, "oos_size": 4000},
-    "HOUR_SWING": {"bars_per_hour": 1, "max_trade_bars": 480, "window_size": 35000, "oos_size": 4000},  # 20 Tage max
-    "MINUTE_15": {"bars_per_hour": 4, "max_trade_bars": 96, "window_size": 50000, "oos_size": 8000},
-    "MINUTE_5": {"bars_per_hour": 12, "max_trade_bars": 144, "window_size": 80000, "oos_size": 16000},
-    "MINUTE_1": {"bars_per_hour": 60, "max_trade_bars": 240, "window_size": 100000, "oos_size": 20000},
-    "DAY": {"bars_per_hour": 1/24, "max_trade_bars": 60, "window_size": 2000, "oos_size": 500},  # 60 Tage max für Swing
+    "HOUR": {"bars_per_hour": 1, "window_size": 35000, "oos_size": 4000},
+    "HOUR_SWING": {"bars_per_hour": 1, "window_size": 35000, "oos_size": 4000},
+    "MINUTE_15": {"bars_per_hour": 4, "window_size": 50000, "oos_size": 8000},
+    "MINUTE_5": {"bars_per_hour": 12, "window_size": 80000, "oos_size": 16000},
+    "MINUTE_1": {"bars_per_hour": 60, "window_size": 100000, "oos_size": 20000},
+    "DAY": {"bars_per_hour": 1/24, "window_size": 2000, "oos_size": 500},
 }
 
 tf_cfg = TIMEFRAME_CONFIG.get(TIMEFRAME, TIMEFRAME_CONFIG["HOUR"])
 WINDOW_SIZE = tf_cfg["window_size"]
 OOS_SIZE = tf_cfg["oos_size"]
-MAX_TRADE_BARS = tf_cfg["max_trade_bars"]
 WALK_FORWARD_FOLDS = 8
 
 # Regime-Filter Thresholds
@@ -245,8 +244,8 @@ FEATURE_GROUPS = {
 }
 
 # Standard Feature-Gruppen die getestet werden (kann überschrieben werden)
-# Weniger Gruppen = schnellere Optimierung
-DEFAULT_FEATURE_GROUPS = ["trend_momentum", "macro_vol", "full_technical"]
+# Alle Gruppen als Default - in Strategy-File kann eingeschränkt werden
+DEFAULT_FEATURE_GROUPS = list(FEATURE_GROUPS.keys())
 
 
 def convert_numpy(obj):

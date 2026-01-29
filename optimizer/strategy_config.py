@@ -23,6 +23,11 @@ class GridConfig:
     sl: List[int] = field(default_factory=lambda: [15, 20, 25, 30, 40, 50, 60, 80])
     ct: List[float] = field(default_factory=lambda: [0.50, 0.52, 0.55, 0.58, 0.60, 0.65, 0.70])
 
+    # Time-based Exit: Nach X Bars ohne TP/SL zum Close schließen
+    # None = kein Timeout, der Trade läuft bis TP/SL
+    # Liste von Werten zum Testen, z.B. [None, 12, 24, 48]
+    timeout_bars: List[int] = field(default_factory=lambda: [None])
+
     # Separate Grids für Long (None = verwende gemeinsame Werte)
     long_tp: List[int] = None
     long_sl: List[int] = None
@@ -47,10 +52,21 @@ class GridConfig:
         # Prüfe ob separate L/S Grids definiert sind
         has_separate = any(k in data for k in ["long_tp", "long_sl", "short_tp", "short_sl"])
 
+        # timeout_bars: kann None, int, oder Liste sein
+        timeout_raw = data.get("timeout_bars", [None])
+        if timeout_raw is None:
+            timeout_bars = [None]
+        elif isinstance(timeout_raw, (int, float)):
+            timeout_bars = [int(timeout_raw)]
+        else:
+            # Liste - None-Werte beibehalten
+            timeout_bars = [int(t) if t is not None else None for t in timeout_raw]
+
         return cls(
             tp=data.get("tp", default_tp),
             sl=data.get("sl", default_sl),
             ct=data.get("ct", default_ct),
+            timeout_bars=timeout_bars,
             long_tp=data.get("long_tp"),
             long_sl=data.get("long_sl"),
             long_ct=data.get("long_ct"),
@@ -137,7 +153,7 @@ class ModelConfig:
 @dataclass
 class SimulationParams:
     """Parameter für Trade-Simulation."""
-    max_trade_bars: int = 48  # Maximale Dauer eines Trades in Bars
+    max_trade_bars: int = None  # None = kein Timeout, Trade läuft bis TP/SL
     tp_sl_basis: str = "spread_multiple"  # Basis für TP/SL Berechnung
     trailing_stop: bool = True
     slippage_model: str = "fixed"
@@ -147,7 +163,7 @@ class SimulationParams:
     def from_dict(cls, data: Dict[str, Any]) -> "SimulationParams":
         """Erstellt SimulationParams aus Dictionary."""
         return cls(
-            max_trade_bars=data.get("max_trade_bars", 48),
+            max_trade_bars=data.get("max_trade_bars"),  # None wenn nicht definiert
             tp_sl_basis=data.get("tp_sl_basis", "spread_multiple"),
             trailing_stop=data.get("trailing_stop", True),
             slippage_model=data.get("slippage_model", "fixed"),
@@ -203,7 +219,7 @@ class FeatureParams:
     time_features: bool = True
     multi_timeframe: bool = True
     feature_selection: str = "importance_based"
-    preferred_groups: List[str] = field(default_factory=lambda: ["trend_momentum", "macro_vol", "full_technical"])
+    preferred_groups: List[str] = None  # None = alle Feature-Gruppen testen
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FeatureParams":
@@ -214,8 +230,15 @@ class FeatureParams:
             time_features=data.get("time_features", True),
             multi_timeframe=data.get("multi_timeframe", True),
             feature_selection=data.get("feature_selection", "importance_based"),
-            preferred_groups=data.get("preferred_groups", ["trend_momentum", "macro_vol", "full_technical"]),
+            preferred_groups=data.get("preferred_groups"),  # None = alle Gruppen
         )
+
+    def get_groups(self) -> List[str]:
+        """Gibt die zu testenden Feature-Gruppen zurück. None = alle."""
+        if self.preferred_groups is None:
+            from .config import DEFAULT_FEATURE_GROUPS
+            return DEFAULT_FEATURE_GROUPS
+        return self.preferred_groups
 
 
 @dataclass
@@ -254,9 +277,8 @@ class StrategyConfig:
 
         for asset_class, grid_data in grids_data.items():
             grid = GridConfig.from_dict(grid_data)
-            # Separate L/S Optimierung wenn model.architecture = long_short_separate
-            if model_config.is_long_short_separate:
-                grid.separate_long_short = True
+            # Separate L/S CT-Optimierung NUR wenn explizit long_ct/short_ct im Grid definiert
+            # (architecture: long_short_separate betrifft nur die ML-Models, nicht das CT-Grid)
             grids[asset_class] = grid
 
         return cls(
@@ -341,7 +363,6 @@ class StrategyConfig:
                 "hyperparameters": self.model.hyperparameters,
             },
             "simulation": {
-                "max_trade_bars": self.simulation.max_trade_bars,
                 "tp_sl_basis": self.simulation.tp_sl_basis,
                 "trailing_stop": self.simulation.trailing_stop,
                 "slippage_model": self.simulation.slippage_model,
@@ -365,7 +386,7 @@ class StrategyConfig:
     def log_summary(self, log_func=print):
         """Gibt eine Zusammenfassung der Konfiguration aus."""
         log_func(f"Strategy: {self.name}")
-        log_func(f"  Max Trade Bars: {self.simulation.max_trade_bars} ({self.simulation.max_trade_bars / 24:.0f} Tage)")
         log_func(f"  Min RRR: {self.filters.min_rrr}")
         log_func(f"  Min Trades: {self.filters.min_trades}")
-        log_func(f"  Feature Groups: {self.features.preferred_groups}")
+        groups = self.features.get_groups()
+        log_func(f"  Feature Groups: {len(groups)} ({', '.join(groups[:3])}{'...' if len(groups) > 3 else ''})")
