@@ -1143,6 +1143,11 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         help="Nur bestimmte Assets testen (komma-getrennt, z.B. BTCUSD,ETHUSD)",
     )
     parser.add_argument(
+        "--asset-classes",
+        type=str,
+        help="Nur bestimmte Asset-Klassen testen (komma-getrennt, z.B. FOREX,INDEX,COMMODITY)",
+    )
+    parser.add_argument(
         "--features",
         type=str,
         help="Feature-Gruppen testen (komma-getrennt, z.B. trend,momentum,macro)",
@@ -1272,6 +1277,23 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         asset_filter = None
         if args.assets:
             asset_filter = [a.strip().upper() for a in args.assets.split(",")]
+
+        # Expand asset classes to individual assets
+        if args.asset_classes:
+            from .asset_config import AssetRegistry
+            registry = AssetRegistry()
+            classes = [c.strip().upper() for c in args.asset_classes.split(",")]
+            class_assets = []
+            for cls in classes:
+                class_assets.extend(registry.symbols_by_class(cls))
+            if asset_filter:
+                # Kombiniere mit expliziten Assets
+                asset_filter = list(set(asset_filter + class_assets))
+            else:
+                asset_filter = class_assets
+            if not asset_filter:
+                print(f"Keine Assets für Klassen {classes} gefunden!")
+                return
 
         # Parse feature groups filter
         feature_groups = None
