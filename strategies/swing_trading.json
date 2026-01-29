@@ -1,89 +1,123 @@
 {
   "name": "Swing Trading",
   "description": "Längerfristige Trades (Tage bis Wochen) mit großen TP/SL-Zielen und hohem RRR",
-  "category": "trading_style",
-  "tags": ["swing", "trend_following", "high_rrr", "long_hold"],
+  "tags": [
+    "swing",
+    "trend_following",
+    "high_rrr",
+    "long_hold"
+  ],
   "hypothesis": "Swing-Trading-Strategien mit großen TP-Zielen (100-1000x Spread) und moderaten SL können profitable Trend-Following-Setups identifizieren",
   "expected_outcome": "Weniger Trades, aber höheres RRR (>1.5) und längere Haltezeit (Tage bis Wochen)",
-  "baseline_run": null,
-  "changes": [
-    {
-      "component": "grid",
-      "before": "scalping (TP: 15-80, SL: 15-80)",
-      "after": "swing (TP: 100-1000, SL: 50-300)"
-    },
-    {
-      "component": "max_trade_bars",
-      "before": "48 (2 Tage)",
-      "after": "480 (20 Tage)"
-    },
-    {
-      "component": "min_rrr",
-      "before": "0.0 (kein Filter)",
-      "after": "1.0 (mindestens 1:1)"
-    }
-  ],
   "model": {
-    "type": "xgboost",
-    "architecture": "long_short_separate",
-    "hyperparameters": {
-      "n_estimators": 100,
-      "max_depth": 5,
-      "random_state": 42
-    }
+    "architecture": "long_short_separate"
   },
   "features": {
-    "technical_indicators": true,
-    "macro_indicators": true,
-    "time_features": true,
-    "multi_timeframe": true,
-    "feature_selection": "importance_based",
-    "preferred_groups": ["trend_momentum", "macro_vol"]
-  },
-  "simulation": {
-    "tp_sl_basis": "spread_multiple",
-    "trailing_stop": true,
-    "slippage_model": "fixed",
-    "regime_filter": true,
-    "max_trade_bars": 480
-  },
-  "validation": {
-    "method": "walk_forward",
-    "folds": 8,
-    "oos_size": 4000,
-    "holdout_ratio": 0.20
+    "preferred_groups": [
+      "trend_momentum",
+      "macro_vol"
+    ]
   },
   "grids": {
     "FOREX": {
-      "tp": [100, 150, 200, 300, 500, 750, 1000],
-      "sl": [50, 75, 100, 150, 200, 300],
-      "ct": [0.55, 0.60, 0.65, 0.70, 0.75]
+      "tp": [
+        100,
+        150,
+        200,
+        300,
+        500,
+        750,
+        1000
+      ],
+      "sl": [
+        50,
+        75,
+        100,
+        150,
+        200,
+        300
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ]
     },
     "INDEX": {
-      "tp": [100, 200, 300, 500, 750, 1000],
-      "sl": [50, 100, 150, 200, 300],
-      "ct": [0.55, 0.60, 0.65, 0.70, 0.75]
+      "tp": [
+        100,
+        200,
+        300,
+        500,
+        750,
+        1000
+      ],
+      "sl": [
+        50,
+        100,
+        150,
+        200,
+        300
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ]
     },
     "COMMODITY": {
-      "tp": [100, 200, 300, 500, 750, 1000],
-      "sl": [50, 100, 150, 200, 300],
-      "ct": [0.55, 0.60, 0.65, 0.70, 0.75]
+      "tp": [
+        100,
+        200,
+        300,
+        500,
+        750,
+        1000
+      ],
+      "sl": [
+        50,
+        100,
+        150,
+        200,
+        300
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ]
     },
     "CRYPTO": {
-      "tp": [200, 400, 600, 1000, 1500, 2000],
-      "sl": [100, 200, 300, 500],
-      "ct": [0.55, 0.60, 0.65, 0.70]
+      "tp": [
+        200,
+        400,
+        600,
+        1000,
+        1500,
+        2000
+      ],
+      "sl": [
+        100,
+        200,
+        300,
+        500
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7
+      ]
     }
   },
   "filters": {
     "min_rrr": 1.0,
-    "min_trades": 30,
-    "min_annual_return": 15.0
-  },
-  "resources": {
-    "max_cpu_percent": 80,
-    "min_free_ram_percent": 20,
-    "ram_per_worker_gb": 3
-  },
-  "notes": "Swing-Trading sucht nach größeren Marktbewegungen. Die höheren TP-Ziele (bis 1000x Spread) entsprechen bei EURUSD ca. 200 Pips oder 2% Preisbewegung. Min RRR von 1.0 filtert Scalping-Strategien aus."
+    "min_trades": 30
+  }
 }

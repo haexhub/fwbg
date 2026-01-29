@@ -1,58 +1,13 @@
 {
   "name": "Symmetrisches TP/SL Grid",
   "description": "Testet alle RRR-Kombinationen von 0.19 bis 5.33 - KI entscheidet ob Scalping (hohe WR) oder Trend (hohes RRR) besser ist",
-  "category": "hyperparameter",
   "tags": ["symmetric_grid", "rrr_exploration", "long_short", "macro"],
   "hypothesis": "Ein symmetrisches Grid könnte profitable Konfigurationen finden, die mit dem asymmetrischen Grid (RRR >= 0.5) nicht getestet wurden - z.B. Scalping-Strategien mit kleinem TP und großem SL",
   "expected_outcome": "Möglicherweise neue profitable Assets oder bessere Konfigurationen für bestehende Assets",
-  "baseline_run": null,
-  "changes": [
-    {
-      "component": "grid",
-      "before": "asymmetrisch (TP: 25-80, SL: 15-50, RRR >= 0.5)",
-      "after": "symmetrisch (TP: 15-80, SL: 15-80, RRR 0.19-5.33)"
-    },
-    {
-      "component": "kombinationen",
-      "before": "~150 pro Asset (6 TP x 5 SL x 5 CT)",
-      "after": "~384 pro Asset (8 TP x 8 SL x 6 CT)"
-    }
-  ],
   "model": {
-    "type": "xgboost",
-    "architecture": "long_short_separate",
-    "hyperparameters": {
-      "n_estimators": 100,
-      "max_depth": 5,
-      "random_state": 42
-    }
-  },
-  "features": {
-    "technical_indicators": true,
-    "macro_indicators": true,
-    "time_features": true,
-    "multi_timeframe": true,
-    "custom_features": [],
-    "feature_selection": "importance_based"
-  },
-  "simulation": {
-    "tp_sl_basis": "spread_multiple",
-    "trailing_stop": true,
-    "slippage_model": "fixed",
-    "regime_filter": true
-  },
-  "validation": {
-    "method": "walk_forward",
-    "folds": 8,
-    "oos_size": 4000
+    "architecture": "long_short_separate"
   },
   "assets": {
     "classes": ["COMMODITY"]
-  },
-  "resources": {
-    "max_cpu_percent": 0.8,
-    "min_free_ram_percent": 0.25,
-    "ram_per_worker_gb": 3.0
-  },
-  "notes": "Erwartet längere Laufzeit (~2.5x) wegen größerem Suchraum. Ermöglicht aber vollständige Exploration aller RRR-Konfigurationen."
+  }
 }

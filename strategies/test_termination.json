@@ -1,37 +1,17 @@
 {
   "name": "Test Termination Fix",
   "description": "Schneller Test um zu pruefen ob das Programm korrekt terminiert",
-  "category": "test",
   "tags": ["test"],
   "hypothesis": "Test",
   "expected_outcome": "Programm beendet sich nach 100%",
-  "baseline_run": null,
-  "changes": [],
   "model": {
-    "type": "xgboost",
     "architecture": "long_short_separate",
     "hyperparameters": {
       "n_estimators": 30,
-      "max_depth": 3,
-      "random_state": 42
+      "max_depth": 3
     }
   },
-  "features": {
-    "technical_indicators": true,
-    "macro_indicators": false,
-    "time_features": false,
-    "multi_timeframe": false,
-    "custom_features": [],
-    "feature_selection": "importance_based"
-  },
-  "simulation": {
-    "tp_sl_basis": "spread_multiple",
-    "trailing_stop": false,
-    "slippage_model": "fixed",
-    "regime_filter": false
-  },
   "validation": {
-    "method": "walk_forward",
     "folds": 2,
     "oos_size": 500
   },
@@ -47,6 +27,5 @@
     "max_cpu_percent": 0.5,
     "min_free_ram_percent": 0.25,
     "ram_per_worker_gb": 2.0
-  },
-  "notes": "Minimaler Test-Lauf mit 8 Grid-Kombinationen"
+  }
 }
