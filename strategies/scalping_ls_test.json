@@ -1,41 +1,11 @@
 {
   "name": "Scalping L/S Test",
   "description": "Schnelltest für separate Long/Short CT-Optimierung mit reduziertem Asset-Set",
-  "category": "trading_style",
   "tags": ["scalping", "long_short_separate", "test"],
   "hypothesis": "Separate CT-Thresholds für Long und Short können unterschiedliche Marktbedingungen besser abbilden",
   "expected_outcome": "Unterschiedliche CT-Werte für L/S bei einigen Assets, ähnliche bei anderen",
-  "baseline_run": null,
-  "changes": ["5 CT-Werte (5x5=25 L/S Kombinationen)", "Alle Assets"],
   "model": {
-    "type": "xgboost",
-    "architecture": "long_short_separate",
-    "hyperparameters": {
-      "n_estimators": 100,
-      "max_depth": 5,
-      "random_state": 42
-    }
-  },
-  "features": {
-    "technical_indicators": true,
-    "macro_indicators": true,
-    "time_features": true,
-    "multi_timeframe": true,
-    "feature_selection": "importance_based",
-    "preferred_groups": ["full_technical", "trend_momentum"]
-  },
-  "simulation": {
-    "tp_sl_basis": "spread_multiple",
-    "trailing_stop": true,
-    "slippage_model": "fixed",
-    "regime_filter": true,
-    "max_trade_bars": 48
-  },
-  "validation": {
-    "method": "walk_forward",
-    "folds": 8,
-    "oos_size": 4000,
-    "holdout_ratio": 0.20
+    "architecture": "long_short_separate"
   },
   "grids": {
     "FOREX": {
@@ -61,13 +31,6 @@
   },
   "filters": {
     "min_rrr": 0.0,
-    "min_trades": 50,
-    "min_annual_return": 12.0
-  },
-  "resources": {
-    "max_cpu_percent": 80,
-    "min_free_ram_percent": 20,
-    "ram_per_worker_gb": 3
-  },
-  "notes": "Full L/S CT Run: 5 CT-Werte (5x5=25 Kombinationen), alle Assets. Erwartet ~2-3h Laufzeit."
+    "min_trades": 50
+  }
 }
