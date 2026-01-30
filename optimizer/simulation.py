@@ -4,7 +4,7 @@ Trade-Simulation und Metriken
 import numpy as np
 import pandas as pd
 
-from .config import RELEVANCE_THRESHOLD, FEATURE_STABILITY_MIN, DATA_PATH
+from .config import DATA_PATH
 
 
 # Cache für Sub-Stunden-Daten (wird einmal pro Symbol geladen)
@@ -144,28 +144,6 @@ def calculate_calmar_ratio(returns, kelly_risk, rrr):
     max_dd = max(max_dd, 0.01)
     total_return = (equity[-1] - equity[0]) / equity[0]
     return min(10.0, total_return / max_dd)
-
-
-def check_feature_stability(fold_importances, threshold=RELEVANCE_THRESHOLD):
-    """
-    Prüft ob Features über alle Folds konsistent wichtig sind.
-    Returns: Liste der stabilen Features
-    """
-    if not fold_importances:
-        return []
-
-    feature_counts = {}
-    for imps in fold_importances:
-        for feat, imp in imps.items():
-            if imp > threshold:
-                feature_counts[feat] = feature_counts.get(feat, 0) + 1
-
-    stable_features = [
-        f for f, count in feature_counts.items()
-        if count >= FEATURE_STABILITY_MIN
-    ]
-
-    return stable_features
 
 
 def _load_ohlc_csv(path):

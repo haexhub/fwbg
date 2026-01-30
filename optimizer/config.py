@@ -11,11 +11,9 @@ BASE_PATH = f"accounts/{ACCOUNT_NAME}"
 EXPORT_FILE = f"{BASE_PATH}/assets.json"
 PLOT_PATH = f"{BASE_PATH}/plots"
 
-CORR_THRESHOLD = 0.75
-RELEVANCE_THRESHOLD = 0.02  # 2% Hürde
+CORR_THRESHOLD = 0.75  # Für Asset-Währungskorrelation (Portfolio-Diversifikation)
 TARGET_TZ = "Europe/Berlin"
-MIN_TRADES = 50  # Minimum Trades für statistische Signifikanz (realistisch bei sequentiellem Trading)
-FEATURE_STABILITY_MIN = 3  # Feature muss in min. 3 von 5 Folds relevant sein
+MIN_TRADES = 50  # Minimum Trades für statistische Signifikanz
 
 # Timeframe-abhängige Parameter
 TIMEFRAME = os.environ.get("TIMEFRAME", "HOUR")

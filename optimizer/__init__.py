@@ -33,7 +33,6 @@ from .simulation import (
     calculate_calmar_ratio,
     calculate_max_drawdown,
     calculate_annual_return,
-    check_feature_stability,
     simulate_pro_trade
 )
 
@@ -91,7 +90,7 @@ __all__ = [
     'compute_indicator_pool', 'get_feature_columns', 'compute_regime_filter',
     # Simulation
     'calculate_sharpe_ratio', 'calculate_calmar_ratio', 'calculate_max_drawdown',
-    'calculate_annual_return', 'check_feature_stability', 'simulate_pro_trade',
+    'calculate_annual_return', 'simulate_pro_trade',
     # Process
     'walk_forward_split', 'process_symbol',
     # Main
