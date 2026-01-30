@@ -235,6 +235,11 @@ FEATURE_GROUPS = {
         "prefixes": ["fft_"],
         "description": "FFT-basierte Zykluserkennung: Dominante Frequenz, Spektrale Energie/Entropie",
     },
+    "regime": {
+        "name": "Regime-Indikatoren",
+        "prefixes": ["regime_"],
+        "description": "Hurst-Exponent (Markt-Charakter: trending/mean-reverting/random)",
+    },
     # Kombinationen
     "trend_momentum": {
         "name": "Trend + Momentum",

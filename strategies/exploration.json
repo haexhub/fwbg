@@ -38,6 +38,7 @@
       "cross",
       "distribution",
       "fft",
+      "regime",
       "trend_momentum",
       "macro_vol",
       "full_technical"
