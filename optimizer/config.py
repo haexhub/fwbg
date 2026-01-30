@@ -183,7 +183,7 @@ FEATURE_GROUPS = {
     "trend": {
         "name": "Trend Indikatoren",
         "prefixes": ["trend_", "ichi_"],
-        "description": "ADX, EMA, SMA, MACD, CCI, Aroon, Ichimoku",
+        "description": "ADX, EMA, SMA, MACD, CCI, Aroon, Ichimoku, Efficiency Ratio",
     },
     "momentum": {
         "name": "Momentum Indikatoren",
@@ -224,6 +224,16 @@ FEATURE_GROUPS = {
         "name": "Cross-Indikator",
         "prefixes": ["cross_"],
         "description": "Kombinierte Signale aus mehreren Indikatoren",
+    },
+    "distribution": {
+        "name": "Verteilungs-Features",
+        "prefixes": ["dist_"],
+        "description": "Rolling Skewness und Kurtosis der Returns",
+    },
+    "fft": {
+        "name": "Fourier-Analyse",
+        "prefixes": ["fft_"],
+        "description": "FFT-basierte Zykluserkennung: Dominante Frequenz, Spektrale Energie/Entropie",
     },
     # Kombinationen
     "trend_momentum": {

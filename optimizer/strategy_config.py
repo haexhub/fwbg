@@ -12,6 +12,80 @@ from .config import CLASS_GRIDS
 
 
 @dataclass
+class RegimeFilterGridConfig:
+    """Konfiguration für Regime-Filter als Grid-Parameter.
+
+    Ermöglicht das Testen verschiedener Regime-Filter-Kombinationen im Grid-Search.
+    Jede Kombination wird als separate Optimierung durchgeführt.
+    """
+    # ADX Grid: Liste von (enabled, min_value) Tupeln oder min_values
+    # z.B. [0, 15, 20, 25] - 0 bedeutet deaktiviert
+    adx_min: List[float] = field(default_factory=lambda: [20.0])
+
+    # VIX Grid: Liste von max_values (None = deaktiviert)
+    # z.B. [None, 20, 25, 30]
+    vix_max: List[float] = field(default_factory=lambda: [None])
+
+    # Hurst Grid: Liste von (min, max) Tupeln oder Presets
+    # z.B. [None, {"min": 0.55}, {"max": 0.45}, {"min": 0.4, "max": 0.6}]
+    hurst: List[Dict[str, float]] = field(default_factory=lambda: [None])
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RegimeFilterGridConfig":
+        """Erstellt RegimeFilterGridConfig aus Dictionary."""
+        if data is None:
+            return cls()
+
+        # ADX: Kann Liste von Werten sein oder einzelner Wert
+        adx_raw = data.get("adx_min", [20.0])
+        if not isinstance(adx_raw, list):
+            adx_raw = [adx_raw]
+
+        # VIX: Kann Liste von Werten sein oder einzelner Wert
+        vix_raw = data.get("vix_max", [None])
+        if not isinstance(vix_raw, list):
+            vix_raw = [vix_raw]
+
+        # Hurst: Kann Liste von Dicts sein, Presets, oder None
+        hurst_raw = data.get("hurst", [None])
+        if not isinstance(hurst_raw, list):
+            hurst_raw = [hurst_raw]
+
+        return cls(
+            adx_min=adx_raw,
+            vix_max=vix_raw,
+            hurst=hurst_raw,
+        )
+
+    def get_combinations(self) -> List[Dict[str, Any]]:
+        """Generiert alle Regime-Filter-Kombinationen.
+
+        Returns:
+            Liste von Dicts mit Regime-Filter-Parametern
+        """
+        import itertools
+        combinations = []
+
+        for adx, vix, hurst in itertools.product(self.adx_min, self.vix_max, self.hurst):
+            config = {
+                "adx_enabled": adx is not None and adx > 0,
+                "adx_min": adx if adx and adx > 0 else 0,
+                "vix_enabled": vix is not None,
+                "vix_max": vix if vix else 25.0,
+                "hurst_enabled": hurst is not None,
+                "hurst_min": hurst.get("min") if isinstance(hurst, dict) else None,
+                "hurst_max": hurst.get("max") if isinstance(hurst, dict) else None,
+            }
+            combinations.append(config)
+
+        return combinations
+
+    def total_combinations(self) -> int:
+        """Anzahl der Regime-Filter-Kombinationen."""
+        return len(self.adx_min) * len(self.vix_max) * len(self.hurst)
+
+
+@dataclass
 class GridConfig:
     """Konfiguration für TP/SL/CT Grid-Search.
 
@@ -27,6 +101,9 @@ class GridConfig:
     # None = kein Timeout, der Trade läuft bis TP/SL
     # Liste von Werten zum Testen, z.B. [None, 12, 24, 48]
     timeout_bars: List[int] = field(default_factory=lambda: [None])
+
+    # Regime-Filter Grid (verschiedene Filter-Kombinationen testen)
+    regime_filter_grid: RegimeFilterGridConfig = field(default_factory=RegimeFilterGridConfig)
 
     # Separate Grids für Long (None = verwende gemeinsame Werte)
     long_tp: List[int] = None
@@ -62,11 +139,15 @@ class GridConfig:
             # Liste - None-Werte beibehalten
             timeout_bars = [int(t) if t is not None else None for t in timeout_raw]
 
+        # Regime-Filter Grid parsen
+        regime_grid = RegimeFilterGridConfig.from_dict(data.get("regime_filter_grid"))
+
         return cls(
             tp=data.get("tp", default_tp),
             sl=data.get("sl", default_sl),
             ct=data.get("ct", default_ct),
             timeout_bars=timeout_bars,
+            regime_filter_grid=regime_grid,
             long_tp=data.get("long_tp"),
             long_sl=data.get("long_sl"),
             long_ct=data.get("long_ct"),
@@ -212,6 +293,86 @@ class FilterParams:
 
 
 @dataclass
+class RegimeFilterParams:
+    """Parameter für Regime-Filter.
+
+    Regime-Filter bestimmen, wann Trading erlaubt ist basierend auf
+    Marktbedingungen wie Trend-Stärke, Volatilität und Markt-Charakter.
+
+    Hurst-Exponent Interpretation:
+    - H > 0.5: Trending/Persistent (gut für Trend-Following)
+    - H = 0.5: Random Walk (schwierig zu traden)
+    - H < 0.5: Mean-Reverting (gut für Mean-Reversion Strategien)
+    """
+    # ADX Filter (Trend-Stärke)
+    adx_enabled: bool = True
+    adx_min: float = 20.0  # Minimum ADX für Trading
+
+    # VIX Filter (Markt-Volatilität)
+    vix_enabled: bool = False
+    vix_max: float = 25.0  # Maximum VIX für Trading
+
+    # Hurst Exponent Filter (Markt-Charakter)
+    hurst_enabled: bool = False
+    hurst_min: float = None  # Minimum Hurst (None = kein Minimum)
+    hurst_max: float = None  # Maximum Hurst (None = kein Maximum)
+    hurst_window: int = 100  # Fenster für Rolling Hurst
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RegimeFilterParams":
+        """Erstellt RegimeFilterParams aus Dictionary."""
+        return cls(
+            adx_enabled=data.get("adx_enabled", True),
+            adx_min=data.get("adx_min", 20.0),
+            vix_enabled=data.get("vix_enabled", False),
+            vix_max=data.get("vix_max", 25.0),
+            hurst_enabled=data.get("hurst_enabled", False),
+            hurst_min=data.get("hurst_min"),
+            hurst_max=data.get("hurst_max"),
+            hurst_window=data.get("hurst_window", 100),
+        )
+
+
+@dataclass
+class PreprocessingParams:
+    """Parameter für Daten-Preprocessing.
+
+    Unterstützte Transformationen:
+    - fractional_differentiation: Stationäre Preise mit Memory (López de Prado)
+    - log_returns: Log-Returns statt absoluter Preise
+    - normalize: Z-Score Normalisierung der OHLC-Daten
+    """
+    # Fractional Differentiation
+    fractional_differentiation: bool = False
+    frac_diff_auto_d: bool = True  # Automatische d-Optimierung via ADF-Test
+    frac_diff_default_d: float = 0.4  # Default d-Wert wenn auto_d=False
+
+    # Log-Returns Transformation
+    log_returns: bool = False  # Verwendet log(P_t/P_{t-1}) statt absoluter Preise
+
+    # Normalisierung
+    normalize: bool = False  # Z-Score Normalisierung
+    normalize_window: int = 100  # Rolling-Window für Z-Score
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PreprocessingParams":
+        """Erstellt PreprocessingParams aus Dictionary."""
+        return cls(
+            fractional_differentiation=data.get("fractional_differentiation", False),
+            frac_diff_auto_d=data.get("frac_diff_auto_d", True),
+            frac_diff_default_d=data.get("frac_diff_default_d", 0.4),
+            log_returns=data.get("log_returns", False),
+            normalize=data.get("normalize", False),
+            normalize_window=data.get("normalize_window", 100),
+        )
+
+    @property
+    def has_any(self) -> bool:
+        """Prüft ob irgendein Preprocessing aktiviert ist."""
+        return self.fractional_differentiation or self.log_returns or self.normalize
+
+
+@dataclass
 class FeatureParams:
     """Parameter für Feature-Auswahl."""
     technical_indicators: bool = True
@@ -261,6 +422,8 @@ class StrategyConfig:
     validation: ValidationParams = field(default_factory=ValidationParams)
     filters: FilterParams = field(default_factory=FilterParams)
     features: FeatureParams = field(default_factory=FeatureParams)
+    preprocessing: PreprocessingParams = field(default_factory=PreprocessingParams)
+    regime_filter: RegimeFilterParams = field(default_factory=RegimeFilterParams)
 
     # Metadata
     hypothesis: str = ""
@@ -292,6 +455,8 @@ class StrategyConfig:
             validation=ValidationParams.from_dict(data.get("validation", {})),
             filters=FilterParams.from_dict(data.get("filters", {})),
             features=FeatureParams.from_dict(data.get("features", {})),
+            preprocessing=PreprocessingParams.from_dict(data.get("preprocessing", {})),
+            regime_filter=RegimeFilterParams.from_dict(data.get("regime_filter", {})),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
             notes=data.get("notes", ""),
