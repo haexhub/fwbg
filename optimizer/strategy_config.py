@@ -17,17 +17,17 @@ class RegimeFilterGridConfig:
 
     Ermöglicht das Testen verschiedener Regime-Filter-Kombinationen im Grid-Search.
     Jede Kombination wird als separate Optimierung durchgeführt.
-    """
-    # ADX Grid: Liste von (enabled, min_value) Tupeln oder min_values
-    # z.B. [0, 15, 20, 25] - 0 bedeutet deaktiviert
-    adx_min: List[float] = field(default_factory=lambda: [20.0])
 
-    # VIX Grid: Liste von max_values (None = deaktiviert)
-    # z.B. [None, 20, 25, 30]
+    HINWEIS: Default ist [0] für adx_min = kein Filter aktiv.
+    ML soll selbst lernen, welche Marktbedingungen relevant sind.
+    """
+    # ADX Grid: Liste von min_values - 0 bedeutet deaktiviert (Default)
+    adx_min: List[float] = field(default_factory=lambda: [0.0])
+
+    # VIX Grid: Liste von max_values (None = deaktiviert, Default)
     vix_max: List[float] = field(default_factory=lambda: [None])
 
-    # Hurst Grid: Liste von (min, max) Tupeln oder Presets
-    # z.B. [None, {"min": 0.55}, {"max": 0.45}, {"min": 0.4, "max": 0.6}]
+    # Hurst Grid: Liste von (min, max) Dicts (None = deaktiviert, Default)
     hurst: List[Dict[str, float]] = field(default_factory=lambda: [None])
 
     @classmethod
@@ -36,8 +36,8 @@ class RegimeFilterGridConfig:
         if data is None:
             return cls()
 
-        # ADX: Kann Liste von Werten sein oder einzelner Wert
-        adx_raw = data.get("adx_min", [20.0])
+        # ADX: Kann Liste von Werten sein oder einzelner Wert (Default: 0 = kein Filter)
+        adx_raw = data.get("adx_min", [0.0])
         if not isinstance(adx_raw, list):
             adx_raw = [adx_raw]
 
@@ -299,20 +299,24 @@ class RegimeFilterParams:
     Regime-Filter bestimmen, wann Trading erlaubt ist basierend auf
     Marktbedingungen wie Trend-Stärke, Volatilität und Markt-Charakter.
 
+    HINWEIS: Defaults sind jetzt alle deaktiviert - ML soll selbst lernen,
+    welche Marktbedingungen relevant sind (via Features wie trend_adx_*,
+    macro_vix, regime_hurst_*).
+
     Hurst-Exponent Interpretation:
     - H > 0.5: Trending/Persistent (gut für Trend-Following)
     - H = 0.5: Random Walk (schwierig zu traden)
     - H < 0.5: Mean-Reverting (gut für Mean-Reversion Strategien)
     """
-    # ADX Filter (Trend-Stärke)
-    adx_enabled: bool = True
-    adx_min: float = 20.0  # Minimum ADX für Trading
+    # ADX Filter (Trend-Stärke) - Default: deaktiviert
+    adx_enabled: bool = False
+    adx_min: float = 0.0  # 0 = kein Filter
 
-    # VIX Filter (Markt-Volatilität)
+    # VIX Filter (Markt-Volatilität) - Default: deaktiviert
     vix_enabled: bool = False
-    vix_max: float = 25.0  # Maximum VIX für Trading
+    vix_max: float = None  # None = kein Filter
 
-    # Hurst Exponent Filter (Markt-Charakter)
+    # Hurst Exponent Filter (Markt-Charakter) - Default: deaktiviert
     hurst_enabled: bool = False
     hurst_min: float = None  # Minimum Hurst (None = kein Minimum)
     hurst_max: float = None  # Maximum Hurst (None = kein Maximum)
@@ -322,10 +326,10 @@ class RegimeFilterParams:
     def from_dict(cls, data: Dict[str, Any]) -> "RegimeFilterParams":
         """Erstellt RegimeFilterParams aus Dictionary."""
         return cls(
-            adx_enabled=data.get("adx_enabled", True),
-            adx_min=data.get("adx_min", 20.0),
+            adx_enabled=data.get("adx_enabled", False),
+            adx_min=data.get("adx_min", 0.0),
             vix_enabled=data.get("vix_enabled", False),
-            vix_max=data.get("vix_max", 25.0),
+            vix_max=data.get("vix_max"),
             hurst_enabled=data.get("hurst_enabled", False),
             hurst_min=data.get("hurst_min"),
             hurst_max=data.get("hurst_max"),

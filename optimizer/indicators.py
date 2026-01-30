@@ -2,6 +2,7 @@
 Technische Indikatoren für den Optimizer
 """
 import numpy as np
+import pandas as pd
 import ta
 from statsmodels.tsa.stattools import adfuller
 
@@ -717,8 +718,8 @@ def compute_regime_filter(df, vix_series=None, regime_params=None):
     Returns:
         Boolean Series (True = Trading erlaubt)
     """
-    # Default-Werte wenn keine Parameter übergeben
-    adx_min = ADX_MIN
+    # Default: Kein Filter aktiv (alle Trades erlaubt)
+    adx_min = 0
     vix_max = None
     hurst_min = None
     hurst_max = None
@@ -731,9 +732,13 @@ def compute_regime_filter(df, vix_series=None, regime_params=None):
             hurst_min = regime_params.hurst_min
             hurst_max = regime_params.hurst_max
 
-    # ADX Filter
-    adx_14 = df.get("trend_adx_14", ta.trend.adx(df["H"], df["L"], df["C"], window=14))
-    regime_ok = adx_14 >= adx_min
+    # ADX Filter (adx_min=0 bedeutet kein Filter)
+    if adx_min > 0:
+        adx_14 = df.get("trend_adx_14", ta.trend.adx(df["H"], df["L"], df["C"], window=14))
+        regime_ok = adx_14 >= adx_min
+    else:
+        # Kein ADX-Filter - alle Bars erlaubt
+        regime_ok = pd.Series(True, index=df.index)
 
     # VIX Filter
     if vix_max is not None and "sent_vix" in df.columns:

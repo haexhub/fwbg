@@ -15,10 +15,10 @@
     "normalize": false
   },
   "regime_filter": {
-    "adx_enabled": true,
-    "adx_min": 20,
+    "adx_enabled": false,
+    "adx_min": 0,
     "vix_enabled": false,
-    "vix_max": 25,
+    "vix_max": null,
     "hurst_enabled": false,
     "hurst_min": null,
     "hurst_max": null,
