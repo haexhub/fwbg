@@ -16,7 +16,6 @@ from .simulation_context import SimulationContext
 from .simulation import simulate_pro_trade
 from .plateau import select_plateau_features
 from .progress import report_progress
-from .config import RELEVANCE_THRESHOLD
 
 
 def simulate_trades_sequential(
@@ -223,7 +222,7 @@ def select_features_from_fold(
 
     plateau_features = select_plateau_features(
         importances.to_dict(), group_features,
-        top_n=5, min_importance=RELEVANCE_THRESHOLD
+        top_n=5, min_importance=0  # Kein Filter - XGBoost reguliert selbst
     )
 
     if len(plateau_features) >= 2:
