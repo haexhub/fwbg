@@ -154,13 +154,18 @@ def _create_incremental_plot(result, plots_path):
     drawdowns = eq_result["drawdowns"]
     max_dd = eq_result["max_drawdown"]
 
-    # Plot erstellen
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), height_ratios=[3, 1])
+    # Gewinn pro Trade berechnen (aus Equity-Kurve)
+    profit_per_trade = []
+    for i in range(1, len(eq)):
+        profit_per_trade.append(eq[i] - eq[i - 1])
+
+    # Plot erstellen - 3 Subplots
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 9), height_ratios=[3, 1, 1])
 
     ax1.plot(eq, color="blue", linewidth=1.5)
     ax1.fill_between(range(len(eq)), eq, alpha=0.3)
     ax1.set_yscale("log")
-    ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x)}" if x >= 1 else f"{x:.2f}"))
+    ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}".replace(",", ".")))
 
     ct_val = config.get("conf_thresh", 0)
     ax1.set_title(
@@ -173,8 +178,25 @@ def _create_incremental_plot(result, plots_path):
     ax2.fill_between(range(len(drawdowns)), drawdowns, color="red", alpha=0.5)
     ax2.set_ylabel("Drawdown (%)")
     ax2.set_ylim(max(drawdowns) * 1.1 if drawdowns else 1, 0)
-    ax2.set_xlabel("Trade #")
     ax2.grid(True, alpha=0.3)
+
+    # Profit per Trade als Bar-Chart (grün = Gewinn, rot = Verlust)
+    colors = ["green" if p > 0 else "red" for p in profit_per_trade]
+    ax3.bar(range(len(profit_per_trade)), profit_per_trade, color=colors, alpha=0.7, width=1.0)
+    ax3.axhline(y=0, color="black", linewidth=0.5)
+    if profit_per_trade:
+        wins = [p for p in profit_per_trade if p > 0]
+        losses = [p for p in profit_per_trade if p < 0]
+        if wins:
+            avg_win = sum(wins) / len(wins)
+            ax3.axhline(y=avg_win, color="green", linestyle="--", alpha=0.7, label=f"Ø Win: {avg_win:,.0f}")
+        if losses:
+            avg_loss = sum(losses) / len(losses)
+            ax3.axhline(y=avg_loss, color="red", linestyle="--", alpha=0.7, label=f"Ø Loss: {avg_loss:,.0f}")
+        ax3.legend(loc="upper right", fontsize=8)
+    ax3.set_xlabel("Trade #")
+    ax3.set_ylabel("Gewinn/Trade")
+    ax3.grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.savefig(f"{plots_path}/{sym}.png", dpi=100)
@@ -512,9 +534,8 @@ def run_optimizer(
         ax1.plot(eq, color="blue", linewidth=1.5)
         ax1.fill_between(range(len(eq)), eq, alpha=0.3)
         ax1.set_yscale("log")  # Logarithmische Y-Achse
-        # Formatiere Y-Achse als Integer (100, 200, 500, 1000, etc.) - KEINE scientific notation
-        ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x)}" if x >= 1 else f"{x:.2f}"))
-        ax1.ticklabel_format(style='plain', axis='y', useOffset=False)
+        # Formatiere Y-Achse als Integer (100, 200, 500, 1000, etc.)
+        ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x):,}".replace(",", ".")))
         # CT-Werte für Titel (separate oder gemeinsam)
         config = e.get("config", {})
         if config.get("separate_long_short") and config.get("ct_long") != config.get("ct_short"):
@@ -607,9 +628,12 @@ def run_optimizer(
         fold_stability = e.get("fold_stability", 0)
 
         # Erweiterte Profitabilitätsprüfung inkl. Monte Carlo
-        MIN_ANNUAL_RETURN = 10  # Mindestens 10%/Jahr
+        # Filter aus Strategy-Config oder Defaults
+        strat_filters = strategy_metadata.get("filters", {}) if strategy_metadata else {}
+        MIN_ANNUAL_RETURN = strat_filters.get("min_annual_return", 10)  # Default: 10%/Jahr
+        MIN_SHARPE = strat_filters.get("min_sharpe", 1.0)  # Default: 1.0
         is_profitable = (
-            sharpe >= 1.0
+            sharpe >= MIN_SHARPE
             and annual_return >= MIN_ANNUAL_RETURN
             and max_dd < 0.6
             and mc_stats.get("is_significant", False)

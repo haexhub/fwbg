@@ -3,8 +3,309 @@ Technische Indikatoren für den Optimizer
 """
 import numpy as np
 import ta
+from statsmodels.tsa.stattools import adfuller
 
 from .config import ADX_MIN
+
+
+def get_frac_diff_weights(d: float, size: int, threshold: float = 1e-4) -> np.ndarray:
+    """
+    Berechnet die Gewichte für Fractional Differentiation.
+
+    Args:
+        d: Differenzierungsordnung (0 < d < 1)
+        size: Maximale Anzahl der Gewichte
+        threshold: Abbruchschwelle für kleine Gewichte (höher = kürzeres Lookback)
+
+    Returns:
+        Array mit Gewichten (absteigend)
+    """
+    weights = [1.0]
+    for k in range(1, size):
+        w = -weights[-1] * (d - k + 1) / k
+        if abs(w) < threshold:
+            break
+        weights.append(w)
+    return np.array(weights[::-1])
+
+
+def frac_diff(series: np.ndarray, d: float, threshold: float = 1e-4) -> np.ndarray:
+    """
+    Wendet Fractional Differentiation auf eine Zeitreihe an.
+
+    Args:
+        series: Input-Zeitreihe
+        d: Differenzierungsordnung (0 < d < 1)
+        threshold: Abbruchschwelle für Gewichte (höher = weniger NaN)
+
+    Returns:
+        Fractionally differenzierte Serie (mit NaN am Anfang)
+    """
+    weights = get_frac_diff_weights(d, len(series), threshold)
+    width = len(weights)
+
+    result = np.full(len(series), np.nan)
+    for i in range(width - 1, len(series)):
+        result[i] = np.dot(weights, series[i - width + 1:i + 1])
+
+    return result
+
+
+def find_min_d_for_stationarity(series: np.ndarray,
+                                 max_d: float = 1.0,
+                                 p_value_threshold: float = 0.05,
+                                 step: float = 0.05) -> float:
+    """
+    Findet den minimalen d-Wert der Stationarität erreicht (ADF-Test).
+
+    Args:
+        series: Input-Zeitreihe (ohne NaN)
+        max_d: Maximaler d-Wert zum Testen
+        p_value_threshold: p-Wert Schwelle für Stationarität
+        step: Schrittgröße für d-Suche
+
+    Returns:
+        Optimaler d-Wert
+    """
+    # Entferne NaN für die Suche
+    series_clean = series[~np.isnan(series)]
+    if len(series_clean) < 100:
+        return 0.5  # Default wenn zu wenig Daten
+
+    for d in np.arange(step, max_d + step, step):
+        diff_series = frac_diff(series_clean, d)
+        # Entferne NaN vom Anfang
+        diff_clean = diff_series[~np.isnan(diff_series)]
+
+        if len(diff_clean) < 50:
+            continue
+
+        try:
+            adf_result = adfuller(diff_clean, maxlag=1)
+            p_value = adf_result[1]
+
+            if p_value < p_value_threshold:
+                return round(d, 2)
+        except Exception:
+            continue
+
+    return max_d  # Fallback auf volle Differenzierung
+
+
+def apply_frac_diff_preprocessing(df, use_auto_d=True, default_d=0.4):
+    """
+    Wendet Fractional Differentiation als Preprocessing auf OHLC-Daten an.
+    Transformiert die Preise zu stationären Werten bei Erhalt von Memory.
+
+    Nach López de Prado: Diese transformierten Daten sollten für alle
+    weiteren Indikator-Berechnungen verwendet werden.
+
+    Args:
+        df: DataFrame mit OHLC Daten
+        use_auto_d: Automatische d-Optimierung via ADF-Test
+        default_d: Standard d-Wert wenn auto_d=False
+
+    Returns:
+        Tuple (DataFrame mit transformierten OHLC, d-Wert)
+    """
+    # Speichere Original-Close für spätere Referenz
+    df["_original_close"] = df["C"].copy()
+
+    # Finde optimalen d-Wert basierend auf Close-Preis
+    if use_auto_d:
+        sample_size = min(5000, len(df))
+        sample = df["C"].values[-sample_size:]
+        d = find_min_d_for_stationarity(sample)
+    else:
+        d = default_d
+
+    # Transformiere OHLC
+    for col in ["O", "H", "L", "C"]:
+        if col in df.columns:
+            df[col] = frac_diff(df[col].values, d)
+
+    # Entferne NaN-Zeilen vom Anfang (Warmup-Periode)
+    first_valid = df["C"].first_valid_index()
+    if first_valid is not None:
+        df = df.loc[first_valid:]
+
+    return df, d
+
+
+def apply_log_returns_preprocessing(df):
+    """
+    Transformiert OHLC-Daten zu Log-Returns.
+
+    Log-Returns sind approximativ normalverteilt und additiv über Zeit,
+    was für ML-Modelle oft besser funktioniert.
+
+    Args:
+        df: DataFrame mit OHLC Daten
+
+    Returns:
+        DataFrame mit transformierten OHLC
+    """
+    # Speichere Original-Close für spätere Referenz
+    df["_original_close"] = df["C"].copy()
+
+    # Berechne Log-Returns für OHLC
+    for col in ["O", "H", "L", "C"]:
+        if col in df.columns:
+            df[col] = np.log(df[col] / df[col].shift(1))
+
+    # Erste Zeile hat NaN durch shift
+    df = df.iloc[1:]
+
+    return df
+
+
+def apply_normalize_preprocessing(df, window=100):
+    """
+    Normalisiert OHLC-Daten mit Rolling Z-Score.
+
+    Args:
+        df: DataFrame mit OHLC Daten
+        window: Rolling-Window für Mean/Std Berechnung
+
+    Returns:
+        DataFrame mit normalisierten OHLC
+    """
+    # Speichere Original-Close für spätere Referenz
+    if "_original_close" not in df.columns:
+        df["_original_close"] = df["C"].copy()
+
+    # Z-Score Normalisierung für OHLC
+    for col in ["O", "H", "L", "C"]:
+        if col in df.columns:
+            rolling_mean = df[col].rolling(window).mean()
+            rolling_std = df[col].rolling(window).std()
+            df[col] = (df[col] - rolling_mean) / (rolling_std + 1e-10)
+
+    # Entferne Warmup-Periode
+    df = df.iloc[window:]
+
+    return df
+
+
+def apply_preprocessing(df, preprocessing_params):
+    """
+    Wendet alle konfigurierten Preprocessing-Schritte auf OHLC-Daten an.
+
+    Reihenfolge:
+    1. Fractional Differentiation (falls aktiviert)
+    2. Log-Returns (falls aktiviert)
+    3. Normalisierung (falls aktiviert)
+
+    Args:
+        df: DataFrame mit OHLC Daten
+        preprocessing_params: PreprocessingParams Objekt
+
+    Returns:
+        Tuple (DataFrame, preprocessing_info dict)
+    """
+    info = {"applied": [], "frac_diff_d": None}
+
+    # 1. Fractional Differentiation
+    if preprocessing_params.fractional_differentiation:
+        df, d = apply_frac_diff_preprocessing(
+            df,
+            use_auto_d=preprocessing_params.frac_diff_auto_d,
+            default_d=preprocessing_params.frac_diff_default_d
+        )
+        info["applied"].append("fractional_differentiation")
+        info["frac_diff_d"] = d
+
+    # 2. Log-Returns
+    if preprocessing_params.log_returns:
+        df = apply_log_returns_preprocessing(df)
+        info["applied"].append("log_returns")
+
+    # 3. Normalisierung
+    if preprocessing_params.normalize:
+        df = apply_normalize_preprocessing(df, preprocessing_params.normalize_window)
+        info["applied"].append(f"normalize_{preprocessing_params.normalize_window}")
+
+    return df, info
+
+
+def _compute_fft_features(df, window: int):
+    """
+    Berechnet FFT-basierte Features für einen Rolling-Window.
+
+    Extrahiert aus dem Frequenzspektrum:
+    - Dominante Frequenz (Hauptzyklus)
+    - Spektrale Energie (Gesamtstärke der Zyklen)
+    - Spektrale Entropie (Verteilung der Energie über Frequenzen)
+
+    Args:
+        df: DataFrame mit Close-Preisen
+        window: Fenstergröße für FFT (sollte Potenz von 2 sein)
+
+    Returns:
+        DataFrame mit zusätzlichen FFT-Features
+    """
+    close = df["C"].values
+    n = len(close)
+
+    # Initialisiere Arrays für Features
+    dominant_freq = np.full(n, np.nan)
+    dominant_power = np.full(n, np.nan)
+    spectral_energy = np.full(n, np.nan)
+    spectral_entropy = np.full(n, np.nan)
+    low_freq_ratio = np.full(n, np.nan)
+
+    for i in range(window, n):
+        # Fenster extrahieren und detrenden (Mittelwert entfernen)
+        segment = close[i - window:i]
+        segment_detrended = segment - np.mean(segment)
+
+        # Hanning Window anwenden (reduziert Spectral Leakage)
+        windowed = segment_detrended * np.hanning(window)
+
+        # FFT berechnen
+        fft_result = np.fft.rfft(windowed)
+        freqs = np.fft.rfftfreq(window)
+
+        # Power Spectrum (Magnitude squared)
+        power = np.abs(fft_result) ** 2
+
+        # Ignoriere DC-Komponente (Index 0)
+        power_no_dc = power[1:]
+        freqs_no_dc = freqs[1:]
+
+        if len(power_no_dc) == 0 or np.sum(power_no_dc) < 1e-10:
+            continue
+
+        # 1. Dominante Frequenz (Index der maximalen Power)
+        dom_idx = np.argmax(power_no_dc)
+        dominant_freq[i] = freqs_no_dc[dom_idx]
+        dominant_power[i] = power_no_dc[dom_idx] / (np.sum(power_no_dc) + 1e-10)
+
+        # 2. Spektrale Energie (normalisiert)
+        spectral_energy[i] = np.log1p(np.sum(power_no_dc))
+
+        # 3. Spektrale Entropie (Maß für Verteilung der Energie)
+        # Hohe Entropie = gleichmäßig verteilt (Rauschen)
+        # Niedrige Entropie = konzentriert auf wenige Frequenzen (klare Zyklen)
+        power_norm = power_no_dc / (np.sum(power_no_dc) + 1e-10)
+        power_norm = power_norm[power_norm > 1e-10]  # Vermeide log(0)
+        spectral_entropy[i] = -np.sum(power_norm * np.log(power_norm))
+
+        # 4. Low-Frequency Ratio (Anteil der Energie in niedrigen Frequenzen)
+        # Niedrige Frequenzen = langfristige Trends
+        cutoff = len(power_no_dc) // 4
+        if cutoff > 0:
+            low_freq_ratio[i] = np.sum(power_no_dc[:cutoff]) / (np.sum(power_no_dc) + 1e-10)
+
+    # Features zum DataFrame hinzufügen
+    suffix = f"_{window}"
+    df[f"fft_dom_freq{suffix}"] = dominant_freq
+    df[f"fft_dom_power{suffix}"] = dominant_power
+    df[f"fft_energy{suffix}"] = spectral_energy
+    df[f"fft_entropy{suffix}"] = spectral_entropy
+    df[f"fft_lowfreq{suffix}"] = low_freq_ratio
+
+    return df
 
 
 def compute_indicator_pool(df):
@@ -37,6 +338,21 @@ def compute_indicator_pool(df):
     aroon = ta.trend.AroonIndicator(df["H"], df["L"], window=25)
     df["trend_aroon_up"] = aroon.aroon_up()
     df["trend_aroon_down"] = aroon.aroon_down()
+
+    # === KAUFMAN'S EFFICIENCY RATIO ===
+    # ER = |Change| / Sum(|Daily Changes|)
+    # ER nahe 1 = starker Trend, ER nahe 0 = Seitwärtsbewegung/Noise
+    for period in [10, 20, 50]:
+        # Netto-Bewegung (Richtung)
+        change = abs(df["C"] - df["C"].shift(period))
+        # Summe aller absoluten Tagesbewegungen (Volatilität/Noise)
+        volatility = abs(df["C"].diff()).rolling(period).sum()
+        # Efficiency Ratio
+        df[f"trend_er_{period}"] = change / (volatility + 1e-10)
+
+    # ER Change (Momentum des ER selbst)
+    df["trend_er_10_chg"] = df["trend_er_10"] - df["trend_er_10"].shift(5)
+    df["trend_er_20_chg"] = df["trend_er_20"] - df["trend_er_20"].shift(10)
 
     # === MOMENTUM INDIKATOREN ===
     for period in [7, 14, 21]:
@@ -74,6 +390,39 @@ def compute_indicator_pool(df):
         df[f"vol_atr_pct_{period}"] = atr / df["C"]
 
     df["vol_atr"] = df["_atr"]
+
+    # === DISTRIBUTION FEATURES (Skewness & Kurtosis) ===
+    # Rolling Returns für Verteilungs-Analyse
+    returns = df["C"].pct_change()
+
+    for period in [20, 50, 100]:
+        # Rolling Skewness: Asymmetrie der Return-Verteilung
+        # Positiv = mehr positive Ausreisser, Negativ = mehr negative Ausreisser
+        df[f"dist_skew_{period}"] = returns.rolling(period).skew()
+
+        # Rolling Kurtosis: Schwere der Tails
+        # Hoch = Fat Tails (mehr Extremereignisse), Niedrig = dünne Tails
+        df[f"dist_kurt_{period}"] = returns.rolling(period).kurt()
+
+    # Normalisierte Versionen (z-Score über längere Periode)
+    for period in [20, 50]:
+        skew_col = f"dist_skew_{period}"
+        kurt_col = f"dist_kurt_{period}"
+
+        # Z-Score der Skewness/Kurtosis relativ zur Historie
+        df[f"dist_skew_{period}_z"] = (
+            (df[skew_col] - df[skew_col].rolling(200).mean()) /
+            (df[skew_col].rolling(200).std() + 1e-10)
+        )
+        df[f"dist_kurt_{period}_z"] = (
+            (df[kurt_col] - df[kurt_col].rolling(200).mean()) /
+            (df[kurt_col].rolling(200).std() + 1e-10)
+        )
+
+    # === FFT (FAST FOURIER TRANSFORMATION) FEATURES ===
+    # Extrahiert dominante Frequenzen/Zyklen aus der Preisbewegung
+    for window in [64, 128, 256]:
+        df = _compute_fft_features(df, window)
 
     # === VOLUME INDIKATOREN ===
     if "V" in df.columns or "Volume" in df.columns:
@@ -238,17 +587,156 @@ def filter_features_by_group(all_features, group_name):
     return filtered
 
 
-def compute_regime_filter(df, vix_series=None):
+def compute_hurst_exponent(series: np.ndarray, max_lag: int = 100) -> float:
     """
-    Berechnet Regime-Filter basierend auf ADX und optional VIX.
-    Returns: Boolean Series (True = Trading erlaubt)
-    """
-    adx_14 = df.get("trend_adx_14", ta.trend.adx(df["H"], df["L"], df["C"], window=14))
-    adx_ok = adx_14 >= ADX_MIN
+    Berechnet den Hurst-Exponenten mittels R/S (Rescaled Range) Analyse.
 
-    if vix_series is not None and "sent_vix" in df.columns:
+    Interpretation:
+    - H > 0.5: Trending/Persistent (gute Bedingungen für Trend-Following)
+    - H = 0.5: Random Walk (schwierig zu traden)
+    - H < 0.5: Mean-Reverting (gute Bedingungen für Mean-Reversion)
+
+    Args:
+        series: Preis-Zeitreihe
+        max_lag: Maximale Lag-Größe für R/S Analyse
+
+    Returns:
+        Hurst-Exponent (0-1)
+    """
+    if len(series) < max_lag * 2:
+        return 0.5  # Default bei zu wenig Daten
+
+    # Verwende Log-Returns für bessere Skalierung
+    returns = np.diff(np.log(series + 1e-10))
+    returns = returns[~np.isnan(returns)]
+
+    if len(returns) < max_lag:
+        return 0.5
+
+    lags = range(10, min(max_lag, len(returns) // 4))
+    rs_values = []
+    lag_values = []
+
+    for lag in lags:
+        # Teile Serie in Subseries
+        n_subseries = len(returns) // lag
+        if n_subseries < 2:
+            continue
+
+        rs_lag = []
+        for i in range(n_subseries):
+            subseries = returns[i * lag:(i + 1) * lag]
+            if len(subseries) < 2:
+                continue
+
+            # Berechne kumulative Abweichung vom Mittelwert
+            mean_val = np.mean(subseries)
+            cumdev = np.cumsum(subseries - mean_val)
+
+            # Range und Standardabweichung
+            r = np.max(cumdev) - np.min(cumdev)
+            s = np.std(subseries, ddof=1)
+
+            if s > 1e-10:
+                rs_lag.append(r / s)
+
+        if rs_lag:
+            rs_values.append(np.mean(rs_lag))
+            lag_values.append(lag)
+
+    if len(lag_values) < 3:
+        return 0.5
+
+    # Log-Log Regression für Hurst
+    log_lags = np.log(lag_values)
+    log_rs = np.log(rs_values)
+
+    # Lineare Regression
+    slope, _ = np.polyfit(log_lags, log_rs, 1)
+
+    # Hurst = Slope, begrenzt auf [0, 1]
+    return float(np.clip(slope, 0.0, 1.0))
+
+
+def compute_rolling_hurst(series: np.ndarray, window: int = 100, step: int = 10) -> np.ndarray:
+    """
+    Berechnet Rolling Hurst-Exponent.
+
+    Args:
+        series: Preis-Zeitreihe
+        window: Fenstergröße für Hurst-Berechnung
+        step: Schrittgröße für effizientere Berechnung
+
+    Returns:
+        Array mit Hurst-Werten (NaN am Anfang)
+    """
+    result = np.full(len(series), np.nan)
+
+    for i in range(window, len(series), step):
+        window_data = series[i - window:i]
+        h = compute_hurst_exponent(window_data, max_lag=min(50, window // 4))
+
+        # Fülle alle Werte bis zum nächsten Step
+        end_idx = min(i + step, len(series))
+        result[i:end_idx] = h
+
+    # Forward-fill für Lücken
+    for i in range(1, len(result)):
+        if np.isnan(result[i]) and not np.isnan(result[i - 1]):
+            result[i] = result[i - 1]
+
+    return result
+
+
+def compute_regime_filter(df, vix_series=None, regime_params=None):
+    """
+    Berechnet Regime-Filter basierend auf konfigurierbaren Bedingungen.
+
+    Args:
+        df: DataFrame mit Indikatoren
+        vix_series: Optional VIX-Daten
+        regime_params: Optional RegimeFilterParams mit Konfiguration
+
+    Returns:
+        Boolean Series (True = Trading erlaubt)
+    """
+    # Default-Werte wenn keine Parameter übergeben
+    adx_min = ADX_MIN
+    vix_max = None
+    hurst_min = None
+    hurst_max = None
+
+    if regime_params is not None:
+        adx_min = regime_params.adx_min if regime_params.adx_enabled else 0
+        if regime_params.vix_enabled:
+            vix_max = regime_params.vix_max
+        if regime_params.hurst_enabled:
+            hurst_min = regime_params.hurst_min
+            hurst_max = regime_params.hurst_max
+
+    # ADX Filter
+    adx_14 = df.get("trend_adx_14", ta.trend.adx(df["H"], df["L"], df["C"], window=14))
+    regime_ok = adx_14 >= adx_min
+
+    # VIX Filter
+    if vix_max is not None and "sent_vix" in df.columns:
+        vix_ok = df["sent_vix"] < vix_max
+        regime_ok = regime_ok & vix_ok
+    elif vix_series is not None and "sent_vix" in df.columns:
         from .config import VIX_HIGH
         vix_ok = df["sent_vix"] < VIX_HIGH
-        return adx_ok & vix_ok
+        regime_ok = regime_ok & vix_ok
 
-    return adx_ok
+    # Hurst Filter
+    if hurst_min is not None or hurst_max is not None:
+        if "_hurst" not in df.columns:
+            # Berechne Hurst wenn nicht vorhanden
+            close_values = df["C"].values if "_original_close" not in df.columns else df["_original_close"].values
+            df["_hurst"] = compute_rolling_hurst(close_values, window=100, step=10)
+
+        if hurst_min is not None:
+            regime_ok = regime_ok & (df["_hurst"] >= hurst_min)
+        if hurst_max is not None:
+            regime_ok = regime_ok & (df["_hurst"] <= hurst_max)
+
+    return regime_ok

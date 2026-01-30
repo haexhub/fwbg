@@ -10,11 +10,14 @@ from .config import (
     DATA_PATH, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
     OOS_SIZE, tf_cfg, MIN_TRADES, WALK_FORWARD_FOLDS
 )
-from .strategy_config import StrategyConfig
+from .strategy_config import StrategyConfig, RegimeFilterParams
 from .asset_config import get_asset
 from .simulation_context import SimulationContext
 from .data_loader import load_data_aligned, load_macro_csv
-from .indicators import compute_indicator_pool, get_feature_columns, compute_regime_filter, filter_features_by_group
+from .indicators import (
+    compute_indicator_pool, get_feature_columns, compute_regime_filter,
+    filter_features_by_group, apply_preprocessing
+)
 from .simulation import (
     calculate_sharpe_ratio, calculate_calmar_ratio,
     monte_carlo_permutation_test, monte_carlo_equity_simulation,
@@ -184,6 +187,17 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         log(3, f"Abgeleitete Features berechnet ({time.time()-t0:.1f}s)", sym)
 
+        # === PREPROCESSING (optional) ===
+        preprocessing_info = None
+        if strategy.preprocessing.has_any:
+            t0 = time.time()
+            rows_before = len(df)
+            df, preprocessing_info = apply_preprocessing(df, strategy.preprocessing)
+            log(2, f"Preprocessing: {preprocessing_info['applied']} ({rows_before} -> {len(df)} Zeilen, {time.time()-t0:.1f}s)", sym)
+
+            if preprocessing_info.get("frac_diff_d"):
+                log(3, f"  Frac Diff d={preprocessing_info['frac_diff_d']}", sym)
+
         t0 = time.time()
         df = compute_indicator_pool(df).dropna()
         log(2, f"Indikatoren berechnet: {len(df)} Zeilen nach dropna ({time.time()-t0:.1f}s)", sym)
@@ -192,10 +206,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(1, f"SKIP - Zu wenig Daten nach dropna ({len(df)} < {MIN_TRADES * 2})", sym)
             return {"symbol": sym, "status": "insufficient_data", "rows": len(df)}
 
-        # Regime-Filter berechnen
-        has_vix = "sent_vix" in df.columns
-        df["_regime_ok"] = compute_regime_filter(df, has_vix)
-
+        # Feature-Pool vorbereiten (unabhängig von Regime-Filter)
         full_pool = get_feature_columns(df)
         log(2, f"Feature-Pool: {len(full_pool)} Features", sym)
 
@@ -235,8 +246,15 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # Feature-Gruppen aus Strategy-Config
         feature_groups_to_test = ctx.feature_groups
-        total_combos = ctx.total_grid_combinations()
-        log(1, f"Grid-Search: {len(feature_groups_to_test)} Feature-Gruppen x {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} = {total_combos} Kombinationen", sym)
+
+        # Regime-Filter Kombinationen aus Grid (falls definiert)
+        regime_filter_combinations = grid.regime_filter_grid.get_combinations()
+        n_regime_combos = len(regime_filter_combinations)
+
+        # Berechne Gesamtzahl der Kombinationen inkl. Regime-Filter
+        base_combos = ctx.total_grid_combinations()
+        total_combos = base_combos * n_regime_combos
+        log(1, f"Grid-Search: {len(feature_groups_to_test)} FG x {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} x {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
         if ctx.min_rrr > 0:
             log(1, f"Min RRR Filter: {ctx.min_rrr} (Scalping-Strategien mit RRR < {ctx.min_rrr} werden gefiltert)", sym)
 
@@ -249,88 +267,128 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         log(1, f"Nested CV: {len(inner_df)} Inner / {len(holdout_df)} Holdout (nie gesehen während Grid-Search)", sym)
 
-        # Äußere Schleife: Feature-Gruppen
-        for fg_idx, feature_group in enumerate(feature_groups_to_test):
-            # Filtere Features nach Gruppe
-            group_features = filter_features_by_group(full_pool, feature_group)
+        has_vix = "sent_vix" in df.columns
 
-            if len(group_features) < 3:
-                log(2, f"  Feature-Gruppe '{feature_group}': nur {len(group_features)} Features - übersprungen", sym)
-                continue
+        # === ÄUSSERSTE SCHLEIFE: Regime-Filter Kombinationen ===
+        for rf_idx, regime_config in enumerate(regime_filter_combinations):
+            # Erstelle RegimeFilterParams aus Kombination
+            regime_params = RegimeFilterParams.from_dict(regime_config)
 
-            log(1, f"Feature-Gruppe {fg_idx+1}/{len(feature_groups_to_test)}: {feature_group} ({len(group_features)} Features)", sym)
+            # Berechne _regime_ok für diese Kombination
+            df["_regime_ok"] = compute_regime_filter(df, has_vix, regime_params)
 
-            grid_count = 0
-            grid_per_fg = ctx.grid_combinations_per_feature_group()
-            total_grid_combos = ctx.total_grid_combinations()
-            grid_offset = fg_idx * grid_per_fg
+            # Update inner_folds mit neuem regime_ok
+            # inner_folds ist eine Liste von (train_df, val_df) Tupeln
+            for train_df_fold, val_df_fold in inner_folds:
+                train_df_fold["_regime_ok"] = df.loc[train_df_fold.index, "_regime_ok"]
+                val_df_fold["_regime_ok"] = df.loc[val_df_fold.index, "_regime_ok"]
+            holdout_df["_regime_ok"] = df.loc[holdout_df.index, "_regime_ok"]
+            inner_df["_regime_ok"] = df.loc[inner_df.index, "_regime_ok"]
 
-            # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
-            timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
+            # Log Regime-Filter Info
+            regime_desc = []
+            if regime_params.adx_enabled:
+                regime_desc.append(f"ADX>={regime_params.adx_min}")
+            if regime_params.vix_enabled:
+                regime_desc.append(f"VIX<={regime_params.vix_max}")
+            if regime_params.hurst_enabled:
+                hurst_parts = []
+                if regime_params.hurst_min is not None:
+                    hurst_parts.append(f"H>={regime_params.hurst_min}")
+                if regime_params.hurst_max is not None:
+                    hurst_parts.append(f"H<={regime_params.hurst_max}")
+                regime_desc.append(" & ".join(hurst_parts) if hurst_parts else "Hurst")
+            regime_str = " + ".join(regime_desc) if regime_desc else "No Filter"
 
-            for tp in grid.tp:
-                for sl in grid.sl:
-                    for timeout_bars in timeout_values:
-                        grid_count += 1
-                        global_grid_pos = grid_offset + grid_count
+            if n_regime_combos > 1:
+                log(1, f"Regime {rf_idx+1}/{n_regime_combos}: {regime_str}", sym)
 
-                        # RRR-Filter: Überspringe Kombinationen mit zu niedrigem RRR
-                        rrr = tp / sl
-                        if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                            log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
-                            continue
+            # Innere Schleife: Feature-Gruppen
+            for fg_idx, feature_group in enumerate(feature_groups_to_test):
+                # Filtere Features nach Gruppe
+                group_features = filter_features_by_group(full_pool, feature_group)
 
-                        timeout_str = f", TO={timeout_bars}" if timeout_bars else ""
-                        log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}, RRR={rrr:.2f}{timeout_str})", sym)
+                if len(group_features) < 3:
+                    log(2, f"  Feature-Gruppe '{feature_group}': nur {len(group_features)} Features - übersprungen", sym)
+                    continue
 
-                        # === INNER CV: Grid-Search auf Inner Folds ===
-                        inner_result = run_inner_cv(
-                            inner_folds, group_features, tp, sl, ctx,
-                            global_grid_pos, total_grid_combos,
-                            timeout_bars=timeout_bars
-                        )
+                log(1, f"Feature-Gruppe {fg_idx+1}/{len(feature_groups_to_test)}: {feature_group} ({len(group_features)} Features)", sym)
 
-                        if not inner_result["success"]:
-                            continue
+                grid_count = 0
+                grid_per_fg = ctx.grid_combinations_per_feature_group()
+                total_grid_combos = ctx.total_grid_combinations()
+                grid_offset = fg_idx * grid_per_fg
 
-                        # Kandidat speichern (noch OHNE Holdout-Evaluation!)
-                        candidate = {
-                            "inner_val_pnl": inner_result["avg_val_pnl"],
-                            "params": (tp, sl, inner_result["best_ct"]),
-                            "timeout_bars": timeout_bars,  # Time-based Exit
-                            "feats": inner_result["selected_features"],
-                            "feature_group": feature_group,
-                            "rrr": rrr,
-                            "selected_features_long": inner_result["selected_features_long"],
-                            "selected_features_short": inner_result["selected_features_short"],
-                            "fold_stability": inner_result.get("fold_stability", 0),
-                        }
+                # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
+                timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
 
-                        # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
-                        if ctx.separate_long_short and "ct_long" in inner_result:
-                            candidate["ct_long"] = inner_result["ct_long"]
-                            candidate["ct_short"] = inner_result["ct_short"]
+                for tp in grid.tp:
+                    for sl in grid.sl:
+                        for timeout_bars in timeout_values:
+                            grid_count += 1
+                            global_grid_pos = grid_offset + grid_count
 
-                        candidates.append(candidate)
+                            # RRR-Filter: Überspringe Kombinationen mit zu niedrigem RRR
+                            rrr = tp / sl
+                            if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
+                                log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                                continue
 
-                        # Grid-Result mit CT (kann Tuple sein)
-                        conf_thresh = inner_result["best_ct"]
-                        grid_result = {
-                            "feature_group": feature_group,
-                            "tp_mult": tp,
-                            "sl_mult": sl,
-                            "timeout_bars": timeout_bars,
-                            "conf_thresh": conf_thresh,
-                            "rrr": rrr,
-                            "inner_val_pnl": inner_result["avg_val_pnl"],
-                            "fold_stability": inner_result.get("fold_stability", 0),
-                            "features": inner_result["selected_features"],
-                        }
-                        # Bei separater Optimierung: CTs aufschlüsseln für Grid-Results
-                        if isinstance(conf_thresh, tuple):
-                            grid_result["ct_long"] = conf_thresh[0]
-                            grid_result["ct_short"] = conf_thresh[1]
-                    all_grid_results.append(grid_result)
+                            timeout_str = f", TO={timeout_bars}" if timeout_bars else ""
+                            log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}, RRR={rrr:.2f}{timeout_str})", sym)
+
+                            # === INNER CV: Grid-Search auf Inner Folds ===
+                            inner_result = run_inner_cv(
+                                inner_folds, group_features, tp, sl, ctx,
+                                global_grid_pos, total_grid_combos,
+                                timeout_bars=timeout_bars
+                            )
+
+                            if not inner_result["success"]:
+                                continue
+
+                            # Kandidat speichern (noch OHNE Holdout-Evaluation!)
+                            candidate = {
+                                "inner_val_pnl": inner_result["avg_val_pnl"],
+                                "params": (tp, sl, inner_result["best_ct"]),
+                                "timeout_bars": timeout_bars,  # Time-based Exit
+                                "feats": inner_result["selected_features"],
+                                "feature_group": feature_group,
+                                "rrr": rrr,
+                                "selected_features_long": inner_result["selected_features_long"],
+                                "selected_features_short": inner_result["selected_features_short"],
+                                "fold_stability": inner_result.get("fold_stability", 0),
+                                # Regime-Filter Config für diesen Kandidaten
+                                "regime_filter": regime_config,
+                            }
+
+                            # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
+                            if ctx.separate_long_short and "ct_long" in inner_result:
+                                candidate["ct_long"] = inner_result["ct_long"]
+                                candidate["ct_short"] = inner_result["ct_short"]
+
+                            candidates.append(candidate)
+
+                            # Grid-Result mit CT (kann Tuple sein)
+                            conf_thresh = inner_result["best_ct"]
+                            grid_result = {
+                                "feature_group": feature_group,
+                                "tp_mult": tp,
+                                "sl_mult": sl,
+                                "timeout_bars": timeout_bars,
+                                "conf_thresh": conf_thresh,
+                                "rrr": rrr,
+                                "inner_val_pnl": inner_result["avg_val_pnl"],
+                                "fold_stability": inner_result.get("fold_stability", 0),
+                                "features": inner_result["selected_features"],
+                                # Regime-Filter Config
+                                "regime_filter": regime_config,
+                            }
+                            # Bei separater Optimierung: CTs aufschlüsseln für Grid-Results
+                            if isinstance(conf_thresh, tuple):
+                                grid_result["ct_long"] = conf_thresh[0]
+                                grid_result["ct_short"] = conf_thresh[1]
+                            all_grid_results.append(grid_result)
 
         log(2, f"Inner CV fertig: {len(candidates)} Kandidaten ({time.time()-t_start:.1f}s)", sym)
 
@@ -603,6 +661,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     "scale_factor": kelly_adjustment["scale_factor"],
                     "target_dd": 0.30,
                 },
+                # Regime-Filter (optimaler aus Grid-Search)
+                "regime_filter": b.get("regime_filter", {}),
             },
             "tr_trace": b["tr"],
             "trades_detailed": b.get("trades_detailed", []),  # Volle Trade-Details mit Zeiten, Preisen etc.
@@ -636,6 +696,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "holdout_pnl": holdout_result["pnl"],
                 "fold_stability": b.get("fold_stability", 0),
             },
+            # Optimaler Regime-Filter (vom Grid-Search gefunden)
+            "regime_filter": b.get("regime_filter", {}),
         }
 
         # Bei separater L/S Optimierung: Statistiken pro Richtung hinzufügen
