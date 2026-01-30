@@ -549,6 +549,23 @@ def compute_indicator_pool(df):
         (np.sign(h4_trend) == np.sign(d1_trend))
     ).astype(int)
 
+    # === REGIME FEATURES (Markt-Charakter) ===
+    # Hurst-Exponent: H > 0.5 = trending, H < 0.5 = mean-reverting, H = 0.5 = random
+    # Verwende Original-Close falls Frac-Diff aktiv (sonst sind Preise transformiert)
+    close_for_hurst = df["_original_close"].values if "_original_close" in df.columns else df["C"].values
+
+    # Mehrere Fenstergrößen für unterschiedliche Zeitskalen
+    for window in [100, 200, 500]:
+        hurst_values = compute_rolling_hurst(close_for_hurst, window=window, step=10)
+        df[f"regime_hurst_{window}"] = hurst_values
+
+    # Hurst-Änderung (Regime-Shift Detektion)
+    df["regime_hurst_100_chg"] = df["regime_hurst_100"] - df["regime_hurst_100"].shift(24)
+    df["regime_hurst_200_chg"] = df["regime_hurst_200"] - df["regime_hurst_200"].shift(48)
+
+    # Hurst Divergenz zwischen Zeitskalen (kurzfristig vs langfristig)
+    df["regime_hurst_divergence"] = df["regime_hurst_100"] - df["regime_hurst_500"]
+
     return df
 
 
