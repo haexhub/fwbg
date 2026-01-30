@@ -6,8 +6,6 @@ import pandas as pd
 import ta
 from statsmodels.tsa.stattools import adfuller
 
-from .config import ADX_MIN
-
 
 def get_frac_diff_weights(d: float, size: int, threshold: float = 1e-4) -> np.ndarray:
     """
@@ -706,13 +704,12 @@ def compute_rolling_hurst(series: np.ndarray, window: int = 100, step: int = 10)
     return result
 
 
-def compute_regime_filter(df, vix_series=None, regime_params=None):
+def compute_regime_filter(df, regime_params=None):
     """
     Berechnet Regime-Filter basierend auf konfigurierbaren Bedingungen.
 
     Args:
         df: DataFrame mit Indikatoren
-        vix_series: Optional VIX-Daten
         regime_params: Optional RegimeFilterParams mit Konfiguration
 
     Returns:
@@ -740,13 +737,9 @@ def compute_regime_filter(df, vix_series=None, regime_params=None):
         # Kein ADX-Filter - alle Bars erlaubt
         regime_ok = pd.Series(True, index=df.index)
 
-    # VIX Filter
+    # VIX Filter (nur wenn explizit konfiguriert)
     if vix_max is not None and "sent_vix" in df.columns:
         vix_ok = df["sent_vix"] < vix_max
-        regime_ok = regime_ok & vix_ok
-    elif vix_series is not None and "sent_vix" in df.columns:
-        from .config import VIX_HIGH
-        vix_ok = df["sent_vix"] < VIX_HIGH
         regime_ok = regime_ok & vix_ok
 
     # Hurst Filter

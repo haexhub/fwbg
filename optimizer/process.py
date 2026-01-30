@@ -267,15 +267,13 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         log(1, f"Nested CV: {len(inner_df)} Inner / {len(holdout_df)} Holdout (nie gesehen während Grid-Search)", sym)
 
-        has_vix = "sent_vix" in df.columns
-
         # === ÄUSSERSTE SCHLEIFE: Regime-Filter Kombinationen ===
         for rf_idx, regime_config in enumerate(regime_filter_combinations):
             # Erstelle RegimeFilterParams aus Kombination
             regime_params = RegimeFilterParams.from_dict(regime_config)
 
             # Berechne _regime_ok für diese Kombination
-            df["_regime_ok"] = compute_regime_filter(df, has_vix, regime_params)
+            df["_regime_ok"] = compute_regime_filter(df, regime_params)
 
             # Update inner_folds mit neuem regime_ok
             # inner_folds ist eine Liste von (train_df, val_df) Tupeln

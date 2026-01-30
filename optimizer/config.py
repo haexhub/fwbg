@@ -34,9 +34,6 @@ WINDOW_SIZE = tf_cfg["window_size"]
 OOS_SIZE = tf_cfg["oos_size"]
 WALK_FORWARD_FOLDS = 8
 
-# Regime-Filter Thresholds
-VIX_HIGH = 25
-ADX_MIN = 20
 
 # Asset-Klassifizierung und Spread-Kosten
 # Spreads from IG Demo Account (Jan 2026)
