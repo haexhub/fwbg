@@ -381,6 +381,55 @@ class PreprocessingParams:
 
 
 @dataclass
+class ResourceParams:
+    """Parameter für Ressourcen-Limits bei paralleler Feature-Group-Verarbeitung.
+
+    Diese Werte steuern, wie viele Feature-Groups parallel verarbeitet werden
+    können, basierend auf verfügbarem RAM und CPU.
+
+    Die Defaults sind eher aggressiv, da Feature-Group-Threads sich viele Daten
+    teilen (Copy-on-Write) und einzelne Threads nicht sehr RAM-intensiv sind.
+    """
+    # RAM pro Feature-Group-Thread in GB (typisch: 0.5-1.5GB)
+    # Niedrigerer Wert = mehr parallele Threads
+    ram_per_feature_group_gb: float = 0.5
+
+    # CPU-Kerne pro Feature-Group-Thread (typisch: 0.5-1.0)
+    # Niedrigerer Wert = mehr parallele Threads (gut für I/O-bound tasks)
+    cpu_per_feature_group: float = 0.5
+
+    # Mindestens X% RAM frei halten (0.0-1.0)
+    # Niedrigerer Wert = mehr RAM für Threads verfügbar
+    min_free_ram_percent: float = 0.15
+
+    # Maximal X% der CPU-Kerne nutzen (0.0-1.0)
+    # Höherer Wert = mehr CPU-Kerne verfügbar
+    max_cpu_percent: float = 0.90
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ResourceParams":
+        """Erstellt ResourceParams aus Dictionary."""
+        if data is None:
+            return cls()
+
+        # Normalisiere Prozent-Werte: 80 -> 0.80, 0.80 -> 0.80
+        min_free_ram = data.get("min_free_ram_percent", 0.20)
+        if min_free_ram > 1:
+            min_free_ram = min_free_ram / 100
+
+        max_cpu = data.get("max_cpu_percent", 0.80)
+        if max_cpu > 1:
+            max_cpu = max_cpu / 100
+
+        return cls(
+            ram_per_feature_group_gb=data.get("ram_per_feature_group_gb", 1.0),
+            cpu_per_feature_group=data.get("cpu_per_feature_group", 1.0),
+            min_free_ram_percent=min_free_ram,
+            max_cpu_percent=max_cpu,
+        )
+
+
+@dataclass
 class FeatureParams:
     """Parameter für Feature-Auswahl.
 
@@ -438,6 +487,7 @@ class StrategyConfig:
     features: FeatureParams = field(default_factory=FeatureParams)
     preprocessing: PreprocessingParams = field(default_factory=PreprocessingParams)
     regime_filter: RegimeFilterParams = field(default_factory=RegimeFilterParams)
+    resources: ResourceParams = field(default_factory=ResourceParams)
 
     # Metadata
     hypothesis: str = ""
@@ -471,6 +521,7 @@ class StrategyConfig:
             features=FeatureParams.from_dict(data.get("features", {})),
             preprocessing=PreprocessingParams.from_dict(data.get("preprocessing", {})),
             regime_filter=RegimeFilterParams.from_dict(data.get("regime_filter", {})),
+            resources=ResourceParams.from_dict(data.get("resources")),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
             notes=data.get("notes", ""),

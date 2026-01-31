@@ -18,6 +18,24 @@ from .logging_utils import set_progress_ui_active
 # Globale Queue für Worker-Updates (wird in main.py initialisiert)
 _progress_queue: Optional[Queue] = None
 
+# Thread-lokale Daten für parallele Feature-Group-Verarbeitung
+_thread_local = threading.local()
+
+
+def set_parallel_mode(enabled: bool):
+    """
+    Aktiviert/Deaktiviert den Parallel-Modus für Feature-Group-Threads.
+
+    Im Parallel-Modus werden Progress-Updates unterdrückt, um Chaos
+    in der Progress-Bar zu vermeiden wenn mehrere Threads gleichzeitig laufen.
+    """
+    _thread_local.parallel_mode = enabled
+
+
+def is_parallel_mode() -> bool:
+    """Prüft ob der aktuelle Thread im Parallel-Modus läuft."""
+    return getattr(_thread_local, 'parallel_mode', False)
+
 
 def init_progress_queue() -> Queue:
     """Erstellt eine neue Progress-Queue."""
@@ -56,6 +74,11 @@ def report_progress(
         grid_pos: Aktuelle Grid-Position (1-basiert)
         grid_total: Gesamtzahl der Grid-Kombinationen
     """
+    # Im Parallel-Modus Progress-Updates unterdrücken
+    # (parallele Feature-Group-Threads würden sich sonst gegenseitig überschreiben)
+    if is_parallel_mode():
+        return
+
     if _progress_queue is not None:
         try:
             _progress_queue.put_nowait({
@@ -88,6 +111,30 @@ def report_done(symbol: str, status: str = "ok"):
             pass
 
 
+def report_phase(symbol: str, phase: str):
+    """
+    Meldet die aktuelle Verarbeitungsphase für ein Symbol.
+
+    Diese Phase wird im Progress-UI angezeigt, solange keine neue Phase gemeldet wird.
+    Beispiele: "Lade Daten...", "Berechne Indikatoren...", "Grid-Search...", etc.
+
+    Args:
+        symbol: Asset-Symbol (z.B. "EURUSD")
+        phase: Beschreibung der aktuellen Phase
+    """
+    if _progress_queue is not None:
+        try:
+            _progress_queue.put_nowait({
+                "type": "phase",
+                "pid": os.getpid(),
+                "symbol": symbol,
+                "phase": phase,
+                "time": time.time(),
+            })
+        except Exception:
+            pass
+
+
 class ProgressTracker:
     """
     Progress-Tracker mit Queue-basierter Worker-Kommunikation.
@@ -108,6 +155,7 @@ class ProgressTracker:
         self.completed_symbols: List[str] = []
         self.queue = queue
         self.worker_status: Dict[int, dict] = {}  # pid -> status
+        self.worker_phases: Dict[str, str] = {}  # symbol -> aktuelle Phase
         self.start_time = None
         self._stop_event = threading.Event()
         self._display_thread = None
@@ -170,8 +218,13 @@ class ProgressTracker:
                 with self._lock:
                     if msg["type"] == "progress":
                         self.worker_status[msg["pid"]] = msg
+                    elif msg["type"] == "phase":
+                        # Phase-Update: Symbol -> Phase-Text speichern
+                        self.worker_phases[msg["symbol"]] = msg["phase"]
                     elif msg["type"] == "done":
                         self.worker_status.pop(msg["pid"], None)
+                        # Phase für dieses Symbol löschen
+                        self.worker_phases.pop(msg.get("symbol"), None)
             except Empty:
                 continue
             except Exception:
@@ -204,6 +257,7 @@ class ProgressTracker:
             completed = self.completed_assets
             completed_symbols = self.completed_symbols[:]
             workers = dict(self.worker_status)
+            phases = dict(self.worker_phases)
 
         elapsed = time.time() - self.start_time if self.start_time else 0
 
@@ -223,14 +277,18 @@ class ProgressTracker:
         elapsed_str = self._format_time(elapsed)
 
         if self._is_tty:
-            self._render_tty(completed, total_progress, pct, elapsed_str, eta_str, active_workers, completed_symbols)
+            self._render_tty(completed, total_progress, pct, elapsed_str, eta_str, active_workers, completed_symbols, phases)
         else:
             self._render_non_tty(completed, pct, elapsed_str, eta_str, active_workers)
 
     def _render_tty(self, completed: int, total_progress: float, pct: float,
-                    elapsed_str: str, eta_str: str, active_workers: Dict, completed_symbols: List[str]):
+                    elapsed_str: str, eta_str: str, active_workers: Dict,
+                    completed_symbols: List[str], phases: Dict[str, str]):
         """Rendert für TTY mit Multi-Line Display und Cursor-Steuerung."""
         lines = []
+
+        # Feste Fensterbreite für konsistentes Layout
+        WIDTH = 70
 
         # Progress bar
         bar_width = 40
@@ -239,40 +297,76 @@ class ProgressTracker:
         bar = "█" * filled + "░" * (bar_width - filled)
 
         # Header-Zeile
-        lines.append(f"╔══════════════════════════════════════════════════════════════════╗")
-        lines.append(f"║ [{bar}] {pct:5.1f}%")
-        lines.append(f"║ Assets: {completed}/{self.total_assets} | Zeit: {elapsed_str} | ETA: {eta_str}")
-        lines.append(f"╠══════════════════════════════════════════════════════════════════╣")
+        lines.append("╔" + "═" * (WIDTH - 2) + "╗")
+        lines.append(f"║ [{bar}] {pct:5.1f}%".ljust(WIDTH - 1) + "║")
+        lines.append(f"║ Assets: {completed}/{self.total_assets} | Zeit: {elapsed_str} | ETA: {eta_str}".ljust(WIDTH - 1) + "║")
+        lines.append("╠" + "═" * (WIDTH - 2) + "╣")
 
         # Worker-Status (max. MAX_DISPLAY_LINES Zeilen)
-        if active_workers:
-            worker_list = sorted(active_workers.items(), key=lambda x: x[1].get("symbol", ""))
-            for i, (pid, info) in enumerate(worker_list[:self.MAX_DISPLAY_LINES - 6]):
-                sym = info.get("symbol", "?")
-                grid_pos = info.get("grid_pos", 0)
-                grid_total = info.get("grid_total", 0)
+        # Kombiniere aktive Worker (mit Grid-Progress) und Phasen-Updates (ohne Grid)
+        # Phasen können auch von Workern kommen, die noch keinen Grid-Progress haben
+
+        # Sammle alle Symbole die entweder Worker-Status oder Phase haben
+        all_symbols = set()
+        for info in active_workers.values():
+            all_symbols.add(info.get("symbol", "?"))
+        for sym in phases.keys():
+            all_symbols.add(sym)
+
+        if all_symbols:
+            # Sortiere Symbole alphabetisch
+            sorted_symbols = sorted(all_symbols)
+
+            for sym in sorted_symbols[:self.MAX_DISPLAY_LINES - 6]:
+                # Finde Worker-Info für dieses Symbol (falls vorhanden)
+                worker_info = None
+                for info in active_workers.values():
+                    if info.get("symbol") == sym:
+                        worker_info = info
+                        break
+
+                grid_pos = worker_info.get("grid_pos", 0) if worker_info else 0
+                grid_total = worker_info.get("grid_total", 0) if worker_info else 0
+
+                # Phase für dieses Symbol (falls vorhanden)
+                phase = phases.get(sym, "")
 
                 if grid_total > 0:
                     worker_pct = int(grid_pos / grid_total * 100)
-                    worker_bar_width = 20
+                    worker_bar_width = 15
                     worker_filled = int(worker_bar_width * grid_pos / grid_total)
                     worker_bar = "▓" * worker_filled + "░" * (worker_bar_width - worker_filled)
-                    lines.append(f"║  {sym:<10} [{worker_bar}] {worker_pct:3d}%")
+                    # Zeige Progress-Bar + Phase
+                    line = f"║  {sym:<10} [{worker_bar}] {worker_pct:3d}%"
+                    if phase:
+                        # Phase kürzen falls nötig
+                        max_phase_len = WIDTH - len(line) - 4
+                        if len(phase) > max_phase_len:
+                            phase = phase[:max_phase_len-2] + ".."
+                        line += f"  {phase}"
+                    lines.append(line.ljust(WIDTH - 1) + "║")
                 else:
-                    lines.append(f"║  {sym:<10} [starting...]")
+                    # Noch kein Grid-Fortschritt - zeige Phase
+                    if phase:
+                        max_phase_len = WIDTH - 16
+                        if len(phase) > max_phase_len:
+                            phase = phase[:max_phase_len-2] + ".."
+                        lines.append(f"║  {sym:<10} {phase}".ljust(WIDTH - 1) + "║")
+                    else:
+                        lines.append(f"║  {sym:<10} [starting...]".ljust(WIDTH - 1) + "║")
 
-            if len(worker_list) > self.MAX_DISPLAY_LINES - 6:
-                lines.append(f"║  ... und {len(worker_list) - (self.MAX_DISPLAY_LINES - 6)} weitere Worker")
+            if len(sorted_symbols) > self.MAX_DISPLAY_LINES - 6:
+                lines.append(f"║  ... und {len(sorted_symbols) - (self.MAX_DISPLAY_LINES - 6)} weitere".ljust(WIDTH - 1) + "║")
         else:
-            lines.append(f"║  Starte Worker...")
+            lines.append(f"║  Starte Worker...".ljust(WIDTH - 1) + "║")
 
         # Kürzlich fertige Assets
         if completed_symbols:
             recent = completed_symbols[-3:]
-            lines.append(f"╠══════════════════════════════════════════════════════════════════╣")
-            lines.append(f"║ Fertig: " + ", ".join(f"✓{s}" for s in recent))
+            lines.append("╠" + "═" * (WIDTH - 2) + "╣")
+            lines.append(("║ Fertig: " + ", ".join(f"✓{s}" for s in recent)).ljust(WIDTH - 1) + "║")
 
-        lines.append(f"╚══════════════════════════════════════════════════════════════════╝")
+        lines.append("╚" + "═" * (WIDTH - 2) + "╝")
 
         # Altes Display löschen
         self._clear_display()
