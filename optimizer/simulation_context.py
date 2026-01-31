@@ -94,10 +94,11 @@ class SimulationContext:
     first_fold_min_trades: int = 5  # Minimum Trades im ersten Fold
 
     # Ressourcen-Limits für parallele Feature-Group-Verarbeitung
-    ram_per_feature_group_gb: float = 1.0
-    cpu_per_feature_group: float = 1.0
-    min_free_ram_percent: float = 0.20
-    max_cpu_percent: float = 0.80
+    # Defaults sind aggressiv (viele parallele Threads) - kann in Strategy-Config angepasst werden
+    ram_per_feature_group_gb: float = 0.5
+    cpu_per_feature_group: float = 0.5
+    min_free_ram_percent: float = 0.15
+    max_cpu_percent: float = 0.90
 
     @classmethod
     def create(cls, asset: "AssetConfig", strategy: "StrategyConfig") -> "SimulationContext":

@@ -232,8 +232,8 @@ def _process_feature_groups_parallel(
     log(3, f"    - CPU-basiertes Limit: {cpu_based_limit} Threads ({usable_cores} nutzbare Kerne / {cpu_per_thread} pro Thread)", sym)
     log(2, f"  => Effektives Limit: {max_workers} parallele Feature-Gruppen", sym)
 
-    # Initialen Progress reporten
-    report_progress(sym, 0, n_feature_groups, "feature_groups", 0, total_grid_combos)
+    # Initialen Progress reporten (grid_pos=1 damit der Worker als aktiv gilt)
+    report_progress(sym, 0, n_feature_groups, "feature_groups", 1, total_grid_combos)
 
     completed = 0
     start_time = time.time()
@@ -274,6 +274,10 @@ def _process_feature_groups_parallel(
             grid_per_fg = ctx.grid_combinations_per_feature_group()
             completed_grid = completed * grid_per_fg
             report_progress(sym, completed, n_feature_groups, "feature_groups", completed_grid, total_grid_combos)
+
+            # Phase-Update mit Fortschritt
+            pct = int(completed / n_feature_groups * 100)
+            report_phase(sym, f"Feature-Gruppen: {completed}/{n_feature_groups} ({pct}%)")
 
     total_elapsed = time.time() - start_time
     final_mem = psutil.virtual_memory()

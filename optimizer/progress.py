@@ -261,11 +261,12 @@ class ProgressTracker:
 
         elapsed = time.time() - self.start_time if self.start_time else 0
 
-        # Aktive Worker filtern (nur die letzten 30 Sekunden)
+        # Aktive Worker filtern (nur die letzten 5 Minuten)
+        # Feature-Gruppen können länger dauern, daher großzügiges Timeout
         now = time.time()
         active_workers = {
             pid: info for pid, info in workers.items()
-            if now - info.get("time", 0) < 30
+            if now - info.get("time", 0) < 300  # 5 Minuten statt 30 Sekunden
         }
 
         # Gesamt-Fortschritt berechnen (inkl. Grid-Fortschritt der aktiven Worker)
