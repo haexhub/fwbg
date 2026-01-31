@@ -502,14 +502,15 @@ class TestSyntheticEquityScenarios:
 
     def test_only_wins_exponential_growth(self):
         """Nur Gewinne sollten zu exponentiellem Wachstum führen."""
-        from optimizer.main import simulate_equity
+        from optimizer.equity import simulate_equity
 
         # 100 Gewinne bei 5% Kelly und RRR=2
         trades = [1.0] * 100
         kelly_risk = 0.05
         rrr = 2.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        # Nutze hohes compound_cap um reines Compounding zu testen
+        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
 
         # Erwartete Equity: 100 * (1 + 0.05*2)^100 = 100 * 1.1^100
         expected = 100 * (1.1 ** 100)
@@ -521,14 +522,14 @@ class TestSyntheticEquityScenarios:
 
     def test_only_losses_geometric_decay(self):
         """Nur Verluste sollten zu geometrischem Verfall führen."""
-        from optimizer.main import simulate_equity
+        from optimizer.equity import simulate_equity
 
         # 20 Verluste bei 10% Kelly
         trades = [-1.0] * 20
         kelly_risk = 0.10
         rrr = 1.0  # RRR irrelevant bei Verlusten
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
 
         # Erwartete Equity: 100 * 0.9^20
         expected = 100 * (0.9 ** 20)
@@ -542,14 +543,14 @@ class TestSyntheticEquityScenarios:
 
     def test_win_loss_alternating_pattern(self):
         """Wechselnde Wins/Losses sollten vorhersagbare Equity ergeben."""
-        from optimizer.main import simulate_equity
+        from optimizer.equity import simulate_equity
 
         # Win, Loss, Win, Loss... (10x)
         trades = [1.0, -1.0] * 10
         kelly_risk = 0.10
         rrr = 1.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
 
         # Bei RRR=1: Win multipliziert mit 1.1, Loss mit 0.9
         # Nach 10 Paaren: 100 * (1.1 * 0.9)^10 = 100 * 0.99^10
@@ -559,14 +560,14 @@ class TestSyntheticEquityScenarios:
 
     def test_recovery_after_drawdown(self):
         """Equity kann sich nach Drawdown erholen, aber DD bleibt bestehen."""
-        from optimizer.main import simulate_equity
+        from optimizer.equity import simulate_equity
 
         # 5 Verluste, dann 20 Gewinne
         trades = [-1.0] * 5 + [1.0] * 20
         kelly_risk = 0.10
         rrr = 2.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
 
         # Nach 5 Verlusten: 100 * 0.9^5 = 59.05
         # Max DD an diesem Punkt: 1 - 0.9^5 = 0.4095 (40.95%)
@@ -582,7 +583,7 @@ class TestSyntheticEquityScenarios:
 
     def test_known_rrr_asymmetry(self):
         """Bei RRR < 1 ist das Risiko asymmetrisch - mehr Verlust als Gewinn."""
-        from optimizer.main import simulate_equity
+        from optimizer.equity import simulate_equity
 
         # RRR = 0.5 bedeutet: Gewinn = 5%, Verlust = 10%
         # Bei 50/50 Win Rate sollte Equity sinken
@@ -590,7 +591,7 @@ class TestSyntheticEquityScenarios:
         kelly_risk = 0.10
         rrr = 0.5
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
 
         # Win: 1.05, Loss: 0.9
         # Nach 50 Paaren: 100 * (1.05 * 0.9)^50
@@ -604,7 +605,7 @@ class TestSyntheticEquityScenarios:
 
     def test_high_rrr_compensates_low_winrate(self):
         """Bei hohem RRR kann niedrige Win Rate kompensiert werden."""
-        from optimizer.main import simulate_equity
+        from optimizer.equity import simulate_equity
 
         # 30% Win Rate, aber RRR = 3 (Gewinn = 30%, Verlust = 10%)
         wins = [1.0] * 30
@@ -619,7 +620,7 @@ class TestSyntheticEquityScenarios:
         kelly_risk = 0.10
         rrr = 3.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
 
         # Erwartung: 30 Wins x 1.3, 70 Losses x 0.9
         # = 100 * 1.3^30 * 0.9^70
@@ -636,7 +637,7 @@ class TestSyntheticEquityScenarios:
         Wenn die Equity von 100 auf 50 fällt, muss der DD 50% zeigen.
         Wenn die Equity dann auf 75 steigt, bleibt DD bei 50% (nicht bei neuen Peak).
         """
-        from optimizer.main import simulate_equity
+        from optimizer.equity import simulate_equity
 
         # Konstruiere eine spezifische Sequenz
         # Start: 100
@@ -647,7 +648,7 @@ class TestSyntheticEquityScenarios:
         kelly_risk = 0.10
         rrr = 1.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
         eq = result["equity_curve"]
         dd = result["drawdowns"]
 
@@ -713,6 +714,218 @@ class TestDataLeakagePrevention:
 
             assert max_train_value < min_test_value, \
                 f"Fold {i}: Train sieht Test-Daten! Max Train ({max_train_value}) >= Min Test ({min_test_value})"
+
+
+class TestEarlyTermination:
+    """
+    Tests für die Early Termination Logik bei Grid-Optimierung.
+
+    Die Idee ist: Wenn ein Kandidat bereits zu viele fehlgeschlagene Folds hat
+    und die Mindest-Fold-Stability mathematisch nicht mehr erreichen kann,
+    wird die Evaluation vorzeitig abgebrochen um Rechenzeit zu sparen.
+    """
+
+    def test_early_termination_math_is_correct(self):
+        """Prüft die mathematische Logik der Early Termination.
+
+        Bei 5 Folds und min_fold_stability=0.5:
+        - Min profitable Folds: ceil(5 * 0.5) = 3
+        - Erlaubte Fehlschläge: 5 - 3 = 2
+        - Nach 3 Fehlschlägen → Abbruch (selbst wenn alle restlichen profitabel wären)
+        """
+        import math
+
+        total_folds = 5
+        min_fold_stability = 0.5
+
+        # Berechne min_profitable
+        min_profitable = int(math.ceil(total_folds * min_fold_stability))
+        assert min_profitable == 3
+
+        # Erlaubte Fehlschläge
+        max_failures = total_folds - min_profitable
+        assert max_failures == 2
+
+        # Simuliere: Nach fold_idx=2 (3 Folds), profitable_count=0, failed_count=3
+        # Prüfe ob Abbruch erfolgen sollte
+        fold_idx = 3  # Nach 3 Folds
+        profitable_count = 0
+        remaining_folds = total_folds - fold_idx
+        max_possible_profitable = profitable_count + remaining_folds
+
+        # 0 + 2 = 2 < 3 → Abbruch
+        should_terminate = max_possible_profitable < min_profitable
+        assert should_terminate is True
+
+    def test_early_termination_with_some_wins(self):
+        """Prüft Early Termination wenn einige Folds profitabel sind."""
+        import math
+
+        total_folds = 5
+        min_fold_stability = 0.5
+        min_profitable = int(math.ceil(total_folds * min_fold_stability))  # 3
+
+        # Szenario: Nach 4 Folds haben wir 1 Win und 3 Losses
+        fold_idx = 4
+        profitable_count = 1
+        remaining_folds = total_folds - fold_idx  # 1 Fold übrig
+
+        max_possible_profitable = profitable_count + remaining_folds  # 1 + 1 = 2
+
+        # 2 < 3 → Sollte abbrechen
+        should_terminate = max_possible_profitable < min_profitable
+        assert should_terminate is True
+
+    def test_no_early_termination_when_possible(self):
+        """Prüft dass kein Abbruch erfolgt wenn Stabilität noch erreichbar ist."""
+        import math
+
+        total_folds = 5
+        min_fold_stability = 0.5
+        min_profitable = int(math.ceil(total_folds * min_fold_stability))  # 3
+
+        # Szenario: Nach 2 Folds haben wir 1 Win und 1 Loss
+        fold_idx = 2
+        profitable_count = 1
+        remaining_folds = total_folds - fold_idx  # 3 Folds übrig
+
+        max_possible_profitable = profitable_count + remaining_folds  # 1 + 3 = 4
+
+        # 4 >= 3 → Sollte NICHT abbrechen
+        should_terminate = max_possible_profitable < min_profitable
+        assert should_terminate is False
+
+
+class TestFirstFoldSanityCheck:
+    """
+    Tests für den First-Fold Sanity Check.
+
+    Der First-Fold Sanity Check bricht nur bei extremen Fällen ab:
+    - Win-Rate < 25% UND PnL < -10 UND genug Trades
+    - Oder: Weniger als Minimum-Trades im ersten Fold
+    """
+
+    def test_catastrophic_first_fold_detected(self):
+        """Katastrophaler erster Fold sollte erkannt werden."""
+        # Einstellungen
+        first_fold_min_win_rate = 0.25
+        first_fold_min_pnl = -10.0
+        first_fold_min_trades = 5
+
+        # Simulierte Trades: Alle Verluste (11 Trades → PnL = -11 < -10)
+        fold_trades = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        n_fold_trades = len(fold_trades)
+        fold_win_rate = fold_trades.count(1.0) / n_fold_trades  # 0%
+        fold_pnl = sum(fold_trades)  # -11
+
+        # Prüfe ob katastrophal
+        is_catastrophic = (
+            fold_win_rate < first_fold_min_win_rate and
+            fold_pnl < first_fold_min_pnl and
+            n_fold_trades >= first_fold_min_trades
+        )
+
+        assert is_catastrophic is True, "11 Verluste in Folge sollte katastrophal sein"
+
+    def test_bad_but_not_catastrophic_passes(self):
+        """Schlechter aber nicht katastrophaler Fold sollte durchgelassen werden."""
+        first_fold_min_win_rate = 0.25
+        first_fold_min_pnl = -10.0
+        first_fold_min_trades = 5
+
+        # 30% Win-Rate - schlecht aber nicht katastrophal
+        fold_trades = [1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        n_fold_trades = len(fold_trades)
+        fold_win_rate = fold_trades.count(1.0) / n_fold_trades  # 30%
+        fold_pnl = sum(fold_trades)  # -4
+
+        is_catastrophic = (
+            fold_win_rate < first_fold_min_win_rate and
+            fold_pnl < first_fold_min_pnl and
+            n_fold_trades >= first_fold_min_trades
+        )
+
+        # 30% > 25% → nicht katastrophal (unabhängig vom PnL)
+        assert is_catastrophic is False, "30% Win-Rate sollte durchgelassen werden"
+
+    def test_high_loss_but_ok_winrate_passes(self):
+        """Hoher Verlust mit OK Win-Rate sollte durchgelassen werden."""
+        first_fold_min_win_rate = 0.25
+        first_fold_min_pnl = -10.0
+        first_fold_min_trades = 5
+
+        # 40% Win-Rate aber hoher Verlust (RRR schlecht)
+        fold_trades = [1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        n_fold_trades = len(fold_trades)
+        fold_win_rate = fold_trades.count(1.0) / n_fold_trades  # 40%
+        fold_pnl = sum(fold_trades)  # -2
+
+        is_catastrophic = (
+            fold_win_rate < first_fold_min_win_rate and
+            fold_pnl < first_fold_min_pnl and
+            n_fold_trades >= first_fold_min_trades
+        )
+
+        # 40% > 25% → nicht katastrophal
+        assert is_catastrophic is False
+
+    def test_too_few_trades_not_catastrophic_by_pnl(self):
+        """Wenige schlechte Trades sollten NICHT als katastrophal gelten."""
+        first_fold_min_win_rate = 0.25
+        first_fold_min_pnl = -10.0
+        first_fold_min_trades = 5
+
+        # Nur 3 Trades - zu wenige um sicher zu sagen
+        fold_trades = [-1.0, -1.0, -1.0]
+        n_fold_trades = len(fold_trades)
+        fold_win_rate = fold_trades.count(1.0) / n_fold_trades  # 0%
+        fold_pnl = sum(fold_trades)  # -3
+
+        is_catastrophic = (
+            fold_win_rate < first_fold_min_win_rate and
+            fold_pnl < first_fold_min_pnl and
+            n_fold_trades >= first_fold_min_trades
+        )
+
+        # Weniger als 5 Trades → nicht als katastrophal werten
+        assert is_catastrophic is False
+
+    def test_extreme_loss_with_low_winrate_is_catastrophic(self):
+        """20% Win-Rate mit starkem Verlust sollte katastrophal sein."""
+        first_fold_min_win_rate = 0.25
+        first_fold_min_pnl = -10.0
+        first_fold_min_trades = 5
+
+        # 20% Win-Rate, 15 Trades
+        fold_trades = [1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0,
+                       -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        n_fold_trades = len(fold_trades)
+        fold_win_rate = fold_trades.count(1.0) / n_fold_trades  # 20%
+        fold_pnl = sum(fold_trades)  # -9
+
+        is_catastrophic = (
+            fold_win_rate < first_fold_min_win_rate and
+            fold_pnl < first_fold_min_pnl and
+            n_fold_trades >= first_fold_min_trades
+        )
+
+        # 20% < 25% und PnL = -9 > -10 → knapp NICHT katastrophal
+        assert is_catastrophic is False, "PnL -9 ist > -10, also nicht katastrophal"
+
+        # Mit PnL = -12 wäre es katastrophal
+        fold_trades_worse = [1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, -1.0,
+                              -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        n_trades_worse = len(fold_trades_worse)
+        win_rate_worse = fold_trades_worse.count(1.0) / n_trades_worse  # ~18%
+        pnl_worse = sum(fold_trades_worse)  # -11
+
+        is_catastrophic_worse = (
+            win_rate_worse < first_fold_min_win_rate and
+            pnl_worse < first_fold_min_pnl and
+            n_trades_worse >= first_fold_min_trades
+        )
+
+        assert is_catastrophic_worse is True, "18% Win-Rate mit PnL -11 sollte katastrophal sein"
 
 
 if __name__ == "__main__":

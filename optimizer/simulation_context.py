@@ -80,6 +80,19 @@ class SimulationContext:
     # Optional: Trade-Timeout (None = kein Timeout, Trade läuft bis TP/SL)
     max_trade_bars: int = None
 
+    # Early Termination: Mindest-Fold-Stability für Kandidaten (0.5 = 50% der Folds profitabel)
+    min_fold_stability: float = 0.5
+
+    # Early Termination aktivieren: Kandidaten die min_fold_stability nicht erreichen können werden abgebrochen
+    early_termination: bool = True
+
+    # First-Fold Sanity Check: Bricht nach erstem Fold ab wenn Ergebnis katastrophal ist
+    # Nur für extreme Fälle - normal schlechte Folds werden nicht abgebrochen
+    first_fold_sanity_check: bool = True
+    first_fold_min_win_rate: float = 0.25  # Minimum 25% Win-Rate
+    first_fold_min_pnl: float = -10.0  # Minimum PnL (sehr großzügig)
+    first_fold_min_trades: int = 5  # Minimum Trades im ersten Fold
+
     @classmethod
     def create(cls, asset: "AssetConfig", strategy: "StrategyConfig") -> "SimulationContext":
         """

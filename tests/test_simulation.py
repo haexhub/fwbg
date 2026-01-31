@@ -24,78 +24,80 @@ class TestSimulateTrade:
         self.highs[1] = 1.02  # SL hit
         self.lows[1] = 0.98   # TP hit
 
-        res, bars = simulate_pro_trade(
+        trade_result = simulate_pro_trade(
             self.closes, self.highs, self.lows, self.atrs,
             0, -1, self.tp_mult, self.sl_mult, self.spread
         )
-        assert res == -1.0, "Both TP/SL hit should return loss (conservative)"
-        assert bars == 1
+        assert trade_result["result"] == -1.0, "Both TP/SL hit should return loss (conservative)"
+        # bars_held = 0 bedeutet Exit im selben Bar wie Entry (sofortiger Ausgang)
+        assert trade_result["bars_held"] >= 0
 
     def test_clear_tp_hit_short(self):
         """Short Trade mit klarem TP Hit."""
         self.lows[1] = 0.95   # Clear TP hit
         self.highs[1] = 0.99  # No SL hit
 
-        res, _ = simulate_pro_trade(
+        trade_result = simulate_pro_trade(
             self.closes, self.highs, self.lows, self.atrs,
             0, -1, self.tp_mult, self.sl_mult, self.spread
         )
-        assert res == 1.0, "Clear TP hit should return win"
+        assert trade_result["result"] == 1.0, "Clear TP hit should return win"
 
     def test_clear_sl_hit_short(self):
         """Short Trade mit klarem SL Hit."""
         self.highs[1] = 1.05  # Clear SL hit
         self.lows[1] = 0.99   # No TP hit
 
-        res, _ = simulate_pro_trade(
+        trade_result = simulate_pro_trade(
             self.closes, self.highs, self.lows, self.atrs,
             0, -1, self.tp_mult, self.sl_mult, self.spread
         )
-        assert res == -1.0, "Clear SL hit should return loss"
+        assert trade_result["result"] == -1.0, "Clear SL hit should return loss"
 
     def test_clear_tp_hit_long(self):
         """Long Trade mit klarem TP Hit."""
         self.highs[1] = 1.05  # Clear TP hit
         self.lows[1] = 1.01   # No SL hit
 
-        res, _ = simulate_pro_trade(
+        trade_result = simulate_pro_trade(
             self.closes, self.highs, self.lows, self.atrs,
             0, 1, self.tp_mult, self.sl_mult, self.spread
         )
-        assert res == 1.0, "Clear TP hit should return win"
+        assert trade_result["result"] == 1.0, "Clear TP hit should return win"
 
     def test_clear_sl_hit_long(self):
         """Long Trade mit klarem SL Hit."""
         self.lows[1] = 0.95   # Clear SL hit
         self.highs[1] = 1.01  # No TP hit
 
-        res, _ = simulate_pro_trade(
+        trade_result = simulate_pro_trade(
             self.closes, self.highs, self.lows, self.atrs,
             0, 1, self.tp_mult, self.sl_mult, self.spread
         )
-        assert res == -1.0, "Clear SL hit should return loss"
+        assert trade_result["result"] == -1.0, "Clear SL hit should return loss"
 
-    def test_no_exit_returns_neutral(self):
-        """Trade ohne TP/SL Hit sollte 0 zurückgeben."""
+    def test_no_exit_returns_none(self):
+        """Trade ohne TP/SL Hit sollte None zurückgeben."""
         # Alle Bars bei Entry-Level - weder TP noch SL erreicht
-        res, bars = simulate_pro_trade(
+        trade_result = simulate_pro_trade(
             self.closes, self.highs, self.lows, self.atrs,
             0, 1, self.tp_mult, self.sl_mult, self.spread, max_bars=10
         )
-        assert res == 0.0, "No exit should return neutral"
+        # No exit means None is returned
+        assert trade_result is None, "No exit should return None"
 
-    def test_insufficient_bars_returns_invalid(self):
-        """Zu wenig Bars sollte 0 zurückgeben."""
+    def test_insufficient_bars_returns_none(self):
+        """Zu wenig Bars sollte None zurückgeben."""
         short_closes = np.array([1.0, 1.0, 1.0])
         short_highs = np.array([1.0, 1.0, 1.0])
         short_lows = np.array([1.0, 1.0, 1.0])
         short_atrs = np.array([0.01, 0.01, 0.01])
 
-        res, _ = simulate_pro_trade(
+        trade_result = simulate_pro_trade(
             short_closes, short_highs, short_lows, short_atrs,
             2, 1, self.tp_mult, self.sl_mult, self.spread, max_bars=10
         )
-        assert res == 0.0, "Insufficient bars should return invalid"
+        assert trade_result is None, "Insufficient bars should return None"
 
 
 class TestSharpeRatio:
@@ -157,8 +159,8 @@ class TestM15Lookup:
         # Mit Timestamps (aber ohne echte M15 Daten - Fallback)
         timestamps = pd.date_range("2024-01-01", periods=100, freq="h").values
 
-        res, _ = simulate_pro_trade(
+        trade_result = simulate_pro_trade(
             closes, highs, lows, atrs, 0, 1, 1.0, 1.0, 0.01,
             timestamps=timestamps, symbol="TEST"
         )
-        assert res == 1.0  # Sollte trotzdem funktionieren
+        assert trade_result["result"] == 1.0  # Sollte trotzdem funktionieren

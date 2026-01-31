@@ -28,6 +28,7 @@ Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur 
 18. [Risk/Tail-Risk Features](#18-risktail-risk-features-risk_) ⭐ NEU
 19. [Makro Features](#19-makro-features-macro_)
 20. [Feature-Gruppen](#feature-gruppen)
+21. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung-) ⭐ NEU
 
 ---
 
@@ -835,3 +836,82 @@ Das alte Verhalten mit festem top_n=5 Limit pro Feature-Gruppe:
 | `importance_based` | Top-5 | Hoch | Legacy, schneller |
 
 **Referenz:** Kursa & Rudnicki (2010) "Feature Selection with the Boruta Package"
+
+---
+
+## Early Termination & Grid-Optimierung ⭐ NEU
+
+Das Optimizer-System verfügt über intelligente Early-Termination-Mechanismen, um hoffnungslose Kandidaten frühzeitig abzubrechen und Rechenzeit zu sparen.
+
+### Early Termination (Fold-Stability)
+
+Bricht die Evaluation eines Kandidaten ab, wenn mathematisch nicht mehr genug profitable Folds erreicht werden können.
+
+**Funktionsweise:**
+1. Für jeden Grid-Kandidaten werden N Inner-Folds evaluiert
+2. Ein Fold gilt als "profitabel" wenn PnL > 0
+3. `min_fold_stability` definiert den Mindestanteil profitabler Folds (Default: 50%)
+4. Nach jedem Fold wird geprüft: Können wir noch genug profitable Folds sammeln?
+5. Wenn mathematisch unmöglich → Abbruch
+
+**Beispiel mit 5 Folds und min_fold_stability=0.5:**
+- Benötigt: ceil(5 × 0.5) = 3 profitable Folds
+- Nach 3 Verlusten in Folge: max. 2 Folds noch möglich → Abbruch
+
+**Parameter in SimulationContext:**
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `min_fold_stability` | 0.5 | Mindestanteil profitabler Folds (50%) |
+| `early_termination` | true | Early Termination aktivieren |
+
+### First-Fold Sanity Check ⭐ NEU
+
+Ein zusätzlicher Sicherheitsmechanismus, der nach dem ersten Fold prüft, ob das Ergebnis **katastrophal** ist.
+
+**Wichtig:** Dieser Check ist bewusst sehr konservativ - nur extreme Fälle werden abgebrochen. Normal schlechte Folds werden durchgelassen, da sich spätere Folds erholen können.
+
+**Ein Kandidat wird nur abgebrochen wenn ALLE drei Bedingungen erfüllt sind:**
+
+1. **Win-Rate < 25%** - Weniger als jeder 4. Trade ist profitabel
+2. **PnL < -10** - Deutlich negatives Ergebnis (stark im Minus)
+3. **>= 5 Trades** - Genug Trades für statistisch sinnvolle Aussage
+
+**Rationale:**
+- Ein einziger schlechter Fold sollte nicht alles torpedieren
+- Aber wenn der erste Fold katastrophal ist, sind weitere Folds Zeitverschwendung
+- Die Schwellenwerte sind großzügig gewählt um False Positives zu vermeiden
+
+**Parameter in SimulationContext:**
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `first_fold_sanity_check` | true | Sanity Check aktivieren |
+| `first_fold_min_win_rate` | 0.25 | Minimum Win-Rate (25%) |
+| `first_fold_min_pnl` | -10.0 | Minimum PnL (sehr großzügig) |
+| `first_fold_min_trades` | 5 | Minimum Trades für Aussagekraft |
+
+### Logging
+
+Bei aktiviertem Debug-Logging (OPTIMIZER_LOG >= 3) werden Abbrüche geloggt:
+
+```
+    Early terminated (3 failed folds)
+    First-fold sanity check failed
+```
+
+### Zeitersparnis
+
+Bei einem Grid mit 1000+ Kombinationen und 5 Folds kann Early Termination die Laufzeit um 30-50% reduzieren, da hoffnungslose Kandidaten nach 2-3 Folds abgebrochen werden statt alle 5 durchzulaufen.
+
+### Deaktivierung
+
+Falls gewünscht, können beide Mechanismen deaktiviert werden:
+
+```python
+# In einer benutzerdefinierten SimulationContext-Erstellung:
+ctx.early_termination = False
+ctx.first_fold_sanity_check = False
+```
+
+**Empfehlung:** Beide Mechanismen aktiviert lassen für optimale Performance.

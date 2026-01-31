@@ -515,18 +515,53 @@ def run_inner_cv(
     Returns:
         dict mit success, avg_val_pnl, best_ct, selected_features etc.
         Bei separate_long_short: best_ct ist ein Tuple (ct_long, ct_short)
+
+    Early Termination:
+        Wenn early_termination aktiviert ist (ctx.early_termination=True) und
+        der Kandidat mathematisch nicht mehr min_fold_stability erreichen kann,
+        wird die Evaluation vorzeitig abgebrochen.
+
+        Beispiel: Bei 5 Folds und min_fold_stability=0.5 müssen mindestens 3
+        Folds profitabel sein. Nach 3 Verlusten in Folge kann dies nicht mehr
+        erreicht werden → Abbruch.
     """
     inner_val_pnls = []
     selected_features_long = None
     selected_features_short = None
     best_ct_votes = {}
 
+    # Early Termination Setup
+    total_folds = len(inner_folds)
+    min_fold_stability = getattr(ctx, 'min_fold_stability', 0.5)
+    early_termination_enabled = getattr(ctx, 'early_termination', True)
+    min_profitable = int(np.ceil(total_folds * min_fold_stability))
+    profitable_count = 0
+    failed_count = 0
+    early_terminated = False
+    first_fold_failed = False
+
+    # First-Fold Sanity Check Setup
+    first_fold_sanity_check = getattr(ctx, 'first_fold_sanity_check', True)
+    first_fold_min_win_rate = getattr(ctx, 'first_fold_min_win_rate', 0.25)
+    first_fold_min_pnl = getattr(ctx, 'first_fold_min_pnl', -10.0)
+    first_fold_min_trades = getattr(ctx, 'first_fold_min_trades', 5)
+
     for fold_idx, (train_df, val_df) in enumerate(inner_folds):
+        # Early Termination Check: Kann min_fold_stability noch erreicht werden?
+        if early_termination_enabled and min_profitable > 0:
+            remaining_folds = total_folds - fold_idx
+            max_possible_profitable = profitable_count + remaining_folds
+            if max_possible_profitable < min_profitable:
+                # Nicht mehr möglich, genug profitable Folds zu sammeln
+                early_terminated = True
+                break
+
         report_progress(ctx.symbol, fold_idx + 1, len(inner_folds), "inner_cv", global_grid_pos, total_grid_combos)
 
         targets_long, targets_short, has_long, has_short = compute_targets(train_df, tp, sl, ctx, timeout_bars)
 
         if not has_long and not has_short:
+            failed_count += 1
             continue
 
         # Feature-Auswahl nur auf erstem Fold
@@ -543,12 +578,13 @@ def run_inner_cv(
                 )
 
         if not selected_features_long and not selected_features_short:
+            failed_count += 1
             continue
 
         mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades) if has_long else None
         mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades) if has_short else None
 
-        best_fold_ct, best_fold_pnl, _ = evaluate_on_validation(
+        best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
             val_df, mod_long, mod_short,
             selected_features_long, selected_features_short,
             tp, sl, ctx, timeout_bars
@@ -557,6 +593,50 @@ def run_inner_cv(
         if best_fold_ct:
             inner_val_pnls.append(best_fold_pnl)
             best_ct_votes[best_fold_ct] = best_ct_votes.get(best_fold_ct, 0) + 1
+            # Zähle profitable/unprofitable Folds für Early Termination
+            if best_fold_pnl > 0:
+                profitable_count += 1
+            else:
+                failed_count += 1
+
+            # First-Fold Sanity Check: Nur nach erstem Fold, nur für extreme Fälle
+            if fold_idx == 0 and first_fold_sanity_check:
+                # Berechne Win-Rate aus dem trades_by_ct für den besten CT
+                # Wir haben die trades nicht direkt, aber wir können sie aus evaluate_on_validation holen
+                # Vereinfachte Version: Nutze PnL als Proxy
+                # Bei RRR=1 entspricht PnL ungefähr (wins - losses)
+                # Annahme: Bei n Trades ist Win-Rate = (n + PnL) / (2*n)
+                # Aber wir brauchen die tatsächlichen Trades für die Win-Rate
+                # trades_by_ct enthält Trades pro CT-Wert
+                fold_trades = trades_by_ct.get(best_fold_ct, [])
+                n_fold_trades = len(fold_trades)
+
+                if n_fold_trades > 0:
+                    fold_win_rate = fold_trades.count(1.0) / n_fold_trades
+
+                    # Sanity Check: Nur bei extremen Fällen abbrechen
+                    # Katastrophal = Win-Rate < 25% UND PnL stark negativ UND genug Trades
+                    is_catastrophic = (
+                        fold_win_rate < first_fold_min_win_rate and
+                        best_fold_pnl < first_fold_min_pnl and
+                        n_fold_trades >= first_fold_min_trades
+                    )
+
+                    if is_catastrophic:
+                        first_fold_failed = True
+                        break
+                elif n_fold_trades < first_fold_min_trades:
+                    # Zu wenige Trades im ersten Fold - auch abbrechen
+                    first_fold_failed = True
+                    break
+        else:
+            failed_count += 1
+
+    if early_terminated:
+        return {"success": False, "early_terminated": True, "failed_folds": failed_count}
+
+    if first_fold_failed:
+        return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
 
     if not inner_val_pnls or not best_ct_votes:
         return {"success": False}

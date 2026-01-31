@@ -343,6 +343,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                             )
 
                             if not inner_result["success"]:
+                                # Log wenn Early Termination
+                                if inner_result.get("early_terminated"):
+                                    log(3, f"    Early terminated ({inner_result.get('failed_folds', 0)} failed folds)", sym)
+                                elif inner_result.get("first_fold_failed"):
+                                    log(3, f"    First-fold sanity check failed", sym)
                                 continue
 
                             # Kandidat speichern (noch OHNE Holdout-Evaluation!)
