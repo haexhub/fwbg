@@ -44,7 +44,8 @@ def _process_feature_group(
     sym: str,
     n_feature_groups: int,
     parallel_mode: bool = False,
-    progress_callback=None
+    progress_callback=None,
+    inner_df=None,
 ) -> tuple:
     """
     Verarbeitet eine Feature-Gruppe (Grid-Search über TP/SL/Timeout).
@@ -85,6 +86,9 @@ def _process_feature_group(
     # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
     timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
 
+    # Import für Target-Caching
+    from .nested_cv import compute_targets_cached, slice_targets_for_fold
+
     for tp in grid.tp:
         for sl in grid.sl:
             for timeout_bars in timeout_values:
@@ -100,11 +104,27 @@ def _process_feature_group(
                 timeout_str = f", TO={timeout_bars}" if timeout_bars else ""
                 log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}, RRR={rrr:.2f}{timeout_str})", sym)
 
+                # === TARGET CACHING ===
+                # Berechne Targets einmal auf inner_df und slice für jeden Fold
+                cached_targets = None
+                if inner_df is not None:
+                    full_targets_long, full_targets_short = compute_targets_cached(
+                        inner_df, tp, sl, ctx, timeout_bars
+                    )
+                    # Erstelle Cache-Dict mit Fold-Index -> (targets_long, targets_short)
+                    cached_targets = {}
+                    for fold_idx, (train_df, _) in enumerate(inner_folds):
+                        fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
+                            full_targets_long, full_targets_short, inner_df, train_df, ctx
+                        )
+                        cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
+
                 # === INNER CV: Grid-Search auf Inner Folds ===
                 inner_result = run_inner_cv(
                     inner_folds, group_features, tp, sl, ctx,
                     global_grid_pos, total_grid_combos,
-                    timeout_bars=timeout_bars
+                    timeout_bars=timeout_bars,
+                    cached_targets=cached_targets,
                 )
 
                 # Progress-Callback für aggregierten Fortschritt
@@ -172,7 +192,8 @@ def _process_feature_groups_parallel(
     grid,
     ctx,
     regime_config: dict,
-    sym: str
+    sym: str,
+    inner_df=None,
 ) -> tuple:
     """
     Verarbeitet Feature-Gruppen parallel mit RAM/CPU-Kontrolle pro Thread.
@@ -272,7 +293,8 @@ def _process_feature_groups_parallel(
                 fg_idx, feature_group, full_pool, inner_folds,
                 grid, ctx, regime_config, sym, n_feature_groups,
                 parallel_mode=True,  # Progress-Updates in Threads unterdrücken
-                progress_callback=progress_callback  # Aggregierter Fortschritt
+                progress_callback=progress_callback,  # Aggregierter Fortschritt
+                inner_df=inner_df,  # Für Target-Caching
             ): feature_group
             for fg_idx, feature_group in enumerate(feature_groups)
         }
@@ -596,7 +618,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 for fg_idx, feature_group in enumerate(feature_groups_to_test):
                     fg_candidates, fg_grid_results = _process_feature_group(
                         fg_idx, feature_group, full_pool, inner_folds,
-                        grid, ctx, regime_config, sym, n_feature_groups
+                        grid, ctx, regime_config, sym, n_feature_groups,
+                        inner_df=inner_df
                     )
                     candidates.extend(fg_candidates)
                     all_grid_results.extend(fg_grid_results)
@@ -605,7 +628,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 # RAM-Kontrolle erfolgt auf Asset-Ebene im AdaptivePoolManager
                 fg_candidates, fg_grid_results = _process_feature_groups_parallel(
                     feature_groups_to_test, full_pool, inner_folds,
-                    grid, ctx, regime_config, sym
+                    grid, ctx, regime_config, sym, inner_df=inner_df
                 )
                 candidates.extend(fg_candidates)
                 all_grid_results.extend(fg_grid_results)

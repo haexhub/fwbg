@@ -199,6 +199,100 @@ def compute_targets(
     return targets_long, targets_short, has_long, has_short
 
 
+def compute_targets_cached(
+    full_df: pd.DataFrame,
+    tp: int,
+    sl: int,
+    ctx: SimulationContext,
+    timeout_bars: int = None
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Berechnet Targets einmal auf dem gesamten DataFrame (für Caching).
+
+    Diese Funktion berechnet Targets nur einmal pro TP/SL/Timeout-Kombination.
+    Die Ergebnisse können dann für jeden Fold per Index-Slice wiederverwendet werden.
+
+    Args:
+        full_df: Gesamter Inner-DataFrame (nicht nur ein Fold!)
+        tp: Take-Profit Multiplikator
+        sl: Stop-Loss Multiplikator
+        ctx: SimulationContext
+        timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
+
+    Returns:
+        (targets_long, targets_short) - Arrays mit gleicher Länge wie full_df
+    """
+    targets_long = np.zeros(len(full_df))
+    targets_short = np.zeros(len(full_df))
+
+    opn_v = full_df["O"].values
+    cls_v = full_df["C"].values
+    hgh_v = full_df["H"].values
+    low_v = full_df["L"].values
+    atr_v = full_df["_atr"].values
+    timestamps = full_df.index.values
+
+    # Simuliere bis zum vorletzten Bar (letzter Bar kann kein Entry sein)
+    for i in range(len(full_df) - 1):
+        trade_long = simulate_pro_trade(
+            cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, ctx.spread,
+            timestamps=timestamps, symbol=ctx.symbol, opens=opn_v,
+            max_bars=ctx.max_trade_bars,
+            timeout_bars=timeout_bars
+        )
+        trade_short = simulate_pro_trade(
+            cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, ctx.spread,
+            timestamps=timestamps, symbol=ctx.symbol, opens=opn_v,
+            max_bars=ctx.max_trade_bars,
+            timeout_bars=timeout_bars
+        )
+        if trade_long and trade_long["result"] == 1.0:
+            targets_long[i] = 1
+        if trade_short and trade_short["result"] == 1.0:
+            targets_short[i] = 1
+
+    return targets_long, targets_short
+
+
+def slice_targets_for_fold(
+    full_targets_long: np.ndarray,
+    full_targets_short: np.ndarray,
+    full_df: pd.DataFrame,
+    fold_df: pd.DataFrame,
+    ctx: SimulationContext
+) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
+    """
+    Extrahiert Targets für einen bestimmten Fold aus gecachten Gesamt-Targets.
+
+    Args:
+        full_targets_long: Gecachte Long-Targets für gesamten DataFrame
+        full_targets_short: Gecachte Short-Targets für gesamten DataFrame
+        full_df: Der gesamte DataFrame (für Index-Mapping)
+        fold_df: Der Fold-DataFrame (Train oder Val)
+        ctx: SimulationContext
+
+    Returns:
+        (targets_long, targets_short, has_long, has_short)
+    """
+    # Finde die Positionen des Fold im Gesamt-DataFrame
+    # Da wir iloc-basierte Slices verwenden, müssen wir die Position finden
+    start_idx = full_df.index.get_loc(fold_df.index[0])
+    end_idx = full_df.index.get_loc(fold_df.index[-1]) + 1
+
+    # Slice die gecachten Targets
+    fold_targets_long = full_targets_long[start_idx:end_idx]
+    fold_targets_short = full_targets_short[start_idx:end_idx]
+
+    # Prüfe ob genug Targets vorhanden
+    min_per_direction = ctx.min_trades // 2
+    n_long = np.count_nonzero(fold_targets_long)
+    n_short = np.count_nonzero(fold_targets_short)
+    has_long = ctx.long_enabled and n_long >= min_per_direction
+    has_short = ctx.short_enabled and n_short >= min_per_direction
+
+    return fold_targets_long, fold_targets_short, has_long, has_short
+
+
 def select_features_from_fold(
     train_df: pd.DataFrame,
     targets: np.ndarray,
@@ -505,12 +599,15 @@ def run_inner_cv(
     global_grid_pos: int,
     total_grid_combos: int,
     timeout_bars: int = None,
+    cached_targets: Optional[Dict] = None,
 ) -> Dict[str, Any]:
     """
     Führt Inner Cross-Validation für eine Grid-Kombination durch.
 
     Args:
         timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
+        cached_targets: Optional - vorberechnete Targets {fold_idx: (targets_long, targets_short)}
+                        Wenn übergeben, werden diese statt Neuberechnung verwendet.
 
     Returns:
         dict mit success, avg_val_pnl, best_ct, selected_features etc.
@@ -558,7 +655,17 @@ def run_inner_cv(
 
         report_progress(ctx.symbol, fold_idx + 1, len(inner_folds), "inner_cv", global_grid_pos, total_grid_combos)
 
-        targets_long, targets_short, has_long, has_short = compute_targets(train_df, tp, sl, ctx, timeout_bars)
+        # Targets: aus Cache oder neu berechnen
+        if cached_targets and fold_idx in cached_targets:
+            targets_long, targets_short = cached_targets[fold_idx]
+            # has_long/has_short prüfen
+            min_per_direction = ctx.min_trades // 2
+            n_long = np.count_nonzero(targets_long)
+            n_short = np.count_nonzero(targets_short)
+            has_long = ctx.long_enabled and n_long >= min_per_direction
+            has_short = ctx.short_enabled and n_short >= min_per_direction
+        else:
+            targets_long, targets_short, has_long, has_short = compute_targets(train_df, tp, sl, ctx, timeout_bars)
 
         if not has_long and not has_short:
             failed_count += 1
