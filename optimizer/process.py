@@ -464,7 +464,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         report_phase(sym, "Berechne Indikatoren...")
         t0 = time.time()
-        df = compute_indicator_pool(df).dropna()
+        df = compute_indicator_pool(df, symbol=sym).dropna()
         log(2, f"Indikatoren berechnet: {len(df)} Zeilen nach dropna ({time.time()-t0:.1f}s)", sym)
 
         if len(df) < MIN_TRADES * 2:

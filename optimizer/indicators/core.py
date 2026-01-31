@@ -25,35 +25,34 @@ from .risk import (
 )
 
 
-def compute_indicator_pool(df, log_progress=False):
+def compute_indicator_pool(df, symbol: str = None):
     """
     Berechnet erweiterten Indikator-Pool für echte Feature Selection.
     ATR wird separat berechnet (nur für TP/SL Sizing, nicht als Feature).
 
     Args:
         df: DataFrame mit OHLC-Daten
-        log_progress: Wenn True, Progress-Meldungen ausgeben (Default: False)
-                      Wird normalerweise nicht benötigt da Progress-UI über
-                      report_phase() gesteuert wird.
+        symbol: Optional - Symbol für Progress-UI Updates (z.B. "EURUSD")
 
     Returns:
         DataFrame mit allen berechneten Features
     """
     import time
+    from ..progress import report_phase
 
-    def _log(msg):
-        # Deaktiviert - Progress wird jetzt über report_phase() gesteuert
-        pass
+    def _phase(msg):
+        """Meldet Phase an Progress-UI falls Symbol angegeben."""
+        if symbol:
+            report_phase(symbol, f"Indikatoren: {msg}")
 
     t_start = time.time()
     n_rows = len(df)
-    _log(f"Starte Berechnung für {n_rows:,} Zeilen...")
 
     # ATR separat für Sizing (nicht im Feature-Pool)
     df["_atr"] = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
 
     # === TREND INDIKATOREN ===
-    _log("Trend-Indikatoren (ADX, EMA, SMA, MACD, CCI, Aroon, ER)...")
+    _phase("Trend (ADX, EMA, MACD)")
     for period in [7, 14, 21]:
         df[f"trend_adx_{period}"] = ta.trend.adx(df["H"], df["L"], df["C"], window=period)
 
@@ -86,7 +85,7 @@ def compute_indicator_pool(df, log_progress=False):
     df["trend_er_20_chg"] = df["trend_er_20"] - df["trend_er_20"].shift(10)
 
     # === MOMENTUM INDIKATOREN ===
-    _log("Momentum-Indikatoren (RSI, Stochastic, Williams, ROC)...")
+    _phase("Momentum (RSI, Stochastic)")
     for period in [7, 14, 21]:
         df[f"mom_rsi_{period}"] = ta.momentum.rsi(df["C"], window=period)
 
@@ -104,7 +103,7 @@ def compute_indicator_pool(df, log_progress=False):
         df[f"mom_roc_{period}"] = ta.momentum.roc(df["C"], window=period)
 
     # === VOLATILITÄT INDIKATOREN ===
-    _log("Volatilität-Indikatoren (Bollinger, Keltner, Donchian, ATR)...")
+    _phase("Volatilität (Bollinger, ATR)")
     for period in [20]:
         bb = ta.volatility.BollingerBands(df["C"], window=period)
         df[f"vol_bb_pband_{period}"] = bb.bollinger_pband()
@@ -144,7 +143,7 @@ def compute_indicator_pool(df, log_progress=False):
         )
 
     # === FFT FEATURES ===
-    _log("FFT-Features (64/128/256 Fenster)...")
+    _phase("FFT (64/128/256)")
     for window in [64, 128, 256]:
         df = compute_fft_features(df, window)
 
@@ -238,7 +237,7 @@ def compute_indicator_pool(df, log_progress=False):
     df["cross_vol_trend"] = df["dyn_atr_chg_4h"] * df["trend_adx_14"] / 100
 
     # === MULTI-TIMEFRAME FEATURES ===
-    _log("Multi-Timeframe-Features (H4, D1)...")
+    _phase("Multi-Timeframe (H4, D1)")
     h4_high = df["H"].rolling(4).max()
     h4_low = df["L"].rolling(4).min()
     h4_close = df["C"]
@@ -275,27 +274,27 @@ def compute_indicator_pool(df, log_progress=False):
     ).astype(int)
 
     # === REGIME FEATURES ===
-    _log("Regime-Features (Hurst-Exponent)...")
+    _phase("Regime (Hurst)")
     df = compute_regime_features(df)
 
     # === EVENT FEATURES ===
-    _log("Event-Features (Bars since high/low)...")
+    _phase("Event-Features")
     df = compute_event_features(df)
 
     # === PATH EFFICIENCY / FRACTAL DIMENSION ===
-    _log("Path-Efficiency & Fraktal-Features...")
+    _phase("Path-Efficiency")
     df = compute_path_efficiency(df)
 
     # === CONVEXITY FEATURES ===
-    _log("Convexity-Features...")
+    _phase("Convexity")
     df = compute_convexity_features(df)
 
     # === CORRELATION FEATURES ===
-    _log("Correlation-Features (SPX, VIX)...")
+    _phase("Correlation (SPX, VIX)")
     df = compute_correlation_features(df)
 
     # === RISK FEATURES ===
-    _log("Risk-Features (Drawdown, CVaR, Vol-of-Vol, VWAP, Crash-Prob)...")
+    _phase("Risk (Drawdown, CVaR)")
     df = compute_drawdown_features(df)
     df = compute_cvar_features(df)
     df = compute_vol_of_vol_features(df)
@@ -303,7 +302,7 @@ def compute_indicator_pool(df, log_progress=False):
     df = compute_crash_probability_features(df)
 
     elapsed = time.time() - t_start
-    _log(f"Fertig: {len(df.columns)} Spalten in {elapsed:.1f}s")
+    _phase(f"Fertig ({len(df.columns)} Features)")
 
     return df
 
