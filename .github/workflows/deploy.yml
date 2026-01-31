@@ -51,6 +51,34 @@ jobs:
         run: |
           python -m pytest tests/test_streaming.py -v --tb=short
 
+      - name: Run Simulation Tests
+        run: |
+          python -m pytest tests/test_simulation.py -v --tb=short
+
+      - name: Run Validation Tests
+        run: |
+          python -m pytest tests/test_validation.py -v --tb=short
+
+      - name: Run Core Indicator Tests
+        run: |
+          python -m pytest tests/test_core_indicators.py -v --tb=short
+
+      - name: Run Preprocessing Tests
+        run: |
+          python -m pytest tests/test_preprocessing.py -v --tb=short
+
+      - name: Run Regime Tests
+        run: |
+          python -m pytest tests/test_regime.py -v --tb=short
+
+      - name: Run Risk Tests
+        run: |
+          python -m pytest tests/test_risk.py -v --tb=short
+
+      - name: Run Structure Tests
+        run: |
+          python -m pytest tests/test_structure.py -v --tb=short
+
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
