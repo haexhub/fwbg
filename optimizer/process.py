@@ -33,6 +33,80 @@ from .nested_cv import (
 )
 
 
+def _process_single_grid_combo(
+    tp: int,
+    sl: int,
+    timeout_bars,
+    group_features: list,
+    inner_folds: list,
+    ctx,
+    regime_config: dict,
+    feature_group: str,
+    global_grid_pos: int,
+    total_grid_combos: int,
+    cached_targets: dict,
+) -> tuple:
+    """
+    Verarbeitet eine einzelne Grid-Kombination (TP/SL/Timeout).
+
+    Thread-safe und kann parallel für verschiedene Kombinationen aufgerufen werden.
+
+    Returns:
+        Tuple von (candidate_or_none, grid_result_or_none)
+    """
+    rrr = tp / sl
+
+    # === INNER CV: Grid-Search auf Inner Folds ===
+    inner_result = run_inner_cv(
+        inner_folds, group_features, tp, sl, ctx,
+        global_grid_pos, total_grid_combos,
+        timeout_bars=timeout_bars,
+        cached_targets=cached_targets,
+    )
+
+    if not inner_result["success"]:
+        return None, None
+
+    # Kandidat speichern (noch OHNE Holdout-Evaluation!)
+    candidate = {
+        "inner_val_pnl": inner_result["avg_val_pnl"],
+        "params": (tp, sl, inner_result["best_ct"]),
+        "timeout_bars": timeout_bars,
+        "feats": inner_result["selected_features"],
+        "feature_group": feature_group,
+        "rrr": rrr,
+        "selected_features_long": inner_result["selected_features_long"],
+        "selected_features_short": inner_result["selected_features_short"],
+        "fold_stability": inner_result.get("fold_stability", 0),
+        "regime_filter": regime_config,
+    }
+
+    # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
+    if ctx.separate_long_short and "ct_long" in inner_result:
+        candidate["ct_long"] = inner_result["ct_long"]
+        candidate["ct_short"] = inner_result["ct_short"]
+
+    # Grid-Result mit CT (kann Tuple sein)
+    conf_thresh = inner_result["best_ct"]
+    grid_result = {
+        "feature_group": feature_group,
+        "tp_mult": tp,
+        "sl_mult": sl,
+        "timeout_bars": timeout_bars,
+        "conf_thresh": conf_thresh,
+        "rrr": rrr,
+        "inner_val_pnl": inner_result["avg_val_pnl"],
+        "fold_stability": inner_result.get("fold_stability", 0),
+        "features": inner_result["selected_features"],
+        "regime_filter": regime_config,
+    }
+    if isinstance(conf_thresh, tuple):
+        grid_result["ct_long"] = conf_thresh[0]
+        grid_result["ct_short"] = conf_thresh[1]
+
+    return candidate, grid_result
+
+
 def _process_feature_group(
     fg_idx: int,
     feature_group: str,
@@ -62,6 +136,8 @@ def _process_feature_group(
     """
     from .indicators import filter_features_by_group
     from .progress import set_parallel_mode
+    from .nested_cv import compute_targets_cached, slice_targets_for_fold
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     # Setze Parallel-Modus für diesen Thread (unterdrückt Progress-Updates)
     if parallel_mode:
@@ -75,10 +151,6 @@ def _process_feature_group(
 
     log(1, f"Feature-Gruppe {fg_idx+1}/{n_feature_groups}: {feature_group} ({len(group_features)} Features)", sym)
 
-    candidates = []
-    grid_results = []
-
-    grid_count = 0
     grid_per_fg = ctx.grid_combinations_per_feature_group()
     total_grid_combos = ctx.total_grid_combinations()
     grid_offset = fg_idx * grid_per_fg
@@ -86,100 +158,113 @@ def _process_feature_group(
     # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
     timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
 
-    # Import für Target-Caching
-    from .nested_cv import compute_targets_cached, slice_targets_for_fold
+    # === PHASE 1: Alle Targets vorberechnen (parallelisierbar) ===
+    # Cache: (tp, sl, timeout) -> {fold_idx: (targets_long, targets_short)}
+    target_cache = {}
 
+    if inner_df is not None:
+        # Sammle alle gültigen Grid-Kombinationen
+        grid_combos = []
+        for tp in grid.tp:
+            for sl in grid.sl:
+                rrr = tp / sl
+                if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
+                    continue
+                for timeout_bars in timeout_values:
+                    grid_combos.append((tp, sl, timeout_bars))
+
+        # Berechne Targets parallel für alle Kombinationen
+        def compute_targets_for_combo(combo):
+            tp, sl, timeout_bars = combo
+            full_targets_long, full_targets_short = compute_targets_cached(
+                inner_df, tp, sl, ctx, timeout_bars
+            )
+            cached_targets = {}
+            for fold_idx, (train_df, _) in enumerate(inner_folds):
+                fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
+                    full_targets_long, full_targets_short, inner_df, train_df, ctx
+                )
+                cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
+            return combo, cached_targets
+
+        # Parallele Target-Berechnung (max 8 Threads für I/O-bound)
+        with ThreadPoolExecutor(max_workers=min(8, len(grid_combos))) as executor:
+            futures = [executor.submit(compute_targets_for_combo, c) for c in grid_combos]
+            for future in as_completed(futures):
+                combo, cached_targets = future.result()
+                target_cache[combo] = cached_targets
+
+    # === PHASE 2: Grid-Search mit gecachten Targets (parallelisierbar) ===
+    candidates = []
+    grid_results = []
+    grid_count = 0
+
+    # Sammle alle Jobs für parallele Ausführung
+    jobs = []
     for tp in grid.tp:
         for sl in grid.sl:
+            rrr = tp / sl
+            if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
+                grid_count += 1
+                log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                continue
+
             for timeout_bars in timeout_values:
                 grid_count += 1
                 global_grid_pos = grid_offset + grid_count
+                cached_targets = target_cache.get((tp, sl, timeout_bars), None)
 
-                # RRR-Filter: Überspringe Kombinationen mit zu niedrigem RRR
-                rrr = tp / sl
-                if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                    log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
-                    continue
-
-                timeout_str = f", TO={timeout_bars}" if timeout_bars else ""
-                log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}, RRR={rrr:.2f}{timeout_str})", sym)
-
-                # === TARGET CACHING ===
-                # Berechne Targets einmal auf inner_df und slice für jeden Fold
-                cached_targets = None
-                if inner_df is not None:
-                    full_targets_long, full_targets_short = compute_targets_cached(
-                        inner_df, tp, sl, ctx, timeout_bars
-                    )
-                    # Erstelle Cache-Dict mit Fold-Index -> (targets_long, targets_short)
-                    cached_targets = {}
-                    for fold_idx, (train_df, _) in enumerate(inner_folds):
-                        fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
-                            full_targets_long, full_targets_short, inner_df, train_df, ctx
-                        )
-                        cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
-
-                # === INNER CV: Grid-Search auf Inner Folds ===
-                inner_result = run_inner_cv(
-                    inner_folds, group_features, tp, sl, ctx,
-                    global_grid_pos, total_grid_combos,
-                    timeout_bars=timeout_bars,
-                    cached_targets=cached_targets,
-                )
-
-                # Progress-Callback für aggregierten Fortschritt
-                if progress_callback:
-                    progress_callback(grid_count, grid_per_fg)
-
-                if not inner_result["success"]:
-                    # Log wenn Early Termination
-                    if inner_result.get("early_terminated"):
-                        log(3, f"    Early terminated ({inner_result.get('failed_folds', 0)} failed folds)", sym)
-                    elif inner_result.get("first_fold_failed"):
-                        log(3, f"    First-fold sanity check failed", sym)
-                    continue
-
-                # Kandidat speichern (noch OHNE Holdout-Evaluation!)
-                candidate = {
-                    "inner_val_pnl": inner_result["avg_val_pnl"],
-                    "params": (tp, sl, inner_result["best_ct"]),
-                    "timeout_bars": timeout_bars,  # Time-based Exit
-                    "feats": inner_result["selected_features"],
-                    "feature_group": feature_group,
-                    "rrr": rrr,
-                    "selected_features_long": inner_result["selected_features_long"],
-                    "selected_features_short": inner_result["selected_features_short"],
-                    "fold_stability": inner_result.get("fold_stability", 0),
-                    # Regime-Filter Config für diesen Kandidaten
-                    "regime_filter": regime_config,
-                }
-
-                # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
-                if ctx.separate_long_short and "ct_long" in inner_result:
-                    candidate["ct_long"] = inner_result["ct_long"]
-                    candidate["ct_short"] = inner_result["ct_short"]
-
-                candidates.append(candidate)
-
-                # Grid-Result mit CT (kann Tuple sein)
-                conf_thresh = inner_result["best_ct"]
-                grid_result = {
-                    "feature_group": feature_group,
-                    "tp_mult": tp,
-                    "sl_mult": sl,
+                jobs.append({
+                    "tp": tp,
+                    "sl": sl,
                     "timeout_bars": timeout_bars,
-                    "conf_thresh": conf_thresh,
-                    "rrr": rrr,
-                    "inner_val_pnl": inner_result["avg_val_pnl"],
-                    "fold_stability": inner_result.get("fold_stability", 0),
-                    "features": inner_result["selected_features"],
-                    # Regime-Filter Config
-                    "regime_filter": regime_config,
-                }
-                # Bei separater Optimierung: CTs aufschlüsseln für Grid-Results
-                if isinstance(conf_thresh, tuple):
-                    grid_result["ct_long"] = conf_thresh[0]
-                    grid_result["ct_short"] = conf_thresh[1]
+                    "global_grid_pos": global_grid_pos,
+                    "cached_targets": cached_targets,
+                    "grid_count": grid_count,
+                })
+
+    # Parallel ausführen (max 4 Threads - XGBoost nutzt intern auch Threads)
+    n_workers = min(4, len(jobs))
+    if n_workers > 1:
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = {
+                executor.submit(
+                    _process_single_grid_combo,
+                    job["tp"], job["sl"], job["timeout_bars"],
+                    group_features, inner_folds, ctx, regime_config,
+                    feature_group, job["global_grid_pos"], total_grid_combos,
+                    job["cached_targets"]
+                ): job
+                for job in jobs
+            }
+
+            for future in as_completed(futures):
+                job = futures[future]
+                candidate, grid_result = future.result()
+
+                if progress_callback:
+                    progress_callback(job["grid_count"], grid_per_fg)
+
+                if candidate:
+                    candidates.append(candidate)
+                if grid_result:
+                    grid_results.append(grid_result)
+    else:
+        # Sequentiell wenn nur 1 Job
+        for job in jobs:
+            candidate, grid_result = _process_single_grid_combo(
+                job["tp"], job["sl"], job["timeout_bars"],
+                group_features, inner_folds, ctx, regime_config,
+                feature_group, job["global_grid_pos"], total_grid_combos,
+                job["cached_targets"]
+            )
+
+            if progress_callback:
+                progress_callback(job["grid_count"], grid_per_fg)
+
+            if candidate:
+                candidates.append(candidate)
+            if grid_result:
                 grid_results.append(grid_result)
 
     return candidates, grid_results
