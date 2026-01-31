@@ -43,7 +43,8 @@ def _process_feature_group(
     regime_config: dict,
     sym: str,
     n_feature_groups: int,
-    parallel_mode: bool = False
+    parallel_mode: bool = False,
+    progress_callback=None
 ) -> tuple:
     """
     Verarbeitet eine Feature-Gruppe (Grid-Search über TP/SL/Timeout).
@@ -105,6 +106,10 @@ def _process_feature_group(
                     global_grid_pos, total_grid_combos,
                     timeout_bars=timeout_bars
                 )
+
+                # Progress-Callback für aggregierten Fortschritt
+                if progress_callback:
+                    progress_callback(grid_count, grid_per_fg)
 
                 if not inner_result["success"]:
                     # Log wenn Early Termination
@@ -182,6 +187,7 @@ def _process_feature_groups_parallel(
         Tuple von (all_candidates, all_grid_results)
     """
     import psutil
+    import threading
     from .progress import report_progress
     from concurrent.futures import as_completed
 
@@ -191,6 +197,26 @@ def _process_feature_groups_parallel(
 
     # Gesamte Grid-Kombinationen für Progress-Tracking
     total_grid_combos = ctx.total_grid_combinations()
+
+    # Thread-safe Zähler für aggregierten Grid-Fortschritt
+    progress_lock = threading.Lock()
+    completed_grid_combos = [0]  # Liste für Mutability in Closure
+    last_phase_update = [0]  # Zeitstempel des letzten Phase-Updates
+
+    def progress_callback(grid_count, grid_per_fg):
+        """Callback für Grid-Fortschritt aus Feature-Group-Threads."""
+        with progress_lock:
+            completed_grid_combos[0] += 1
+            current = completed_grid_combos[0]
+            now = time.time()
+
+            # Phase-Update alle 2 Sekunden um nicht zu viele Updates zu senden
+            if now - last_phase_update[0] >= 2.0:
+                pct = int(current / total_grid_combos * 100)
+                report_phase(sym, f"Grid-Search: {current}/{total_grid_combos} ({pct}%)")
+                # Auch Progress für ETA-Berechnung melden
+                report_progress(sym, 0, 0, "grid_search", current, total_grid_combos)
+                last_phase_update[0] = now
 
     # RAM/CPU-Limits aus Strategy-Config (via ctx)
     total_ram_gb = psutil.virtual_memory().total / (1024**3)
@@ -217,9 +243,6 @@ def _process_feature_groups_parallel(
     # Effektives Limit
     max_workers = min(ram_based_limit, cpu_based_limit, n_feature_groups)
 
-    # Phase-Update für Progress-UI
-    report_phase(sym, f"Feature-Gruppen ({max_workers} parallel)")
-
     # Detailliertes Logging (Level 2 = nur bei Verbose)
     log(2, f"=== Ressourcen-Konfiguration für Feature-Gruppen ===", sym)
     log(2, f"  System: {total_ram_gb:.1f}GB RAM total, {free_ram_gb:.1f}GB frei, {total_cores} CPU-Kerne", sym)
@@ -237,6 +260,10 @@ def _process_feature_groups_parallel(
 
     completed = 0
     start_time = time.time()
+
+    # Initialen Phase-Update senden
+    report_phase(sym, f"Grid-Search: 0/{total_grid_combos} (0%)")
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Alle Feature-Gruppen gleichzeitig starten (bis max_workers)
         futures = {
@@ -244,7 +271,8 @@ def _process_feature_groups_parallel(
                 _process_feature_group,
                 fg_idx, feature_group, full_pool, inner_folds,
                 grid, ctx, regime_config, sym, n_feature_groups,
-                parallel_mode=True  # Progress-Updates in Threads unterdrücken
+                parallel_mode=True,  # Progress-Updates in Threads unterdrücken
+                progress_callback=progress_callback  # Aggregierter Fortschritt
             ): feature_group
             for fg_idx, feature_group in enumerate(feature_groups)
         }
@@ -270,14 +298,8 @@ def _process_feature_groups_parallel(
             except Exception as e:
                 log(1, f"Fehler bei Feature-Gruppe '{feature_group}': {e}", sym)
 
-            # Aggregierten Progress reporten (pro fertige Feature-Gruppe)
-            grid_per_fg = ctx.grid_combinations_per_feature_group()
-            completed_grid = completed * grid_per_fg
-            report_progress(sym, completed, n_feature_groups, "feature_groups", completed_grid, total_grid_combos)
-
-            # Phase-Update mit Fortschritt
-            pct = int(completed / n_feature_groups * 100)
-            report_phase(sym, f"Feature-Gruppen: {completed}/{n_feature_groups} ({pct}%)")
+            # Progress wird jetzt kontinuierlich via progress_callback gemeldet
+            # Hier nur loggen dass Feature-Gruppe fertig ist
 
     total_elapsed = time.time() - start_time
     final_mem = psutil.virtual_memory()
