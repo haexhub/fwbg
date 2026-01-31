@@ -93,6 +93,12 @@ class SimulationContext:
     first_fold_min_pnl: float = -10.0  # Minimum PnL (sehr großzügig)
     first_fold_min_trades: int = 5  # Minimum Trades im ersten Fold
 
+    # Ressourcen-Limits für parallele Feature-Group-Verarbeitung
+    ram_per_feature_group_gb: float = 1.0
+    cpu_per_feature_group: float = 1.0
+    min_free_ram_percent: float = 0.20
+    max_cpu_percent: float = 0.80
+
     @classmethod
     def create(cls, asset: "AssetConfig", strategy: "StrategyConfig") -> "SimulationContext":
         """
@@ -135,6 +141,11 @@ class SimulationContext:
             short_enabled=strategy.model.short_enabled,
             feature_groups=strategy.features.get_groups(),
             feature_selection=strategy.features.feature_selection,
+            # Ressourcen-Limits aus Strategy-Config
+            ram_per_feature_group_gb=strategy.resources.ram_per_feature_group_gb,
+            cpu_per_feature_group=strategy.resources.cpu_per_feature_group,
+            min_free_ram_percent=strategy.resources.min_free_ram_percent,
+            max_cpu_percent=strategy.resources.max_cpu_percent,
         )
 
     def get_long_grid(self) -> tuple:

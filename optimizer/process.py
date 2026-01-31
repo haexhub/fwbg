@@ -5,6 +5,8 @@ import os
 import time
 import numpy as np
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing as mp
 
 from .config import (
     DATA_PATH, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
@@ -24,11 +26,266 @@ from .simulation import (
     adjust_kelly_for_target_dd, find_optimal_circuit_breaker, calculate_equity_smoothness
 )
 from .plateau import calculate_param_plateau_score, select_best_plateau_candidate
-from .progress import report_done
+from .progress import report_done, report_phase
 from .logging_utils import log
 from .nested_cv import (
     nested_cv_split, run_inner_cv, evaluate_on_holdout
 )
+
+
+def _process_feature_group(
+    fg_idx: int,
+    feature_group: str,
+    full_pool: list,
+    inner_folds: list,
+    grid,
+    ctx,
+    regime_config: dict,
+    sym: str,
+    n_feature_groups: int,
+    parallel_mode: bool = False
+) -> tuple:
+    """
+    Verarbeitet eine Feature-Gruppe (Grid-Search über TP/SL/Timeout).
+
+    Diese Funktion ist thread-safe und kann parallel für verschiedene
+    Feature-Gruppen aufgerufen werden.
+
+    Args:
+        parallel_mode: Wenn True, wird Progress-Reporting für diesen Thread
+                       unterdrückt um Chaos in der Progressbar zu vermeiden.
+
+    Returns:
+        Tuple von (candidates_list, grid_results_list)
+    """
+    from .indicators import filter_features_by_group
+    from .progress import set_parallel_mode
+
+    # Setze Parallel-Modus für diesen Thread (unterdrückt Progress-Updates)
+    if parallel_mode:
+        set_parallel_mode(True)
+
+    group_features = filter_features_by_group(full_pool, feature_group)
+
+    if len(group_features) < 3:
+        log(2, f"  Feature-Gruppe '{feature_group}': nur {len(group_features)} Features - übersprungen", sym)
+        return [], []
+
+    log(1, f"Feature-Gruppe {fg_idx+1}/{n_feature_groups}: {feature_group} ({len(group_features)} Features)", sym)
+
+    candidates = []
+    grid_results = []
+
+    grid_count = 0
+    grid_per_fg = ctx.grid_combinations_per_feature_group()
+    total_grid_combos = ctx.total_grid_combinations()
+    grid_offset = fg_idx * grid_per_fg
+
+    # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
+    timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
+
+    for tp in grid.tp:
+        for sl in grid.sl:
+            for timeout_bars in timeout_values:
+                grid_count += 1
+                global_grid_pos = grid_offset + grid_count
+
+                # RRR-Filter: Überspringe Kombinationen mit zu niedrigem RRR
+                rrr = tp / sl
+                if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
+                    log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                    continue
+
+                timeout_str = f", TO={timeout_bars}" if timeout_bars else ""
+                log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}, RRR={rrr:.2f}{timeout_str})", sym)
+
+                # === INNER CV: Grid-Search auf Inner Folds ===
+                inner_result = run_inner_cv(
+                    inner_folds, group_features, tp, sl, ctx,
+                    global_grid_pos, total_grid_combos,
+                    timeout_bars=timeout_bars
+                )
+
+                if not inner_result["success"]:
+                    # Log wenn Early Termination
+                    if inner_result.get("early_terminated"):
+                        log(3, f"    Early terminated ({inner_result.get('failed_folds', 0)} failed folds)", sym)
+                    elif inner_result.get("first_fold_failed"):
+                        log(3, f"    First-fold sanity check failed", sym)
+                    continue
+
+                # Kandidat speichern (noch OHNE Holdout-Evaluation!)
+                candidate = {
+                    "inner_val_pnl": inner_result["avg_val_pnl"],
+                    "params": (tp, sl, inner_result["best_ct"]),
+                    "timeout_bars": timeout_bars,  # Time-based Exit
+                    "feats": inner_result["selected_features"],
+                    "feature_group": feature_group,
+                    "rrr": rrr,
+                    "selected_features_long": inner_result["selected_features_long"],
+                    "selected_features_short": inner_result["selected_features_short"],
+                    "fold_stability": inner_result.get("fold_stability", 0),
+                    # Regime-Filter Config für diesen Kandidaten
+                    "regime_filter": regime_config,
+                }
+
+                # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
+                if ctx.separate_long_short and "ct_long" in inner_result:
+                    candidate["ct_long"] = inner_result["ct_long"]
+                    candidate["ct_short"] = inner_result["ct_short"]
+
+                candidates.append(candidate)
+
+                # Grid-Result mit CT (kann Tuple sein)
+                conf_thresh = inner_result["best_ct"]
+                grid_result = {
+                    "feature_group": feature_group,
+                    "tp_mult": tp,
+                    "sl_mult": sl,
+                    "timeout_bars": timeout_bars,
+                    "conf_thresh": conf_thresh,
+                    "rrr": rrr,
+                    "inner_val_pnl": inner_result["avg_val_pnl"],
+                    "fold_stability": inner_result.get("fold_stability", 0),
+                    "features": inner_result["selected_features"],
+                    # Regime-Filter Config
+                    "regime_filter": regime_config,
+                }
+                # Bei separater Optimierung: CTs aufschlüsseln für Grid-Results
+                if isinstance(conf_thresh, tuple):
+                    grid_result["ct_long"] = conf_thresh[0]
+                    grid_result["ct_short"] = conf_thresh[1]
+                grid_results.append(grid_result)
+
+    return candidates, grid_results
+
+
+def _process_feature_groups_parallel(
+    feature_groups: list,
+    full_pool: list,
+    inner_folds: list,
+    grid,
+    ctx,
+    regime_config: dict,
+    sym: str
+) -> tuple:
+    """
+    Verarbeitet Feature-Gruppen parallel mit RAM/CPU-Kontrolle pro Thread.
+
+    RAM und CPU werden pro Feature-Group-Thread berechnet und begrenzt.
+    Das ermöglicht maximale Parallelisierung innerhalb eines Assets,
+    während das System nicht überlastet wird.
+
+    Die Ressourcen-Limits werden aus ctx gelesen (konfigurierbar in Strategy-Config).
+
+    Returns:
+        Tuple von (all_candidates, all_grid_results)
+    """
+    import psutil
+    from .progress import report_progress
+    from concurrent.futures import as_completed
+
+    n_feature_groups = len(feature_groups)
+    all_candidates = []
+    all_grid_results = []
+
+    # Gesamte Grid-Kombinationen für Progress-Tracking
+    total_grid_combos = ctx.total_grid_combinations()
+
+    # RAM/CPU-Limits aus Strategy-Config (via ctx)
+    total_ram_gb = psutil.virtual_memory().total / (1024**3)
+    free_ram_gb = psutil.virtual_memory().available / (1024**3)
+    total_cores = mp.cpu_count()
+
+    # Konfigurierbare Werte aus ctx
+    ram_per_thread_gb = ctx.ram_per_feature_group_gb
+    min_free_ram_percent = ctx.min_free_ram_percent
+    max_cpu_percent = ctx.max_cpu_percent
+    cpu_per_thread = ctx.cpu_per_feature_group
+
+    # Berechne minimalen freien RAM
+    min_free_ram_gb = total_ram_gb * min_free_ram_percent
+
+    # Berechne max Threads basierend auf verfügbarem RAM
+    available_ram_for_threads = max(0, free_ram_gb - min_free_ram_gb)
+    ram_based_limit = max(1, int(available_ram_for_threads / ram_per_thread_gb))
+
+    # CPU-Limit basierend auf max_cpu_percent und cpu_per_thread
+    usable_cores = int(total_cores * max_cpu_percent)
+    cpu_based_limit = max(1, int(usable_cores / cpu_per_thread))
+
+    # Effektives Limit
+    max_workers = min(ram_based_limit, cpu_based_limit, n_feature_groups)
+
+    # Phase-Update für Progress-UI
+    report_phase(sym, f"Feature-Gruppen ({max_workers} parallel)")
+
+    # Detailliertes Logging (Level 2 = nur bei Verbose)
+    log(2, f"=== Ressourcen-Konfiguration für Feature-Gruppen ===", sym)
+    log(2, f"  System: {total_ram_gb:.1f}GB RAM total, {free_ram_gb:.1f}GB frei, {total_cores} CPU-Kerne", sym)
+    log(2, f"  Config: {ram_per_thread_gb}GB RAM/Thread, {cpu_per_thread} CPU/Thread", sym)
+    log(2, f"  Limits: min_free_ram={min_free_ram_percent*100:.0f}%, max_cpu={max_cpu_percent*100:.0f}%", sym)
+    log(3, f"  Berechnung:", sym)
+    log(3, f"    - RAM-Reserve: {min_free_ram_gb:.1f}GB (={min_free_ram_percent*100:.0f}% von {total_ram_gb:.1f}GB)", sym)
+    log(3, f"    - Verfügbar für Threads: {available_ram_for_threads:.1f}GB", sym)
+    log(3, f"    - RAM-basiertes Limit: {ram_based_limit} Threads", sym)
+    log(3, f"    - CPU-basiertes Limit: {cpu_based_limit} Threads ({usable_cores} nutzbare Kerne / {cpu_per_thread} pro Thread)", sym)
+    log(2, f"  => Effektives Limit: {max_workers} parallele Feature-Gruppen", sym)
+
+    # Initialen Progress reporten
+    report_progress(sym, 0, n_feature_groups, "feature_groups", 0, total_grid_combos)
+
+    completed = 0
+    start_time = time.time()
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Alle Feature-Gruppen gleichzeitig starten (bis max_workers)
+        futures = {
+            executor.submit(
+                _process_feature_group,
+                fg_idx, feature_group, full_pool, inner_folds,
+                grid, ctx, regime_config, sym, n_feature_groups,
+                parallel_mode=True  # Progress-Updates in Threads unterdrücken
+            ): feature_group
+            for fg_idx, feature_group in enumerate(feature_groups)
+        }
+
+        # Ergebnisse sammeln wie sie fertig werden
+        for future in as_completed(futures):
+            feature_group = futures[future]
+            completed += 1
+
+            try:
+                fg_candidates, fg_grid_results = future.result()
+                all_candidates.extend(fg_candidates)
+                all_grid_results.extend(fg_grid_results)
+
+                # Ressourcen-Status loggen nach jeder Feature-Gruppe
+                current_mem = psutil.virtual_memory()
+                current_cpu = psutil.cpu_percent(interval=0.1)
+                elapsed = time.time() - start_time
+                log(2, f"Feature-Gruppe '{feature_group}' fertig ({completed}/{n_feature_groups}) "
+                       f"- {len(fg_candidates)} Kandidaten, "
+                       f"RAM: {current_mem.percent:.1f}% belegt ({current_mem.available/(1024**3):.1f}GB frei), "
+                       f"CPU: {current_cpu:.1f}%, Zeit: {elapsed:.1f}s", sym)
+            except Exception as e:
+                log(1, f"Fehler bei Feature-Gruppe '{feature_group}': {e}", sym)
+
+            # Aggregierten Progress reporten (pro fertige Feature-Gruppe)
+            grid_per_fg = ctx.grid_combinations_per_feature_group()
+            completed_grid = completed * grid_per_fg
+            report_progress(sym, completed, n_feature_groups, "feature_groups", completed_grid, total_grid_combos)
+
+    total_elapsed = time.time() - start_time
+    final_mem = psutil.virtual_memory()
+
+    # Phase-Update: Feature-Gruppen fertig
+    report_phase(sym, f"Kandidaten: {len(all_candidates)}")
+
+    log(2, f"=== Feature-Gruppen abgeschlossen ===", sym)
+    log(2, f"  Verarbeitet: {completed}/{n_feature_groups} Gruppen in {total_elapsed:.1f}s", sym)
+    log(2, f"  Kandidaten gefunden: {len(all_candidates)}", sym)
+    log(2, f"  Finale RAM-Auslastung: {final_mem.percent:.1f}% ({final_mem.available/(1024**3):.1f}GB frei)", sym)
+    return all_candidates, all_grid_results
 
 
 def walk_forward_split(df, n_folds=WALK_FORWARD_FOLDS, oos_size=OOS_SIZE):
@@ -108,6 +365,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         return {"symbol": sym, "status": "macro_asset"}
 
     log(1, "START", sym)
+    report_phase(sym, "Lade Daten...")
 
     try:
         t0 = time.time()
@@ -116,6 +374,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(1, "SKIP - Keine Daten", sym)
             return {"symbol": sym, "status": "no_data"}
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
+        report_phase(sym, "Makro-Indikatoren...")
 
         # === ALLE MAKRO-INDIKATOREN LADEN ===
         t0 = time.time()
@@ -190,6 +449,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # === PREPROCESSING (optional) ===
         preprocessing_info = None
         if strategy.preprocessing.has_any:
+            report_phase(sym, "Preprocessing...")
             t0 = time.time()
             rows_before = len(df)
             df, preprocessing_info = apply_preprocessing(df, strategy.preprocessing)
@@ -198,6 +458,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             if preprocessing_info.get("frac_diff_d"):
                 log(3, f"  Frac Diff d={preprocessing_info['frac_diff_d']}", sym)
 
+        report_phase(sym, "Berechne Indikatoren...")
         t0 = time.time()
         df = compute_indicator_pool(df).dropna()
         log(2, f"Indikatoren berechnet: {len(df)} Zeilen nach dropna ({time.time()-t0:.1f}s)", sym)
@@ -301,97 +562,27 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             if n_regime_combos > 1:
                 log(1, f"Regime {rf_idx+1}/{n_regime_combos}: {regime_str}", sym)
 
-            # Innere Schleife: Feature-Gruppen
-            for fg_idx, feature_group in enumerate(feature_groups_to_test):
-                # Filtere Features nach Gruppe
-                group_features = filter_features_by_group(full_pool, feature_group)
+            # Feature-Gruppen verarbeiten mit adaptivem Threading
+            n_feature_groups = len(feature_groups_to_test)
 
-                if len(group_features) < 3:
-                    log(2, f"  Feature-Gruppe '{feature_group}': nur {len(group_features)} Features - übersprungen", sym)
-                    continue
-
-                log(1, f"Feature-Gruppe {fg_idx+1}/{len(feature_groups_to_test)}: {feature_group} ({len(group_features)} Features)", sym)
-
-                grid_count = 0
-                grid_per_fg = ctx.grid_combinations_per_feature_group()
-                total_grid_combos = ctx.total_grid_combinations()
-                grid_offset = fg_idx * grid_per_fg
-
-                # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
-                timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
-
-                for tp in grid.tp:
-                    for sl in grid.sl:
-                        for timeout_bars in timeout_values:
-                            grid_count += 1
-                            global_grid_pos = grid_offset + grid_count
-
-                            # RRR-Filter: Überspringe Kombinationen mit zu niedrigem RRR
-                            rrr = tp / sl
-                            if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                                log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
-                                continue
-
-                            timeout_str = f", TO={timeout_bars}" if timeout_bars else ""
-                            log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}, RRR={rrr:.2f}{timeout_str})", sym)
-
-                            # === INNER CV: Grid-Search auf Inner Folds ===
-                            inner_result = run_inner_cv(
-                                inner_folds, group_features, tp, sl, ctx,
-                                global_grid_pos, total_grid_combos,
-                                timeout_bars=timeout_bars
-                            )
-
-                            if not inner_result["success"]:
-                                # Log wenn Early Termination
-                                if inner_result.get("early_terminated"):
-                                    log(3, f"    Early terminated ({inner_result.get('failed_folds', 0)} failed folds)", sym)
-                                elif inner_result.get("first_fold_failed"):
-                                    log(3, f"    First-fold sanity check failed", sym)
-                                continue
-
-                            # Kandidat speichern (noch OHNE Holdout-Evaluation!)
-                            candidate = {
-                                "inner_val_pnl": inner_result["avg_val_pnl"],
-                                "params": (tp, sl, inner_result["best_ct"]),
-                                "timeout_bars": timeout_bars,  # Time-based Exit
-                                "feats": inner_result["selected_features"],
-                                "feature_group": feature_group,
-                                "rrr": rrr,
-                                "selected_features_long": inner_result["selected_features_long"],
-                                "selected_features_short": inner_result["selected_features_short"],
-                                "fold_stability": inner_result.get("fold_stability", 0),
-                                # Regime-Filter Config für diesen Kandidaten
-                                "regime_filter": regime_config,
-                            }
-
-                            # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
-                            if ctx.separate_long_short and "ct_long" in inner_result:
-                                candidate["ct_long"] = inner_result["ct_long"]
-                                candidate["ct_short"] = inner_result["ct_short"]
-
-                            candidates.append(candidate)
-
-                            # Grid-Result mit CT (kann Tuple sein)
-                            conf_thresh = inner_result["best_ct"]
-                            grid_result = {
-                                "feature_group": feature_group,
-                                "tp_mult": tp,
-                                "sl_mult": sl,
-                                "timeout_bars": timeout_bars,
-                                "conf_thresh": conf_thresh,
-                                "rrr": rrr,
-                                "inner_val_pnl": inner_result["avg_val_pnl"],
-                                "fold_stability": inner_result.get("fold_stability", 0),
-                                "features": inner_result["selected_features"],
-                                # Regime-Filter Config
-                                "regime_filter": regime_config,
-                            }
-                            # Bei separater Optimierung: CTs aufschlüsseln für Grid-Results
-                            if isinstance(conf_thresh, tuple):
-                                grid_result["ct_long"] = conf_thresh[0]
-                                grid_result["ct_short"] = conf_thresh[1]
-                            all_grid_results.append(grid_result)
+            if n_feature_groups <= 1:
+                # Nur 1 Feature-Gruppe: sequentiell
+                for fg_idx, feature_group in enumerate(feature_groups_to_test):
+                    fg_candidates, fg_grid_results = _process_feature_group(
+                        fg_idx, feature_group, full_pool, inner_folds,
+                        grid, ctx, regime_config, sym, n_feature_groups
+                    )
+                    candidates.extend(fg_candidates)
+                    all_grid_results.extend(fg_grid_results)
+            else:
+                # Mehrere Feature-Gruppen: parallel ohne zusätzliche RAM-Prüfung
+                # RAM-Kontrolle erfolgt auf Asset-Ebene im AdaptivePoolManager
+                fg_candidates, fg_grid_results = _process_feature_groups_parallel(
+                    feature_groups_to_test, full_pool, inner_folds,
+                    grid, ctx, regime_config, sym
+                )
+                candidates.extend(fg_candidates)
+                all_grid_results.extend(fg_grid_results)
 
         log(2, f"Inner CV fertig: {len(candidates)} Kandidaten ({time.time()-t_start:.1f}s)", sym)
 
@@ -562,11 +753,15 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # === MONTE CARLO TESTS ===
         # Prüfe ob Ergebnisse statistisch signifikant sind
+        report_phase(sym, "Monte Carlo Validierung...")
+        log(2, f"=== Monte Carlo Validierung ===", sym)
+        log(2, f"  Starte Permutations-Test (1000 Samples)...", sym)
         t_mc = time.time()
         mc_perm = monte_carlo_permutation_test(b["tr"], n_permutations=1000)
+        log(2, f"  Starte Equity-Simulation (500 Samples)...", sym)
         mc_equity = monte_carlo_equity_simulation(b["tr"], fk, rrr, n_simulations=500)
 
-        log(2, f"Monte Carlo: p={mc_perm['p_value']:.3f}, "
+        log(2, f"  Monte Carlo fertig: p={mc_perm['p_value']:.3f}, "
                f"Equity median={mc_equity['median_equity']:.1f}, "
                f"bankruptcy={mc_equity['bankruptcy_rate']:.1%} ({time.time()-t_mc:.1f}s)", sym)
 
