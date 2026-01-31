@@ -137,7 +137,6 @@ def _process_feature_group(
     from .indicators import filter_features_by_group
     from .progress import set_parallel_mode
     from .nested_cv import compute_targets_cached, slice_targets_for_fold
-    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     # Setze Parallel-Modus für diesen Thread (unterdrückt Progress-Updates)
     if parallel_mode:
@@ -158,49 +157,14 @@ def _process_feature_group(
     # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
     timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
 
-    # === PHASE 1: Alle Targets vorberechnen (parallelisierbar) ===
-    # Cache: (tp, sl, timeout) -> {fold_idx: (targets_long, targets_short)}
-    target_cache = {}
-
-    if inner_df is not None:
-        # Sammle alle gültigen Grid-Kombinationen
-        grid_combos = []
-        for tp in grid.tp:
-            for sl in grid.sl:
-                rrr = tp / sl
-                if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                    continue
-                for timeout_bars in timeout_values:
-                    grid_combos.append((tp, sl, timeout_bars))
-
-        # Berechne Targets parallel für alle Kombinationen
-        def compute_targets_for_combo(combo):
-            tp, sl, timeout_bars = combo
-            full_targets_long, full_targets_short = compute_targets_cached(
-                inner_df, tp, sl, ctx, timeout_bars
-            )
-            cached_targets = {}
-            for fold_idx, (train_df, _) in enumerate(inner_folds):
-                fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
-                    full_targets_long, full_targets_short, inner_df, train_df, ctx
-                )
-                cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
-            return combo, cached_targets
-
-        # Parallele Target-Berechnung (max 8 Threads für I/O-bound)
-        with ThreadPoolExecutor(max_workers=min(8, len(grid_combos))) as executor:
-            futures = [executor.submit(compute_targets_for_combo, c) for c in grid_combos]
-            for future in as_completed(futures):
-                combo, cached_targets = future.result()
-                target_cache[combo] = cached_targets
-
-    # === PHASE 2: Grid-Search mit gecachten Targets (parallelisierbar) ===
+    # === Grid-Search sequentiell mit Lazy Target-Berechnung ===
+    # Target-Berechnung ist CPU-bound und dominiert die Laufzeit.
+    # Statt alle Targets vorab zu berechnen, berechnen wir sie on-demand
+    # und nutzen Parallelisierung NUR für die eigentliche CV (XGBoost).
     candidates = []
     grid_results = []
     grid_count = 0
 
-    # Sammle alle Jobs für parallele Ausführung
-    jobs = []
     for tp in grid.tp:
         for sl in grid.sl:
             rrr = tp / sl
@@ -212,60 +176,35 @@ def _process_feature_group(
             for timeout_bars in timeout_values:
                 grid_count += 1
                 global_grid_pos = grid_offset + grid_count
-                cached_targets = target_cache.get((tp, sl, timeout_bars), None)
 
-                jobs.append({
-                    "tp": tp,
-                    "sl": sl,
-                    "timeout_bars": timeout_bars,
-                    "global_grid_pos": global_grid_pos,
-                    "cached_targets": cached_targets,
-                    "grid_count": grid_count,
-                })
+                # Berechne Targets für diese Kombination (lazy, on-demand)
+                cached_targets = None
+                if inner_df is not None:
+                    full_targets_long, full_targets_short = compute_targets_cached(
+                        inner_df, tp, sl, ctx, timeout_bars
+                    )
+                    cached_targets = {}
+                    for fold_idx, (train_df, _) in enumerate(inner_folds):
+                        fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
+                            full_targets_long, full_targets_short, inner_df, train_df, ctx
+                        )
+                        cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
 
-    # Parallel ausführen (max 4 Threads - XGBoost nutzt intern auch Threads)
-    n_workers = min(4, len(jobs))
-    if n_workers > 1:
-        with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            futures = {
-                executor.submit(
-                    _process_single_grid_combo,
-                    job["tp"], job["sl"], job["timeout_bars"],
+                # Inner CV ausführen
+                candidate, grid_result = _process_single_grid_combo(
+                    tp, sl, timeout_bars,
                     group_features, inner_folds, ctx, regime_config,
-                    feature_group, job["global_grid_pos"], total_grid_combos,
-                    job["cached_targets"]
-                ): job
-                for job in jobs
-            }
-
-            for future in as_completed(futures):
-                job = futures[future]
-                candidate, grid_result = future.result()
+                    feature_group, global_grid_pos, total_grid_combos,
+                    cached_targets
+                )
 
                 if progress_callback:
-                    progress_callback(job["grid_count"], grid_per_fg)
+                    progress_callback(grid_count, grid_per_fg)
 
                 if candidate:
                     candidates.append(candidate)
                 if grid_result:
                     grid_results.append(grid_result)
-    else:
-        # Sequentiell wenn nur 1 Job
-        for job in jobs:
-            candidate, grid_result = _process_single_grid_combo(
-                job["tp"], job["sl"], job["timeout_bars"],
-                group_features, inner_folds, ctx, regime_config,
-                feature_group, job["global_grid_pos"], total_grid_combos,
-                job["cached_targets"]
-            )
-
-            if progress_callback:
-                progress_callback(job["grid_count"], grid_per_fg)
-
-            if candidate:
-                candidates.append(candidate)
-            if grid_result:
-                grid_results.append(grid_result)
 
     return candidates, grid_results
 
