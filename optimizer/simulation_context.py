@@ -74,6 +74,9 @@ class SimulationContext:
     # Feature-Gruppen
     feature_groups: List[str] = None
 
+    # Feature Selection Methode: "boruta", "boruta_plateau", "importance_based"
+    feature_selection: str = "boruta"
+
     # Optional: Trade-Timeout (None = kein Timeout, Trade läuft bis TP/SL)
     max_trade_bars: int = None
 
@@ -118,6 +121,7 @@ class SimulationContext:
             long_enabled=strategy.model.long_enabled,
             short_enabled=strategy.model.short_enabled,
             feature_groups=strategy.features.get_groups(),
+            feature_selection=strategy.features.feature_selection,
         )
 
     def get_long_grid(self) -> tuple:

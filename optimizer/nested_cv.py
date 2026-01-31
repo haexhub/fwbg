@@ -15,6 +15,7 @@ from xgboost import XGBClassifier
 from .simulation_context import SimulationContext
 from .simulation import simulate_pro_trade
 from .plateau import select_plateau_features
+from .boruta import select_features_boruta
 from .progress import report_progress
 
 
@@ -202,10 +203,21 @@ def select_features_from_fold(
     train_df: pd.DataFrame,
     targets: np.ndarray,
     group_features: List[str],
-    min_trades: int
+    min_trades: int,
+    feature_selection: str = "boruta",
 ) -> Tuple[Optional[List[str]], Dict[str, float]]:
     """
     Wählt Features basierend auf einem Training-Fold.
+
+    Args:
+        train_df: Training DataFrame
+        targets: Target Array
+        group_features: Features der aktuellen Gruppe
+        min_trades: Minimum Trades
+        feature_selection:
+            - "boruta" (default): Boruta findet alle relevanten Features, kein Limit
+            - "boruta_plateau": Boruta + Plateau-Validierung (kombiniert)
+            - "importance_based": Altes Verhalten mit top_n=5
 
     Returns:
         (selected_features, importances_dict) oder (None, {})
@@ -213,22 +225,68 @@ def select_features_from_fold(
     if np.count_nonzero(targets) < min_trades // 2:
         return None, {}
 
-    model = XGBClassifier(
-        n_estimators=100, max_depth=5, n_jobs=1,
-        random_state=42, verbosity=0,
-    )
-    model.fit(train_df[group_features], targets)
-    importances = pd.Series(model.feature_importances_, index=group_features)
+    # Nur verfügbare Features nutzen
+    available_features = [f for f in group_features if f in train_df.columns]
+    if not available_features:
+        return None, {}
 
-    plateau_features = select_plateau_features(
-        importances.to_dict(), group_features,
-        top_n=5, min_importance=0  # Kein Filter - XGBoost reguliert selbst
-    )
+    if feature_selection == "boruta":
+        # Boruta: Kein hartes Feature-Limit, alle relevanten Features werden genutzt
+        return select_features_boruta(
+            train_df, targets, available_features,
+            min_trades=min_trades,
+            min_z_score=0.5,
+        )
 
-    if len(plateau_features) >= 2:
-        return plateau_features, importances.to_dict()
+    elif feature_selection == "boruta_plateau":
+        # Kombination: Boruta findet relevante Features, Plateau filtert instabile Perioden
+        boruta_features, importances = select_features_boruta(
+            train_df, targets, available_features,
+            min_trades=min_trades,
+            min_z_score=0.3,  # Etwas lockerer, Plateau filtert danach
+        )
 
-    return None, importances.to_dict()
+        if boruta_features and len(boruta_features) >= 2:
+            # Plateau-Validierung auf Boruta-Ergebnis
+            # Features mit instabilen Nachbarn werden abgewertet
+            from .plateau import calculate_feature_plateau_score
+            plateau_results = calculate_feature_plateau_score(importances, boruta_features)
+
+            # Behalte Features die Plateau-Check bestehen (is_plateau=True)
+            # ODER die keine Nachbarn haben (können nicht validiert werden)
+            stable_features = [
+                f for f in boruta_features
+                if f in plateau_results and (
+                    plateau_results[f]["is_plateau"] or
+                    len(plateau_results[f]["neighbors"]) == 0
+                )
+            ]
+
+            # Fallback: Wenn zu wenige stabil, nutze alle Boruta-Features
+            if len(stable_features) >= 2:
+                return stable_features, importances
+            return boruta_features, importances
+
+        return boruta_features, importances
+
+    else:
+        # Altes Verhalten: Importance + Plateau mit top_n=5
+        model = XGBClassifier(
+            n_estimators=100, max_depth=5, n_jobs=1,
+            random_state=42, verbosity=0,
+        )
+        model.fit(train_df[available_features], targets)
+        importances = pd.Series(model.feature_importances_, index=available_features)
+
+        plateau_features = select_plateau_features(
+            importances.to_dict(), available_features,
+            top_n=5, min_importance=0
+        )
+
+        if len(plateau_features) >= 2:
+            return plateau_features, importances.to_dict()
+
+        return None, importances.to_dict()
 
 
 def train_model(
@@ -475,11 +533,13 @@ def run_inner_cv(
         if fold_idx == 0:
             if has_long:
                 selected_features_long, _ = select_features_from_fold(
-                    train_df, targets_long, group_features, ctx.min_trades
+                    train_df, targets_long, group_features, ctx.min_trades,
+                    feature_selection=ctx.feature_selection
                 )
             if has_short:
                 selected_features_short, _ = select_features_from_fold(
-                    train_df, targets_short, group_features, ctx.min_trades
+                    train_df, targets_short, group_features, ctx.min_trades,
+                    feature_selection=ctx.feature_selection
                 )
 
         if not selected_features_long and not selected_features_short:

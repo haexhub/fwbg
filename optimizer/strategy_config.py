@@ -281,6 +281,8 @@ class FilterParams:
     min_rrr: float = 0.0  # Minimum Risk-Reward-Ratio
     min_trades: int = 50  # Minimum Trades für Validität
     min_annual_return: float = 10.0  # Minimum Jahresrendite in %
+    max_drawdown: float = 1.0  # Maximum Drawdown (1.0 = kein Filter, 0.6 = max 60%)
+    min_sharpe: float = 0.0  # Minimum Sharpe Ratio (0 = kein Filter)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FilterParams":
@@ -289,6 +291,8 @@ class FilterParams:
             min_rrr=data.get("min_rrr", 0.0),
             min_trades=data.get("min_trades", 50),
             min_annual_return=data.get("min_annual_return", 10.0),
+            max_drawdown=data.get("max_drawdown", 1.0),
+            min_sharpe=data.get("min_sharpe", 0.0),
         )
 
 
@@ -378,12 +382,18 @@ class PreprocessingParams:
 
 @dataclass
 class FeatureParams:
-    """Parameter für Feature-Auswahl."""
+    """Parameter für Feature-Auswahl.
+
+    feature_selection Optionen:
+    - "boruta": Boruta findet alle statistisch relevanten Features, KEIN hartes Limit
+    - "boruta_plateau": Boruta + Plateau-Validierung (filtert instabile Lookback-Perioden)
+    - "importance_based": Altes Verhalten mit top_n=5 Features pro Gruppe
+    """
     technical_indicators: bool = True
     macro_indicators: bool = True
     time_features: bool = True
     multi_timeframe: bool = True
-    feature_selection: str = "importance_based"
+    feature_selection: str = "boruta"  # Default: Boruta ohne Feature-Limit
     preferred_groups: List[str] = None  # None = alle Feature-Gruppen testen
 
     @classmethod
@@ -394,7 +404,7 @@ class FeatureParams:
             macro_indicators=data.get("macro_indicators", True),
             time_features=data.get("time_features", True),
             multi_timeframe=data.get("multi_timeframe", True),
-            feature_selection=data.get("feature_selection", "importance_based"),
+            feature_selection=data.get("feature_selection", "boruta"),
             preferred_groups=data.get("preferred_groups"),  # None = alle Gruppen
         )
 
