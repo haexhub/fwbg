@@ -235,6 +235,26 @@ FEATURE_GROUPS = {
         "prefixes": ["regime_"],
         "description": "Hurst-Exponent (Markt-Charakter: trending/mean-reverting/random)",
     },
+    "event": {
+        "name": "Event-Features",
+        "prefixes": ["event_"],
+        "description": "Time-Since-Event: Bars seit High/Low, EMA-Cross, RSI-Extrem, Vol-Spike",
+    },
+    "structure": {
+        "name": "Struktur-Features",
+        "prefixes": ["path_", "fractal_", "convex_", "structure_"],
+        "description": "Path Efficiency, Fractal Dimension, Convexity, VWAP Distance",
+    },
+    "correlation": {
+        "name": "Korrelations-Features",
+        "prefixes": ["corr_", "lead_lag_", "vix_lead_"],
+        "description": "Korrelationsstabilität, Decoupling, Lead-Lag Momentum",
+    },
+    "risk": {
+        "name": "Risk/Tail-Risk Features",
+        "prefixes": ["risk_"],
+        "description": "Drawdown State, CVaR, Vol-of-Vol, Crash Probability",
+    },
     # Kombinationen
     "trend_momentum": {
         "name": "Trend + Momentum",

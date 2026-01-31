@@ -6,6 +6,7 @@ psutil
 pytest
 PyYAML
 scikit-learn
+scipy
 seaborn
 statsmodels
 ta
