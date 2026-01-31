@@ -76,5 +76,11 @@
     "min_annual_return": 0,
     "min_sharpe": 0,
     "max_drawdown": 1.0
+  },
+  "resources": {
+    "ram_per_feature_group_gb": 0.3,
+    "cpu_per_feature_group": 0.3,
+    "min_free_ram_percent": 0.2,
+    "max_cpu_percent": 0.8
   }
 }
