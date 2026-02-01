@@ -416,7 +416,9 @@ class ProgressTracker:
 
     def _calculate_eta(self, elapsed: float, total_progress: float) -> str:
         """Berechnet ETA basierend auf Gesamt-Fortschritt."""
-        if elapsed < 10 or total_progress < 0.1:
+        # Mindestens 30 Sekunden warten und 1% Fortschritt für zuverlässige ETA
+        min_progress = 0.01 * self.total_assets  # 1% des Gesamtfortschritts
+        if elapsed < 30 or total_progress < min_progress:
             return "--:--"
 
         # total_progress ist der Fortschritt in "Asset-Einheiten" (0 bis total_assets)
