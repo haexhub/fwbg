@@ -31,6 +31,7 @@ from .logging_utils import log
 from .nested_cv import (
     nested_cv_split, run_inner_cv, evaluate_on_holdout
 )
+from .xgb_config import set_xgboost_n_jobs
 
 
 def _process_single_grid_combo(
@@ -288,11 +289,28 @@ def _process_feature_groups_parallel(
     # Effektives Limit
     max_workers = min(ram_based_limit, cpu_based_limit, n_feature_groups)
 
+    # XGBoost n_jobs: aus Config oder automatisch berechnen
+    # 0 = auto (Kerne / parallele Worker, min 2)
+    # 1 = single-threaded (für VPS/Production)
+    # -1 = alle Kerne (Vorsicht: Überparallelisierung!)
+    if ctx.xgboost_n_jobs == 0:
+        # Automatisch: Kerne gleichmäßig auf Worker verteilen
+        # Minimum 2 Kerne pro XGBoost für sinnvolle Parallelisierung
+        # Nicht alle Worker sind gleichzeitig CPU-intensiv (I/O, Warten etc.)
+        xgb_n_jobs = max(2, total_cores // max_workers)
+    else:
+        xgb_n_jobs = ctx.xgboost_n_jobs
+    set_xgboost_n_jobs(xgb_n_jobs)
+
     # Detailliertes Logging (Level 2 = nur bei Verbose)
     log(2, f"=== Ressourcen-Konfiguration für Feature-Gruppen ===", sym)
     log(2, f"  System: {total_ram_gb:.1f}GB RAM total, {free_ram_gb:.1f}GB frei, {total_cores} CPU-Kerne", sym)
     log(2, f"  Config: {ram_per_thread_gb}GB RAM/Thread, {cpu_per_thread} CPU/Thread", sym)
     log(2, f"  Limits: min_free_ram={min_free_ram_percent*100:.0f}%, max_cpu={max_cpu_percent*100:.0f}%", sym)
+    if ctx.xgboost_n_jobs == 0:
+        log(2, f"  XGBoost n_jobs: {xgb_n_jobs} (auto: {total_cores} Kerne / {max_workers} Worker)", sym)
+    else:
+        log(2, f"  XGBoost n_jobs: {xgb_n_jobs} (konfiguriert)", sym)
     log(3, f"  Berechnung:", sym)
     log(3, f"    - RAM-Reserve: {min_free_ram_gb:.1f}GB (={min_free_ram_percent*100:.0f}% von {total_ram_gb:.1f}GB)", sym)
     log(3, f"    - Verfügbar für Threads: {available_ram_for_threads:.1f}GB", sym)

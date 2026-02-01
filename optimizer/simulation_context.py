@@ -99,6 +99,8 @@ class SimulationContext:
     cpu_per_feature_group: float = 0.5
     min_free_ram_percent: float = 0.15
     max_cpu_percent: float = 0.90
+    # XGBoost n_jobs: 0 = auto (Kerne/Worker), 1 = single-threaded, -1 = alle Kerne
+    xgboost_n_jobs: int = 0
 
     @classmethod
     def create(cls, asset: "AssetConfig", strategy: "StrategyConfig") -> "SimulationContext":
@@ -147,6 +149,7 @@ class SimulationContext:
             cpu_per_feature_group=strategy.resources.cpu_per_feature_group,
             min_free_ram_percent=strategy.resources.min_free_ram_percent,
             max_cpu_percent=strategy.resources.max_cpu_percent,
+            xgboost_n_jobs=strategy.resources.xgboost_n_jobs,
         )
 
     def get_long_grid(self) -> tuple:

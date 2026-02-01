@@ -1,5 +1,6 @@
 holidays
 matplotlib
+numba
 numpy
 pandas
 psutil
