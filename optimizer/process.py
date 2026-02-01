@@ -26,7 +26,7 @@ from .simulation import (
     adjust_kelly_for_target_dd, find_optimal_circuit_breaker, calculate_equity_smoothness
 )
 from .plateau import calculate_param_plateau_score, select_best_plateau_candidate
-from .progress import report_done, report_phase
+from .progress import report_done, report_phase, report_progress, set_parallel_mode
 from .logging_utils import log
 from .nested_cv import (
     nested_cv_split, run_inner_cv, evaluate_on_holdout
@@ -136,7 +136,6 @@ def _process_feature_group(
         Tuple von (candidates_list, grid_results_list)
     """
     from .indicators import filter_features_by_group
-    from .progress import set_parallel_mode
     from .nested_cv import compute_targets_cached, slice_targets_for_fold
 
     # Setze Parallel-Modus für diesen Thread (unterdrückt Progress-Updates)
@@ -251,8 +250,6 @@ def _process_feature_groups_parallel(
 
     def progress_callback(grid_count, grid_per_fg):
         """Callback für Grid-Fortschritt aus Feature-Group-Threads."""
-        from .progress import set_parallel_mode
-
         with progress_lock:
             completed_grid_combos[0] += 1
             current = completed_grid_combos[0]
