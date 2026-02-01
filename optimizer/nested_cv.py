@@ -13,10 +13,11 @@ from typing import List, Dict, Any, Tuple, Optional
 from xgboost import XGBClassifier
 
 from .simulation_context import SimulationContext
-from .simulation import simulate_pro_trade
+from .simulation import simulate_pro_trade, compute_targets_numba
 from .plateau import select_plateau_features
 from .boruta import select_features_boruta
 from .progress import report_progress
+from .xgb_config import get_xgboost_n_jobs
 
 
 def simulate_trades_sequential(
@@ -212,6 +213,8 @@ def compute_targets_cached(
     Diese Funktion berechnet Targets nur einmal pro TP/SL/Timeout-Kombination.
     Die Ergebnisse können dann für jeden Fold per Index-Slice wiederverwendet werden.
 
+    Nutzt Numba-JIT für ~22x Speedup.
+
     Args:
         full_df: Gesamter Inner-DataFrame (nicht nur ein Fold!)
         tp: Take-Profit Multiplikator
@@ -222,36 +225,27 @@ def compute_targets_cached(
     Returns:
         (targets_long, targets_short) - Arrays mit gleicher Länge wie full_df
     """
-    targets_long = np.zeros(len(full_df))
-    targets_short = np.zeros(len(full_df))
+    opn_v = full_df["O"].values.astype(np.float64)
+    cls_v = full_df["C"].values.astype(np.float64)
+    hgh_v = full_df["H"].values.astype(np.float64)
+    low_v = full_df["L"].values.astype(np.float64)
 
-    opn_v = full_df["O"].values
-    cls_v = full_df["C"].values
-    hgh_v = full_df["H"].values
-    low_v = full_df["L"].values
-    atr_v = full_df["_atr"].values
-    timestamps = full_df.index.values
+    # Distanzen berechnen (gleiche Logik wie simulate_pro_trade)
+    tp_distance = ctx.spread * tp
+    sl_distance = ctx.spread * sl
+    slippage = ctx.spread * 0.5
 
-    # Simuliere bis zum vorletzten Bar (letzter Bar kann kein Entry sein)
-    for i in range(len(full_df) - 1):
-        trade_long = simulate_pro_trade(
-            cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, ctx.spread,
-            timestamps=timestamps, symbol=ctx.symbol, opens=opn_v,
-            max_bars=ctx.max_trade_bars,
-            timeout_bars=timeout_bars
-        )
-        trade_short = simulate_pro_trade(
-            cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, ctx.spread,
-            timestamps=timestamps, symbol=ctx.symbol, opens=opn_v,
-            max_bars=ctx.max_trade_bars,
-            timeout_bars=timeout_bars
-        )
-        if trade_long and trade_long["result"] == 1.0:
-            targets_long[i] = 1
-        if trade_short and trade_short["result"] == 1.0:
-            targets_short[i] = 1
+    # max_bars: Wie weit maximal simuliert wird (None = bis zum Ende)
+    max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(full_df)
 
-    return targets_long, targets_short
+    # timeout_bars: Wann Trade geschlossen wird (0 = kein Timeout)
+    timeout_val = timeout_bars if timeout_bars else 0
+
+    return compute_targets_numba(
+        opn_v, cls_v, hgh_v, low_v,
+        tp_distance, sl_distance, ctx.spread, slippage,
+        max_bars, timeout_val
+    )
 
 
 def slice_targets_for_fold(
@@ -366,7 +360,7 @@ def select_features_from_fold(
     else:
         # Altes Verhalten: Importance + Plateau mit top_n=5
         model = XGBClassifier(
-            n_estimators=100, max_depth=5, n_jobs=1,
+            n_estimators=100, max_depth=5, n_jobs=get_xgboost_n_jobs(),
             random_state=42, verbosity=0,
         )
         model.fit(train_df[available_features], targets)
@@ -394,7 +388,7 @@ def train_model(
         return None
 
     model = XGBClassifier(
-        n_estimators=100, max_depth=5, n_jobs=1,
+        n_estimators=100, max_depth=5, n_jobs=get_xgboost_n_jobs(),
         random_state=42, verbosity=0,
     )
     model.fit(train_df[features], targets)

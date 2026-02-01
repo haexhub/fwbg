@@ -17,6 +17,9 @@ from typing import List, Tuple, Optional
 from xgboost import XGBClassifier
 from scipy import stats
 
+# Import n_jobs aus zentraler Config um zirkuläre Imports zu vermeiden
+from .xgb_config import get_xgboost_n_jobs
+
 
 def create_shadow_features(X: pd.DataFrame) -> pd.DataFrame:
     """
@@ -56,7 +59,7 @@ def boruta_iteration(
     model = XGBClassifier(
         n_estimators=n_estimators,
         max_depth=max_depth,
-        n_jobs=1,
+        n_jobs=get_xgboost_n_jobs(),
         random_state=np.random.randint(10000),
         verbosity=0,
     )
@@ -254,7 +257,7 @@ def select_features_boruta(
     # Importances für Logging (approximiert durch letztes Modell)
     if selected:
         model = XGBClassifier(
-            n_estimators=50, max_depth=4, n_jobs=1,
+            n_estimators=50, max_depth=4, n_jobs=get_xgboost_n_jobs(),
             random_state=42, verbosity=0,
         )
         model.fit(X[selected], targets)

@@ -406,6 +406,12 @@ class ResourceParams:
     # Höherer Wert = mehr CPU-Kerne verfügbar
     max_cpu_percent: float = 0.90
 
+    # XGBoost n_jobs: Anzahl Kerne pro XGBoost-Modell
+    # 0 = automatisch (Kerne / parallele Feature-Gruppen)
+    # 1 = single-threaded (für VPS/Production die nur traden)
+    # -1 = alle Kerne (WARNUNG: Überparallelisierung bei vielen Feature-Gruppen!)
+    xgboost_n_jobs: int = 0
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ResourceParams":
         """Erstellt ResourceParams aus Dictionary."""
@@ -426,6 +432,7 @@ class ResourceParams:
             cpu_per_feature_group=data.get("cpu_per_feature_group", 1.0),
             min_free_ram_percent=min_free_ram,
             max_cpu_percent=max_cpu,
+            xgboost_n_jobs=data.get("xgboost_n_jobs", 0),
         )
 
 
