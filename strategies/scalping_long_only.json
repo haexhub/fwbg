@@ -1,37 +1,115 @@
 {
   "name": "Scalping Long Only",
   "description": "Scalping-Strategie nur mit Long-Positionen",
-  "tags": ["scalping", "long_only", "directional"],
+  "tags": ["scalping", "long_only", "directional", "atr_based"],
   "hypothesis": "Long-only Scalping kann in Märkten mit Aufwärtsbias (Aktien, Indizes) bessere Ergebnisse liefern als bidirektional",
   "expected_outcome": "Weniger aber konsistentere Trades, bessere Performance in Bullenmärkten",
-  "model": {
-    "architecture": "unified",
-    "trade_directions": ["long"]
-  },
-  "grids": {
-    "FOREX": {
-      "tp": [15, 20, 25, 30, 40, 50, 60, 80],
-      "sl": [15, 20, 25, 30, 40, 50, 60, 80],
-      "ct": [0.50, 0.52, 0.55, 0.58, 0.60, 0.65, 0.70]
+
+  "indicators": [
+    "trend",
+    "momentum",
+    "volatility",
+    "price_action",
+    "microstructure"
+  ],
+
+  "indicator_params": {
+    "trend": {
+      "adx_periods": [7, 14],
+      "ema_periods": [8, 21, 50]
     },
-    "INDEX": {
-      "tp": [20, 30, 50, 70, 100, 150],
-      "sl": [20, 30, 50, 70, 100, 150],
-      "ct": [0.50, 0.52, 0.55, 0.60, 0.65, 0.70]
+    "momentum": {
+      "rsi_periods": [5, 7, 14],
+      "stoch_periods": [7, 14],
+      "roc_periods": [3, 5]
     },
-    "COMMODITY": {
-      "tp": [20, 30, 40, 60, 80, 100],
-      "sl": [20, 30, 40, 60, 80, 100],
-      "ct": [0.50, 0.52, 0.55, 0.58, 0.62, 0.65, 0.70]
+    "volatility": {
+      "bb_periods": [10, 20],
+      "atr_periods": [5, 7, 14]
     },
-    "CRYPTO": {
-      "tp": [20, 30, 50, 80, 120, 200],
-      "sl": [20, 30, 50, 80, 120, 200],
-      "ct": [0.50, 0.52, 0.55, 0.60, 0.65, 0.70]
+    "price_action": {
+      "hh_ll_period": 3,
+      "compute_volume": true
+    },
+    "microstructure": {
+      "atr_period": 7,
+      "rolling_window": 3
     }
   },
+
+  "exit_strategy": "atr_based",
+
+  "exit_params": {
+    "atr_period": 7,
+    "min_tp_pips": 5,
+    "min_sl_pips": 8
+  },
+
+  "feature_selector": "boruta",
+
+  "feature_params": {
+    "max_features": 25,
+    "n_iter": 8,
+    "n_estimators": 100
+  },
+
+  "model": {
+    "type": "xgboost",
+    "architecture": "unified",
+    "trade_directions": ["long"],
+    "hyperparameters": {
+      "n_estimators": 100,
+      "max_depth": 4,
+      "learning_rate": 0.1,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
+    }
+  },
+
+  "grids": {
+    "FOREX": {
+      "tp": [0.25, 0.4, 0.5, 0.6, 0.75, 1.0, 1.25],
+      "sl": [0.25, 0.4, 0.5, 0.6, 0.75, 1.0, 1.25],
+      "ct": [0.50, 0.52, 0.55, 0.58, 0.60, 0.65, 0.70],
+      "timeout_bars": [3, 6, 12, 24]
+    },
+    "INDEX": {
+      "tp": [0.4, 0.6, 1.0, 1.4, 2.0, 3.0],
+      "sl": [0.4, 0.6, 1.0, 1.4, 2.0, 3.0],
+      "ct": [0.50, 0.52, 0.55, 0.60, 0.65, 0.70],
+      "timeout_bars": [3, 6, 12, 24]
+    },
+    "COMMODITY": {
+      "tp": [0.4, 0.6, 0.8, 1.2, 1.6, 2.0],
+      "sl": [0.4, 0.6, 0.8, 1.2, 1.6, 2.0],
+      "ct": [0.50, 0.52, 0.55, 0.58, 0.62, 0.65, 0.70],
+      "timeout_bars": [3, 6, 12, 24]
+    },
+    "CRYPTO": {
+      "tp": [0.4, 0.6, 1.0, 1.6, 2.4, 4.0],
+      "sl": [0.4, 0.6, 1.0, 1.6, 2.4, 4.0],
+      "ct": [0.50, 0.52, 0.55, 0.60, 0.65, 0.70],
+      "timeout_bars": [6, 12, 24]
+    }
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "min_trades": 100,
+    "n_inner_folds": 5
+  },
+
   "filters": {
     "min_rrr": 0.0,
-    "min_trades": 50
+    "min_trades": 50,
+    "max_drawdown": 0.35
+  },
+
+  "resources": {
+    "ram_per_feature_group_gb": 0.5,
+    "cpu_per_feature_group": 0.5,
+    "max_cpu_percent": 0.8
   }
 }

@@ -1,36 +1,114 @@
 {
   "name": "Asian Session Strategy",
-  "description": "Optimiert fuer die asiatische Handelszeit (00:00-08:00 UTC), niedrigere Volatilitaet",
-  "tags": ["asian_session", "time_based", "range_trading", "low_volatility"],
+  "description": "Optimiert für die asiatische Handelszeit (00:00-08:00 UTC) - Range-Trading bei niedriger Volatilität",
+  "tags": ["asian_session", "time_based", "range_trading", "low_volatility", "atr_based"],
   "hypothesis": "Asiatische Session hat andere Charakteristik - mehr Range-Trading, weniger Trends",
   "expected_outcome": "Konsistente kleine Gewinne, Win-Rate 55-70%",
-  "features": {
-    "preferred_groups": ["time", "price_action", "volatility"]
-  },
-  "grids": {
-    "FOREX": {
-      "tp": [15, 20, 25, 35, 45],
-      "sl": [20, 30, 40, 50, 60],
-      "ct": [0.55, 0.60, 0.65, 0.70]
+
+  "indicators": [
+    "price_action",
+    "volatility",
+    "time_season",
+    "momentum",
+    "microstructure"
+  ],
+
+  "indicator_params": {
+    "price_action": {
+      "hh_ll_period": 3,
+      "compute_volume": true
     },
-    "INDEX": {
-      "tp": [20, 35, 50, 70, 100],
-      "sl": [30, 50, 70, 100, 140],
-      "ct": [0.55, 0.60, 0.65, 0.70]
+    "volatility": {
+      "bb_periods": [20],
+      "atr_periods": [7, 14]
     },
-    "COMMODITY": {
-      "tp": [20, 30, 45, 65, 90],
-      "sl": [25, 40, 60, 85, 120],
-      "ct": [0.55, 0.60, 0.65, 0.70]
+    "time_season": {
+      "include_raw": true,
+      "include_encoded": true
     },
-    "CRYPTO": {
-      "tp": [30, 60, 100, 160],
-      "sl": [50, 90, 150, 230],
-      "ct": [0.55, 0.60, 0.65]
+    "momentum": {
+      "rsi_periods": [7, 14],
+      "stoch_periods": [14]
+    },
+    "microstructure": {
+      "atr_period": 7,
+      "rolling_window": 3
     }
   },
+
+  "exit_strategy": "atr_based",
+
+  "exit_params": {
+    "atr_period": 14,
+    "min_tp_pips": 8,
+    "min_sl_pips": 10
+  },
+
+  "feature_selector": "boruta",
+
+  "feature_params": {
+    "max_features": 25,
+    "n_iter": 10,
+    "n_estimators": 100
+  },
+
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "trade_directions": ["long", "short"],
+    "hyperparameters": {
+      "n_estimators": 150,
+      "max_depth": 5,
+      "learning_rate": 0.1,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
+    }
+  },
+
+  "grids": {
+    "FOREX": {
+      "tp": [0.5, 0.75, 1.0, 1.25, 1.5],
+      "sl": [0.75, 1.0, 1.25, 1.5, 2.0],
+      "ct": [0.55, 0.60, 0.65, 0.70],
+      "timeout_bars": [6, 12, 24]
+    },
+    "INDEX": {
+      "tp": [0.5, 0.75, 1.0, 1.5, 2.0],
+      "sl": [0.75, 1.0, 1.5, 2.0],
+      "ct": [0.55, 0.60, 0.65, 0.70],
+      "timeout_bars": [6, 12, 24]
+    },
+    "COMMODITY": {
+      "tp": [0.5, 0.75, 1.0, 1.5, 2.0],
+      "sl": [0.75, 1.0, 1.5, 2.0],
+      "ct": [0.55, 0.60, 0.65, 0.70],
+      "timeout_bars": [6, 12, 24]
+    },
+    "CRYPTO": {
+      "tp": [0.75, 1.0, 1.5, 2.0],
+      "sl": [1.0, 1.5, 2.0, 2.5],
+      "ct": [0.55, 0.60, 0.65],
+      "timeout_bars": [12, 24]
+    }
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "min_trades": 100,
+    "n_inner_folds": 5
+  },
+
   "filters": {
     "min_rrr": 0.0,
-    "min_trades": 50
+    "min_trades": 50,
+    "max_drawdown": 0.35
+  },
+
+  "resources": {
+    "ram_per_feature_group_gb": 0.5,
+    "cpu_per_feature_group": 0.5,
+    "max_cpu_percent": 0.8
   }
 }

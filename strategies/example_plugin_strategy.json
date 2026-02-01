@@ -1,31 +1,23 @@
 {
-  "name": "Default Strategy",
-  "description": "Standard Walk-Forward Optimierung mit allen Core-Indikatoren",
-  "tags": ["default", "balanced", "atr_based"],
-  "hypothesis": "Ausgewogene Strategie mit den wichtigsten Indikatoren",
-  "expected_outcome": "Solide Baseline-Performance",
+  "name": "Plugin Strategy Example",
+  "description": "Beispiel-Strategie mit der neuen Plugin-basierten Struktur",
+  "tags": ["plugin", "example", "atr_based"],
 
-  "indicators": [
-    "trend",
-    "momentum",
-    "volatility",
-    "price_action",
-    "time_season"
-  ],
+  "hypothesis": "Demonstration der Plugin-Architektur mit ATR-basierter Exit-Strategie",
+  "expected_outcome": "Zeigt wie Plugins konfiguriert werden",
+
+  "indicators": ["trend", "momentum", "volatility"],
 
   "indicator_params": {
     "trend": {
       "adx_periods": [14, 21],
-      "ema_periods": [21, 50, 200],
-      "sma_periods": [50, 200]
+      "ema_periods": [21, 50, 100]
     },
     "momentum": {
-      "rsi_periods": [14],
-      "stoch_periods": [14]
+      "rsi_periods": [14, 21]
     },
     "volatility": {
-      "bb_periods": [20],
-      "atr_periods": [14]
+      "atr_periods": [14, 21]
     }
   },
 
@@ -42,8 +34,16 @@
   "feature_params": {
     "max_features": 30,
     "n_iter": 10,
-    "n_estimators": 100,
-    "max_depth": 5
+    "min_z_score": 0.5
+  },
+
+  "preprocessing": ["fractional_diff"],
+
+  "preprocessing_params": {
+    "fractional_diff": {
+      "auto_d": true,
+      "default_d": 0.4
+    }
   },
 
   "model": {
@@ -51,11 +51,8 @@
     "architecture": "long_short_separate",
     "trade_directions": ["long", "short"],
     "hyperparameters": {
-      "n_estimators": 150,
+      "n_estimators": 100,
       "max_depth": 5,
-      "learning_rate": 0.1,
-      "subsample": 0.8,
-      "colsample_bytree": 0.8,
       "random_state": 42
     }
   },
@@ -64,25 +61,25 @@
     "FOREX": {
       "tp": [1.0, 1.5, 2.0, 2.5, 3.0],
       "sl": [1.0, 1.5, 2.0, 2.5],
-      "ct": [0.52, 0.55, 0.58, 0.60, 0.65, 0.70],
-      "timeout_bars": [null, 24, 48]
+      "ct": [0.50, 0.52, 0.55, 0.58, 0.60],
+      "timeout_bars": [null, 24, 48, 96]
     },
     "INDEX": {
-      "tp": [1.0, 1.5, 2.0, 3.0],
-      "sl": [1.0, 1.5, 2.0],
-      "ct": [0.52, 0.55, 0.60, 0.65, 0.70],
+      "tp": [1.0, 1.5, 2.0, 2.5, 3.0],
+      "sl": [1.0, 1.5, 2.0, 2.5],
+      "ct": [0.50, 0.52, 0.55, 0.60],
       "timeout_bars": [null, 24, 48]
     },
     "COMMODITY": {
       "tp": [1.0, 1.5, 2.0, 2.5, 3.0],
-      "sl": [1.0, 1.5, 2.0],
-      "ct": [0.52, 0.55, 0.58, 0.62, 0.65, 0.70],
+      "sl": [1.0, 1.5, 2.0, 2.5],
+      "ct": [0.50, 0.52, 0.55, 0.60],
       "timeout_bars": [null, 24, 48]
     },
     "CRYPTO": {
       "tp": [1.5, 2.0, 2.5, 3.0, 4.0],
-      "sl": [1.5, 2.0, 2.5],
-      "ct": [0.52, 0.55, 0.60, 0.65],
+      "sl": [1.5, 2.0, 2.5, 3.0],
+      "ct": [0.50, 0.52, 0.55, 0.60],
       "timeout_bars": [null, 48, 96]
     }
   },
@@ -91,7 +88,7 @@
     "method": "walk_forward",
     "folds": 8,
     "oos_size": 4000,
-    "min_trades": 200,
+    "min_trades": 50,
     "n_inner_folds": 5
   },
 
@@ -107,7 +104,7 @@
     "ram_per_feature_group_gb": 0.5,
     "cpu_per_feature_group": 0.5,
     "min_free_ram_percent": 0.15,
-    "max_cpu_percent": 0.8,
+    "max_cpu_percent": 0.9,
     "xgboost_n_jobs": 0
   }
 }

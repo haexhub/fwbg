@@ -1,123 +1,129 @@
 {
   "name": "Swing Trading",
-  "description": "Längerfristige Trades (Tage bis Wochen) mit großen TP/SL-Zielen und hohem RRR",
-  "tags": [
-    "swing",
-    "trend_following",
-    "high_rrr",
-    "long_hold"
+  "description": "Längerfristige Trades (Tage bis Wochen) mit großen TP/SL-Zielen",
+  "tags": ["swing", "trend_following", "high_rrr", "long_hold", "atr_based"],
+  "hypothesis": "Swing-Trading mit großen TP-Zielen kann profitable Trend-Following-Setups identifizieren",
+  "expected_outcome": "Weniger Trades, höheres RRR (>1.5), längere Haltezeit",
+
+  "indicators": [
+    "trend",
+    "momentum",
+    "regime",
+    "multi_timeframe",
+    "risk",
+    "ichimoku",
+    "dynamics"
   ],
-  "hypothesis": "Swing-Trading-Strategien mit großen TP-Zielen (100-1000x Spread) und moderaten SL können profitable Trend-Following-Setups identifizieren",
-  "expected_outcome": "Weniger Trades, aber höheres RRR (>1.5) und längere Haltezeit (Tage bis Wochen)",
-  "model": {
-    "architecture": "long_short_separate"
-  },
-  "features": {
-    "preferred_groups": [
-      "trend_momentum",
-      "macro_vol"
-    ]
-  },
-  "grids": {
-    "FOREX": {
-      "tp": [
-        100,
-        150,
-        200,
-        300,
-        500,
-        750,
-        1000
-      ],
-      "sl": [
-        50,
-        75,
-        100,
-        150,
-        200,
-        300
-      ],
-      "ct": [
-        0.55,
-        0.6,
-        0.65,
-        0.7,
-        0.75
-      ]
+
+  "indicator_params": {
+    "trend": {
+      "adx_periods": [14, 21],
+      "ema_periods": [50, 100, 200],
+      "sma_periods": [50, 200],
+      "er_periods": [20, 50]
     },
-    "INDEX": {
-      "tp": [
-        100,
-        200,
-        300,
-        500,
-        750,
-        1000
-      ],
-      "sl": [
-        50,
-        100,
-        150,
-        200,
-        300
-      ],
-      "ct": [
-        0.55,
-        0.6,
-        0.65,
-        0.7,
-        0.75
-      ]
+    "momentum": {
+      "rsi_periods": [14, 21],
+      "roc_periods": [10, 20]
     },
-    "COMMODITY": {
-      "tp": [
-        100,
-        200,
-        300,
-        500,
-        750,
-        1000
-      ],
-      "sl": [
-        50,
-        100,
-        150,
-        200,
-        300
-      ],
-      "ct": [
-        0.55,
-        0.6,
-        0.65,
-        0.7,
-        0.75
-      ]
+    "regime": {
+      "hurst_windows": [200, 500],
+      "step": 10
     },
-    "CRYPTO": {
-      "tp": [
-        200,
-        400,
-        600,
-        1000,
-        1500,
-        2000
-      ],
-      "sl": [
-        100,
-        200,
-        300,
-        500
-      ],
-      "ct": [
-        0.55,
-        0.6,
-        0.65,
-        0.7
-      ]
+    "multi_timeframe": {
+      "h4_bars": 4,
+      "d1_bars": 24,
+      "ema_periods": [50, 100]
+    },
+    "risk": {
+      "dd_windows": [100, 200],
+      "cvar_windows": [100],
+      "vov_windows": [50, 100]
+    },
+    "ichimoku": {
+      "tenkan_period": 9,
+      "kijun_period": 26,
+      "senkou_b_period": 52
+    },
+    "dynamics": {
+      "lookbacks": [24, 48],
+      "lag_periods": [24, 48, 96]
     }
   },
+
+  "exit_strategy": "atr_based",
+
+  "exit_params": {
+    "atr_period": 21,
+    "min_tp_pips": 20,
+    "min_sl_pips": 15
+  },
+
+  "feature_selector": "boruta",
+
+  "feature_params": {
+    "max_features": 40,
+    "n_iter": 12,
+    "n_estimators": 100
+  },
+
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "trade_directions": ["long", "short"],
+    "hyperparameters": {
+      "n_estimators": 200,
+      "max_depth": 6,
+      "learning_rate": 0.1,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
+    }
+  },
+
+  "grids": {
+    "FOREX": {
+      "tp": [3.0, 4.0, 5.0, 6.0, 8.0, 10.0],
+      "sl": [1.5, 2.0, 2.5, 3.0],
+      "ct": [0.55, 0.6, 0.65, 0.7, 0.75],
+      "timeout_bars": [null, 96, 168, 336]
+    },
+    "INDEX": {
+      "tp": [3.0, 4.0, 5.0, 6.0, 8.0],
+      "sl": [1.5, 2.0, 2.5, 3.0],
+      "ct": [0.55, 0.6, 0.65, 0.7, 0.75],
+      "timeout_bars": [null, 96, 168, 336]
+    },
+    "COMMODITY": {
+      "tp": [3.0, 4.0, 5.0, 6.0, 8.0],
+      "sl": [1.5, 2.0, 2.5, 3.0],
+      "ct": [0.55, 0.6, 0.65, 0.7, 0.75],
+      "timeout_bars": [null, 96, 168, 336]
+    },
+    "CRYPTO": {
+      "tp": [4.0, 5.0, 6.0, 8.0, 10.0],
+      "sl": [2.0, 2.5, 3.0, 4.0],
+      "ct": [0.55, 0.6, 0.65, 0.7],
+      "timeout_bars": [null, 168, 336]
+    }
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "min_trades": 40,
+    "n_inner_folds": 5
+  },
+
   "filters": {
     "min_rrr": 1.0,
-    "min_trades": 30
+    "min_trades": 30,
+    "max_drawdown": 0.5
+  },
+
+  "resources": {
+    "ram_per_feature_group_gb": 0.5,
+    "cpu_per_feature_group": 0.5,
+    "max_cpu_percent": 0.8
   }
 }
