@@ -242,33 +242,35 @@ class TestBotImportsOptimizerModules:
         # Lade ig_bot.py als Text und prüfe Imports
         bot_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'ig_bot.py'
+            'bots', 'ig', 'bot.py'
         )
 
         with open(bot_path, 'r') as f:
             bot_code = f.read()
 
-        assert 'from optimizer.indicators import compute_indicator_pool' in bot_code, \
+        # Bot nutzt jetzt das Plugin-System (fwbg.builtins)
+        assert 'compute_indicator_pool' in bot_code, \
             "Bot muss compute_indicator_pool importieren!"
 
     def test_bot_imports_load_macro_indicators(self):
         """Bot muss load_macro_indicators importieren."""
         bot_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'ig_bot.py'
+            'bots', 'ig', 'bot.py'
         )
 
         with open(bot_path, 'r') as f:
             bot_code = f.read()
 
-        assert 'from optimizer.data_loader import load_macro_indicators' in bot_code, \
+        # Bot nutzt jetzt das Plugin-System (fwbg.builtins)
+        assert 'load_macro_indicators' in bot_code, \
             "Bot muss load_macro_indicators importieren!"
 
     def test_bot_imports_load_interest_rates(self):
         """Bot muss load_interest_rates importieren."""
         bot_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'ig_bot.py'
+            'bots', 'ig', 'bot.py'
         )
 
         with open(bot_path, 'r') as f:
@@ -281,7 +283,7 @@ class TestBotImportsOptimizerModules:
         """Bot muss compute_indicator_pool in load_and_prepare_data verwenden."""
         bot_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'ig_bot.py'
+            'bots', 'ig', 'bot.py'
         )
 
         with open(bot_path, 'r') as f:
@@ -299,7 +301,7 @@ class TestBotDataFlow:
         """Bot muss fetch_ig_historical Methode haben."""
         bot_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'ig_bot.py'
+            'bots', 'ig', 'bot.py'
         )
 
         with open(bot_path, 'r') as f:
@@ -312,7 +314,7 @@ class TestBotDataFlow:
         """Bot muss fetch_macro_data Methode haben."""
         bot_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'ig_bot.py'
+            'bots', 'ig', 'bot.py'
         )
 
         with open(bot_path, 'r') as f:
@@ -325,7 +327,7 @@ class TestBotDataFlow:
         """Bot muss IG API für historische Daten verwenden."""
         bot_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'ig_bot.py'
+            'bots', 'ig', 'bot.py'
         )
 
         with open(bot_path, 'r') as f:
@@ -351,7 +353,7 @@ class TestGoldFeaturesParity:
         """Bot muss Live-Makro-Daten für aktuelle Entscheidungen aktualisieren."""
         bot_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'ig_bot.py'
+            'bots', 'ig', 'bot.py'
         )
 
         with open(bot_path, 'r') as f:

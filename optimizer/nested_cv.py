@@ -18,6 +18,8 @@ from .plateau import select_plateau_features
 from .boruta import select_features_boruta
 from .progress import report_progress
 from .xgb_config import get_xgboost_n_jobs
+from .exit_strategies import get_strategy
+from .exit_strategies.base import GridParams
 
 
 def simulate_trades_sequential(
@@ -205,7 +207,9 @@ def compute_targets_cached(
     tp: int,
     sl: int,
     ctx: SimulationContext,
-    timeout_bars: int = None
+    timeout_bars: int = None,
+    exit_strategy_mode: str = "fixed",
+    grid_params: GridParams = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Berechnet Targets einmal auf dem gesamten DataFrame (für Caching).
@@ -213,18 +217,39 @@ def compute_targets_cached(
     Diese Funktion berechnet Targets nur einmal pro TP/SL/Timeout-Kombination.
     Die Ergebnisse können dann für jeden Fold per Index-Slice wiederverwendet werden.
 
-    Nutzt Numba-JIT für ~22x Speedup.
+    Unterstützt verschiedene Exit-Strategien:
+    - "fixed": Fixe TP/SL-Werte (spread-basiert)
+    - "atr_based": ATR-basierte dynamische TP/SL
 
     Args:
         full_df: Gesamter Inner-DataFrame (nicht nur ein Fold!)
-        tp: Take-Profit Multiplikator
-        sl: Stop-Loss Multiplikator
+        tp: Take-Profit Wert (Spread-Multiplikator bei fixed, ATR-Multiplikator bei atr_based)
+        sl: Stop-Loss Wert (Spread-Multiplikator bei fixed, ATR-Multiplikator bei atr_based)
         ctx: SimulationContext
         timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
+        exit_strategy_mode: "fixed" oder "atr_based"
+        grid_params: GridParams-Objekt mit allen Parametern (wenn vorhanden, werden tp/sl ignoriert)
 
     Returns:
         (targets_long, targets_short) - Arrays mit gleicher Länge wie full_df
     """
+    # Dispatch zu Exit-Strategie
+    if exit_strategy_mode == "atr_based":
+        # ATR-basierte Exit-Strategie verwenden
+        strategy_cls = get_strategy("atr_based")
+        strategy = strategy_cls()
+
+        # Erstelle GridParams wenn nicht übergeben
+        if grid_params is None:
+            grid_params = GridParams(
+                tp_value=float(tp),
+                sl_value=float(sl),
+                timeout_bars=timeout_bars,
+            )
+
+        return strategy.compute_targets(full_df, ctx, grid_params)
+
+    # Default: Fixed Exit Strategy (Numba-optimiert)
     opn_v = full_df["O"].values.astype(np.float64)
     cls_v = full_df["C"].values.astype(np.float64)
     hgh_v = full_df["H"].values.astype(np.float64)
@@ -293,6 +318,7 @@ def select_features_from_fold(
     group_features: List[str],
     min_trades: int,
     feature_selection: str = "boruta",
+    max_features: int = 0,
 ) -> Tuple[Optional[List[str]], Dict[str, float]]:
     """
     Wählt Features basierend auf einem Training-Fold.
@@ -306,6 +332,7 @@ def select_features_from_fold(
             - "boruta" (default): Boruta findet alle relevanten Features, kein Limit
             - "boruta_plateau": Boruta + Plateau-Validierung (kombiniert)
             - "importance_based": Altes Verhalten mit top_n=5
+        max_features: Maximum Features pro Modell (0 = kein Limit)
 
     Returns:
         (selected_features, importances_dict) oder (None, {})
@@ -319,11 +346,12 @@ def select_features_from_fold(
         return None, {}
 
     if feature_selection == "boruta":
-        # Boruta: Kein hartes Feature-Limit, alle relevanten Features werden genutzt
+        # Boruta: Findet alle relevanten Features, optional mit max_features Limit
         return select_features_boruta(
             train_df, targets, available_features,
             min_trades=min_trades,
             min_z_score=0.5,
+            max_features=max_features,
         )
 
     elif feature_selection == "boruta_plateau":
@@ -332,6 +360,7 @@ def select_features_from_fold(
             train_df, targets, available_features,
             min_trades=min_trades,
             min_z_score=0.3,  # Etwas lockerer, Plateau filtert danach
+            max_features=max_features,
         )
 
         if boruta_features and len(boruta_features) >= 2:
@@ -675,12 +704,14 @@ def run_inner_cv(
             if has_long:
                 selected_features_long, _ = select_features_from_fold(
                     train_df, targets_long, group_features, ctx.min_trades,
-                    feature_selection=ctx.feature_selection
+                    feature_selection=ctx.feature_selection,
+                    max_features=ctx.max_features,
                 )
             if has_short:
                 selected_features_short, _ = select_features_from_fold(
                     train_df, targets_short, group_features, ctx.min_trades,
-                    feature_selection=ctx.feature_selection
+                    feature_selection=ctx.feature_selection,
+                    max_features=ctx.max_features,
                 )
 
         if not selected_features_long and not selected_features_short:

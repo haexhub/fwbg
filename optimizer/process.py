@@ -181,7 +181,8 @@ def _process_feature_group(
                 cached_targets = None
                 if inner_df is not None:
                     full_targets_long, full_targets_short = compute_targets_cached(
-                        inner_df, tp, sl, ctx, timeout_bars
+                        inner_df, tp, sl, ctx, timeout_bars,
+                        exit_strategy_mode=ctx.exit_strategy_mode,
                     )
                     cached_targets = {}
                     for fold_idx, (train_df, _) in enumerate(inner_folds):

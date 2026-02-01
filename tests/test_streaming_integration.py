@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 # Projekt-Root zum Path hinzufügen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ig_bot import EliteBot, STREAMING_AVAILABLE
+from bots.ig import EliteBot, STREAMING_AVAILABLE
 
 # Skip alle Tests wenn Streaming nicht verfügbar
 pytestmark = pytest.mark.skipif(
@@ -63,7 +63,7 @@ class TestStreamingAvailability:
 
     def test_streaming_modules_importable(self):
         """Streaming-Module sollten importierbar sein."""
-        from ig_streaming import StreamingManager, StreamingCacheManager, CandleListener
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager, CandleListener
         assert StreamingManager is not None
         assert StreamingCacheManager is not None
         assert CandleListener is not None
@@ -97,7 +97,7 @@ class TestStreamingConnection:
 
     def test_streaming_manager_connects(self, bot_instance):
         """StreamingManager sollte verbinden können."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         cache_manager = StreamingCacheManager(bot_instance)
 
@@ -126,7 +126,7 @@ class TestStreamingSubscription:
 
     def test_can_subscribe_to_chart_hour(self, bot_instance):
         """Sollte CHART:EPIC:HOUR subscriben können."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
         from lightstreamer.client import Subscription
 
         cache_manager = StreamingCacheManager(bot_instance)
@@ -154,7 +154,7 @@ class TestStreamingSubscription:
 
     def test_subscription_receives_updates(self, bot_instance):
         """Subscription sollte Updates empfangen."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         received_updates = []
 
@@ -201,7 +201,7 @@ class TestStreamingCacheIntegration:
 
     def test_streaming_updates_bot_cache(self, bot_instance):
         """Streaming-Updates sollten Bot-Cache aktualisieren."""
-        from ig_streaming import StreamingCacheManager
+        from bots.ig.streaming import StreamingCacheManager
 
         # Initial cache status
         initial_cache_count = len(bot_instance.ohlc_cache.get("EURUSD", []))
@@ -243,7 +243,7 @@ class TestStreamingReconnect:
 
     def test_manager_tracks_heartbeat(self, bot_instance):
         """Manager sollte Heartbeat tracken."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         cache_manager = StreamingCacheManager(bot_instance)
         test_symbol = list(bot_instance.models.keys())[0] if bot_instance.models else None
@@ -272,7 +272,7 @@ class TestStreamingReconnect:
 
     def test_manager_resets_reconnect_counter_on_connect(self, bot_instance):
         """Reconnect-Counter sollte bei erfolgreichem Connect zurückgesetzt werden."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         cache_manager = StreamingCacheManager(bot_instance)
         test_symbol = list(bot_instance.models.keys())[0] if bot_instance.models else None
@@ -342,7 +342,7 @@ class TestMinuteCandleStreaming:
         Test dass wir eine vollständige MINUTE-Kerze mit CONS_END=1 empfangen.
         Dieser Test wartet bis zu 90 Sekunden auf eine abgeschlossene Kerze.
         """
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         # Tracking für empfangene Candles
         received_candles = []
@@ -413,7 +413,7 @@ class TestMinuteCandleStreaming:
 
     def test_minute_subscription_item_format(self, bot_instance):
         """Test dass die MINUTE-Subscription das richtige Format verwendet."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         cache_manager = StreamingCacheManager(bot_instance)
 
@@ -460,7 +460,7 @@ class TestHistoricalPlusStreamingWorkflow:
         - Dann Streaming starten mit MINUTE-Kerzen
         - Prüfen dass neue Kerzen korrekt angehängt werden
         """
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
         import pandas as pd
 
         # Wähle ein Symbol
@@ -591,7 +591,7 @@ class TestHistoricalPlusStreamingWorkflow:
         Test dass Streaming-Kerzen lückenlos an historische Daten angehängt werden.
         Simuliert den Übergang von historisch zu live.
         """
-        from ig_streaming import StreamingCacheManager
+        from bots.ig.streaming import StreamingCacheManager
         import pandas as pd
 
         test_symbol = "TEST_SYMBOL"
@@ -660,7 +660,7 @@ class TestCandleBuilding:
         Test dass Kerzen korrekt aus mehreren Streaming-Updates zusammengebaut werden.
         Prüft Mid-Price Berechnung (Bid+Ask)/2.
         """
-        from ig_streaming import CandleListener, StreamingCacheManager
+        from bots.ig.streaming import CandleListener, StreamingCacheManager
         from unittest.mock import MagicMock
 
         print(f"\n{'='*60}")
@@ -790,7 +790,7 @@ class TestCandleBuilding:
         """
         Live-Test: Warte auf echte MINUTE-Kerze und prüfe die Struktur.
         """
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         test_symbol = list(bot_instance.models.keys())[0] if bot_instance.models else None
         if not test_symbol:
@@ -871,7 +871,7 @@ class TestStreamingPerformance:
 
     def test_cache_update_is_fast(self, bot_instance):
         """Cache-Update sollte schnell sein (<100ms)."""
-        from ig_streaming import StreamingCacheManager
+        from bots.ig.streaming import StreamingCacheManager
         import time
 
         cache_manager = StreamingCacheManager(bot_instance)

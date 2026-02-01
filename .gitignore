@@ -2,9 +2,31 @@ config.yaml
 .venv
 __pycache__/
 *.pyc
+*.pyo
 *.log
 trade_history.csv
 data/
 stats_export/
 account_info.json
 test_results/
+
+# Build artifacts
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Type checking
+.mypy_cache/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
