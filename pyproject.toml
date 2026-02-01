@@ -1,0 +1,133 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fwbg"
+version = "2.0.0"
+description = "Forex/Trading Strategy Optimizer with Plugin Architecture"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Proprietary"}
+authors = [
+    {name = "FWBG Team"}
+]
+keywords = ["trading", "forex", "optimization", "machine-learning", "xgboost"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    # Core Data Processing
+    "numpy>=2.2",
+    "pandas>=3.0",
+    "scipy>=1.15",
+    # ML / Optimization
+    "xgboost>=3.0",
+    "scikit-learn>=1.7",
+    # Technical Analysis
+    "ta>=0.11",
+    "numba>=0.63",
+    # Utilities
+    "tabulate>=0.9",
+    "tqdm>=4.66",
+    "psutil>=7.0",
+    "PyYAML>=6.0",
+    "holidays>=0.70",
+]
+
+[project.optional-dependencies]
+# Development tools
+dev = [
+    "pytest>=9.0",
+    "pytest-cov>=7.0",
+    "black>=26.0",
+    "isort>=7.0",
+    "mypy>=1.15",
+]
+# Advanced analytics & visualization
+analytics = [
+    "statsmodels>=0.14",
+    "matplotlib>=3.10",
+    "seaborn>=0.13",
+]
+# Live trading with IG Markets
+ig = [
+    "trading-ig>=0.0.22",
+    "yfinance>=1.0",
+]
+# All optional dependencies
+full = [
+    "fwbg[analytics,ig]",
+]
+
+[project.scripts]
+fwbg = "fwbg.cli:main"
+
+# Entry Points für Plugin-Discovery
+[project.entry-points."fwbg.indicators"]
+# Core Indicators
+trend = "fwbg.builtins.indicators.trend:TrendIndicators"
+momentum = "fwbg.builtins.indicators.momentum:MomentumIndicators"
+volatility = "fwbg.builtins.indicators.volatility:VolatilityIndicators"
+# Advanced Indicators
+regime = "fwbg.builtins.indicators.regime:RegimeIndicators"
+structure = "fwbg.builtins.indicators.structure:StructureIndicators"
+risk = "fwbg.builtins.indicators.risk:RiskIndicators"
+price_action = "fwbg.builtins.indicators.price_action:PriceActionIndicators"
+time_season = "fwbg.builtins.indicators.time_season:TimeSeasonIndicators"
+distribution = "fwbg.builtins.indicators.distribution:DistributionIndicators"
+dynamics = "fwbg.builtins.indicators.dynamics:DynamicsIndicators"
+multi_timeframe = "fwbg.builtins.indicators.multi_timeframe:MultiTimeframeIndicators"
+cross_features = "fwbg.builtins.indicators.cross_features:CrossFeatureIndicators"
+ichimoku = "fwbg.builtins.indicators.ichimoku:IchimokuIndicators"
+microstructure = "fwbg.builtins.indicators.microstructure:MicrostructureIndicator"
+macro_surprise = "fwbg.builtins.indicators.macro_surprise:MacroSurpriseIndicator"
+
+[project.entry-points."fwbg.exit_strategies"]
+fixed = "fwbg.builtins.exit_strategies.fixed:FixedExitStrategy"
+atr_based = "fwbg.builtins.exit_strategies.atr_based:AtrExitStrategy"
+
+[project.entry-points."fwbg.feature_selectors"]
+boruta = "fwbg.builtins.feature_selection.boruta:BorutaSelector"
+plateau = "fwbg.builtins.feature_selection.plateau:PlateauSelector"
+
+[project.entry-points."fwbg.preprocessors"]
+fractional_diff = "fwbg.builtins.preprocessing.fractional_diff:FractionalDiffPreprocessor"
+
+[project.entry-points."fwbg.data_adapters"]
+csv = "fwbg.adapters.data.csv_adapter:CSVDataAdapter"
+
+[project.entry-points."fwbg.execution_adapters"]
+ig = "fwbg.adapters.execution.ig_adapter:IGExecutionAdapter"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311", "py312", "py313"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fwbg-adapter-binance"
+version = "1.0.0"
+description = "Binance Execution Adapter for FWBG"
+requires-python = ">=3.9"
+dependencies = [
+    "fwbg>=2.0.0",
+    "python-binance>=1.0.0",
+]
+
+# Entry Points - so findet FWBG den Adapter automatisch
+[project.entry-points."fwbg.execution_adapters"]
+binance = "fwbg_adapter_binance:BinanceAdapter"
+
+[tool.setuptools.packages.find]
+where = ["src"]

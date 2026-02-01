@@ -1,5 +1,7 @@
 """
-Optimizer Module für Walk-Forward Strategie-Optimierung
+Optimizer Module für Walk-Forward Strategie-Optimierung.
+
+Verwendet das Plugin-System aus fwbg.core und fwbg.plugins.
 """
 from .config import (
     ACCOUNT_NAME, DATA_PATH, BASE_PATH, EXPORT_FILE, PLOT_PATH,
@@ -8,24 +10,12 @@ from .config import (
     convert_numpy
 )
 
-# Neue Konfigurationsklassen
-from .strategy_config import (
-    StrategyConfig, GridConfig, SimulationParams,
-    ValidationParams, FilterParams, FeatureParams, ModelConfig
-)
 from .asset_config import AssetConfig, AssetRegistry, get_asset
-from .simulation_context import SimulationContext
 
 from .data_loader import (
     load_data_aligned,
     load_macro_indicators,
     load_interest_rates
-)
-
-from .indicators import (
-    compute_indicator_pool,
-    get_feature_columns,
-    compute_regime_filter
 )
 
 from .simulation import (
@@ -79,15 +69,10 @@ __all__ = [
     'TIMEFRAME', 'WALK_FORWARD_FOLDS', 'OOS_SIZE',
     'ASSET_CONFIG', 'CLASS_GRIDS', 'MIN_TRADES', 'CORR_THRESHOLD',
     'convert_numpy',
-    # Konfigurationsklassen
-    'StrategyConfig', 'GridConfig', 'SimulationParams',
-    'ValidationParams', 'FilterParams', 'FeatureParams', 'ModelConfig',
+    # Asset
     'AssetConfig', 'AssetRegistry', 'get_asset',
-    'SimulationContext',
     # Data
     'load_data_aligned', 'load_macro_indicators', 'load_interest_rates',
-    # Indicators
-    'compute_indicator_pool', 'get_feature_columns', 'compute_regime_filter',
     # Simulation
     'calculate_sharpe_ratio', 'calculate_calmar_ratio', 'calculate_max_drawdown',
     'calculate_annual_return', 'simulate_pro_trade',

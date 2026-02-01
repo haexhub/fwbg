@@ -14,14 +14,14 @@ from trading_ig import IGService
 
 # Streaming imports (optional - only used in streaming mode)
 try:
-    from ig_streaming import StreamingManager, StreamingCacheManager
+    from .streaming import StreamingManager, StreamingCacheManager
     STREAMING_AVAILABLE = True
 except ImportError:
     STREAMING_AVAILABLE = False
 
-# Optimizer-Module für konsistente Feature-Berechnung
-from optimizer.indicators import compute_indicator_pool
-from optimizer.data_loader import load_macro_indicators, load_interest_rates
+# Plugin-System für konsistente Feature-Berechnung
+from fwbg.builtins.indicators import compute_indicator_pool
+from fwbg.builtins.utils import load_macro_indicators, load_interest_rates
 
 # --- LOGGING SETUP ---
 LOG_DIR = os.environ.get("LOG_DIR", "logs")
@@ -1065,28 +1065,3 @@ def run_bot_for_account(account_path):
         logger.error(f"❌ Bot for {account_path} crashed: {e}")
 
 
-if __name__ == "__main__":
-    accounts = discover_accounts()
-
-    if not accounts:
-        logger.error("❌ No valid accounts found in 'accounts/' directory")
-        logger.info("💡 Each account needs: account_info.json and assets.json")
-        sys.exit(1)
-
-    logger.info(f"🔍 Found {len(accounts)} account(s): {accounts}")
-
-    if len(accounts) == 1:
-        # Single account - run directly
-        run_bot_for_account(accounts[0])
-    else:
-        # Multiple accounts - run in parallel threads
-        threads = []
-        for account_path in accounts:
-            t = threading.Thread(target=run_bot_for_account, args=(account_path,), daemon=True)
-            t.start()
-            threads.append(t)
-            logger.info(f"🚀 Started bot for {account_path}")
-
-        # Wait for all threads
-        for t in threads:
-            t.join()

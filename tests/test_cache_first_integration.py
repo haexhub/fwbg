@@ -11,7 +11,7 @@ import numpy as np
 # Projekt-Root zum Path hinzufügen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ig_bot import EliteBot
+from bots.ig import EliteBot
 
 
 # Pfad zum Demo-Account

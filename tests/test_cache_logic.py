@@ -19,7 +19,7 @@ class TestCacheArchitecture:
 
     def test_bot_has_cache_attributes(self):
         """Bot-Klasse sollte Cache-Attribute haben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
 
         # Prüfe dass die Attribute in __init__ definiert werden
         import inspect
@@ -31,28 +31,28 @@ class TestCacheArchitecture:
 
     def test_bot_has_update_ohlc_cache_method(self):
         """Bot sollte update_ohlc_cache Methode haben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
 
         assert hasattr(EliteBot, "update_ohlc_cache")
         assert callable(getattr(EliteBot, "update_ohlc_cache"))
 
     def test_bot_has_get_features_for_prediction_method(self):
         """Bot sollte get_features_for_prediction Methode haben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
 
         assert hasattr(EliteBot, "get_features_for_prediction")
         assert callable(getattr(EliteBot, "get_features_for_prediction"))
 
     def test_bot_has_execute_order_fast_method(self):
         """Bot sollte execute_order_fast Methode haben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
 
         assert hasattr(EliteBot, "execute_order_fast")
         assert callable(getattr(EliteBot, "execute_order_fast"))
 
     def test_bot_has_update_cache_background_method(self):
         """Bot sollte update_cache_background Methode haben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
 
         assert hasattr(EliteBot, "update_cache_background")
         assert callable(getattr(EliteBot, "update_cache_background"))
@@ -63,7 +63,7 @@ class TestRunMethodArchitecture:
 
     def test_run_method_uses_features_cache(self):
         """_run_polling() sollte features_cache nutzen statt load_and_prepare_data."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         # Prüfe _run_polling (der Legacy-Polling-Loop)
@@ -74,7 +74,7 @@ class TestRunMethodArchitecture:
 
     def test_run_method_has_signal_check_phase(self):
         """_run_polling() sollte eine Signal-Check Phase haben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot._run_polling)
@@ -83,7 +83,7 @@ class TestRunMethodArchitecture:
 
     def test_run_method_uses_execute_order_fast(self):
         """_run_polling() sollte execute_order_fast für schnelle Ausführung nutzen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot._run_polling)
@@ -92,7 +92,7 @@ class TestRunMethodArchitecture:
 
     def test_run_method_prevents_duplicate_signals_per_hour(self):
         """_run_polling() sollte mehrfache Signale pro Stunde verhindern."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot._run_polling)
@@ -101,7 +101,7 @@ class TestRunMethodArchitecture:
 
     def test_run_dispatches_to_streaming_or_polling(self):
         """run() sollte zu streaming oder polling dispatchen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.run)
@@ -115,7 +115,7 @@ class TestTrainMethodCacheFilling:
 
     def test_train_method_fills_ohlc_cache(self):
         """train_elite_model sollte OHLC-Cache füllen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.train_elite_model)
@@ -124,7 +124,7 @@ class TestTrainMethodCacheFilling:
 
     def test_train_method_fills_features_cache(self):
         """train_elite_model sollte Feature-Cache füllen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.train_elite_model)
@@ -133,7 +133,7 @@ class TestTrainMethodCacheFilling:
 
     def test_train_method_sets_last_bar_time(self):
         """train_elite_model sollte last_bar_time setzen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.train_elite_model)
@@ -146,7 +146,7 @@ class TestExecuteOrderFastMethod:
 
     def test_execute_order_fast_takes_cached_atr(self):
         """execute_order_fast sollte cached_atr als Parameter nehmen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         sig = inspect.signature(EliteBot.execute_order_fast)
@@ -156,7 +156,7 @@ class TestExecuteOrderFastMethod:
 
     def test_execute_order_fast_does_not_call_fetch_ig_historical(self):
         """execute_order_fast sollte NICHT fetch_ig_historical aufrufen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.execute_order_fast)
@@ -169,7 +169,7 @@ class TestUpdateOhlcCacheLogic:
 
     def test_update_ohlc_cache_checks_cache_existence(self):
         """update_ohlc_cache sollte prüfen ob Cache existiert."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.update_ohlc_cache)
@@ -179,7 +179,7 @@ class TestUpdateOhlcCacheLogic:
 
     def test_update_ohlc_cache_checks_hour_boundary(self):
         """update_ohlc_cache sollte auf Stundenwechsel prüfen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.update_ohlc_cache)
@@ -188,7 +188,7 @@ class TestUpdateOhlcCacheLogic:
 
     def test_update_ohlc_cache_limits_new_bars(self):
         """update_ohlc_cache sollte Anzahl neuer Bars limitieren."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.update_ohlc_cache)
@@ -201,7 +201,7 @@ class TestBotVersion:
 
     def test_bot_version_is_8_0(self):
         """Bot sollte Version 8.0 (Streaming) sein."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.__init__)
@@ -214,7 +214,7 @@ class TestSleepIntervals:
 
     def test_polling_method_sleeps_60_seconds(self):
         """_run_polling() sollte 60 Sekunden schlafen (statt 300)."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot._run_polling)
@@ -225,7 +225,7 @@ class TestSleepIntervals:
 
     def test_streaming_method_sleeps_60_seconds(self):
         """run_streaming() sollte auch 60 Sekunden im Health-Loop schlafen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.run_streaming)
@@ -239,14 +239,14 @@ class TestSlippageVerification:
 
     def test_verify_execution_price_method_exists(self):
         """verify_execution_price Methode sollte existieren."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
 
         assert hasattr(EliteBot, "verify_execution_price")
         assert callable(getattr(EliteBot, "verify_execution_price"))
 
     def test_verify_execution_price_signature(self):
         """verify_execution_price sollte die richtigen Parameter haben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         sig = inspect.signature(EliteBot.verify_execution_price)
@@ -259,7 +259,7 @@ class TestSlippageVerification:
 
     def test_execute_order_fast_calls_verify_execution(self):
         """execute_order_fast sollte verify_execution_price aufrufen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.execute_order_fast)
@@ -269,7 +269,7 @@ class TestSlippageVerification:
 
     def test_execute_order_fast_logs_expected_price(self):
         """execute_order_fast sollte erwarteten Preis loggen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.execute_order_fast)
@@ -279,7 +279,7 @@ class TestSlippageVerification:
 
     def test_slippage_check_uses_cache_price(self):
         """Slippage-Check sollte Preis aus Cache nutzen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.execute_order_fast)
@@ -289,7 +289,7 @@ class TestSlippageVerification:
 
     def test_verify_returns_tuple(self):
         """verify_execution_price sollte Tuple zurückgeben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.verify_execution_price)

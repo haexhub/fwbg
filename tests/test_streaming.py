@@ -33,19 +33,19 @@ class TestStreamingImports:
 
     def test_streaming_module_exists(self):
         """ig_streaming.py sollte existieren und importierbar sein."""
-        from ig_streaming import StreamingManager, StreamingCacheManager, CandleListener
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager, CandleListener
         assert StreamingManager is not None
         assert StreamingCacheManager is not None
         assert CandleListener is not None
 
     def test_bot_has_streaming_flag(self):
         """Bot sollte STREAMING_AVAILABLE Flag haben."""
-        import ig_bot
+        import bots.ig as ig_bot
         assert hasattr(ig_bot, "STREAMING_AVAILABLE")
 
     def test_bot_init_accepts_use_streaming_param(self):
         """EliteBot.__init__ sollte use_streaming Parameter akzeptieren."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         sig = inspect.signature(EliteBot.__init__)
@@ -58,7 +58,7 @@ class TestStreamingManagerArchitecture:
 
     def test_streaming_manager_has_required_methods(self):
         """StreamingManager sollte alle erforderlichen Methoden haben."""
-        from ig_streaming import StreamingManager
+        from bots.ig.streaming import StreamingManager
 
         required_methods = [
             "start",
@@ -79,13 +79,13 @@ class TestStreamingManagerArchitecture:
 
     def test_streaming_manager_has_is_connected_property(self):
         """StreamingManager sollte is_connected Property haben."""
-        from ig_streaming import StreamingManager
+        from bots.ig.streaming import StreamingManager
 
         assert hasattr(StreamingManager, "is_connected")
 
     def test_streaming_manager_has_candle_fields(self):
         """StreamingManager sollte CANDLE_FIELDS definieren."""
-        from ig_streaming import StreamingManager
+        from bots.ig.streaming import StreamingManager
 
         assert hasattr(StreamingManager, "CANDLE_FIELDS")
         fields = StreamingManager.CANDLE_FIELDS
@@ -98,7 +98,7 @@ class TestStreamingManagerArchitecture:
 
     def test_streaming_manager_init_signature(self):
         """StreamingManager.__init__ sollte richtige Parameter haben."""
-        from ig_streaming import StreamingManager
+        from bots.ig.streaming import StreamingManager
         import inspect
 
         sig = inspect.signature(StreamingManager.__init__)
@@ -111,7 +111,7 @@ class TestStreamingManagerArchitecture:
 
     def test_streaming_manager_has_valid_timeframes(self):
         """StreamingManager sollte gültige Timeframes definieren."""
-        from ig_streaming import StreamingManager
+        from bots.ig.streaming import StreamingManager
 
         assert hasattr(StreamingManager, "VALID_TIMEFRAMES")
         valid = StreamingManager.VALID_TIMEFRAMES
@@ -122,7 +122,7 @@ class TestStreamingManagerArchitecture:
 
     def test_streaming_manager_default_timeframe_is_hour(self):
         """Standard-Timeframe sollte HOUR sein."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         mock_ig_service = MagicMock()
         mock_bot = MagicMock()
@@ -137,7 +137,7 @@ class TestStreamingManagerArchitecture:
 
     def test_streaming_manager_accepts_minute_timeframe(self):
         """StreamingManager sollte 1MINUTE Timeframe akzeptieren."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         mock_ig_service = MagicMock()
         mock_bot = MagicMock()
@@ -152,7 +152,7 @@ class TestStreamingManagerArchitecture:
 
     def test_streaming_manager_falls_back_to_hour_for_invalid_timeframe(self):
         """Bei ungültiger Timeframe sollte HOUR verwendet werden."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         mock_ig_service = MagicMock()
         mock_bot = MagicMock()
@@ -171,7 +171,7 @@ class TestStreamingCacheManager:
 
     def test_cache_manager_has_required_methods(self):
         """StreamingCacheManager sollte alle erforderlichen Methoden haben."""
-        from ig_streaming import StreamingCacheManager
+        from bots.ig.streaming import StreamingCacheManager
 
         required_methods = [
             "on_candle_complete",
@@ -183,7 +183,7 @@ class TestStreamingCacheManager:
 
     def test_cache_manager_on_candle_complete_updates_bot_cache(self):
         """on_candle_complete sollte Bot-Cache aktualisieren."""
-        from ig_streaming import StreamingCacheManager
+        from bots.ig.streaming import StreamingCacheManager
 
         # Mock Bot
         mock_bot = MagicMock()
@@ -209,7 +209,7 @@ class TestStreamingCacheManager:
 
     def test_cache_manager_limits_candle_count(self):
         """Cache sollte auf max_candles begrenzt sein."""
-        from ig_streaming import StreamingCacheManager
+        from bots.ig.streaming import StreamingCacheManager
 
         mock_bot = MagicMock()
         mock_bot.ohlc_cache = {}
@@ -229,7 +229,7 @@ class TestStreamingCacheManager:
 
     def test_cache_manager_avoids_duplicates(self):
         """Cache sollte keine Duplikate enthalten."""
-        from ig_streaming import StreamingCacheManager
+        from bots.ig.streaming import StreamingCacheManager
 
         mock_bot = MagicMock()
         mock_bot.ohlc_cache = {}
@@ -254,7 +254,7 @@ class TestCandleListener:
 
     def test_candle_listener_has_required_methods(self):
         """CandleListener sollte Lightstreamer Listener-Methoden haben."""
-        from ig_streaming import CandleListener
+        from bots.ig.streaming import CandleListener
 
         required_methods = [
             "onSubscription",
@@ -268,7 +268,7 @@ class TestCandleListener:
 
     def test_candle_listener_processes_complete_candle(self):
         """CandleListener sollte abgeschlossene Candles verarbeiten."""
-        from ig_streaming import CandleListener
+        from bots.ig.streaming import CandleListener
 
         mock_cache_manager = MagicMock()
         mock_cache_manager.streaming_manager = MagicMock()
@@ -297,7 +297,7 @@ class TestCandleListener:
 
     def test_candle_listener_ignores_incomplete_candle(self):
         """CandleListener sollte unvollständige Candles ignorieren."""
-        from ig_streaming import CandleListener
+        from bots.ig.streaming import CandleListener
 
         mock_cache_manager = MagicMock()
         mock_cache_manager.streaming_manager = MagicMock()
@@ -324,21 +324,21 @@ class TestBotStreamingIntegration:
 
     def test_bot_has_on_streaming_candle_method(self):
         """EliteBot sollte on_streaming_candle Methode haben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
 
         assert hasattr(EliteBot, "on_streaming_candle")
         assert callable(getattr(EliteBot, "on_streaming_candle"))
 
     def test_bot_has_run_streaming_method(self):
         """EliteBot sollte run_streaming Methode haben."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
 
         assert hasattr(EliteBot, "run_streaming")
         assert callable(getattr(EliteBot, "run_streaming"))
 
     def test_bot_run_calls_streaming_when_enabled(self):
         """run() sollte run_streaming aufrufen wenn use_streaming=True."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.run)
@@ -347,7 +347,7 @@ class TestBotStreamingIntegration:
 
     def test_on_streaming_candle_checks_for_signals(self):
         """on_streaming_candle sollte auf Signale prüfen."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.on_streaming_candle)
@@ -361,7 +361,7 @@ class TestBotStreamingIntegration:
 
     def test_on_streaming_candle_prevents_duplicate_signals(self):
         """on_streaming_candle sollte mehrfache Signale pro Stunde verhindern."""
-        from ig_bot import EliteBot
+        from bots.ig import EliteBot
         import inspect
 
         source = inspect.getsource(EliteBot.on_streaming_candle)
@@ -374,7 +374,7 @@ class TestReconnectLogic:
 
     def test_streaming_manager_has_reconnect_attributes(self):
         """StreamingManager sollte Reconnect-Attribute haben."""
-        from ig_streaming import StreamingManager
+        from bots.ig.streaming import StreamingManager
         import inspect
 
         source = inspect.getsource(StreamingManager.__init__)
@@ -385,7 +385,7 @@ class TestReconnectLogic:
 
     def test_reconnect_resets_attempt_counter(self):
         """Erfolgreicher Connect sollte Attempt-Counter zurücksetzen."""
-        from ig_streaming import StreamingManager
+        from bots.ig.streaming import StreamingManager
         import inspect
 
         source = inspect.getsource(StreamingManager._connect)
@@ -395,7 +395,7 @@ class TestReconnectLogic:
 
     def test_health_monitor_checks_heartbeat(self):
         """Health Monitor sollte Heartbeat prüfen."""
-        from ig_streaming import StreamingManager
+        from bots.ig.streaming import StreamingManager
         import inspect
 
         source = inspect.getsource(StreamingManager._start_health_monitor)
@@ -409,7 +409,7 @@ class TestStreamingManagerMocked:
 
     def test_start_connects_and_subscribes(self):
         """start() sollte verbinden und subscriben."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         mock_ig_service = MagicMock()
         mock_bot = MagicMock()
@@ -432,7 +432,7 @@ class TestStreamingManagerMocked:
 
     def test_stop_disconnects(self):
         """stop() sollte Verbindung trennen."""
-        from ig_streaming import StreamingManager, StreamingCacheManager
+        from bots.ig.streaming import StreamingManager, StreamingCacheManager
 
         mock_ig_service = MagicMock()
         mock_bot = MagicMock()
@@ -454,7 +454,7 @@ class TestCacheStatsMethod:
 
     def test_get_cache_stats_returns_dict(self):
         """get_cache_stats sollte Dict zurückgeben."""
-        from ig_streaming import StreamingCacheManager
+        from bots.ig.streaming import StreamingCacheManager
 
         mock_bot = MagicMock()
         mock_bot.ohlc_cache = {
