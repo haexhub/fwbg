@@ -275,11 +275,25 @@ def _process_feature_groups_parallel(
     max_cpu_percent = ctx.max_cpu_percent
     cpu_per_thread = ctx.cpu_per_feature_group
 
-    # Berechne minimalen freien RAM
+    # Berechne minimalen freien RAM (ABSOLUT, nicht vom aktuellen freien)
     min_free_ram_gb = total_ram_gb * min_free_ram_percent
 
-    # Berechne max Threads basierend auf verfügbarem RAM
-    available_ram_for_threads = max(0, free_ram_gb - min_free_ram_gb)
+    # Aktuelle RAM-Auslastung berücksichtigen (wichtig bei mehreren Assets!)
+    # Wenn bereits > (1-min_free_ram_percent) genutzt wird, weniger Threads starten
+    current_used_percent = psutil.virtual_memory().percent / 100.0
+    target_max_used_percent = 1.0 - min_free_ram_percent
+
+    if current_used_percent > target_max_used_percent:
+        # System ist bereits überlastet - stark reduzieren
+        available_ram_for_threads = max(0, free_ram_gb - min_free_ram_gb)
+        log(2, f"  WARNUNG: RAM bereits bei {current_used_percent*100:.0f}% (Ziel: max {target_max_used_percent*100:.0f}%)", sym)
+    else:
+        # Berechne wie viel RAM wir noch nutzen dürfen
+        # Nicht vom aktuellen freien RAM, sondern vom erlaubten Maximum
+        max_usable_ram_gb = total_ram_gb * target_max_used_percent
+        currently_used_gb = total_ram_gb * current_used_percent
+        available_ram_for_threads = max(0, max_usable_ram_gb - currently_used_gb)
+
     ram_based_limit = max(1, int(available_ram_for_threads / ram_per_thread_gb))
 
     # CPU-Limit basierend auf max_cpu_percent und cpu_per_thread

@@ -637,6 +637,11 @@ def run_inner_cv(
     first_fold_min_pnl = getattr(ctx, 'first_fold_min_pnl', -10.0)
     first_fold_min_trades = getattr(ctx, 'first_fold_min_trades', 5)
 
+    # Moderate Early Termination: Cumulative PnL und Consecutive Failures
+    cumulative_pnl = 0.0
+    consecutive_failures = 0
+    max_consecutive_failures = 3  # Nach 3 Folds ohne Erfolg abbrechen
+
     for fold_idx, (train_df, val_df) in enumerate(inner_folds):
         # Early Termination Check: Kann min_fold_stability noch erreicht werden?
         if early_termination_enabled and min_profitable > 0:
@@ -694,11 +699,30 @@ def run_inner_cv(
         if best_fold_ct:
             inner_val_pnls.append(best_fold_pnl)
             best_ct_votes[best_fold_ct] = best_ct_votes.get(best_fold_ct, 0) + 1
+            cumulative_pnl += best_fold_pnl
+
             # Zähle profitable/unprofitable Folds für Early Termination
             if best_fold_pnl > 0:
                 profitable_count += 1
+                consecutive_failures = 0  # Reset bei Erfolg
             else:
                 failed_count += 1
+                consecutive_failures += 1
+
+            # Moderate Early Termination: 3+ Folds hintereinander unprofitabel
+            if early_termination_enabled and consecutive_failures >= max_consecutive_failures:
+                early_terminated = True
+                break
+
+            # Moderate Early Termination: Nach Hälfte der Folds stark negativ
+            # Nur wenn mindestens 3 Folds gelaufen sind und PnL pro Fold < -3
+            halfway = total_folds // 2
+            if early_termination_enabled and fold_idx >= halfway and fold_idx >= 2:
+                avg_pnl_so_far = cumulative_pnl / (fold_idx + 1)
+                if avg_pnl_so_far < -3.0:
+                    # Durchschnittlich > 3 Verlust-Trades pro Fold - aussichtslos
+                    early_terminated = True
+                    break
 
             # First-Fold Sanity Check: Nur nach erstem Fold, nur für extreme Fälle
             if fold_idx == 0 and first_fold_sanity_check:
@@ -732,6 +756,12 @@ def run_inner_cv(
                     break
         else:
             failed_count += 1
+            consecutive_failures += 1
+
+            # Auch bei komplett fehlgeschlagenen Folds: 3+ in Folge = Abbruch
+            if early_termination_enabled and consecutive_failures >= max_consecutive_failures:
+                early_terminated = True
+                break
 
     if early_terminated:
         return {"success": False, "early_terminated": True, "failed_folds": failed_count}
