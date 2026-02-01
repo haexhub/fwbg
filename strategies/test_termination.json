@@ -1,31 +1,79 @@
 {
   "name": "Test Termination Fix",
   "description": "Schneller Test um zu pruefen ob das Programm korrekt terminiert",
-  "tags": ["test"],
-  "hypothesis": "Test",
+  "tags": ["test", "termination", "atr_based"],
+  "hypothesis": "Test für korrekte Terminierung",
   "expected_outcome": "Programm beendet sich nach 100%",
-  "model": {
-    "architecture": "long_short_separate",
-    "hyperparameters": {
-      "n_estimators": 30,
-      "max_depth": 3
+
+  "indicators": ["trend"],
+
+  "indicator_params": {
+    "trend": {
+      "adx_periods": [14],
+      "ema_periods": [21]
     }
   },
-  "validation": {
-    "folds": 2,
-    "oos_size": 500
+
+  "exit_strategy": "atr_based",
+
+  "exit_params": {
+    "atr_period": 14,
+    "min_tp_pips": 10,
+    "min_sl_pips": 12
   },
+
+  "feature_selector": "boruta",
+
+  "feature_params": {
+    "max_features": 10,
+    "n_iter": 3,
+    "n_estimators": 30
+  },
+
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "trade_directions": ["long", "short"],
+    "hyperparameters": {
+      "n_estimators": 30,
+      "max_depth": 3,
+      "learning_rate": 0.1,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
+    }
+  },
+
   "assets": {
     "classes": ["TEST"]
   },
-  "grid": {
-    "tp": [20, 40],
-    "sl": [20, 40],
-    "ct": [0.55, 0.60]
+
+  "grids": {
+    "TEST": {
+      "tp": [1.0, 2.0],
+      "sl": [1.0, 2.0],
+      "ct": [0.55, 0.60],
+      "timeout_bars": [24]
+    }
   },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 2,
+    "oos_size": 500,
+    "min_trades": 20,
+    "n_inner_folds": 2
+  },
+
+  "filters": {
+    "min_rrr": 0.0,
+    "min_trades": 20,
+    "max_drawdown": 0.5
+  },
+
   "resources": {
+    "ram_per_feature_group_gb": 0.5,
+    "cpu_per_feature_group": 0.5,
     "max_cpu_percent": 0.5,
-    "min_free_ram_percent": 0.25,
-    "ram_per_worker_gb": 2.0
+    "min_free_ram_percent": 0.25
   }
 }

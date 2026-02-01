@@ -91,11 +91,23 @@ Diese Dokumentation beschreibt alle verfügbaren Parameter für Strategy-Konfigu
 
 ---
 
-### features - Feature-Gruppen
+### features - Feature-Gruppen & Selection
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
 | `preferred_groups` | array | alle Gruppen | Feature-Gruppen die getestet werden |
+| `feature_selection` | string | `"boruta"` | Feature-Selection Methode |
+| `max_features` | int | `0` | Max Features pro Modell (0 = kein Limit) |
+
+**feature_selection - Optionen:**
+
+| Methode | Beschreibung | Limit |
+|---------|--------------|-------|
+| `boruta` | Findet alle statistisch relevanten Features | Optional (max_features) |
+| `boruta_plateau` | Boruta + Plateau-Validierung für Stabilität | Optional (max_features) |
+| `importance_based` | Top-5 Features nach Importance (Legacy) | Fest: 5 |
+
+**max_features:** Begrenzt die Anzahl der Features auf die Top-N nach Importance. Empfohlen: 20-30 um Overfitting bei großen Feature-Gruppen (macro, macro_vol) zu vermeiden.
 
 **Verfügbare Feature-Gruppen:**
 
@@ -200,17 +212,81 @@ Die kombinierten Gruppen enthalten Basis-Gruppen. Nicht zusammen verwenden:
 
 ---
 
+### exit_strategy - Exit-Strategie
+
+Definiert wie TP/SL-Distanzen berechnet werden.
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `mode` | string | `"fixed"` | Exit-Modus: `"fixed"` oder `"atr_based"` |
+
+**Mode-Optionen:**
+
+| Mode | Beschreibung | Grid-Werte |
+|------|--------------|------------|
+| `fixed` | TP/SL als Spread-Multiplikatoren (konstant) | Große Zahlen: 10-100 |
+| `atr_based` | TP/SL als ATR-Multiplikatoren (dynamisch) | Kleine Zahlen: 0.5-5.0 |
+
+**ATR-Based Parameter:**
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `atr_period` | int | `14` | ATR-Periode für Volatilitätsberechnung |
+| `min_tp_pips` | int | `10` | Mindest-TP in Spread-Multiples (Spread-Schutz) |
+| `min_sl_pips` | int | `15` | Mindest-SL in Spread-Multiples (Spread-Schutz) |
+
+**Beispiel - Fixed Exit (Default):**
+
+```json
+"exit_strategy": {
+  "mode": "fixed"
+}
+```
+
+Grid-Werte interpretiert als Spread-Multiplikatoren:
+- `tp: 40` = 40 × Spread
+- `sl: 30` = 30 × Spread
+
+**Beispiel - ATR-Based Exit:**
+
+```json
+"exit_strategy": {
+  "mode": "atr_based",
+  "atr_based": {
+    "atr_period": 14,
+    "min_tp_pips": 10,
+    "min_sl_pips": 15
+  }
+}
+```
+
+Grid-Werte interpretiert als ATR-Multiplikatoren:
+- `tp: 1.5` = 1.5 × ATR (dynamisch pro Bar)
+- `sl: 1.0` = 1.0 × ATR (dynamisch pro Bar)
+
+**Wichtig:** Bei beiden Modi werden Spread und Slippage berücksichtigt!
+
+---
+
 ### grids - TP/SL/CT Grid-Search
 
 Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte pro Asset-Klasse.
 
+**Die Interpretation der `tp`/`sl`-Werte hängt vom `exit_strategy.mode` ab:**
+
+| Mode | tp/sl Interpretation | Typische Werte |
+|------|---------------------|----------------|
+| `fixed` | Spread-Multiplikatoren | 10, 20, 30, 50, 80, 100 |
+| `atr_based` | ATR-Multiplikatoren | 0.5, 1.0, 1.5, 2.0, 3.0 |
+
 **Asset-Klassen:** `FOREX`, `INDEX`, `COMMODITY`, `CRYPTO`
 
-| Parameter | Typ | Beschreibung | Beispiel |
-|-----------|-----|--------------|----------|
-| `tp` | array[int] | Take-Profit in Spread-Multiples | `[20, 40, 60, 80]` |
-| `sl` | array[int] | Stop-Loss in Spread-Multiples | `[20, 40, 60, 80]` |
-| `ct` | array[float] | Confidence Threshold (0.50-1.00) | `[0.55, 0.60, 0.65, 0.70]` |
+| Parameter | Typ | Beschreibung |
+|-----------|-----|--------------|
+| `tp` | array | Take-Profit Werte (Interpretation je nach exit_strategy) |
+| `sl` | array | Stop-Loss Werte (Interpretation je nach exit_strategy) |
+| `ct` | array[float] | Confidence Threshold (0.50-1.00) |
+| `timeout_bars` | array | Trade-Timeout in Bars (`[null, 24, 48]` = kein Timeout, 24h, 48h) |
 
 **Separate Long/Short CT (optional):**
 
@@ -219,24 +295,43 @@ Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte
 | `long_ct` | array[float] | CT nur für Long-Trades |
 | `short_ct` | array[float] | CT nur für Short-Trades |
 
-**Beispiel - Standard Grid:**
+**Beispiel - Fixed Exit Grid:**
 
 ```json
+"exit_strategy": {
+  "mode": "fixed"
+},
 "grids": {
   "FOREX": {
     "tp": [15, 20, 25, 30, 40, 50, 60, 80],
     "sl": [15, 20, 25, 30, 40, 50, 60, 80],
     "ct": [0.50, 0.55, 0.60, 0.65, 0.70]
-  },
-  "INDEX": {
-    "tp": [20, 30, 50, 70, 100, 150],
-    "sl": [20, 30, 50, 70, 100, 150],
-    "ct": [0.50, 0.55, 0.60, 0.65, 0.70]
   }
 }
 ```
 
-**Beispiel - Swing Trading Grid (große TP/SL):**
+**Beispiel - ATR-Based Exit Grid:**
+
+```json
+"exit_strategy": {
+  "mode": "atr_based",
+  "atr_based": {
+    "atr_period": 14,
+    "min_tp_pips": 10,
+    "min_sl_pips": 15
+  }
+},
+"grids": {
+  "FOREX": {
+    "tp": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0],
+    "sl": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+    "ct": [0.50, 0.55, 0.60, 0.65],
+    "timeout_bars": [null, 24, 48, 96]
+  }
+}
+```
+
+**Beispiel - Swing Trading Grid (Fixed, große TP/SL):**
 
 ```json
 "grids": {
@@ -244,18 +339,6 @@ Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte
     "tp": [100, 150, 200, 300, 500, 750, 1000],
     "sl": [50, 75, 100, 150, 200, 300],
     "ct": [0.55, 0.60, 0.65, 0.70, 0.75]
-  }
-}
-```
-
-**Beispiel - High Confidence Grid:**
-
-```json
-"grids": {
-  "FOREX": {
-    "tp": [25, 35, 50, 70, 100],
-    "sl": [25, 35, 50, 70, 100],
-    "ct": [0.70, 0.75, 0.80, 0.85]
   }
 }
 ```

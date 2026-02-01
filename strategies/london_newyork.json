@@ -1,110 +1,120 @@
 {
   "name": "London/New York Overlap Strategy",
-  "description": "Fokus auf die Ueberlappung London/NY (12:00-16:00 UTC), hoechste Liquiditaet",
-  "tags": [
-    "london_session",
-    "newyork_session",
-    "overlap",
-    "high_volatility"
+  "description": "Fokus auf die Überlappung London/NY (12:00-16:00 UTC) - höchste Liquidität",
+  "tags": ["london_session", "newyork_session", "overlap", "high_volatility", "atr_based"],
+  "hypothesis": "Die Überlappung bietet beste Liquidität und stärkste Bewegungen",
+  "expected_outcome": "Größere Bewegungen, RRR 1.0-2.5",
+
+  "indicators": [
+    "trend",
+    "momentum",
+    "volatility",
+    "time_season",
+    "microstructure",
+    "macro_surprise"
   ],
-  "hypothesis": "Die Ueberlappung bietet beste Liquiditaet und staerkste Bewegungen",
-  "expected_outcome": "Groessere Bewegungen, RRR 1.0-2.5",
-  "features": {
-    "preferred_groups": [
-      "trend_momentum",
-      "volatility",
-      "time"
-    ]
-  },
-  "grids": {
-    "FOREX": {
-      "tp": [
-        30,
-        50,
-        75,
-        110,
-        160
-      ],
-      "sl": [
-        25,
-        40,
-        60,
-        85,
-        120
-      ],
-      "ct": [
-        0.55,
-        0.6,
-        0.65,
-        0.7
-      ]
+
+  "indicator_params": {
+    "trend": {
+      "adx_periods": [7, 14],
+      "ema_periods": [21, 50]
     },
-    "INDEX": {
-      "tp": [
-        50,
-        90,
-        140,
-        210,
-        300
-      ],
-      "sl": [
-        40,
-        70,
-        110,
-        160,
-        230
-      ],
-      "ct": [
-        0.55,
-        0.6,
-        0.65,
-        0.7
-      ]
+    "momentum": {
+      "rsi_periods": [7, 14],
+      "stoch_periods": [14],
+      "roc_periods": [5, 10]
     },
-    "COMMODITY": {
-      "tp": [
-        45,
-        80,
-        125,
-        190,
-        270
-      ],
-      "sl": [
-        35,
-        65,
-        100,
-        150,
-        210
-      ],
-      "ct": [
-        0.55,
-        0.6,
-        0.65,
-        0.7
-      ]
+    "volatility": {
+      "bb_periods": [20],
+      "atr_periods": [7, 14]
     },
-    "CRYPTO": {
-      "tp": [
-        80,
-        170,
-        300,
-        480
-      ],
-      "sl": [
-        60,
-        130,
-        230,
-        370
-      ],
-      "ct": [
-        0.55,
-        0.6,
-        0.65
-      ]
+    "time_season": {
+      "include_raw": true,
+      "include_encoded": true
+    },
+    "microstructure": {
+      "atr_period": 7,
+      "rolling_window": 5
+    },
+    "macro_surprise": {
+      "vol_lookback": 10,
+      "surprise_threshold": 1.5
     }
   },
+
+  "exit_strategy": "atr_based",
+
+  "exit_params": {
+    "atr_period": 14,
+    "min_tp_pips": 10,
+    "min_sl_pips": 10
+  },
+
+  "feature_selector": "boruta",
+
+  "feature_params": {
+    "max_features": 30,
+    "n_iter": 10,
+    "n_estimators": 100
+  },
+
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "trade_directions": ["long", "short"],
+    "hyperparameters": {
+      "n_estimators": 150,
+      "max_depth": 5,
+      "learning_rate": 0.1,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8
+    }
+  },
+
+  "grids": {
+    "FOREX": {
+      "tp": [1.0, 1.5, 2.0, 2.5, 3.0],
+      "sl": [0.75, 1.0, 1.5, 2.0],
+      "ct": [0.55, 0.6, 0.65, 0.7],
+      "timeout_bars": [6, 12, 24]
+    },
+    "INDEX": {
+      "tp": [1.0, 1.5, 2.0, 3.0, 4.0],
+      "sl": [0.75, 1.0, 1.5, 2.5],
+      "ct": [0.55, 0.6, 0.65, 0.7],
+      "timeout_bars": [6, 12, 24]
+    },
+    "COMMODITY": {
+      "tp": [1.0, 1.5, 2.0, 3.0, 4.0],
+      "sl": [0.75, 1.0, 1.5, 2.5],
+      "ct": [0.55, 0.6, 0.65, 0.7],
+      "timeout_bars": [6, 12, 24]
+    },
+    "CRYPTO": {
+      "tp": [1.5, 2.0, 3.0, 4.0],
+      "sl": [1.0, 1.5, 2.0, 3.0],
+      "ct": [0.55, 0.6, 0.65],
+      "timeout_bars": [12, 24]
+    }
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "min_trades": 100,
+    "n_inner_folds": 5
+  },
+
   "filters": {
     "min_rrr": 0.8,
-    "min_trades": 60
+    "min_trades": 60,
+    "max_drawdown": 0.4
+  },
+
+  "resources": {
+    "ram_per_feature_group_gb": 0.5,
+    "cpu_per_feature_group": 0.5,
+    "max_cpu_percent": 0.8
   }
 }
