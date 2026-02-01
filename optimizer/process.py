@@ -251,6 +251,8 @@ def _process_feature_groups_parallel(
 
     def progress_callback(grid_count, grid_per_fg):
         """Callback für Grid-Fortschritt aus Feature-Group-Threads."""
+        from .progress import set_parallel_mode
+
         with progress_lock:
             completed_grid_combos[0] += 1
             current = completed_grid_combos[0]
@@ -260,8 +262,10 @@ def _process_feature_groups_parallel(
             if now - last_phase_update[0] >= 2.0:
                 pct = int(current / total_grid_combos * 100)
                 report_phase(sym, f"Grid-Search: {current}/{total_grid_combos} ({pct}%)")
-                # Auch Progress für ETA-Berechnung melden
+                # Parallel-Modus kurz deaktivieren für aggregiertes Update
+                set_parallel_mode(False)
                 report_progress(sym, 0, 0, "grid_search", current, total_grid_combos)
+                set_parallel_mode(True)
                 last_phase_update[0] = now
 
     # RAM/CPU-Limits aus Strategy-Config (via ctx)
