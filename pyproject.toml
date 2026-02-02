@@ -103,11 +103,8 @@ plateau = "fwbg.builtins.feature_selection.plateau:PlateauSelector"
 [project.entry-points."fwbg.preprocessors"]
 fractional_diff = "fwbg.builtins.preprocessing.fractional_diff:FractionalDiffPreprocessor"
 
-[project.entry-points."fwbg.data_adapters"]
-csv = "fwbg.adapters.data.csv_adapter:CSVDataAdapter"
-
-[project.entry-points."fwbg.execution_adapters"]
-ig = "fwbg.adapters.execution.ig_adapter:IGExecutionAdapter"
+[project.entry-points."fwbg.broker_adapters"]
+ig = "fwbg.adapters.broker.ig:IGBrokerAdapter"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -134,3 +131,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.14",
+]

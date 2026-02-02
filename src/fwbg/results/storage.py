@@ -472,7 +472,7 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
     """Schreibt die menschenlesbare Zusammenfassung."""
     with open(summary_path, "w") as f:
         f.write(f"{'='*70}\n")
-        f.write(f"OPTIMIZER RUN SUMMARY\n")
+        f.write("OPTIMIZER RUN SUMMARY\n")
         f.write(f"{'='*70}\n\n")
 
         f.write(f"Run ID:      {os.path.basename(run_path)}\n")
@@ -481,53 +481,53 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
 
         if description:
             f.write(f"Description: {description}\n")
-        f.write(f"\n")
+        f.write("\n")
 
         # Strategie-Metadaten
         if strategy_metadata:
             f.write(f"{'='*70}\n")
-            f.write(f"STRATEGIE\n")
+            f.write("STRATEGIE\n")
             f.write(f"{'='*70}\n\n")
 
             f.write(f"Name:        {strategy_metadata.get('name', '-')}\n")
             f.write(f"Kategorie:   {strategy_metadata.get('category', '-')}\n")
             if strategy_metadata.get('tags'):
                 f.write(f"Tags:        {', '.join(strategy_metadata['tags'])}\n")
-            f.write(f"\n")
+            f.write("\n")
 
             if strategy_metadata.get('hypothesis'):
-                f.write(f"HYPOTHESE\n")
+                f.write("HYPOTHESE\n")
                 f.write(f"{'-'*40}\n")
                 f.write(f"{strategy_metadata['hypothesis']}\n\n")
 
             if strategy_metadata.get('expected_outcome'):
-                f.write(f"ERWARTETES ERGEBNIS\n")
+                f.write("ERWARTETES ERGEBNIS\n")
                 f.write(f"{'-'*40}\n")
                 f.write(f"{strategy_metadata['expected_outcome']}\n\n")
 
             if strategy_metadata.get('changes'):
-                f.write(f"ÄNDERUNGEN (vs Baseline)\n")
+                f.write("ÄNDERUNGEN (vs Baseline)\n")
                 f.write(f"{'-'*40}\n")
                 for change in strategy_metadata['changes']:
                     f.write(f"  [{change.get('component', '?')}] {change.get('before', '?')} → {change.get('after', '?')}\n")
-                f.write(f"\n")
+                f.write("\n")
 
             if strategy_metadata.get('baseline_run'):
                 f.write(f"Baseline:    {strategy_metadata['baseline_run']}\n\n")
 
             # Modell-Info
             model = strategy_metadata.get('model', {})
-            f.write(f"MODELL\n")
+            f.write("MODELL\n")
             f.write(f"{'-'*40}\n")
             f.write(f"  Typ:          {model.get('type', '-')}\n")
             f.write(f"  Architektur:  {model.get('architecture', '-')}\n")
             if model.get('hyperparameters'):
                 f.write(f"  Hyperparams:  {model['hyperparameters']}\n")
-            f.write(f"\n")
+            f.write("\n")
 
             # Feature-Info
             features = strategy_metadata.get('features', {})
-            f.write(f"FEATURES\n")
+            f.write("FEATURES\n")
             f.write(f"{'-'*40}\n")
             f.write(f"  Technical:    {'Ja' if features.get('technical_indicators') else 'Nein'}\n")
             f.write(f"  Macro:        {'Ja' if features.get('macro_indicators') else 'Nein'}\n")
@@ -536,46 +536,46 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
             f.write(f"  Selection:    {features.get('feature_selection', '-')}\n")
             if features.get('custom_features'):
                 f.write(f"  Custom:       {', '.join(features['custom_features'])}\n")
-            f.write(f"\n")
+            f.write("\n")
 
             # Simulation-Info
             sim = strategy_metadata.get('simulation', {})
-            f.write(f"SIMULATION\n")
+            f.write("SIMULATION\n")
             f.write(f"{'-'*40}\n")
             f.write(f"  TP/SL Basis:  {sim.get('tp_sl_basis', '-')}\n")
             f.write(f"  Trailing:     {'Ja' if sim.get('trailing_stop') else 'Nein'}\n")
             f.write(f"  Slippage:     {sim.get('slippage_model', '-')}\n")
             f.write(f"  Regime:       {'Ja' if sim.get('regime_filter') else 'Nein'}\n")
-            f.write(f"\n")
+            f.write("\n")
 
             if strategy_metadata.get('notes'):
-                f.write(f"NOTIZEN\n")
+                f.write("NOTIZEN\n")
                 f.write(f"{'-'*40}\n")
                 f.write(f"{strategy_metadata['notes']}\n\n")
 
         # Technische Konfiguration
         f.write(f"{'='*70}\n")
-        f.write(f"TECHNISCHE KONFIGURATION\n")
+        f.write("TECHNISCHE KONFIGURATION\n")
         f.write(f"{'='*70}\n\n")
         f.write(f"Walk-Forward Folds: {WALK_FORWARD_FOLDS}\n")
         f.write(f"OOS Size:           {OOS_SIZE}\n")
         f.write(f"Min Trades:         {MIN_TRADES}\n")
         f.write(f"Corr Threshold:     {CORR_THRESHOLD}\n")
         f.write(f"Macro Indicators:   {len(MACRO_INDICATORS)}\n")
-        f.write(f"\n")
+        f.write("\n")
 
         # Ergebnisse
         f.write(f"{'='*70}\n")
-        f.write(f"ERGEBNISSE\n")
+        f.write("ERGEBNISSE\n")
         f.write(f"{'='*70}\n\n")
         f.write(f"Assets Processed:   {len(raw_results)}\n")
         f.write(f"After Corr Filter:  {len(filtered_results)}\n")
         f.write(f"Elite (Top 10):     {len(elite_results)}\n")
         f.write(f"Profitable:         {len(final_assets)}\n")
-        f.write(f"\n")
+        f.write("\n")
 
         if table_data:
-            f.write(f"ELITE ASSETS\n")
+            f.write("ELITE ASSETS\n")
             f.write(f"{'-'*120}\n")
             f.write(f"{'Asset':<10} {'Kelly':>8} {'WinRate':>8} {'RRR':>6} {'Sharpe':>7} {'Calmar':>7} {'Trades':>7} {'L/S':>12} {'Return':>10} {'MaxDD':>6} {'p-val':>6} {'Folds':>6} {'Status':>6}\n")
             f.write(f"{'-'*120}\n")
@@ -584,14 +584,14 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
                 # row hat 13 Spalten: Asset, Kelly, WinRate, RRR, Sharpe, Calmar, Trades, L/S, Return, MaxDD, p-val, Folds, Status
                 f.write(f"{row[0]:<10} {row[1]:>8} {row[2]:>8} {row[3]:>6} {row[4]:>7} {row[5]:>7} {row[6]:>7} {row[7]:>12} {row[8]:>10} {row[9]:>6} {row[10]:>6} {row[11]:>6} {row[12]:>6}\n")
 
-        f.write(f"\n")
-        f.write(f"PROFITABLE ASSETS\n")
+        f.write("\n")
+        f.write("PROFITABLE ASSETS\n")
         f.write(f"{'-'*40}\n")
         if final_assets:
             for sym in final_assets.keys():
                 f.write(f"  - {sym}\n")
         else:
-            f.write(f"  (keine)\n")
+            f.write("  (keine)\n")
 
 
 def list_runs(tags=None):

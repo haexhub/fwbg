@@ -18,7 +18,7 @@ from fwbg.core.context import SimulationContext
 from fwbg.data.loader import load_data_aligned, load_macro_csv
 from fwbg.builtins.indicators import (
     compute_indicator_pool, get_feature_columns, compute_regime_filter,
-    filter_features_by_group, apply_preprocessing
+    filter_features_by_group
 )
 from fwbg.simulation.trade import (
     calculate_sharpe_ratio, calculate_calmar_ratio,
@@ -137,7 +137,6 @@ def _process_feature_group(
     Returns:
         Tuple von (candidates_list, grid_results_list)
     """
-    from fwbg.builtins.indicators import filter_features_by_group
     from .nested_cv import compute_targets_cached, slice_targets_for_fold
 
     # Setze Parallel-Modus für diesen Thread (unterdrückt Progress-Updates)
@@ -156,8 +155,13 @@ def _process_feature_group(
     total_grid_combos = ctx.total_grid_combinations()
     grid_offset = fg_idx * grid_per_fg
 
-    # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
-    timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
+    # Timeout-Werte: Bei adaptive_timeout nur [None], sonst Grid-Werte
+    # Bei adaptive_timeout wird der Timeout pro Trade dynamisch berechnet
+    adaptive_timeout = ctx.exit_params.get("adaptive_timeout", False)
+    if adaptive_timeout:
+        timeout_values = [None]  # Timeout wird in compute_targets dynamisch berechnet
+    else:
+        timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
 
     # === Grid-Search mit optimiertem Target-Caching ===
     # OPTIMIERUNG: Targets werden pro TP/SL einmal berechnet und für alle
@@ -253,8 +257,6 @@ def _process_feature_groups_parallel(
     """
     import psutil
     import threading
-    from fwbg.utils.progress import report_progress
-    from concurrent.futures import as_completed
 
     n_feature_groups = len(feature_groups)
     all_candidates = []
@@ -344,7 +346,7 @@ def _process_feature_groups_parallel(
     set_xgboost_n_jobs(xgb_n_jobs)
 
     # Detailliertes Logging (Level 2 = nur bei Verbose)
-    log(2, f"=== Ressourcen-Konfiguration für Feature-Gruppen ===", sym)
+    log(2, "=== Ressourcen-Konfiguration für Feature-Gruppen ===", sym)
     log(2, f"  System: {total_ram_gb:.1f}GB RAM total, {free_ram_gb:.1f}GB frei, {total_cores} CPU-Kerne", sym)
     log(2, f"  Config: {ram_per_thread_gb}GB RAM/Thread, {cpu_per_thread} CPU/Thread", sym)
     log(2, f"  Limits: min_free_ram={min_free_ram_percent*100:.0f}%, max_cpu={max_cpu_percent*100:.0f}%", sym)
@@ -352,7 +354,7 @@ def _process_feature_groups_parallel(
         log(2, f"  XGBoost n_jobs: {xgb_n_jobs} (auto: {total_cores} Kerne / {max_workers} Worker)", sym)
     else:
         log(2, f"  XGBoost n_jobs: {xgb_n_jobs} (konfiguriert)", sym)
-    log(3, f"  Berechnung:", sym)
+    log(3, "  Berechnung:", sym)
     log(3, f"    - RAM-Reserve: {min_free_ram_gb:.1f}GB (={min_free_ram_percent*100:.0f}% von {total_ram_gb:.1f}GB)", sym)
     log(3, f"    - Verfügbar für Threads: {available_ram_for_threads:.1f}GB", sym)
     log(3, f"    - RAM-basiertes Limit: {ram_based_limit} Threads", sym)
@@ -418,7 +420,7 @@ def _process_feature_groups_parallel(
     # Phase-Update: Feature-Gruppen fertig
     report_phase(sym, f"Kandidaten: {len(all_candidates)}")
 
-    log(2, f"=== Feature-Gruppen abgeschlossen ===", sym)
+    log(2, "=== Feature-Gruppen abgeschlossen ===", sym)
     log(2, f"  Verarbeitet: {completed}/{n_feature_groups} Gruppen in {total_elapsed:.1f}s", sym)
     log(2, f"  Kandidaten gefunden: {len(all_candidates)}", sym)
     log(2, f"  Finale RAM-Auslastung: {final_mem.percent:.1f}% ({final_mem.available/(1024**3):.1f}GB frei)", sym)
@@ -743,7 +745,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         grid_results = all_grid_results
 
         if not candidates:
-            log(1, f"SKIP - Keine profitablen Kandidaten", sym)
+            log(1, "SKIP - Keine profitablen Kandidaten", sym)
             report_done(sym, "no_candidates")
             return {"symbol": sym, "status": "no_candidates", "grid_results": grid_results}
 
@@ -908,11 +910,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # === MONTE CARLO TESTS ===
         # Prüfe ob Ergebnisse statistisch signifikant sind
         report_phase(sym, "Monte Carlo Validierung...")
-        log(2, f"=== Monte Carlo Validierung ===", sym)
-        log(2, f"  Starte Permutations-Test (1000 Samples)...", sym)
+        log(2, "=== Monte Carlo Validierung ===", sym)
+        log(2, "  Starte Permutations-Test (1000 Samples)...", sym)
         t_mc = time.time()
         mc_perm = monte_carlo_permutation_test(b["tr"], n_permutations=1000)
-        log(2, f"  Starte Equity-Simulation (500 Samples)...", sym)
+        log(2, "  Starte Equity-Simulation (500 Samples)...", sym)
         mc_equity = monte_carlo_equity_simulation(b["tr"], fk, rrr, n_simulations=500)
 
         log(2, f"  Monte Carlo fertig: p={mc_perm['p_value']:.3f}, "

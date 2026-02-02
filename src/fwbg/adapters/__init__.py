@@ -1,47 +1,50 @@
 """
-Adapter System - Modulare Integration von Datenquellen und Brokern.
+Adapter System - Modulare Integration von Brokern.
 
-Adapters sind die Schnittstelle zwischen FWBG und der Außenwelt:
-- DataAdapter: Liefern Marktdaten (CSV, REST API, WebSocket)
-- ExecutionAdapter: Führen Orders aus (IG, Binance, etc.)
+BrokerAdapter ist das Interface für alle Broker-Integrationen:
+- Historische Marktdaten abrufen
+- Live-Streaming (optional)
+- Order-Ausführung
+- Position-Management
+- Account-Information
 
-Alle Adapter kommunizieren über den MessageBus via Events.
+Beispiel:
 
-Beispiel - Eigenen DataAdapter schreiben:
+    from fwbg.adapters import IGBrokerAdapter, OrderSide
 
-    from fwbg.adapters import DataAdapter
-    from fwbg.core.events import BarEvent
+    adapter = IGBrokerAdapter(
+        username="...",
+        password="...",
+        api_key="...",
+        env="DEMO"
+    )
 
-    class MyDataAdapter(DataAdapter):
-        def connect(self):
-            # Verbindung herstellen
-            pass
-
-        def subscribe_bars(self, symbol, timeframe):
-            # Bars abonnieren, Events via self.publish() senden
-            pass
+    with adapter:
+        df = adapter.get_historical_bars("EURUSD", limit=1000)
+        result = adapter.submit_order("EURUSD", OrderSide.BUY, size=0.1)
 """
 from .base import BaseAdapter
-from .data import DataAdapter, CSVDataAdapter
-from .execution import (
-    ExecutionAdapter,
-    Order, Position, AccountInfo,
-    OrderType, OrderSide,
-    IGExecutionAdapter,
+from .broker import (
+    BrokerAdapter,
+    IGBrokerAdapter,
+    OrderSide,
+    OrderType,
+    OrderStatus,
+    OrderResult,
+    Position,
+    AccountInfo,
+    BarData,
 )
 
 __all__ = [
-    # Base
     "BaseAdapter",
-    # Data Adapters
-    "DataAdapter",
-    "CSVDataAdapter",
-    # Execution Adapters
-    "ExecutionAdapter",
-    "Order",
+    "BrokerAdapter",
+    "IGBrokerAdapter",
+    "OrderSide",
+    "OrderType",
+    "OrderStatus",
+    "OrderResult",
     "Position",
     "AccountInfo",
-    "OrderType",
-    "OrderSide",
-    "IGExecutionAdapter",
+    "BarData",
 ]

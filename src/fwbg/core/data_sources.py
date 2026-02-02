@@ -35,7 +35,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Optional, List, Any, Type
+from typing import Dict, List, Any
 import logging
 
 log = logging.getLogger(__name__)

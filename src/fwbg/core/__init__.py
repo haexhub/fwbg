@@ -2,6 +2,14 @@
 Core Module - Kern-Infrastruktur für FWBG.
 """
 
+from .enums import (
+    Timeframe,
+    AssetClass,
+    Symbol,
+    Direction,
+    SignalType,
+)
+
 from .data_sources import (
     # Types
     SourceType,
@@ -57,6 +65,12 @@ from .registry import (
 )
 
 __all__ = [
+    # Enums
+    "Timeframe",
+    "AssetClass",
+    "Symbol",
+    "Direction",
+    "SignalType",
     # Data Source Types
     "SourceType",
     "DataSourceConfig",

@@ -2,7 +2,7 @@
 Base Adapter - Gemeinsame Funktionalität für alle Adapter.
 """
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from datetime import datetime
 import threading
 import logging
