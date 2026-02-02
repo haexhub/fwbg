@@ -48,7 +48,7 @@ class TestCLIArgumentParsing:
         assert "momentum" in result.stdout
 
     def test_list_runs_command(self):
-        """Test: --list zeigt vorhandene Runs."""
+        """Test: --list zeigt vorhandene Runs oder 'keine gefunden' Meldung."""
         import subprocess
         result = subprocess.run(
             ["python3", "-m", "fwbg.cli", "--list"],
@@ -56,7 +56,8 @@ class TestCLIArgumentParsing:
             env={**os.environ, "PYTHONPATH": "src"}
         )
         assert result.returncode == 0
-        assert "TEST-RUNS" in result.stdout
+        # Entweder gibt es Runs oder die "keine gefunden" Meldung
+        assert "TEST-RUNS" in result.stdout or "Keine Test-Runs" in result.stdout
 
 
 class TestStrategyLoading:
