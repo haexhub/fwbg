@@ -17,6 +17,10 @@ from datetime import datetime, timedelta
 # Projekt-Root zum Path hinzufügen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Skip all tests if dependencies not available
+pytest.importorskip("yfinance", reason="yfinance not installed (optional ig dependency)")
+pytest.importorskip("trading_ig", reason="trading-ig not installed (optional ig dependency)")
+
 from bots.ig import EliteBot, STREAMING_AVAILABLE
 
 # Skip alle Tests wenn Streaming nicht verfügbar

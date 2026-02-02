@@ -8,6 +8,16 @@ import os
 import sys
 import pytest
 
+# Projekt-Root zum Path hinzufügen
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Skip all tests if dependencies not available
+pytest.importorskip("yfinance", reason="yfinance not installed (optional ig dependency)")
+pytest.importorskip("trading_ig", reason="trading-ig not installed (optional ig dependency)")
+
+import pandas as pd
+import numpy as np
+
 # Skip if demo account does not exist
 DEMO_ACCOUNT_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -17,12 +27,6 @@ pytestmark = pytest.mark.skipif(
     not os.path.exists(os.path.join(DEMO_ACCOUNT_PATH, "account_info.json")),
     reason="Demo account not found - integration tests require real account"
 )
-
-import pandas as pd
-import numpy as np
-
-# Projekt-Root zum Path hinzufügen
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bots.ig import EliteBot
 
