@@ -216,8 +216,9 @@ class TestComputeTargets:
 
         # Bei zu wenig Trades sollte has_* False sein
         # (abhängig von den zufälligen Daten)
-        assert isinstance(has_long, bool)
-        assert isinstance(has_short, bool)
+        # Akzeptiere bool und np.bool_ (numpy Vergleiche liefern np.bool_)
+        assert isinstance(has_long, (bool, np.bool_))
+        assert isinstance(has_short, (bool, np.bool_))
 
     def test_cached_vs_uncached_equivalence(self):
         """Test: Cached und Uncached Berechnung liefern gleiche Ergebnisse."""

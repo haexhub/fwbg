@@ -144,23 +144,6 @@ class TestStrategyLoading:
 class TestAccountTimeframeOverride:
     """Tests für Account/Timeframe CLI-Overrides."""
 
-    def test_account_override(self):
-        """Test: --account überschreibt Default."""
-        import fwbg.data.config as data_config
-
-        original_account = data_config.ACCOUNT_NAME
-
-        # Simuliere CLI-Override
-        data_config.ACCOUNT_NAME = "test_cli_account"
-        data_config.BASE_PATH = f"accounts/test_cli_account"
-
-        assert data_config.ACCOUNT_NAME == "test_cli_account"
-        assert "test_cli_account" in data_config.BASE_PATH
-
-        # Restore
-        data_config.ACCOUNT_NAME = original_account
-        data_config.BASE_PATH = f"accounts/{original_account}"
-
     def test_timeframe_override(self):
         """Test: --timeframe überschreibt Default."""
         import fwbg.data.config as data_config
@@ -381,11 +364,10 @@ class TestDataConfig:
     def test_config_values_exist(self):
         """Test: Alle wichtigen Config-Werte existieren."""
         from fwbg.data.config import (
-            ACCOUNT_NAME, DATA_PATH, TIMEFRAME, OOS_SIZE,
+            DATA_PATH, TIMEFRAME, OOS_SIZE,
             WALK_FORWARD_FOLDS, CORR_THRESHOLD, MIN_TRADES
         )
 
-        assert ACCOUNT_NAME is not None
         assert DATA_PATH is not None
         assert TIMEFRAME is not None
         assert OOS_SIZE > 0

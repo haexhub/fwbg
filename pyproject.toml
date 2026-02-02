@@ -35,6 +35,8 @@ dependencies = [
     "numba>=0.63",
     # Statistics (needed for preprocessing/stationarity tests)
     "statsmodels>=0.14",
+    # Visualization (needed for CLI)
+    "matplotlib>=3.10",
     # Utilities
     "tabulate>=0.9",
     "tqdm>=4.66",
@@ -54,7 +56,6 @@ dev = [
 ]
 # Advanced analytics & visualization
 analytics = [
-    "matplotlib>=3.10",
     "seaborn>=0.13",
 ]
 # Live trading with IG Markets
