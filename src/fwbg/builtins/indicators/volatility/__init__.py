@@ -46,35 +46,38 @@ class VolatilityIndicators(BaseIndicator):
         if atr_periods is None:
             atr_periods = [7, 14, 21]
 
+        features = {}
+
         # ATR (für interne Nutzung und als Feature)
-        df["_atr"] = ta.volatility.average_true_range(
+        atr_14 = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
         )
-        df["vol_atr"] = df["_atr"]
+        features["_atr"] = atr_14
+        features["vol_atr"] = atr_14
 
         # ATR als Prozent vom Preis
         for period in atr_periods:
             atr = ta.volatility.average_true_range(
                 df["H"], df["L"], df["C"], window=period
             )
-            df[f"vol_atr_pct_{period}"] = atr / df["C"]
+            features[f"vol_atr_pct_{period}"] = atr / df["C"]
 
         # Bollinger Bands
         bb = ta.volatility.BollingerBands(df["C"], window=bb_period)
-        df[f"vol_bb_pband_{bb_period}"] = bb.bollinger_pband()
-        df[f"vol_bb_wband_{bb_period}"] = bb.bollinger_wband()
+        features[f"vol_bb_pband_{bb_period}"] = bb.bollinger_pband()
+        features[f"vol_bb_wband_{bb_period}"] = bb.bollinger_wband()
 
         # Keltner Channel
         kc = ta.volatility.KeltnerChannel(df["H"], df["L"], df["C"])
-        df["vol_kc_pband"] = kc.keltner_channel_pband()
-        df["vol_kc_wband"] = kc.keltner_channel_wband()
+        features["vol_kc_pband"] = kc.keltner_channel_pband()
+        features["vol_kc_wband"] = kc.keltner_channel_wband()
 
         # Donchian Channel
         dc = ta.volatility.DonchianChannel(df["H"], df["L"], df["C"])
-        df["vol_dc_pband"] = dc.donchian_channel_pband()
-        df["vol_dc_wband"] = dc.donchian_channel_wband()
+        features["vol_dc_pband"] = dc.donchian_channel_pband()
+        features["vol_dc_wband"] = dc.donchian_channel_wband()
 
-        return df
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         """Gibt Liste aller Volatilitäts-Feature-Spalten zurück."""

@@ -31,6 +31,19 @@ class CandleListener(SubscriptionListener):
 
     def onSubscriptionError(self, code, message):
         logger.error(f"❌ {self.symbol}: Subscription error {code}: {message}")
+        # Log more details about the error
+        if "Invalid account type" in message:
+            logger.error(f"   This IG account does not have streaming market data permission.")
+            logger.error(f"   ACCOUNT and TRADE subscriptions work, but CHART/L1 do not.")
+            logger.error(f"   This is a common limitation with IG demo accounts.")
+            logger.error(f"   Consider:")
+            logger.error(f"   - Using polling mode instead (--no-streaming)")
+            logger.error(f"   - Contacting IG to enable streaming on your account")
+            logger.error(f"   - Using a live account with streaming permission")
+        elif "Invalid item" in message:
+            logger.error(f"   The EPIC or timeframe may be incorrect")
+        elif "Unauthorized" in message:
+            logger.error(f"   API credentials or session may be invalid")
 
     def onItemUpdate(self, update):
         """Called on each candle update from Lightstreamer."""
@@ -135,7 +148,49 @@ class StreamingManager:
     def _connect(self):
         """Establish streaming connection."""
         with self._lock:
+            # Log connection details for debugging
+            logger.info("🔌 Connecting to streaming service...")
+            logger.info(f"   IG Service type: {type(self.ig_service).__name__}")
+
+            # Log session info if available
+            if hasattr(self.ig_service, 'session'):
+                session = self.ig_service.session
+                logger.info(f"   Session: {session}")
+            if hasattr(self.ig_service, 'ACC_TYPE'):
+                logger.info(f"   ACC_TYPE: {self.ig_service.ACC_TYPE}")
+            if hasattr(self.ig_service, 'ig_session'):
+                ig_session = getattr(self.ig_service, 'ig_session', None)
+                if ig_session:
+                    logger.info(f"   ig_session keys: {list(ig_session.keys()) if isinstance(ig_session, dict) else 'not a dict'}")
+                    if isinstance(ig_session, dict):
+                        logger.info(f"   accountType: {ig_session.get('accountType', 'N/A')}")
+                        logger.info(f"   lightstreamerEndpoint: {ig_session.get('lightstreamerEndpoint', 'N/A')}")
+
+            # WORKAROUND für Bug in trading-ig:
+            # IGStreamService.create_session() holt zwar die Session-Daten,
+            # setzt aber nie self.acc_number aus ig_session["currentAccountId"].
+            # Wir holen die Account-ID VORHER und setzen sie manuell.
+
+            # Erst Session erstellen um Account-ID zu bekommen
+            logger.info("   Fetching account info from IG session...")
+            session_result = self.ig_service.create_session()
+            acc_id = None
+            if isinstance(session_result, dict):
+                acc_id = session_result.get('currentAccountId')
+                logger.info(f"   Account ID: {acc_id}")
+                logger.info(f"   Account Type: {session_result.get('accountType')}")
+                logger.info(f"   Lightstreamer: {session_result.get('lightstreamerEndpoint')}")
+
+            if not acc_id:
+                logger.error("   ❌ Could not get account ID from session!")
+                raise ValueError("Account ID not available from IG session")
+
+            # Jetzt StreamService erstellen und acc_number setzen
             self.stream_service = IGStreamService(self.ig_service)
+            self.stream_service.acc_number = acc_id
+            logger.info(f"   Stream service created with acc_number: {acc_id}")
+
+            logger.info("🔌 Creating streaming session...")
             self.stream_service.create_session()
             self._connected = True
             self._last_heartbeat = datetime.now()
@@ -152,6 +207,11 @@ class StreamingManager:
         """Subscribe to candle stream for a single symbol."""
         try:
             item = f"CHART:{epic}:{self.timeframe}"
+            logger.info(f"📡 Subscribing to {symbol}:")
+            logger.info(f"   Item: {item}")
+            logger.info(f"   Mode: MERGE")
+            logger.info(f"   Fields: {self.CANDLE_FIELDS}")
+
             subscription = Subscription(
                 mode="MERGE",
                 items=[item],
@@ -161,14 +221,17 @@ class StreamingManager:
             listener = CandleListener(self.cache_manager, symbol)
             subscription.addListener(listener)
 
+            logger.info(f"   Calling stream_service.subscribe()...")
             self.stream_service.subscribe(subscription)
             self.subscriptions[symbol] = subscription
             self.listeners[symbol] = listener
 
-            logger.debug(f"📡 Subscribed to {symbol} ({item})")
+            logger.info(f"✅ Subscription request sent for {symbol}")
 
         except Exception as e:
             logger.error(f"❌ Failed to subscribe to {symbol}: {e}")
+            import traceback
+            logger.error(f"   Traceback: {traceback.format_exc()}")
 
     def _start_health_monitor(self):
         """Start background thread to monitor connection health."""

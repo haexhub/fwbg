@@ -57,65 +57,54 @@ class DistributionIndicators(BaseIndicator):
         if windows is None:
             windows = [20, 50, 100]
 
+        features = {}
         returns = df["C"].pct_change()
 
         for period in windows:
             # Rolling Skewness
-            skew = returns.rolling(period).skew()
-            df[f"dist_skew_{period}"] = skew
-
+            features[f"dist_skew_{period}"] = returns.rolling(period).skew()
             # Rolling Kurtosis (Excess Kurtosis, 0 = Normal)
-            kurt = returns.rolling(period).kurt()
-            df[f"dist_kurt_{period}"] = kurt
+            features[f"dist_kurt_{period}"] = returns.rolling(period).kurt()
 
         # Z-Score Normalisierung (relativ zur eigenen Historie)
         for period in windows:
-            skew_col = f"dist_skew_{period}"
-            kurt_col = f"dist_kurt_{period}"
+            skew = features[f"dist_skew_{period}"]
+            kurt = features[f"dist_kurt_{period}"]
 
             # Skewness Z-Score
-            skew_mean = df[skew_col].rolling(z_score_lookback).mean()
-            skew_std = df[skew_col].rolling(z_score_lookback).std()
-            df[f"dist_skew_{period}_z"] = (df[skew_col] - skew_mean) / (skew_std + 1e-10)
+            skew_mean = skew.rolling(z_score_lookback).mean()
+            skew_std = skew.rolling(z_score_lookback).std()
+            features[f"dist_skew_{period}_z"] = (skew - skew_mean) / (skew_std + 1e-10)
 
             # Kurtosis Z-Score
-            kurt_mean = df[kurt_col].rolling(z_score_lookback).mean()
-            kurt_std = df[kurt_col].rolling(z_score_lookback).std()
-            df[f"dist_kurt_{period}_z"] = (df[kurt_col] - kurt_mean) / (kurt_std + 1e-10)
+            kurt_mean = kurt.rolling(z_score_lookback).mean()
+            kurt_std = kurt.rolling(z_score_lookback).std()
+            features[f"dist_kurt_{period}_z"] = (kurt - kurt_mean) / (kurt_std + 1e-10)
 
         # === Änderungs-Features ===
-        if compute_changes:
-            # Skewness Change (Shift in Distribution)
-            if "dist_skew_50" in df.columns:
-                df["dist_skew_change_10"] = (
-                    df["dist_skew_50"] - df["dist_skew_50"].shift(10)
-                )
-                df["dist_skew_change_20"] = (
-                    df["dist_skew_50"] - df["dist_skew_50"].shift(20)
-                )
+        if compute_changes and 50 in windows:
+            skew_50 = features["dist_skew_50"]
+            kurt_50 = features["dist_kurt_50"]
 
-            # Kurtosis Change (Tail-Risk Change)
-            if "dist_kurt_50" in df.columns:
-                df["dist_kurt_change_10"] = (
-                    df["dist_kurt_50"] - df["dist_kurt_50"].shift(10)
-                )
-                df["dist_kurt_change_20"] = (
-                    df["dist_kurt_50"] - df["dist_kurt_50"].shift(20)
-                )
+            features["dist_skew_change_10"] = skew_50 - skew_50.shift(10)
+            features["dist_skew_change_20"] = skew_50 - skew_50.shift(20)
+            features["dist_kurt_change_10"] = kurt_50 - kurt_50.shift(10)
+            features["dist_kurt_change_20"] = kurt_50 - kurt_50.shift(20)
 
         # === Composite Features ===
-        # Tail Risk Score: Kombiniert Kurtosis und negative Skewness
-        if "dist_kurt_50" in df.columns and "dist_skew_50" in df.columns:
-            # Hohe Kurtosis + negative Skewness = hohes Tail-Risk
-            kurt_norm = df["dist_kurt_50"].clip(-3, 10) / 10  # Normalisiert auf ~0-1
-            skew_contrib = (-df["dist_skew_50"]).clip(0, 3) / 3  # Nur negative Skewness
-            df["dist_tail_risk"] = (kurt_norm + skew_contrib) / 2
+        if 50 in windows:
+            skew_50 = features["dist_skew_50"]
+            kurt_50 = features["dist_kurt_50"]
 
-        # Distribution Stability (Std der Skewness über Zeit)
-        if "dist_skew_50" in df.columns:
-            df["dist_stability"] = df["dist_skew_50"].rolling(50).std()
+            # Tail Risk Score: Kombiniert Kurtosis und negative Skewness
+            kurt_norm = kurt_50.clip(-3, 10) / 10
+            skew_contrib = (-skew_50).clip(0, 3) / 3
+            features["dist_tail_risk"] = (kurt_norm + skew_contrib) / 2
 
-        return df
+            # Distribution Stability
+            features["dist_stability"] = skew_50.rolling(50).std()
+
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [

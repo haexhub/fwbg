@@ -162,6 +162,7 @@ def compute_indicator_pool(
             indicators = ["trend", "momentum", "volatility"]
 
     total = len(indicators)
+
     for idx, name in enumerate(indicators):
         if name in _DEFAULT_INDICATORS:
             try:

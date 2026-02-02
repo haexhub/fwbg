@@ -1,34 +1,30 @@
 {
     "EURUSD": {
-        "kelly_risk": 0.01,
+        "kelly_risk": 0.005,
         "point_value": 0.0001,
-        "spread": 0.00006,
-        "tp_mult": 50,
-        "sl_mult": 30,
+        "spread": 0.00018,
+        "tp_mult": 40,
+        "sl_mult": 25,
         "conf_thresh": 0.55,
         "features": [
-            "test_feature_1",
-            "test_feature_2"
+            "trend_adx_14",
+            "trend_ema_dist_21",
+            "trend_ema_dist_50",
+            "trend_sma_dist_20",
+            "mom_rsi_14",
+            "mom_stoch_k_14",
+            "mom_stoch_d_14",
+            "mom_roc_10",
+            "vol_atr_pct_14",
+            "vol_bb_pband_20",
+            "vol_bb_wband_20",
+            "pa_range_pos",
+            "pa_body_ratio",
+            "time_hour_sin",
+            "time_hour_cos",
+            "time_day_sin"
         ],
-        "good_hours": [
-            8,
-            9,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            16
-        ],
-        "ensemble": [
-            {
-                "tp_mult": 50,
-                "sl_mult": 30,
-                "conf_thresh": 0.58,
-                "weight": 0.5
-            }
-        ],
+        "good_hours": [8, 9, 10, 11, 12, 13, 14, 15, 16],
         "dd_scaling": {
             "5": 0.75,
             "10": 0.5,

@@ -125,6 +125,8 @@ class RegimeIndicators(BaseIndicator):
         if hurst_windows is None:
             hurst_windows = [100, 200, 500]
 
+        features = {}
+
         # Verwende Original-Close falls Frac-Diff aktiv
         close_for_hurst = (
             df["_original_close"].values
@@ -135,26 +137,25 @@ class RegimeIndicators(BaseIndicator):
         # Hurst für verschiedene Fenstergrößen
         for window in hurst_windows:
             hurst_values = _compute_rolling_hurst(close_for_hurst, window=window, step=step)
-            df[f"regime_hurst_{window}"] = hurst_values
+            features[f"regime_hurst_{window}"] = hurst_values
 
         # Hurst-Änderung (Regime-Shift Detection)
-        if "regime_hurst_100" in df.columns:
-            df["regime_hurst_100_chg"] = (
-                df["regime_hurst_100"] - df["regime_hurst_100"].shift(24)
-            )
+        if 100 in hurst_windows:
+            hurst_100 = pd.Series(features["regime_hurst_100"], index=df.index)
+            features["regime_hurst_100_chg"] = hurst_100 - hurst_100.shift(24)
 
-        if "regime_hurst_200" in df.columns:
-            df["regime_hurst_200_chg"] = (
-                df["regime_hurst_200"] - df["regime_hurst_200"].shift(48)
-            )
+        if 200 in hurst_windows:
+            hurst_200 = pd.Series(features["regime_hurst_200"], index=df.index)
+            features["regime_hurst_200_chg"] = hurst_200 - hurst_200.shift(48)
 
         # Hurst-Divergenz zwischen Zeitskalen
-        if "regime_hurst_100" in df.columns and "regime_hurst_500" in df.columns:
-            df["regime_hurst_divergence"] = (
-                df["regime_hurst_100"] - df["regime_hurst_500"]
+        if 100 in hurst_windows and 500 in hurst_windows:
+            features["regime_hurst_divergence"] = (
+                pd.Series(features["regime_hurst_100"], index=df.index) -
+                pd.Series(features["regime_hurst_500"], index=df.index)
             )
 
-        return df
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [

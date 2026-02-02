@@ -60,6 +60,8 @@ class IchimokuIndicators(BaseIndicator):
         Returns:
             DataFrame mit Ichimoku-Features
         """
+        features = {}
+
         # Ichimoku Indicator aus ta-lib
         ichimoku = ta.trend.IchimokuIndicator(
             df["H"], df["L"],
@@ -69,94 +71,85 @@ class IchimokuIndicators(BaseIndicator):
         )
 
         # Basis-Linien
-        df["ichi_tenkan"] = ichimoku.ichimoku_conversion_line()
-        df["ichi_kijun"] = ichimoku.ichimoku_base_line()
-        df["ichi_senkou_a"] = ichimoku.ichimoku_a()
-        df["ichi_senkou_b"] = ichimoku.ichimoku_b()
+        tenkan = ichimoku.ichimoku_conversion_line()
+        kijun = ichimoku.ichimoku_base_line()
+        senkou_a = ichimoku.ichimoku_a()
+        senkou_b = ichimoku.ichimoku_b()
+
+        features["ichi_tenkan"] = tenkan
+        features["ichi_kijun"] = kijun
+        features["ichi_senkou_a"] = senkou_a
+        features["ichi_senkou_b"] = senkou_b
 
         # Cloud Top und Bottom
-        cloud_top = df[["ichi_senkou_a", "ichi_senkou_b"]].max(axis=1)
-        cloud_bottom = df[["ichi_senkou_a", "ichi_senkou_b"]].min(axis=1)
+        cloud_top = pd.concat([senkou_a, senkou_b], axis=1).max(axis=1)
+        cloud_bottom = pd.concat([senkou_a, senkou_b], axis=1).min(axis=1)
 
         # Cloud Thickness (normalisiert)
-        df["ichi_cloud_thick"] = (cloud_top - cloud_bottom) / df["C"]
+        features["ichi_cloud_thick"] = (cloud_top - cloud_bottom) / df["C"]
 
-        # Cloud Position: Wo ist der Preis relativ zur Cloud (0-1)
-        # < 0 = unter Cloud, > 1 = über Cloud, 0-1 = in Cloud
-        df["ichi_cloud_pos"] = (df["C"] - cloud_bottom) / (cloud_top - cloud_bottom + 1e-10)
+        # Cloud Position
+        features["ichi_cloud_pos"] = (df["C"] - cloud_bottom) / (cloud_top - cloud_bottom + 1e-10)
 
         # Preis über/unter Cloud
-        df["ichi_above_cloud"] = (df["C"] > cloud_top).astype(int)
-        df["ichi_below_cloud"] = (df["C"] < cloud_bottom).astype(int)
-        df["ichi_in_cloud"] = (
-            (df["C"] >= cloud_bottom) & (df["C"] <= cloud_top)
-        ).astype(int)
+        above_cloud = (df["C"] > cloud_top).astype(int)
+        below_cloud = (df["C"] < cloud_bottom).astype(int)
+        features["ichi_above_cloud"] = above_cloud
+        features["ichi_below_cloud"] = below_cloud
+        features["ichi_in_cloud"] = ((df["C"] >= cloud_bottom) & (df["C"] <= cloud_top)).astype(int)
 
-        # TK Cross (Tenkan - Kijun, normalisiert)
-        df["ichi_tk_cross"] = (df["ichi_tenkan"] - df["ichi_kijun"]) / df["C"]
+        # TK Cross
+        tk_cross = (tenkan - kijun) / df["C"]
+        features["ichi_tk_cross"] = tk_cross
 
-        # TK Cross Direction Change (Signal)
-        tk_bullish = (df["ichi_tenkan"] > df["ichi_kijun"]).astype(bool)
+        # TK Cross Direction Change
+        tk_bullish = (tenkan > kijun).astype(bool)
         tk_bullish_prev = tk_bullish.shift(1).fillna(False).astype(bool)
-        df["ichi_tk_bullish_cross"] = (
-            tk_bullish & ~tk_bullish_prev
-        ).astype(int)
-        df["ichi_tk_bearish_cross"] = (
-            ~tk_bullish & tk_bullish_prev
-        ).astype(int)
+        features["ichi_tk_bullish_cross"] = (tk_bullish & ~tk_bullish_prev).astype(int)
+        features["ichi_tk_bearish_cross"] = (~tk_bullish & tk_bullish_prev).astype(int)
 
-        # Price-Kijun Distance (Kijun als Support/Resistance)
-        df["ichi_price_kijun"] = (df["C"] - df["ichi_kijun"]) / df["C"]
+        # Price-Kijun Distance
+        features["ichi_price_kijun"] = (df["C"] - kijun) / df["C"]
 
-        # Kijun Flat (Ranging Market)
-        kijun_change = df["ichi_kijun"].diff().abs()
-        df["ichi_kijun_flat"] = (kijun_change < 0.0001 * df["C"]).astype(int)
+        # Kijun Flat
+        kijun_change = kijun.diff().abs()
+        features["ichi_kijun_flat"] = (kijun_change < 0.0001 * df["C"]).astype(int)
 
-        # Cloud Color (Bullish = Span A > Span B)
-        df["ichi_bullish_cloud"] = (df["ichi_senkou_a"] > df["ichi_senkou_b"]).astype(int)
+        # Cloud Color
+        bullish_cloud = (senkou_a > senkou_b).astype(int)
+        features["ichi_bullish_cloud"] = bullish_cloud
 
-        # Cloud Color Change (Kumo Twist)
-        cloud_bullish = (df["ichi_senkou_a"] > df["ichi_senkou_b"]).astype(bool)
+        # Kumo Twist
+        cloud_bullish = (senkou_a > senkou_b).astype(bool)
         cloud_bullish_prev = cloud_bullish.shift(1).fillna(False).astype(bool)
-        df["ichi_kumo_twist"] = (cloud_bullish != cloud_bullish_prev).astype(int)
+        features["ichi_kumo_twist"] = (cloud_bullish != cloud_bullish_prev).astype(int)
 
-        # Chikou Span (Lagging) - Preis vor 26 Perioden
-        # Für Trading: aktueller Preis vs Preis vor 26 Perioden
-        df["ichi_chikou_above"] = (df["C"] > df["C"].shift(kijun_period)).astype(int)
+        # Chikou Span
+        features["ichi_chikou_above"] = (df["C"] > df["C"].shift(kijun_period)).astype(int)
 
         # === Composite Signals ===
-        # Strong Bullish: Above cloud + TK bullish + bullish cloud
-        df["ichi_strong_bullish"] = (
-            (df["ichi_above_cloud"] == 1) &
-            (df["ichi_tk_cross"] > 0) &
-            (df["ichi_bullish_cloud"] == 1)
+        features["ichi_strong_bullish"] = (
+            (above_cloud == 1) & (tk_cross > 0) & (bullish_cloud == 1)
         ).astype(int)
 
-        # Strong Bearish: Below cloud + TK bearish + bearish cloud
-        df["ichi_strong_bearish"] = (
-            (df["ichi_below_cloud"] == 1) &
-            (df["ichi_tk_cross"] < 0) &
-            (df["ichi_bullish_cloud"] == 0)
+        features["ichi_strong_bearish"] = (
+            (below_cloud == 1) & (tk_cross < 0) & (bullish_cloud == 0)
         ).astype(int)
 
-        # Neutral/Ranging: In cloud or conflicting signals
-        df["ichi_neutral"] = (
-            (df["ichi_in_cloud"] == 1) |
-            (
-                (df["ichi_above_cloud"] != df["ichi_bullish_cloud"]) &
-                (df["ichi_below_cloud"] != (1 - df["ichi_bullish_cloud"]))
-            )
+        features["ichi_neutral"] = (
+            (features["ichi_in_cloud"] == 1) |
+            ((above_cloud != bullish_cloud) & (below_cloud != (1 - bullish_cloud)))
         ).astype(int)
 
-        # Distance to Cloud (für Entry Timing)
+        # Distance to Cloud
         dist_to_top = (cloud_top - df["C"]) / df["C"]
         dist_to_bottom = (df["C"] - cloud_bottom) / df["C"]
-        df["ichi_dist_to_cloud"] = np.where(
-            df["ichi_above_cloud"] == 1, dist_to_bottom,
-            np.where(df["ichi_below_cloud"] == 1, -dist_to_top, 0)
+        features["ichi_dist_to_cloud"] = np.where(
+            above_cloud == 1, dist_to_bottom,
+            np.where(below_cloud == 1, -dist_to_top, 0)
         )
 
-        return df
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [

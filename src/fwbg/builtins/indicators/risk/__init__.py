@@ -103,76 +103,63 @@ class RiskIndicators(BaseIndicator):
         if vov_windows is None:
             vov_windows = [20, 50, 100]
 
+        features = {}
         close = df["C"]
         returns = close.pct_change()
 
         # === Drawdown Features ===
         for window in dd_windows:
             rolling_max = close.rolling(window, min_periods=1).max()
-
-            # Aktueller Drawdown in %
             dd_pct = (close - rolling_max) / rolling_max
-            df[f"risk_dd_pct_{window}"] = dd_pct
+            features[f"risk_dd_pct_{window}"] = dd_pct
 
-            # Drawdown Ratio
             rolling_min_dd = dd_pct.rolling(window, min_periods=1).min()
-            df[f"risk_dd_ratio_{window}"] = dd_pct / (rolling_min_dd - 1e-10)
+            features[f"risk_dd_ratio_{window}"] = dd_pct / (rolling_min_dd - 1e-10)
 
         # Time since peak
         if 200 in dd_windows:
             rolling_max_200 = close.rolling(200, min_periods=1).max()
             is_at_peak = (close >= rolling_max_200).astype(int)
-            df["risk_bars_since_peak"] = _bars_since_event(is_at_peak)
-            df["risk_bars_since_peak_log"] = np.log1p(df["risk_bars_since_peak"])
+            bars_since_peak = _bars_since_event(is_at_peak)
+            features["risk_bars_since_peak"] = bars_since_peak
+            features["risk_bars_since_peak_log"] = np.log1p(bars_since_peak)
 
-            # Recovery Ratio
             rolling_min_close = close.rolling(50, min_periods=1).min()
-            recovery = (close - rolling_min_close) / (
-                rolling_max_200 - rolling_min_close + 1e-10
-            )
-            df["risk_recovery_ratio"] = recovery.clip(0, 1)
+            recovery = (close - rolling_min_close) / (rolling_max_200 - rolling_min_close + 1e-10)
+            features["risk_recovery_ratio"] = recovery.clip(0, 1)
 
         # === CVaR Features ===
         for window in cvar_windows:
             for percentile in cvar_percentiles:
-                # VaR
                 var = returns.rolling(window).quantile(percentile / 100)
-                df[f"risk_var_{percentile}_{window}"] = var
+                features[f"risk_var_{percentile}_{window}"] = var
+                features[f"risk_cvar_{percentile}_{window}"] = _compute_rolling_cvar(returns, window, percentile)
 
-                # CVaR
-                cvar = _compute_rolling_cvar(returns, window, percentile)
-                df[f"risk_cvar_{percentile}_{window}"] = cvar
-
-        # CVaR Ratio und Change
-        if "risk_cvar_1_100" in df.columns and "risk_cvar_5_100" in df.columns:
-            df["risk_cvar_tail_ratio"] = (
-                df["risk_cvar_1_100"] / (df["risk_cvar_5_100"] + 1e-10)
-            )
-
-        if "risk_cvar_5_100" in df.columns:
-            df["risk_cvar_5_change"] = (
-                df["risk_cvar_5_100"] - df["risk_cvar_5_100"].shift(20)
-            )
+        if 100 in cvar_windows and 1 in cvar_percentiles and 5 in cvar_percentiles:
+            cvar_1_100 = features["risk_cvar_1_100"]
+            cvar_5_100 = features["risk_cvar_5_100"]
+            features["risk_cvar_tail_ratio"] = cvar_1_100 / (cvar_5_100 + 1e-10)
+            features["risk_cvar_5_change"] = cvar_5_100 - cvar_5_100.shift(20)
 
         # === Vol-of-Vol Features ===
         atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
         atr_change = atr.pct_change()
 
         for window in vov_windows:
-            df[f"risk_vol_of_vol_{window}"] = atr_change.rolling(window).std()
+            features[f"risk_vol_of_vol_{window}"] = atr_change.rolling(window).std()
 
-        # Vol-of-Vol Z-Score
-        if "risk_vol_of_vol_100" in df.columns:
-            vov_100 = df["risk_vol_of_vol_100"]
+        if 100 in vov_windows:
+            vov_100 = features["risk_vol_of_vol_100"]
             vov_mean = vov_100.rolling(200).mean()
             vov_std = vov_100.rolling(200).std()
-            df["risk_vol_of_vol_zscore"] = (vov_100 - vov_mean) / (vov_std + 1e-10)
+            features["risk_vol_of_vol_zscore"] = (vov_100 - vov_mean) / (vov_std + 1e-10)
 
-        # Vol-of-Vol Trend
-        if "risk_vol_of_vol_50" in df.columns:
-            df["risk_vol_of_vol_trend"] = (
-                df["risk_vol_of_vol_50"] - df["risk_vol_of_vol_50"].shift(10)
-            )
+        if 50 in vov_windows:
+            vov_50 = features["risk_vol_of_vol_50"]
+            features["risk_vol_of_vol_trend"] = vov_50 - vov_50.shift(10)
+
+        # Concat features first, then compute crash prob and correlations
+        df = pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
         # === Crash Probability ===
         self._compute_crash_probability(df)
