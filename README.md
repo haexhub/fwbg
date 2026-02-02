@@ -76,8 +76,8 @@ Erstelle `accounts/<name>/` mit:
 
 ## Dokumentation
 
-- [FEATURES.md](FEATURES.md) - Alle verfügbaren Indikatoren & Features (~220-300+)
-- [ADAPTERS.md](ADAPTERS.md) - Adapter-System für Datenquellen & Broker
+- [docs/FEATURES.md](docs/FEATURES.md) - Alle verfügbaren Indikatoren & Features (~220-300+)
+- [docs/ADAPTERS.md](docs/ADAPTERS.md) - Adapter-System für Datenquellen & Broker
 
 ---
 
