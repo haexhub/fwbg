@@ -54,8 +54,8 @@ echo -e "${BLUE}=== 2/6 Python Dependencies ===${NC}"
 echo "Upgrade pip..."
 pip install --upgrade pip -q
 
-echo "Installiere requirements.txt..."
-pip install -r requirements.txt -q
+echo "Installiere fwbg mit allen Dependencies..."
+pip install -e ".[dev,ig]" -q
 echo -e "${GREEN}Dependencies installiert${NC}"
 
 # 3. Verzeichnisse erstellen
@@ -448,10 +448,14 @@ ls -la data/forexsb/*.csv 2>/dev/null | wc -l | xargs -I {} echo "  {} CSV-Datei
 echo ""
 echo -e "${BLUE}Optimizer starten:${NC}"
 echo "  source .venv/bin/activate"
-echo "  python -m optimizer --strategy-file strategies/default.json"
+echo "  python -m fwbg.optimizer --assets EURUSD"
+echo "  python -m fwbg.optimizer --strategy-file strategies/default.json --assets EURUSD"
+echo ""
+echo -e "${BLUE}Trading Bot starten:${NC}"
+echo "  python -m bots.ig                  # Streaming mode"
+echo "  python -m bots.ig --no-streaming   # Polling mode"
 echo ""
 echo -e "${BLUE}Andere Befehle:${NC}"
-echo "  python -m optimizer --runs              # Runs anzeigen"
-echo "  python -m optimizer --compare ID1 ID2  # Runs vergleichen"
-echo "  TIMEFRAME=MINUTE_15 python -m optimizer ...  # Anderer Timeframe"
+echo "  fwbg --help                        # CLI-Hilfe"
+echo "  python -m fwbg.optimizer --runs    # Runs anzeigen"
 echo ""
