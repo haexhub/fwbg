@@ -17,6 +17,7 @@ from scipy import stats
 
 from fwbg.plugins import BaseFeatureSelector
 from fwbg.core import register_feature_selector
+from .selector import select_features_boruta
 
 
 def _create_shadow_features(X: pd.DataFrame) -> pd.DataFrame:
@@ -147,4 +148,4 @@ class BorutaSelector(BaseFeatureSelector):
         }
 
 
-__all__ = ["BorutaSelector"]
+__all__ = ["BorutaSelector", "select_features_boruta"]

@@ -22,13 +22,15 @@ Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur 
 12. [Cross-Indikator Features](#12-cross-indikator-features-cross_)
 13. [Multi-Timeframe Features](#13-multi-timeframe-features-mtf_)
 14. [Regime Features](#14-regime-features-regime_)
-15. [Event Features](#15-event-features-event_) ⭐ NEU
-16. [Struktur Features](#16-struktur-features-path_-fractal_-convex_-structure_) ⭐ NEU
-17. [Korrelations Features](#17-korrelations-features-corr_-lead_lag_) ⭐ NEU
-18. [Risk/Tail-Risk Features](#18-risktail-risk-features-risk_) ⭐ NEU
-19. [Makro Features](#19-makro-features-macro_)
-20. [Feature-Gruppen](#feature-gruppen)
-21. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung-) ⭐ NEU
+15. [Event Features](#15-event-features-event_)
+16. [Struktur Features](#16-struktur-features-path_-fractal_-convex_-structure_)
+17. [Korrelations Features](#17-korrelations-features-corr_-lead_lag_)
+18. [Risk/Tail-Risk Features](#18-risktail-risk-features-risk_)
+19. [Microstructure Features](#19-microstructure-features-micro_) ⭐ NEU
+20. [Macro Surprise Features](#20-macro-surprise-features-macsurp_) ⭐ NEU
+21. [Makro Features](#21-makro-features-macro_)
+22. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
+23. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
 
 ---
 
@@ -402,7 +404,7 @@ Markt-Charakter Indikatoren basierend auf dem Hurst-Exponenten.
 
 ---
 
-## 15. Event Features (`event_`) ⭐ NEU
+## 15. Event Features (`event_`)
 
 Time-Since-Event Features messen, wie viele Bars seit wichtigen Ereignissen vergangen sind.
 
@@ -430,7 +432,7 @@ Time-Since-Event Features messen, wie viele Bars seit wichtigen Ereignissen verg
 
 ---
 
-## 16. Struktur Features (`path_`, `fractal_`, `convex_`, `structure_`) ⭐ NEU
+## 16. Struktur Features (`path_`, `fractal_`, `convex_`, `structure_`)
 
 Analysieren die mathematische Struktur der Preisbewegung.
 
@@ -499,7 +501,7 @@ VWAP-ähnliche Referenzpunkte (ohne echtes Volume, Typical Price als Proxy).
 
 ---
 
-## 17. Korrelations Features (`corr_`, `lead_lag_`) ⭐ NEU
+## 17. Korrelations Features (`corr_`, `lead_lag_`)
 
 Analysieren Beziehungen zu Benchmark-Assets (SPX, VIX).
 
@@ -540,7 +542,7 @@ VIX und Benchmarks führen oft vor dem Asset.
 
 ---
 
-## 18. Risk/Tail-Risk Features (`risk_`) ⭐ NEU
+## 18. Risk/Tail-Risk Features (`risk_`)
 
 Features zur Messung von Tail-Risk und Crash-Wahrscheinlichkeit.
 
@@ -611,7 +613,185 @@ Kombiniert mehrere Warnsignale zu einem Score.
 
 ---
 
-## 19. Makro Features (`macro_`)
+## 19. Microstructure Features (`micro_`) ⭐ NEU
+
+Analysieren die Intrabar-Dynamik und Orderflow-Muster.
+
+**Plugin:** `microstructure`
+
+### Wick Imbalance
+
+Misst das Ungleichgewicht zwischen oberem und unterem Docht.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `micro_wick_imbalance` | (Oberer Docht - Unterer Docht) / Range | -1 bis 1, positiv = Verkaufsdruck oben |
+| `micro_wick_imbalance_sum_N` | Rolling Sum über N Bars | Kumulierter Druck |
+
+**Werte:**
+- Positiv: Mehr Verkaufsdruck (langer oberer Docht)
+- Negativ: Mehr Kaufdruck (langer unterer Docht)
+- Nahe 0: Ausgewogene Kerze
+
+### Intrabar Bias
+
+Zeigt, wo der Close relativ zur Bar-Range liegt.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `micro_intrabar_bias` | (Close - Low) / Range | 0-1, 1 = Close am High |
+| `micro_intrabar_bias_sum_N` | Rolling Sum über N Bars | Kumulierter Bias |
+
+### Body Ratio
+
+Verhältnis von Kerzenkörper zur Gesamtrange.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `micro_body_ratio` | |Open - Close| / Range | 0-1, 1 = keine Dochte |
+| `micro_body_ratio_avg_N` | Rolling Average | Durchschnittliche Kerzenqualität |
+
+**Interpretation:**
+- Hoher Body Ratio: Starke, entschiedene Bewegung
+- Niedriger Body Ratio: Unentschlossen, viel Hin und Her (Doji-ähnlich)
+
+### Range over ATR
+
+Normalisierte Bar-Range.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `micro_range_over_atr` | (High - Low) / ATR | Relative Größe der Bar |
+| `micro_range_over_atr_max_N` | Rolling Maximum | Größte Bar im Fenster |
+
+**Werte:**
+- > 1: Überdurchschnittlich große Bar (Breakout?)
+- < 1: Unterdurchschnittlich kleine Bar (Konsolidierung)
+
+### Pressure Score
+
+Kombinierter Orderflow-Score.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `micro_pressure_score` | wick_imbalance × body_ratio | -1 bis 1 |
+| `micro_pressure_score_sum_N` | Rolling Sum | Kumulierter Druck |
+
+**Formel:** pressure = wick_imbalance × body_ratio
+
+**Interpretation:**
+- Stark positiv: Starker Verkaufsdruck mit klarer Richtung
+- Stark negativ: Starker Kaufdruck mit klarer Richtung
+- Nahe 0: Kein klarer Druck
+
+### Volume-gewichtete Features (falls Volume verfügbar)
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `micro_vol_wick_imbalance` | Volume × Wick Imbalance | Volume-bestätigter Druck |
+| `micro_vol_pressure` | Volume × Pressure Score | Volume-bestätigter Score |
+
+### Konfigurierbare Parameter
+
+```json
+{
+  "indicator_params": {
+    "microstructure": {
+      "atr_period": 14,
+      "rolling_window": 5
+    }
+  }
+}
+```
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `atr_period` | 14 | ATR-Periode für Normalisierung |
+| `rolling_window` | 5 | Fenster für Rolling-Aggregationen |
+
+---
+
+## 20. Macro Surprise Features (`macsurp_`) ⭐ NEU
+
+Analysieren Gap-Verhalten und Informationsflüsse zwischen Sessions.
+
+**Plugin:** `macro_surprise`
+
+### Gap Analysis
+
+Misst Overnight-Gaps und deren Bedeutung.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `macsurp_gap` | (Open - Previous Close) / ATR | Normalisierte Gap-Größe |
+| `macsurp_gap_abs` | Absolute Gap (ohne Vorzeichen) | Gap-Magnitude |
+| `macsurp_gap_ma` | Moving Average der Gaps | Durchschnittliche Gap-Aktivität |
+| `macsurp_gap_std` | Standardabweichung der Gaps | Gap-Volatilität |
+
+**Interpretation:**
+- Große positive Gaps: Bullische Overnight-News
+- Große negative Gaps: Bearische Overnight-News
+- Hohe Gap-Volatilität: Unruhige Märkte, News-getrieben
+
+### Return Decomposition
+
+Zerlegt Returns in Gap und Intraday-Komponenten.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `macsurp_intraday_return` | (Close - Open) / Open | Intraday-Performance |
+| `macsurp_total_return` | (Close - Prev Close) / Prev Close | Gesamt-Performance |
+| `macsurp_gap_ratio` | Gap / Total Return | Anteil des Gaps am Return |
+
+**Anwendung:**
+- `gap_ratio` nahe 1: Return komplett durch Gap bestimmt
+- `gap_ratio` nahe 0: Return durch Intraday-Trading bestimmt
+- Negative Ratio: Gap und Intraday gegenläufig
+
+### Surprise Detection
+
+Erkennt unerwartete Marktbewegungen.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `macsurp_surprise` | |Gap| > threshold × rolling_std | Binär: 1 = Überraschung |
+| `macsurp_surprise_direction` | Gap-Richtung bei Surprise | 1 = bullish, -1 = bearish |
+| `macsurp_bars_since_surprise` | Bars seit letzter Surprise | Marktberuhigung |
+
+**threshold** wird konfiguriert (Default: 2.0 = 2 Standardabweichungen)
+
+### Volatility Breaks
+
+Erkennt ungewöhnliche Intraday-Volatilität.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `macsurp_vol_break` | Range > 2 × rolling_avg_range | Binär: Volatility Break |
+| `macsurp_vol_break_strength` | Range / rolling_avg_range | Stärke des Breaks |
+
+### Konfigurierbare Parameter
+
+```json
+{
+  "indicator_params": {
+    "macro_surprise": {
+      "vol_lookback": 20,
+      "surprise_threshold": 2.0,
+      "gap_ma_period": 10
+    }
+  }
+}
+```
+
+| Parameter | Default | Beschreibung |
+|-----------|---------|--------------|
+| `vol_lookback` | 20 | Lookback für Rolling-Statistiken |
+| `surprise_threshold` | 2.0 | Anzahl Std-Abweichungen für Surprise |
+| `gap_ma_period` | 10 | MA-Periode für Gap-Glättung |
+
+---
+
+## 21. Makro Features (`macro_`)
 
 Fundamentale Marktdaten von externen Quellen. Jeder Indikator generiert mehrere Features mit verschiedenen Lookback-Perioden.
 
@@ -687,30 +867,60 @@ Für jeden Makro-Indikator werden Change-Features mit folgenden Lookbacks generi
 
 ---
 
-## Feature-Gruppen
+## Feature-Gruppen / Indicator Plugins
 
-Feature-Gruppen ermöglichen systematisches Testen verschiedener Indikator-Kombinationen.
+Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indikator ist ein separates Plugin mit eigenen konfigurierbaren Parametern.
 
-| Gruppe | Prefixes | Anzahl Features | Beschreibung |
-|--------|----------|-----------------|--------------|
-| `trend` | `trend_`, `ichi_` | ~34 | Trend-Indikatoren inkl. Ichimoku |
-| `momentum` | `mom_` | ~16 | RSI, Stochastic, ROC, etc. |
-| `volatility` | `vol_` | ~14 | Bollinger, Keltner, ATR, etc. |
-| `price_action` | `pa_` | 5 | Range, Higher Highs, Gaps |
-| `time` | `time_`, `season_` | ~14 | Zeit- und Saisonalitäts-Features |
-| `macro` | `macro_` | ~80+ | Fundamentale Marktdaten |
-| `dynamics` | `dyn_`, `lag_`, `accel_` | ~27 | Änderungen und Verzögerungen |
-| `mtf` | `mtf_` | ~12 | Multi-Timeframe Aggregation |
-| `cross` | `cross_` | 3 | Kombinierte Signale |
-| `distribution` | `dist_` | 10 | Skewness und Kurtosis |
-| `fft` | `fft_` | 15 | Fourier-Zykluserkennung |
-| `regime` | `regime_` | 6 | Hurst-basierte Regime |
-| `event` | `event_` | ~14 | Time-Since-Event Features ⭐ NEU |
-| `structure` | `path_`, `fractal_`, `convex_`, `structure_` | ~20 | Path Efficiency, Fractal Dim, Convexity, VWAP ⭐ NEU |
-| `correlation` | `corr_`, `lead_lag_`, `vix_lead_` | ~12 | Korrelation, Decoupling, Lead-Lag ⭐ NEU |
-| `risk` | `risk_` | ~25 | Drawdown, CVaR, Vol-of-Vol, Crash Probability ⭐ NEU |
+### Verfügbare Indicator Plugins
 
-### Kombinierte Gruppen
+| Plugin Name | Gruppe | Anzahl Features | Beschreibung |
+|-------------|--------|-----------------|--------------|
+| `trend` | trend | ~34 | ADX, EMA, SMA, MACD, CCI, Aroon, ER |
+| `momentum` | momentum | ~16 | RSI, Stochastic, Williams %R, ROC, UO |
+| `volatility` | volatility | ~14 | Bollinger, Keltner, Donchian, ATR |
+| `ichimoku` | trend | ~8 | Ichimoku Cloud System |
+| `price_action` | price_action | ~5 | Range, Higher Highs/Lows, Gaps |
+| `time_season` | time | ~14 | Zeit und Saisonalität |
+| `dynamics` | dynamics | ~27 | Änderungen, Lags, Beschleunigung |
+| `multi_timeframe` | mtf | ~12 | H4/D1 Aggregation |
+| `cross_features` | cross | ~3 | Kombinierte Signale |
+| `distribution` | distribution | ~10 | Skewness, Kurtosis |
+| `structure` | structure | ~20 | FFT, Path Efficiency, VWAP |
+| `regime` | regime | ~6 | Hurst-Exponent |
+| `risk` | risk | ~25 | Drawdown, CVaR, Vol-of-Vol |
+| `microstructure` | microstructure | ~15 | Intrabar-Analyse, Orderflow ⭐ NEU |
+| `macro_surprise` | macro_surprise | ~12 | Gap-Analyse, Surprises ⭐ NEU |
+
+### Plugin-Konfiguration in Strategy JSON
+
+```json
+{
+  "indicators": [
+    "trend",
+    "momentum",
+    "volatility",
+    "microstructure",
+    "macro_surprise"
+  ],
+
+  "indicator_params": {
+    "trend": {
+      "adx_periods": [14, 21],
+      "ema_periods": [21, 50, 100]
+    },
+    "microstructure": {
+      "atr_period": 14,
+      "rolling_window": 5
+    },
+    "macro_surprise": {
+      "vol_lookback": 20,
+      "surprise_threshold": 2.0
+    }
+  }
+}
+```
+
+### Legacy Feature-Gruppen (Backward Compatibility)
 
 | Gruppe | Prefixes | Beschreibung |
 |--------|----------|--------------|
@@ -839,7 +1049,7 @@ Das alte Verhalten mit festem top_n=5 Limit pro Feature-Gruppe:
 
 ---
 
-## Early Termination & Grid-Optimierung ⭐ NEU
+## Early Termination & Grid-Optimierung
 
 Das Optimizer-System verfügt über intelligente Early-Termination-Mechanismen, um hoffnungslose Kandidaten frühzeitig abzubrechen und Rechenzeit zu sparen.
 

@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from optimizer.simulation import simulate_pro_trade, calculate_sharpe_ratio, resolve_tp_sl_collision_m15, _m15_cache
+from fwbg.simulation.trade import simulate_pro_trade, calculate_sharpe_ratio, resolve_tp_sl_collision_m15, _m15_cache
 
 
 class TestSimulateTrade:

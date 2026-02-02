@@ -1,10 +1,23 @@
 """
 Integration-Tests für die Cache-First Architektur des EliteBot.
 Nutzt den Demo-Account für echte API-Calls.
+
+Diese Tests benötigen einen echten Demo-Account mit Credentials.
 """
 import os
 import sys
 import pytest
+
+# Skip if demo account does not exist
+DEMO_ACCOUNT_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "accounts", "main_demo"
+)
+pytestmark = pytest.mark.skipif(
+    not os.path.exists(os.path.join(DEMO_ACCOUNT_PATH, "account_info.json")),
+    reason="Demo account not found - integration tests require real account"
+)
+
 import pandas as pd
 import numpy as np
 
@@ -12,13 +25,6 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bots.ig import EliteBot
-
-
-# Pfad zum Demo-Account
-DEMO_ACCOUNT_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "accounts", "main_demo"
-)
 
 
 @pytest.fixture(scope="module")

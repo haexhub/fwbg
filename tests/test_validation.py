@@ -19,7 +19,7 @@ class TestWalkForwardSplit:
 
     def test_split_returns_train_val_test_tuples(self):
         """Walk-Forward sollte (train, val, test) Tupel zurückgeben."""
-        from optimizer.process import walk_forward_split
+        from fwbg.optimization.process import walk_forward_split
 
         # Erstelle Dummy-DataFrame
         n_rows = 50000
@@ -40,7 +40,7 @@ class TestWalkForwardSplit:
 
     def test_split_sizes_approximate_60_20_20(self):
         """Val und Test sollten etwa gleich groß sein (20/20)."""
-        from optimizer.process import walk_forward_split
+        from fwbg.optimization.process import walk_forward_split
 
         n_rows = 50000
         df = pd.DataFrame({
@@ -57,7 +57,7 @@ class TestWalkForwardSplit:
 
     def test_no_data_leakage_between_splits(self):
         """Es darf keine Überlappung zwischen Train/Val/Test geben."""
-        from optimizer.process import walk_forward_split
+        from fwbg.optimization.process import walk_forward_split
 
         n_rows = 50000
         df = pd.DataFrame({
@@ -78,7 +78,7 @@ class TestWalkForwardSplit:
 
     def test_chronological_order(self):
         """Train kommt vor Val, Val kommt vor Test."""
-        from optimizer.process import walk_forward_split
+        from fwbg.optimization.process import walk_forward_split
 
         n_rows = 50000
         df = pd.DataFrame({
@@ -97,7 +97,7 @@ class TestMonteCarloPermutation:
 
     def test_random_trades_not_significant(self):
         """Zufällige Trades sollten nicht signifikant sein."""
-        from optimizer.simulation import monte_carlo_permutation_test
+        from fwbg.simulation.trade import monte_carlo_permutation_test
 
         np.random.seed(42)
         # 50% Win Rate, zufällige Reihenfolge
@@ -111,7 +111,7 @@ class TestMonteCarloPermutation:
 
     def test_highly_profitable_trades_significant(self):
         """Stark profitable Trades sollten signifikant sein."""
-        from optimizer.simulation import monte_carlo_permutation_test
+        from fwbg.simulation.trade import monte_carlo_permutation_test
 
         # 80% Win Rate - klar überdurchschnittlich
         trades = [1.0] * 80 + [-1.0] * 20
@@ -124,7 +124,7 @@ class TestMonteCarloPermutation:
 
     def test_losing_trades_not_significant(self):
         """Verlierende Trades sollten nicht signifikant sein."""
-        from optimizer.simulation import monte_carlo_permutation_test
+        from fwbg.simulation.trade import monte_carlo_permutation_test
 
         # 30% Win Rate - schlecht
         trades = [1.0] * 30 + [-1.0] * 70
@@ -136,7 +136,7 @@ class TestMonteCarloPermutation:
 
     def test_too_few_trades_returns_not_significant(self):
         """Zu wenige Trades sollten automatisch nicht signifikant sein."""
-        from optimizer.simulation import monte_carlo_permutation_test
+        from fwbg.simulation.trade import monte_carlo_permutation_test
 
         trades = [1.0, 1.0, -1.0]  # Nur 3 Trades
 
@@ -152,7 +152,7 @@ class TestMonteCarloEquity:
 
     def test_high_kelly_leads_to_low_equity(self):
         """Hoher Kelly-Risk bei 50/50 Trades sollte zu niedriger Equity führen."""
-        from optimizer.simulation import monte_carlo_equity_simulation
+        from fwbg.simulation.trade import monte_carlo_equity_simulation
 
         # 50/50 Win/Loss (unprofitabel bei RRR=1)
         trades = [1.0] * 50 + [-1.0] * 50
@@ -168,7 +168,7 @@ class TestMonteCarloEquity:
 
     def test_low_kelly_no_bankruptcy(self):
         """Niedriger Kelly-Risk sollte keine Bankrotte verursachen."""
-        from optimizer.simulation import monte_carlo_equity_simulation
+        from fwbg.simulation.trade import monte_carlo_equity_simulation
 
         # 60% Win Rate
         trades = [1.0] * 60 + [-1.0] * 40
@@ -182,7 +182,7 @@ class TestMonteCarloEquity:
 
     def test_confidence_intervals_make_sense(self):
         """Konfidenzintervalle sollten logisch sein (p5 < median < p95)."""
-        from optimizer.simulation import monte_carlo_equity_simulation
+        from fwbg.simulation.trade import monte_carlo_equity_simulation
 
         trades = [1.0] * 60 + [-1.0] * 40
 
@@ -209,7 +209,7 @@ class TestSyntheticStrategy:
         Erstellt Daten wo ein bestimmtes Feature perfekt den Trend vorhersagt.
         Die Strategie sollte dies erkennen und profitabel sein.
         """
-        from optimizer.simulation import monte_carlo_permutation_test
+        from fwbg.simulation.trade import monte_carlo_permutation_test
 
         # Synthetischer Trade-Record: Feature sagt perfekt voraus
         # Wenn Feature > 0.5 → Long profitabel (Win)
@@ -227,7 +227,7 @@ class TestSyntheticStrategy:
         Erstellt Daten wo Features nur Rauschen sind.
         Die Strategie sollte NICHT profitabel sein.
         """
-        from optimizer.simulation import monte_carlo_permutation_test
+        from fwbg.simulation.trade import monte_carlo_permutation_test
 
         np.random.seed(123)
         # Komplett zufällige Trades
@@ -243,7 +243,7 @@ class TestSyntheticStrategy:
         """
         Testet ob die Equity-Simulation das erwartete Ergebnis liefert.
         """
-        from optimizer.main import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # Bekannte Trades: 4 Wins, 1 Loss
         trades = [1.0, 1.0, 1.0, -1.0, 1.0]
@@ -267,7 +267,7 @@ class TestSyntheticStrategy:
         """
         Testet ob der Max Drawdown korrekt berechnet wird.
         """
-        from optimizer.main import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # Trades die einen klaren Drawdown erzeugen
         trades = [1.0, 1.0, -1.0, -1.0, -1.0, 1.0]  # Peak nach 2, dann 3 Losses
@@ -340,7 +340,7 @@ class TestEquityDrawdownConsistency:
 
     def test_drawdown_matches_equity_curve(self):
         """Der berechnete Drawdown muss zur Equity-Kurve passen."""
-        from optimizer.main import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # Trades mit bekanntem Muster
         trades = [1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
@@ -366,7 +366,7 @@ class TestEquityDrawdownConsistency:
 
     def test_max_drawdown_is_maximum_of_drawdowns(self):
         """max_drawdown muss dem Maximum der drawdowns-Liste entsprechen."""
-        from optimizer.main import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         trades = [1.0, 1.0, -1.0, -1.0, -1.0, 1.0, 1.0, -1.0]
         kelly_risk = 0.15
@@ -382,7 +382,7 @@ class TestEquityDrawdownConsistency:
 
     def test_drawdown_at_peak_is_zero(self):
         """An einem neuen Peak muss der Drawdown 0 sein."""
-        from optimizer.main import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # Nur Gewinne = jeder Punkt ist ein neuer Peak
         trades = [1.0, 1.0, 1.0, 1.0, 1.0]
@@ -397,7 +397,7 @@ class TestEquityDrawdownConsistency:
 
     def test_drawdown_increases_during_loss_streak(self):
         """Während einer Verlustserie muss der Drawdown steigen."""
-        from optimizer.main import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # Erst Gewinne (Peak bilden), dann Verluste
         trades = [1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0]
@@ -415,7 +415,7 @@ class TestEquityDrawdownConsistency:
 
     def test_equity_drop_magnitude_matches_drawdown(self):
         """Ein 50% Drawdown bedeutet, dass die Equity auf 50% des Peaks gefallen ist."""
-        from optimizer.main import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # Konstruiere einen Fall mit bekanntem Drawdown
         # 10 Verluste bei 10% Kelly: (0.9)^10 = 0.3487 → ~65% DD
@@ -502,7 +502,7 @@ class TestSyntheticEquityScenarios:
 
     def test_only_wins_exponential_growth(self):
         """Nur Gewinne sollten zu exponentiellem Wachstum führen."""
-        from optimizer.equity import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # 100 Gewinne bei 5% Kelly und RRR=2
         trades = [1.0] * 100
@@ -522,7 +522,7 @@ class TestSyntheticEquityScenarios:
 
     def test_only_losses_geometric_decay(self):
         """Nur Verluste sollten zu geometrischem Verfall führen."""
-        from optimizer.equity import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # 20 Verluste bei 10% Kelly
         trades = [-1.0] * 20
@@ -543,7 +543,7 @@ class TestSyntheticEquityScenarios:
 
     def test_win_loss_alternating_pattern(self):
         """Wechselnde Wins/Losses sollten vorhersagbare Equity ergeben."""
-        from optimizer.equity import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # Win, Loss, Win, Loss... (10x)
         trades = [1.0, -1.0] * 10
@@ -560,7 +560,7 @@ class TestSyntheticEquityScenarios:
 
     def test_recovery_after_drawdown(self):
         """Equity kann sich nach Drawdown erholen, aber DD bleibt bestehen."""
-        from optimizer.equity import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # 5 Verluste, dann 20 Gewinne
         trades = [-1.0] * 5 + [1.0] * 20
@@ -583,7 +583,7 @@ class TestSyntheticEquityScenarios:
 
     def test_known_rrr_asymmetry(self):
         """Bei RRR < 1 ist das Risiko asymmetrisch - mehr Verlust als Gewinn."""
-        from optimizer.equity import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # RRR = 0.5 bedeutet: Gewinn = 5%, Verlust = 10%
         # Bei 50/50 Win Rate sollte Equity sinken
@@ -605,7 +605,7 @@ class TestSyntheticEquityScenarios:
 
     def test_high_rrr_compensates_low_winrate(self):
         """Bei hohem RRR kann niedrige Win Rate kompensiert werden."""
-        from optimizer.equity import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # 30% Win Rate, aber RRR = 3 (Gewinn = 30%, Verlust = 10%)
         wins = [1.0] * 30
@@ -637,7 +637,7 @@ class TestSyntheticEquityScenarios:
         Wenn die Equity von 100 auf 50 fällt, muss der DD 50% zeigen.
         Wenn die Equity dann auf 75 steigt, bleibt DD bei 50% (nicht bei neuen Peak).
         """
-        from optimizer.equity import simulate_equity
+        from fwbg.simulation.equity import simulate_equity
 
         # Konstruiere eine spezifische Sequenz
         # Start: 100
@@ -680,7 +680,7 @@ class TestDataLeakagePrevention:
 
     def test_val_comes_before_test_chronologically(self):
         """Validation-Daten müssen chronologisch VOR Test-Daten liegen."""
-        from optimizer.process import walk_forward_split
+        from fwbg.optimization.process import walk_forward_split
 
         n_rows = 50000
         df = pd.DataFrame({
@@ -699,7 +699,7 @@ class TestDataLeakagePrevention:
 
     def test_train_never_sees_test_data(self):
         """Training darf niemals Test-Daten sehen."""
-        from optimizer.process import walk_forward_split
+        from fwbg.optimization.process import walk_forward_split
 
         n_rows = 50000
         df = pd.DataFrame({

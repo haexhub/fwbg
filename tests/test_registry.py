@@ -494,3 +494,8 @@ class TestRegistryIntegration:
         for name in list_exit_strategies():
             cls = get_exit_strategy(name)
             assert hasattr(cls, "compute_targets") or hasattr(cls, "iterate_grid")
+
+        # Preprocessors müssen transform() haben (nicht process()!)
+        for name in list_preprocessors():
+            cls = get_preprocessor(name)
+            assert hasattr(cls, "transform"), f"Preprocessor {name} has no transform() method"

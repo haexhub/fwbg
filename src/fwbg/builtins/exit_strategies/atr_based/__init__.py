@@ -4,7 +4,7 @@ ATR-Based Exit Strategy Plugin.
 Verwendet dynamische TP/SL-Werte basierend auf Average True Range.
 TP/SL werden pro Trade basierend auf der Volatilität bei Entry berechnet.
 """
-from typing import Dict, Any, Iterator, Tuple, TYPE_CHECKING
+from typing import Dict, Any, Iterator, Tuple, Union, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 from numba import njit
@@ -12,6 +12,7 @@ from numba import njit
 from fwbg.plugins import BaseExitStrategy
 from fwbg.core import register_exit_strategy
 from fwbg.simulation import _simulate_trade_numba
+from fwbg.builtins.exit_strategies.base import GridParams
 
 if TYPE_CHECKING:
     from fwbg.core.context import SimulationContext
@@ -96,6 +97,7 @@ class AtrExitStrategy(BaseExitStrategy):
         self,
         df: pd.DataFrame,
         ctx: "SimulationContext",
+        params: Union[GridParams, None] = None,
         tp_mult: float = 2.0,
         sl_mult: float = 1.5,
         atr_period: int = 14,
@@ -110,6 +112,7 @@ class AtrExitStrategy(BaseExitStrategy):
         Args:
             df: DataFrame mit OHLC-Daten und optional _atr Spalte
             ctx: SimulationContext
+            params: Optional GridParams-Objekt (überschreibt tp_mult/sl_mult/timeout_bars)
             tp_mult: ATR-Multiplikator für Take-Profit
             sl_mult: ATR-Multiplikator für Stop-Loss
             atr_period: ATR-Periode (für Fallback-Berechnung)
@@ -120,6 +123,17 @@ class AtrExitStrategy(BaseExitStrategy):
         Returns:
             (targets_long, targets_short)
         """
+        # GridParams überschreibt einzelne Parameter
+        if params is not None:
+            tp_mult = params.tp_value
+            sl_mult = params.sl_value
+            if params.timeout_bars is not None:
+                timeout_bars = params.timeout_bars
+            # Extra-Parameter aus GridParams
+            if params.extra:
+                atr_period = params.extra.get("atr_period", atr_period)
+                min_tp_pips = params.extra.get("min_tp_pips", min_tp_pips)
+                min_sl_pips = params.extra.get("min_sl_pips", min_sl_pips)
         # OHLC-Arrays extrahieren
         opn_v = df["O"].values.astype(np.float64)
         cls_v = df["C"].values.astype(np.float64)

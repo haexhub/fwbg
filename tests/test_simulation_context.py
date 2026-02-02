@@ -91,7 +91,7 @@ class TestSimulationContextBasic:
         assert ctx.min_rrr == 0.0
         assert ctx.long_enabled is True
         assert ctx.short_enabled is True
-        assert ctx.exit_strategy == "fixed"
+        assert ctx.exit_strategy == "atr_based"
         assert ctx.min_fold_stability == 0.5
         assert ctx.early_termination is True
 
