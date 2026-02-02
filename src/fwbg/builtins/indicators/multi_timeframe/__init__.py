@@ -62,112 +62,81 @@ class MultiTimeframeIndicators(BaseIndicator):
         if ema_periods is None:
             ema_periods = [20, 50]
 
+        features = {}
+
         # === H4 Timeframe ===
         h4_high = df["H"].rolling(h4_bars).max()
         h4_low = df["L"].rolling(h4_bars).min()
         h4_close = df["C"]
         h4_open = df["O"].shift(h4_bars - 1)
 
-        # H4 Trend (Candle Direction normalized by Range)
-        df["mtf_h4_trend"] = (h4_close - h4_open) / (h4_high - h4_low + 1e-10)
-
-        # H4 Range Position
-        df["mtf_h4_range_pos"] = (df["C"] - h4_low) / (h4_high - h4_low + 1e-10)
+        # H4 Trend
+        features["mtf_h4_trend"] = (h4_close - h4_open) / (h4_high - h4_low + 1e-10)
+        features["mtf_h4_range_pos"] = (df["C"] - h4_low) / (h4_high - h4_low + 1e-10)
 
         # H4 EMA Distances
         for period in ema_periods:
             h4_ema = ta.trend.ema_indicator(df["C"], window=period * h4_bars)
-            df[f"mtf_h4_ema{period}_dist"] = (df["C"] - h4_ema) / df["C"]
+            features[f"mtf_h4_ema{period}_dist"] = (df["C"] - h4_ema) / df["C"]
 
         # H4 Technical Indicators
-        df["mtf_h4_adx"] = ta.trend.adx(h4_high, h4_low, df["C"], window=14)
-        df["mtf_h4_rsi"] = ta.momentum.rsi(df["C"], window=14 * h4_bars)
+        features["mtf_h4_adx"] = ta.trend.adx(h4_high, h4_low, df["C"], window=14)
+        h4_rsi = ta.momentum.rsi(df["C"], window=14 * h4_bars)
+        features["mtf_h4_rsi"] = h4_rsi
 
         h4_atr = ta.volatility.average_true_range(h4_high, h4_low, df["C"], window=14)
-        df["mtf_h4_atr_pct"] = h4_atr / df["C"]
+        h4_atr_pct = h4_atr / df["C"]
+        features["mtf_h4_atr_pct"] = h4_atr_pct
 
-        # H4 Bollinger Band Position
         h4_bb = ta.volatility.BollingerBands(df["C"], window=20 * h4_bars)
-        df["mtf_h4_bb_pband"] = h4_bb.bollinger_pband()
+        features["mtf_h4_bb_pband"] = h4_bb.bollinger_pband()
 
         # === D1 Timeframe ===
         d1_high = df["H"].rolling(d1_bars).max()
         d1_low = df["L"].rolling(d1_bars).min()
 
-        # D1 Range Position
-        df["mtf_d1_range_pos"] = (df["C"] - d1_low) / (d1_high - d1_low + 1e-10)
+        features["mtf_d1_range_pos"] = (df["C"] - d1_low) / (d1_high - d1_low + 1e-10)
 
-        # D1 EMA Distance
         for period in ema_periods:
             d1_ema = ta.trend.ema_indicator(df["C"], window=period * d1_bars)
-            df[f"mtf_d1_ema{period}_dist"] = (df["C"] - d1_ema) / df["C"]
+            features[f"mtf_d1_ema{period}_dist"] = (df["C"] - d1_ema) / df["C"]
 
-        # D1 ADX - berechnen auf langsamerer Basis (ohne ta.trend.adx das nicht mit aggregierten Werten funktioniert)
-        # Stattdessen: D1 Trend Strength via EMA Slope
         d1_ema_slow = ta.trend.ema_indicator(df["C"], window=20 * d1_bars)
-        df["mtf_d1_trend_strength"] = d1_ema_slow.pct_change(d1_bars) * 100
+        features["mtf_d1_trend_strength"] = d1_ema_slow.pct_change(d1_bars) * 100
 
         # === Trend Alignment ===
-        # H1 Trend (EMA 21)
         h1_ema_21 = ta.trend.ema_indicator(df["C"], window=21)
         h1_trend = (df["C"] - h1_ema_21) / df["C"]
+        h4_trend = features["mtf_h4_ema20_dist"]
+        d1_trend = features["mtf_d1_ema20_dist"]
 
-        # H4 Trend (EMA 20)
-        h4_trend = df["mtf_h4_ema20_dist"]
-
-        # D1 Trend (EMA 20)
-        d1_trend = df["mtf_d1_ema20_dist"]
-
-        # H1-H4 Alignment
-        df["mtf_trend_alignment_h1h4"] = (
-            np.sign(h1_trend) == np.sign(h4_trend)
-        ).astype(int)
-
-        # H4-D1 Alignment
-        df["mtf_trend_alignment_h4d1"] = (
-            np.sign(h4_trend) == np.sign(d1_trend)
-        ).astype(int)
-
-        # Full Consensus (H1, H4, D1 alle gleiche Richtung)
-        df["mtf_consensus"] = (
+        features["mtf_trend_alignment_h1h4"] = (np.sign(h1_trend) == np.sign(h4_trend)).astype(int)
+        features["mtf_trend_alignment_h4d1"] = (np.sign(h4_trend) == np.sign(d1_trend)).astype(int)
+        features["mtf_consensus"] = (
             (np.sign(h1_trend) == np.sign(h4_trend)) &
             (np.sign(h4_trend) == np.sign(d1_trend))
         ).astype(int)
-
-        # Trend Strength (Summe der Alignments)
-        df["mtf_trend_strength"] = (
-            df["mtf_trend_alignment_h1h4"] + df["mtf_trend_alignment_h4d1"]
-        )
+        features["mtf_trend_strength"] = features["mtf_trend_alignment_h1h4"] + features["mtf_trend_alignment_h4d1"]
 
         # === Volatility Ratio ===
-        # H1 ATR
         h1_atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
         h1_atr_pct = h1_atr / df["C"]
-
-        # H1/H4 Volatility Ratio
-        df["mtf_vol_ratio_h1h4"] = h1_atr_pct / (df["mtf_h4_atr_pct"] + 1e-10)
+        features["mtf_vol_ratio_h1h4"] = h1_atr_pct / (h4_atr_pct + 1e-10)
 
         # === Momentum Divergence ===
-        # H1 RSI
         h1_rsi = ta.momentum.rsi(df["C"], window=14)
-
-        # RSI Divergenz zwischen Timeframes
-        if "mtf_h4_rsi" in df.columns:
-            df["mtf_rsi_divergence"] = h1_rsi - df["mtf_h4_rsi"]
+        features["mtf_rsi_divergence"] = h1_rsi - h4_rsi
 
         # === Higher Timeframe Support/Resistance ===
-        # D1 Previous High/Low als Support/Resistance
         d1_prev_high = d1_high.shift(d1_bars)
         d1_prev_low = d1_low.shift(d1_bars)
 
-        df["mtf_d1_above_prev_high"] = (df["C"] > d1_prev_high).astype(int)
-        df["mtf_d1_below_prev_low"] = (df["C"] < d1_prev_low).astype(int)
+        features["mtf_d1_above_prev_high"] = (df["C"] > d1_prev_high).astype(int)
+        features["mtf_d1_below_prev_low"] = (df["C"] < d1_prev_low).astype(int)
+        features["mtf_d1_dist_to_high"] = (d1_prev_high - df["C"]) / df["C"]
+        features["mtf_d1_dist_to_low"] = (df["C"] - d1_prev_low) / df["C"]
 
-        # Distance to D1 Levels
-        df["mtf_d1_dist_to_high"] = (d1_prev_high - df["C"]) / df["C"]
-        df["mtf_d1_dist_to_low"] = (df["C"] - d1_prev_low) / df["C"]
-
-        return df
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [

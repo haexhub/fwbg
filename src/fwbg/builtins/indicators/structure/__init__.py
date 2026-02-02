@@ -158,7 +158,9 @@ class StructureIndicators(BaseIndicator):
         if vwap_windows is None:
             vwap_windows = [20, 50, 100]
 
+        features = {}
         close = df["C"].values
+        close_series = df["C"]
 
         # === FFT Features ===
         for window in fft_windows:
@@ -166,32 +168,29 @@ class StructureIndicators(BaseIndicator):
                 continue
             fft_features = _compute_fft_features(close, window)
             suffix = f"_{window}"
-            df[f"fft_dom_freq{suffix}"] = fft_features["dom_freq"]
-            df[f"fft_dom_power{suffix}"] = fft_features["dom_power"]
-            df[f"fft_energy{suffix}"] = fft_features["energy"]
-            df[f"fft_entropy{suffix}"] = fft_features["entropy"]
-            df[f"fft_lowfreq{suffix}"] = fft_features["lowfreq"]
+            features[f"fft_dom_freq{suffix}"] = fft_features["dom_freq"]
+            features[f"fft_dom_power{suffix}"] = fft_features["dom_power"]
+            features[f"fft_energy{suffix}"] = fft_features["energy"]
+            features[f"fft_entropy{suffix}"] = fft_features["entropy"]
+            features[f"fft_lowfreq{suffix}"] = fft_features["lowfreq"]
 
         # === Path Efficiency / Fractal Dimension ===
-        close_series = df["C"]
         for window in path_windows:
             net_change = abs(close_series - close_series.shift(window))
             abs_changes = abs(close_series.diff())
             path_length = abs_changes.rolling(window).sum()
 
             pe = net_change / (path_length + 1e-10)
-            df[f"path_efficiency_{window}"] = pe
-            df[f"fractal_dim_{window}"] = 1 + (1 - pe)
+            features[f"path_efficiency_{window}"] = pe
+            features[f"fractal_dim_{window}"] = 1 + (1 - pe)
 
-        # Path Efficiency Änderung (Regime-Shift)
-        if "path_efficiency_20" in df.columns:
-            df["path_efficiency_20_chg"] = (
-                df["path_efficiency_20"] - df["path_efficiency_20"].shift(10)
-            )
-        if "path_efficiency_50" in df.columns:
-            df["path_efficiency_50_chg"] = (
-                df["path_efficiency_50"] - df["path_efficiency_50"].shift(20)
-            )
+        # Path Efficiency Änderung
+        if 20 in path_windows:
+            pe_20 = features["path_efficiency_20"]
+            features["path_efficiency_20_chg"] = pe_20 - pe_20.shift(10)
+        if 50 in path_windows:
+            pe_50 = features["path_efficiency_50"]
+            features["path_efficiency_50_chg"] = pe_50 - pe_50.shift(20)
 
         # === Convexity Features ===
         for period in convexity_periods:
@@ -199,20 +198,17 @@ class StructureIndicators(BaseIndicator):
             ema_slope = ema.diff()
             ema_convexity = ema_slope.diff()
 
-            df[f"convex_ema_{period}"] = ema_convexity / (df["C"] + 1e-10) * 1000
-            df[f"convex_ema_{period}_smooth"] = df[f"convex_ema_{period}"].rolling(5).mean()
+            convex = ema_convexity / (df["C"] + 1e-10) * 1000
+            features[f"convex_ema_{period}"] = convex
+            features[f"convex_ema_{period}_smooth"] = convex.rolling(5).mean()
 
-        # Convexity-Divergenz
-        if "convex_ema_21" in df.columns and "convex_ema_50" in df.columns:
-            df["convex_divergence"] = df["convex_ema_21"] - df["convex_ema_50"]
+        if 21 in convexity_periods and 50 in convexity_periods:
+            features["convex_divergence"] = features["convex_ema_21"] - features["convex_ema_50"]
 
-        # Convexity Z-Score
-        if "convex_ema_21_smooth" in df.columns:
-            convex_21 = df["convex_ema_21_smooth"]
+        if 21 in convexity_periods:
+            convex_21 = features["convex_ema_21_smooth"]
             convex_std = convex_21.rolling(100).std()
-            df["convex_zscore"] = (
-                (convex_21 - convex_21.rolling(100).mean()) / (convex_std + 1e-10)
-            )
+            features["convex_zscore"] = (convex_21 - convex_21.rolling(100).mean()) / (convex_std + 1e-10)
 
         # === Event Features ===
         for period in event_periods:
@@ -222,54 +218,52 @@ class StructureIndicators(BaseIndicator):
             is_new_high = (df["H"] >= rolling_high).astype(int)
             is_new_low = (df["L"] <= rolling_low).astype(int)
 
-            df[f"event_bars_since_high_{period}"] = _bars_since_event(is_new_high)
-            df[f"event_bars_since_low_{period}"] = _bars_since_event(is_new_low)
+            bars_since_high = _bars_since_event(is_new_high)
+            bars_since_low = _bars_since_event(is_new_low)
 
-            # Log-Transformation
-            df[f"event_bars_since_high_{period}_log"] = np.log1p(
-                df[f"event_bars_since_high_{period}"]
-            )
-            df[f"event_bars_since_low_{period}_log"] = np.log1p(
-                df[f"event_bars_since_low_{period}"]
-            )
+            features[f"event_bars_since_high_{period}"] = bars_since_high
+            features[f"event_bars_since_low_{period}"] = bars_since_low
+            features[f"event_bars_since_high_{period}_log"] = np.log1p(bars_since_high)
+            features[f"event_bars_since_low_{period}_log"] = np.log1p(bars_since_low)
 
         # EMA-Cross Event
         ema_8 = ta.trend.ema_indicator(df["C"], window=8)
         ema_21 = ta.trend.ema_indicator(df["C"], window=21)
         ema_cross = ((ema_8 > ema_21) != (ema_8.shift(1) > ema_21.shift(1))).astype(int)
-        df["event_bars_since_ema_cross"] = _bars_since_event(ema_cross)
-        df["event_bars_since_ema_cross_log"] = np.log1p(df["event_bars_since_ema_cross"])
+        bars_ema_cross = _bars_since_event(ema_cross)
+        features["event_bars_since_ema_cross"] = bars_ema_cross
+        features["event_bars_since_ema_cross_log"] = np.log1p(bars_ema_cross)
 
         # RSI Extremwert Event
         rsi = ta.momentum.rsi(df["C"], window=14)
         rsi_extreme = ((rsi > 70) | (rsi < 30)).astype(int)
-        df["event_bars_since_rsi_extreme"] = _bars_since_event(rsi_extreme)
-        df["event_bars_since_rsi_extreme_log"] = np.log1p(df["event_bars_since_rsi_extreme"])
+        bars_rsi = _bars_since_event(rsi_extreme)
+        features["event_bars_since_rsi_extreme"] = bars_rsi
+        features["event_bars_since_rsi_extreme_log"] = np.log1p(bars_rsi)
 
         # Volatilitäts-Spike Event
         atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
         atr_mean = atr.rolling(50).mean()
         vol_spike = (atr > 2 * atr_mean).astype(int)
-        df["event_bars_since_vol_spike"] = _bars_since_event(vol_spike)
-        df["event_bars_since_vol_spike_log"] = np.log1p(df["event_bars_since_vol_spike"])
+        bars_vol = _bars_since_event(vol_spike)
+        features["event_bars_since_vol_spike"] = bars_vol
+        features["event_bars_since_vol_spike_log"] = np.log1p(bars_vol)
 
         # === VWAP-ähnliche Features ===
         tp = (df["H"] + df["L"] + df["C"]) / 3
 
         for window in vwap_windows:
             vwap = tp.rolling(window).mean()
-            df[f"structure_vwap_dist_{window}"] = (df["C"] - vwap) / vwap
+            features[f"structure_vwap_dist_{window}"] = (df["C"] - vwap) / vwap
 
-        # Zeit oberhalb VWAP
         vwap_50 = tp.rolling(50).mean()
         above_vwap = (df["C"] > vwap_50).astype(int)
-        df["structure_vwap_time_above"] = above_vwap.rolling(20).mean()
+        features["structure_vwap_time_above"] = above_vwap.rolling(20).mean()
 
-        # VWAP Cross
         vwap_cross = (above_vwap != above_vwap.shift(1)).astype(int)
-        df["structure_bars_since_vwap_cross"] = _bars_since_event(vwap_cross)
+        features["structure_bars_since_vwap_cross"] = _bars_since_event(vwap_cross)
 
-        return df
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [

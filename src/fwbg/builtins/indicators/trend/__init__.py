@@ -59,51 +59,52 @@ class TrendIndicators(BaseIndicator):
         if sma_periods is None:
             sma_periods = [20, 50, 200]
 
+        features = {}
+
         # ADX
         for period in adx_periods:
-            df[f"trend_adx_{period}"] = ta.trend.adx(
+            features[f"trend_adx_{period}"] = ta.trend.adx(
                 df["H"], df["L"], df["C"], window=period
             )
 
         # EMA Distanz
         for period in ema_periods:
             ema = ta.trend.ema_indicator(df["C"], window=period)
-            df[f"trend_ema_dist_{period}"] = (df["C"] - ema) / df["C"]
+            features[f"trend_ema_dist_{period}"] = (df["C"] - ema) / df["C"]
 
         # SMA Distanz
         for period in sma_periods:
             sma = ta.trend.sma_indicator(df["C"], window=period)
-            df[f"trend_sma_dist_{period}"] = (df["C"] - sma) / df["C"]
+            features[f"trend_sma_dist_{period}"] = (df["C"] - sma) / df["C"]
 
         # MACD
         macd = ta.trend.MACD(df["C"])
-        df["trend_macd"] = macd.macd_diff() / df["C"]
-        df["trend_macd_signal"] = macd.macd_signal() / df["C"]
+        features["trend_macd"] = macd.macd_diff() / df["C"]
+        features["trend_macd_signal"] = macd.macd_signal() / df["C"]
 
         # CCI
         for period in [14, 20]:
-            df[f"trend_cci_{period}"] = ta.trend.cci(
+            features[f"trend_cci_{period}"] = ta.trend.cci(
                 df["H"], df["L"], df["C"], window=period
             )
 
         # Aroon
         aroon = ta.trend.AroonIndicator(df["H"], df["L"], window=25)
-        df["trend_aroon_up"] = aroon.aroon_up()
-        df["trend_aroon_down"] = aroon.aroon_down()
+        features["trend_aroon_up"] = aroon.aroon_up()
+        features["trend_aroon_down"] = aroon.aroon_down()
 
         # Kaufman's Efficiency Ratio
         for period in [10, 20, 50]:
             change = abs(df["C"] - df["C"].shift(period))
             volatility = abs(df["C"].diff()).rolling(period).sum()
-            df[f"trend_er_{period}"] = change / (volatility + 1e-10)
+            features[f"trend_er_{period}"] = change / (volatility + 1e-10)
 
         # ER Change
-        if "trend_er_10" in df.columns:
-            df["trend_er_10_chg"] = df["trend_er_10"] - df["trend_er_10"].shift(5)
-        if "trend_er_20" in df.columns:
-            df["trend_er_20_chg"] = df["trend_er_20"] - df["trend_er_20"].shift(10)
+        features["trend_er_10_chg"] = features["trend_er_10"] - features["trend_er_10"].shift(5)
+        features["trend_er_20_chg"] = features["trend_er_20"] - features["trend_er_20"].shift(10)
 
-        return df
+        # Concat all features at once
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         """Gibt Liste aller Trend-Feature-Spalten zurück."""

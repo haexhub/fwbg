@@ -60,96 +60,78 @@ class DynamicsIndicators(BaseIndicator):
         if lag_periods is None:
             lag_periods = [4, 8, 24, 48]
 
+        features = {}
+
         # Berechne Basis-Indikatoren falls nicht vorhanden
-        if "mom_rsi_14" not in df.columns:
-            df["mom_rsi_14"] = ta.momentum.rsi(df["C"], window=14)
+        mom_rsi_14 = df.get("mom_rsi_14", ta.momentum.rsi(df["C"], window=14))
+        trend_adx_14 = df.get("trend_adx_14", ta.trend.adx(df["H"], df["L"], df["C"], window=14))
 
-        if "trend_adx_14" not in df.columns:
-            df["trend_adx_14"] = ta.trend.adx(df["H"], df["L"], df["C"], window=14)
-
-        if "vol_atr_pct_14" not in df.columns:
+        if "vol_atr_pct_14" in df.columns:
+            vol_atr_pct_14 = df["vol_atr_pct_14"]
+        else:
             atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
-            df["vol_atr_pct_14"] = atr / df["C"]
+            vol_atr_pct_14 = atr / df["C"]
 
-        if "vol_bb_wband_20" not in df.columns:
+        if "vol_bb_wband_20" in df.columns:
+            vol_bb_wband_20 = df["vol_bb_wband_20"]
+        else:
             bb = ta.volatility.BollingerBands(df["C"], window=20)
-            df["vol_bb_wband_20"] = bb.bollinger_wband()
+            vol_bb_wband_20 = bb.bollinger_wband()
 
-        if "mom_stoch_k_14" not in df.columns:
+        if "mom_stoch_k_14" in df.columns:
+            mom_stoch_k_14 = df["mom_stoch_k_14"]
+        else:
             stoch = ta.momentum.StochasticOscillator(df["H"], df["L"], df["C"], window=14)
-            df["mom_stoch_k_14"] = stoch.stoch()
+            mom_stoch_k_14 = stoch.stoch()
 
-        if "trend_macd" not in df.columns:
+        if "trend_macd" in df.columns:
+            trend_macd = df["trend_macd"]
+        else:
             macd = ta.trend.MACD(df["C"])
-            df["trend_macd"] = macd.macd_diff() / df["C"]
+            trend_macd = macd.macd_diff() / df["C"]
 
         # === RSI Changes ===
         for lookback in lookbacks:
-            df[f"dyn_rsi14_chg_{lookback}h"] = (
-                df["mom_rsi_14"] - df["mom_rsi_14"].shift(lookback)
-            )
-            df[f"dyn_rsi14_pct_{lookback}h"] = df["mom_rsi_14"].pct_change(lookback) * 100
+            features[f"dyn_rsi14_chg_{lookback}h"] = mom_rsi_14 - mom_rsi_14.shift(lookback)
+            features[f"dyn_rsi14_pct_{lookback}h"] = mom_rsi_14.pct_change(lookback) * 100
 
         # === ATR / Volatility Changes ===
         for lookback in lookbacks:
-            df[f"dyn_atr_chg_{lookback}h"] = df["vol_atr_pct_14"].pct_change(lookback) * 100
-            df[f"dyn_bbwidth_chg_{lookback}h"] = (
-                df["vol_bb_wband_20"].pct_change(lookback) * 100
-            )
+            features[f"dyn_atr_chg_{lookback}h"] = vol_atr_pct_14.pct_change(lookback) * 100
+            features[f"dyn_bbwidth_chg_{lookback}h"] = vol_bb_wband_20.pct_change(lookback) * 100
 
         # === ADX Changes ===
         for lookback in lookbacks:
-            df[f"dyn_adx_chg_{lookback}h"] = (
-                df["trend_adx_14"] - df["trend_adx_14"].shift(lookback)
-            )
+            features[f"dyn_adx_chg_{lookback}h"] = trend_adx_14 - trend_adx_14.shift(lookback)
 
         # === MACD Changes ===
         for lookback in [4, 8]:
-            df[f"dyn_macd_chg_{lookback}h"] = (
-                df["trend_macd"] - df["trend_macd"].shift(lookback)
-            )
+            features[f"dyn_macd_chg_{lookback}h"] = trend_macd - trend_macd.shift(lookback)
 
         # === Stochastic Changes ===
         for lookback in [4, 8]:
-            df[f"dyn_stoch_chg_{lookback}h"] = (
-                df["mom_stoch_k_14"] - df["mom_stoch_k_14"].shift(lookback)
-            )
+            features[f"dyn_stoch_chg_{lookback}h"] = mom_stoch_k_14 - mom_stoch_k_14.shift(lookback)
 
         # === Lag Features ===
         for lag in lag_periods[:3]:  # [4, 8, 24]
-            df[f"lag_rsi14_{lag}h"] = df["mom_rsi_14"].shift(lag)
-            df[f"lag_atr_{lag}h"] = df["vol_atr_pct_14"].shift(lag)
+            features[f"lag_rsi14_{lag}h"] = mom_rsi_14.shift(lag)
+            features[f"lag_atr_{lag}h"] = vol_atr_pct_14.shift(lag)
 
         for lag in [4, 8]:
-            df[f"lag_adx_{lag}h"] = df["trend_adx_14"].shift(lag)
+            features[f"lag_adx_{lag}h"] = trend_adx_14.shift(lag)
 
         for lag in lag_periods:  # [4, 8, 24, 48]
-            df[f"lag_price_chg_{lag}h"] = (
+            features[f"lag_price_chg_{lag}h"] = (
                 (df["C"] - df["C"].shift(lag)) / df["C"].shift(lag) * 100
             )
 
         # === Beschleunigungs-Features (2. Ableitung) ===
-        # RSI Beschleunigung
-        if "dyn_rsi14_chg_4h" in df.columns:
-            df["accel_rsi"] = (
-                df["dyn_rsi14_chg_4h"] - df["dyn_rsi14_chg_4h"].shift(4)
-            )
+        features["accel_rsi"] = features["dyn_rsi14_chg_4h"] - features["dyn_rsi14_chg_4h"].shift(4)
+        features["accel_atr"] = features["dyn_atr_chg_4h"] - features["dyn_atr_chg_4h"].shift(4)
+        features["accel_adx"] = features["dyn_adx_chg_4h"] - features["dyn_adx_chg_4h"].shift(4)
+        features["accel_price"] = features["lag_price_chg_4h"] - features["lag_price_chg_4h"].shift(4)
 
-        # ATR Beschleunigung
-        if "dyn_atr_chg_4h" in df.columns:
-            df["accel_atr"] = df["dyn_atr_chg_4h"] - df["dyn_atr_chg_4h"].shift(4)
-
-        # ADX Beschleunigung
-        if "dyn_adx_chg_4h" in df.columns:
-            df["accel_adx"] = df["dyn_adx_chg_4h"] - df["dyn_adx_chg_4h"].shift(4)
-
-        # Price Momentum Beschleunigung
-        if "lag_price_chg_4h" in df.columns:
-            df["accel_price"] = (
-                df["lag_price_chg_4h"] - df["lag_price_chg_4h"].shift(4)
-            )
-
-        return df
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [

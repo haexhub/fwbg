@@ -62,6 +62,7 @@ analytics = [
 ig = [
     "trading-ig>=0.0.22",
     "yfinance>=1.0",
+    "munch>=4.0",  # Optional but recommended for trading-ig
 ]
 # All optional dependencies
 full = [

@@ -56,139 +56,89 @@ class CrossFeatureIndicators(BaseIndicator):
         # Stelle sicher dass Basis-Indikatoren vorhanden sind
         self._ensure_base_indicators(df)
 
+        features = {}
+
         # === RSI Conditional Features ===
         rsi = df["mom_rsi_14"]
         rsi_change = rsi - rsi.shift(4)
 
-        # RSI hoch UND steigend (Continuation Signal)
-        df["cross_rsi_high_rising"] = (
-            (rsi > rsi_overbought) & (rsi_change > 0)
-        ).astype(int)
-
-        # RSI niedrig UND fallend (Continuation Signal)
-        df["cross_rsi_low_falling"] = (
-            (rsi < rsi_oversold) & (rsi_change < 0)
-        ).astype(int)
-
-        # RSI hoch ABER fallend (Reversal Warning)
-        df["cross_rsi_high_falling"] = (
-            (rsi > rsi_overbought) & (rsi_change < 0)
-        ).astype(int)
-
-        # RSI niedrig ABER steigend (Reversal Warning)
-        df["cross_rsi_low_rising"] = (
-            (rsi < rsi_oversold) & (rsi_change > 0)
-        ).astype(int)
+        features["cross_rsi_high_rising"] = ((rsi > rsi_overbought) & (rsi_change > 0)).astype(int)
+        features["cross_rsi_low_falling"] = ((rsi < rsi_oversold) & (rsi_change < 0)).astype(int)
+        features["cross_rsi_high_falling"] = ((rsi > rsi_overbought) & (rsi_change < 0)).astype(int)
+        features["cross_rsi_low_rising"] = ((rsi < rsi_oversold) & (rsi_change > 0)).astype(int)
 
         # === Volatility-Trend Interactions ===
         atr_change = df["vol_atr_pct_14"].pct_change(4) * 100
         adx = df["trend_adx_14"]
 
-        # Volatility * Trend Strength (hoher ADX + steigende Vol = explosive Move)
-        df["cross_vol_trend"] = atr_change * adx / 100
-
-        # Expanding Volatility in Strong Trend
-        df["cross_expanding_trend"] = (
-            (atr_change > 0) & (adx > 25)
-        ).astype(int)
-
-        # Contracting Volatility (Consolidation)
-        df["cross_contracting"] = (
-            (atr_change < -5) & (adx < 20)
-        ).astype(int)
+        features["cross_vol_trend"] = atr_change * adx / 100
+        features["cross_expanding_trend"] = ((atr_change > 0) & (adx > 25)).astype(int)
+        features["cross_contracting"] = ((atr_change < -5) & (adx < 20)).astype(int)
 
         # === Bollinger Band Squeeze ===
         bb_width = df["vol_bb_wband_20"]
         bb_width_percentile = bb_width.rolling(100).apply(
             lambda x: (x.iloc[-1] <= np.percentile(x, 20)) if len(x) > 0 else 0
         )
-        df["cross_bb_squeeze"] = (bb_width_percentile == 1).astype(int)
+        features["cross_bb_squeeze"] = (bb_width_percentile == 1).astype(int)
 
         # === Trend Confirmation ===
         ema_short = ta.trend.ema_indicator(df["C"], window=8)
         ema_long = ta.trend.ema_indicator(df["C"], window=21)
-
-        # EMA aligned with ADX
         bullish_ema = ema_short > ema_long
         strong_trend = adx > 25
 
-        df["cross_bullish_strong"] = (bullish_ema & strong_trend).astype(int)
-        df["cross_bearish_strong"] = (~bullish_ema & strong_trend).astype(int)
+        features["cross_bullish_strong"] = (bullish_ema & strong_trend).astype(int)
+        features["cross_bearish_strong"] = (~bullish_ema & strong_trend).astype(int)
 
         # === MACD-RSI Confluence ===
         macd = df["trend_macd"]
-
-        # Bullish Confluence: MACD > 0 und RSI > 50 und RSI < 70
-        df["cross_bullish_confluence"] = (
-            (macd > 0) & (rsi > 50) & (rsi < rsi_overbought)
-        ).astype(int)
-
-        # Bearish Confluence: MACD < 0 und RSI < 50 und RSI > 30
-        df["cross_bearish_confluence"] = (
-            (macd < 0) & (rsi < 50) & (rsi > rsi_oversold)
-        ).astype(int)
+        features["cross_bullish_confluence"] = ((macd > 0) & (rsi > 50) & (rsi < rsi_overbought)).astype(int)
+        features["cross_bearish_confluence"] = ((macd < 0) & (rsi < 50) & (rsi > rsi_oversold)).astype(int)
 
         # === Divergence Detection ===
-        # Price macht Higher High, aber RSI nicht
         price_hh = (df["H"] > df["H"].rolling(20).max().shift(1))
         rsi_hh = (rsi > rsi.rolling(20).max().shift(1))
-        df["cross_bearish_divergence"] = (price_hh & ~rsi_hh).astype(int)
+        features["cross_bearish_divergence"] = (price_hh & ~rsi_hh).astype(int)
 
-        # Price macht Lower Low, aber RSI nicht
         price_ll = (df["L"] < df["L"].rolling(20).min().shift(1))
         rsi_ll = (rsi < rsi.rolling(20).min().shift(1))
-        df["cross_bullish_divergence"] = (price_ll & ~rsi_ll).astype(int)
+        features["cross_bullish_divergence"] = (price_ll & ~rsi_ll).astype(int)
 
         # === Momentum-Volatility Score ===
-        # Kombiniert multiple Faktoren
-        rsi_score = (rsi - 50) / 50  # -1 to 1
-        adx_score = adx / 50  # 0 to ~1
+        rsi_score = (rsi - 50) / 50
+        adx_score = adx / 50
         vol_score = df["vol_atr_pct_14"] / df["vol_atr_pct_14"].rolling(50).mean()
-
-        df["cross_momentum_vol_score"] = rsi_score * adx_score * vol_score
+        momentum_vol_score = rsi_score * adx_score * vol_score
+        features["cross_momentum_vol_score"] = momentum_vol_score
 
         # === Overbought/Oversold with Trend ===
-        # Overbought in Uptrend (könnte weiter steigen)
-        df["cross_overbought_uptrend"] = (
+        features["cross_overbought_uptrend"] = (
             (rsi > rsi_overbought) & (ema_short > ema_long) & (adx > 20)
         ).astype(int)
-
-        # Oversold in Downtrend (könnte weiter fallen)
-        df["cross_oversold_downtrend"] = (
+        features["cross_oversold_downtrend"] = (
             (rsi < rsi_oversold) & (ema_short < ema_long) & (adx > 20)
         ).astype(int)
 
         # === Stochastic-RSI Confluence ===
         stoch = df["mom_stoch_k_14"]
-
-        df["cross_stoch_rsi_overbought"] = (
-            (stoch > 80) & (rsi > rsi_overbought)
-        ).astype(int)
-
-        df["cross_stoch_rsi_oversold"] = (
-            (stoch < 20) & (rsi < rsi_oversold)
-        ).astype(int)
+        features["cross_stoch_rsi_overbought"] = ((stoch > 80) & (rsi > rsi_overbought)).astype(int)
+        features["cross_stoch_rsi_oversold"] = ((stoch < 20) & (rsi < rsi_oversold)).astype(int)
 
         # === Confluence Score ===
-        # Bullish signals count
-        bullish_signals = (
-            df["cross_bullish_confluence"].astype(int) +
-            df["cross_bullish_divergence"].astype(int) +
-            (df["cross_momentum_vol_score"] > 0).astype(int)
-        )
+        bullish_confluence = features["cross_bullish_confluence"]
+        bullish_divergence = features["cross_bullish_divergence"]
+        bearish_confluence = features["cross_bearish_confluence"]
+        bearish_divergence = features["cross_bearish_divergence"]
 
-        # Bearish signals count
-        bearish_signals = (
-            df["cross_bearish_confluence"].astype(int) +
-            df["cross_bearish_divergence"].astype(int) +
-            (df["cross_momentum_vol_score"] < 0).astype(int)
-        )
+        bullish_signals = bullish_confluence + bullish_divergence + (momentum_vol_score > 0).astype(int)
+        bearish_signals = bearish_confluence + bearish_divergence + (momentum_vol_score < 0).astype(int)
 
-        df["cross_bullish_count"] = bullish_signals
-        df["cross_bearish_count"] = bearish_signals
-        df["cross_signal_bias"] = bullish_signals - bearish_signals
+        features["cross_bullish_count"] = bullish_signals
+        features["cross_bearish_count"] = bearish_signals
+        features["cross_signal_bias"] = bullish_signals - bearish_signals
 
-        return df
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def _ensure_base_indicators(self, df: pd.DataFrame) -> None:
         """Berechnet fehlende Basis-Indikatoren."""

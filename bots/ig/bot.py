@@ -55,27 +55,29 @@ def check_restart_signal():
 
 
 class EliteBot:
-    # CFD EPICs - keine Knock-Outs, keine Optionen
+    # CFD EPICs für deutsche IG Accounts
+    # WICHTIG: EPICs sind regional unterschiedlich!
+    # Diese EPICs wurden für deutsche Demo-Accounts getestet.
     SYMBOL_TO_EPIC = {
-        # Indizes CFDs
-        "FTSE100": "IX.D.FTSE.DAILY.IP",
-        "DOW30": "IX.D.DOW.DAILY.IP",
-        "NAS100": "IX.D.NASDAQ.DAILY.IP",
-        "DAX": "IX.D.DAX.DAILY.IP",
-        # Forex CFDs
-        "EURUSD": "CS.D.EURUSD.TODAY.IP",
-        "GBPUSD": "CS.D.GBPUSD.TODAY.IP",
-        "USDJPY": "CS.D.USDJPY.TODAY.IP",
-        "USDCHF": "CS.D.USDCHF.TODAY.IP",
-        "USDCAD": "CS.D.USDCAD.TODAY.IP",
-        "AUDUSD": "CS.D.AUDUSD.TODAY.IP",
-        "EURCAD": "CS.D.EURCAD.TODAY.IP",
-        # Commodities CFDs (Spot)
-        "XAUUSD": "CS.D.CFDGOLD.CFD.IP",
-        "GOLD": "CS.D.CFDGOLD.CFD.IP",
-        "XAGUSD": "CS.D.CFDSILVER.CFD.IP",
-        "SILVER": "CS.D.CFDSILVER.CFD.IP",
-        "BRENT": "CC.D.LCO.UNC.IP",
+        # Indizes CFDs (Deutschland)
+        "FTSE100": "IX.D.FTSE.IFD.IP",       # FTSE 100 Kassa
+        "DOW30": "IX.D.DOW.IFD.IP",           # Wall Street Kassa (10$)
+        "NAS100": "IX.D.NASDAQ.IFD.IP",       # US Tech 100 Kassa (100$)
+        "DAX": "IX.D.DAX.IFMM.IP",            # Deutschland 40-Kassa (1€)
+        # Forex CFDs (Deutschland)
+        "EURUSD": "CS.D.EURUSD.CEA.IP",       # EUR/USD
+        "GBPUSD": "CS.D.GBPUSD.CFD.IP",       # GBP/USD
+        "USDJPY": "CS.D.USDJPY.CFD.IP",       # USD/JPY
+        "USDCHF": "CS.D.USDCHF.CFD.IP",       # USD/CHF
+        "USDCAD": "CS.D.USDCAD.CFD.IP",       # USD/CAD
+        "AUDUSD": "CS.D.AUDUSD.CFD.IP",       # AUD/USD
+        "EURCAD": "CS.D.EURCAD.CFD.IP",       # EUR/CAD
+        # Commodities CFDs (Deutschland)
+        "XAUUSD": "CS.D.CFEGOLD.CEA.IP",      # Gold Kassa ($1 Kontrakt)
+        "GOLD": "CS.D.CFEGOLD.CEA.IP",        # Gold Kassa ($1 Kontrakt)
+        "XAGUSD": "CS.D.CFESILVER.CFD.IP",    # Silver Kassa
+        "SILVER": "CS.D.CFESILVER.CFD.IP",    # Silver Kassa
+        "BRENT": "CC.D.LCO.UME.IP",           # Brent Crude
     }
 
     # yfinance Ticker Mapping (Fallback wenn IG rate-limited)
@@ -199,11 +201,31 @@ class EliteBot:
 
     def initialize_ig_session(self):
         creds = self.account_info["credentials"]
+        env = creds["env"].upper()
+        logger.info(f"🔐 Initializing IG session...")
+        logger.info(f"   Environment: {env}")
+        logger.info(f"   Username: {creds['username'][:3]}***")
+
         ig = IGService(
-            creds["username"], creds["password"], creds["api_key"], creds["env"].upper()
+            creds["username"], creds["password"], creds["api_key"], env
         )
         try:
             ig.create_session()
+            logger.info(f"✅ IG session created")
+
+            # Log all IG service attributes for debugging
+            logger.info("   IGService attributes:")
+            for attr in dir(ig):
+                if not attr.startswith('_') and not callable(getattr(ig, attr, None)):
+                    try:
+                        val = getattr(ig, attr)
+                        if isinstance(val, (str, int, float, bool, type(None))):
+                            logger.info(f"      {attr}: {val}")
+                        elif isinstance(val, dict):
+                            logger.info(f"      {attr}: {list(val.keys())[:10]}")
+                    except Exception:
+                        pass
+
             return ig
         except Exception as e:
             logger.error(f"❌ Login gescheitert: {e}")

@@ -57,34 +57,36 @@ class MomentumIndicators(BaseIndicator):
         if roc_periods is None:
             roc_periods = [5, 10, 20]
 
+        features = {}
+
         # RSI
         for period in rsi_periods:
-            df[f"mom_rsi_{period}"] = ta.momentum.rsi(df["C"], window=period)
+            features[f"mom_rsi_{period}"] = ta.momentum.rsi(df["C"], window=period)
 
         # Stochastic
         for period in stoch_periods:
             stoch = ta.momentum.StochasticOscillator(
                 df["H"], df["L"], df["C"], window=period
             )
-            df[f"mom_stoch_k_{period}"] = stoch.stoch()
-            df[f"mom_stoch_d_{period}"] = stoch.stoch_signal()
+            features[f"mom_stoch_k_{period}"] = stoch.stoch()
+            features[f"mom_stoch_d_{period}"] = stoch.stoch_signal()
 
         # Williams %R
         for period in williams_periods:
-            df[f"mom_williams_{period}"] = ta.momentum.williams_r(
+            features[f"mom_williams_{period}"] = ta.momentum.williams_r(
                 df["H"], df["L"], df["C"], lbp=period
             )
 
         # Ultimate Oscillator
-        df["mom_uo"] = ta.momentum.ultimate_oscillator(
+        features["mom_uo"] = ta.momentum.ultimate_oscillator(
             df["H"], df["L"], df["C"]
         )
 
         # Rate of Change
         for period in roc_periods:
-            df[f"mom_roc_{period}"] = ta.momentum.roc(df["C"], window=period)
+            features[f"mom_roc_{period}"] = ta.momentum.roc(df["C"], window=period)
 
-        return df
+        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         """Gibt Liste aller Momentum-Feature-Spalten zurück."""
