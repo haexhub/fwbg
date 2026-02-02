@@ -17,7 +17,6 @@ WORKDIR /app
 # pyproject.toml und src kopieren für Installation
 COPY pyproject.toml .
 COPY src/ src/
-COPY bots/ bots/
 
 # Package mit IG-Dependencies installieren
 RUN pip install --no-cache-dir -e ".[ig]"
@@ -25,5 +24,5 @@ RUN pip install --no-cache-dir -e ".[ig]"
 # Verzeichnisse für Volumes erstellen (damit Berechtigungen stimmen)
 RUN mkdir -p accounts data logs stats_export
 
-# Startbefehl (Bot im Streaming-Modus)
-CMD ["python", "-m", "bots.ig"]
+# Startbefehl
+CMD ["python", "-m", "fwbg"]
