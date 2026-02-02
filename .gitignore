@@ -5,7 +5,7 @@ __pycache__/
 *.pyo
 *.log
 trade_history.csv
-data/
+/data/
 stats_export/
 account_info.json
 test_results/
