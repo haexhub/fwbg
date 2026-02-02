@@ -11,8 +11,6 @@ from functools import partial
 
 import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.ticker import FuncFormatter
 from tabulate import tabulate
 
 from fwbg.data import config as data_config
@@ -517,7 +515,6 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     args = parser.parse_args()
 
     # Account/Timeframe aus CLI oder Strategy übernehmen
-    import fwbg.data.config as data_config
 
     if args.list_features:
         from fwbg.builtins.indicators import FEATURE_GROUPS

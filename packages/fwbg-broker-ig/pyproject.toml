@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fwbg-broker-ig"
+version = "1.0.0"
+description = "IG Markets Broker Adapter for FWBG"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "FWBG Team"}
+]
+keywords = ["trading", "forex", "ig-markets", "broker", "fwbg"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+]
+
+dependencies = [
+    "fwbg>=2.0.0",
+    "trading-ig>=0.0.22",
+]
+
+[project.optional-dependencies]
+yfinance = [
+    "yfinance>=1.0",
+]
+streaming = [
+    "lightstreamer-client-lib>=1.0",
+]
+full = [
+    "fwbg-broker-ig[yfinance,streaming]",
+]
+dev = [
+    "pytest>=9.0",
+    "pytest-cov>=7.0",
+]
+
+[project.entry-points."fwbg.broker_adapters"]
+ig = "fwbg_broker_ig:IGBrokerAdapter"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["src/fwbg_broker_ig"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

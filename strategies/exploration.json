@@ -113,7 +113,12 @@
   "exit_params": {
     "atr_period": 14,
     "min_tp_pips": 10,
-    "min_sl_pips": 15
+    "min_sl_pips": 15,
+    "adaptive_timeout": true,
+    "base_timeout": 48,
+    "min_timeout": 12,
+    "max_timeout": 96,
+    "atr_ma_period": 200
   },
 
   "feature_selector": "boruta",

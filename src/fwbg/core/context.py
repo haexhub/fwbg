@@ -166,9 +166,22 @@ class SimulationContext:
             return (self.short_grid_tp, self.short_grid_sl, self.short_grid_ct)
         return (self.grid_tp, self.grid_sl, self.grid_ct)
 
+    def _effective_timeout_grid_size(self) -> int:
+        """
+        Berechnet effektive Timeout-Grid-Größe.
+
+        Bei adaptive_timeout=True wird das Timeout pro Trade dynamisch berechnet,
+        daher ist die Grid-Größe 1 (kein Timeout-Grid-Loop).
+        """
+        # Prüfe ob adaptive_timeout aktiviert ist
+        adaptive_timeout = self.exit_params.get("adaptive_timeout", False)
+        if adaptive_timeout:
+            return 1  # Timeout wird dynamisch berechnet, kein Grid
+        return len(self.grid_timeout_bars) if self.grid_timeout_bars else 1
+
     def total_grid_combinations(self) -> int:
         """Berechnet Gesamtzahl der Grid-Kombinationen."""
-        n_timeout = len(self.grid_timeout_bars) if self.grid_timeout_bars else 1
+        n_timeout = self._effective_timeout_grid_size()
         n_groups = len(self.feature_groups) if self.feature_groups else 1
 
         if self.separate_long_short:
@@ -182,7 +195,7 @@ class SimulationContext:
 
     def grid_combinations_per_feature_group(self) -> int:
         """Berechnet Grid-Kombinationen pro Feature-Gruppe."""
-        n_timeout = len(self.grid_timeout_bars) if self.grid_timeout_bars else 1
+        n_timeout = self._effective_timeout_grid_size()
 
         if self.separate_long_short:
             long_tp, long_sl, _ = self.get_long_grid()
