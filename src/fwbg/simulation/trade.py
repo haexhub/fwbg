@@ -3,7 +3,7 @@ Trade-Simulation und Metriken
 """
 import numpy as np
 import pandas as pd
-from numba import njit
+from numba import njit, prange
 
 from fwbg.data.config import DATA_PATH
 
@@ -95,7 +95,7 @@ def _simulate_trade_numba(
     return 0.0, -1, 0.0, -1
 
 
-@njit(cache=True, parallel=False)
+@njit(cache=True, parallel=True)
 def compute_targets_numba(
     opens: np.ndarray,
     closes: np.ndarray,
@@ -111,6 +111,9 @@ def compute_targets_numba(
     """
     Berechnet Long/Short Targets für alle Bars (parallelisiert mit Numba).
 
+    OPTIMIERT: Nutzt numba.prange für parallele Berechnung über Bars.
+    Jeder Bar wird unabhängig berechnet → ideal für Parallelisierung.
+
     Returns:
         (targets_long, targets_short) - Arrays mit 1.0 für Win, 0.0 sonst
     """
@@ -118,8 +121,8 @@ def compute_targets_numba(
     targets_long = np.zeros(n, dtype=np.float64)
     targets_short = np.zeros(n, dtype=np.float64)
 
-    # Sequentiell über alle Bars (Parallelisierung auf Feature-Gruppen-Ebene)
-    for i in range(n - 1):
+    # Parallel über alle Bars - jeder Bar unabhängig berechenbar
+    for i in prange(n - 1):
         # Long Trade
         result_long, _, _, _ = _simulate_trade_numba(
             opens, closes, highs, lows, i, 1,
