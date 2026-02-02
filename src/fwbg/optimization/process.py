@@ -159,41 +159,51 @@ def _process_feature_group(
     # Timeout-Werte aus Grid (falls nicht definiert, nur None = kein Timeout)
     timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
 
-    # === Grid-Search sequentiell mit Lazy Target-Berechnung ===
-    # Target-Berechnung ist CPU-bound und dominiert die Laufzeit.
-    # Statt alle Targets vorab zu berechnen, berechnen wir sie on-demand
-    # und nutzen Parallelisierung NUR für die eigentliche CV (XGBoost).
+    # === Grid-Search mit optimiertem Target-Caching ===
+    # OPTIMIERUNG: Targets werden pro TP/SL einmal berechnet und für alle
+    # timeout_bars Werte wiederverwendet. Das spart erheblich Speicher und CPU.
+    # Alte Arrays werden explizit freigegeben um Memory-Druck zu reduzieren.
+    import gc
+
     candidates = []
     grid_results = []
     grid_count = 0
+    gc_interval = 50  # GC alle 50 Iterationen
 
     for tp in grid.tp:
         for sl in grid.sl:
             rrr = tp / sl
             if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                grid_count += 1
-                log(2, f"  Grid {grid_count}/{grid_per_fg} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                grid_count += len(timeout_values)
+                log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
                 continue
 
+            # Berechne Targets EINMAL pro TP/SL (nicht pro timeout!)
+            # timeout_bars beeinflusst nur die Trade-Simulation, nicht die Targets
+            cached_targets = None
+            full_targets_long = None
+            full_targets_short = None
+
+            if inner_df is not None:
+                # Targets berechnen (ohne timeout - wird in simulate_trades behandelt)
+                full_targets_long, full_targets_short = compute_targets_cached(
+                    inner_df, tp, sl, ctx, None,  # timeout=None für Target-Berechnung
+                    exit_strategy_mode=ctx.exit_strategy,
+                )
+                # Fold-Slices vorbereiten
+                cached_targets = {}
+                for fold_idx, (train_df, _) in enumerate(inner_folds):
+                    fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
+                        full_targets_long, full_targets_short, inner_df, train_df, ctx
+                    )
+                    cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
+
+            # Iteriere über timeout_values mit wiederverwendeten Targets
             for timeout_bars in timeout_values:
                 grid_count += 1
                 global_grid_pos = grid_offset + grid_count
 
-                # Berechne Targets für diese Kombination (lazy, on-demand)
-                cached_targets = None
-                if inner_df is not None:
-                    full_targets_long, full_targets_short = compute_targets_cached(
-                        inner_df, tp, sl, ctx, timeout_bars,
-                        exit_strategy_mode=ctx.exit_strategy,
-                    )
-                    cached_targets = {}
-                    for fold_idx, (train_df, _) in enumerate(inner_folds):
-                        fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
-                            full_targets_long, full_targets_short, inner_df, train_df, ctx
-                        )
-                        cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
-
-                # Inner CV ausführen
+                # Inner CV ausführen (Targets werden wiederverwendet)
                 candidate, grid_result = _process_single_grid_combo(
                     tp, sl, timeout_bars,
                     group_features, inner_folds, ctx, regime_config,
@@ -208,6 +218,13 @@ def _process_feature_group(
                     candidates.append(candidate)
                 if grid_result:
                     grid_results.append(grid_result)
+
+            # Speicher explizit freigeben nach jedem TP/SL Paar
+            del cached_targets, full_targets_long, full_targets_short
+
+            # Periodischer GC um Memory-Fragmentierung zu reduzieren
+            if grid_count % gc_interval == 0:
+                gc.collect()
 
     return candidates, grid_results
 
