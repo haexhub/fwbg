@@ -13,6 +13,10 @@ from unittest.mock import MagicMock, patch
 # Projekt-Root zum Path hinzufügen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Skip all tests if bots.ig is not available (requires yfinance, trading-ig)
+pytest.importorskip("yfinance", reason="yfinance not installed (optional ig dependency)")
+pytest.importorskip("trading_ig", reason="trading-ig not installed (optional ig dependency)")
+
 
 class TestCacheArchitecture:
     """Tests für die Cache-Architektur ohne echte API-Calls."""
