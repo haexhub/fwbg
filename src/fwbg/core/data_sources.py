@@ -93,17 +93,28 @@ class CSVSourceConfig(DataSourceConfig):
         return list(self.path.glob(pattern))
 
     def create_adapter(self, timeframe: str = "HOUR", **kwargs):
-        """Erstellt einen CSVDataAdapter."""
-        from fwbg.adapters.data.csv_adapter import CSVDataAdapter
+        """
+        Erstellt einen CSV DataAdapter.
 
-        tf_value = self.timeframe_map.get(timeframe, timeframe)
-        pattern = self.file_pattern.format(symbol="{symbol}", timeframe=tf_value)
+        Hinweis: Der CSVDataAdapter muss separat implementiert
+        oder als Plugin installiert werden.
+        """
+        from fwbg.core.registry import DATA_ADAPTER_REGISTRY
 
-        return CSVDataAdapter(
-            data_path=str(self.path),
-            file_pattern=pattern,
-            timeframe=timeframe,
-            **kwargs
+        if "csv" in DATA_ADAPTER_REGISTRY:
+            adapter_cls = DATA_ADAPTER_REGISTRY["csv"]
+            tf_value = self.timeframe_map.get(timeframe, timeframe)
+            pattern = self.file_pattern.format(symbol="{symbol}", timeframe=tf_value)
+            return adapter_cls(
+                data_path=str(self.path),
+                file_pattern=pattern,
+                timeframe=timeframe,
+                **kwargs
+            )
+
+        raise NotImplementedError(
+            f"CSV adapter not available. Install a CSV adapter plugin or "
+            f"implement CSVDataAdapter for source '{self.name}'."
         )
 
 

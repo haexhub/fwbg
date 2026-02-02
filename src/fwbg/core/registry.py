@@ -12,8 +12,7 @@ if TYPE_CHECKING:
     from ..plugins.exit_strategy import BaseExitStrategy
     from ..plugins.feature_selector import BaseFeatureSelector
     from ..plugins.preprocessor import BasePreprocessor
-    from ..adapters.data import DataAdapter
-    from ..adapters.execution import ExecutionAdapter
+    from ..adapters.broker import BrokerAdapter
 
 log = logging.getLogger(__name__)
 
@@ -22,8 +21,10 @@ INDICATOR_REGISTRY: Dict[str, Type["BaseIndicator"]] = {}
 EXIT_STRATEGY_REGISTRY: Dict[str, Type["BaseExitStrategy"]] = {}
 FEATURE_SELECTOR_REGISTRY: Dict[str, Type["BaseFeatureSelector"]] = {}
 PREPROCESSOR_REGISTRY: Dict[str, Type["BasePreprocessor"]] = {}
-DATA_ADAPTER_REGISTRY: Dict[str, Type["DataAdapter"]] = {}
-EXECUTION_ADAPTER_REGISTRY: Dict[str, Type["ExecutionAdapter"]] = {}
+BROKER_ADAPTER_REGISTRY: Dict[str, Type["BrokerAdapter"]] = {}
+# Legacy aliases for backwards compatibility
+DATA_ADAPTER_REGISTRY: Dict[str, type] = {}  # Deprecated
+EXECUTION_ADAPTER_REGISTRY: Dict[str, type] = {}  # Deprecated
 
 
 def register_indicator(name: str):
@@ -114,46 +115,45 @@ def register_preprocessor(name: str):
     return decorator
 
 
-def register_data_adapter(name: str):
+def register_broker_adapter(name: str):
     """
-    Decorator zum Registrieren eines DataAdapters.
+    Decorator zum Registrieren eines BrokerAdapters.
 
     Beispiel:
         ```python
-        from fwbg.core import register_data_adapter
-        from fwbg.adapters import DataAdapter
+        from fwbg.core import register_broker_adapter
+        from fwbg.adapters import BrokerAdapter
 
-        @register_data_adapter("csv")
-        class CSVDataAdapter(DataAdapter):
+        @register_broker_adapter("ig")
+        class IGBrokerAdapter(BrokerAdapter):
             ...
         ```
     """
     def decorator(cls):
+        BROKER_ADAPTER_REGISTRY[name] = cls
+        cls.adapter_type = name
+        log.debug(f"Registered broker adapter: {name}")
+        return cls
+    return decorator
+
+
+# Legacy decorators for backwards compatibility
+def register_data_adapter(name: str):
+    """Deprecated: Use register_broker_adapter instead."""
+    def decorator(cls):
         DATA_ADAPTER_REGISTRY[name] = cls
         cls.adapter_type = name
-        log.debug(f"Registered data adapter: {name}")
+        log.debug(f"Registered data adapter: {name} (deprecated)")
         return cls
     return decorator
 
 
 def register_execution_adapter(name: str):
-    """
-    Decorator zum Registrieren eines ExecutionAdapters.
-
-    Beispiel:
-        ```python
-        from fwbg.core import register_execution_adapter
-        from fwbg.adapters import ExecutionAdapter
-
-        @register_execution_adapter("ig")
-        class IGExecutionAdapter(ExecutionAdapter):
-            ...
-        ```
-    """
+    """Deprecated: Use register_broker_adapter instead."""
     def decorator(cls):
         EXECUTION_ADAPTER_REGISTRY[name] = cls
         cls.adapter_type = name
-        log.debug(f"Registered execution adapter: {name}")
+        log.debug(f"Registered execution adapter: {name} (deprecated)")
         return cls
     return decorator
 
@@ -167,6 +167,7 @@ def discover_plugins():
     - fwbg.exit_strategies
     - fwbg.feature_selectors
     - fwbg.preprocessors
+    - fwbg.broker_adapters
 
     Wird automatisch beim Import von fwbg aufgerufen.
     """
@@ -175,6 +176,8 @@ def discover_plugins():
         ("fwbg.exit_strategies", EXIT_STRATEGY_REGISTRY),
         ("fwbg.feature_selectors", FEATURE_SELECTOR_REGISTRY),
         ("fwbg.preprocessors", PREPROCESSOR_REGISTRY),
+        ("fwbg.broker_adapters", BROKER_ADAPTER_REGISTRY),
+        # Legacy entry points (deprecated)
         ("fwbg.data_adapters", DATA_ADAPTER_REGISTRY),
         ("fwbg.execution_adapters", EXECUTION_ADAPTER_REGISTRY),
     ]
@@ -198,8 +201,7 @@ def discover_plugins():
         + len(EXIT_STRATEGY_REGISTRY)
         + len(FEATURE_SELECTOR_REGISTRY)
         + len(PREPROCESSOR_REGISTRY)
-        + len(DATA_ADAPTER_REGISTRY)
-        + len(EXECUTION_ADAPTER_REGISTRY)
+        + len(BROKER_ADAPTER_REGISTRY)
     )
 
     if total > 0:
@@ -209,8 +211,7 @@ def discover_plugins():
             f"{len(EXIT_STRATEGY_REGISTRY)} exit strategies, "
             f"{len(FEATURE_SELECTOR_REGISTRY)} feature selectors, "
             f"{len(PREPROCESSOR_REGISTRY)} preprocessors, "
-            f"{len(DATA_ADAPTER_REGISTRY)} data adapters, "
-            f"{len(EXECUTION_ADAPTER_REGISTRY)} execution adapters"
+            f"{len(BROKER_ADAPTER_REGISTRY)} broker adapters"
         )
 
 
@@ -322,19 +323,36 @@ def list_preprocessors() -> list:
     return list(PREPROCESSOR_REGISTRY.keys())
 
 
-def get_data_adapter(name: str) -> Type["DataAdapter"]:
+def get_broker_adapter(name: str) -> Type["BrokerAdapter"]:
     """
-    Gibt DataAdapter-Klasse anhand des Namens zurück.
+    Gibt BrokerAdapter-Klasse anhand des Namens zurück.
 
     Args:
-        name: Registrierter Name des DataAdapters
+        name: Registrierter Name des BrokerAdapters
 
     Returns:
-        DataAdapter-Klasse
+        BrokerAdapter-Klasse
 
     Raises:
-        ValueError: Wenn DataAdapter nicht gefunden
+        ValueError: Wenn BrokerAdapter nicht gefunden
     """
+    if name not in BROKER_ADAPTER_REGISTRY:
+        available = list(BROKER_ADAPTER_REGISTRY.keys())
+        raise ValueError(
+            f"Unknown broker adapter: '{name}'. "
+            f"Available: {available}"
+        )
+    return BROKER_ADAPTER_REGISTRY[name]
+
+
+def list_broker_adapters() -> list:
+    """Listet alle registrierten BrokerAdapters."""
+    return list(BROKER_ADAPTER_REGISTRY.keys())
+
+
+# Legacy functions for backwards compatibility
+def get_data_adapter(name: str) -> type:
+    """Deprecated: Use get_broker_adapter instead."""
     if name not in DATA_ADAPTER_REGISTRY:
         available = list(DATA_ADAPTER_REGISTRY.keys())
         raise ValueError(
@@ -344,19 +362,8 @@ def get_data_adapter(name: str) -> Type["DataAdapter"]:
     return DATA_ADAPTER_REGISTRY[name]
 
 
-def get_execution_adapter(name: str) -> Type["ExecutionAdapter"]:
-    """
-    Gibt ExecutionAdapter-Klasse anhand des Namens zurück.
-
-    Args:
-        name: Registrierter Name des ExecutionAdapters
-
-    Returns:
-        ExecutionAdapter-Klasse
-
-    Raises:
-        ValueError: Wenn ExecutionAdapter nicht gefunden
-    """
+def get_execution_adapter(name: str) -> type:
+    """Deprecated: Use get_broker_adapter instead."""
     if name not in EXECUTION_ADAPTER_REGISTRY:
         available = list(EXECUTION_ADAPTER_REGISTRY.keys())
         raise ValueError(
@@ -367,10 +374,10 @@ def get_execution_adapter(name: str) -> Type["ExecutionAdapter"]:
 
 
 def list_data_adapters() -> list:
-    """Listet alle registrierten DataAdapters."""
+    """Deprecated: Use list_broker_adapters instead."""
     return list(DATA_ADAPTER_REGISTRY.keys())
 
 
 def list_execution_adapters() -> list:
-    """Listet alle registrierten ExecutionAdapters."""
+    """Deprecated: Use list_broker_adapters instead."""
     return list(EXECUTION_ADAPTER_REGISTRY.keys())
