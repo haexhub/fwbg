@@ -9,7 +9,7 @@ Ein Machine-Learning-basierter Optimizer für systematische Trading-Strategien. 
 3. [Optimizer Ausführen](#optimizer-ausführen)
 4. [Strategy-Konfiguration](#strategy-konfiguration)
 5. [Exit-Strategien](#exit-strategien)
-6. [Feature-Gruppen](#feature-gruppen)
+6. [Indicator Plugins](#indicator-plugins)
 7. [Feature Selection](#feature-selection)
 8. [Ergebnisse](#ergebnisse)
 9. [Architektur](#architektur)
@@ -134,7 +134,7 @@ Strategien werden als JSON-Dateien im `strategies/` Verzeichnis definiert.
 }
 ```
 
-### Vollständige Konfiguration
+### Vollständige Konfiguration (Plugin-Format)
 
 ```json
 {
@@ -142,22 +142,56 @@ Strategien werden als JSON-Dateien im `strategies/` Verzeichnis definiert.
   "description": "Breite Parameter-Suche mit ATR-basierten Exits",
   "tags": ["exploration", "atr_based"],
 
-  "model": {
-    "architecture": "long_short_separate"
-  },
+  "indicators": [
+    "trend",
+    "momentum",
+    "volatility",
+    "regime",
+    "microstructure"
+  ],
 
-  "features": {
-    "preferred_groups": ["trend", "momentum", "volatility"],
-    "feature_selection": "boruta",
-    "max_features": 30
-  },
-
-  "exit_strategy": {
-    "mode": "atr_based",
-    "atr_based": {
+  "indicator_params": {
+    "trend": {
+      "adx_periods": [14, 21],
+      "ema_periods": [21, 50, 100]
+    },
+    "momentum": {
+      "rsi_periods": [7, 14],
+      "stoch_periods": [14]
+    },
+    "volatility": {
+      "atr_periods": [7, 14]
+    },
+    "microstructure": {
       "atr_period": 14,
-      "min_tp_pips": 10,
-      "min_sl_pips": 15
+      "rolling_window": 5
+    }
+  },
+
+  "exit_strategy": "atr_based",
+
+  "exit_params": {
+    "atr_period": 14,
+    "min_tp_pips": 10,
+    "min_sl_pips": 15
+  },
+
+  "feature_selector": "boruta",
+
+  "feature_params": {
+    "max_features": 30,
+    "n_iter": 10,
+    "n_estimators": 100
+  },
+
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "trade_directions": ["long", "short"],
+    "hyperparameters": {
+      "n_estimators": 150,
+      "max_depth": 5,
+      "learning_rate": 0.1
     }
   },
 
@@ -166,18 +200,26 @@ Strategien werden als JSON-Dateien im `strategies/` Verzeichnis definiert.
       "tp": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
       "sl": [0.5, 1.0, 1.5, 2.0, 2.5],
       "ct": [0.5, 0.52, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 24, 48, 96]
+      "timeout_bars": [12, 24, 48, 96]
     }
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "min_trades": 50
   },
 
   "filters": {
     "min_rrr": 0,
-    "min_trades": 30
+    "min_trades": 30,
+    "max_drawdown": 0.4
   },
 
   "resources": {
     "max_cpu_percent": 0.8,
-    "xgboost_n_jobs": 0
+    "ram_per_feature_group_gb": 0.5
   }
 }
 ```
@@ -187,9 +229,10 @@ Strategien werden als JSON-Dateien im `strategies/` Verzeichnis definiert.
 | Parameter | Beschreibung | Default |
 |-----------|--------------|---------|
 | `model.architecture` | `"unified"` oder `"long_short_separate"` | `"unified"` |
-| `features.max_features` | Max Features pro Modell (0 = kein Limit) | `0` |
-| `exit_strategy.mode` | `"fixed"` oder `"atr_based"` | `"fixed"` |
-| `filters.min_trades` | Minimum Trades für Validität | `50` |
+| `model.trade_directions` | `["long", "short"]` oder `["long"]` | `["long", "short"]` |
+| `feature_params.max_features` | Max Features pro Modell | `30` |
+| `exit_strategy` | `"fixed"` oder `"atr_based"` | `"atr_based"` |
+| `validation.min_trades` | Minimum Trades für Validität | `50` |
 
 ---
 
@@ -264,45 +307,50 @@ TP und SL werden als **ATR-Multiplikatoren** definiert. Die tatsächlichen Dista
 
 ---
 
-## Feature-Gruppen
+## Indicator Plugins
 
-Features sind in Gruppen organisiert. Jede Gruppe wird separat getestet.
+Das System verwendet eine plugin-basierte Architektur. Jeder Indikator ist ein separates Plugin mit eigenen konfigurierbaren Parametern.
 
-### Verfügbare Gruppen
+### Verfügbare Plugins
 
-| Gruppe | Prefixes | Beschreibung |
-|--------|----------|--------------|
-| `trend` | `trend_`, `ichi_` | ADX, EMA, SMA, MACD, Ichimoku |
-| `momentum` | `mom_` | RSI, Stochastic, Williams %R, ROC |
-| `volatility` | `vol_` | Bollinger, Keltner, ATR |
-| `price_action` | `pa_` | Range, Higher Highs, Gaps |
-| `time` | `time_`, `season_` | Zeit- und Saisonalitäts-Features |
-| `macro` | `macro_` | VIX, Yields, DXY, Indices |
-| `dynamics` | `dyn_`, `lag_`, `accel_` | Änderungen und Verzögerungen |
-| `mtf` | `mtf_` | Multi-Timeframe (H4, D1) |
-| `distribution` | `dist_` | Skewness, Kurtosis |
-| `fft` | `fft_` | Fourier-Zykluserkennung |
-| `regime` | `regime_` | Hurst-basierte Marktregime |
-
-### Kombinierte Gruppen
-
-| Gruppe | Enthält |
-|--------|---------|
-| `trend_momentum` | trend + momentum |
-| `macro_vol` | macro + volatility |
-| `full_technical` | trend + momentum + volatility + price_action |
+| Plugin | Beschreibung | Wichtige Features |
+|--------|--------------|-------------------|
+| `trend` | Trend-Indikatoren | ADX, EMA, SMA, MACD, CCI, Aroon |
+| `momentum` | Momentum-Oszillatoren | RSI, Stochastic, Williams %R, ROC |
+| `volatility` | Volatilitäts-Messung | Bollinger, Keltner, ATR |
+| `ichimoku` | Ichimoku Cloud | Tenkan, Kijun, Senkou, Cloud Position |
+| `price_action` | Kerzen-Analyse | Range, Higher Highs/Lows, Gaps |
+| `time_season` | Zeit-Features | Stunde, Wochentag, Monat, Saison |
+| `dynamics` | Änderungs-Features | Indicator Changes, Lags, Acceleration |
+| `multi_timeframe` | Höhere Timeframes | H4/D1 Aggregation, Trend Alignment |
+| `cross_features` | Kombinierte Signale | RSI + Trend, Vol + ADX |
+| `distribution` | Verteilungs-Statistik | Skewness, Kurtosis, Z-Scores |
+| `structure` | Struktur-Analyse | FFT, Path Efficiency, VWAP |
+| `regime` | Markt-Regime | Hurst-Exponent, Trending vs Range |
+| `risk` | Risiko-Messung | Drawdown, CVaR, Vol-of-Vol |
+| `microstructure` | Orderflow-Analyse | Wick Imbalance, Body Ratio, Pressure |
+| `macro_surprise` | Event-Detection | Gap Analysis, Surprise Detection |
 
 ### Konfiguration
 
 ```json
 {
-  "features": {
-    "preferred_groups": ["trend", "momentum", "volatility"]
+  "indicators": ["trend", "momentum", "volatility", "microstructure"],
+
+  "indicator_params": {
+    "trend": {
+      "adx_periods": [14, 21],
+      "ema_periods": [21, 50, 100]
+    },
+    "microstructure": {
+      "atr_period": 14,
+      "rolling_window": 5
+    }
   }
 }
 ```
 
-Ohne `preferred_groups` werden alle Gruppen getestet.
+Ohne `indicators` werden alle verfügbaren Plugins verwendet.
 
 ---
 
@@ -316,23 +364,28 @@ Boruta ist ein "All-Relevant" Algorithmus, der alle statistisch relevanten Featu
 
 ```json
 {
-  "features": {
-    "feature_selection": "boruta",
-    "max_features": 30
+  "feature_selector": "boruta",
+
+  "feature_params": {
+    "max_features": 30,
+    "n_iter": 10,
+    "n_estimators": 100
   }
 }
 ```
 
 **max_features:** Begrenzt die Anzahl auf die Top-N nach Importance. Empfohlen: 20-30 um Overfitting zu vermeiden.
 
-### Boruta + Plateau
+### Plateau Feature Selection
 
-Kombiniert Boruta mit Plateau-Validierung für zusätzliche Stabilität.
+Alternative Methode mit Plateau-Validierung für zusätzliche Stabilität.
 
 ```json
 {
-  "features": {
-    "feature_selection": "boruta_plateau"
+  "feature_selector": "plateau",
+
+  "feature_params": {
+    "max_features": 25
   }
 }
 ```
@@ -342,8 +395,7 @@ Kombiniert Boruta mit Plateau-Validierung für zusätzliche Stabilität.
 | Methode | Feature-Limit | Stabilität | Speed |
 |---------|---------------|------------|-------|
 | `boruta` | Optional (max_features) | Mittel | Mittel |
-| `boruta_plateau` | Optional | Hoch | Langsamer |
-| `importance_based` | Fest (Top-5) | Hoch | Schnell |
+| `plateau` | Optional | Hoch | Schneller |
 
 ---
 
@@ -395,25 +447,40 @@ test_results/
 
 ## Architektur
 
-### Kern-Komponenten
+### Plugin-basierte Struktur
 
 ```
-optimizer/
-├── __main__.py          # CLI Entry Point
-├── cli.py               # Argument Parsing
-├── process.py           # Haupt-Optimierungslogik
-├── nested_cv.py         # Walk-Forward Cross-Validation
-├── simulation.py        # Trade-Simulation (Numba)
-├── boruta.py            # Boruta Feature Selection
+src/fwbg/                    # Neues Plugin-System
+├── plugins/                 # Plugin Base Classes
+│   ├── indicator.py         # BaseIndicator
+│   ├── exit_strategy.py     # BaseExitStrategy
+│   ├── feature_selector.py  # BaseFeatureSelector
+│   └── preprocessor.py      # BasePreprocessor
 │
-├── exit_strategies/     # Exit-Strategie Module
-│   ├── base.py          # Abstrakte Basisklasse
-│   ├── fixed/           # Spread-basierte Exits
-│   └── atr_based/       # ATR-basierte Exits
+├── builtins/                # Built-in Plugins
+│   ├── indicators/          # 15 Indicator Plugins
+│   │   ├── trend/
+│   │   ├── momentum/
+│   │   ├── volatility/
+│   │   ├── microstructure/
+│   │   ├── macro_surprise/
+│   │   └── ...
+│   ├── exit_strategies/     # fixed, atr_based
+│   ├── feature_selection/   # boruta, plateau
+│   └── preprocessing/       # fractional_diff
 │
-├── strategy_config.py   # Strategy-JSON Parsing
-├── simulation_context.py # Parameter-Container
-└── asset_config.py      # Asset-Konfiguration
+├── core/                    # Core Infrastructure
+│   ├── registry.py          # Plugin Discovery (Entry Points)
+│   ├── context.py           # SimulationContext
+│   └── config.py            # StrategyConfig
+│
+└── simulation/              # Trade Simulation (Numba)
+
+optimizer/                   # Optimizer Engine
+├── __main__.py              # CLI Entry Point
+├── process.py               # Haupt-Optimierungslogik
+├── nested_cv.py             # Walk-Forward Cross-Validation
+└── simulation.py            # Trade-Simulation
 ```
 
 ### Optimierungs-Pipeline
@@ -421,25 +488,27 @@ optimizer/
 ```
 1. Strategy-JSON laden
    ↓
-2. Asset-Daten laden (H1 OHLC + Makro)
+2. Plugins laden (Entry Points Discovery)
    ↓
-3. Features berechnen (alle Gruppen)
+3. Asset-Daten laden (H1 OHLC + Makro)
    ↓
-4. Für jede Feature-Gruppe:
+4. Indicator Plugins berechnen Features
+   ↓
+5. Für jeden Indicator:
    │
-   ├─ 5. Grid-Search (TP × SL × Timeout)
+   ├─ 6. Grid-Search (TP × SL × CT × Timeout)
    │     │
-   │     └─ 6. Walk-Forward CV (N Folds)
+   │     └─ 7. Walk-Forward CV (N Folds)
    │          │
-   │          ├─ 7a. Feature Selection (Boruta)
-   │          ├─ 7b. Model Training (XGBoost)
-   │          └─ 7c. OOS Validation
+   │          ├─ 8a. Feature Selection Plugin (Boruta)
+   │          ├─ 8b. Model Training (XGBoost L/S)
+   │          └─ 8c. OOS Validation
    │
-   └─ 8. Beste Kandidaten sammeln
+   └─ 9. Beste Kandidaten sammeln
    ↓
-9. Monte-Carlo Significance Test
-   ↓
-10. Ergebnisse speichern
+10. Monte-Carlo Significance Test
+    ↓
+11. Ergebnisse speichern
 ```
 
 ### Performance-Optimierungen

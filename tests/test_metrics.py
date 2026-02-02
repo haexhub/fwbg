@@ -15,12 +15,8 @@ Testet:
 """
 import pytest
 import numpy as np
-import sys
-import os
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from optimizer.simulation import (
+from fwbg.simulation.trade import (
     calculate_sharpe_ratio,
     calculate_calmar_ratio,
     monte_carlo_permutation_test,
@@ -28,6 +24,7 @@ from optimizer.simulation import (
     adjust_kelly_for_target_dd,
     calculate_equity_smoothness,
 )
+from fwbg.simulation.equity import simulate_equity
 
 
 class TestSharpeRatio:

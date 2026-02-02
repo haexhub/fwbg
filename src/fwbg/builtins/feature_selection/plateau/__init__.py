@@ -19,6 +19,7 @@ from xgboost import XGBClassifier
 
 from fwbg.plugins import BaseFeatureSelector
 from fwbg.core import register_feature_selector
+from .selector import select_plateau_features
 
 
 def find_feature_neighbors(feature_name: str, all_features: List[str]) -> List[str]:
@@ -415,6 +416,7 @@ def select_best_plateau_candidate(
 
 
 __all__ = [
+    "select_plateau_features",
     "PlateauSelector",
     "find_feature_neighbors",
     "calculate_feature_plateau_scores",

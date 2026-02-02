@@ -8,10 +8,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from optimizer.data_loader import load_macro_csv, load_data_aligned
+from fwbg.data.loader import load_macro_csv, load_data_aligned
 
 
 class TestLoadMacroCsv:
@@ -101,8 +98,8 @@ class TestLoadMacroCsv:
 class TestLoadDataAligned:
     """Tests für die OHLC-Datenladefunktion."""
 
-    def test_standard_ohlc(self, tmp_path):
-        """Testet Standard OHLCV Format."""
+    def test_standard_ohlcv(self, tmp_path):
+        """Testet Standard OHLCV Format mit Header und Volume."""
         csv_path = tmp_path / "test_ohlc.csv"
         csv_path.write_text(
             "Time,Open,High,Low,Close,Volume\n"
@@ -118,6 +115,8 @@ class TestLoadDataAligned:
         assert "H" in df.columns
         assert "L" in df.columns
         assert "C" in df.columns
+        assert "V" in df.columns
+        assert df["V"].iloc[0] == 1000
 
     def test_close_only(self, tmp_path):
         """Testet Close-only Format (wie VIX)."""
@@ -140,6 +139,27 @@ class TestLoadDataAligned:
 
 class TestRealDataFormats:
     """Integration Tests mit echten Datenformaten."""
+
+    def test_forexsb_raw_format_no_header(self, tmp_path):
+        """Testet das echte ForexSB-Format OHNE Header."""
+        csv_path = tmp_path / "EURUSD_HOUR.csv"
+        # Das echte Format hat keinen Header!
+        csv_path.write_text(
+            "2024-01-01 10:00,1.1000,1.1010,1.0990,1.1005,100\n"
+            "2024-01-01 11:00,1.1005,1.1015,1.0995,1.1010,110\n"
+        )
+
+        df = load_data_aligned(str(csv_path))
+
+        assert df is not None
+        assert len(df) == 2
+        assert "O" in df.columns
+        assert "H" in df.columns
+        assert "L" in df.columns
+        assert "C" in df.columns
+        assert "V" in df.columns
+        assert df["C"].iloc[0] == pytest.approx(1.1005, rel=0.01)
+        assert df["V"].iloc[0] == 100
 
     def test_forexsb_imported_format(self, tmp_path):
         """Testet das von forexsb_importer.py erzeugte Format."""

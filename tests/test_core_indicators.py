@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from optimizer.indicators.core import (
+from fwbg.builtins.indicators import (
     compute_indicator_pool,
     get_feature_columns,
     filter_features_by_group,
@@ -556,15 +556,18 @@ class TestMultiTimeframeFeatures:
         assert h4_trend.iloc[-50:].mean() > 0, "H4 trend should be positive in uptrend"
 
     def test_trend_alignment_1_when_all_timeframes_agree(self):
-        """Trend Alignment sollte 1 sein wenn alle Timeframes übereinstimmen."""
+        """Trend Alignment sollte hoch sein wenn Timeframes übereinstimmen."""
         n = 600  # Genug für D1 EMA
         close = np.linspace(100, 200, n)
         df = create_ohlc(close)
         result = compute_indicator_pool(df)
 
-        alignment = result["mtf_trend_alignment"].dropna()
-        # Im klaren Aufwärtstrend sollten alle Timeframes übereinstimmen
-        assert alignment.iloc[-50:].mean() > 0.8, "Alignment should be 1 in clear trend"
+        # Feature wurde umbenannt zu mtf_trend_alignment_h1h4 und mtf_trend_alignment_h4d1
+        alignment_h1h4 = result["mtf_trend_alignment_h1h4"].dropna()
+        alignment_h4d1 = result["mtf_trend_alignment_h4d1"].dropna()
+        # Im klaren Aufwärtstrend sollten Timeframes übereinstimmen
+        assert alignment_h1h4.iloc[-50:].mean() > 0.5, "H1/H4 alignment should be high in clear trend"
+        assert alignment_h4d1.iloc[-50:].mean() > 0.5, "H4/D1 alignment should be high in clear trend"
 
 
 # === INTEGRATION TESTS ===

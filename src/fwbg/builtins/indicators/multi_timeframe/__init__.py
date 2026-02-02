@@ -102,8 +102,10 @@ class MultiTimeframeIndicators(BaseIndicator):
             d1_ema = ta.trend.ema_indicator(df["C"], window=period * d1_bars)
             df[f"mtf_d1_ema{period}_dist"] = (df["C"] - d1_ema) / df["C"]
 
-        # D1 ADX
-        df["mtf_d1_adx"] = ta.trend.adx(d1_high, d1_low, df["C"], window=14)
+        # D1 ADX - berechnen auf langsamerer Basis (ohne ta.trend.adx das nicht mit aggregierten Werten funktioniert)
+        # Stattdessen: D1 Trend Strength via EMA Slope
+        d1_ema_slow = ta.trend.ema_indicator(df["C"], window=20 * d1_bars)
+        df["mtf_d1_trend_strength"] = d1_ema_slow.pct_change(d1_bars) * 100
 
         # === Trend Alignment ===
         # H1 Trend (EMA 21)
@@ -176,7 +178,7 @@ class MultiTimeframeIndicators(BaseIndicator):
             # D1 Features
             "mtf_d1_range_pos",
             "mtf_d1_ema20_dist", "mtf_d1_ema50_dist",
-            "mtf_d1_adx",
+            "mtf_d1_trend_strength",
             # Alignment Features
             "mtf_trend_alignment_h1h4", "mtf_trend_alignment_h4d1",
             "mtf_consensus", "mtf_trend_strength",

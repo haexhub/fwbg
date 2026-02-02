@@ -3,7 +3,7 @@ import time
 import pytest
 from unittest.mock import MagicMock, patch
 
-from optimizer.progress import (
+from fwbg.utils.progress import (
     ProgressTracker,
     set_parallel_mode,
     is_parallel_mode,
@@ -181,26 +181,23 @@ class TestNonTTYRendering:
 
     def test_non_tty_output_format(self):
         """Nicht-TTY Ausgabe sollte kompakt sein."""
-        tracker = ProgressTracker(total_assets=10)
+        tracker = ProgressTracker(total_assets=10, asset_names=["EURUSD", "GBPUSD"])
         tracker._is_tty = False
         tracker.start_time = time.time() - 120  # 2 Minuten vergangen
+        tracker.completed_symbols = []
 
-        active_workers = {
-            1001: {"symbol": "EURUSD", "grid_pos": 500, "grid_total": 1000, "time": time.time()},
-        }
+        phases = {"EURUSD": "Grid-Search"}
 
         with patch('sys.stdout') as mock_stdout:
             mock_stdout.flush = MagicMock()
 
-            # Direkt _render_non_tty aufrufen statt print zu mocken
-            # (da print intern verwendet wird)
             with patch('builtins.print') as mock_print:
-                tracker._render_non_tty(
+                tracker._render_compact(
                     completed=2,
                     pct=25.0,
                     elapsed_str="02:00",
                     eta_str="06:00",
-                    active_workers=active_workers
+                    phases=phases
                 )
 
                 # Prüfe dass print aufgerufen wurde
@@ -208,12 +205,11 @@ class TestNonTTYRendering:
                 output = mock_print.call_args[0][0]
 
                 # Format prüfen
-                assert "[PROGRESS]" in output
                 assert "25.0%" in output
                 assert "2/10" in output
                 assert "02:00" in output
                 assert "ETA: 06:00" in output
-                assert "EURUSD:50%" in output
+                assert "EURUSD" in output
 
 
 class TestAssetProgressBar:
