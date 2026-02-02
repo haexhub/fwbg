@@ -7,8 +7,10 @@ __pycache__/
 trade_history.csv
 /data/
 stats_export/
-account_info.json
 test_results/
+
+# Account data (sensitive!)
+accounts/
 
 # Build artifacts
 *.egg-info/
