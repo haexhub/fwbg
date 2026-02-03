@@ -131,7 +131,7 @@
     "min_z_score": 0.5
   },
 
-  "preprocessing": ["fractional_diff"],
+  "preprocessing": [],
 
   "preprocessing_params": {
     "fractional_diff": {
