@@ -177,9 +177,6 @@ def discover_plugins():
         ("fwbg.feature_selectors", FEATURE_SELECTOR_REGISTRY),
         ("fwbg.preprocessors", PREPROCESSOR_REGISTRY),
         ("fwbg.broker_adapters", BROKER_ADAPTER_REGISTRY),
-        # Legacy entry points (deprecated)
-        ("fwbg.data_adapters", DATA_ADAPTER_REGISTRY),
-        ("fwbg.execution_adapters", EXECUTION_ADAPTER_REGISTRY),
     ]
 
     for group_name, registry in groups:

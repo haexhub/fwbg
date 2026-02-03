@@ -95,6 +95,9 @@ class SimulationContext:
     exit_strategy: str = "atr_based"
     exit_params: dict = field(default_factory=dict)
 
+    # Model Hyperparameters (from StrategyConfig)
+    model_hyperparameters: dict = field(default_factory=dict)
+
     @classmethod
     def create(
         cls,
@@ -152,6 +155,8 @@ class SimulationContext:
             # Exit-Strategy Plugin
             exit_strategy=strategy.exit_strategy,
             exit_params=strategy.exit_params,
+            # Model Hyperparameters
+            model_hyperparameters=strategy.model.hyperparameters,
         )
 
     def get_long_grid(self) -> tuple:

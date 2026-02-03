@@ -478,10 +478,14 @@ def select_features_from_fold(
 
     else:
         # Altes Verhalten: Importance + Plateau mit top_n=5
-        model = XGBClassifier(
-            n_estimators=100, max_depth=5, n_jobs=get_xgboost_n_jobs(),
-            random_state=42, verbosity=0,
-        )
+        # Verwende reduzierte Parameter auch hier (Feature Selection ist Inner CV)
+        params = ctx.model_hyperparameters.copy()
+        params["n_estimators"] = max(10, params.get("n_estimators", 100) // 2)
+        params.setdefault("random_state", 42)
+        params.setdefault("verbosity", 0)
+        params["n_jobs"] = get_xgboost_n_jobs()
+
+        model = XGBClassifier(**params)
         model.fit(train_df[available_features], targets)
         importances = pd.Series(model.feature_importances_, index=available_features)
 
@@ -500,16 +504,33 @@ def train_model(
     train_df: pd.DataFrame,
     targets: np.ndarray,
     features: Optional[List[str]],
-    min_trades: int
+    min_trades: int,
+    ctx: SimulationContext,
+    use_reduced_params: bool = False
 ) -> Optional[XGBClassifier]:
-    """Trainiert ein XGBoost-Modell."""
+    """
+    Trainiert ein XGBoost-Modell.
+
+    Args:
+        use_reduced_params: Wenn True, werden Hyperparameter halbiert (für Inner CV)
+    """
     if features is None or np.count_nonzero(targets) < min_trades // 2:
         return None
 
-    model = XGBClassifier(
-        n_estimators=100, max_depth=5, n_jobs=get_xgboost_n_jobs(),
-        random_state=42, verbosity=0,
-    )
+    # Hole Hyperparameter aus Context (aus StrategyConfig)
+    params = ctx.model_hyperparameters.copy()
+
+    # Für Inner CV: Halbiere n_estimators für schnelleres Ranking
+    if use_reduced_params:
+        params["n_estimators"] = max(10, params.get("n_estimators", 100) // 2)
+        # max_depth bleibt gleich (wichtiger für Modellqualität)
+
+    # Standard-Parameter falls nicht gesetzt
+    params.setdefault("random_state", 42)
+    params.setdefault("verbosity", 0)
+    params["n_jobs"] = get_xgboost_n_jobs()
+
+    model = XGBClassifier(**params)
     model.fit(train_df[features], targets)
     return model
 
@@ -869,8 +890,9 @@ def run_inner_cv(
             failed_count += 1
             continue
 
-        mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades) if has_long else None
-        mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades) if has_short else None
+        # Inner CV: Verwende reduzierte Parameter für schnelleres Ranking
+        mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades, ctx, use_reduced_params=True) if has_long else None
+        mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades, ctx, use_reduced_params=True) if has_short else None
 
         best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
             val_df, mod_long, mod_short,
@@ -1015,8 +1037,9 @@ def evaluate_on_holdout(
 
     targets_long, targets_short, has_long, has_short = compute_targets(inner_df, tp, sl, ctx, timeout_bars)
 
-    mod_long = train_model(inner_df, targets_long, features_long, ctx.min_trades) if has_long and features_long else None
-    mod_short = train_model(inner_df, targets_short, features_short, ctx.min_trades) if has_short and features_short else None
+    # Holdout: Verwende volle Parameter für finale Evaluation
+    mod_long = train_model(inner_df, targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False) if has_long and features_long else None
+    mod_short = train_model(inner_df, targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False) if has_short and features_short else None
 
     if not mod_long and not mod_short:
         return {"trades": [], "trades_detailed": [], "pnl": 0, "win_rate": 0, "n_trades": 0}
