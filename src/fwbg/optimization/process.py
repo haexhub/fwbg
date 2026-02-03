@@ -172,6 +172,11 @@ def _process_feature_group(
     Diese Funktion ist thread-safe und kann parallel für verschiedene
     Feature-Gruppen aufgerufen werden.
 
+    HINWEIS: TP/SL-Kombinationen werden SEQUENTIELL verarbeitet.
+    Parallelisierung erfolgt auf Feature-Gruppen-Ebene (mit Ressourcen-Check),
+    nicht innerhalb einer Feature-Gruppe. Das verhindert unkontrollierte
+    Ressourcen-Überlastung durch verschachtelte Thread-Pools.
+
     Args:
         parallel_mode: Wenn True, wird Progress-Reporting für diesen Thread
                        unterdrückt um Chaos in der Progressbar zu vermeiden.
@@ -179,9 +184,6 @@ def _process_feature_group(
     Returns:
         Tuple von (candidates_list, grid_results_list)
     """
-    import threading
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
     # Setze Parallel-Modus für diesen Thread (unterdrückt Progress-Updates)
     if parallel_mode:
         set_parallel_mode(True)
@@ -205,8 +207,7 @@ def _process_feature_group(
     else:
         timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
 
-    # === Parallele Grid-Search über TP/SL-Kombinationen ===
-    # Erstelle alle Kombinationen und verarbeite sie parallel
+    # Erstelle alle Kombinationen
     combos = []
     combo_idx = 0
 
@@ -232,45 +233,21 @@ def _process_feature_group(
         for _ in range(skipped_combos):
             progress_callback(0, grid_per_fg)
 
-    # Bestimme Anzahl paralleler Worker (max 4, limitiert durch CPU)
-    import multiprocessing as mp
-    max_workers = min(4, mp.cpu_count(), len(combos))
-
     candidates = []
     grid_results = []
-    progress_lock = threading.Lock()
-    completed_count = [0]
 
-    # Verarbeite Kombinationen parallel
-    if max_workers > 1 and len(combos) > 1:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(_process_tp_sl_combo_wrapper, combo): combo for combo in combos}
+    # Sequentielle Verarbeitung der TP/SL-Kombinationen
+    # (Parallelisierung erfolgt auf Feature-Gruppen-Ebene mit Ressourcen-Check)
+    for combo in combos:
+        candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
 
-            for future in as_completed(futures):
-                candidate, grid_result, idx = future.result()
+        if progress_callback:
+            progress_callback(idx + 1, grid_per_fg)
 
-                with progress_lock:
-                    completed_count[0] += 1
-                    if progress_callback:
-                        progress_callback(completed_count[0], grid_per_fg)
-
-                if candidate:
-                    candidates.append(candidate)
-                if grid_result:
-                    grid_results.append(grid_result)
-    else:
-        # Fallback: Sequentiell verarbeiten wenn nur 1 Worker oder 1 Combo
-        for combo in combos:
-            candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
-
-            completed_count[0] += 1
-            if progress_callback:
-                progress_callback(completed_count[0], grid_per_fg)
-
-            if candidate:
-                candidates.append(candidate)
-            if grid_result:
-                grid_results.append(grid_result)
+        if candidate:
+            candidates.append(candidate)
+        if grid_result:
+            grid_results.append(grid_result)
 
     return candidates, grid_results
 
@@ -417,43 +394,100 @@ def _process_feature_groups_parallel(
     # 3. Feature-Gruppen sind I/O-bound (DataFrame-Slicing) + CPU-bound (XGBoost)
     # 4. XGBoost releases GIL während der Berechnung
     # Der Hauptteil der CPU-Arbeit geschieht in XGBoost (C++), nicht in Python.
+
+    def can_start_feature_group(active_workers: int) -> bool:
+        """Prüft ob eine weitere Feature-Gruppe gestartet werden kann."""
+        if active_workers >= max_workers:
+            return False
+
+        # CPU-Check: Nicht starten wenn CPU bereits über max_cpu_percent
+        current_cpu = psutil.cpu_percent(interval=0.1)
+        if current_cpu > max_cpu_percent * 100:
+            return False
+
+        # RAM-Check: Genug freier RAM?
+        current_free_ram = psutil.virtual_memory().available / (1024**3)
+        if current_free_ram < min_free_ram_gb + ram_per_thread_gb:
+            return False
+
+        return True
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Alle Feature-Gruppen gleichzeitig starten (bis max_workers)
-        futures = {
-            executor.submit(
+        futures = {}
+        fg_iter = iter(enumerate(feature_groups))
+        active_count = 0
+
+        # Starte konservativ mit 1 Feature-Gruppe
+        try:
+            fg_idx, feature_group = next(fg_iter)
+            future = executor.submit(
                 _process_feature_group,
                 fg_idx, feature_group, full_pool, inner_folds,
                 grid, ctx, regime_config, sym, n_feature_groups,
-                parallel_mode=True,  # Progress-Updates in Threads unterdrücken
-                progress_callback=progress_callback,  # Aggregierter Fortschritt
-                inner_df=inner_df,  # Für Target-Caching
-            ): feature_group
-            for fg_idx, feature_group in enumerate(feature_groups)
-        }
+                parallel_mode=True,
+                progress_callback=progress_callback,
+                inner_df=inner_df,
+            )
+            futures[future] = feature_group
+            active_count += 1
+            log(2, f"Gestartet: Feature-Gruppe '{feature_group}' (1/{n_feature_groups})", sym)
+        except StopIteration:
+            pass
 
-        # Ergebnisse sammeln wie sie fertig werden
-        for future in as_completed(futures):
-            feature_group = futures[future]
-            completed += 1
+        # Adaptive Verarbeitung: Starte neue Tasks wenn Ressourcen frei
+        fg_remaining = True
+        last_scale_check = time.time()
 
-            try:
-                fg_candidates, fg_grid_results = future.result()
-                all_candidates.extend(fg_candidates)
-                all_grid_results.extend(fg_grid_results)
+        while futures or fg_remaining:
+            # Fertige Tasks einsammeln
+            done_futures = [f for f in list(futures.keys()) if f.done()]
 
-                # Ressourcen-Status loggen nach jeder Feature-Gruppe
-                current_mem = psutil.virtual_memory()
-                current_cpu = psutil.cpu_percent(interval=0.1)
-                elapsed = time.time() - start_time
-                log(2, f"Feature-Gruppe '{feature_group}' fertig ({completed}/{n_feature_groups}) "
-                       f"- {len(fg_candidates)} Kandidaten, "
-                       f"RAM: {current_mem.percent:.1f}% belegt ({current_mem.available/(1024**3):.1f}GB frei), "
-                       f"CPU: {current_cpu:.1f}%, Zeit: {elapsed:.1f}s", sym)
-            except Exception as e:
-                log(1, f"Fehler bei Feature-Gruppe '{feature_group}': {e}", sym)
+            for future in done_futures:
+                feature_group = futures.pop(future)
+                active_count -= 1
+                completed += 1
 
-            # Progress wird jetzt kontinuierlich via progress_callback gemeldet
-            # Hier nur loggen dass Feature-Gruppe fertig ist
+                try:
+                    fg_candidates, fg_grid_results = future.result()
+                    all_candidates.extend(fg_candidates)
+                    all_grid_results.extend(fg_grid_results)
+
+                    current_mem = psutil.virtual_memory()
+                    current_cpu = psutil.cpu_percent(interval=0.1)
+                    elapsed = time.time() - start_time
+                    log(2, f"Feature-Gruppe '{feature_group}' fertig ({completed}/{n_feature_groups}) "
+                           f"- {len(fg_candidates)} Kandidaten, "
+                           f"RAM: {current_mem.percent:.1f}% ({current_mem.available/(1024**3):.1f}GB frei), "
+                           f"CPU: {current_cpu:.1f}%, Zeit: {elapsed:.1f}s", sym)
+                except Exception as e:
+                    log(1, f"Fehler bei Feature-Gruppe '{feature_group}': {e}", sym)
+
+            # Periodisch prüfen ob neue Feature-Gruppen gestartet werden können
+            now = time.time()
+            if fg_remaining and now - last_scale_check >= 1.0:
+                last_scale_check = now
+
+                while fg_remaining and can_start_feature_group(active_count):
+                    try:
+                        fg_idx, feature_group = next(fg_iter)
+                        future = executor.submit(
+                            _process_feature_group,
+                            fg_idx, feature_group, full_pool, inner_folds,
+                            grid, ctx, regime_config, sym, n_feature_groups,
+                            parallel_mode=True,
+                            progress_callback=progress_callback,
+                            inner_df=inner_df,
+                        )
+                        futures[future] = feature_group
+                        active_count += 1
+                        log(2, f"Gestartet: Feature-Gruppe '{feature_group}' ({active_count} aktiv)", sym)
+                    except StopIteration:
+                        fg_remaining = False
+                        break
+
+            # Kurz warten
+            if futures:
+                time.sleep(0.2)
 
     total_elapsed = time.time() - start_time
     final_mem = psutil.virtual_memory()
