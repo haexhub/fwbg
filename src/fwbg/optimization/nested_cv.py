@@ -853,7 +853,8 @@ def run_inner_cv(
                 early_terminated = True
                 break
 
-        report_progress(ctx.symbol, fold_idx + 1, len(inner_folds), "inner_cv", global_grid_pos, total_grid_combos)
+        # Fold-Progress (wird von progress_callback überschrieben, aber hilft beim Debugging)
+        # report_progress(ctx.symbol, fold_idx + 1, len(inner_folds), "inner_cv", global_grid_pos, total_grid_combos)
 
         # Targets: aus Cache oder neu berechnen
         if cached_targets is not None and fold_idx in cached_targets:

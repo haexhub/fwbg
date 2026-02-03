@@ -217,14 +217,18 @@ class ProgressTracker:
                 msg = self.queue.get(timeout=0.1)
                 with self._lock:
                     if msg["type"] == "progress":
-                        self.worker_status[msg["pid"]] = msg
+                        # Index by symbol, not PID (multiple threads share same PID)
+                        symbol = msg.get("symbol", msg["pid"])
+                        self.worker_status[symbol] = msg
                     elif msg["type"] == "phase":
                         # Phase-Update: Symbol -> Phase-Text speichern
                         self.worker_phases[msg["symbol"]] = msg["phase"]
                     elif msg["type"] == "done":
-                        self.worker_status.pop(msg["pid"], None)
-                        # Phase für dieses Symbol löschen
-                        self.worker_phases.pop(msg.get("symbol"), None)
+                        # Remove by symbol
+                        symbol = msg.get("symbol")
+                        if symbol:
+                            self.worker_status.pop(symbol, None)
+                            self.worker_phases.pop(symbol, None)
             except Empty:
                 continue
             except Exception:
@@ -317,30 +321,24 @@ class ProgressTracker:
                 lines.append(f"║  ✓ {sym:<10} [████████████████] 100%  Fertig".ljust(WIDTH - 1) + "║")
             else:
                 # Noch aktiv oder wartend
-                # Finde Worker-Info für dieses Symbol
-                worker_info = None
-                for info in active_workers.values():
-                    if info.get("symbol") == sym:
-                        worker_info = info
-                        break
+                # Worker-Info direkt per Symbol abrufen (nicht mehr per PID)
+                worker_info = active_workers.get(sym)
 
                 grid_pos = worker_info.get("grid_pos", 0) if worker_info else 0
                 grid_total = worker_info.get("grid_total", 0) if worker_info else 0
                 phase = phases.get(sym, "")
 
                 if grid_total > 0:
-                    # Hat Grid-Fortschritt
+                    # Hat Grid-Fortschritt - Progress-Bar und Text aus gleicher Quelle!
                     worker_pct = int(grid_pos / grid_total * 100)
                     worker_bar_width = 16
                     worker_filled = int(worker_bar_width * grid_pos / grid_total)
                     worker_bar = "▓" * worker_filled + "░" * (worker_bar_width - worker_filled)
 
-                    # Phase kürzen
-                    max_phase = WIDTH - 42
-                    if len(phase) > max_phase:
-                        phase = phase[:max_phase-2] + ".."
+                    # Generiere konsistenten Phase-Text aus grid_pos/grid_total
+                    grid_phase = f"Grid: {grid_pos}/{grid_total} ({worker_pct}%)"
 
-                    lines.append(f"║  → {sym:<10} [{worker_bar}] {worker_pct:3d}%  {phase}".ljust(WIDTH - 1) + "║")
+                    lines.append(f"║  → {sym:<10} [{worker_bar}] {worker_pct:3d}%  {grid_phase}".ljust(WIDTH - 1) + "║")
                 elif phase:
                     # Nur Phase, noch kein Grid
                     max_phase = WIDTH - 20

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fwbg"
-version = "2.2.0"
+version = "2.2.1"
 description = "Forex/Trading Strategy Optimizer with Plugin Architecture"
 readme = "README.md"
 requires-python = ">=3.11"
