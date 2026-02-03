@@ -199,6 +199,7 @@
   },
 
   "resources": {
+    "ram_per_worker_gb": 4.0,
     "ram_per_feature_group_gb": 0.5,
     "cpu_per_feature_group": 1.0,
     "min_free_ram_percent": 0.15,

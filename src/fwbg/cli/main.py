@@ -110,21 +110,12 @@ def run_optimizer(
     else:
         strategy = StrategyConfig()
 
-    # Ressourcen-Einstellungen aus Strategy (oder Defaults)
+    # Ressourcen-Einstellungen aus Strategy-Objekt (bereits geparst)
     resource_settings = {
-        "max_cpu_percent": 0.80,
-        "min_free_ram_percent": 0.20,
-        "ram_per_worker_gb": 3.0,
+        "max_cpu_percent": strategy.resources.max_cpu_percent,
+        "min_free_ram_percent": strategy.resources.min_free_ram_percent,
+        "ram_per_worker_gb": strategy.resources.ram_per_worker_gb,
     }
-    if strategy_metadata:
-        strat_resources = strategy_metadata.get("resources", {})
-        if strat_resources:
-            if strat_resources.get("max_cpu_percent") is not None:
-                resource_settings["max_cpu_percent"] = strat_resources["max_cpu_percent"]
-            if strat_resources.get("min_free_ram_percent") is not None:
-                resource_settings["min_free_ram_percent"] = strat_resources["min_free_ram_percent"]
-            if strat_resources.get("ram_per_worker_gb") is not None:
-                resource_settings["ram_per_worker_gb"] = strat_resources["ram_per_worker_gb"]
 
     # Filter nach bestimmten Assets wenn angegeben
     if asset_filter:
