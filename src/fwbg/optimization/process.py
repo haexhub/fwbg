@@ -210,15 +210,13 @@ def _process_feature_group(
     combos = []
     combo_idx = 0
 
+    skipped_combos = 0
     for tp in grid.tp:
         for sl in grid.sl:
             rrr = tp / sl
             if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                combo_idx += len(timeout_values)
+                skipped_combos += len(timeout_values)
                 log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
-                # Progress-Update auch bei SKIPs
-                if progress_callback:
-                    progress_callback(combo_idx, grid_per_fg)
                 continue
 
             for timeout_bars in timeout_values:
@@ -228,6 +226,11 @@ def _process_feature_group(
                     feature_group, grid_offset, total_grid_combos, inner_df
                 ))
                 combo_idx += 1
+
+    # Progress-Update für übersprungene Combos (alle auf einmal)
+    if skipped_combos > 0 and progress_callback:
+        for _ in range(skipped_combos):
+            progress_callback(0, grid_per_fg)
 
     # Bestimme Anzahl paralleler Worker (max 4, limitiert durch CPU)
     import multiprocessing as mp
@@ -307,24 +310,26 @@ def _process_feature_groups_parallel(
     # Thread-safe Zähler für aggregierten Grid-Fortschritt
     progress_lock = threading.Lock()
     completed_grid_combos = [0]  # Liste für Mutability in Closure
-    last_phase_update = [0]  # Zeitstempel des letzten Phase-Updates
 
-    def progress_callback(grid_count, grid_per_fg):
-        """Callback für Grid-Fortschritt aus Feature-Group-Threads."""
+    def progress_callback(grid_count, grid_per_fg, fg_idx=None):
+        """
+        Callback für Grid-Fortschritt aus Feature-Group-Threads.
+
+        Args:
+            grid_count: Aktuelle Anzahl abgeschlossener Kombinationen in dieser Feature-Gruppe
+            grid_per_fg: Gesamtzahl Kombinationen pro Feature-Gruppe
+            fg_idx: Index der Feature-Gruppe (optional, für besseres Tracking)
+        """
         with progress_lock:
+            # Inkrementiere globalen Zähler
             completed_grid_combos[0] += 1
             current = completed_grid_combos[0]
-            now = time.time()
 
-            # Phase-Update alle 2 Sekunden um nicht zu viele Updates zu senden
-            if now - last_phase_update[0] >= 2.0:
-                pct = int(current / total_grid_combos * 100)
-                report_phase(sym, f"Grid-Search: {current}/{total_grid_combos} ({pct}%)")
-                # Parallel-Modus kurz deaktivieren für aggregiertes Update
-                set_parallel_mode(False)
-                report_progress(sym, 0, 0, "grid_search", current, total_grid_combos)
-                set_parallel_mode(True)
-                last_phase_update[0] = now
+            # Progress-Update senden (Phase-Text wird in progress.py generiert)
+            # Parallel-Modus kurz deaktivieren für Update
+            set_parallel_mode(False)
+            report_progress(sym, 0, 0, "grid_search", current, total_grid_combos)
+            set_parallel_mode(True)
 
     # RAM/CPU-Limits aus Strategy-Config (via ctx)
     total_ram_gb = psutil.virtual_memory().total / (1024**3)
@@ -400,14 +405,11 @@ def _process_feature_groups_parallel(
     log(3, f"    - CPU-basiertes Limit: {cpu_based_limit} Threads ({usable_cores} nutzbare Kerne / {cpu_per_thread} pro Thread)", sym)
     log(2, f"  => Effektives Limit: {max_workers} parallele Feature-Gruppen", sym)
 
-    # Initialen Progress reporten (grid_pos=1 damit der Worker als aktiv gilt)
-    report_progress(sym, 0, n_feature_groups, "feature_groups", 1, total_grid_combos)
-
     completed = 0
     start_time = time.time()
 
-    # Initialen Phase-Update senden
-    report_phase(sym, f"Grid-Search: 0/{total_grid_combos} (0%)")
+    # Initialen Progress reporten (grid_pos=0, wird durch progress_callback aktualisiert)
+    report_progress(sym, 0, n_feature_groups, "feature_groups", 0, total_grid_combos)
 
     # HINWEIS: ThreadPoolExecutor statt ProcessPoolExecutor ist hier BEABSICHTIGT:
     # 1. XGBoost parallelisiert intern bereits mit n_jobs (libgomp/OpenMP)
