@@ -110,6 +110,48 @@ def _process_single_grid_combo(
     return candidate, grid_result
 
 
+def _process_tp_sl_combo_wrapper(args):
+    """
+    Wrapper-Funktion für parallele Verarbeitung einer TP/SL+timeout Kombination.
+
+    Args:
+        args: Tuple mit allen benötigten Parametern
+
+    Returns:
+        Tuple von (candidate_or_none, grid_result_or_none, combo_idx)
+    """
+    (tp, sl, timeout_bars, combo_idx, group_features, inner_folds, ctx, regime_config,
+     feature_group, grid_offset, total_grid_combos, inner_df) = args
+
+    from .nested_cv import compute_targets_cached, slice_targets_for_fold
+
+    global_grid_pos = grid_offset + combo_idx + 1
+
+    # Berechne Targets für diese Kombination
+    cached_targets = None
+    if inner_df is not None:
+        full_targets_long, full_targets_short = compute_targets_cached(
+            inner_df, tp, sl, ctx, timeout_bars,
+            exit_strategy_mode=ctx.exit_strategy,
+        )
+        cached_targets = {}
+        for fold_idx, (train_df, _) in enumerate(inner_folds):
+            fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
+                full_targets_long, full_targets_short, inner_df, train_df, ctx
+            )
+            cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
+
+    # Inner CV ausführen
+    candidate, grid_result = _process_single_grid_combo(
+        tp, sl, timeout_bars,
+        group_features, inner_folds, ctx, regime_config,
+        feature_group, global_grid_pos, total_grid_combos,
+        cached_targets
+    )
+
+    return candidate, grid_result, combo_idx
+
+
 def _process_feature_group(
     fg_idx: int,
     feature_group: str,
@@ -137,7 +179,8 @@ def _process_feature_group(
     Returns:
         Tuple von (candidates_list, grid_results_list)
     """
-    from .nested_cv import compute_targets_cached, slice_targets_for_fold
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     # Setze Parallel-Modus für diesen Thread (unterdrückt Progress-Updates)
     if parallel_mode:
@@ -156,79 +199,75 @@ def _process_feature_group(
     grid_offset = fg_idx * grid_per_fg
 
     # Timeout-Werte: Bei adaptive_timeout nur [None], sonst Grid-Werte
-    # Bei adaptive_timeout wird der Timeout pro Trade dynamisch berechnet
     adaptive_timeout = ctx.exit_params.get("adaptive_timeout", False)
     if adaptive_timeout:
         timeout_values = [None]  # Timeout wird in compute_targets dynamisch berechnet
     else:
         timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
 
-    # === Grid-Search mit optimiertem Target-Caching ===
-    # OPTIMIERUNG: Targets werden pro TP/SL einmal berechnet und für alle
-    # timeout_bars Werte wiederverwendet. Das spart erheblich Speicher und CPU.
-    # Alte Arrays werden explizit freigegeben um Memory-Druck zu reduzieren.
-    import gc
-
-    candidates = []
-    grid_results = []
-    grid_count = 0
-    gc_interval = 50  # GC alle 50 Iterationen
+    # === Parallele Grid-Search über TP/SL-Kombinationen ===
+    # Erstelle alle Kombinationen und verarbeite sie parallel
+    combos = []
+    combo_idx = 0
 
     for tp in grid.tp:
         for sl in grid.sl:
             rrr = tp / sl
             if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                grid_count += len(timeout_values)
+                combo_idx += len(timeout_values)
                 log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                # Progress-Update auch bei SKIPs
+                if progress_callback:
+                    progress_callback(combo_idx, grid_per_fg)
                 continue
 
-            # Berechne Targets EINMAL pro TP/SL (nicht pro timeout!)
-            # timeout_bars beeinflusst nur die Trade-Simulation, nicht die Targets
-            cached_targets = None
-            full_targets_long = None
-            full_targets_short = None
-
-            if inner_df is not None:
-                # Targets berechnen (ohne timeout - wird in simulate_trades behandelt)
-                full_targets_long, full_targets_short = compute_targets_cached(
-                    inner_df, tp, sl, ctx, None,  # timeout=None für Target-Berechnung
-                    exit_strategy_mode=ctx.exit_strategy,
-                )
-                # Fold-Slices vorbereiten
-                cached_targets = {}
-                for fold_idx, (train_df, _) in enumerate(inner_folds):
-                    fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
-                        full_targets_long, full_targets_short, inner_df, train_df, ctx
-                    )
-                    cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
-
-            # Iteriere über timeout_values mit wiederverwendeten Targets
             for timeout_bars in timeout_values:
-                grid_count += 1
-                global_grid_pos = grid_offset + grid_count
-
-                # Inner CV ausführen (Targets werden wiederverwendet)
-                candidate, grid_result = _process_single_grid_combo(
-                    tp, sl, timeout_bars,
+                combos.append((
+                    tp, sl, timeout_bars, combo_idx,
                     group_features, inner_folds, ctx, regime_config,
-                    feature_group, global_grid_pos, total_grid_combos,
-                    cached_targets
-                )
+                    feature_group, grid_offset, total_grid_combos, inner_df
+                ))
+                combo_idx += 1
 
-                if progress_callback:
-                    progress_callback(grid_count, grid_per_fg)
+    # Bestimme Anzahl paralleler Worker (max 4, limitiert durch CPU)
+    import multiprocessing as mp
+    max_workers = min(4, mp.cpu_count(), len(combos))
+
+    candidates = []
+    grid_results = []
+    progress_lock = threading.Lock()
+    completed_count = [0]
+
+    # Verarbeite Kombinationen parallel
+    if max_workers > 1 and len(combos) > 1:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_process_tp_sl_combo_wrapper, combo): combo for combo in combos}
+
+            for future in as_completed(futures):
+                candidate, grid_result, idx = future.result()
+
+                with progress_lock:
+                    completed_count[0] += 1
+                    if progress_callback:
+                        progress_callback(completed_count[0], grid_per_fg)
 
                 if candidate:
                     candidates.append(candidate)
                 if grid_result:
                     grid_results.append(grid_result)
+    else:
+        # Fallback: Sequentiell verarbeiten wenn nur 1 Worker oder 1 Combo
+        for combo in combos:
+            candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
 
-            # Speicher explizit freigeben nach jedem TP/SL Paar
-            del cached_targets, full_targets_long, full_targets_short
+            completed_count[0] += 1
+            if progress_callback:
+                progress_callback(completed_count[0], grid_per_fg)
 
-            # Periodischer GC um Memory-Fragmentierung zu reduzieren
-            if grid_count % gc_interval == 0:
-                gc.collect()
+            if candidate:
+                candidates.append(candidate)
+            if grid_result:
+                grid_results.append(grid_result)
 
     return candidates, grid_results
 
