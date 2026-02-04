@@ -71,6 +71,9 @@ def _wait_for_resources(
         return
     _throttle_check_counter = 0
 
+    # Debug: Zeige dass Check durchgeführt wird
+    log(0, f"CPU-Check...", sym)
+
     # Normalisiere Prozent-Werte
     max_cpu = max_cpu_percent / 100 if max_cpu_percent > 1 else max_cpu_percent
     min_ram = min_free_ram_percent / 100 if min_free_ram_percent > 1 else min_free_ram_percent
