@@ -46,7 +46,8 @@ def _wait_for_resources(
     max_cpu_percent: float = 0.80,
     min_free_ram_percent: float = 0.15,
     check_interval: float = 1.0,
-    max_wait: float = 120.0
+    max_wait: float = 120.0,
+    sym: str = None
 ):
     """
     Wartet, bis genug CPU/RAM-Ressourcen verfügbar sind.
@@ -60,6 +61,7 @@ def _wait_for_resources(
         min_free_ram_percent: Minimaler freier RAM (0.0-1.0 oder Prozent)
         check_interval: Sekunden zwischen Checks während des Wartens
         max_wait: Maximale Wartezeit in Sekunden
+        sym: Asset-Symbol für Log-Ausgaben
     """
     global _last_throttle_check, _throttle_wait_count
 
@@ -96,22 +98,22 @@ def _wait_for_resources(
             if waited:
                 _throttle_wait_count += 1
                 elapsed = time.time() - wait_start
-                log(2, f"  Ressourcen wieder verfügbar nach {elapsed:.1f}s Pause (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)")
+                log(1, f"RESUME nach {elapsed:.1f}s (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)", sym)
             break
 
         # Max Wartezeit erreicht?
         if time.time() - wait_start > max_wait:
-            log(1, f"  Max Wartezeit ({max_wait}s) erreicht - fahre trotzdem fort (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)")
+            log(1, f"TIMEOUT nach {max_wait}s - fahre fort (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)", sym)
             break
 
         # Erste Warnung loggen
         if not waited:
             reasons = []
             if not cpu_ok:
-                reasons.append(f"CPU {cpu_percent*100:.0f}% > {max_cpu*100:.0f}%")
+                reasons.append(f"CPU {cpu_percent*100:.0f}%")
             if not ram_ok:
-                reasons.append(f"RAM {free_ram_percent*100:.0f}% frei < {min_ram*100:.0f}%")
-            log(2, f"  Pausiere Grid-Search ({', '.join(reasons)})...")
+                reasons.append(f"RAM {free_ram_percent*100:.0f}%")
+            log(1, f"PAUSE ({', '.join(reasons)})", sym)
             waited = True
 
         # Warten bevor nächster Check
@@ -329,7 +331,8 @@ def _process_feature_group(
             max_cpu_percent=ctx.max_cpu_percent,
             min_free_ram_percent=ctx.min_free_ram_percent,
             check_interval=1.0,
-            max_wait=300.0
+            max_wait=300.0,
+            sym=sym
         )
 
         candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
