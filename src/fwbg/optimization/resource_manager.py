@@ -340,7 +340,7 @@ class AdaptivePoolManager:
 
             # Tracking für periodisches Scaling
             last_scale_check = time.time()
-            scale_check_interval = 2.0  # Sekunden zwischen Scale-Checks
+            scale_check_interval = 5.0  # Sekunden zwischen Scale-Checks (konservativ für CPU/RAM-Messung)
             items_remaining = True
 
             while futures or items_remaining:
@@ -376,9 +376,13 @@ class AdaptivePoolManager:
                 if now - last_scale_check >= scale_check_interval:
                     last_scale_check = now
 
-                    # Versuche neue Tasks zu starten wenn Ressourcen frei
+                    # KONSERVATIV: Max 1 Worker pro Scale-Check
+                    # Das gibt dem System Zeit, die CPU/RAM-Last zu messen
+                    # bevor weitere Worker gestartet werden
                     spawned = 0
-                    while items_remaining:
+                    max_spawn_per_check = 1
+
+                    while items_remaining and spawned < max_spawn_per_check:
                         if not self.can_spawn_worker(active_count):
                             break
 

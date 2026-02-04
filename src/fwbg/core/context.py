@@ -84,12 +84,11 @@ class SimulationContext:
     first_fold_min_pnl: float = -10.0
     first_fold_min_trades: int = 5
 
-    # Ressourcen-Limits
-    ram_per_feature_group_gb: float = 0.5
-    cpu_per_feature_group: float = 0.5
-    min_free_ram_percent: float = 0.15
-    max_cpu_percent: float = 0.90
-    xgboost_n_jobs: int = 0
+    # Ressourcen-Limits (Globale Limits - Dynamische Optimierung)
+    ram_per_worker_gb: float = 4.0  # Geschätzter RAM pro Asset-Worker
+    min_free_ram_percent: float = 0.15  # Mindestens 15% RAM frei halten
+    max_cpu_percent: float = 0.90  # Maximal 90% CPU nutzen
+    xgboost_n_jobs: int = 0  # 0 = Auto, 1 = Single-threaded, -1 = Alle Kerne
 
     # Exit-Strategy (Plugin)
     exit_strategy: str = "atr_based"
@@ -146,9 +145,8 @@ class SimulationContext:
             feature_selection=strategy.feature_selector,
             max_features=strategy.feature_params.get("max_features", 0),
             min_z_score=strategy.feature_params.get("min_z_score", 0.3),
-            # Ressourcen-Limits aus Strategy-Config
-            ram_per_feature_group_gb=strategy.resources.ram_per_feature_group_gb,
-            cpu_per_feature_group=strategy.resources.cpu_per_feature_group,
+            # Ressourcen-Limits aus Strategy-Config (Globale Limits)
+            ram_per_worker_gb=strategy.resources.ram_per_worker_gb,
             min_free_ram_percent=strategy.resources.min_free_ram_percent,
             max_cpu_percent=strategy.resources.max_cpu_percent,
             xgboost_n_jobs=strategy.resources.xgboost_n_jobs,

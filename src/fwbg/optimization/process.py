@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing as mp
+import psutil
 
 from fwbg.data.config import (
     DATA_PATH, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
@@ -34,6 +35,86 @@ from fwbg.utils.progress import (
 from fwbg.utils.logging import log
 from .nested_cv import nested_cv_split, run_inner_cv, evaluate_on_holdout
 from fwbg.utils.xgb_config import set_xgboost_n_jobs
+
+
+# Globale Throttling-Variablen
+_last_throttle_check = 0
+_throttle_wait_count = 0
+
+
+def _wait_for_resources(
+    max_cpu_percent: float = 0.80,
+    min_free_ram_percent: float = 0.15,
+    check_interval: float = 2.0,
+    max_wait: float = 60.0
+):
+    """
+    Wartet, bis genug CPU/RAM-Ressourcen verfügbar sind.
+
+    Diese Funktion pausiert die Grid-Search-Iteration, wenn:
+    - CPU-Auslastung > max_cpu_percent
+    - Freier RAM < min_free_ram_percent
+
+    Args:
+        max_cpu_percent: Maximale CPU-Auslastung (0.0-1.0 oder Prozent)
+        min_free_ram_percent: Minimaler freier RAM (0.0-1.0 oder Prozent)
+        check_interval: Sekunden zwischen Checks
+        max_wait: Maximale Wartezeit in Sekunden
+    """
+    global _last_throttle_check, _throttle_wait_count
+
+    # Normalisiere Prozent-Werte
+    max_cpu = max_cpu_percent / 100 if max_cpu_percent > 1 else max_cpu_percent
+    min_ram = min_free_ram_percent / 100 if min_free_ram_percent > 1 else min_free_ram_percent
+
+    # Nicht zu häufig checken (Performance)
+    now = time.time()
+    if now - _last_throttle_check < check_interval:
+        return
+
+    _last_throttle_check = now
+
+    wait_start = time.time()
+    waited = False
+
+    while True:
+        # CPU-Check
+        cpu_percent = psutil.cpu_percent(interval=0.1) / 100.0
+
+        # RAM-Check
+        mem = psutil.virtual_memory()
+        free_ram_percent = mem.available / mem.total
+
+        # Prüfe ob Ressourcen OK
+        cpu_ok = cpu_percent < max_cpu
+        ram_ok = free_ram_percent > min_ram
+
+        if cpu_ok and ram_ok:
+            if waited:
+                _throttle_wait_count += 1
+                elapsed = time.time() - wait_start
+                log(2, f"  Ressourcen wieder verfügbar nach {elapsed:.1f}s Pause (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)")
+            break
+
+        # Max Wartezeit erreicht?
+        if time.time() - wait_start > max_wait:
+            log(1, f"  Max Wartezeit ({max_wait}s) erreicht - fahre trotzdem fort")
+            break
+
+        # Erste Warnung loggen
+        if not waited:
+            reasons = []
+            if not cpu_ok:
+                reasons.append(f"CPU {cpu_percent*100:.0f}% > {max_cpu*100:.0f}%")
+            if not ram_ok:
+                reasons.append(f"RAM {free_ram_percent*100:.0f}% frei < {min_ram*100:.0f}%")
+            log(2, f"  Pausiere Grid-Search ({', '.join(reasons)})...")
+            waited = True
+
+        # Kurz warten
+        time.sleep(check_interval)
+
+    return
 
 
 def _process_single_grid_combo(
@@ -239,6 +320,14 @@ def _process_feature_group(
     # Sequentielle Verarbeitung der TP/SL-Kombinationen
     # (Parallelisierung erfolgt auf Feature-Gruppen-Ebene mit Ressourcen-Check)
     for combo in combos:
+        # Ressourcen-Check: Pausiere wenn CPU/RAM zu hoch
+        _wait_for_resources(
+            max_cpu_percent=ctx.max_cpu_percent,
+            min_free_ram_percent=ctx.min_free_ram_percent,
+            check_interval=2.0,
+            max_wait=60.0
+        )
+
         candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
 
         if progress_callback:
@@ -313,44 +402,44 @@ def _process_feature_groups_parallel(
     free_ram_gb = psutil.virtual_memory().available / (1024**3)
     total_cores = mp.cpu_count()
 
-    # Konfigurierbare Werte aus ctx
-    ram_per_thread_gb = ctx.ram_per_feature_group_gb
+    # Konfigurierbare globale Limits
     min_free_ram_percent = ctx.min_free_ram_percent
     max_cpu_percent = ctx.max_cpu_percent
-    cpu_per_thread = ctx.cpu_per_feature_group
 
-    # Berechne minimalen freien RAM (ABSOLUT, nicht vom aktuellen freien)
+    # Dynamische RAM-Schätzung pro Feature-Group
+    # Schätze ~25% von ram_per_worker_gb pro Feature-Group Thread
+    # (Feature-Groups sind weniger RAM-intensiv als vollständige Asset-Worker)
+    ram_per_worker_gb = ctx.ram_per_worker_gb
+    estimated_ram_per_fg = ram_per_worker_gb * 0.25
+
+    # Berechne minimalen freien RAM (ABSOLUT)
     min_free_ram_gb = total_ram_gb * min_free_ram_percent
 
-    # Aktuelle RAM-Auslastung berücksichtigen (wichtig bei mehreren Assets!)
-    # Wenn bereits > (1-min_free_ram_percent) genutzt wird, weniger Threads starten
+    # Aktuelle RAM-Auslastung berücksichtigen
     current_used_percent = psutil.virtual_memory().percent / 100.0
     target_max_used_percent = 1.0 - min_free_ram_percent
 
     if current_used_percent > target_max_used_percent:
-        # System ist bereits überlastet - stark reduzieren
-        # Nutze nur den RAM der ÜBER min_free_ram_gb frei ist
+        # System ist bereits überlastet
         available_ram_for_threads = max(0, free_ram_gb - min_free_ram_gb)
         log(2, f"  WARNUNG: RAM bereits bei {current_used_percent*100:.0f}% (Ziel: max {target_max_used_percent*100:.0f}%)", sym)
     else:
         # Berechne wie viel RAM wir noch nutzen dürfen
-        # Nicht vom aktuellen freien RAM, sondern vom erlaubten Maximum
         max_usable_ram_gb = total_ram_gb * target_max_used_percent
         currently_used_gb = total_ram_gb * current_used_percent
         available_ram_for_threads = max(0, max_usable_ram_gb - currently_used_gb)
 
-    # RAM-basiertes Limit: mindestens 1 Thread, auch wenn RAM knapp ist
-    # Bei 0 verfügbarem RAM -> 1 Thread (sequentiell)
-    if available_ram_for_threads < ram_per_thread_gb:
-        ram_based_limit = 1
+    # RAM-basiertes Limit
+    if available_ram_for_threads < estimated_ram_per_fg:
+        ram_based_limit = 1  # Mindestens 1 Thread sequentiell
     else:
-        ram_based_limit = max(1, int(available_ram_for_threads / ram_per_thread_gb))
+        ram_based_limit = max(1, int(available_ram_for_threads / estimated_ram_per_fg))
 
-    # CPU-Limit basierend auf max_cpu_percent und cpu_per_thread
-    usable_cores = int(total_cores * max_cpu_percent)
-    cpu_based_limit = max(1, int(usable_cores / cpu_per_thread))
+    # CPU-Limit: Maximal max_cpu_percent der Kerne nutzen
+    # Jede Feature-Group bekommt dynamisch CPU zugeteilt basierend auf Verfügbarkeit
+    cpu_based_limit = max(1, int(total_cores * max_cpu_percent))
 
-    # Effektives Limit
+    # Effektives Limit: Das Minimum aus RAM, CPU und Anzahl Feature-Groups
     max_workers = min(ram_based_limit, cpu_based_limit, n_feature_groups)
 
     # XGBoost n_jobs: aus Config oder automatisch berechnen

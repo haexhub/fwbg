@@ -1,10 +1,15 @@
 {
   "name": "Macro Driven Strategy",
-  "description": "Nutzt makroökonomische Indikatoren und Cross-Asset-Signale als primäre Signalquelle",
-  "tags": ["macro", "fundamental", "vix", "intermarket", "atr_based"],
+  "description": "Nutzt makro\u00f6konomische Indikatoren und Cross-Asset-Signale als prim\u00e4re Signalquelle",
+  "tags": [
+    "macro",
+    "fundamental",
+    "vix",
+    "intermarket",
+    "atr_based"
+  ],
   "hypothesis": "Makro-Faktoren treiben langfristige Marktbewegungen",
   "expected_outcome": "Weniger aber qualitativ hochwertige Trades, RRR 1.5-4.0",
-
   "indicators": [
     "risk",
     "regime",
@@ -13,21 +18,40 @@
     "trend",
     "multi_timeframe"
   ],
-
   "indicator_params": {
     "risk": {
-      "dd_windows": [100, 200],
-      "cvar_windows": [50, 100],
-      "vov_windows": [50, 100],
+      "dd_windows": [
+        100,
+        200
+      ],
+      "cvar_windows": [
+        50,
+        100
+      ],
+      "vov_windows": [
+        50,
+        100
+      ],
       "compute_correlations": true
     },
     "regime": {
-      "hurst_windows": [200, 500],
+      "hurst_windows": [
+        200,
+        500
+      ],
       "step": 10
     },
     "dynamics": {
-      "lookbacks": [8, 24, 48],
-      "lag_periods": [24, 48, 96]
+      "lookbacks": [
+        8,
+        24,
+        48
+      ],
+      "lag_periods": [
+        24,
+        48,
+        96
+      ]
     },
     "macro_surprise": {
       "vol_lookback": 20,
@@ -35,36 +59,43 @@
       "gap_ma_period": 10
     },
     "trend": {
-      "adx_periods": [21],
-      "ema_periods": [50, 100, 200]
+      "adx_periods": [
+        21
+      ],
+      "ema_periods": [
+        50,
+        100,
+        200
+      ]
     },
     "multi_timeframe": {
       "h4_bars": 4,
       "d1_bars": 24,
-      "ema_periods": [50, 100]
+      "ema_periods": [
+        50,
+        100
+      ]
     }
   },
-
   "exit_strategy": "atr_based",
-
   "exit_params": {
     "atr_period": 21,
     "min_tp_pips": 15,
     "min_sl_pips": 12
   },
-
   "feature_selector": "boruta",
-
   "feature_params": {
     "max_features": 35,
     "n_iter": 12,
     "n_estimators": 100
   },
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 200,
       "max_depth": 6,
@@ -73,34 +104,114 @@
       "colsample_bytree": 0.8
     }
   },
-
   "grids": {
     "FOREX": {
-      "tp": [2.0, 2.5, 3.0, 4.0, 5.0],
-      "sl": [1.0, 1.5, 2.0, 2.5],
-      "ct": [0.6, 0.65, 0.7, 0.75],
-      "timeout_bars": [null, 48, 96, 168]
+      "tp": [
+        2.0,
+        2.5,
+        3.0,
+        4.0,
+        5.0
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0,
+        2.5
+      ],
+      "ct": [
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ],
+      "timeout_bars": [
+        null,
+        48,
+        96,
+        168
+      ]
     },
     "INDEX": {
-      "tp": [2.0, 3.0, 4.0, 5.0, 6.0],
-      "sl": [1.0, 1.5, 2.0, 3.0],
-      "ct": [0.6, 0.65, 0.7, 0.75],
-      "timeout_bars": [null, 48, 96, 168]
+      "tp": [
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0,
+        3.0
+      ],
+      "ct": [
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ],
+      "timeout_bars": [
+        null,
+        48,
+        96,
+        168
+      ]
     },
     "COMMODITY": {
-      "tp": [2.0, 3.0, 4.0, 5.0, 6.0],
-      "sl": [1.0, 1.5, 2.0, 3.0],
-      "ct": [0.6, 0.65, 0.7, 0.75],
-      "timeout_bars": [null, 48, 96, 168]
+      "tp": [
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0,
+        3.0
+      ],
+      "ct": [
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ],
+      "timeout_bars": [
+        null,
+        48,
+        96,
+        168
+      ]
     },
     "CRYPTO": {
-      "tp": [3.0, 4.0, 5.0, 6.0, 8.0],
-      "sl": [1.5, 2.0, 3.0, 4.0],
-      "ct": [0.6, 0.65, 0.7],
-      "timeout_bars": [null, 96, 168]
+      "tp": [
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        8.0
+      ],
+      "sl": [
+        1.5,
+        2.0,
+        3.0,
+        4.0
+      ],
+      "ct": [
+        0.6,
+        0.65,
+        0.7
+      ],
+      "timeout_bars": [
+        null,
+        96,
+        168
+      ]
     }
   },
-
   "validation": {
     "method": "walk_forward",
     "folds": 8,
@@ -108,16 +219,12 @@
     "min_trades": 50,
     "n_inner_folds": 5
   },
-
   "filters": {
     "min_rrr": 1.2,
     "min_trades": 35,
     "max_drawdown": 0.5
   },
-
   "resources": {
-    "ram_per_feature_group_gb": 0.5,
-    "cpu_per_feature_group": 0.5,
     "max_cpu_percent": 0.8
   }
 }

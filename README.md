@@ -162,6 +162,57 @@ TP und SL als Spread-Multiplikatoren (konstant):
 
 ---
 
+## Ressourcen-Management
+
+Das System nutzt **dynamische Ressourcen-Optimierung** mit automatischer Pause bei Überlastung.
+
+### Konfiguration
+
+Nur 4 globale Parameter in `strategies/*.json`:
+
+```json
+{
+  "resources": {
+    "ram_per_worker_gb": 4.0,
+    "min_free_ram_percent": 0.15,
+    "max_cpu_percent": 0.8,
+    "xgboost_n_jobs": 0
+  }
+}
+```
+
+| Parameter | Beschreibung | Default |
+|-----------|--------------|---------|
+| `ram_per_worker_gb` | Geschätzter RAM pro Asset-Worker | 4.0 GB |
+| `min_free_ram_percent` | Mindest-freier RAM (System pausiert wenn unterschritten) | 0.15 (15%) |
+| `max_cpu_percent` | Max CPU-Auslastung (System pausiert wenn überschritten) | 0.8 (80%) |
+| `xgboost_n_jobs` | XGBoost Threading: 0=auto, 1=single-thread, -1=alle Kerne | 0 |
+
+### Dynamisches Verhalten
+
+**Automatisches Scaling:**
+1. Startet konservativ mit 1 Worker
+2. Skaliert alle 5s um max +1 Worker wenn Ressourcen OK
+3. Stoppt Scaling bei CPU > `max_cpu_percent` ODER RAM < `min_free_ram_percent`
+
+**Grid-Search Throttling:**
+- Vor jeder Grid-Iteration: CPU/RAM-Check
+- Bei Überlastung: **Pausiert bis Ressourcen frei**
+- Wartet max 60s, dann Fortsetzung trotzdem
+
+**Beispiel-Log:**
+```
+[ResourceManager] System: 16 Cores, 64.0 GB RAM
+[ResourceManager] Limits: max 8 Workers (CPU<80%, RAM=4GB/Worker)
+[ResourceManager] Aktuell: 48.2 GB RAM frei, CPU bei 12%
+[ResourceManager] Initial gestartet: 1 Worker (skaliert dynamisch bis max 8)
+[ResourceManager] Skaliert: +1 Worker (jetzt 2 aktiv)
+  Pausiere Grid-Search (CPU 82% > 80%)...
+  Ressourcen wieder verfügbar nach 4.2s Pause (CPU: 76%, RAM: 72% frei)
+```
+
+---
+
 ## Ergebnisse
 
 Optimierungsergebnisse in `test_results/<timestamp>/`:

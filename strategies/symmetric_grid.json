@@ -1,10 +1,15 @@
 {
   "name": "Symmetrisches TP/SL Grid",
   "description": "Testet alle RRR-Kombinationen - KI entscheidet ob Scalping (hohe WR) oder Trend (hohes RRR) besser ist",
-  "tags": ["symmetric_grid", "rrr_exploration", "long_short", "macro", "atr_based"],
-  "hypothesis": "Ein symmetrisches Grid könnte profitable Konfigurationen finden, die mit dem asymmetrischen Grid (RRR >= 0.5) nicht getestet wurden - z.B. Scalping-Strategien mit kleinem TP und großem SL",
-  "expected_outcome": "Möglicherweise neue profitable Assets oder bessere Konfigurationen für bestehende Assets",
-
+  "tags": [
+    "symmetric_grid",
+    "rrr_exploration",
+    "long_short",
+    "macro",
+    "atr_based"
+  ],
+  "hypothesis": "Ein symmetrisches Grid k\u00f6nnte profitable Konfigurationen finden, die mit dem asymmetrischen Grid (RRR >= 0.5) nicht getestet wurden - z.B. Scalping-Strategien mit kleinem TP und gro\u00dfem SL",
+  "expected_outcome": "M\u00f6glicherweise neue profitable Assets oder bessere Konfigurationen f\u00fcr bestehende Assets",
   "indicators": [
     "trend",
     "momentum",
@@ -13,55 +18,87 @@
     "risk",
     "dynamics"
   ],
-
   "indicator_params": {
     "trend": {
-      "adx_periods": [14, 21],
-      "ema_periods": [21, 50, 100]
+      "adx_periods": [
+        14,
+        21
+      ],
+      "ema_periods": [
+        21,
+        50,
+        100
+      ]
     },
     "momentum": {
-      "rsi_periods": [7, 14],
-      "stoch_periods": [14]
+      "rsi_periods": [
+        7,
+        14
+      ],
+      "stoch_periods": [
+        14
+      ]
     },
     "volatility": {
-      "bb_periods": [20],
-      "atr_periods": [7, 14]
+      "bb_periods": [
+        20
+      ],
+      "atr_periods": [
+        7,
+        14
+      ]
     },
     "regime": {
-      "hurst_windows": [100, 200]
+      "hurst_windows": [
+        100,
+        200
+      ]
     },
     "risk": {
-      "dd_windows": [50, 100],
-      "cvar_windows": [50],
-      "vov_windows": [20, 50],
+      "dd_windows": [
+        50,
+        100
+      ],
+      "cvar_windows": [
+        50
+      ],
+      "vov_windows": [
+        20,
+        50
+      ],
       "compute_correlations": true
     },
     "dynamics": {
-      "lookbacks": [4, 8, 24],
-      "lag_periods": [8, 24]
+      "lookbacks": [
+        4,
+        8,
+        24
+      ],
+      "lag_periods": [
+        8,
+        24
+      ]
     }
   },
-
   "exit_strategy": "atr_based",
-
   "exit_params": {
     "atr_period": 14,
     "min_tp_pips": 8,
     "min_sl_pips": 8
   },
-
   "feature_selector": "boruta",
-
   "feature_params": {
     "max_features": 30,
     "n_iter": 10,
     "n_estimators": 100
   },
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 150,
       "max_depth": 5,
@@ -70,20 +107,49 @@
       "colsample_bytree": 0.8
     }
   },
-
   "assets": {
-    "classes": ["COMMODITY"]
+    "classes": [
+      "COMMODITY"
+    ]
   },
-
   "grids": {
     "COMMODITY": {
-      "tp": [0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0],
-      "sl": [0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0],
-      "ct": [0.5, 0.52, 0.55, 0.6, 0.65, 0.7],
-      "timeout_bars": [12, 24, 48, 96]
+      "tp": [
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        4.0,
+        5.0
+      ],
+      "sl": [
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        4.0,
+        5.0
+      ],
+      "ct": [
+        0.5,
+        0.52,
+        0.55,
+        0.6,
+        0.65,
+        0.7
+      ],
+      "timeout_bars": [
+        12,
+        24,
+        48,
+        96
+      ]
     }
   },
-
   "validation": {
     "method": "walk_forward",
     "folds": 8,
@@ -91,16 +157,12 @@
     "min_trades": 80,
     "n_inner_folds": 5
   },
-
   "filters": {
     "min_rrr": 0.0,
     "min_trades": 40,
     "max_drawdown": 0.5
   },
-
   "resources": {
-    "ram_per_feature_group_gb": 0.5,
-    "cpu_per_feature_group": 0.5,
     "max_cpu_percent": 0.8
   }
 }

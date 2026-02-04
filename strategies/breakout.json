@@ -1,10 +1,15 @@
 {
   "name": "Breakout Strategy",
-  "description": "Handelt Ausbrüche aus Konsolidierungszonen, folgt dem Momentum",
-  "tags": ["breakout", "momentum", "trend_start", "volatility_expansion", "atr_based"],
-  "hypothesis": "Ausbrüche aus engen Ranges führen oft zu starken Bewegungen",
+  "description": "Handelt Ausbr\u00fcche aus Konsolidierungszonen, folgt dem Momentum",
+  "tags": [
+    "breakout",
+    "momentum",
+    "trend_start",
+    "volatility_expansion",
+    "atr_based"
+  ],
+  "hypothesis": "Ausbr\u00fcche aus engen Ranges f\u00fchren oft zu starken Bewegungen",
   "expected_outcome": "Moderate Win-Rate (40-55%) bei hoher RRR (1.5-3.0)",
-
   "indicators": [
     "volatility",
     "trend",
@@ -13,27 +18,51 @@
     "structure",
     "macro_surprise"
   ],
-
   "indicator_params": {
     "volatility": {
-      "bb_periods": [20],
-      "atr_periods": [7, 14, 21]
+      "bb_periods": [
+        20
+      ],
+      "atr_periods": [
+        7,
+        14,
+        21
+      ]
     },
     "trend": {
-      "adx_periods": [14, 21],
-      "ema_periods": [21, 50]
+      "adx_periods": [
+        14,
+        21
+      ],
+      "ema_periods": [
+        21,
+        50
+      ]
     },
     "momentum": {
-      "rsi_periods": [14],
-      "roc_periods": [5, 10, 20]
+      "rsi_periods": [
+        14
+      ],
+      "roc_periods": [
+        5,
+        10,
+        20
+      ]
     },
     "price_action": {
       "hh_ll_period": 5,
       "compute_volume": true
     },
     "structure": {
-      "path_windows": [10, 20, 50],
-      "event_periods": [20, 50]
+      "path_windows": [
+        10,
+        20,
+        50
+      ],
+      "event_periods": [
+        20,
+        50
+      ]
     },
     "macro_surprise": {
       "vol_lookback": 20,
@@ -41,27 +70,25 @@
       "gap_ma_period": 10
     }
   },
-
   "exit_strategy": "atr_based",
-
   "exit_params": {
     "atr_period": 14,
     "min_tp_pips": 12,
     "min_sl_pips": 10
   },
-
   "feature_selector": "boruta",
-
   "feature_params": {
     "max_features": 30,
     "n_iter": 10,
     "n_estimators": 100
   },
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 150,
       "max_depth": 5,
@@ -70,34 +97,107 @@
       "colsample_bytree": 0.8
     }
   },
-
   "grids": {
     "FOREX": {
-      "tp": [1.5, 2.0, 2.5, 3.0, 4.0],
-      "sl": [0.75, 1.0, 1.25, 1.5],
-      "ct": [0.55, 0.6, 0.65, 0.7],
-      "timeout_bars": [24, 48, 96]
+      "tp": [
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        4.0
+      ],
+      "sl": [
+        0.75,
+        1.0,
+        1.25,
+        1.5
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7
+      ],
+      "timeout_bars": [
+        24,
+        48,
+        96
+      ]
     },
     "INDEX": {
-      "tp": [1.5, 2.0, 2.5, 3.0, 4.0],
-      "sl": [0.75, 1.0, 1.5],
-      "ct": [0.55, 0.6, 0.65, 0.7],
-      "timeout_bars": [24, 48, 96]
+      "tp": [
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        4.0
+      ],
+      "sl": [
+        0.75,
+        1.0,
+        1.5
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7
+      ],
+      "timeout_bars": [
+        24,
+        48,
+        96
+      ]
     },
     "COMMODITY": {
-      "tp": [1.5, 2.0, 2.5, 3.0, 4.0],
-      "sl": [0.75, 1.0, 1.5],
-      "ct": [0.55, 0.6, 0.65, 0.7],
-      "timeout_bars": [24, 48, 96]
+      "tp": [
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        4.0
+      ],
+      "sl": [
+        0.75,
+        1.0,
+        1.5
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7
+      ],
+      "timeout_bars": [
+        24,
+        48,
+        96
+      ]
     },
     "CRYPTO": {
-      "tp": [2.0, 2.5, 3.0, 4.0, 5.0],
-      "sl": [1.0, 1.5, 2.0],
-      "ct": [0.55, 0.6, 0.65],
-      "timeout_bars": [48, 96]
+      "tp": [
+        2.0,
+        2.5,
+        3.0,
+        4.0,
+        5.0
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65
+      ],
+      "timeout_bars": [
+        48,
+        96
+      ]
     }
   },
-
   "validation": {
     "method": "walk_forward",
     "folds": 8,
@@ -105,16 +205,12 @@
     "min_trades": 80,
     "n_inner_folds": 5
   },
-
   "filters": {
     "min_rrr": 1.0,
     "min_trades": 40,
     "max_drawdown": 0.5
   },
-
   "resources": {
-    "ram_per_feature_group_gb": 0.5,
-    "cpu_per_feature_group": 0.5,
     "max_cpu_percent": 0.8
   }
 }

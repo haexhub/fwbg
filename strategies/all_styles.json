@@ -1,10 +1,15 @@
 {
   "name": "All Trading Styles",
   "description": "Kombiniertes Grid das sowohl Scalping als auch Swing-Trading Strategien finden kann",
-  "tags": ["scalping", "swing", "comprehensive", "all_rrr", "atr_based"],
+  "tags": [
+    "scalping",
+    "swing",
+    "comprehensive",
+    "all_rrr",
+    "atr_based"
+  ],
   "hypothesis": "Ein erweitertes Grid das alle TP/SL-Kombinationen testet, findet den optimalen Trading-Stil pro Asset automatisch",
   "expected_outcome": "Gemischte Ergebnisse - manche Assets profitieren von Scalping, andere von Swing-Trading",
-
   "indicators": [
     "trend",
     "momentum",
@@ -14,58 +19,93 @@
     "time_season",
     "dynamics"
   ],
-
   "indicator_params": {
     "trend": {
-      "adx_periods": [14, 21],
-      "ema_periods": [21, 50, 100, 200]
+      "adx_periods": [
+        14,
+        21
+      ],
+      "ema_periods": [
+        21,
+        50,
+        100,
+        200
+      ]
     },
     "momentum": {
-      "rsi_periods": [7, 14],
-      "stoch_periods": [14],
-      "roc_periods": [5, 10]
+      "rsi_periods": [
+        7,
+        14
+      ],
+      "stoch_periods": [
+        14
+      ],
+      "roc_periods": [
+        5,
+        10
+      ]
     },
     "volatility": {
-      "bb_periods": [20],
-      "atr_periods": [7, 14, 21]
+      "bb_periods": [
+        20
+      ],
+      "atr_periods": [
+        7,
+        14,
+        21
+      ]
     },
     "regime": {
-      "hurst_windows": [100, 200]
+      "hurst_windows": [
+        100,
+        200
+      ]
     },
     "structure": {
-      "fft_windows": [64, 128],
-      "path_windows": [20, 50]
+      "fft_windows": [
+        64,
+        128
+      ],
+      "path_windows": [
+        20,
+        50
+      ]
     },
     "time_season": {
       "include_raw": true,
       "include_encoded": true
     },
     "dynamics": {
-      "lookbacks": [4, 8, 24],
-      "lag_periods": [8, 24]
+      "lookbacks": [
+        4,
+        8,
+        24
+      ],
+      "lag_periods": [
+        8,
+        24
+      ]
     }
   },
-
   "exit_strategy": "atr_based",
-
   "exit_params": {
     "atr_period": 14,
     "min_tp_pips": 8,
     "min_sl_pips": 10
   },
-
   "feature_selector": "boruta",
-
   "feature_params": {
     "max_features": 35,
     "n_iter": 10,
     "n_estimators": 100
   },
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 150,
       "max_depth": 5,
@@ -74,34 +114,152 @@
       "colsample_bytree": 0.8
     }
   },
-
   "grids": {
     "FOREX": {
-      "tp": [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 7.0, 10.0],
-      "sl": [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0],
-      "ct": [0.5, 0.55, 0.6, 0.65, 0.7, 0.75],
-      "timeout_bars": [6, 12, 24, 48, 96]
+      "tp": [
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        7.0,
+        10.0
+      ],
+      "sl": [
+        0.25,
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        4.0
+      ],
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ],
+      "timeout_bars": [
+        6,
+        12,
+        24,
+        48,
+        96
+      ]
     },
     "INDEX": {
-      "tp": [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 7.0, 10.0],
-      "sl": [0.5, 1.0, 1.5, 2.0, 3.0, 4.0],
-      "ct": [0.5, 0.55, 0.6, 0.65, 0.7, 0.75],
-      "timeout_bars": [6, 12, 24, 48, 96]
+      "tp": [
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        7.0,
+        10.0
+      ],
+      "sl": [
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        4.0
+      ],
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ],
+      "timeout_bars": [
+        6,
+        12,
+        24,
+        48,
+        96
+      ]
     },
     "COMMODITY": {
-      "tp": [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 7.0, 10.0],
-      "sl": [0.5, 1.0, 1.5, 2.0, 3.0, 4.0],
-      "ct": [0.5, 0.55, 0.6, 0.65, 0.7, 0.75],
-      "timeout_bars": [6, 12, 24, 48, 96]
+      "tp": [
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        7.0,
+        10.0
+      ],
+      "sl": [
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        4.0
+      ],
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75
+      ],
+      "timeout_bars": [
+        6,
+        12,
+        24,
+        48,
+        96
+      ]
     },
     "CRYPTO": {
-      "tp": [1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 15.0, 20.0],
-      "sl": [1.0, 2.0, 3.0, 5.0, 7.0],
-      "ct": [0.5, 0.55, 0.6, 0.65, 0.7],
-      "timeout_bars": [12, 24, 48, 96]
+      "tp": [
+        1.0,
+        2.0,
+        3.0,
+        5.0,
+        7.0,
+        10.0,
+        15.0,
+        20.0
+      ],
+      "sl": [
+        1.0,
+        2.0,
+        3.0,
+        5.0,
+        7.0
+      ],
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7
+      ],
+      "timeout_bars": [
+        12,
+        24,
+        48,
+        96
+      ]
     }
   },
-
   "validation": {
     "method": "walk_forward",
     "folds": 8,
@@ -109,16 +267,12 @@
     "min_trades": 80,
     "n_inner_folds": 5
   },
-
   "filters": {
     "min_rrr": 0.0,
     "min_trades": 30,
     "max_drawdown": 0.5
   },
-
   "resources": {
-    "ram_per_feature_group_gb": 0.5,
-    "cpu_per_feature_group": 0.5,
     "max_cpu_percent": 0.8
   }
 }

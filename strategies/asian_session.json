@@ -1,10 +1,15 @@
 {
   "name": "Asian Session Strategy",
-  "description": "Optimiert für die asiatische Handelszeit (00:00-08:00 UTC) - Range-Trading bei niedriger Volatilität",
-  "tags": ["asian_session", "time_based", "range_trading", "low_volatility", "atr_based"],
+  "description": "Optimiert f\u00fcr die asiatische Handelszeit (00:00-08:00 UTC) - Range-Trading bei niedriger Volatilit\u00e4t",
+  "tags": [
+    "asian_session",
+    "time_based",
+    "range_trading",
+    "low_volatility",
+    "atr_based"
+  ],
   "hypothesis": "Asiatische Session hat andere Charakteristik - mehr Range-Trading, weniger Trends",
   "expected_outcome": "Konsistente kleine Gewinne, Win-Rate 55-70%",
-
   "indicators": [
     "price_action",
     "volatility",
@@ -12,50 +17,57 @@
     "momentum",
     "microstructure"
   ],
-
   "indicator_params": {
     "price_action": {
       "hh_ll_period": 3,
       "compute_volume": true
     },
     "volatility": {
-      "bb_periods": [20],
-      "atr_periods": [7, 14]
+      "bb_periods": [
+        20
+      ],
+      "atr_periods": [
+        7,
+        14
+      ]
     },
     "time_season": {
       "include_raw": true,
       "include_encoded": true
     },
     "momentum": {
-      "rsi_periods": [7, 14],
-      "stoch_periods": [14]
+      "rsi_periods": [
+        7,
+        14
+      ],
+      "stoch_periods": [
+        14
+      ]
     },
     "microstructure": {
       "atr_period": 7,
       "rolling_window": 3
     }
   },
-
   "exit_strategy": "atr_based",
-
   "exit_params": {
     "atr_period": 14,
     "min_tp_pips": 8,
     "min_sl_pips": 10
   },
-
   "feature_selector": "boruta",
-
   "feature_params": {
     "max_features": 25,
     "n_iter": 10,
     "n_estimators": 100
   },
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 150,
       "max_depth": 5,
@@ -64,34 +76,110 @@
       "colsample_bytree": 0.8
     }
   },
-
   "grids": {
     "FOREX": {
-      "tp": [0.5, 0.75, 1.0, 1.25, 1.5],
-      "sl": [0.75, 1.0, 1.25, 1.5, 2.0],
-      "ct": [0.55, 0.60, 0.65, 0.70],
-      "timeout_bars": [6, 12, 24]
+      "tp": [
+        0.5,
+        0.75,
+        1.0,
+        1.25,
+        1.5
+      ],
+      "sl": [
+        0.75,
+        1.0,
+        1.25,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7
+      ],
+      "timeout_bars": [
+        6,
+        12,
+        24
+      ]
     },
     "INDEX": {
-      "tp": [0.5, 0.75, 1.0, 1.5, 2.0],
-      "sl": [0.75, 1.0, 1.5, 2.0],
-      "ct": [0.55, 0.60, 0.65, 0.70],
-      "timeout_bars": [6, 12, 24]
+      "tp": [
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.0
+      ],
+      "sl": [
+        0.75,
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7
+      ],
+      "timeout_bars": [
+        6,
+        12,
+        24
+      ]
     },
     "COMMODITY": {
-      "tp": [0.5, 0.75, 1.0, 1.5, 2.0],
-      "sl": [0.75, 1.0, 1.5, 2.0],
-      "ct": [0.55, 0.60, 0.65, 0.70],
-      "timeout_bars": [6, 12, 24]
+      "tp": [
+        0.5,
+        0.75,
+        1.0,
+        1.5,
+        2.0
+      ],
+      "sl": [
+        0.75,
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65,
+        0.7
+      ],
+      "timeout_bars": [
+        6,
+        12,
+        24
+      ]
     },
     "CRYPTO": {
-      "tp": [0.75, 1.0, 1.5, 2.0],
-      "sl": [1.0, 1.5, 2.0, 2.5],
-      "ct": [0.55, 0.60, 0.65],
-      "timeout_bars": [12, 24]
+      "tp": [
+        0.75,
+        1.0,
+        1.5,
+        2.0
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0,
+        2.5
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.65
+      ],
+      "timeout_bars": [
+        12,
+        24
+      ]
     }
   },
-
   "validation": {
     "method": "walk_forward",
     "folds": 8,
@@ -99,16 +187,12 @@
     "min_trades": 100,
     "n_inner_folds": 5
   },
-
   "filters": {
     "min_rrr": 0.0,
     "min_trades": 50,
     "max_drawdown": 0.35
   },
-
   "resources": {
-    "ram_per_feature_group_gb": 0.5,
-    "cpu_per_feature_group": 0.5,
     "max_cpu_percent": 0.8
   }
 }

@@ -251,31 +251,39 @@ class RegimeFilterConfig:
 
 @dataclass
 class ResourceConfig:
-    """Parameter für Ressourcen-Limits."""
-    ram_per_feature_group_gb: float = 0.5
-    cpu_per_feature_group: float = 0.5
+    """
+    Ressourcen-Limits für Optimizer.
+
+    Globale Limits - System optimiert dynamisch während des Runs:
+    - ram_per_worker_gb: Geschätzter RAM pro Asset-Worker
+    - min_free_ram_percent: Mindest-freier RAM (System pausiert wenn unterschritten)
+    - max_cpu_percent: Maximale CPU-Auslastung (System pausiert wenn überschritten)
+    - xgboost_n_jobs: XGBoost-Threading (0=auto, 1=single, -1=alle Kerne)
+    """
+    ram_per_worker_gb: float = 4.0
     min_free_ram_percent: float = 0.15
-    max_cpu_percent: float = 0.90
+    max_cpu_percent: float = 0.80
     xgboost_n_jobs: int = 0
-    ram_per_worker_gb: float = 3.0
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ResourceConfig":
         if data is None:
             return cls()
+
+        # Normalisiere Prozent-Werte
         min_free_ram = data.get("min_free_ram_percent", 0.15)
         if min_free_ram > 1:
             min_free_ram = min_free_ram / 100
-        max_cpu = data.get("max_cpu_percent", 0.90)
+
+        max_cpu = data.get("max_cpu_percent", 0.80)
         if max_cpu > 1:
             max_cpu = max_cpu / 100
+
         return cls(
-            ram_per_feature_group_gb=data.get("ram_per_feature_group_gb", 0.5),
-            cpu_per_feature_group=data.get("cpu_per_feature_group", 0.5),
+            ram_per_worker_gb=data.get("ram_per_worker_gb", 4.0),
             min_free_ram_percent=min_free_ram,
             max_cpu_percent=max_cpu,
             xgboost_n_jobs=data.get("xgboost_n_jobs", 0),
-            ram_per_worker_gb=data.get("ram_per_worker_gb", 3.0),
         )
 
 
