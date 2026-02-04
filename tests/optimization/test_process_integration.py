@@ -272,7 +272,7 @@ class TestStrategyConfigIntegration:
             strategy = StrategyConfig.from_json_file(strategy_path)
 
             assert strategy.name == "Exploration"
-            assert strategy.exit_strategy == "atr_based"
+            assert strategy.exit_strategy == "fixed"
             assert "FOREX" in strategy.grids
 
     def test_grid_config_parsing(self):
