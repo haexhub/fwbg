@@ -38,7 +38,9 @@ from fwbg.utils.xgb_config import set_xgboost_n_jobs
 
 
 # Globale Throttling-Variablen
-# _last_throttle_check removed - no longer needed
+# Counter für Throttle-Checks (nur alle N Iterationen prüfen)
+_throttle_check_counter = 0
+_THROTTLE_CHECK_INTERVAL = 10  # Alle 10 Grid-Kombinationen prüfen
 _throttle_wait_count = 0
 
 
@@ -54,15 +56,20 @@ def _wait_for_resources(
     - CPU-Auslastung > max_cpu_percent
     - Freier RAM < min_free_ram_percent
 
-    WICHTIG: Diese Funktion wartet unbegrenzt bis Ressourcen frei sind!
-    Das ist beabsichtigt, um Überlastung zu vermeiden.
+    WICHTIG: Prüft nur alle _THROTTLE_CHECK_INTERVAL Aufrufe um Overhead zu minimieren.
 
     Args:
         max_cpu_percent: Maximale CPU-Auslastung (0.0-1.0 oder Prozent)
         min_free_ram_percent: Minimaler freier RAM (0.0-1.0 oder Prozent)
         sym: Asset-Symbol für Log-Ausgaben
     """
-    global _throttle_wait_count
+    global _throttle_wait_count, _throttle_check_counter
+
+    # Nur alle N Iterationen wirklich prüfen (Performance!)
+    _throttle_check_counter += 1
+    if _throttle_check_counter < _THROTTLE_CHECK_INTERVAL:
+        return
+    _throttle_check_counter = 0
 
     # Normalisiere Prozent-Werte
     max_cpu = max_cpu_percent / 100 if max_cpu_percent > 1 else max_cpu_percent
@@ -73,11 +80,11 @@ def _wait_for_resources(
     last_log_time = 0
 
     while True:
-        # CPU-Check: Mehrere Samples für stabilen Wert
-        cpu_readings = []
-        for _ in range(3):
-            cpu_readings.append(psutil.cpu_percent(interval=0.2))
-        cpu_percent = sum(cpu_readings) / len(cpu_readings) / 100.0
+        # CPU-Check: Ein Sample reicht (interval=None nutzt cached value)
+        # Dann kurz warten und nochmal für stabilen Wert
+        psutil.cpu_percent(interval=None)  # Reset
+        time.sleep(0.5)
+        cpu_percent = psutil.cpu_percent(interval=None) / 100.0
 
         # RAM-Check
         mem = psutil.virtual_memory()
