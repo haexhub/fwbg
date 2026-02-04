@@ -421,6 +421,10 @@ def _process_feature_groups_parallel(
     ram_per_worker_gb = ctx.ram_per_worker_gb
     estimated_ram_per_fg = ram_per_worker_gb * 0.25
 
+    # Variablen für Logging und can_start_feature_group
+    ram_per_thread_gb = estimated_ram_per_fg
+    cpu_per_thread = 1.0  # Jede Feature-Group nutzt ~1 CPU-Kern
+
     # Berechne minimalen freien RAM (ABSOLUT)
     min_free_ram_gb = total_ram_gb * min_free_ram_percent
 
@@ -446,7 +450,8 @@ def _process_feature_groups_parallel(
 
     # CPU-Limit: Maximal max_cpu_percent der Kerne nutzen
     # Jede Feature-Group bekommt dynamisch CPU zugeteilt basierend auf Verfügbarkeit
-    cpu_based_limit = max(1, int(total_cores * max_cpu_percent))
+    usable_cores = int(total_cores * max_cpu_percent)
+    cpu_based_limit = max(1, usable_cores)
 
     # Effektives Limit: Das Minimum aus RAM, CPU und Anzahl Feature-Groups
     max_workers = min(ram_based_limit, cpu_based_limit, n_feature_groups)
