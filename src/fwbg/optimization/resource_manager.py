@@ -312,42 +312,21 @@ class AdaptivePoolManager:
         with ProcessPoolExecutor(**executor_kwargs) as executor:
             _active_executor = executor
 
-            # Futures verwalten
+            # Alle Items sofort starten - Indikator-Berechnung ist leicht
+            # Ressourcen-Kontrolle erfolgt in _wait_for_resources() während Grid-Search
             futures = {}
-            items_iter = iter(enumerate(items))
-            active_count = 0
-
-            # KONSERVATIV STARTEN: Nur 1 Worker initial!
-            # Die echte CPU-Last entsteht erst bei Grid-Search, nicht beim Start.
-            # Weitere Worker werden erst gestartet wenn die Last tatsächlich messbar ist.
-            try:
-                idx, item = next(items_iter)
+            for idx, item in enumerate(items):
                 future = executor.submit(func, item)
                 futures[future] = idx
                 _active_futures.append(future)
-                active_count += 1
-            except StopIteration:
-                pass
 
+            active_count = len(futures)
             self.peak_workers = active_count
-            self.log(f"Initial gestartet: {active_count} Worker (skaliert dynamisch bis max {self.max_workers})", force=True)
+            self.log(f"Gestartet: {active_count} Worker (Ressourcen-Kontrolle in Grid-Search)", force=True)
 
-            # Tracking für periodisches Scaling
-            last_scale_check = time.time()
-            # WICHTIG: Langsames Scaling um System nicht zu überlasten
-            # CPU-Last entsteht erst bei Grid-Search, nicht bei Indikator-Berechnung
-            # Daher: Lange Wartezeiten zwischen Worker-Starts
-            initial_wait = 90.0  # 90 Sekunden warten bevor erstes Scaling
-            scale_check_interval = 60.0  # Danach alle 60 Sekunden ein weiterer Worker
-            first_scale_done = False
-            items_remaining = True
-
-            while futures or items_remaining:
+            while futures:
                 # Fertige Tasks einsammeln
-                done_futures = []
-                for future in list(futures.keys()):
-                    if future.done():
-                        done_futures.append(future)
+                done_futures = [f for f in futures if f.done()]
 
                 # Ergebnisse sammeln
                 for future in done_futures:
@@ -369,47 +348,6 @@ class AdaptivePoolManager:
 
                     if progress_callback:
                         progress_callback(completed, total)
-
-                # Periodisch prüfen ob wir skalieren können (auch wenn kein Task fertig)
-                now = time.time()
-                current_interval = initial_wait if not first_scale_done else scale_check_interval
-
-                if now - last_scale_check >= current_interval:
-                    last_scale_check = now
-                    first_scale_done = True
-
-                    # KONSERVATIV: Max 1 Worker pro Scale-Check
-                    # Das gibt dem System Zeit, die CPU/RAM-Last zu messen
-                    # bevor weitere Worker gestartet werden
-                    spawned = 0
-                    max_spawn_per_check = 1
-
-                    while items_remaining and spawned < max_spawn_per_check:
-                        if not self.can_spawn_worker(active_count):
-                            break
-
-                        try:
-                            idx, item = next(items_iter)
-                            future = executor.submit(func, item)
-                            futures[future] = idx
-                            _active_futures.append(future)
-                            active_count += 1
-                            spawned += 1
-
-                            if active_count > self.peak_workers:
-                                self.peak_workers = active_count
-                        except StopIteration:
-                            items_remaining = False
-                            break
-
-                    if spawned > 0:
-                        self.log(f"Skaliert: +{spawned} Worker (jetzt {active_count} aktiv)", force=True)
-
-                # Ressourcen-Status loggen bei Throttling
-                if self.ram_throttle_count > 0 and self.ram_throttle_count % 20 == 0:
-                    free_gb = self.get_free_ram_gb()
-                    cpu_pct = self.get_cpu_percent()
-                    self.log(f"Throttling: {free_gb:.1f} GB RAM frei, CPU {cpu_pct:.0f}%, {active_count}/{self.max_workers} Worker")
 
                 # Kurz warten bevor nächster Check
                 if futures:
