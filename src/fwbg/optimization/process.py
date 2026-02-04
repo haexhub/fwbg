@@ -38,15 +38,13 @@ from fwbg.utils.xgb_config import set_xgboost_n_jobs
 
 
 # Globale Throttling-Variablen
-_last_throttle_check = 0
+# _last_throttle_check removed - no longer needed
 _throttle_wait_count = 0
 
 
 def _wait_for_resources(
     max_cpu_percent: float = 0.80,
     min_free_ram_percent: float = 0.15,
-    check_interval: float = 1.0,
-    max_wait: float = 120.0,
     sym: str = None
 ):
     """
@@ -56,34 +54,29 @@ def _wait_for_resources(
     - CPU-Auslastung > max_cpu_percent
     - Freier RAM < min_free_ram_percent
 
+    WICHTIG: Diese Funktion wartet unbegrenzt bis Ressourcen frei sind!
+    Das ist beabsichtigt, um Überlastung zu vermeiden.
+
     Args:
         max_cpu_percent: Maximale CPU-Auslastung (0.0-1.0 oder Prozent)
         min_free_ram_percent: Minimaler freier RAM (0.0-1.0 oder Prozent)
-        check_interval: Sekunden zwischen Checks während des Wartens
-        max_wait: Maximale Wartezeit in Sekunden
         sym: Asset-Symbol für Log-Ausgaben
     """
-    global _last_throttle_check, _throttle_wait_count
+    global _throttle_wait_count
 
     # Normalisiere Prozent-Werte
     max_cpu = max_cpu_percent / 100 if max_cpu_percent > 1 else max_cpu_percent
     min_ram = min_free_ram_percent / 100 if min_free_ram_percent > 1 else min_free_ram_percent
 
-    # Nicht zu häufig checken (Performance) - aber mind. alle 5 Sekunden
-    now = time.time()
-    if now - _last_throttle_check < 5.0:
-        return
-
-    _last_throttle_check = now
-
     wait_start = time.time()
     waited = False
+    last_log_time = 0
 
     while True:
         # CPU-Check: Mehrere Samples für stabilen Wert
         cpu_readings = []
         for _ in range(3):
-            cpu_readings.append(psutil.cpu_percent(interval=0.15))
+            cpu_readings.append(psutil.cpu_percent(interval=0.2))
         cpu_percent = sum(cpu_readings) / len(cpu_readings) / 100.0
 
         # RAM-Check
@@ -98,14 +91,8 @@ def _wait_for_resources(
             if waited:
                 _throttle_wait_count += 1
                 elapsed = time.time() - wait_start
-                # Level 0 = immer anzeigen (auch mit Progress-UI)
                 log(0, f"RESUME nach {elapsed:.1f}s (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)", sym)
-            break
-
-        # Max Wartezeit erreicht?
-        if time.time() - wait_start > max_wait:
-            log(0, f"TIMEOUT nach {max_wait}s - fahre fort (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)", sym)
-            break
+            return
 
         # Erste Warnung loggen
         if not waited:
@@ -114,14 +101,18 @@ def _wait_for_resources(
                 reasons.append(f"CPU {cpu_percent*100:.0f}%")
             if not ram_ok:
                 reasons.append(f"RAM {free_ram_percent*100:.0f}%")
-            # Level 0 = immer anzeigen (auch mit Progress-UI)
             log(0, f"PAUSE ({', '.join(reasons)})", sym)
             waited = True
 
-        # Warten bevor nächster Check
-        time.sleep(check_interval)
+        # Periodisch Status loggen (alle 30 Sekunden)
+        now = time.time()
+        if now - last_log_time > 30:
+            elapsed = now - wait_start
+            log(0, f"Warte... {elapsed:.0f}s (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}%)", sym)
+            last_log_time = now
 
-    return
+        # Warten bevor nächster Check (2 Sekunden)
+        time.sleep(2.0)
 
 
 def _process_single_grid_combo(
@@ -328,12 +319,10 @@ def _process_feature_group(
     # (Parallelisierung erfolgt auf Feature-Gruppen-Ebene mit Ressourcen-Check)
     for combo in combos:
         # Ressourcen-Check: Pausiere wenn CPU/RAM zu hoch
-        # check_interval=1.0 während Warten, max_wait=300s (5 min)
+        # Wartet unbegrenzt bis Ressourcen verfügbar sind
         _wait_for_resources(
             max_cpu_percent=ctx.max_cpu_percent,
             min_free_ram_percent=ctx.min_free_ram_percent,
-            check_interval=1.0,
-            max_wait=300.0,
             sym=sym
         )
 
