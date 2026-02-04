@@ -188,10 +188,16 @@ def run_optimizer(
     # Callback für inkrementelle Ergebnis-Speicherung
     def on_result_ready(result):
         """Wird nach jedem fertigen Asset aufgerufen."""
-        if not result or not save_results or not run_path:
+        if not result:
             return
 
         sym = result.get("symbol", "?")
+
+        # Asset als fertig markieren (für UI "Fertig" statt "Wartend")
+        progress_tracker.update_completed(progress_tracker.completed_assets, sym)
+
+        if not save_results or not run_path:
+            return
         status = result.get("status", "unknown")
 
         # Grid-Details sofort speichern

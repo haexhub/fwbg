@@ -334,7 +334,11 @@ class AdaptivePoolManager:
 
             # Tracking für periodisches Scaling
             last_scale_check = time.time()
-            scale_check_interval = 5.0  # Sekunden zwischen Scale-Checks (konservativ für CPU/RAM-Messung)
+            # WICHTIG: Erstes Scale-Interval länger, um der Grid-Search Zeit zu geben
+            # CPU-Last entsteht erst bei Grid-Search, nicht bei Indikator-Berechnung
+            initial_wait = 60.0  # 60 Sekunden warten bevor erstes Scaling
+            scale_check_interval = 10.0  # Danach alle 10 Sekunden prüfen
+            first_scale_done = False
             items_remaining = True
 
             while futures or items_remaining:
@@ -367,8 +371,11 @@ class AdaptivePoolManager:
 
                 # Periodisch prüfen ob wir skalieren können (auch wenn kein Task fertig)
                 now = time.time()
-                if now - last_scale_check >= scale_check_interval:
+                current_interval = initial_wait if not first_scale_done else scale_check_interval
+
+                if now - last_scale_check >= current_interval:
                     last_scale_check = now
+                    first_scale_done = True
 
                     # KONSERVATIV: Max 1 Worker pro Scale-Check
                     # Das gibt dem System Zeit, die CPU/RAM-Last zu messen
