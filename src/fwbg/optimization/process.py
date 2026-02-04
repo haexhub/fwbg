@@ -484,30 +484,19 @@ def _process_feature_groups_parallel(
     # 4. XGBoost releases GIL während der Berechnung
     # Der Hauptteil der CPU-Arbeit geschieht in XGBoost (C++), nicht in Python.
 
-    def get_avg_cpu(samples: int = 3) -> float:
-        """Nimmt mehrere CPU-Samples und gibt den Durchschnitt zurück."""
-        readings = []
-        for _ in range(samples):
-            readings.append(psutil.cpu_percent(interval=0.15))
-        return sum(readings) / len(readings)
-
     def can_start_feature_group(active_workers: int) -> bool:
-        """Prüft ob eine weitere Feature-Gruppe gestartet werden kann."""
+        """
+        Prüft ob eine weitere Feature-Gruppe gestartet werden kann.
+
+        WICHTIG: Feature-Gruppen-Parallelisierung ist INNERHALB eines Assets.
+        Die Asset-Ebene (AdaptivePoolManager) kontrolliert bereits die Gesamtlast.
+        Hier prüfen wir nur RAM, um den lokalen Thread-Pool nicht zu überladen.
+        CPU-Check ist auf Asset-Ebene bereits gemacht worden.
+        """
         if active_workers >= max_workers:
             return False
 
-        # CPU-Check: Mehrere Samples für stabilen Wert
-        current_cpu = get_avg_cpu(samples=3)
-        cpu_threshold = max_cpu_percent * 100
-
-        # Bei bereits laufenden Gruppen: Konservativer sein
-        if active_workers >= 1:
-            cpu_threshold = min(cpu_threshold, 90 - (active_workers * 10))
-
-        if current_cpu > cpu_threshold:
-            return False
-
-        # RAM-Check: Genug freier RAM?
+        # RAM-Check: Genug freier RAM für eine weitere Feature-Gruppe?
         current_free_ram = psutil.virtual_memory().available / (1024**3)
         if current_free_ram < min_free_ram_gb + ram_per_thread_gb:
             return False
