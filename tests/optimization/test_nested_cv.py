@@ -85,6 +85,12 @@ def create_mock_context(
     ctx.first_fold_min_win_rate = 0.25
     ctx.first_fold_min_pnl = -10.0
     ctx.first_fold_min_trades = 5
+    ctx.model_hyperparameters = {
+        "n_estimators": 100,
+        "max_depth": 5,
+        "learning_rate": 0.1,
+        "random_state": 42
+    }
     return ctx
 
 
@@ -343,8 +349,9 @@ class TestTrainModel:
         df = create_test_df(500)
         targets = np.random.randint(0, 2, len(df))
         features = ["trend_rsi_14", "trend_adx_14"]
+        ctx = create_mock_context()
 
-        model = train_model(df, targets, features, min_trades=10)
+        model = train_model(df, targets, features, min_trades=10, ctx=ctx)
 
         if np.count_nonzero(targets) >= 5:
             assert model is not None
@@ -354,8 +361,9 @@ class TestTrainModel:
         """Test: Training ohne Features."""
         df = create_test_df(500)
         targets = np.random.randint(0, 2, len(df))
+        ctx = create_mock_context()
 
-        model = train_model(df, targets, None, min_trades=10)
+        model = train_model(df, targets, None, min_trades=10, ctx=ctx)
         assert model is None
 
     def test_insufficient_positive_targets(self):
@@ -363,8 +371,9 @@ class TestTrainModel:
         df = create_test_df(500)
         targets = np.zeros(len(df))  # Keine positiven
         features = ["trend_rsi_14"]
+        ctx = create_mock_context()
 
-        model = train_model(df, targets, features, min_trades=100)
+        model = train_model(df, targets, features, min_trades=100, ctx=ctx)
         assert model is None
 
 
