@@ -330,14 +330,15 @@ class AdaptivePoolManager:
                 pass
 
             self.peak_workers = active_count
-            self.log(f"Initial gestartet: {active_count} Worker (skaliert dynamisch bis max {self.max_workers})")
+            self.log(f"Initial gestartet: {active_count} Worker (skaliert dynamisch bis max {self.max_workers})", force=True)
 
             # Tracking für periodisches Scaling
             last_scale_check = time.time()
-            # WICHTIG: Erstes Scale-Interval länger, um der Grid-Search Zeit zu geben
+            # WICHTIG: Langsames Scaling um System nicht zu überlasten
             # CPU-Last entsteht erst bei Grid-Search, nicht bei Indikator-Berechnung
-            initial_wait = 60.0  # 60 Sekunden warten bevor erstes Scaling
-            scale_check_interval = 10.0  # Danach alle 10 Sekunden prüfen
+            # Daher: Lange Wartezeiten zwischen Worker-Starts
+            initial_wait = 90.0  # 90 Sekunden warten bevor erstes Scaling
+            scale_check_interval = 60.0  # Danach alle 60 Sekunden ein weiterer Worker
             first_scale_done = False
             items_remaining = True
 
@@ -402,7 +403,7 @@ class AdaptivePoolManager:
                             break
 
                     if spawned > 0:
-                        self.log(f"Skaliert: +{spawned} Worker (jetzt {active_count} aktiv)")
+                        self.log(f"Skaliert: +{spawned} Worker (jetzt {active_count} aktiv)", force=True)
 
                 # Ressourcen-Status loggen bei Throttling
                 if self.ram_throttle_count > 0 and self.ram_throttle_count % 20 == 0:
