@@ -98,12 +98,13 @@ def _wait_for_resources(
             if waited:
                 _throttle_wait_count += 1
                 elapsed = time.time() - wait_start
-                log(1, f"RESUME nach {elapsed:.1f}s (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)", sym)
+                # Level 0 = immer anzeigen (auch mit Progress-UI)
+                log(0, f"RESUME nach {elapsed:.1f}s (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)", sym)
             break
 
         # Max Wartezeit erreicht?
         if time.time() - wait_start > max_wait:
-            log(1, f"TIMEOUT nach {max_wait}s - fahre fort (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)", sym)
+            log(0, f"TIMEOUT nach {max_wait}s - fahre fort (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)", sym)
             break
 
         # Erste Warnung loggen
@@ -113,7 +114,8 @@ def _wait_for_resources(
                 reasons.append(f"CPU {cpu_percent*100:.0f}%")
             if not ram_ok:
                 reasons.append(f"RAM {free_ram_percent*100:.0f}%")
-            log(1, f"PAUSE ({', '.join(reasons)})", sym)
+            # Level 0 = immer anzeigen (auch mit Progress-UI)
+            log(0, f"PAUSE ({', '.join(reasons)})", sym)
             waited = True
 
         # Warten bevor nächster Check
