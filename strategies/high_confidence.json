@@ -1,10 +1,14 @@
 {
   "name": "High Confidence Strategy",
-  "description": "Nur Trades bei sehr hoher Modell-Konfidenz - Qualität über Quantität",
-  "tags": ["high_confidence", "selective", "quality_over_quantity", "atr_based"],
+  "description": "Nur Trades bei sehr hoher Modell-Konfidenz - Qualit\u00e4t \u00fcber Quantit\u00e4t",
+  "tags": [
+    "high_confidence",
+    "selective",
+    "quality_over_quantity",
+    "atr_based"
+  ],
   "hypothesis": "Weniger ist mehr - nur bei starken Signalen handeln reduziert Fehlsignale",
   "expected_outcome": "Sehr hohe Win-Rate (70-85%) bei wenigen Trades",
-
   "indicators": [
     "trend",
     "momentum",
@@ -13,53 +17,72 @@
     "distribution",
     "regime"
   ],
-
   "indicator_params": {
     "trend": {
-      "adx_periods": [14, 21],
-      "ema_periods": [21, 50, 200]
+      "adx_periods": [
+        14,
+        21
+      ],
+      "ema_periods": [
+        21,
+        50,
+        200
+      ]
     },
     "momentum": {
-      "rsi_periods": [14, 21],
-      "stoch_periods": [14]
+      "rsi_periods": [
+        14,
+        21
+      ],
+      "stoch_periods": [
+        14
+      ]
     },
     "volatility": {
-      "bb_periods": [20],
-      "atr_periods": [14]
+      "bb_periods": [
+        20
+      ],
+      "atr_periods": [
+        14
+      ]
     },
     "cross_features": {
       "rsi_overbought": 70,
       "rsi_oversold": 30
     },
     "distribution": {
-      "windows": [20, 50],
+      "windows": [
+        20,
+        50
+      ],
       "z_score_lookback": 100
     },
     "regime": {
-      "hurst_windows": [100, 200]
+      "hurst_windows": [
+        100,
+        200
+      ]
     }
   },
-
   "exit_strategy": "atr_based",
-
   "exit_params": {
     "atr_period": 14,
     "min_tp_pips": 10,
     "min_sl_pips": 12
   },
-
   "feature_selector": "boruta",
-
   "feature_params": {
     "max_features": 30,
     "n_iter": 10,
     "n_estimators": 100
   },
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 150,
       "max_depth": 5,
@@ -68,34 +91,100 @@
       "colsample_bytree": 0.8
     }
   },
-
   "grids": {
     "FOREX": {
-      "tp": [0.75, 1.0, 1.5, 2.0],
-      "sl": [0.75, 1.0, 1.5, 2.0],
-      "ct": [0.7, 0.75, 0.8, 0.85],
-      "timeout_bars": [24, 48]
+      "tp": [
+        0.75,
+        1.0,
+        1.5,
+        2.0
+      ],
+      "sl": [
+        0.75,
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.7,
+        0.75,
+        0.8,
+        0.85
+      ],
+      "timeout_bars": [
+        24,
+        48
+      ]
     },
     "INDEX": {
-      "tp": [1.0, 1.5, 2.0, 2.5],
-      "sl": [1.0, 1.5, 2.0],
-      "ct": [0.7, 0.75, 0.8, 0.85],
-      "timeout_bars": [24, 48]
+      "tp": [
+        1.0,
+        1.5,
+        2.0,
+        2.5
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.7,
+        0.75,
+        0.8,
+        0.85
+      ],
+      "timeout_bars": [
+        24,
+        48
+      ]
     },
     "COMMODITY": {
-      "tp": [1.0, 1.5, 2.0, 2.5],
-      "sl": [1.0, 1.5, 2.0],
-      "ct": [0.7, 0.75, 0.8, 0.85],
-      "timeout_bars": [24, 48]
+      "tp": [
+        1.0,
+        1.5,
+        2.0,
+        2.5
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.7,
+        0.75,
+        0.8,
+        0.85
+      ],
+      "timeout_bars": [
+        24,
+        48
+      ]
     },
     "CRYPTO": {
-      "tp": [1.5, 2.0, 2.5, 3.0],
-      "sl": [1.5, 2.0, 2.5],
-      "ct": [0.7, 0.75, 0.8],
-      "timeout_bars": [24, 48]
+      "tp": [
+        1.5,
+        2.0,
+        2.5,
+        3.0
+      ],
+      "sl": [
+        1.5,
+        2.0,
+        2.5
+      ],
+      "ct": [
+        0.7,
+        0.75,
+        0.8
+      ],
+      "timeout_bars": [
+        24,
+        48
+      ]
     }
   },
-
   "validation": {
     "method": "walk_forward",
     "folds": 8,
@@ -103,16 +192,12 @@
     "min_trades": 50,
     "n_inner_folds": 5
   },
-
   "filters": {
     "min_rrr": 0.0,
     "min_trades": 25,
     "max_drawdown": 0.3
   },
-
   "resources": {
-    "ram_per_feature_group_gb": 0.5,
-    "cpu_per_feature_group": 0.5,
     "max_cpu_percent": 0.8
   }
 }

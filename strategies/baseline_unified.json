@@ -1,10 +1,14 @@
 {
   "name": "Baseline Unified Model",
-  "description": "Unified XGBoost-Modell (gleiche Thresholds für Long/Short) mit Core-Indikatoren",
-  "tags": ["unified", "xgboost", "baseline", "atr_based"],
-  "hypothesis": "Unified Modell als Baseline für Vergleiche - einfachere Architektur",
-  "expected_outcome": "Referenzwert für separate Long/Short Modelle",
-
+  "description": "Unified XGBoost-Modell (gleiche Thresholds f\u00fcr Long/Short) mit Core-Indikatoren",
+  "tags": [
+    "unified",
+    "xgboost",
+    "baseline",
+    "atr_based"
+  ],
+  "hypothesis": "Unified Modell als Baseline f\u00fcr Vergleiche - einfachere Architektur",
+  "expected_outcome": "Referenzwert f\u00fcr separate Long/Short Modelle",
   "indicators": [
     "trend",
     "momentum",
@@ -12,44 +16,57 @@
     "regime",
     "price_action"
   ],
-
   "indicator_params": {
     "trend": {
-      "adx_periods": [14, 21],
-      "ema_periods": [21, 50, 200]
+      "adx_periods": [
+        14,
+        21
+      ],
+      "ema_periods": [
+        21,
+        50,
+        200
+      ]
     },
     "momentum": {
-      "rsi_periods": [14],
-      "stoch_periods": [14]
+      "rsi_periods": [
+        14
+      ],
+      "stoch_periods": [
+        14
+      ]
     },
     "volatility": {
-      "atr_periods": [14]
+      "atr_periods": [
+        14
+      ]
     },
     "regime": {
-      "hurst_windows": [100, 200]
+      "hurst_windows": [
+        100,
+        200
+      ]
     }
   },
-
   "exit_strategy": "atr_based",
-
   "exit_params": {
     "atr_period": 14,
     "min_tp_pips": 10,
     "min_sl_pips": 15
   },
-
   "feature_selector": "boruta",
-
   "feature_params": {
     "max_features": 25,
     "n_iter": 10,
     "n_estimators": 100
   },
-
   "model": {
     "type": "xgboost",
     "architecture": "unified",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 150,
       "max_depth": 5,
@@ -58,34 +75,103 @@
       "colsample_bytree": 0.8
     }
   },
-
   "grids": {
     "FOREX": {
-      "tp": [1.0, 1.5, 2.0, 2.5],
-      "sl": [1.0, 1.5, 2.0],
-      "ct": [0.52, 0.55, 0.60, 0.65],
-      "timeout_bars": [null, 24, 48]
+      "tp": [
+        1.0,
+        1.5,
+        2.0,
+        2.5
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.52,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "timeout_bars": [
+        null,
+        24,
+        48
+      ]
     },
     "INDEX": {
-      "tp": [1.0, 1.5, 2.0, 2.5],
-      "sl": [1.0, 1.5, 2.0],
-      "ct": [0.52, 0.55, 0.60, 0.65],
-      "timeout_bars": [null, 24, 48]
+      "tp": [
+        1.0,
+        1.5,
+        2.0,
+        2.5
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.52,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "timeout_bars": [
+        null,
+        24,
+        48
+      ]
     },
     "COMMODITY": {
-      "tp": [1.0, 1.5, 2.0, 2.5],
-      "sl": [1.0, 1.5, 2.0],
-      "ct": [0.52, 0.55, 0.60, 0.65],
-      "timeout_bars": [null, 24, 48]
+      "tp": [
+        1.0,
+        1.5,
+        2.0,
+        2.5
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.52,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "timeout_bars": [
+        null,
+        24,
+        48
+      ]
     },
     "CRYPTO": {
-      "tp": [1.5, 2.0, 2.5, 3.0],
-      "sl": [1.5, 2.0, 2.5],
-      "ct": [0.52, 0.55, 0.60],
-      "timeout_bars": [null, 48, 96]
+      "tp": [
+        1.5,
+        2.0,
+        2.5,
+        3.0
+      ],
+      "sl": [
+        1.5,
+        2.0,
+        2.5
+      ],
+      "ct": [
+        0.52,
+        0.55,
+        0.6
+      ],
+      "timeout_bars": [
+        null,
+        48,
+        96
+      ]
     }
   },
-
   "validation": {
     "method": "walk_forward",
     "folds": 8,
@@ -93,16 +179,12 @@
     "min_trades": 100,
     "n_inner_folds": 5
   },
-
   "filters": {
     "min_rrr": 0,
     "min_trades": 30,
     "max_drawdown": 1.0
   },
-
   "resources": {
-    "ram_per_feature_group_gb": 0.5,
-    "cpu_per_feature_group": 0.5,
     "max_cpu_percent": 0.8
   }
 }

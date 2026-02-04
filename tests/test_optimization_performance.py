@@ -64,10 +64,7 @@ class TestXGBoostHyperparameters:
             },
             "exit_strategy": "fixed",
             "exit_params": {},
-            "resources": {
-                "ram_per_feature_group_gb": 0.5,
-                "cpu_per_feature_group": 1.0,
-                "min_free_ram_percent": 0.15,
+            "resources": {                "min_free_ram_percent": 0.15,
                 "max_cpu_percent": 0.8,
                 "xgboost_n_jobs": 1
             }
@@ -132,10 +129,7 @@ class TestXGBoostHyperparameters:
             "grids": {"FOREX": {"tp": [1.0], "sl": [1.0], "ct": [0.5]}},
             "exit_strategy": "fixed",
             "exit_params": {},
-            "resources": {
-                "ram_per_feature_group_gb": 0.5,
-                "cpu_per_feature_group": 1.0,
-                "min_free_ram_percent": 0.15,
+            "resources": {                "min_free_ram_percent": 0.15,
                 "max_cpu_percent": 0.8,
                 "xgboost_n_jobs": 1
             }
@@ -169,10 +163,7 @@ class TestXGBoostHyperparameters:
             "grids": {"FOREX": {"tp": [1.0], "sl": [1.0], "ct": [0.5]}},
             "exit_strategy": "fixed",
             "exit_params": {},
-            "resources": {
-                "ram_per_feature_group_gb": 0.5,
-                "cpu_per_feature_group": 1.0,
-                "min_free_ram_percent": 0.15,
+            "resources": {                "min_free_ram_percent": 0.15,
                 "max_cpu_percent": 0.8,
                 "xgboost_n_jobs": 1
             }
@@ -223,10 +214,7 @@ class TestXGBoostHyperparameters:
             "grids": {"FOREX": {"tp": [1.0], "sl": [1.0], "ct": [0.5]}},
             "exit_strategy": "fixed",
             "exit_params": {},
-            "resources": {
-                "ram_per_feature_group_gb": 0.5,
-                "cpu_per_feature_group": 1.0,
-                "min_free_ram_percent": 0.15,
+            "resources": {                "min_free_ram_percent": 0.15,
                 "max_cpu_percent": 0.8,
                 "xgboost_n_jobs": 1
             }

@@ -1,10 +1,15 @@
 {
   "name": "Volatility Breakout Strategy",
-  "description": "Handelt bei steigender Volatilität - nutzt Vol-Regimes als Filter",
-  "tags": ["volatility", "vix", "atr", "regime_based", "atr_based"],
-  "hypothesis": "Hohe Volatilität bietet größere Chancen - gezielte Trades bei Vol-Expansion",
-  "expected_outcome": "Variable Win-Rate abhängig vom Marktregime, RRR 1.0-3.0",
-
+  "description": "Handelt bei steigender Volatilit\u00e4t - nutzt Vol-Regimes als Filter",
+  "tags": [
+    "volatility",
+    "vix",
+    "atr",
+    "regime_based",
+    "atr_based"
+  ],
+  "hypothesis": "Hohe Volatilit\u00e4t bietet gr\u00f6\u00dfere Chancen - gezielte Trades bei Vol-Expansion",
+  "expected_outcome": "Variable Win-Rate abh\u00e4ngig vom Marktregime, RRR 1.0-3.0",
   "indicators": [
     "volatility",
     "risk",
@@ -13,24 +18,49 @@
     "macro_surprise",
     "microstructure"
   ],
-
   "indicator_params": {
     "volatility": {
-      "bb_periods": [20],
-      "atr_periods": [7, 14, 21]
+      "bb_periods": [
+        20
+      ],
+      "atr_periods": [
+        7,
+        14,
+        21
+      ]
     },
     "risk": {
-      "dd_windows": [50, 100],
-      "cvar_windows": [50, 100],
-      "vov_windows": [20, 50],
+      "dd_windows": [
+        50,
+        100
+      ],
+      "cvar_windows": [
+        50,
+        100
+      ],
+      "vov_windows": [
+        20,
+        50
+      ],
       "compute_correlations": true
     },
     "dynamics": {
-      "lookbacks": [4, 8, 24],
-      "lag_periods": [4, 8, 24]
+      "lookbacks": [
+        4,
+        8,
+        24
+      ],
+      "lag_periods": [
+        4,
+        8,
+        24
+      ]
     },
     "regime": {
-      "hurst_windows": [100, 200]
+      "hurst_windows": [
+        100,
+        200
+      ]
     },
     "macro_surprise": {
       "vol_lookback": 20,
@@ -41,27 +71,25 @@
       "rolling_window": 5
     }
   },
-
   "exit_strategy": "atr_based",
-
   "exit_params": {
     "atr_period": 14,
     "min_tp_pips": 12,
     "min_sl_pips": 12
   },
-
   "feature_selector": "boruta",
-
   "feature_params": {
     "max_features": 35,
     "n_iter": 12,
     "n_estimators": 100
   },
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 150,
       "max_depth": 5,
@@ -70,34 +98,108 @@
       "colsample_bytree": 0.8
     }
   },
-
   "grids": {
     "FOREX": {
-      "tp": [1.5, 2.0, 2.5, 3.0, 4.0],
-      "sl": [1.0, 1.5, 2.0],
-      "ct": [0.58, 0.62, 0.68, 0.72],
-      "timeout_bars": [24, 48, 96]
+      "tp": [
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        4.0
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0
+      ],
+      "ct": [
+        0.58,
+        0.62,
+        0.68,
+        0.72
+      ],
+      "timeout_bars": [
+        24,
+        48,
+        96
+      ]
     },
     "INDEX": {
-      "tp": [1.5, 2.0, 3.0, 4.0, 5.0],
-      "sl": [1.0, 1.5, 2.0, 3.0],
-      "ct": [0.58, 0.62, 0.68, 0.72],
-      "timeout_bars": [24, 48, 96]
+      "tp": [
+        1.5,
+        2.0,
+        3.0,
+        4.0,
+        5.0
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0,
+        3.0
+      ],
+      "ct": [
+        0.58,
+        0.62,
+        0.68,
+        0.72
+      ],
+      "timeout_bars": [
+        24,
+        48,
+        96
+      ]
     },
     "COMMODITY": {
-      "tp": [1.5, 2.0, 3.0, 4.0, 5.0],
-      "sl": [1.0, 1.5, 2.0, 3.0],
-      "ct": [0.58, 0.62, 0.68, 0.72],
-      "timeout_bars": [24, 48, 96]
+      "tp": [
+        1.5,
+        2.0,
+        3.0,
+        4.0,
+        5.0
+      ],
+      "sl": [
+        1.0,
+        1.5,
+        2.0,
+        3.0
+      ],
+      "ct": [
+        0.58,
+        0.62,
+        0.68,
+        0.72
+      ],
+      "timeout_bars": [
+        24,
+        48,
+        96
+      ]
     },
     "CRYPTO": {
-      "tp": [2.0, 3.0, 4.0, 5.0, 6.0],
-      "sl": [1.5, 2.0, 3.0],
-      "ct": [0.55, 0.6, 0.68],
-      "timeout_bars": [48, 96]
+      "tp": [
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0
+      ],
+      "sl": [
+        1.5,
+        2.0,
+        3.0
+      ],
+      "ct": [
+        0.55,
+        0.6,
+        0.68
+      ],
+      "timeout_bars": [
+        48,
+        96
+      ]
     }
   },
-
   "validation": {
     "method": "walk_forward",
     "folds": 8,
@@ -105,16 +207,12 @@
     "min_trades": 80,
     "n_inner_folds": 5
   },
-
   "filters": {
     "min_rrr": 0.8,
     "min_trades": 40,
     "max_drawdown": 0.5
   },
-
   "resources": {
-    "ram_per_feature_group_gb": 0.5,
-    "cpu_per_feature_group": 0.5,
     "max_cpu_percent": 0.8
   }
 }

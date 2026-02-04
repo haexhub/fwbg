@@ -1,15 +1,16 @@
 {
-  "name": "Exploration",
-  "description": "Maximale Feature-Exploration mit allen verfügbaren Indicator-Plugins - ML lernt optimale Marktbedingungen",
+  "name": "Exploration ATR",
+  "description": "Maximale Feature-Exploration mit ATR-basierter dynamischer Exit-Strategie - TP/SL passen sich der Volatilität an",
   "tags": [
     "exploration",
     "parameter_search",
     "full_features",
     "ml_driven",
-    "atr_based"
+    "atr_based",
+    "dynamic_exits"
   ],
-  "hypothesis": "ML soll selbst lernen, welche Features und Marktbedingungen relevant sind - keine harten Filter, maximale Feature-Vielfalt",
-  "expected_outcome": "Identifikation der wichtigsten Features und profitablen Parameter-Bereiche durch Boruta Feature-Selektion",
+  "hypothesis": "ATR-basierte dynamische TP/SL bieten bessere Anpassung an Marktvolatilität als fixe Spread-Multiplikatoren. ML lernt optimale ATR-Multiplikatoren für verschiedene Marktregime.",
+  "expected_outcome": "Höhere Risk-Adjusted Returns durch volatilitäts-angepasste Exits. Bessere Performance in verschiedenen Volatilitätsregimen.",
 
   "indicators": [
     "trend",
@@ -108,9 +109,14 @@
     }
   },
 
-  "exit_strategy": "fixed",
+  "exit_strategy": "atr_based",
 
-  "exit_params": {},
+  "exit_params": {
+    "atr_period": 14,
+    "min_tp_pips": 10,
+    "min_sl_pips": 15,
+    "adaptive_timeout": false
+  },
 
   "feature_selector": "boruta",
 
@@ -148,26 +154,26 @@
 
   "grids": {
     "FOREX": {
-      "tp": [15, 20, 25, 30, 40, 50, 60, 80],
-      "sl": [15, 20, 25, 30, 40, 50, 60, 80],
+      "tp": [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0],
+      "sl": [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0],
       "ct": [0.5, 0.52, 0.55, 0.58, 0.6, 0.65, 0.7],
       "timeout_bars": [null, 12, 24, 48, 96]
     },
     "INDEX": {
-      "tp": [20, 30, 50, 70, 100, 150],
-      "sl": [20, 30, 50, 70, 100, 150],
+      "tp": [0.5, 0.75, 1.0, 1.5, 2.0, 3.0],
+      "sl": [0.5, 0.75, 1.0, 1.5, 2.0, 3.0],
       "ct": [0.5, 0.52, 0.55, 0.6, 0.65, 0.7],
       "timeout_bars": [null, 12, 24, 48, 96]
     },
     "COMMODITY": {
-      "tp": [20, 30, 40, 60, 80, 100],
-      "sl": [20, 30, 40, 60, 80, 100],
+      "tp": [0.5, 0.75, 1.0, 1.5, 2.0, 2.5],
+      "sl": [0.5, 0.75, 1.0, 1.5, 2.0, 2.5],
       "ct": [0.5, 0.52, 0.55, 0.58, 0.62, 0.65, 0.7],
       "timeout_bars": [null, 12, 24, 48, 96]
     },
     "CRYPTO": {
-      "tp": [20, 30, 50, 80, 120, 200],
-      "sl": [20, 30, 50, 80, 120, 200],
+      "tp": [0.5, 1.0, 1.5, 2.0, 3.0, 4.0],
+      "sl": [0.5, 1.0, 1.5, 2.0, 3.0, 4.0],
       "ct": [0.5, 0.52, 0.55, 0.6, 0.65, 0.7],
       "timeout_bars": [null, 12, 24, 48, 96]
     }
