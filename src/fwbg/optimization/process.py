@@ -45,8 +45,8 @@ _throttle_wait_count = 0
 def _wait_for_resources(
     max_cpu_percent: float = 0.80,
     min_free_ram_percent: float = 0.15,
-    check_interval: float = 2.0,
-    max_wait: float = 60.0
+    check_interval: float = 1.0,
+    max_wait: float = 120.0
 ):
     """
     Wartet, bis genug CPU/RAM-Ressourcen verfügbar sind.
@@ -58,7 +58,7 @@ def _wait_for_resources(
     Args:
         max_cpu_percent: Maximale CPU-Auslastung (0.0-1.0 oder Prozent)
         min_free_ram_percent: Minimaler freier RAM (0.0-1.0 oder Prozent)
-        check_interval: Sekunden zwischen Checks
+        check_interval: Sekunden zwischen Checks während des Wartens
         max_wait: Maximale Wartezeit in Sekunden
     """
     global _last_throttle_check, _throttle_wait_count
@@ -67,9 +67,9 @@ def _wait_for_resources(
     max_cpu = max_cpu_percent / 100 if max_cpu_percent > 1 else max_cpu_percent
     min_ram = min_free_ram_percent / 100 if min_free_ram_percent > 1 else min_free_ram_percent
 
-    # Nicht zu häufig checken (Performance)
+    # Nicht zu häufig checken (Performance) - aber mind. alle 5 Sekunden
     now = time.time()
-    if now - _last_throttle_check < check_interval:
+    if now - _last_throttle_check < 5.0:
         return
 
     _last_throttle_check = now
@@ -78,8 +78,11 @@ def _wait_for_resources(
     waited = False
 
     while True:
-        # CPU-Check
-        cpu_percent = psutil.cpu_percent(interval=0.1) / 100.0
+        # CPU-Check: Mehrere Samples für stabilen Wert
+        cpu_readings = []
+        for _ in range(3):
+            cpu_readings.append(psutil.cpu_percent(interval=0.15))
+        cpu_percent = sum(cpu_readings) / len(cpu_readings) / 100.0
 
         # RAM-Check
         mem = psutil.virtual_memory()
@@ -98,7 +101,7 @@ def _wait_for_resources(
 
         # Max Wartezeit erreicht?
         if time.time() - wait_start > max_wait:
-            log(1, f"  Max Wartezeit ({max_wait}s) erreicht - fahre trotzdem fort")
+            log(1, f"  Max Wartezeit ({max_wait}s) erreicht - fahre trotzdem fort (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)")
             break
 
         # Erste Warnung loggen
@@ -111,7 +114,7 @@ def _wait_for_resources(
             log(2, f"  Pausiere Grid-Search ({', '.join(reasons)})...")
             waited = True
 
-        # Kurz warten
+        # Warten bevor nächster Check
         time.sleep(check_interval)
 
     return
@@ -321,11 +324,12 @@ def _process_feature_group(
     # (Parallelisierung erfolgt auf Feature-Gruppen-Ebene mit Ressourcen-Check)
     for combo in combos:
         # Ressourcen-Check: Pausiere wenn CPU/RAM zu hoch
+        # check_interval=1.0 während Warten, max_wait=300s (5 min)
         _wait_for_resources(
             max_cpu_percent=ctx.max_cpu_percent,
             min_free_ram_percent=ctx.min_free_ram_percent,
-            check_interval=2.0,
-            max_wait=60.0
+            check_interval=1.0,
+            max_wait=300.0
         )
 
         candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
