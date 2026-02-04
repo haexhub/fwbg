@@ -172,9 +172,20 @@ class AdaptivePoolManager:
         """Gibt den freien RAM in GB zurück."""
         return psutil.virtual_memory().available / (1024**3)
 
-    def get_cpu_percent(self) -> float:
-        """Gibt die aktuelle CPU-Auslastung zurück (0.0-100.0)."""
-        return psutil.cpu_percent(interval=0.1)
+    def get_cpu_percent(self, samples: int = 3) -> float:
+        """
+        Gibt die aktuelle CPU-Auslastung zurück (0.0-100.0).
+
+        Nimmt mehrere Samples und gibt den Durchschnitt zurück,
+        um kurzfristige Schwankungen auszugleichen.
+        """
+        if samples <= 1:
+            return psutil.cpu_percent(interval=0.2)
+
+        readings = []
+        for _ in range(samples):
+            readings.append(psutil.cpu_percent(interval=0.15))
+        return sum(readings) / len(readings)
 
     def can_spawn_worker(self, current_workers: int) -> bool:
         """
@@ -194,8 +205,17 @@ class AdaptivePoolManager:
             return False
 
         # CPU-Check: Nicht starten wenn CPU bereits über max_cpu_percent
-        current_cpu = self.get_cpu_percent()
-        if current_cpu > self.max_cpu_percent * 100:
+        # Mehrere Samples nehmen um Momentan-Schwankungen auszugleichen
+        current_cpu = self.get_cpu_percent(samples=3)
+        cpu_threshold = self.max_cpu_percent * 100
+
+        # Bei bereits laufenden Workern: Konservativer sein
+        # Wenn schon Workers aktiv sind, reduziere die Schwelle leicht
+        if current_workers >= 1:
+            # Pro aktivem Worker 5% weniger Headroom erlauben
+            cpu_threshold = min(cpu_threshold, 95 - (current_workers * 10))
+
+        if current_cpu > cpu_threshold:
             self.ram_throttle_count += 1  # Reuse counter for any throttle
             return False
 

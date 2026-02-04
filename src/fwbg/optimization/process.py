@@ -395,14 +395,27 @@ def _process_feature_groups_parallel(
     # 4. XGBoost releases GIL während der Berechnung
     # Der Hauptteil der CPU-Arbeit geschieht in XGBoost (C++), nicht in Python.
 
+    def get_avg_cpu(samples: int = 3) -> float:
+        """Nimmt mehrere CPU-Samples und gibt den Durchschnitt zurück."""
+        readings = []
+        for _ in range(samples):
+            readings.append(psutil.cpu_percent(interval=0.15))
+        return sum(readings) / len(readings)
+
     def can_start_feature_group(active_workers: int) -> bool:
         """Prüft ob eine weitere Feature-Gruppe gestartet werden kann."""
         if active_workers >= max_workers:
             return False
 
-        # CPU-Check: Nicht starten wenn CPU bereits über max_cpu_percent
-        current_cpu = psutil.cpu_percent(interval=0.1)
-        if current_cpu > max_cpu_percent * 100:
+        # CPU-Check: Mehrere Samples für stabilen Wert
+        current_cpu = get_avg_cpu(samples=3)
+        cpu_threshold = max_cpu_percent * 100
+
+        # Bei bereits laufenden Gruppen: Konservativer sein
+        if active_workers >= 1:
+            cpu_threshold = min(cpu_threshold, 90 - (active_workers * 10))
+
+        if current_cpu > cpu_threshold:
             return False
 
         # RAM-Check: Genug freier RAM?
