@@ -692,11 +692,16 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(1, "SKIP - Keine Daten", sym)
             return {"symbol": sym, "status": "no_data"}
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
+
+        # Defragmentiere VOR Makro-Laden
+        df = df.copy()
+        log(3, "DataFrame vor Makro-Load defragmentiert", sym)
+
         report_phase(sym, "Makro-Indikatoren...")
 
         # === ALLE MAKRO-INDIKATOREN LADEN ===
         t0 = time.time()
-        df["_date"] = df.index.date
+        date_series = df.index.date  # Kein Assignment, nur temporäre Variable
         macro_count = 0
 
         for filename, prefix in MACRO_INDICATORS.items():
@@ -707,7 +712,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     macro_lookup = macro_df["Close"].to_dict()
 
                     col_name = f"macro_{prefix}"
-                    df[col_name] = df["_date"].map(lambda d: macro_lookup.get(pd.Timestamp(d), np.nan))
+                    df[col_name] = pd.Series(date_series, index=df.index).map(lambda d: macro_lookup.get(pd.Timestamp(d), np.nan))
                     df[col_name] = df[col_name].ffill()
 
                     # Stunden-basierte Lookbacks
@@ -719,11 +724,20 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                         df[f"{col_name}_chg_{lb_d}d"] = df[col_name].pct_change(24 * lb_d) * 100
 
                     macro_count += 1
+
+                    # Defragmentiere nach jedem 10. Indikator
+                    if macro_count % 10 == 0:
+                        df = df.copy()
+                        log(3, f"DataFrame defragmentiert nach {macro_count} Indikatoren", sym)
+
                 except Exception:
                     pass
 
-        df = df.drop(columns=["_date"], errors="ignore")
         log(2, f"Makro-Indikatoren: {macro_count} geladen ({time.time()-t0:.1f}s)", sym)
+
+        # Final defragmentation nach allen Makro-Daten
+        df = df.copy()
+        log(3, "DataFrame nach Makro-Load final defragmentiert", sym)
 
         # === ABGELEITETE FEATURES (Spreads & Ratios) ===
         t0 = time.time()
