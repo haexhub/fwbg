@@ -868,6 +868,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # === NESTED CV: Holdout Split ===
         # Die letzten 20% werden KOMPLETT zurückgehalten für finale Evaluation
+        report_phase(sym, "Grid-Search...")
         cv_split = nested_cv_split(df, holdout_ratio=0.20, n_inner_folds=5)
         inner_folds = cv_split["inner_folds"]
         holdout_df = cv_split["holdout_df"]
