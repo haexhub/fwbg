@@ -263,7 +263,12 @@ class StructureIndicators(BaseIndicator):
         vwap_cross = (above_vwap != above_vwap.shift(1)).astype(int)
         features["structure_bars_since_vwap_cross"] = _bars_since_event(vwap_cross)
 
-        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
+        # CRITICAL: Shift all features by 1 to prevent lookahead bias
+        features_df = pd.DataFrame(features, index=df.index)
+        for col in features_df.columns:
+            features_df[col] = features_df[col].shift(1)
+
+        return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [

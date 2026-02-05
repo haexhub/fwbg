@@ -155,7 +155,12 @@ class RegimeIndicators(BaseIndicator):
                 pd.Series(features["regime_hurst_500"], index=df.index)
             )
 
-        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
+        # CRITICAL: Shift all features by 1 to prevent lookahead bias
+        features_df = pd.DataFrame(features, index=df.index)
+        for col in features_df.columns:
+            features_df[col] = features_df[col].shift(1)
+
+        return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [

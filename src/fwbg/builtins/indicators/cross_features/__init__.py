@@ -138,7 +138,13 @@ class CrossFeatureIndicators(BaseIndicator):
         features["cross_bearish_count"] = bearish_signals
         features["cross_signal_bias"] = bullish_signals - bearish_signals
 
-        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
+        # CRITICAL: Shift all features by 1 to prevent lookahead bias
+        # At bar i, the model should use features from bar i-1, not bar i
+        features_df = pd.DataFrame(features, index=df.index)
+        for col in features_df.columns:
+            features_df[col] = features_df[col].shift(1)
+
+        return pd.concat([df, features_df], axis=1)
 
     def _ensure_base_indicators(self, df: pd.DataFrame) -> None:
         """Berechnet fehlende Basis-Indikatoren."""

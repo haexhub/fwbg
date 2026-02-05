@@ -86,7 +86,13 @@ class MomentumIndicators(BaseIndicator):
         for period in roc_periods:
             features[f"mom_roc_{period}"] = ta.momentum.roc(df["C"], window=period)
 
-        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
+        # CRITICAL: Shift all features by 1 to prevent lookahead bias
+        # At bar i, the model should use features from bar i-1, not bar i
+        features_df = pd.DataFrame(features, index=df.index)
+        for col in features_df.columns:
+            features_df[col] = features_df[col].shift(1)
+
+        return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         """Gibt Liste aller Momentum-Feature-Spalten zurück."""
