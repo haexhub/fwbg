@@ -166,6 +166,51 @@ Die kombinierten Gruppen enthalten Basis-Gruppen. Nicht zusammen verwenden:
 
 ---
 
+### preprocessing - Daten-Preprocessing
+
+Preprocessing wird **vor** Feature-Berechnung auf OHLC-Daten angewendet.
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `preprocessing` | array | `[]` | Liste der Preprocessing-Plugins |
+| `preprocessing_params` | object | `{}` | Parameter pro Plugin |
+
+**Verfügbare Plugins:**
+
+#### fractional_diff - Fractional Differentiation
+
+Macht Zeitreihen stationär unter Beibehaltung von Memory (nach López de Prado).
+
+**Parameter:**
+- `auto_d` (bool): Automatische d-Optimierung via ADF-Test (default: `true`)
+- `default_d` (float): Fallback d-Wert wenn `auto_d=false` (default: `0.4`)
+  - d=0: Keine Transformation (original)
+  - d=1: Volle Differentiation (verliert Memory)
+  - d=0.3-0.5: Optimal für Trading (stationär + Memory)
+- `columns` (list): Zu transformierende Spalten (default: `["O", "H", "L", "C"]`)
+
+**Wann nützlich:**
+- Bei nicht-stationären Zeitreihen (Trends, Mean-Reversion)
+- Verbessert ML-Modell-Performance durch stationäre Features
+- Besonders wertvoll bei längeren Lookback-Perioden
+
+**Beispiel:**
+
+```json
+{
+  "preprocessing": ["fractional_diff"],
+  "preprocessing_params": {
+    "fractional_diff": {
+      "auto_d": true,
+      "default_d": 0.4,
+      "columns": ["O", "H", "L", "C"]
+    }
+  }
+}
+```
+
+---
+
 ### simulation - Trade-Simulation
 
 | Parameter | Typ | Default | Beschreibung |
@@ -560,25 +605,3 @@ Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte
 }
 ```
 
----
-
-## Nicht mehr genutzte Parameter
-
-Diese Parameter werden im Code **nicht mehr verwendet** und können ignoriert oder entfernt werden:
-
-- `baseline_run` - nur Dokumentation
-- `changes` - nur Dokumentation
-- `notes` - nur Dokumentation
-- `features.technical_indicators` - hat keinen Effekt
-- `features.macro_indicators` - hat keinen Effekt
-- `features.time_features` - hat keinen Effekt
-- `features.multi_timeframe` - hat keinen Effekt
-- `features.custom_features` - hat keinen Effekt
-- `features.feature_selection` - hat keinen Effekt
-- `simulation.tp_sl_basis` - immer "spread_multiple"
-- `simulation.trailing_stop` - immer true
-- `simulation.slippage_model` - immer "fixed"
-- `simulation.regime_filter` - immer true
-- `validation.method` - immer "walk_forward"
-- `filters.min_annual_return` - hat keinen Effekt
-- `model.type` - immer "xgboost"
