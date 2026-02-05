@@ -798,8 +798,17 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             df,
             indicators=strategy.indicators,
             progress_callback=indicator_progress
-        ).dropna()
-        log(2, f"Indikatoren berechnet: {len(df)} Zeilen nach dropna ({time.time()-t0:.1f}s)", sym)
+        )
+        log(2, f"Indikatoren berechnet, DataFrame shape: {df.shape}", sym)
+
+        # Defragmentiere DataFrame vor dropna() - fragmentierte DataFrames sind extrem langsam
+        report_phase(sym, "Defragmentiere DataFrame...")
+        df = df.copy()
+        log(2, f"DataFrame defragmentiert", sym)
+
+        report_phase(sym, "Entferne NaN-Zeilen...")
+        df = df.dropna()
+        log(2, f"Nach dropna: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
 
         if len(df) < MIN_TRADES * 2:
             log(1, f"SKIP - Zu wenig Daten nach dropna ({len(df)} < {MIN_TRADES * 2})", sym)
