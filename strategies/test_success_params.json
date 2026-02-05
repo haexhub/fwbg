@@ -24,8 +24,14 @@
     "min_z_score": 0.5
   },
   
-  "preprocessing": [],
-  "preprocessing_params": {},
+  "preprocessing": ["fractional_diff"],
+  "preprocessing_params": {
+    "fractional_diff": {
+      "auto_d": true,
+      "default_d": 0.4,
+      "columns": ["O", "H", "L", "C"]
+    }
+  },
   
   "model": {
     "type": "xgboost",
