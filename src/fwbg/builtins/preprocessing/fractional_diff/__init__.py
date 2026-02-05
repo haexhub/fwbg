@@ -24,7 +24,7 @@ def _get_weights(d: float, size: int) -> np.ndarray:
     return np.array(w[::-1])
 
 
-def _frac_diff(series: pd.Series, d: float, threshold: float = 1e-5) -> pd.Series:
+def _frac_diff(series: pd.Series, d: float, threshold: float = 1e-5, max_window: int = 500) -> pd.Series:
     """
     Wendet Fractional Differentiation auf eine Serie an.
 
@@ -32,6 +32,7 @@ def _frac_diff(series: pd.Series, d: float, threshold: float = 1e-5) -> pd.Serie
         series: Input-Serie
         d: Differentiation-Exponent (0-1)
         threshold: Minimum-Gewicht für Cutoff
+        max_window: Maximale Anzahl von Gewichten (verhindert Memory-Probleme bei langen Serien)
 
     Returns:
         Transformierte Serie
@@ -39,8 +40,10 @@ def _frac_diff(series: pd.Series, d: float, threshold: float = 1e-5) -> pd.Serie
     if d == 0:
         return series
 
-    # Gewichte berechnen (mit Cutoff für Effizienz)
-    weights = _get_weights(d, len(series))
+    # Gewichte berechnen (limitiert auf max_window für Performance)
+    # Nach López de Prado: Gewichte werden nach ~100-500 Bars vernachlässigbar klein
+    window_size = min(max_window, len(series))
+    weights = _get_weights(d, window_size)
     weights = weights[np.abs(weights) > threshold]
     width = len(weights)
 
