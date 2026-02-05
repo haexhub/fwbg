@@ -89,21 +89,36 @@ def test_preprocessing_fit_called_per_fold():
     ctx.min_z_score = 0.3
     ctx.early_termination = False
     ctx.first_fold_sanity_check = False
+    ctx.min_fold_stability = 0.5
+    ctx.first_fold_min_win_rate = 0.25
+    ctx.first_fold_min_pnl = -10.0
+    ctx.first_fold_min_trades = 5
+    ctx.separate_long_short = False
+    ctx.min_score_margin = 0.0
 
-    # Mock get_preprocessor to return our MockPreprocessor
+    # Mock get_preprocessor to return a CLASS that creates tracked instances
+    # We need to return the class itself, not an instance
     mock_pp = MockPreprocessor()
-    with patch("fwbg.core.get_preprocessor", return_value=lambda: mock_pp):
+
+    def get_mock_preprocessor_class(name):
+        """Return a class that always creates the same tracked instance."""
+        return lambda: mock_pp
+
+    with patch("fwbg.core.get_preprocessor", side_effect=get_mock_preprocessor_class):
         with patch("fwbg.optimization.nested_cv.compute_targets") as mock_targets:
-            with patch("fwbg.optimization.nested_cv.select_features_from_fold"):
-                with patch("fwbg.optimization.nested_cv.train_model"):
-                    with patch("fwbg.optimization.nested_cv.evaluate_on_validation"):
+            with patch("fwbg.optimization.nested_cv.select_features_from_fold") as mock_select:
+                with patch("fwbg.optimization.nested_cv.train_model") as mock_train:
+                    with patch("fwbg.optimization.nested_cv.evaluate_on_validation") as mock_eval:
                         # Configure mock returns
                         mock_targets.return_value = (
-                            pd.Series([1, 0, 1]),  # targets_long
-                            pd.Series([0, 1, 0]),  # targets_short
+                            pd.Series([1, 0, 1] * 100, index=range(300)),  # targets_long
+                            pd.Series([0, 1, 0] * 100, index=range(300)),  # targets_short
                             True,  # has_long
                             True   # has_short
                         )
+                        mock_select.return_value = (["feature1", "feature2"], None)
+                        mock_train.return_value = (Mock(), Mock())  # model_long, model_short
+                        mock_eval.return_value = (1, 10.0, {})  # best_ct, best_pnl, trades_by_ct
 
                         try:
                             run_inner_cv(
@@ -116,8 +131,10 @@ def test_preprocessing_fit_called_per_fold():
                                 total_grid_combos=10,
                                 cached_targets=None
                             )
-                        except Exception:
-                            pass  # Ignore errors, we just want to check fit calls
+                        except Exception as e:
+                            print(f"[DEBUG] run_inner_cv failed: {e}")
+                            import traceback
+                            traceback.print_exc()
 
     # Verify fit() was called once per fold
     assert len(mock_pp.fit_calls) == 3, f"Expected 3 fit calls, got {len(mock_pp.fit_calls)}"
@@ -146,19 +163,41 @@ def test_preprocessing_no_lookahead_bias():
 
     ctx = Mock(spec=SimulationContext)
     ctx.preprocessing = ["mock_preprocessor"]
-    ctx.preprocessing_params = {}
+    ctx.preprocessing_params = {"mock_preprocessor": {}}
     ctx.symbol = "TEST"
     ctx.early_termination = False
     ctx.first_fold_sanity_check = False
     ctx.min_trades = 10
+    ctx.min_fold_stability = 0.5
+    ctx.first_fold_min_win_rate = 0.25
+    ctx.first_fold_min_pnl = -10.0
+    ctx.first_fold_min_trades = 5
+    ctx.separate_long_short = False
+    ctx.min_score_margin = 0.0
+    ctx.feature_selection = "boruta"
+    ctx.max_features = 5
 
     mock_pp = MockPreprocessor()
-    with patch("fwbg.core.get_preprocessor", return_value=lambda: mock_pp):
+
+    def get_mock_preprocessor_class(name):
+        """Return a class that always creates the same tracked instance."""
+        return lambda: mock_pp
+
+    with patch("fwbg.core.get_preprocessor", side_effect=get_mock_preprocessor_class):
         with patch("fwbg.optimization.nested_cv.compute_targets") as mock_targets:
-            with patch("fwbg.optimization.nested_cv.select_features_from_fold"):
-                with patch("fwbg.optimization.nested_cv.train_model"):
-                    with patch("fwbg.optimization.nested_cv.evaluate_on_validation"):
-                        mock_targets.return_value = (None, None, False, False)
+            with patch("fwbg.optimization.nested_cv.select_features_from_fold") as mock_select:
+                with patch("fwbg.optimization.nested_cv.train_model") as mock_train:
+                    with patch("fwbg.optimization.nested_cv.evaluate_on_validation") as mock_eval:
+                        # Return valid targets to avoid early termination
+                        mock_targets.return_value = (
+                            pd.Series([1, 0] * 50, index=range(100)),
+                            pd.Series([0, 1] * 50, index=range(100)),
+                            True,
+                            True
+                        )
+                        mock_select.return_value = (["feature1"], None)
+                        mock_train.return_value = (Mock(), Mock())
+                        mock_eval.return_value = (1, 10.0, {})  # best_ct, best_pnl, trades_by_ct
 
                         try:
                             run_inner_cv(
@@ -171,8 +210,10 @@ def test_preprocessing_no_lookahead_bias():
                                 total_grid_combos=10,
                                 cached_targets=None
                             )
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            print(f"[DEBUG] run_inner_cv failed: {e}")
+                            import traceback
+                            traceback.print_exc()
 
     # Verify fit() was called ONLY on train data
     assert len(mock_pp.fit_calls) == 1
