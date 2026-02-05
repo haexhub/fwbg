@@ -197,6 +197,17 @@ class ProgressTracker:
         if self._queue_thread:
             self._queue_thread.join(timeout=1)
 
+        # WICHTIG: Queue schließen um Worker-Prozesse freizugeben
+        # Ohne close() und join_thread() können Worker beim put() blockieren
+        if self.queue is not None:
+            try:
+                # close() verhindert weitere put() Calls
+                self.queue.close()
+                # join_thread() wartet bis alle gepufferten Daten geschrieben wurden
+                self.queue.join_thread()
+            except Exception:
+                pass  # Queue könnte bereits geschlossen sein
+
         # Finale Ausgabe
         elapsed = time.time() - self.start_time if self.start_time else 0
 
