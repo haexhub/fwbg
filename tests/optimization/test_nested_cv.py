@@ -91,6 +91,8 @@ def create_mock_context(
         "learning_rate": 0.1,
         "random_state": 42
     }
+    ctx.preprocessing = []  # No preprocessing by default
+    ctx.preprocessing_params = {}
     return ctx
 
 
