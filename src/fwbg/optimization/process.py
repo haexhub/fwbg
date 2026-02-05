@@ -400,10 +400,8 @@ def _process_feature_groups_parallel(
             current = completed_grid_combos[0]
 
             # Progress-Update senden (Phase-Text wird in progress.py generiert)
-            # Parallel-Modus kurz deaktivieren für Update
-            set_parallel_mode(False)
+            # Parallel-Modus NICHT unterdrücken - wir wollen die Updates sehen!
             report_progress(sym, 0, 0, "grid_search", current, total_grid_combos)
-            set_parallel_mode(True)
 
     # RAM/CPU-Limits aus Strategy-Config (via ctx)
     total_ram_gb = psutil.virtual_memory().total / (1024**3)
