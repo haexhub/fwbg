@@ -321,5 +321,114 @@ def test_preprocessing_indices_consistency():
     assert df_transformed.index.is_monotonic_increasing
 
 
+def test_val_df_no_row_loss():
+    """Test dass val_df nach Preprocessing KEINE Zeilen verliert.
+
+    Kritischer Test: Wenn fit() auf train_df und dann transform() auf val_df
+    aufgerufen wird, darf val_df KEINE Zeilen verlieren. Die History aus
+    train_df wird verwendet um NaNs am Anfang von val_df zu berechnen.
+    """
+    from fwbg.builtins.preprocessing.fractional_diff import FractionalDiffPreprocessor
+
+    # Simuliere CV-Split: train_df gefolgt von val_df (zeitlich danach)
+    n_train = 5000
+    n_val = 1000
+
+    # Train-Daten: Index 0 bis n_train-1
+    train_df = pd.DataFrame({
+        "O": np.random.randn(n_train) + 100,
+        "H": np.random.randn(n_train) + 101,
+        "L": np.random.randn(n_train) + 99,
+        "C": np.random.randn(n_train) + 100,
+        "feature1": np.random.randn(n_train),
+    })
+
+    # Val-Daten: Index n_train bis n_train+n_val-1 (zeitlich NACH train)
+    val_df = pd.DataFrame({
+        "O": np.random.randn(n_val) + 100,
+        "H": np.random.randn(n_val) + 101,
+        "L": np.random.randn(n_val) + 99,
+        "C": np.random.randn(n_val) + 100,
+        "feature1": np.random.randn(n_val),
+    })
+    val_df.index = range(n_train, n_train + n_val)
+
+    # Fit auf Train-Daten
+    pp = FractionalDiffPreprocessor()
+    pp.fit(train_df, auto_d=False, default_d=0.4)
+
+    # Transform auf beiden
+    train_transformed = pp.transform(train_df)
+    val_transformed = pp.transform(val_df)
+
+    # Train verliert Zeilen am Anfang (erwartet, ~500 wegen max_window)
+    train_lost = len(train_df) - len(train_transformed)
+    assert train_lost > 0, "Train-Daten sollten am Anfang Zeilen verlieren"
+    assert train_lost < 600, f"Train verliert zu viele Zeilen: {train_lost}"
+
+    # KRITISCH: Val darf KEINE Zeilen verlieren!
+    val_lost = len(val_df) - len(val_transformed)
+    assert val_lost == 0, \
+        f"Val-Daten sollten KEINE Zeilen verlieren, aber {val_lost} wurden entfernt! " \
+        f"Original: {len(val_df)}, Nach Transform: {len(val_transformed)}"
+
+    # Indices müssen identisch sein
+    assert list(val_transformed.index) == list(val_df.index), \
+        "Val-Indices müssen nach Transform identisch sein"
+
+    # Keine NaNs in den transformierten Spalten
+    for col in ["O", "H", "L", "C"]:
+        nan_count = val_transformed[col].isna().sum()
+        assert nan_count == 0, \
+            f"Val-Spalte {col} hat {nan_count} NaNs nach Transform"
+
+
+def test_holdout_df_no_row_loss():
+    """Test dass holdout_df nach Preprocessing KEINE Zeilen verliert.
+
+    Ähnlich wie val_df - holdout_df kommt zeitlich nach inner_df.
+    """
+    from fwbg.builtins.preprocessing.fractional_diff import FractionalDiffPreprocessor
+
+    n_inner = 8000
+    n_holdout = 2000
+
+    # Inner-Daten (gesamtes Train-Set für final Model)
+    inner_df = pd.DataFrame({
+        "O": np.random.randn(n_inner) + 100,
+        "H": np.random.randn(n_inner) + 101,
+        "L": np.random.randn(n_inner) + 99,
+        "C": np.random.randn(n_inner) + 100,
+    })
+
+    # Holdout-Daten: Index n_inner bis n_inner+n_holdout-1
+    holdout_df = pd.DataFrame({
+        "O": np.random.randn(n_holdout) + 100,
+        "H": np.random.randn(n_holdout) + 101,
+        "L": np.random.randn(n_holdout) + 99,
+        "C": np.random.randn(n_holdout) + 100,
+    })
+    holdout_df.index = range(n_inner, n_inner + n_holdout)
+
+    # Fit auf Inner-Daten
+    pp = FractionalDiffPreprocessor()
+    pp.fit(inner_df, auto_d=False, default_d=0.4)
+
+    # Transform auf beiden
+    inner_transformed = pp.transform(inner_df)
+    holdout_transformed = pp.transform(holdout_df)
+
+    # Holdout darf KEINE Zeilen verlieren
+    holdout_lost = len(holdout_df) - len(holdout_transformed)
+    assert holdout_lost == 0, \
+        f"Holdout-Daten sollten KEINE Zeilen verlieren, aber {holdout_lost} wurden entfernt!"
+
+    # Keine NaNs
+    for col in ["O", "H", "L", "C"]:
+        nan_count = holdout_transformed[col].isna().sum()
+        assert nan_count == 0, \
+            f"Holdout-Spalte {col} hat {nan_count} NaNs nach Transform"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
