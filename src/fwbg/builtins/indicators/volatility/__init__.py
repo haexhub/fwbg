@@ -77,7 +77,14 @@ class VolatilityIndicators(BaseIndicator):
         features["vol_dc_pband"] = dc.donchian_channel_pband()
         features["vol_dc_wband"] = dc.donchian_channel_wband()
 
-        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
+        # CRITICAL: Shift all features by 1 to prevent lookahead bias
+        # At bar i, the model should use features from bar i-1, not bar i
+        # because Close/High/Low of bar i are not yet known when making the signal decision
+        features_df = pd.DataFrame(features, index=df.index)
+        for col in features_df.columns:
+            features_df[col] = features_df[col].shift(1)
+
+        return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         """Gibt Liste aller Volatilitäts-Feature-Spalten zurück."""
