@@ -26,8 +26,9 @@ class TestCLIArgumentParsing:
     def test_help_command(self):
         """Test: --help zeigt Hilfe."""
         import subprocess
+        import sys
         result = subprocess.run(
-            ["python3", "-m", "fwbg.cli", "--help"],
+            [sys.executable, "-m", "fwbg.cli", "--help"],
             capture_output=True, text=True,
             env={**os.environ, "PYTHONPATH": "src"}
         )
@@ -37,8 +38,9 @@ class TestCLIArgumentParsing:
     def test_list_features_command(self):
         """Test: --list-features zeigt Feature-Gruppen."""
         import subprocess
+        import sys
         result = subprocess.run(
-            ["python3", "-m", "fwbg.cli", "--list-features"],
+            [sys.executable, "-m", "fwbg.cli", "--list-features"],
             capture_output=True, text=True,
             env={**os.environ, "PYTHONPATH": "src"}
         )
@@ -50,8 +52,9 @@ class TestCLIArgumentParsing:
     def test_list_runs_command(self):
         """Test: --list zeigt vorhandene Runs oder 'keine gefunden' Meldung."""
         import subprocess
+        import sys
         result = subprocess.run(
-            ["python3", "-m", "fwbg.cli", "--list"],
+            [sys.executable, "-m", "fwbg.cli", "--list"],
             capture_output=True, text=True,
             env={**os.environ, "PYTHONPATH": "src"}
         )
