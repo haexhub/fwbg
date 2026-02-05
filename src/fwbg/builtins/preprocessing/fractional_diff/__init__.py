@@ -89,56 +89,100 @@ class FractionalDiffPreprocessor(BasePreprocessor):
     Fractional Differentiation Preprocessor.
 
     Macht OHLC-Spalten stationär unter Beibehaltung von Memory.
+
+    Folgt sklearn fit/transform Pattern um Lookahead Bias zu verhindern:
+    - fit() lernt optimales d NUR von Train-Daten
+    - transform() wendet das gelernte d an (auf Train/Test/OOS)
     """
 
     order = 10  # Früh ausführen
 
-    def transform(
+    def fit(
         self,
         df: pd.DataFrame,
         auto_d: bool = True,
         default_d: float = 0.4,
         columns: List[str] = None,
         **params
-    ) -> pd.DataFrame:
+    ) -> "FractionalDiffPreprocessor":
         """
-        Wendet Fractional Differentiation auf DataFrame an.
+        Lernt optimales d von Train-Daten.
+
+        WICHTIG: Diese Methode MUSS auf Train-Daten aufgerufen werden,
+        um Lookahead Bias zu verhindern!
 
         Args:
-            df: Input DataFrame mit OHLC-Daten
-            auto_d: Automatische d-Optimierung via ADF-Test
+            df: Train DataFrame mit OHLC-Daten
+            auto_d: Automatische d-Optimierung via ADF-Test (NUR auf Train-Daten!)
             default_d: Default d-Wert wenn auto_d=False
             columns: Spalten zu transformieren (default: O, H, L, C)
 
         Returns:
-            Transformierter DataFrame
+            self (fitted preprocessor)
         """
         if columns is None:
             columns = ["O", "H", "L", "C"]
 
-        # Nur vorhandene Spalten transformieren
-        columns = [c for c in columns if c in df.columns]
+        # Nur vorhandene Spalten speichern
+        self.columns_ = [c for c in columns if c in df.columns]
 
-        if not columns:
+        if not self.columns_:
+            self.d_ = 0.0  # Keine Transformation
+            self.fitted_ = True
+            return self
+
+        # Optimales d finden (NUR auf Train-Daten!)
+        if auto_d:
+            self.d_ = _find_optimal_d(df["C"])
+        else:
+            self.d_ = default_d
+
+        self.fitted_ = True
+        return self
+
+    def transform(
+        self,
+        df: pd.DataFrame,
+        **params
+    ) -> pd.DataFrame:
+        """
+        Wendet Fractional Differentiation mit gelerntem d an.
+
+        Diese Methode verwendet das in fit() gelernte d und kann
+        auf Train, Test und OOS-Daten angewendet werden.
+
+        Args:
+            df: Input DataFrame mit OHLC-Daten
+
+        Returns:
+            Transformierter DataFrame
+
+        Raises:
+            RuntimeError: Wenn fit() noch nicht aufgerufen wurde
+        """
+        if not self.fitted_:
+            raise RuntimeError(
+                "FractionalDiffPreprocessor: fit() must be called before transform()"
+            )
+
+        if not self.columns_ or self.d_ == 0.0:
             return df
 
-        # Optimales d finden
-        if auto_d:
-            d = _find_optimal_d(df["C"])
-        else:
-            d = default_d
+        # DataFrame kopieren um Original nicht zu verändern
+        df = df.copy()
 
-        # Spalten transformieren
-        for col in columns:
-            df[col] = _frac_diff(df[col], d)
+        # Spalten transformieren mit gelerntem d
+        for col in self.columns_:
+            if col in df.columns:
+                df[col] = _frac_diff(df[col], self.d_)
 
-        # NaN am Anfang durch Dropna entfernen
-        first_valid = df[columns[0]].first_valid_index()
+        # NaN am Anfang entfernen (durch die Gewichtung entstehen NaNs)
+        first_valid = df[self.columns_[0]].first_valid_index()
         if first_valid is not None:
             df = df.loc[first_valid:]
 
         # Metadata speichern
-        df.attrs["frac_diff_d"] = d
+        df.attrs["frac_diff_d"] = self.d_
 
         return df
 

@@ -840,7 +840,40 @@ def run_inner_cv(
     first_fold_min_pnl = getattr(ctx, 'first_fold_min_pnl', -10.0)
     first_fold_min_trades = getattr(ctx, 'first_fold_min_trades', 5)
 
+    # === PREPROCESSING SETUP ===
+    # Preprocessing-Objekte erstellen (werden pro Fold neu gefittet)
+    preprocessors = []
+    if ctx.preprocessing:
+        from fwbg.core import get_preprocessor
+        for pp_name in ctx.preprocessing:
+            try:
+                pp_cls = get_preprocessor(pp_name)
+                preprocessors.append((pp_name, pp_cls))
+            except Exception:
+                # Fehler beim Laden des Preprocessors - skippen
+                pass
+
     for fold_idx, (train_df, val_df) in enumerate(inner_folds):
+        # === PREPROCESSING: FIT/TRANSFORM ===
+        # WICHTIG: Preprocessing MUSS in der CV-Schleife passieren um Lookahead Bias zu verhindern!
+        # 1. fit() auf Train-Daten (lernt Parameter NUR von Train)
+        # 2. transform() auf Train und Val-Daten (mit gelernten Parametern)
+        if preprocessors:
+            for pp_name, pp_cls in preprocessors:
+                try:
+                    params = ctx.preprocessing_params.get(pp_name, {})
+                    pp = pp_cls()
+
+                    # Fit auf Train-Daten (KEIN Lookahead!)
+                    pp.fit(train_df, **params)
+
+                    # Transform beide Datasets mit gelernten Parametern
+                    train_df = pp.transform(train_df, **params)
+                    val_df = pp.transform(val_df, **params)
+                except Exception:
+                    # Preprocessing fehlgeschlagen - Fold wird trotzdem weiterverarbeitet
+                    # (Falls nur ein Preprocessor fehlschlägt, sollte der Fold nicht komplett verloren gehen)
+                    pass
         # Early Termination Check: Kann min_fold_stability noch erreicht werden?
         if early_termination_enabled and min_profitable > 0:
             remaining_folds = total_folds - fold_idx
@@ -1004,6 +1037,26 @@ def evaluate_on_holdout(
         dict mit trades, trades_detailed, pnl, win_rate, n_trades
         Bei separate_long_short: zusätzlich long_stats und short_stats
     """
+    # === PREPROCESSING: FIT/TRANSFORM ===
+    # Preprocessing auf dem gesamten Inner-Set fitten und auf Holdout anwenden
+    if ctx.preprocessing:
+        from fwbg.core import get_preprocessor
+        for pp_name in ctx.preprocessing:
+            try:
+                pp_cls = get_preprocessor(pp_name)
+                params = ctx.preprocessing_params.get(pp_name, {})
+                pp = pp_cls()
+
+                # Fit auf GESAMTEM Inner-Set (alle Folds zusammen)
+                pp.fit(inner_df, **params)
+
+                # Transform beide Datasets
+                inner_df = pp.transform(inner_df, **params)
+                holdout_df = pp.transform(holdout_df, **params)
+            except Exception:
+                # Preprocessing fehlgeschlagen - trotzdem weitermachen
+                pass
+
     tp, sl, ct = candidate["params"]
     timeout_bars = candidate.get("timeout_bars")  # Time-based Exit
     features_long = candidate.get("selected_features_long")
