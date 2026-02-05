@@ -334,13 +334,10 @@ class ProgressTracker:
                     worker_bar_width = 16
                     worker_filled = int(worker_bar_width * grid_pos / grid_total)
                     worker_bar = "▓" * worker_filled + "░" * (worker_bar_width - worker_filled)
-
-                    # Generiere konsistenten Phase-Text aus grid_pos/grid_total
                     grid_phase = f"Grid: {grid_pos}/{grid_total} ({worker_pct}%)"
 
                     lines.append(f"║  → {sym:<10} [{worker_bar}] {worker_pct:3d}%  {grid_phase}".ljust(WIDTH - 1) + "║")
                 elif phase:
-                    # Nur Phase, noch kein Grid
                     max_phase = WIDTH - 20
                     if len(phase) > max_phase:
                         phase = phase[:max_phase-2] + ".."

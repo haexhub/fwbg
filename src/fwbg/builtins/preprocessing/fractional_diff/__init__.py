@@ -28,6 +28,8 @@ def _frac_diff(series: pd.Series, d: float, threshold: float = 1e-5, max_window:
     """
     Wendet Fractional Differentiation auf eine Serie an.
 
+    Verwendet vektorisierte Convolution für maximale Performance.
+
     Args:
         series: Input-Serie
         d: Differentiation-Exponent (0-1)
@@ -47,12 +49,16 @@ def _frac_diff(series: pd.Series, d: float, threshold: float = 1e-5, max_window:
     weights = weights[np.abs(weights) > threshold]
     width = len(weights)
 
-    result = pd.Series(index=series.index, dtype=float)
+    # Vektorisierte Convolution statt Python-Loop
+    # np.convolve mit 'valid' Mode gibt nur vollständig überlappende Ergebnisse
+    values = series.values
+    convolved = np.convolve(values, weights[::-1], mode='valid')
 
-    for i in range(width - 1, len(series)):
-        result.iloc[i] = np.dot(weights, series.iloc[i - width + 1:i + 1].values)
+    # Result-Array mit NaNs für den Anfang (wo keine vollständige Convolution möglich)
+    result = np.full(len(series), np.nan)
+    result[width - 1:] = convolved
 
-    return result
+    return pd.Series(result, index=series.index)
 
 
 def _find_optimal_d(
@@ -94,11 +100,18 @@ class FractionalDiffPreprocessor(BasePreprocessor):
     Macht OHLC-Spalten stationär unter Beibehaltung von Memory.
 
     Folgt sklearn fit/transform Pattern um Lookahead Bias zu verhindern:
-    - fit() lernt optimales d NUR von Train-Daten
+    - fit() lernt optimales d NUR von Train-Daten UND speichert History
     - transform() wendet das gelernte d an (auf Train/Test/OOS)
+
+    WICHTIG: Für Val/Test-Daten wird die in fit() gespeicherte History
+    verwendet, um NaNs am Anfang zu vermeiden. Das ist kein Lookahead Bias,
+    da die History aus den TRAIN-Daten stammt (zeitlich VOR Val/Test).
     """
 
     order = 10  # Früh ausführen
+
+    # Max window für frac_diff (bestimmt wie viel History wir brauchen)
+    MAX_WINDOW = 500
 
     def fit(
         self,
@@ -109,7 +122,7 @@ class FractionalDiffPreprocessor(BasePreprocessor):
         **params
     ) -> "FractionalDiffPreprocessor":
         """
-        Lernt optimales d von Train-Daten.
+        Lernt optimales d von Train-Daten und speichert History für spätere transforms.
 
         WICHTIG: Diese Methode MUSS auf Train-Daten aufgerufen werden,
         um Lookahead Bias zu verhindern!
@@ -131,6 +144,7 @@ class FractionalDiffPreprocessor(BasePreprocessor):
 
         if not self.columns_:
             self.d_ = 0.0  # Keine Transformation
+            self.history_ = None
             self.fitted_ = True
             return self
 
@@ -139,6 +153,16 @@ class FractionalDiffPreprocessor(BasePreprocessor):
             self.d_ = _find_optimal_d(df["C"])
         else:
             self.d_ = default_d
+
+        # History speichern: Die letzten MAX_WINDOW Zeilen des Train-DataFrames
+        # Diese werden bei transform() von Val/Test-Daten prepended,
+        # um NaNs am Anfang zu vermeiden (kein Lookahead - das sind TRAIN-Daten!)
+        history_size = min(self.MAX_WINDOW, len(df))
+        self.history_ = df.iloc[-history_size:].copy()
+
+        # Speichere auch den letzten Index des Train-DataFrames
+        # um später zu erkennen ob wir Train oder Val/Test transformieren
+        self.train_end_idx_ = df.index[-1]
 
         self.fitted_ = True
         return self
@@ -153,6 +177,10 @@ class FractionalDiffPreprocessor(BasePreprocessor):
 
         Diese Methode verwendet das in fit() gelernte d und kann
         auf Train, Test und OOS-Daten angewendet werden.
+
+        Für Val/Test-Daten (zeitlich nach Train) wird die in fit() gespeicherte
+        History prepended, um NaNs am Anfang zu vermeiden. Das ist KEIN
+        Lookahead Bias, da die History aus TRAIN-Daten stammt!
 
         Args:
             df: Input DataFrame mit OHLC-Daten
@@ -171,18 +199,46 @@ class FractionalDiffPreprocessor(BasePreprocessor):
         if not self.columns_ or self.d_ == 0.0:
             return df
 
-        # DataFrame kopieren um Original nicht zu verändern
-        df = df.copy()
+        # Prüfe ob das Train-Daten oder Val/Test-Daten sind
+        # Train-Daten: Erster Index <= train_end_idx (überlappend oder identisch)
+        # Val/Test-Daten: Erster Index > train_end_idx (zeitlich danach)
+        is_train_data = df.index[0] <= self.train_end_idx_
 
-        # Spalten transformieren mit gelerntem d
-        for col in self.columns_:
-            if col in df.columns:
-                df[col] = _frac_diff(df[col], self.d_)
+        if is_train_data:
+            # Train-Daten: Normal transformieren, NaNs am Anfang entfernen
+            df = df.copy()
 
-        # NaN am Anfang entfernen (durch die Gewichtung entstehen NaNs)
-        first_valid = df[self.columns_[0]].first_valid_index()
-        if first_valid is not None:
-            df = df.loc[first_valid:]
+            for col in self.columns_:
+                if col in df.columns:
+                    df[col] = _frac_diff(df[col], self.d_)
+
+            # NaN am Anfang entfernen (nur bei Train-Daten!)
+            first_valid = df[self.columns_[0]].first_valid_index()
+            if first_valid is not None:
+                df = df.loc[first_valid:]
+
+        else:
+            # Val/Test-Daten: History prependen um NaNs zu vermeiden
+            # Die History enthält die letzten N Zeilen der TRAIN-Daten
+            if self.history_ is not None:
+                # Kombiniere History + Val/Test-Daten
+                combined = pd.concat([self.history_, df], axis=0)
+
+                # Transformieren
+                combined_transformed = combined.copy()
+                for col in self.columns_:
+                    if col in combined_transformed.columns:
+                        combined_transformed[col] = _frac_diff(combined_transformed[col], self.d_)
+
+                # Nur den ursprünglichen Val/Test-Teil zurückgeben (ohne History)
+                # WICHTIG: Keine NaN-Entfernung hier - alle Zeilen sind valide!
+                df = combined_transformed.loc[df.index].copy()
+            else:
+                # Kein History vorhanden - Fallback auf normale Transformation
+                df = df.copy()
+                for col in self.columns_:
+                    if col in df.columns:
+                        df[col] = _frac_diff(df[col], self.d_)
 
         # Metadata speichern
         df.attrs["frac_diff_d"] = self.d_

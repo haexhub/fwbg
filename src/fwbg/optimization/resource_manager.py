@@ -122,6 +122,7 @@ class AdaptivePoolManager:
         max_cpu_percent: float = 0.80,
         min_free_ram_percent: float = 0.25,
         ram_per_worker_gb: float = 4.0,
+        threads_per_asset: int = 0,
         check_interval: float = 2.0,
         verbose: bool = True,
         progress_dict: Optional[Dict] = None,
@@ -132,6 +133,7 @@ class AdaptivePoolManager:
             max_cpu_percent: Maximaler Anteil der CPU-Kerne (0.0-1.0)
             min_free_ram_percent: Minimaler freier RAM-Anteil (0.0-1.0)
             ram_per_worker_gb: Geschätzter Peak-RAM pro Worker in GB
+            threads_per_asset: Geschätzte CPU-Threads pro Asset (0=auto)
             check_interval: Sekunden zwischen RAM-Checks
             verbose: Detaillierte Ausgaben
             progress_dict: DEPRECATED - nicht mehr verwendet
@@ -150,7 +152,32 @@ class AdaptivePoolManager:
         self.total_ram_gb = psutil.virtual_memory().total / (1024**3)
 
         # Berechne max Workers basierend auf CPU UND RAM
-        cpu_limit = max(1, int(self.total_cores * self.max_cpu_percent))
+        # WICHTIG: Nicht einfach CPU-Kerne zählen! Jedes Asset startet intern
+        # mehrere Feature-Group-Threads mit XGBoost, die jeweils n_jobs nutzen.
+        #
+        # Geschätzte Threads pro Asset (wenn nicht angegeben):
+        # - ~6 Feature-Groups (trend, volatility, reversal, structure, timing, ichimoku)
+        # - XGBoost nutzt n_jobs = total_cores / max_workers (automatisch)
+        # - Effektiv: ~8-12 Threads pro Asset bei mittlerer Systemgröße
+        if threads_per_asset > 0:
+            estimated_threads = threads_per_asset
+        else:
+            # Auto: Schätze basierend auf Systemgröße
+            # Kleine Systeme (≤8 Cores): 6 Threads/Asset
+            # Mittlere Systeme (9-16 Cores): 8 Threads/Asset
+            # Große Systeme (>16 Cores): 10 Threads/Asset
+            if self.total_cores <= 8:
+                estimated_threads = 6
+            elif self.total_cores <= 16:
+                estimated_threads = 8
+            else:
+                estimated_threads = 10
+
+        # CPU-basiertes Limit: Wie viele Assets können parallel laufen ohne Überlastung?
+        # Erlaube leichte Überbuchung (runden statt abschneiden) da nicht alle
+        # Threads gleichzeitig aktiv sind (I/O-Wartezeit, GIL, etc.)
+        usable_cores = self.total_cores * self.max_cpu_percent
+        cpu_limit = max(1, round(usable_cores / estimated_threads))
 
         # RAM-Limit: (Gesamt-RAM - Reserve) / RAM pro Worker
         reserved_ram = self.total_ram_gb * self.min_free_ram_percent
@@ -158,6 +185,11 @@ class AdaptivePoolManager:
         ram_limit = max(1, int(available_for_workers / self.ram_per_worker_gb))
 
         self.max_workers = min(cpu_limit, ram_limit)
+
+        # Für Logging speichern
+        self._cpu_limit = cpu_limit
+        self._ram_limit = ram_limit
+        self._estimated_threads = estimated_threads
 
         # Stats
         self.peak_workers = 0
@@ -293,8 +325,9 @@ class AdaptivePoolManager:
         # Status ausgeben
         status = self.get_status()
         self.log(f"System: {status['total_cores']} Cores, {status['total_ram_gb']:.1f} GB RAM")
-        self.log(f"Limits: max {self.max_workers} Workers (CPU<{self.max_cpu_percent*100:.0f}%, RAM={self.ram_per_worker_gb}GB/Worker)")
-        self.log(f"Reserve: {self.min_free_ram_percent*100:.0f}% RAM = {self.total_ram_gb * self.min_free_ram_percent:.1f} GB")
+        self.log(f"Parallele Assets: max {self.max_workers} (CPU-Limit: {self._cpu_limit}, RAM-Limit: {self._ram_limit})")
+        self.log(f"  CPU: {self._estimated_threads} Threads/Asset × {self.max_workers} = {self._estimated_threads * self.max_workers} von {int(self.total_cores * self.max_cpu_percent)} nutzbaren Kernen")
+        self.log(f"  RAM: {self.ram_per_worker_gb}GB/Asset, Reserve {self.min_free_ram_percent*100:.0f}%")
         self.log(f"Aktuell: {status['free_ram_gb']:.1f} GB RAM frei, CPU bei {initial_cpu:.0f}%")
 
         global _active_executor, _active_futures, _original_sigint, _original_sigterm
@@ -312,19 +345,26 @@ class AdaptivePoolManager:
         with ProcessPoolExecutor(**executor_kwargs) as executor:
             _active_executor = executor
 
-            # Alle Items sofort starten - Indikator-Berechnung ist leicht
-            # Ressourcen-Kontrolle erfolgt in _wait_for_resources() während Grid-Search
+            # Gestaffelter Start: Beginne mit 2 Workers, dann adaptiv nachstarten
+            # Das verhindert CPU-Überlastung wenn alle gleichzeitig Grid-Search starten
             futures = {}
-            for idx, item in enumerate(items):
+            pending_items = list(enumerate(items))  # (idx, item) Paare
+            active_count = 0
+
+            # Starte initial nur 2 Worker (oder weniger wenn weniger Items)
+            initial_workers = min(2, total)
+            for _ in range(initial_workers):
+                if not pending_items:
+                    break
+                idx, item = pending_items.pop(0)
                 future = executor.submit(func, item)
                 futures[future] = idx
                 _active_futures.append(future)
+                active_count += 1
 
-            active_count = len(futures)
-            self.peak_workers = active_count
-            self.log(f"Gestartet: {active_count} Worker (Ressourcen-Kontrolle in Grid-Search)", force=True)
+            self.log(f"Gestartet: {active_count} von {total} Workers (adaptives Nachstarten)", force=True)
 
-            while futures:
+            while futures or pending_items:
                 # Fertige Tasks einsammeln
                 done_futures = [f for f in futures if f.done()]
 
@@ -349,9 +389,25 @@ class AdaptivePoolManager:
                     if progress_callback:
                         progress_callback(completed, total)
 
+                # Versuche neue Worker zu starten wenn Kapazität frei und Items warten
+                while pending_items and active_count < self.max_workers:
+                    # CPU-Check vor jedem neuen Worker
+                    if not self.can_spawn_worker(active_count):
+                        # CPU/RAM zu hoch - warte und versuche später
+                        break
+
+                    idx, item = pending_items.pop(0)
+                    future = executor.submit(func, item)
+                    futures[future] = idx
+                    _active_futures.append(future)
+                    active_count += 1
+                    if active_count > self.peak_workers:
+                        self.peak_workers = active_count
+                    self.log(f"Neuer Worker gestartet ({active_count} aktiv, {len(pending_items)} wartend)")
+
                 # Kurz warten bevor nächster Check
-                if futures:
-                    time.sleep(0.2)
+                if futures or pending_items:
+                    time.sleep(0.5)
 
             # Cleanup nach erfolgreicher Beendigung
             _active_futures.clear()

@@ -37,92 +37,20 @@ from .nested_cv import nested_cv_split, run_inner_cv, evaluate_on_holdout
 from fwbg.utils.xgb_config import set_xgboost_n_jobs
 
 
-# Globale Throttling-Variablen
-# Counter für Throttle-Checks (nur alle N Iterationen prüfen)
-_throttle_check_counter = 0
-_THROTTLE_CHECK_INTERVAL = 10  # Alle 10 Grid-Kombinationen prüfen
-_throttle_wait_count = 0
-
-
 def _wait_for_resources(
     max_cpu_percent: float = 0.80,
     min_free_ram_percent: float = 0.15,
     sym: str = None
 ):
     """
-    Wartet, bis genug CPU/RAM-Ressourcen verfügbar sind.
+    DEPRECATED: Ressourcen-Kontrolle erfolgt jetzt im ResourceManager beim Worker-Start.
 
-    Diese Funktion pausiert die Grid-Search-Iteration, wenn:
-    - CPU-Auslastung > max_cpu_percent
-    - Freier RAM < min_free_ram_percent
-
-    WICHTIG: Prüft nur alle _THROTTLE_CHECK_INTERVAL Aufrufe um Overhead zu minimieren.
-
-    Args:
-        max_cpu_percent: Maximale CPU-Auslastung (0.0-1.0 oder Prozent)
-        min_free_ram_percent: Minimaler freier RAM (0.0-1.0 oder Prozent)
-        sym: Asset-Symbol für Log-Ausgaben
+    Diese Funktion ist jetzt ein No-Op. Der ResourceManager startet neue Assets
+    erst wenn CPU/RAM-Kapazität frei ist, was Deadlocks verhindert wenn mehrere
+    Assets gleichzeitig Grid-Search machen würden.
     """
-    global _throttle_wait_count, _throttle_check_counter
-
-    # Nur alle N Iterationen wirklich prüfen (Performance!)
-    _throttle_check_counter += 1
-    if _throttle_check_counter < _THROTTLE_CHECK_INTERVAL:
-        return
-    _throttle_check_counter = 0
-
-    # Debug: Zeige dass Check durchgeführt wird
-    log(0, f"CPU-Check...", sym)
-
-    # Normalisiere Prozent-Werte
-    max_cpu = max_cpu_percent / 100 if max_cpu_percent > 1 else max_cpu_percent
-    min_ram = min_free_ram_percent / 100 if min_free_ram_percent > 1 else min_free_ram_percent
-
-    wait_start = time.time()
-    waited = False
-    last_log_time = 0
-
-    while True:
-        # CPU-Check: Ein Sample reicht (interval=None nutzt cached value)
-        # Dann kurz warten und nochmal für stabilen Wert
-        psutil.cpu_percent(interval=None)  # Reset
-        time.sleep(0.5)
-        cpu_percent = psutil.cpu_percent(interval=None) / 100.0
-
-        # RAM-Check
-        mem = psutil.virtual_memory()
-        free_ram_percent = mem.available / mem.total
-
-        # Prüfe ob Ressourcen OK
-        cpu_ok = cpu_percent < max_cpu
-        ram_ok = free_ram_percent > min_ram
-
-        if cpu_ok and ram_ok:
-            if waited:
-                _throttle_wait_count += 1
-                elapsed = time.time() - wait_start
-                log(0, f"RESUME nach {elapsed:.1f}s (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}% frei)", sym)
-            return
-
-        # Erste Warnung loggen
-        if not waited:
-            reasons = []
-            if not cpu_ok:
-                reasons.append(f"CPU {cpu_percent*100:.0f}%")
-            if not ram_ok:
-                reasons.append(f"RAM {free_ram_percent*100:.0f}%")
-            log(0, f"PAUSE ({', '.join(reasons)})", sym)
-            waited = True
-
-        # Periodisch Status loggen (alle 30 Sekunden)
-        now = time.time()
-        if now - last_log_time > 30:
-            elapsed = now - wait_start
-            log(0, f"Warte... {elapsed:.0f}s (CPU: {cpu_percent*100:.0f}%, RAM: {free_ram_percent*100:.0f}%)", sym)
-            last_log_time = now
-
-        # Warten bevor nächster Check (2 Sekunden)
-        time.sleep(2.0)
+    # No-Op: Kontrolle erfolgt auf ResourceManager-Ebene
+    pass
 
 
 def _process_single_grid_combo(
