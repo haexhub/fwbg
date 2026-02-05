@@ -954,7 +954,8 @@ Macht Zeitreihen stationär unter Beibehaltung von Memory (nach López de Prado)
 
 **Parameter:**
 - `auto_d` (bool): Automatische d-Optimierung via ADF-Test (default: `true`)
-- `default_d` (float): Fallback d-Wert wenn `auto_d=false` (default: `0.4`)
+  - ⚠️ **WARNUNG**: `auto_d=true` verursacht Lookahead Bias! Der ADF-Test läuft auf dem GESAMTEN Datensatz (inkl. Future-Daten). Für valide Backtests: `auto_d=false` verwenden.
+- `default_d` (float): Fixer d-Wert (default: `0.4`)
   - d=0: Keine Transformation (original)
   - d=1: Volle Differentiation (verliert Memory)
   - d=0.3-0.5: Optimal für Trading (stationär + Memory)
