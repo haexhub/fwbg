@@ -101,6 +101,14 @@ FEATURE_GROUPS = {
         "name": "Ichimoku Features",
         "prefixes": ["ichi_"],
     },
+    "macro_surprise": {
+        "name": "Macro Surprise Features",
+        "prefixes": ["macro_gap", "macro_total", "macro_overnight", "macro_intraday", "macro_range", "macro_return", "macro_is_surprise", "macro_vol_ratio", "macro_vol_zscore", "macro_surprise_streak"],
+    },
+    "microstructure": {
+        "name": "Microstructure Features",
+        "prefixes": ["micro_"],
+    },
     "macro": {
         "name": "Macro Features",
         "prefixes": ["macro_", "sent_"],
