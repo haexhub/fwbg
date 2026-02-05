@@ -870,9 +870,12 @@ def run_inner_cv(
                     # Transform beide Datasets mit gelernten Parametern
                     train_df = pp.transform(train_df, **params)
                     val_df = pp.transform(val_df, **params)
-                except Exception:
-                    # Preprocessing fehlgeschlagen - Fold wird trotzdem weiterverarbeitet
-                    # (Falls nur ein Preprocessor fehlschlägt, sollte der Fold nicht komplett verloren gehen)
+                except Exception as e:
+                    # Preprocessing fehlgeschlagen - Log und überspringe
+                    import traceback
+                    print(f"[DEBUG] Preprocessing {pp_name} failed: {e}")
+                    traceback.print_exc()
+                    # Fold wird trotzdem weiterverarbeitet mit Original-Daten
                     pass
         # Early Termination Check: Kann min_fold_stability noch erreicht werden?
         if early_termination_enabled and min_profitable > 0:
@@ -886,14 +889,11 @@ def run_inner_cv(
         # Fold-Progress (wird von progress_callback überschrieben, aber hilft beim Debugging)
         # report_progress(ctx.symbol, fold_idx + 1, len(inner_folds), "inner_cv", global_grid_pos, total_grid_combos)
 
-        # Targets: aus Cache oder neu berechnen
-        if cached_targets is not None and fold_idx in cached_targets:
-            targets_long, targets_short = cached_targets[fold_idx]
-            has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
-        else:
-            # WARNUNG: Dieser Pfad sollte nicht erreicht werden wenn cached_targets korrekt übergeben wird
-            # compute_targets ist LANGSAM - Cache sollte immer genutzt werden
-            targets_long, targets_short, has_long, has_short = compute_targets(train_df, tp, sl, ctx, timeout_bars)
+        # Targets: MUSS nach Preprocessing berechnet werden (Indices müssen matchen!)
+        # Wenn Preprocessing die DataFrames verändert (z.B. Zeilen entfernt), müssen
+        # Targets auf den transformierten DataFrames neu berechnet werden.
+        # Cache kann NICHT verwendet werden, da er auf den Original-DataFrames basiert!
+        targets_long, targets_short, has_long, has_short = compute_targets(train_df, tp, sl, ctx, timeout_bars)
 
         if not has_long and not has_short:
             failed_count += 1
