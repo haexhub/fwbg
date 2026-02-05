@@ -3,13 +3,12 @@
   "description": "Test exact parameters from successful run 20260201_014605_c5f7f5",
   "tags": ["test", "verification"],
   
-  "indicators": ["macro_surprise"],
-  
+  "indicators": ["macro", "volatility"],
+
   "indicator_params": {
-    "macro_surprise": {
-      "vol_lookback": 20,
-      "surprise_threshold": 2.0,
-      "gap_ma_period": 10
+    "volatility": {
+      "bb_periods": [20],
+      "atr_periods": [7, 14, 21]
     }
   },
   
