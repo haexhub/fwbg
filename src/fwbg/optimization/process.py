@@ -789,16 +789,22 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(2, f"Preprocessing: {applied} ({rows_before} -> {len(df)} Zeilen, {time.time()-t0:.1f}s)", sym)
 
         t0 = time.time()
+        log(1, f"[DEBUG] Starte Indikator-Berechnung für {len(strategy.indicators)} Indikatoren: {strategy.indicators}", sym)
 
         def indicator_progress(name, idx, total):
+            log(1, f"[DEBUG] Indikator {idx}/{total}: {name}", sym)
             report_phase(sym, f"Indikatoren: {name} ({idx}/{total})")
 
         report_phase(sym, "Berechne Indikatoren...")
+        log(1, f"[DEBUG] Rufe compute_indicator_pool auf...", sym)
         df = compute_indicator_pool(
             df,
             indicators=strategy.indicators,
             progress_callback=indicator_progress
-        ).dropna()
+        )
+        log(1, f"[DEBUG] compute_indicator_pool fertig, {len(df)} Zeilen vor dropna", sym)
+        df = df.dropna()
+        log(1, f"[DEBUG] Nach dropna: {len(df)} Zeilen", sym)
         log(2, f"Indikatoren berechnet: {len(df)} Zeilen nach dropna ({time.time()-t0:.1f}s)", sym)
 
         if len(df) < MIN_TRADES * 2:
