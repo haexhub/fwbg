@@ -761,29 +761,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         log(3, f"Abgeleitete Features berechnet ({time.time()-t0:.1f}s)", sym)
 
-        # === PREPROCESSING (optional) ===
-        preprocessing_info = None
-        if strategy.preprocessing:  # Liste von Preprocessor-Namen
-            report_phase(sym, "Preprocessing...")
-            t0 = time.time()
-            rows_before = len(df)
-
-            # Neues Plugin-Format: preprocessing ist Liste von Strings
-            from fwbg.core import get_preprocessor
-
-            applied = []
-            for pp_name in strategy.preprocessing:
-                try:
-                    pp_cls = get_preprocessor(pp_name)
-                    params = strategy.preprocessing_params.get(pp_name, {})
-                    pp = pp_cls()
-                    df = pp.transform(df, **params)
-                    applied.append(pp_name)
-                except Exception as e:
-                    log(2, f"Preprocessor {pp_name} fehlgeschlagen: {e}", sym)
-
-            preprocessing_info = {"applied": applied}
-            log(2, f"Preprocessing: {applied} ({rows_before} -> {len(df)} Zeilen, {time.time()-t0:.1f}s)", sym)
+        # === PREPROCESSING ===
+        # REMOVED: Preprocessing wird jetzt IN der CV-Schleife angewendet (fit/transform)
+        # um Lookahead Bias zu verhindern. Siehe nested_cv.py:run_inner_cv()
 
         t0 = time.time()
 

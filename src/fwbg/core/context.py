@@ -97,6 +97,10 @@ class SimulationContext:
     # Model Hyperparameters (from StrategyConfig)
     model_hyperparameters: dict = field(default_factory=dict)
 
+    # Preprocessing (Plugin-basiert)
+    preprocessing: List[str] = field(default_factory=list)  # Liste von Preprocessor-Namen
+    preprocessing_params: dict = field(default_factory=dict)  # Parameters pro Preprocessor
+
     @classmethod
     def create(
         cls,
@@ -155,6 +159,9 @@ class SimulationContext:
             exit_params=strategy.exit_params,
             # Model Hyperparameters
             model_hyperparameters=strategy.model.hyperparameters,
+            # Preprocessing
+            preprocessing=strategy.preprocessing,
+            preprocessing_params=strategy.preprocessing_params,
         )
 
     def get_long_grid(self) -> tuple:
