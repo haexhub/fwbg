@@ -326,7 +326,7 @@ class TestSimulateTradeTimeout:
         assert exit_idx == 1, "Exit bei Bar 1"
 
     def test_timeout_exceeds_max_bars(self, simple_uptrend):
-        """Timeout größer als max_bars sollte korrekt behandelt werden."""
+        """Timeout größer als max_bars: max_bars ist die harte Grenze."""
         opens, closes, highs, lows = simple_uptrend
 
         result, exit_idx, exit_price, exit_reason = _simulate_trade_numba(
@@ -337,11 +337,11 @@ class TestSimulateTradeTimeout:
             max_bars=5,  # Nur 5 Bars simulieren
             timeout_bars=10  # Timeout nach 10 Bars
         )
-        # max_bars begrenzt, aber timeout_bars ist relativ zu entry
-        # timeout_idx = min(entry + timeout - 1, n - 1) = min(1 + 10 - 1, 99) = 10
-        # Aber max_bars begrenzt Loop auf entry + max_bars = 6
-        # Kein TP/SL -> Timeout wird geprüft
-        assert result in [1.0, -1.0], "Timeout sollte Ergebnis liefern"
+        # max_bars begrenzt den Loop auf entry + max_bars = 6
+        # timeout_idx = 10 liegt außerhalb des Loops
+        # Kein TP/SL innerhalb max_bars -> kein Ergebnis
+        assert result == 0.0, "Kein Ergebnis wenn max_bars Timeout blockiert"
+        assert exit_reason == -1, "Kein Exit-Grund"
 
     def test_timeout_zero_disables(self, simple_uptrend):
         """timeout_bars=0 sollte Timeout deaktivieren."""

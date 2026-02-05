@@ -7,92 +7,8 @@ from numba import njit
 
 from fwbg.data.config import DATA_PATH
 
-
-# ============================================================================
-# Numba-optimierte Trade-Simulation
-# ============================================================================
-
-@njit(cache=True)
-def _simulate_trade_numba(
-    opens: np.ndarray,
-    closes: np.ndarray,
-    highs: np.ndarray,
-    lows: np.ndarray,
-    idx: int,
-    direction: int,
-    tp_distance: float,
-    sl_distance: float,
-    spread: float,
-    slippage: float,
-    max_bars: int,
-    timeout_bars: int,
-) -> tuple:
-    """
-    Numba-optimierte Trade-Simulation (Kern-Loop).
-
-    Returns:
-        (result, exit_idx, exit_price, exit_reason)
-        result: 1.0=Win, -1.0=Loss, 0.0=Kein Ergebnis
-        exit_reason: 0=TP, 1=SL, 2=Timeout, -1=Kein Exit
-    """
-    entry_idx = idx + 1
-    n = len(closes)
-
-    if entry_idx >= n:
-        return 0.0, -1, 0.0, -1
-
-    # Entry-Preis
-    entry_price = opens[entry_idx]
-
-    # TP/SL-Levels berechnen
-    if direction == 1:  # Long
-        entry = entry_price + spread + slippage
-        tp = entry + tp_distance - slippage
-        sl = entry - sl_distance - slippage
-    else:  # Short
-        entry = entry_price - spread - slippage
-        tp = entry - tp_distance + slippage
-        sl = entry + sl_distance + slippage
-
-    # Maximale Simulation-Länge
-    end_idx = min(entry_idx + max_bars, n)
-
-    # Simulation-Loop
-    for j in range(entry_idx, end_idx):
-        if direction == 1:  # Long
-            tp_hit = highs[j] >= tp
-            sl_hit = lows[j] <= sl
-        else:  # Short
-            tp_hit = lows[j] <= tp
-            sl_hit = highs[j] >= sl
-
-        if tp_hit and sl_hit:
-            # Beide im selben Bar - konservativ: Loss
-            return -1.0, j, sl, 1
-
-        if tp_hit:
-            return 1.0, j, tp, 0
-
-        if sl_hit:
-            return -1.0, j, sl, 1
-
-    # Kein TP/SL erreicht - Timeout-Handling
-    if timeout_bars > 0:
-        timeout_idx = min(entry_idx + timeout_bars - 1, n - 1)
-        if timeout_idx >= entry_idx:
-            exit_price = closes[timeout_idx]
-
-            # PnL berechnen
-            if direction == 1:
-                pnl = exit_price - entry
-            else:
-                pnl = entry - exit_price
-
-            result = 1.0 if pnl > 0 else -1.0
-            return result, timeout_idx, exit_price, 2
-
-    # Kein Exit
-    return 0.0, -1, 0.0, -1
+# Import shared numba function from numba_core to avoid duplication
+from fwbg.simulation.numba_core import _simulate_trade_numba
 
 
 @njit(cache=True)
@@ -143,6 +59,9 @@ def compute_targets_numba(
 
 
 # Cache für Sub-Stunden-Daten (wird einmal pro Symbol geladen)
+# Thread-safe durch Lock geschützt
+import threading
+_cache_lock = threading.Lock()
 _m15_cache = {}  # 15-Min-Daten
 _m30_cache = {}  # 30-Min-Daten
 
@@ -318,28 +237,29 @@ def _load_ohlc_csv(path):
 
 def load_sub_hourly_data(symbol):
     """
-    Lädt Sub-Stunden-Daten für ein Symbol (mit Caching).
+    Lädt Sub-Stunden-Daten für ein Symbol (mit Thread-safe Caching).
     Versucht zuerst 15-Min, dann 30-Min als Fallback.
 
     Returns: (DataFrame, resolution) oder (None, None)
     """
-    # Versuche 15-Min-Daten
-    if symbol not in _m15_cache:
-        m15_path = f"{DATA_PATH}/{symbol}_MINUTE_15.csv"
-        _m15_cache[symbol] = _load_ohlc_csv(m15_path)
+    with _cache_lock:
+        # Versuche 15-Min-Daten
+        if symbol not in _m15_cache:
+            m15_path = f"{DATA_PATH}/{symbol}_MINUTE_15.csv"
+            _m15_cache[symbol] = _load_ohlc_csv(m15_path)
 
-    if _m15_cache[symbol] is not None:
-        return _m15_cache[symbol], 15
+        if _m15_cache[symbol] is not None:
+            return _m15_cache[symbol], 15
 
-    # Fallback: 30-Min-Daten
-    if symbol not in _m30_cache:
-        m30_path = f"{DATA_PATH}/{symbol}_MINUTE_30.csv"
-        _m30_cache[symbol] = _load_ohlc_csv(m30_path)
+        # Fallback: 30-Min-Daten
+        if symbol not in _m30_cache:
+            m30_path = f"{DATA_PATH}/{symbol}_MINUTE_30.csv"
+            _m30_cache[symbol] = _load_ohlc_csv(m30_path)
 
-    if _m30_cache[symbol] is not None:
-        return _m30_cache[symbol], 30
+        if _m30_cache[symbol] is not None:
+            return _m30_cache[symbol], 30
 
-    return None, None
+        return None, None
 
 
 def resolve_tp_sl_collision(symbol, hour_timestamp, direction, tp, sl):
@@ -446,20 +366,25 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
     slippage = spread * 0.5
 
     # Entry: Open des nächsten Bars (realistisch, kein Look-Ahead)
-    # Fallback auf Close falls Opens nicht verfügbar
+    # WICHTIG: Kein Fallback auf closes[idx] - das wäre Lookahead Bias!
     if opens is not None:
         entry_price = opens[entry_idx]
     else:
-        entry_price = closes[idx]  # Fallback (weniger realistisch)
+        # Fallback: Close des ENTRY-Bars (nicht Signal-Bar!) als Approximation
+        # Dies ist konservativ - wir nehmen an Entry passiert zum Close des Entry-Bars
+        entry_price = closes[entry_idx]
 
+    # WICHTIG: Slippage wirkt IMMER gegen den Trader:
+    # - Entry-Slippage: schlechterer Einstieg (in entry eingerechnet)
+    # - Exit-Slippage: TP/SL sind Trigger-Levels, nicht Exit-Preise
     if direction == 1:  # Long
-        entry = entry_price + spread + slippage
-        tp = entry + tp_distance - slippage
-        sl = entry - sl_distance - slippage
+        entry = entry_price + spread + slippage  # Kaufe teurer
+        tp = entry + tp_distance  # TP-Level (Trigger)
+        sl = entry - sl_distance  # SL-Level (Trigger)
     else:  # Short
-        entry = entry_price - spread - slippage
-        tp = entry - tp_distance + slippage
-        sl = entry + sl_distance + slippage
+        entry = entry_price - spread - slippage  # Verkaufe billiger
+        tp = entry - tp_distance  # TP-Level (Trigger)
+        sl = entry + sl_distance  # SL-Level (Trigger)
 
     # Hilfsfunktion für Rückgabe
     def make_result(result, exit_idx, exit_price):
@@ -635,7 +560,9 @@ def monte_carlo_permutation_test(trades, n_permutations=1000, random_seed=42):
             "n_permutations": 0,
         }
 
-    np.random.seed(random_seed)
+    # Verwende isolierten RandomState statt globalem np.random.seed()
+    # Dies verhindert Side-Effects auf andere Teile des Codes
+    rng = np.random.default_rng(random_seed)
     trades_arr = np.array(trades)
     n_trades = len(trades_arr)
     observed_pnl = np.sum(trades_arr)
@@ -646,8 +573,8 @@ def monte_carlo_permutation_test(trades, n_permutations=1000, random_seed=42):
     # Generiere Bootstrap-Samples mit 50% Win-Rate
     random_pnls = []
     for _ in range(n_permutations):
-        # Simuliere n_trades mit 50% Win-Rate
-        random_wins = np.sum(np.random.random(n_trades) > 0.5)
+        # Simuliere n_trades mit 50% Win-Rate (verwende isolierten rng)
+        random_wins = np.sum(rng.random(n_trades) > 0.5)
         random_losses = n_trades - random_wins
         random_pnl = random_wins * 1.0 + random_losses * (-1.0)
         random_pnls.append(random_pnl)
@@ -705,7 +632,8 @@ def monte_carlo_equity_simulation(trades, kelly_risk, rrr, n_simulations=1000, r
             "n_simulations": 0,
         }
 
-    np.random.seed(random_seed)
+    # Verwende isolierten RandomState statt globalem np.random.seed()
+    rng = np.random.default_rng(random_seed)
     trades_arr = np.array(trades)
 
     def simulate_equity(trade_sequence):
@@ -722,11 +650,11 @@ def monte_carlo_equity_simulation(trades, kelly_risk, rrr, n_simulations=1000, r
     # Originale Equity
     observed_equity = simulate_equity(trades_arr)
 
-    # Monte Carlo Simulationen
+    # Monte Carlo Simulationen (verwende isolierten rng)
     final_equities = []
     bankruptcies = 0
     for _ in range(n_simulations):
-        permuted = np.random.permutation(trades_arr)
+        permuted = rng.permutation(trades_arr)
         final_eq = simulate_equity(permuted)
         final_equities.append(final_eq)
         if final_eq <= 0:

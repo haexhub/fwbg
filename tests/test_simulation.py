@@ -78,9 +78,17 @@ class TestSimulateTrade:
 
     def test_no_exit_returns_none(self):
         """Trade ohne TP/SL Hit sollte None zurückgeben."""
-        # Alle Bars bei Entry-Level - weder TP noch SL erreicht
+        # Für "No exit" müssen die Bars zwischen TP und SL liegen
+        # Long Entry bei 1.0: entry = 1.0 + spread + slippage = 1.015
+        # TP = 1.015 + 0.01 = 1.025, SL = 1.015 - 0.01 = 1.005
+        # Setze Highs und Lows so, dass sie zwischen SL und TP bleiben
+        test_closes = np.array([1.0] * 20)
+        test_highs = np.array([1.020] * 20)   # Unter TP (1.025)
+        test_lows = np.array([1.010] * 20)    # Über SL (1.005)
+        test_atrs = np.array([0.01] * 20)
+
         trade_result = simulate_pro_trade(
-            self.closes, self.highs, self.lows, self.atrs,
+            test_closes, test_highs, test_lows, test_atrs,
             0, 1, self.tp_mult, self.sl_mult, self.spread, max_bars=10
         )
         # No exit means None is returned
