@@ -692,11 +692,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(1, "SKIP - Keine Daten", sym)
             return {"symbol": sym, "status": "no_data"}
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
-
-        # Defragmentiere VOR Makro-Laden
-        df = df.copy()
-        log(3, "DataFrame vor Makro-Load defragmentiert", sym)
-
         report_phase(sym, "Makro-Indikatoren...")
 
         # === ALLE MAKRO-INDIKATOREN LADEN ===
@@ -724,20 +719,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                         df[f"{col_name}_chg_{lb_d}d"] = df[col_name].pct_change(24 * lb_d) * 100
 
                     macro_count += 1
-
-                    # Defragmentiere nach jedem 10. Indikator
-                    if macro_count % 10 == 0:
-                        df = df.copy()
-                        log(3, f"DataFrame defragmentiert nach {macro_count} Indikatoren", sym)
-
                 except Exception:
                     pass
 
         log(2, f"Makro-Indikatoren: {macro_count} geladen ({time.time()-t0:.1f}s)", sym)
-
-        # Final defragmentation nach allen Makro-Daten
-        df = df.copy()
-        log(3, "DataFrame nach Makro-Load final defragmentiert", sym)
 
         # === ABGELEITETE FEATURES (Spreads & Ratios) ===
         t0 = time.time()
@@ -815,10 +800,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         )
         log(2, f"Indikatoren berechnet, DataFrame shape: {df.shape}", sym)
 
-        # Defragmentiere DataFrame vor dropna() - fragmentierte DataFrames sind extrem langsam
+        # Defragmentiere nach compute_indicator_pool - Indikatoren fügen viele Spalten einzeln ein
         report_phase(sym, "Defragmentiere DataFrame...")
+        t_defrag = time.time()
         df = df.copy()
-        log(2, f"DataFrame defragmentiert", sym)
+        log(2, f"DataFrame defragmentiert ({time.time()-t_defrag:.1f}s)", sym)
 
         report_phase(sym, "Entferne NaN-Zeilen...")
         df = df.dropna()
