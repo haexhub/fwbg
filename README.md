@@ -163,8 +163,8 @@ Macht Zeitreihen stationär unter Beibehaltung von Memory (nach López de Prado)
 
 | Parameter | Beschreibung | Default |
 |-----------|--------------|---------|
-| `auto_d` | Automatische d-Optimierung via ADF-Test | `true` |
-| `default_d` | Fallback d-Wert (0=keine Transformation, 1=volle Diff) | `0.4` |
+| `auto_d` | Automatische d-Optimierung via ADF-Test ⚠️ **Verursacht Lookahead Bias - nicht für Backtests verwenden!** | `true` |
+| `default_d` | Fixer d-Wert (0=keine Transformation, 1=volle Diff) | `0.4` |
 | `columns` | Zu transformierende Spalten | `["O", "H", "L", "C"]` |
 
 **Wann nützlich:**

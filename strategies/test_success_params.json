@@ -27,7 +27,7 @@
   "preprocessing": ["fractional_diff"],
   "preprocessing_params": {
     "fractional_diff": {
-      "auto_d": true,
+      "auto_d": false,
       "default_d": 0.4,
       "columns": ["O", "H", "L", "C"]
     }
