@@ -74,9 +74,9 @@ def report_progress(
         grid_pos: Aktuelle Grid-Position (1-basiert)
         grid_total: Gesamtzahl der Grid-Kombinationen
     """
-    # Im Parallel-Modus Progress-Updates unterdrücken
-    # (parallele Feature-Group-Threads würden sich sonst gegenseitig überschreiben)
-    if is_parallel_mode():
+    # Im Parallel-Modus Progress-Updates unterdrücken, AUSSER bei grid_search
+    # (grid_search Updates sind aggregiert und sollten immer durchkommen)
+    if is_parallel_mode() and stage != "grid_search":
         return
 
     if _progress_queue is not None:
