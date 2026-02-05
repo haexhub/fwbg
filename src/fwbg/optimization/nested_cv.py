@@ -86,7 +86,8 @@ def _simulate_trades_core(
     cls = df["C"].values
     hgh = df["H"].values
     low = df["L"].values
-    atr = df["_atr"].values
+    # ATR ist optional - wenn nicht vorhanden (volatility indicator nicht konfiguriert), Dummy-Array
+    atr = df["_atr"].values if "_atr" in df.columns else np.zeros(len(df))
     regime = df["_regime_ok"].values
     timestamps = df.index.values
 
@@ -229,7 +230,8 @@ def compute_targets(
     cls_v = df["C"].values
     hgh_v = df["H"].values
     low_v = df["L"].values
-    atr_v = df["_atr"].values
+    # ATR ist optional - wenn nicht vorhanden (volatility indicator nicht konfiguriert), Dummy-Array
+    atr_v = df["_atr"].values if "_atr" in df.columns else np.zeros(len(df))
     timestamps = df.index.values
 
     # Simuliere bis zum vorletzten Bar (letzter Bar kann kein Entry sein)

@@ -41,6 +41,8 @@ from .dynamics import DynamicsIndicators
 from .multi_timeframe import MultiTimeframeIndicators
 from .cross_features import CrossFeatureIndicators
 from .ichimoku import IchimokuIndicators
+from .macro_surprise import MacroSurpriseIndicator
+from .microstructure import MicrostructureIndicator
 
 # Preprocessing
 from .preprocessing import apply_preprocessing
@@ -130,6 +132,8 @@ _DEFAULT_INDICATORS = {
     "multi_timeframe": MultiTimeframeIndicators(),
     "cross_features": CrossFeatureIndicators(),
     "ichimoku": IchimokuIndicators(),
+    "macro_surprise": MacroSurpriseIndicator(),
+    "microstructure": MicrostructureIndicator(),
 }
 
 
@@ -162,18 +166,29 @@ def compute_indicator_pool(
             indicators = ["trend", "momentum", "volatility"]
 
     total = len(indicators)
+    print(f"[DEBUG compute_indicator_pool] Start: {total} Indikatoren: {indicators}", flush=True)
 
     for idx, name in enumerate(indicators):
+        print(f"[DEBUG compute_indicator_pool] [{idx+1}/{total}] Processing: {name}", flush=True)
         if name in _DEFAULT_INDICATORS:
             try:
                 if progress_callback:
+                    print(f"[DEBUG compute_indicator_pool] Calling progress_callback for {name}", flush=True)
                     progress_callback(name, idx + 1, total)
+                    print(f"[DEBUG compute_indicator_pool] progress_callback returned", flush=True)
+                print(f"[DEBUG compute_indicator_pool] Getting indicator instance for {name}", flush=True)
                 indicator = _DEFAULT_INDICATORS[name]
+                print(f"[DEBUG compute_indicator_pool] Calling compute() for {name}, df.shape={df.shape}", flush=True)
                 df = indicator.compute(df)
-            except Exception:
+                print(f"[DEBUG compute_indicator_pool] compute() returned for {name}, df.shape={df.shape}", flush=True)
+            except Exception as e:
                 # Fehler bei einzelnen Indikatoren ignorieren
+                print(f"[DEBUG compute_indicator_pool] ERROR in {name}: {e}", flush=True)
                 pass
+        else:
+            print(f"[DEBUG compute_indicator_pool] SKIP {name} - not in registry", flush=True)
 
+    print(f"[DEBUG compute_indicator_pool] Done, returning df.shape={df.shape}", flush=True)
     return df
 
 
