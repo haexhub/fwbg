@@ -932,43 +932,38 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
 
 ## Preprocessing-Optionen
 
-Features können vor der Verwendung transformiert werden:
+Daten-Preprocessing wird **vor** Feature-Berechnung auf OHLC-Daten angewendet.
 
 ### Fractional Differentiation
-Macht Preisdaten stationär bei Erhalt von Memory (López de Prado Methode).
+Macht Zeitreihen stationär unter Beibehaltung von Memory (nach López de Prado).
+
+**Plugin-Name:** `fractional_diff`
 
 ```json
 {
-  "preprocessing": {
-    "fractional_differentiation": true,
-    "frac_diff_auto_d": true,
-    "frac_diff_default_d": 0.4
+  "preprocessing": ["fractional_diff"],
+  "preprocessing_params": {
+    "fractional_diff": {
+      "auto_d": true,
+      "default_d": 0.4,
+      "columns": ["O", "H", "L", "C"]
+    }
   }
 }
 ```
 
-### Log-Returns
-Transformiert Preise zu logarithmischen Returns.
+**Parameter:**
+- `auto_d` (bool): Automatische d-Optimierung via ADF-Test (default: `true`)
+- `default_d` (float): Fallback d-Wert wenn `auto_d=false` (default: `0.4`)
+  - d=0: Keine Transformation (original)
+  - d=1: Volle Differentiation (verliert Memory)
+  - d=0.3-0.5: Optimal für Trading (stationär + Memory)
+- `columns` (list): Zu transformierende Spalten (default: `["O", "H", "L", "C"]`)
 
-```json
-{
-  "preprocessing": {
-    "log_returns": true
-  }
-}
-```
-
-### Z-Score Normalisierung
-Rolling Z-Score Normalisierung der OHLC-Daten.
-
-```json
-{
-  "preprocessing": {
-    "normalize": true,
-    "normalize_window": 100
-  }
-}
-```
+**Wann nützlich:**
+- Bei nicht-stationären Zeitreihen (Trends, Mean-Reversion)
+- Verbessert ML-Modell-Performance durch stationäre Features
+- Besonders wertvoll bei längeren Lookback-Perioden
 
 ---
 

@@ -162,6 +162,49 @@ TP und SL als Spread-Multiplikatoren (konstant):
 
 ---
 
+## Preprocessing
+
+Daten-Preprocessing wird **vor** Feature-Berechnung auf OHLC-Daten angewendet.
+
+### Fractional Differentiation
+
+Macht Zeitreihen stationär unter Beibehaltung von Memory (nach López de Prado):
+
+```json
+{
+  "preprocessing": ["fractional_diff"],
+  "preprocessing_params": {
+    "fractional_diff": {
+      "auto_d": true,
+      "default_d": 0.4,
+      "columns": ["O", "H", "L", "C"]
+    }
+  }
+}
+```
+
+| Parameter | Beschreibung | Default |
+|-----------|--------------|---------|
+| `auto_d` | Automatische d-Optimierung via ADF-Test | `true` |
+| `default_d` | Fallback d-Wert (0=keine Transformation, 1=volle Diff) | `0.4` |
+| `columns` | Zu transformierende Spalten | `["O", "H", "L", "C"]` |
+
+**Wann nützlich:**
+- Bei nicht-stationären Zeitreihen (Trends, Mean-Reversion)
+- Verbessert ML-Modell-Performance durch stationäre Features
+- d ≈ 0.3-0.5 optimal für Trading (stationär + behält Memory)
+
+**Beispiel:**
+```bash
+# Mit Preprocessing
+fwbg --strategy-file strategies/frac_diff_exploration.json --assets SPX500
+
+# Vergleich zu ohne Preprocessing
+fwbg --strategy-file strategies/exploration.json --assets SPX500
+```
+
+---
+
 ## Ressourcen-Management
 
 Das System nutzt **dynamische Ressourcen-Optimierung** mit automatischer Pause bei Überlastung.
