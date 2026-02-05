@@ -145,8 +145,14 @@ def _process_tp_sl_combo_wrapper(args):
     global_grid_pos = grid_offset + combo_idx + 1
 
     # Berechne Targets für diese Kombination
+    # WICHTIG: NUR cachen wenn KEIN Preprocessing aktiv ist!
+    # Bei Preprocessing werden die DataFrames transformiert und Targets müssen
+    # auf den transformierten Daten neu berechnet werden (in run_inner_cv).
     cached_targets = None
-    if inner_df is not None:
+    has_preprocessing = ctx.preprocessing and len(ctx.preprocessing) > 0
+
+    if inner_df is not None and not has_preprocessing:
+        # Ohne Preprocessing können wir Targets vorab berechnen und cachen
         full_targets_long, full_targets_short = compute_targets_cached(
             inner_df, tp, sl, ctx, timeout_bars,
             exit_strategy_mode=ctx.exit_strategy,

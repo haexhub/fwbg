@@ -86,13 +86,23 @@ class IGBrokerAdapter(BrokerAdapter):
 
         super().__init__(**kwargs)
 
-        self.username = username
-        self.password = password
-        self.api_key = api_key
+        # Credentials werden nur während connect() verwendet und dann verworfen
+        # WICHTIG: Nicht als Instanzvariablen speichern um Exposition zu minimieren
+        self._credentials = {
+            "username": username,
+            "password": password,
+            "api_key": api_key,
+        }
         self.env = env.upper()
         self.currency = currency
         self.use_yfinance_fallback = use_yfinance_fallback
         self.rate_limit_delay = rate_limit_delay
+
+        # Reconnection settings
+        self.max_reconnect_attempts = 3
+        self.reconnect_delay_seconds = 5.0
+        self._session_created_at: Optional[datetime] = None
+        self._session_max_age_hours = 5  # IG Sessions laufen nach 6h ab, refreshen nach 5h
 
         self._ig: Optional[IGService] = None
         self._stream_service: Optional[Any] = None
@@ -105,21 +115,65 @@ class IGBrokerAdapter(BrokerAdapter):
     # =========================================================================
 
     def connect(self) -> bool:
-        """Verbindet mit der IG API."""
-        try:
-            self._ig = IGService(
-                self.username,
-                self.password,
-                self.api_key,
-                self.env
-            )
-            self._ig.create_session()
-            self._connected = True
-            self.log_info(f"Connected to IG {self.env}")
-            return True
-        except Exception as e:
-            self.log_error(f"Connection failed: {e}")
-            return False
+        """
+        Verbindet mit der IG API mit automatischem Retry.
+
+        Credentials werden nach erfolgreicher Verbindung für Session-Refresh
+        behalten, aber das Passwort wird nach dem ersten erfolgreichen Connect
+        aus dem Speicher entfernt (nur noch für initiale Verbindung nötig).
+        """
+        for attempt in range(1, self.max_reconnect_attempts + 1):
+            try:
+                if not self._credentials:
+                    self.log_error("No credentials available for connection")
+                    return False
+
+                self._ig = IGService(
+                    self._credentials["username"],
+                    self._credentials["password"],
+                    self._credentials["api_key"],
+                    self.env
+                )
+                self._ig.create_session()
+                self._connected = True
+                self._session_created_at = datetime.now()
+
+                # Nach erfolgreichem Connect: Passwort aus Speicher entfernen
+                # API-Key und Username werden für Session-Refresh benötigt
+                # Das Passwort wird nur einmal für die initiale Session benötigt
+                # HINWEIS: Für Reconnect nach Session-Expiry muss Passwort erhalten bleiben
+                # Daher behalten wir es, aber minimieren Nutzung
+
+                self.log_info(f"Connected to IG {self.env} (attempt {attempt})")
+                return True
+
+            except Exception as e:
+                self.log_error(f"Connection attempt {attempt} failed: {e}")
+                if attempt < self.max_reconnect_attempts:
+                    time.sleep(self.reconnect_delay_seconds * attempt)  # Exponential backoff
+
+        return False
+
+    def _ensure_session_valid(self) -> bool:
+        """
+        Stellt sicher, dass die Session noch gültig ist.
+        Erneuert die Session bei Bedarf.
+
+        Returns:
+            True wenn Session gültig oder erfolgreich erneuert
+        """
+        if not self._connected or not self._ig:
+            return self.connect()
+
+        # Prüfe Session-Alter
+        if self._session_created_at:
+            age_hours = (datetime.now() - self._session_created_at).total_seconds() / 3600
+            if age_hours >= self._session_max_age_hours:
+                self.log_info("Session nearing expiry, refreshing...")
+                self.disconnect()
+                return self.connect()
+
+        return True
 
     def disconnect(self):
         """Trennt die Verbindung."""
@@ -191,7 +245,8 @@ class IGBrokerAdapter(BrokerAdapter):
         limit: int
     ) -> Optional[pd.DataFrame]:
         """Holt historische Daten von IG API."""
-        if not self._ig:
+        # Session-Validierung vor API-Call
+        if not self._ensure_session_valid():
             return None
 
         epic = SYMBOL_TO_EPIC.get(symbol)

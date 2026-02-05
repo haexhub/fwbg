@@ -480,12 +480,15 @@ def select_features_from_fold(
 
     else:
         # Altes Verhalten: Importance + Plateau mit top_n=5
-        # Verwende reduzierte Parameter auch hier (Feature Selection ist Inner CV)
-        params = ctx.model_hyperparameters.copy()
-        params["n_estimators"] = max(10, params.get("n_estimators", 100) // 2)
-        params.setdefault("random_state", 42)
-        params.setdefault("verbosity", 0)
-        params["n_jobs"] = get_xgboost_n_jobs()
+        # Verwende Default-Hyperparameter (kein ctx verfügbar in dieser Funktion)
+        params = {
+            "n_estimators": 50,  # Reduziert für Feature Selection
+            "max_depth": 4,
+            "learning_rate": 0.1,
+            "random_state": 42,
+            "verbosity": 0,
+            "n_jobs": get_xgboost_n_jobs(),
+        }
 
         model = XGBClassifier(**params)
         model.fit(train_df[available_features], targets)

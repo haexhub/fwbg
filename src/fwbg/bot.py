@@ -146,12 +146,31 @@ class TradingBot:
         # Control
         self._stop_event = threading.Event()
         self._running = False
+        self._killed = False  # Kill-Switch Status
 
         # Account info
         self.account_id = account_config.get("account_id", "default")
         self.currency = account_config.get("currency", "EUR")
         self.min_lot_size = account_config.get("min_lot_size", 0.1)
         self.max_risk_percent = account_config.get("max_risk_percent", 0.05)
+
+        # Risk Management - Position Limits
+        self.max_concurrent_positions = account_config.get("max_concurrent_positions", 5)
+        self.max_position_per_symbol = account_config.get("max_position_per_symbol", 1)
+        self.max_total_exposure_percent = account_config.get("max_total_exposure_percent", 0.20)
+
+        # Circuit Breaker - Drawdown Protection
+        self.circuit_breaker_enabled = account_config.get("circuit_breaker_enabled", True)
+        self.max_daily_loss_percent = account_config.get("max_daily_loss_percent", 0.05)
+        self.pause_after_consecutive_losses = account_config.get("pause_after_consecutive_losses", 3)
+        self.pause_duration_minutes = account_config.get("pause_duration_minutes", 60)
+
+        # Circuit Breaker State
+        self._daily_pnl = 0.0
+        self._daily_start_balance = 0.0
+        self._consecutive_losses = 0
+        self._pause_until: datetime = None
+        self._last_day: int = -1
 
     def initialize(self) -> bool:
         """
@@ -294,6 +313,11 @@ class TradingBot:
 
         # Main loop - nur Health-Monitoring
         while not self._stop_event.is_set():
+            # Kill-Switch prüfen
+            if self._check_kill_switch():
+                logger.critical("🚨 Kill switch activated in streaming mode")
+                break
+
             self._write_status("RUNNING")
 
             if self._check_restart_signal():
@@ -309,6 +333,11 @@ class TradingBot:
         logger.info("📊 Starting polling mode...")
 
         while not self._stop_event.is_set():
+            # Kill-Switch prüfen
+            if self._check_kill_switch():
+                logger.critical("🚨 Kill switch activated in polling mode")
+                break
+
             self._write_status("RUNNING")
 
             if self._check_restart_signal():
@@ -317,8 +346,8 @@ class TradingBot:
 
             now = datetime.now()
 
-            # Nur an Werktagen handeln
-            if now.weekday() < 5:
+            # Nur an Werktagen handeln (wenn nicht pausiert)
+            if now.weekday() < 5 and not self._check_circuit_breaker():
                 self._check_all_signals()
 
             time.sleep(60)
@@ -471,7 +500,26 @@ class TradingBot:
     ):
         """
         Führt ein Signal aus - delegiert an den Adapter.
+
+        Prüft vorher:
+        - Kill-Switch
+        - Circuit Breaker
+        - Position Limits
         """
+        # Kill-Switch Check
+        if self._check_kill_switch():
+            logger.warning(f"⚠️ {symbol}: Trading disabled (kill switch)")
+            return
+
+        # Circuit Breaker Check
+        if self._check_circuit_breaker():
+            logger.warning(f"⚠️ {symbol}: Trading paused (circuit breaker)")
+            return
+
+        # Position Limits Check
+        if not self._check_position_limits(symbol):
+            return
+
         try:
             # Account Info für Position Sizing
             account = self.adapter.get_account_info()
@@ -513,8 +561,24 @@ class TradingBot:
 
             if result.success:
                 logger.info(f"✅ {symbol}: Order filled @ {result.fill_price}")
+
+                # Slippage tracken
+                if result.fill_price:
+                    expected_price = self.ohlc_cache.get(symbol, pd.DataFrame()).get("C", pd.Series()).iloc[-1] if symbol in self.ohlc_cache else None
+                    if expected_price:
+                        slippage = abs(result.fill_price - expected_price)
+                        if slippage > 0:
+                            self.slippage_warnings.append({
+                                "symbol": symbol,
+                                "time": datetime.now().isoformat(),
+                                "expected": expected_price,
+                                "actual": result.fill_price,
+                                "slippage": slippage
+                            })
             else:
                 logger.warning(f"⚠️ {symbol}: Order rejected - {result.message}")
+                # Rejected order als Loss für Circuit Breaker zählen
+                self._consecutive_losses += 1
 
         except Exception as e:
             logger.error(f"❌ {symbol}: Signal execution failed: {e}")
@@ -524,6 +588,143 @@ class TradingBot:
         logger.info("⏹️ Stopping bot...")
         self._stop_event.set()
         self._running = False
+
+    def kill(self, close_positions: bool = True):
+        """
+        Emergency Kill Switch - Stoppt sofort allen Handel.
+
+        Args:
+            close_positions: Wenn True, werden alle offenen Positionen geschlossen
+        """
+        logger.critical("🚨 KILL SWITCH ACTIVATED")
+        self._killed = True
+        self._stop_event.set()
+        self._running = False
+
+        if close_positions:
+            logger.warning("🚨 Closing ALL positions...")
+            try:
+                closed = self.adapter.close_all_positions()
+                logger.warning(f"🚨 Closed {closed} positions")
+            except Exception as e:
+                logger.error(f"❌ Failed to close positions: {e}")
+
+        self._write_status("KILLED")
+
+    def _check_kill_switch(self) -> bool:
+        """
+        Prüft ob Kill-Switch ausgelöst werden soll.
+
+        Returns:
+            True wenn Handel gestoppt werden soll
+        """
+        if self._killed:
+            return True
+
+        # Prüfe auf Kill-Signal-Datei
+        kill_file = os.path.join(self.stats_dir, "kill_signal")
+        if os.path.exists(kill_file):
+            try:
+                os.remove(kill_file)
+            except Exception:
+                pass
+            self.kill(close_positions=True)
+            return True
+
+        return False
+
+    def _check_circuit_breaker(self) -> bool:
+        """
+        Prüft ob Circuit Breaker ausgelöst wurde.
+
+        Returns:
+            True wenn Handel pausiert werden soll
+        """
+        if not self.circuit_breaker_enabled:
+            return False
+
+        now = datetime.now()
+
+        # Reset tägliche Statistik um Mitternacht
+        if now.day != self._last_day:
+            self._last_day = now.day
+            self._daily_pnl = 0.0
+            try:
+                account = self.adapter.get_account_info()
+                self._daily_start_balance = account.balance
+            except Exception:
+                pass
+
+        # Prüfe ob Pause noch aktiv
+        if self._pause_until and now < self._pause_until:
+            return True
+
+        # Prüfe täglichen Verlust
+        if self._daily_start_balance > 0:
+            daily_loss_percent = -self._daily_pnl / self._daily_start_balance
+            if daily_loss_percent >= self.max_daily_loss_percent:
+                logger.warning(
+                    f"🚨 Circuit breaker: Daily loss limit reached "
+                    f"({daily_loss_percent:.1%} >= {self.max_daily_loss_percent:.1%})"
+                )
+                self._pause_until = now.replace(hour=23, minute=59, second=59)
+                return True
+
+        # Prüfe consecutive losses
+        if self._consecutive_losses >= self.pause_after_consecutive_losses:
+            logger.warning(
+                f"🚨 Circuit breaker: {self._consecutive_losses} consecutive losses, "
+                f"pausing for {self.pause_duration_minutes} minutes"
+            )
+            self._pause_until = now + pd.Timedelta(minutes=self.pause_duration_minutes)
+            self._consecutive_losses = 0
+            return True
+
+        return False
+
+    def _check_position_limits(self, symbol: str) -> bool:
+        """
+        Prüft ob Position-Limits eingehalten werden.
+
+        Args:
+            symbol: Symbol für das eine neue Position eröffnet werden soll
+
+        Returns:
+            True wenn eine neue Position erlaubt ist
+        """
+        try:
+            positions = self.adapter.get_positions()
+            account = self.adapter.get_account_info()
+
+            # Maximale Anzahl gleichzeitiger Positionen
+            if len(positions) >= self.max_concurrent_positions:
+                logger.warning(
+                    f"⚠️ Position limit reached: {len(positions)}/{self.max_concurrent_positions}"
+                )
+                return False
+
+            # Maximale Positionen pro Symbol
+            symbol_positions = sum(1 for p in positions if p.symbol == symbol)
+            if symbol_positions >= self.max_position_per_symbol:
+                logger.warning(f"⚠️ {symbol}: Already have {symbol_positions} position(s)")
+                return False
+
+            # Maximale Gesamt-Exposure
+            if account.balance > 0:
+                total_exposure = sum(abs(p.size * p.entry_price) for p in positions)
+                exposure_percent = total_exposure / account.balance
+                if exposure_percent >= self.max_total_exposure_percent:
+                    logger.warning(
+                        f"⚠️ Total exposure limit reached: "
+                        f"{exposure_percent:.1%} >= {self.max_total_exposure_percent:.1%}"
+                    )
+                    return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Position limit check failed: {e}")
+            return False  # Im Zweifel keine neue Position
 
     def _cleanup(self):
         """Cleanup beim Beenden."""
