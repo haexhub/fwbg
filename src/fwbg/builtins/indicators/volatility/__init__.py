@@ -8,7 +8,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import shift_features
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core import register_indicator
 
 
@@ -61,7 +61,7 @@ class VolatilityIndicators(BaseIndicator):
             atr = ta.volatility.average_true_range(
                 df["H"], df["L"], df["C"], window=period
             )
-            features[f"vol_atr_pct_{period}"] = atr / df["C"]
+            features[f"vol_atr_pct_{period}"] = safe_divide(atr, df["C"])
 
         # Bollinger Bands
         bb = ta.volatility.BollingerBands(df["C"], window=bb_period)

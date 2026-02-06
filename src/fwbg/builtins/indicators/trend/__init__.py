@@ -67,17 +67,17 @@ class TrendIndicators(BaseIndicator):
         # EMA Distanz
         for period in ema_periods:
             ema = ta.trend.ema_indicator(df["C"], window=period)
-            features[f"trend_ema_dist_{period}"] = (df["C"] - ema) / df["C"]
+            features[f"trend_ema_dist_{period}"] = safe_divide(df["C"] - ema, df["C"])
 
         # SMA Distanz
         for period in sma_periods:
             sma = ta.trend.sma_indicator(df["C"], window=period)
-            features[f"trend_sma_dist_{period}"] = (df["C"] - sma) / df["C"]
+            features[f"trend_sma_dist_{period}"] = safe_divide(df["C"] - sma, df["C"])
 
         # MACD
         macd = ta.trend.MACD(df["C"])
-        features["trend_macd"] = macd.macd_diff() / df["C"]
-        features["trend_macd_signal"] = macd.macd_signal() / df["C"]
+        features["trend_macd"] = safe_divide(macd.macd_diff(), df["C"])
+        features["trend_macd_signal"] = safe_divide(macd.macd_signal(), df["C"])
 
         # CCI
         for period in [14, 20]:

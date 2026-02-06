@@ -17,7 +17,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import shift_features
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core import register_indicator
 
 
@@ -71,7 +71,7 @@ class DynamicsIndicators(BaseIndicator):
             vol_atr_pct_14 = df["vol_atr_pct_14"]
         else:
             atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
-            vol_atr_pct_14 = atr / df["C"]
+            vol_atr_pct_14 = safe_divide(atr, df["C"])
 
         if "vol_bb_wband_20" in df.columns:
             vol_bb_wband_20 = df["vol_bb_wband_20"]
@@ -89,17 +89,27 @@ class DynamicsIndicators(BaseIndicator):
             trend_macd = df["trend_macd"]
         else:
             macd = ta.trend.MACD(df["C"])
-            trend_macd = macd.macd_diff() / df["C"]
+            trend_macd = safe_divide(macd.macd_diff(), df["C"])
 
         # === RSI Changes ===
         for lookback in lookbacks:
             features[f"dyn_rsi14_chg_{lookback}h"] = mom_rsi_14 - mom_rsi_14.shift(lookback)
-            features[f"dyn_rsi14_pct_{lookback}h"] = mom_rsi_14.pct_change(lookback) * 100
+            features[f"dyn_rsi14_pct_{lookback}h"] = safe_divide(
+                mom_rsi_14 - mom_rsi_14.shift(lookback),
+                mom_rsi_14.shift(lookback)
+            ) * 100
 
         # === ATR / Volatility Changes ===
         for lookback in lookbacks:
-            features[f"dyn_atr_chg_{lookback}h"] = vol_atr_pct_14.pct_change(lookback) * 100
-            features[f"dyn_bbwidth_chg_{lookback}h"] = vol_bb_wband_20.pct_change(lookback) * 100
+            # pct_change kann inf produzieren wenn shifted value sehr klein/0 ist
+            features[f"dyn_atr_chg_{lookback}h"] = safe_divide(
+                vol_atr_pct_14 - vol_atr_pct_14.shift(lookback),
+                vol_atr_pct_14.shift(lookback)
+            ) * 100
+            features[f"dyn_bbwidth_chg_{lookback}h"] = safe_divide(
+                vol_bb_wband_20 - vol_bb_wband_20.shift(lookback),
+                vol_bb_wband_20.shift(lookback)
+            ) * 100
 
         # === ADX Changes ===
         for lookback in lookbacks:
@@ -122,9 +132,10 @@ class DynamicsIndicators(BaseIndicator):
             features[f"lag_adx_{lag}h"] = trend_adx_14.shift(lag)
 
         for lag in lag_periods:  # [4, 8, 24, 48]
-            features[f"lag_price_chg_{lag}h"] = (
-                (df["C"] - df["C"].shift(lag)) / df["C"].shift(lag) * 100
-            )
+            features[f"lag_price_chg_{lag}h"] = safe_divide(
+                df["C"] - df["C"].shift(lag),
+                df["C"].shift(lag)
+            ) * 100
 
         # === Beschleunigungs-Features (2. Ableitung) ===
         features["accel_rsi"] = features["dyn_rsi14_chg_4h"] - features["dyn_rsi14_chg_4h"].shift(4)
