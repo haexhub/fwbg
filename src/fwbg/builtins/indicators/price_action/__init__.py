@@ -18,6 +18,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core import register_indicator
 
 
@@ -56,21 +57,24 @@ class PriceActionIndicators(BaseIndicator):
         """
         features = {}
 
+        # Bar Range (für safe_divide)
+        bar_range = df["H"] - df["L"]
+
         # Range Position: Wo liegt Close im High-Low Range (0=Low, 1=High)
-        features["pa_range_pos"] = (df["C"] - df["L"]) / (df["H"] - df["L"] + 1e-10)
+        features["pa_range_pos"] = safe_divide(df["C"] - df["L"], bar_range)
 
         # Body Ratio: Wie viel vom Range ist der Body (0=Doji, 1=Full Body)
-        features["pa_body_ratio"] = abs(df["C"] - df["O"]) / (df["H"] - df["L"] + 1e-10)
+        features["pa_body_ratio"] = safe_divide(abs(df["C"] - df["O"]), bar_range)
 
         # Body Direction: Bullish (+1) vs Bearish (-1)
         features["pa_body_dir"] = np.sign(df["C"] - df["O"])
 
         # Upper/Lower Shadow Ratio
-        features["pa_upper_shadow"] = (df["H"] - df[["C", "O"]].max(axis=1)) / (
-            df["H"] - df["L"] + 1e-10
+        features["pa_upper_shadow"] = safe_divide(
+            df["H"] - df[["C", "O"]].max(axis=1), bar_range
         )
-        features["pa_lower_shadow"] = (df[["C", "O"]].min(axis=1) - df["L"]) / (
-            df["H"] - df["L"] + 1e-10
+        features["pa_lower_shadow"] = safe_divide(
+            df[["C", "O"]].min(axis=1) - df["L"], bar_range
         )
 
         # Higher Highs / Lower Lows Counter
@@ -121,7 +125,7 @@ class PriceActionIndicators(BaseIndicator):
         # Range Expansion/Contraction
         current_range = df["H"] - df["L"]
         avg_range = current_range.rolling(20).mean()
-        features["pa_range_expansion"] = current_range / (avg_range + 1e-10)
+        features["pa_range_expansion"] = safe_divide(current_range, avg_range)
 
         # Inside Bar (High < Previous High AND Low > Previous Low)
         features["pa_inside_bar"] = (
@@ -152,17 +156,14 @@ class PriceActionIndicators(BaseIndicator):
                 )
 
                 # Volume Relative to Average
-                vol_relative = volume / (volume.rolling(20).mean() + 1e-10)
+                vol_relative = safe_divide(volume, volume.rolling(20).mean())
                 features["vol_relative"] = vol_relative
 
                 # Volume Price Trend
                 features["vol_price_trend"] = features["pa_body_dir"] * vol_relative
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
-        # At bar i, the model should use features from bar i-1, not bar i
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 

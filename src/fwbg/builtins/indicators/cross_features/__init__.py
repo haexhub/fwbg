@@ -10,6 +10,9 @@ Cross-Features sind wichtig weil:
 - RSI > 70 allein ist weniger aussagekräftig als RSI > 70 + steigend
 - Volatilität * Trend-Stärke zeigt "explodierende" Moves
 - Divergenzen zwischen Indikatoren zeigen potenzielle Reversals
+
+WICHTIG: Dieses Modul berechnet IMMER alle Basis-Indikatoren neu (nicht geshiptet),
+um Double-Shift Probleme zu vermeiden wenn es nach anderen Modulen läuft.
 """
 from typing import List
 import numpy as np
@@ -17,6 +20,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core import register_indicator
 
 
@@ -31,6 +35,9 @@ class CrossFeatureIndicators(BaseIndicator):
     - Overbought/Oversold Conditions
     - Indicator Divergences
     - Confluence Scores
+
+    WICHTIG: Berechnet alle Basis-Indikatoren IMMER neu um Double-Shift
+    zu vermeiden. Bereits berechnete Features im DataFrame werden ignoriert.
     """
 
     group = "cross"
@@ -53,13 +60,14 @@ class CrossFeatureIndicators(BaseIndicator):
         Returns:
             DataFrame mit Cross-Features
         """
-        # Stelle sicher dass Basis-Indikatoren vorhanden sind
-        self._ensure_base_indicators(df)
+        # KRITISCH: Berechne Basis-Indikatoren IMMER neu (nicht geshiptet)
+        # um Double-Shift zu vermeiden wenn dieses Modul nach anderen läuft
+        base = self._compute_base_indicators(df)
 
         features = {}
 
         # === RSI Conditional Features ===
-        rsi = df["mom_rsi_14"]
+        rsi = base["rsi"]
         rsi_change = rsi - rsi.shift(4)
 
         features["cross_rsi_high_rising"] = ((rsi > rsi_overbought) & (rsi_change > 0)).astype(int)
@@ -68,15 +76,16 @@ class CrossFeatureIndicators(BaseIndicator):
         features["cross_rsi_low_rising"] = ((rsi < rsi_oversold) & (rsi_change > 0)).astype(int)
 
         # === Volatility-Trend Interactions ===
-        atr_change = df["vol_atr_pct_14"].pct_change(4) * 100
-        adx = df["trend_adx_14"]
+        atr_pct = base["atr_pct"]
+        atr_change = atr_pct.pct_change(4) * 100
+        adx = base["adx"]
 
         features["cross_vol_trend"] = atr_change * adx / 100
         features["cross_expanding_trend"] = ((atr_change > 0) & (adx > 25)).astype(int)
         features["cross_contracting"] = ((atr_change < -5) & (adx < 20)).astype(int)
 
         # === Bollinger Band Squeeze ===
-        bb_width = df["vol_bb_wband_20"]
+        bb_width = base["bb_width"]
         bb_width_percentile = bb_width.rolling(100).apply(
             lambda x: (x.iloc[-1] <= np.percentile(x, 20)) if len(x) > 0 else 0
         )
@@ -92,7 +101,7 @@ class CrossFeatureIndicators(BaseIndicator):
         features["cross_bearish_strong"] = (~bullish_ema & strong_trend).astype(int)
 
         # === MACD-RSI Confluence ===
-        macd = df["trend_macd"]
+        macd = base["macd"]
         features["cross_bullish_confluence"] = ((macd > 0) & (rsi > 50) & (rsi < rsi_overbought)).astype(int)
         features["cross_bearish_confluence"] = ((macd < 0) & (rsi < 50) & (rsi > rsi_oversold)).astype(int)
 
@@ -108,7 +117,7 @@ class CrossFeatureIndicators(BaseIndicator):
         # === Momentum-Volatility Score ===
         rsi_score = (rsi - 50) / 50
         adx_score = adx / 50
-        vol_score = df["vol_atr_pct_14"] / df["vol_atr_pct_14"].rolling(50).mean()
+        vol_score = safe_divide(atr_pct, atr_pct.rolling(50).mean())
         momentum_vol_score = rsi_score * adx_score * vol_score
         features["cross_momentum_vol_score"] = momentum_vol_score
 
@@ -121,7 +130,7 @@ class CrossFeatureIndicators(BaseIndicator):
         ).astype(int)
 
         # === Stochastic-RSI Confluence ===
-        stoch = df["mom_stoch_k_14"]
+        stoch = base["stoch"]
         features["cross_stoch_rsi_overbought"] = ((stoch > 80) & (rsi > rsi_overbought)).astype(int)
         features["cross_stoch_rsi_oversold"] = ((stoch < 20) & (rsi < rsi_oversold)).astype(int)
 
@@ -139,36 +148,39 @@ class CrossFeatureIndicators(BaseIndicator):
         features["cross_signal_bias"] = bullish_signals - bearish_signals
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
-        # At bar i, the model should use features from bar i-1, not bar i
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 
-    def _ensure_base_indicators(self, df: pd.DataFrame) -> None:
-        """Berechnet fehlende Basis-Indikatoren."""
-        if "mom_rsi_14" not in df.columns:
-            df["mom_rsi_14"] = ta.momentum.rsi(df["C"], window=14)
+    def _compute_base_indicators(self, df: pd.DataFrame) -> dict:
+        """
+        Berechnet Basis-Indikatoren IMMER neu (nicht geshiptet).
 
-        if "mom_stoch_k_14" not in df.columns:
-            stoch = ta.momentum.StochasticOscillator(df["H"], df["L"], df["C"], window=14)
-            df["mom_stoch_k_14"] = stoch.stoch()
+        KRITISCH: Diese Methode gibt NICHT geshiftete Werte zurück.
+        Das ist wichtig weil:
+        1. Bereits im DataFrame vorhandene Features sind geshiptet
+        2. Wenn wir diese verwenden und am Ende nochmal shiften = Double-Shift
+        3. Daher: Immer neu berechnen aus OHLC-Daten
 
-        if "trend_adx_14" not in df.columns:
-            df["trend_adx_14"] = ta.trend.adx(df["H"], df["L"], df["C"], window=14)
-
-        if "trend_macd" not in df.columns:
-            macd = ta.trend.MACD(df["C"])
-            df["trend_macd"] = macd.macd_diff() / df["C"]
-
-        if "vol_atr_pct_14" not in df.columns:
-            atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
-            df["vol_atr_pct_14"] = atr / df["C"]
-
-        if "vol_bb_wband_20" not in df.columns:
-            bb = ta.volatility.BollingerBands(df["C"], window=20)
-            df["vol_bb_wband_20"] = bb.bollinger_wband()
+        Returns:
+            Dict mit Basis-Indikatoren (rsi, stoch, adx, macd, atr_pct, bb_width)
+        """
+        return {
+            "rsi": ta.momentum.rsi(df["C"], window=14),
+            "stoch": ta.momentum.StochasticOscillator(
+                df["H"], df["L"], df["C"], window=14
+            ).stoch(),
+            "adx": ta.trend.adx(df["H"], df["L"], df["C"], window=14),
+            "macd": safe_divide(
+                ta.trend.MACD(df["C"]).macd_diff(),
+                df["C"]
+            ),
+            "atr_pct": safe_divide(
+                ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14),
+                df["C"]
+            ),
+            "bb_width": ta.volatility.BollingerBands(df["C"], window=20).bollinger_wband(),
+        }
 
     def get_feature_columns(self) -> List[str]:
         return [

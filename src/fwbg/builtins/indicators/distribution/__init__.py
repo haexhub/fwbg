@@ -13,10 +13,10 @@ Interpretation:
 - Niedrige Kurtosis: Dünne Tails, weniger Extremereignisse
 """
 from typing import List
-import numpy as np
 import pandas as pd
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core import register_indicator
 
 
@@ -74,12 +74,12 @@ class DistributionIndicators(BaseIndicator):
             # Skewness Z-Score
             skew_mean = skew.rolling(z_score_lookback).mean()
             skew_std = skew.rolling(z_score_lookback).std()
-            features[f"dist_skew_{period}_z"] = (skew - skew_mean) / (skew_std + 1e-10)
+            features[f"dist_skew_{period}_z"] = safe_divide(skew - skew_mean, skew_std)
 
             # Kurtosis Z-Score
             kurt_mean = kurt.rolling(z_score_lookback).mean()
             kurt_std = kurt.rolling(z_score_lookback).std()
-            features[f"dist_kurt_{period}_z"] = (kurt - kurt_mean) / (kurt_std + 1e-10)
+            features[f"dist_kurt_{period}_z"] = safe_divide(kurt - kurt_mean, kurt_std)
 
         # === Änderungs-Features ===
         if compute_changes and 50 in windows:
@@ -105,10 +105,7 @@ class DistributionIndicators(BaseIndicator):
             features["dist_stability"] = skew_50.rolling(50).std()
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
-        # At bar i, the model should use features from bar i-1, not bar i
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 

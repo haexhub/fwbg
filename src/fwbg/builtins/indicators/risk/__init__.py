@@ -14,12 +14,13 @@ Risk-Management ist entscheidend:
 - Vol-of-Vol zeigt Regime-Unsicherheit
 - Crash-Probability kombiniert Warnsignale
 """
-from typing import List, Optional
+from typing import List
 import numpy as np
 import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import safe_divide
 from fwbg.core import register_indicator
 
 
@@ -114,7 +115,7 @@ class RiskIndicators(BaseIndicator):
             features[f"risk_dd_pct_{window}"] = dd_pct
 
             rolling_min_dd = dd_pct.rolling(window, min_periods=1).min()
-            features[f"risk_dd_ratio_{window}"] = dd_pct / (rolling_min_dd - 1e-10)
+            features[f"risk_dd_ratio_{window}"] = safe_divide(dd_pct, rolling_min_dd)
 
         # Time since peak
         if 200 in dd_windows:
@@ -125,7 +126,7 @@ class RiskIndicators(BaseIndicator):
             features["risk_bars_since_peak_log"] = np.log1p(bars_since_peak)
 
             rolling_min_close = close.rolling(50, min_periods=1).min()
-            recovery = (close - rolling_min_close) / (rolling_max_200 - rolling_min_close + 1e-10)
+            recovery = safe_divide(close - rolling_min_close, rolling_max_200 - rolling_min_close)
             features["risk_recovery_ratio"] = recovery.clip(0, 1)
 
         # === CVaR Features ===
@@ -138,7 +139,7 @@ class RiskIndicators(BaseIndicator):
         if 100 in cvar_windows and 1 in cvar_percentiles and 5 in cvar_percentiles:
             cvar_1_100 = features["risk_cvar_1_100"]
             cvar_5_100 = features["risk_cvar_5_100"]
-            features["risk_cvar_tail_ratio"] = cvar_1_100 / (cvar_5_100 + 1e-10)
+            features["risk_cvar_tail_ratio"] = safe_divide(cvar_1_100, cvar_5_100)
             features["risk_cvar_5_change"] = cvar_5_100 - cvar_5_100.shift(20)
 
         # === Vol-of-Vol Features ===
@@ -152,7 +153,7 @@ class RiskIndicators(BaseIndicator):
             vov_100 = features["risk_vol_of_vol_100"]
             vov_mean = vov_100.rolling(200).mean()
             vov_std = vov_100.rolling(200).std()
-            features["risk_vol_of_vol_zscore"] = (vov_100 - vov_mean) / (vov_std + 1e-10)
+            features["risk_vol_of_vol_zscore"] = safe_divide(vov_100 - vov_mean, vov_std)
 
         if 50 in vov_windows:
             vov_50 = features["risk_vol_of_vol_50"]
@@ -185,11 +186,13 @@ class RiskIndicators(BaseIndicator):
         # Kurtosis-basiert
         has_kurt = "dist_kurt_50" in df.columns
         if has_kurt:
-            kurt_zscore = df.get(
-                "dist_kurt_50_z",
-                (df["dist_kurt_50"] - df["dist_kurt_50"].rolling(100).mean()) /
-                (df["dist_kurt_50"].rolling(100).std() + 1e-10)
-            )
+            if "dist_kurt_50_z" in df.columns:
+                kurt_zscore = df["dist_kurt_50_z"]
+            else:
+                kurt_zscore = safe_divide(
+                    df["dist_kurt_50"] - df["dist_kurt_50"].rolling(100).mean(),
+                    df["dist_kurt_50"].rolling(100).std()
+                )
             crash_score += kurt_zscore.clip(0, 3) / 3
             n_components += 1
 
@@ -201,17 +204,19 @@ class RiskIndicators(BaseIndicator):
 
         # Correlation Decoupling basiert
         if "corr_spx_decoupling" in df.columns:
-            decoupling_norm = df["corr_spx_decoupling"] / (
-                df["corr_spx_decoupling"].rolling(100).max() + 1e-10
+            decoupling_norm = safe_divide(
+                df["corr_spx_decoupling"],
+                df["corr_spx_decoupling"].rolling(100).max()
             )
             crash_score += decoupling_norm.clip(0, 1)
             n_components += 1
 
         # CVaR basiert
         if "risk_cvar_5_100" in df.columns:
-            cvar_zscore = (
-                df["risk_cvar_5_100"] - df["risk_cvar_5_100"].rolling(100).mean()
-            ) / (df["risk_cvar_5_100"].rolling(100).std() + 1e-10)
+            cvar_zscore = safe_divide(
+                df["risk_cvar_5_100"] - df["risk_cvar_5_100"].rolling(100).mean(),
+                df["risk_cvar_5_100"].rolling(100).std()
+            )
             crash_score += (-cvar_zscore).clip(0, 3) / 3
             n_components += 1
 

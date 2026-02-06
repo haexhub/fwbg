@@ -18,6 +18,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core import register_indicator
 
 
@@ -71,8 +72,9 @@ class MultiTimeframeIndicators(BaseIndicator):
         h4_open = df["O"].shift(h4_bars - 1)
 
         # H4 Trend
-        features["mtf_h4_trend"] = (h4_close - h4_open) / (h4_high - h4_low + 1e-10)
-        features["mtf_h4_range_pos"] = (df["C"] - h4_low) / (h4_high - h4_low + 1e-10)
+        h4_range = h4_high - h4_low
+        features["mtf_h4_trend"] = safe_divide(h4_close - h4_open, h4_range)
+        features["mtf_h4_range_pos"] = safe_divide(df["C"] - h4_low, h4_range)
 
         # H4 EMA Distances
         for period in ema_periods:
@@ -95,7 +97,8 @@ class MultiTimeframeIndicators(BaseIndicator):
         d1_high = df["H"].rolling(d1_bars).max()
         d1_low = df["L"].rolling(d1_bars).min()
 
-        features["mtf_d1_range_pos"] = (df["C"] - d1_low) / (d1_high - d1_low + 1e-10)
+        d1_range = d1_high - d1_low
+        features["mtf_d1_range_pos"] = safe_divide(df["C"] - d1_low, d1_range)
 
         for period in ema_periods:
             d1_ema = ta.trend.ema_indicator(df["C"], window=period * d1_bars)
@@ -121,7 +124,7 @@ class MultiTimeframeIndicators(BaseIndicator):
         # === Volatility Ratio ===
         h1_atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
         h1_atr_pct = h1_atr / df["C"]
-        features["mtf_vol_ratio_h1h4"] = h1_atr_pct / (h4_atr_pct + 1e-10)
+        features["mtf_vol_ratio_h1h4"] = safe_divide(h1_atr_pct, h4_atr_pct)
 
         # === Momentum Divergence ===
         h1_rsi = ta.momentum.rsi(df["C"], window=14)
@@ -137,10 +140,7 @@ class MultiTimeframeIndicators(BaseIndicator):
         features["mtf_d1_dist_to_low"] = (df["C"] - d1_prev_low) / df["C"]
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
-        # At bar i, the model should use features from bar i-1, not bar i
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 
