@@ -216,8 +216,9 @@ class StructureIndicators(BaseIndicator):
 
         # === Event Features ===
         for period in event_periods:
-            rolling_high = df["H"].rolling(period).max()
-            rolling_low = df["L"].rolling(period).min()
+            # IMPORTANT: shift(1) to exclude current bar from rolling calculation
+            rolling_high = df["H"].rolling(period).max().shift(1)
+            rolling_low = df["L"].rolling(period).min().shift(1)
 
             is_new_high = (df["H"] >= rolling_high).astype(int)
             is_new_low = (df["L"] <= rolling_low).astype(int)
@@ -247,7 +248,7 @@ class StructureIndicators(BaseIndicator):
 
         # Volatilitäts-Spike Event
         atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
-        atr_mean = atr.rolling(50).mean()
+        atr_mean = atr.rolling(50).mean().shift(1)
         vol_spike = (atr > 2 * atr_mean).astype(int)
         bars_vol = _bars_since_event(vol_spike)
         features["event_bars_since_vol_spike"] = bars_vol

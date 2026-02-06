@@ -86,10 +86,12 @@ class CrossFeatureIndicators(BaseIndicator):
 
         # === Bollinger Band Squeeze ===
         bb_width = base["bb_width"]
-        bb_width_percentile = bb_width.rolling(100).apply(
-            lambda x: (x.iloc[-1] <= np.percentile(x, 20)) if len(x) > 0 else 0
+        # Compare current BB width against historical 20th percentile (excluding current)
+        # Rolling percentile of past 99 values, then compare current value to it
+        bb_width_pct20 = bb_width.shift(1).rolling(99, min_periods=20).apply(
+            lambda x: np.percentile(x, 20), raw=True
         )
-        features["cross_bb_squeeze"] = (bb_width_percentile == 1).astype(int)
+        features["cross_bb_squeeze"] = (bb_width <= bb_width_pct20).astype(int)
 
         # === Trend Confirmation ===
         ema_short = ta.trend.ema_indicator(df["C"], window=8)

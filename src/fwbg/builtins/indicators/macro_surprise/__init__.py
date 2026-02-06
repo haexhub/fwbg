@@ -15,7 +15,7 @@ import pandas as pd
 from typing import List
 
 from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import safe_divide
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core.registry import register_indicator
 
 
@@ -52,6 +52,8 @@ class MacroSurpriseIndicator(BaseIndicator):
         Returns:
             DataFrame mit zusätzlichen Spalten
         """
+        features = {}
+
         o = df["O"]
         h = df["H"]
         l = df["L"]
@@ -64,16 +66,16 @@ class MacroSurpriseIndicator(BaseIndicator):
         gap = o - c_prev
         gap_pct = gap / c_prev
 
-        df["macro_gap"] = gap
-        df["macro_gap_pct"] = gap_pct
+        features["macro_gap"] = gap
+        features["macro_gap_pct"] = gap_pct
 
         # Gap relativ zur durchschnittlichen Range
         avg_range = (h - l).rolling(vol_lookback).mean()
-        df["macro_gap_normalized"] = gap / avg_range
+        features["macro_gap_normalized"] = gap / avg_range
 
         # Gap Direction
-        df["macro_gap_up"] = (gap > 0).astype(float)
-        df["macro_gap_down"] = (gap < 0).astype(float)
+        features["macro_gap_up"] = (gap > 0).astype(float)
+        features["macro_gap_down"] = (gap < 0).astype(float)
 
         # Gap gefüllt? (Close kommt zurück zum vorherigen Close)
         gap_filled = np.where(
@@ -81,7 +83,7 @@ class MacroSurpriseIndicator(BaseIndicator):
             c <= c_prev,  # Up-Gap gefüllt wenn Close <= prev Close
             c >= c_prev   # Down-Gap gefüllt wenn Close >= prev Close
         )
-        df["macro_gap_filled"] = gap_filled.astype(float)
+        features["macro_gap_filled"] = pd.Series(gap_filled, index=df.index).astype(float)
 
         # Gap Extension (Markt bewegt sich weiter in Gap-Richtung)
         gap_extended = np.where(
@@ -89,31 +91,31 @@ class MacroSurpriseIndicator(BaseIndicator):
             c > o,  # Up-Gap extended wenn Close > Open
             c < o   # Down-Gap extended wenn Close < Open
         )
-        df["macro_gap_extended"] = gap_extended.astype(float)
+        features["macro_gap_extended"] = pd.Series(gap_extended, index=df.index).astype(float)
 
         # Rolling Gap Statistics
-        df["macro_gap_avg"] = gap_pct.rolling(gap_ma_period).mean()
-        df["macro_gap_std"] = gap_pct.rolling(gap_ma_period).std()
+        features["macro_gap_avg"] = gap_pct.rolling(gap_ma_period).mean()
+        features["macro_gap_std"] = gap_pct.rolling(gap_ma_period).std()
 
         # === RETURN DECOMPOSITION ===
 
         # Total Return
         total_return = (c - c_prev) / c_prev
-        df["macro_total_return"] = total_return
+        features["macro_total_return"] = total_return
 
         # Overnight Return (Gap)
         overnight_return = (o - c_prev) / c_prev
-        df["macro_overnight_return"] = overnight_return
+        features["macro_overnight_return"] = overnight_return
 
         # Intraday Return
         intraday_return = (c - o) / o
-        df["macro_intraday_return"] = intraday_return
+        features["macro_intraday_return"] = intraday_return
 
         # Return Ratio: Wie viel des Returns war Overnight vs. Intraday
         total_abs = total_return.abs()
         overnight_abs = overnight_return.abs()
         total_abs_safe = total_abs.replace(0, np.nan)
-        df["macro_overnight_ratio"] = overnight_abs / total_abs_safe
+        features["macro_overnight_ratio"] = overnight_abs / total_abs_safe
 
         # === SURPRISE DETECTION ===
 
@@ -127,17 +129,17 @@ class MacroSurpriseIndicator(BaseIndicator):
 
         # Surprise = Actual / Expected
         expected_move_safe = expected_move.replace(0, np.nan)
-        df["macro_range_surprise"] = actual_move / expected_move_safe
+        features["macro_range_surprise"] = actual_move / expected_move_safe
 
         # Surprise Binary (Move > threshold * expected)
-        df["macro_is_surprise"] = (
+        features["macro_is_surprise"] = (
             actual_move > surprise_threshold * expected_move
         ).astype(float)
 
         # Return Surprise
         return_zscore = returns / rolling_std
-        df["macro_return_zscore"] = return_zscore
-        df["macro_return_surprise"] = (
+        features["macro_return_zscore"] = return_zscore
+        features["macro_return_surprise"] = (
             return_zscore.abs() > surprise_threshold
         ).astype(float)
 
@@ -148,32 +150,29 @@ class MacroSurpriseIndicator(BaseIndicator):
         expected_vol = realized_vol.rolling(vol_lookback).mean()
         expected_vol_safe = expected_vol.replace(0, np.nan)
 
-        df["macro_vol_ratio"] = realized_vol / expected_vol_safe
+        features["macro_vol_ratio"] = realized_vol / expected_vol_safe
 
         # Vol Spike Detection
         vol_std = realized_vol.rolling(vol_lookback).std()
         vol_zscore = (realized_vol - expected_vol) / vol_std
-        df["macro_vol_zscore"] = vol_zscore
+        features["macro_vol_zscore"] = vol_zscore
 
         # === STREAK / PERSISTENCE ===
 
         # Consecutive Gap Direction
         gap_direction = np.sign(gap)
         gap_streak = self._compute_streak(gap_direction)
-        df["macro_gap_streak"] = gap_streak
+        features["macro_gap_streak"] = gap_streak
 
         # Surprise Streak
-        is_surprise = df["macro_is_surprise"]
+        is_surprise = features["macro_is_surprise"]
         surprise_streak = self._compute_streak(is_surprise)
-        df["macro_surprise_streak"] = surprise_streak
+        features["macro_surprise_streak"] = surprise_streak
 
-        # CRITICAL: Shift all macro_* features by 1 to prevent lookahead bias
-        # At bar i, the model should use features from bar i-1, not bar i
-        macro_cols = [col for col in df.columns if col.startswith('macro_')]
-        for col in macro_cols:
-            df[col] = df[col].shift(1)
+        # CRITICAL: Shift all features by 1 to prevent lookahead bias
+        features_df = shift_features(features, df.index)
 
-        return df
+        return pd.concat([df, features_df], axis=1)
 
     def _compute_streak(self, series: pd.Series) -> pd.Series:
         """Berechnet aufeinanderfolgende gleiche Werte."""

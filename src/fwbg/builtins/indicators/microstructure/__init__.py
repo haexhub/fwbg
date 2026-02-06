@@ -15,7 +15,7 @@ import pandas as pd
 from typing import List
 
 from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import safe_divide
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core.registry import register_indicator
 
 
@@ -51,6 +51,8 @@ class MicrostructureIndicator(BaseIndicator):
         Returns:
             DataFrame mit zusätzlichen Spalten
         """
+        features = {}
+
         o = df["O"]
         h = df["H"]
         l = df["L"]
@@ -68,16 +70,16 @@ class MicrostructureIndicator(BaseIndicator):
         # --- Wick Imbalance ---
         # Positiv = mehr Upper Wick (Verkaufsdruck oben)
         # Negativ = mehr Lower Wick (Kaufdruck unten)
-        df["micro_wick_imbalance"] = (upper_wick - lower_wick) / bar_range_safe
+        features["micro_wick_imbalance"] = (upper_wick - lower_wick) / bar_range_safe
 
         # --- Intrabar Bias ---
         # Positiv = Close > Open (bullish)
         # Negativ = Close < Open (bearish)
-        df["micro_intrabar_bias"] = (c - o) / bar_range_safe
+        features["micro_intrabar_bias"] = (c - o) / bar_range_safe
 
         # --- Body Ratio ---
         # Wie viel der Range ist Body vs. Wick
-        df["micro_body_ratio"] = body / bar_range_safe
+        features["micro_body_ratio"] = body / bar_range_safe
 
         # --- ATR und Range/ATR ---
         tr = pd.concat([
@@ -86,68 +88,61 @@ class MicrostructureIndicator(BaseIndicator):
             (l - c.shift(1)).abs()
         ], axis=1).max(axis=1)
         atr = tr.rolling(atr_period).mean()
-        df["micro_range_over_atr"] = bar_range / atr
+        features["micro_range_over_atr"] = bar_range / atr
 
         # --- Pressure Score ---
         # Kombination aus Richtung und Body-Stärke
         direction = np.sign(c - o)
         body_ratio = body / bar_range_safe
-        df["micro_pressure_score"] = direction * body_ratio
+        features["micro_pressure_score"] = direction * body_ratio
 
         # --- Rolling Imbalances ---
-        df["micro_wick_imbalance_sum"] = (
-            df["micro_wick_imbalance"].rolling(rolling_window).sum()
+        features["micro_wick_imbalance_sum"] = (
+            features["micro_wick_imbalance"].rolling(rolling_window).sum()
         )
-        df["micro_intrabar_bias_sum"] = (
-            df["micro_intrabar_bias"].rolling(rolling_window).sum()
+        features["micro_intrabar_bias_sum"] = (
+            features["micro_intrabar_bias"].rolling(rolling_window).sum()
         )
-        df["micro_pressure_sum"] = (
-            df["micro_pressure_score"].rolling(rolling_window).sum()
+        features["micro_pressure_sum"] = (
+            features["micro_pressure_score"].rolling(rolling_window).sum()
         )
 
         # --- Shadow Extremes ---
         # Maximale Wicks als Proxy für Liquiditäts-Absorption
-        df["micro_upper_shadow_max"] = (
+        features["micro_upper_shadow_max"] = (
             (upper_wick / bar_range_safe).rolling(rolling_window).max()
         )
-        df["micro_lower_shadow_max"] = (
+        features["micro_lower_shadow_max"] = (
             (lower_wick / bar_range_safe).rolling(rolling_window).max()
         )
 
         # --- Consistency Metrics ---
         # Wie konsistent ist die Richtung?
         direction_series = direction.rolling(rolling_window).mean()
-        df["micro_direction_consistency"] = direction_series.abs()
+        features["micro_direction_consistency"] = direction_series.abs()
 
         # --- Volume-weighted (falls V vorhanden) ---
         if "V" in df.columns and df["V"].notna().any() and (df["V"] > 0).any():
             v = df["V"]
-            v_safe = v.replace(0, np.nan)
 
             # Volume-gewichteter Pressure Score
-            df["micro_vwap_pressure"] = (
-                (df["micro_pressure_score"] * v).rolling(rolling_window).sum()
+            features["micro_vwap_pressure"] = (
+                (features["micro_pressure_score"] * v).rolling(rolling_window).sum()
                 / v.rolling(rolling_window).sum()
             )
 
             # Relative Volume (vs. rolling average)
             v_avg = v.rolling(rolling_window * 4).mean()
-            df["micro_relative_volume"] = v / v_avg
+            features["micro_relative_volume"] = v / v_avg
         else:
             # Fallback wenn kein Volume
-            df["micro_vwap_pressure"] = df["micro_pressure_sum"] / rolling_window
-            df["micro_relative_volume"] = 1.0
+            features["micro_vwap_pressure"] = features["micro_pressure_sum"] / rolling_window
+            features["micro_relative_volume"] = 1.0
 
-        # NaN-Behandlung für erste Perioden
-        # (behalten wir bei, da Modelle damit umgehen können)
+        # CRITICAL: Shift all features by 1 to prevent lookahead bias
+        features_df = shift_features(features, df.index)
 
-        # CRITICAL: Shift all micro_* features by 1 to prevent lookahead bias
-        # At bar i, the model should use features from bar i-1, not bar i
-        micro_cols = [col for col in df.columns if col.startswith('micro_')]
-        for col in micro_cols:
-            df[col] = df[col].shift(1)
-
-        return df
+        return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         """Gibt alle Feature-Spalten zurück."""

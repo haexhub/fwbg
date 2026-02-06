@@ -20,7 +20,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import safe_divide
+from fwbg.plugins.indicator import safe_divide, shift_features
 from fwbg.core import register_indicator
 
 
@@ -169,6 +169,15 @@ class RiskIndicators(BaseIndicator):
         if compute_correlations:
             self._compute_correlation_features(df)
 
+        # CRITICAL: Shift all risk features by 1 to prevent lookahead bias
+        # At bar i, the model should use features from bar i-1, not bar i
+        feature_cols = [
+            c for c in df.columns
+            if c.startswith(('risk_', 'corr_', 'lead_lag_', 'vix_lead_'))
+        ]
+        for col in feature_cols:
+            df[col] = df[col].shift(1)
+
         return df
 
     def _compute_crash_probability(self, df: pd.DataFrame) -> None:
@@ -269,14 +278,6 @@ class RiskIndicators(BaseIndicator):
             df["lead_lag_vix"] = vix_change + asset_change
 
             df["vix_lead_signal"] = vix_change.shift(5) * 100
-
-        # CRITICAL: Shift all risk_* features by 1 to prevent lookahead bias
-        # At bar i, the model should use features from bar i-1, not bar i
-        risk_cols = [col for col in df.columns if col.startswith('risk_') or col.startswith('corr_') or col.startswith('lead_lag_')]
-        for col in risk_cols:
-            df[col] = df[col].shift(1)
-
-        return df
 
     def get_feature_columns(self) -> List[str]:
         return [
