@@ -26,26 +26,30 @@ def _setup_log_yaxis(ax, eq):
     ax.set_yscale("log")
 
     # Berechne sinnvolle Tick-Positionen basierend auf Datenbereich
-    min_val = min(eq)
+    min_val = max(min(eq), 1)  # Mindestens 1 für log-Skala
     max_val = max(eq)
 
     # Finde passende Basis für Ticks (10, 100, 1000, etc.)
-    log_min = np.floor(np.log10(max(min_val, 1)))
-    log_max = np.ceil(np.log10(max(max_val, 1)))
+    log_min = np.floor(np.log10(min_val))
+    log_max = np.ceil(np.log10(max_val))
 
-    # Erstelle manuelle Tick-Positionen für kleine Bereiche
-    if log_max - log_min <= 2:
-        # Kleiner Bereich: zeige mehr Zwischenwerte
-        ticks = []
-        for exp in range(int(log_min), int(log_max) + 1):
-            base = 10 ** exp
-            for mult in [1, 2, 5]:
-                val = base * mult
-                if min_val * 0.9 <= val <= max_val * 1.1:
-                    ticks.append(val)
-        if ticks:
-            ax.set_yticks(ticks)
+    # Erstelle manuelle Tick-Positionen
+    ticks = []
+    # Erweitere Bereich um eine Größenordnung in jede Richtung
+    for exp in range(int(log_min) - 1, int(log_max) + 2):
+        base = 10 ** exp
+        # Mehr Zwischenwerte für bessere Lesbarkeit
+        for mult in [1, 2, 5]:
+            val = base * mult
+            if min_val * 0.8 <= val <= max_val * 1.2:
+                ticks.append(val)
 
+    # Fallback: wenn keine Ticks gefunden, erzeuge gleichmäßig verteilte
+    if len(ticks) < 3:
+        ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)
+        ticks = [round(t, -int(np.floor(np.log10(t))) + 1) for t in ticks]  # Runden
+
+    ax.set_yticks(ticks)
     ax.yaxis.set_major_formatter(FuncFormatter(_format_currency))
     # Deaktiviere Minor-Tick-Labels um Clutter zu vermeiden
     ax.yaxis.set_minor_formatter(NullFormatter())
