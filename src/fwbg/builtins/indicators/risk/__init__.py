@@ -265,6 +265,14 @@ class RiskIndicators(BaseIndicator):
 
             df["vix_lead_signal"] = vix_change.shift(5) * 100
 
+        # CRITICAL: Shift all risk_* features by 1 to prevent lookahead bias
+        # At bar i, the model should use features from bar i-1, not bar i
+        risk_cols = [col for col in df.columns if col.startswith('risk_') or col.startswith('corr_') or col.startswith('lead_lag_')]
+        for col in risk_cols:
+            df[col] = df[col].shift(1)
+
+        return df
+
     def get_feature_columns(self) -> List[str]:
         return [
             # Drawdown

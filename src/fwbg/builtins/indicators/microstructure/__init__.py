@@ -140,6 +140,12 @@ class MicrostructureIndicator(BaseIndicator):
         # NaN-Behandlung für erste Perioden
         # (behalten wir bei, da Modelle damit umgehen können)
 
+        # CRITICAL: Shift all micro_* features by 1 to prevent lookahead bias
+        # At bar i, the model should use features from bar i-1, not bar i
+        micro_cols = [col for col in df.columns if col.startswith('micro_')]
+        for col in micro_cols:
+            df[col] = df[col].shift(1)
+
         return df
 
     def get_feature_columns(self) -> List[str]:

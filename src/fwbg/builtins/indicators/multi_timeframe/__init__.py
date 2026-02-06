@@ -136,7 +136,13 @@ class MultiTimeframeIndicators(BaseIndicator):
         features["mtf_d1_dist_to_high"] = (d1_prev_high - df["C"]) / df["C"]
         features["mtf_d1_dist_to_low"] = (df["C"] - d1_prev_low) / df["C"]
 
-        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
+        # CRITICAL: Shift all features by 1 to prevent lookahead bias
+        # At bar i, the model should use features from bar i-1, not bar i
+        features_df = pd.DataFrame(features, index=df.index)
+        for col in features_df.columns:
+            features_df[col] = features_df[col].shift(1)
+
+        return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [

@@ -166,6 +166,12 @@ class MacroSurpriseIndicator(BaseIndicator):
         surprise_streak = self._compute_streak(is_surprise)
         df["macro_surprise_streak"] = surprise_streak
 
+        # CRITICAL: Shift all macro_* features by 1 to prevent lookahead bias
+        # At bar i, the model should use features from bar i-1, not bar i
+        macro_cols = [col for col in df.columns if col.startswith('macro_')]
+        for col in macro_cols:
+            df[col] = df[col].shift(1)
+
         return df
 
     def _compute_streak(self, series: pd.Series) -> pd.Series:

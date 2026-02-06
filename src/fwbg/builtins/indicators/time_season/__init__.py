@@ -129,7 +129,14 @@ class TimeSeasonIndicators(BaseIndicator):
         days_in_year = 365 + df.index.is_leap_year.astype(int)
         features["time_year_progress"] = day_of_year / days_in_year
 
-        return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
+        # CRITICAL: Shift all features by 1 to prevent lookahead bias
+        # Even though time features don't use OHLC, we shift for consistency
+        # and to ensure features at bar i come from the known state at bar i-1
+        features_df = pd.DataFrame(features, index=df.index)
+        for col in features_df.columns:
+            features_df[col] = features_df[col].shift(1)
+
+        return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self) -> List[str]:
         return [
