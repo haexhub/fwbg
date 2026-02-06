@@ -546,10 +546,9 @@ def train_model(
         error_msg = str(e).lower()
         # Bei GPU/CUDA-Fehlern automatisch auf CPU zurückfallen
         if "cuda" in error_msg or "gpu" in error_msg or "device" in error_msg:
-            import logging
-            logging.getLogger(__name__).warning(
-                f"GPU-Fehler in _build_model, Fallback auf CPU: {e}"
-            )
+            # GPU global deaktivieren nach erstem Fehler
+            from fwbg.utils.xgb_config import disable_gpu
+            disable_gpu()
             # Neues Modell mit CPU-Parametern erstellen
             cpu_params = {k: v for k, v in params.items()
                          if k not in ("device", "tree_method")}
