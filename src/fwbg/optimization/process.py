@@ -148,39 +148,79 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         log(3, f"Abgeleitete Features berechnet ({time.time()-t0:.1f}s)", sym)
 
-        # === PREPROCESSING ===
-        # REMOVED: Preprocessing wird jetzt IN der CV-Schleife angewendet (fit/transform)
-        # um Lookahead Bias zu verhindern. Siehe nested_cv.py:run_inner_cv()
+        # === LOOKAHEAD BIAS PREVENTION ===
+        # KRITISCH: Split VOR Indikator-Berechnung!
+        # Rolling Windows in Indikatoren würden sonst Zukunftsdaten aus dem Holdout sehen.
+        #
+        # Reihenfolge:
+        # 1. OHLC + Makro laden (OK, Makro ist täglich ohne Rolling)
+        # 2. Split in Inner/Holdout (auf OHLC-Basis)
+        # 3. Indikatoren SEPARAT für Inner und Holdout berechnen
 
-        t0 = time.time()
+        if len(df) < MIN_TRADES * 4:
+            log(1, f"SKIP - Zu wenig Daten vor Split ({len(df)} < {MIN_TRADES * 4})", sym)
+            return {"symbol": sym, "status": "insufficient_data", "rows": len(df)}
 
+        # Asset-Konfiguration laden
+        asset = get_asset(sym)
+
+        # SimulationContext erstellen (wird durch alle Funktionen gereicht)
+        ctx = SimulationContext.create(asset, strategy)
+
+        # Kurzreferenzen für lokale Verwendung
+        grid = strategy.get_grid_for_class(asset.asset_class)
+
+        # === SPLIT VOR INDIKATOR-BERECHNUNG ===
+        # Spalte df in Inner (80%) und Holdout (20%)
+        report_phase(sym, "Split vor Indikatoren...")
+        holdout_ratio = 0.20
+        holdout_size = int(len(df) * holdout_ratio)
+        inner_size = len(df) - holdout_size
+
+        # Kopiere OHLC + Makro-Daten (noch keine Indikatoren!)
+        df_inner_raw = df.iloc[:inner_size].copy()
+        df_holdout_raw = df.iloc[inner_size:].copy()
+
+        log(2, f"Pre-Split: {len(df_inner_raw)} Inner / {len(df_holdout_raw)} Holdout", sym)
+
+        # === INDIKATOREN SEPARAT BERECHNEN ===
         def indicator_progress(name, idx, total):
             report_phase(sym, f"Indikatoren: {name} ({idx}/{total})")
 
-        report_phase(sym, "Berechne Indikatoren...")
-        df = compute_indicator_pool(
-            df,
+        # Inner-Set: Indikatoren berechnen (nur auf Inner-Daten!)
+        report_phase(sym, "Berechne Inner-Indikatoren...")
+        t0 = time.time()
+        inner_df = compute_indicator_pool(
+            df_inner_raw,
             indicators=strategy.indicators,
             progress_callback=indicator_progress
         )
-        log(2, f"Indikatoren berechnet, DataFrame shape: {df.shape}", sym)
+        inner_df = inner_df.copy()  # Defragmentieren
+        inner_df = inner_df.dropna()
+        log(2, f"Inner-Indikatoren: {inner_df.shape} ({time.time()-t0:.1f}s)", sym)
 
-        # Defragmentiere nach compute_indicator_pool - Indikatoren fügen viele Spalten einzeln ein
-        report_phase(sym, "Defragmentiere DataFrame...")
-        t_defrag = time.time()
-        df = df.copy()
-        log(2, f"DataFrame defragmentiert ({time.time()-t_defrag:.1f}s)", sym)
+        # Holdout-Set: Indikatoren SEPARAT berechnen (kein Lookahead!)
+        report_phase(sym, "Berechne Holdout-Indikatoren...")
+        t0 = time.time()
+        holdout_df = compute_indicator_pool(
+            df_holdout_raw,
+            indicators=strategy.indicators,
+            progress_callback=None  # Kein Progress für Holdout (geht schneller)
+        )
+        holdout_df = holdout_df.copy()  # Defragmentieren
+        holdout_df = holdout_df.dropna()
+        log(2, f"Holdout-Indikatoren: {holdout_df.shape} ({time.time()-t0:.1f}s)", sym)
 
-        report_phase(sym, "Entferne NaN-Zeilen...")
-        df = df.dropna()
-        log(2, f"Nach dropna: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
+        if len(inner_df) < MIN_TRADES * 2:
+            log(1, f"SKIP - Zu wenig Inner-Daten nach dropna ({len(inner_df)} < {MIN_TRADES * 2})", sym)
+            return {"symbol": sym, "status": "insufficient_data", "rows": len(inner_df)}
 
-        if len(df) < MIN_TRADES * 2:
-            log(1, f"SKIP - Zu wenig Daten nach dropna ({len(df)} < {MIN_TRADES * 2})", sym)
-            return {"symbol": sym, "status": "insufficient_data", "rows": len(df)}
+        if len(holdout_df) < MIN_TRADES:
+            log(1, f"SKIP - Zu wenig Holdout-Daten nach dropna ({len(holdout_df)} < {MIN_TRADES})", sym)
+            return {"symbol": sym, "status": "insufficient_holdout_data", "rows": len(holdout_df)}
 
-        # Feature-Pool vorbereiten (unabhängig von Regime-Filter)
-        full_pool = get_feature_columns(df)
+        # Feature-Pool aus Inner-Daten (Holdout sollte gleiche Features haben)
+        full_pool = get_feature_columns(inner_df)
         log(2, f"Feature-Pool: {len(full_pool)} Features", sym)
 
         # Entferne Features mit inf/nan (XGBoost verträgt keine inf)
@@ -189,9 +229,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         excluded_inf = 0
         excluded_nan = 0
         for col in full_pool:
-            if col in df.columns:
-                has_inf = np.isinf(df[col]).any()
-                nan_ratio = df[col].isna().sum() / len(df)
+            if col in inner_df.columns:
+                has_inf = np.isinf(inner_df[col]).any()
+                nan_ratio = inner_df[col].isna().sum() / len(inner_df)
                 if has_inf:
                     excluded_inf += 1
                 elif nan_ratio >= 0.1:
@@ -204,15 +244,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if len(full_pool) < 5:
             log(1, f"SKIP - Zu wenig saubere Features ({len(full_pool)} < 5)", sym)
             return {"symbol": sym, "status": "insufficient_features", "features": len(full_pool)}
-
-        # Asset-Konfiguration laden
-        asset = get_asset(sym)
-
-        # SimulationContext erstellen (wird durch alle Funktionen gereicht)
-        ctx = SimulationContext.create(asset, strategy)
-
-        # Kurzreferenzen für lokale Verwendung
-        grid = strategy.get_grid_for_class(asset.asset_class)
 
         candidates = []
         all_grid_results = []  # Alle Kombinationen tracken
@@ -231,31 +262,28 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if ctx.min_rrr > 0:
             log(1, f"Min RRR Filter: {ctx.min_rrr} (Scalping-Strategien mit RRR < {ctx.min_rrr} werden gefiltert)", sym)
 
-        # === NESTED CV: Holdout Split ===
-        # Die letzten 20% werden KOMPLETT zurückgehalten für finale Evaluation
+        # === NESTED CV: Inner Folds erstellen (auf bereits berechneten Inner-Daten) ===
         report_phase(sym, "Grid-Search...")
-        cv_split = nested_cv_split(df, holdout_ratio=0.20, n_inner_folds=5)
+        # nested_cv_split wird nur für Inner-Folds verwendet (holdout_ratio=0 da bereits gesplittet)
+        cv_split = nested_cv_split(inner_df, holdout_ratio=0.0, n_inner_folds=5)
         inner_folds = cv_split["inner_folds"]
-        holdout_df = cv_split["holdout_df"]
-        inner_df = cv_split["inner_df"]
 
-        log(1, f"Nested CV: {len(inner_df)} Inner / {len(holdout_df)} Holdout (nie gesehen während Grid-Search)", sym)
+        log(1, f"Nested CV: {len(inner_df)} Inner / {len(holdout_df)} Holdout (KEIN Lookahead - Features separat berechnet)", sym)
 
         # === ÄUSSERSTE SCHLEIFE: Regime-Filter Kombinationen ===
         for rf_idx, regime_config in enumerate(regime_filter_combinations):
             # Erstelle RegimeFilterConfig aus Kombination
             regime_params = RegimeFilterConfig.from_dict(regime_config)
 
-            # Berechne _regime_ok für diese Kombination
-            df["_regime_ok"] = compute_regime_filter(df, regime_params)
+            # Berechne _regime_ok SEPARAT für Inner und Holdout (kein Lookahead!)
+            inner_df["_regime_ok"] = compute_regime_filter(inner_df, regime_params)
+            holdout_df["_regime_ok"] = compute_regime_filter(holdout_df, regime_params)
 
             # Update inner_folds mit neuem regime_ok
             # inner_folds ist eine Liste von (train_df, val_df) Tupeln
             for train_df_fold, val_df_fold in inner_folds:
-                train_df_fold["_regime_ok"] = df.loc[train_df_fold.index, "_regime_ok"]
-                val_df_fold["_regime_ok"] = df.loc[val_df_fold.index, "_regime_ok"]
-            holdout_df["_regime_ok"] = df.loc[holdout_df.index, "_regime_ok"]
-            inner_df["_regime_ok"] = df.loc[inner_df.index, "_regime_ok"]
+                train_df_fold["_regime_ok"] = inner_df.loc[train_df_fold.index, "_regime_ok"]
+                val_df_fold["_regime_ok"] = inner_df.loc[val_df_fold.index, "_regime_ok"]
 
             # Log Regime-Filter Info
             regime_desc = []
