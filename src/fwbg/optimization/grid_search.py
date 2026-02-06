@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fwbg.builtins.indicators import filter_features_by_group
 from fwbg.utils.progress import report_progress, report_phase, set_parallel_mode
 from fwbg.utils.logging import log
-from fwbg.utils.xgb_config import set_xgboost_n_jobs
+from fwbg.utils.xgb_config import set_xgboost_n_jobs, is_gpu_available
 from .nested_cv import run_inner_cv
 
 
@@ -207,6 +207,9 @@ def _process_feature_group(
         log(2, f"  Feature-Gruppe '{feature_group}': nur {len(group_features)} Features - übersprungen", sym)
         return [], []
 
+    # DIAGNOSE: Feature-Gruppen Details
+    log(2, f"  [DIAG] Feature-Gruppe '{feature_group}': {len(group_features)} Features: {group_features[:5]}...", sym)
+
     log(1, f"Feature-Gruppe {fg_idx+1}/{n_feature_groups}: {feature_group} ({len(group_features)} Features)", sym)
 
     grid_per_fg = ctx.grid_combinations_per_feature_group()
@@ -249,21 +252,35 @@ def _process_feature_group(
     candidates = []
     grid_results = []
 
+    # DIAGNOSE
+    log(2, f"  [DIAG] Feature-Gruppe '{feature_group}': Verarbeite {len(combos)} TP/SL-Kombinationen", sym)
+
     # SEQUENTIELLE Verarbeitung der TP/SL-Kombinationen
     # KEINE Parallelisierung hier weil:
     # 1. XGBoost nutzt intern bereits n_jobs für Threading (libgomp/OpenMP)
     # 2. Verschachtelte ThreadPools führen zu Thread-Kontention
     # 3. Feature-Gruppen-Ebene ist bereits parallelisiert
-    for combo in combos:
-        candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
+    try:
+        for i, combo in enumerate(combos):
+            try:
+                candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
 
-        if progress_callback:
-            progress_callback(idx + 1, grid_per_fg)
+                if progress_callback:
+                    progress_callback(idx + 1, grid_per_fg)
 
-        if candidate:
-            candidates.append(candidate)
-        if grid_result:
-            grid_results.append(grid_result)
+                if candidate:
+                    candidates.append(candidate)
+                if grid_result:
+                    grid_results.append(grid_result)
+            except Exception as e:
+                log(1, f"  [DIAG] ERROR in combo {i}: {type(e).__name__}: {e}", sym)
+                import traceback
+                log(2, f"  [DIAG] Traceback: {traceback.format_exc()}", sym)
+    except Exception as outer_e:
+        log(1, f"  [DIAG] OUTER ERROR: {type(outer_e).__name__}: {outer_e}", sym)
+
+    # DIAGNOSE: Zusammenfassung für diese Feature-Gruppe
+    log(2, f"  [DIAG] Feature-Gruppe '{feature_group}': {len(candidates)} Kandidaten aus {len(combos)} Kombinationen", sym)
 
     return candidates, grid_results
 
@@ -415,6 +432,11 @@ def _process_feature_groups_parallel(
     #
     # RAM-Check wurde entfernt: max_workers berücksichtigt bereits RAM-Kapazität.
     # Laufzeit-RAM-Checks waren kontraproduktiv und verlangsamten den Start.
+
+    # WICHTIG: GPU-Verfügbarkeit EINMALIG prüfen BEVOR parallele Threads starten
+    # Dies cached das Ergebnis und verhindert CUDA race conditions
+    gpu_available = is_gpu_available()
+    log(2, f"  GPU-Modus: {'CUDA' if gpu_available else 'CPU'}", sym)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}

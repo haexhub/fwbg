@@ -8,9 +8,11 @@ GPU-Unterstützung:
 - Automatische Erkennung von CUDA-fähigen GPUs
 - Fallback auf CPU wenn keine GPU verfügbar
 - Kompatibel mit NVIDIA, AMD (via ROCm), und CPU-only Systemen
+- Thread-safe GPU-Initialisierung für parallele Verarbeitung
 """
 import os
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -18,57 +20,72 @@ logger = logging.getLogger(__name__)
 _XGBOOST_N_JOBS = -1
 _GPU_AVAILABLE = None  # Cache für GPU-Check
 _GPU_DEVICE_ID = 0
+_GPU_CHECK_LOCK = threading.Lock()  # Thread-safe GPU-Initialisierung
 
 
 def _check_gpu_available() -> bool:
     """
     Prüft ob eine CUDA-fähige GPU für XGBoost verfügbar ist.
 
+    Thread-safe: Nur ein Thread führt die GPU-Prüfung durch,
+    alle anderen warten und nutzen das gecachte Ergebnis.
+
     Returns:
         True wenn GPU nutzbar, False sonst
     """
     global _GPU_AVAILABLE
 
+    # Fast path: Bereits gecacht
     if _GPU_AVAILABLE is not None:
         return _GPU_AVAILABLE
 
-    # Umgebungsvariable zum Deaktivieren der GPU
-    if os.environ.get("FWBG_NO_GPU", "").lower() in ("1", "true", "yes"):
-        logger.info("GPU deaktiviert via FWBG_NO_GPU Umgebungsvariable")
-        _GPU_AVAILABLE = False
-        return False
+    # Thread-safe: Nur ein Thread prüft die GPU
+    with _GPU_CHECK_LOCK:
+        # Double-check nach Lock-Erwerb
+        if _GPU_AVAILABLE is not None:
+            return _GPU_AVAILABLE
 
-    try:
-        # Versuche XGBoost mit GPU zu initialisieren
-        import xgboost as xgb
+        # Umgebungsvariable zum Deaktivieren der GPU
+        if os.environ.get("FWBG_NO_GPU", "").lower() in ("1", "true", "yes"):
+            logger.info("GPU deaktiviert via FWBG_NO_GPU Umgebungsvariable")
+            _GPU_AVAILABLE = False
+            return False
 
-        # Prüfe ob XGBoost mit GPU-Support kompiliert wurde
-        # und ob eine GPU verfügbar ist
-        # XGBoost 2.0+: device='cuda' mit tree_method='hist'
-        test_params = {
-            "tree_method": "hist",
-            "device": "cuda",
-            "n_estimators": 1,
-            "max_depth": 1,
-            "verbosity": 0,
-        }
+        try:
+            # Versuche XGBoost mit GPU zu initialisieren
+            import xgboost as xgb
 
-        # Kleiner Test-Datensatz
-        import numpy as np
-        X_test = np.array([[1, 2], [3, 4], [5, 6], [7, 8]])
-        y_test = np.array([0, 1, 0, 1])
+            # Prüfe ob XGBoost mit GPU-Support kompiliert wurde
+            # und ob eine GPU verfügbar ist
+            # XGBoost 2.0+: device='cuda' mit tree_method='hist'
+            test_params = {
+                "tree_method": "hist",
+                "device": "cuda",
+                "n_estimators": 1,
+                "max_depth": 1,
+                "verbosity": 0,
+            }
 
-        model = xgb.XGBClassifier(**test_params)
-        model.fit(X_test, y_test)
+            # Kleiner Test-Datensatz
+            import numpy as np
+            X_test = np.array([[1, 2], [3, 4], [5, 6], [7, 8]])
+            y_test = np.array([0, 1, 0, 1])
 
-        _GPU_AVAILABLE = True
-        logger.info("GPU erkannt und für XGBoost aktiviert (device=cuda)")
-        return True
+            model = xgb.XGBClassifier(**test_params)
+            model.fit(X_test, y_test)
 
-    except Exception as e:
-        _GPU_AVAILABLE = False
-        logger.debug(f"GPU nicht verfügbar: {e}")
-        return False
+            _GPU_AVAILABLE = True
+            logger.info("GPU erkannt und für XGBoost aktiviert (device=cuda)")
+            return True
+
+        except Exception as e:
+            _GPU_AVAILABLE = False
+            error_msg = str(e)
+            if "cuda" in error_msg.lower() or "gpu" in error_msg.lower():
+                logger.warning(f"GPU-Initialisierung fehlgeschlagen, nutze CPU: {e}")
+            else:
+                logger.debug(f"GPU nicht verfügbar: {e}")
+            return False
 
 
 def set_xgboost_n_jobs(n_jobs: int):

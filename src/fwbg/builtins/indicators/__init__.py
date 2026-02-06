@@ -166,7 +166,8 @@ def compute_indicator_pool(
     Returns:
         DataFrame mit allen berechneten Features
     """
-    if indicators is None:
+    # None oder leere Liste = alle Default-Indikatoren
+    if not indicators:
         if include_advanced:
             indicators = list(_DEFAULT_INDICATORS.keys())
         else:

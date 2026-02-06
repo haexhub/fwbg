@@ -66,7 +66,31 @@ def boruta_iteration(
         verbosity=0,
         **gpu_params,
     )
-    model.fit(X, y)
+
+    try:
+        model.fit(X, y)
+    except Exception as e:
+        error_msg = str(e).lower()
+        # Bei GPU/CUDA-Fehlern automatisch auf CPU zurückfallen
+        if "cuda" in error_msg or "gpu" in error_msg or "device" in error_msg:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"GPU-Fehler in Boruta, Fallback auf CPU: {e}"
+            )
+            # Neues Modell mit CPU erstellen
+            model = XGBClassifier(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                n_jobs=get_xgboost_n_jobs(),
+                random_state=np.random.randint(10000),
+                verbosity=0,
+                tree_method="hist",
+                device="cpu",
+            )
+            model.fit(X, y)
+        else:
+            # Andere Fehler durchreichen
+            raise
 
     importances = pd.Series(model.feature_importances_, index=X.columns)
 
