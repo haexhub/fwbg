@@ -211,13 +211,30 @@ def run_optimizer(
             "total_combinations": len(result.get("grid_results", [])),
             "grid_results": result.get("grid_results", []),
         }
+
+        # Bei erfolgreichen Assets: Holdout-Ergebnisse und Best-Config sofort speichern
+        if status == "ok":
+            grid_data["selected_config"] = result.get("config", {})
+            grid_data["holdout_metrics"] = {
+                "pnl": result.get("pnl", 0),
+                "win_rate": result.get("win_rate", 0),
+                "rrr": result.get("rrr", 0),
+                "sharpe": result.get("sharpe", 0),
+                "calmar": result.get("calmar", 0),
+                "trades": len(result.get("tr_trace", [])),
+            }
+            grid_data["nested_cv"] = result.get("nested_cv", {})
+            grid_data["monte_carlo"] = result.get("monte_carlo", {})
+            grid_data["smoothness"] = result.get("smoothness", {})
+
+        # Für nicht-erfolgreiche Assets mit Holdout-Daten (z.B. no_kelly)
         if result.get("holdout_result"):
             grid_data["holdout_result"] = result["holdout_result"]
         if result.get("best_candidate"):
             grid_data["best_candidate"] = result["best_candidate"]
 
         with open(grid_file, "w") as f:
-            json.dump(grid_data, f, indent=2)
+            json.dump(grid_data, f, indent=2, default=str)
 
         # Zusammenfassung ausgeben
         if status == "ok":
