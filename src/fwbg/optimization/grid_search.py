@@ -226,43 +226,21 @@ def _process_feature_group(
     candidates = []
     grid_results = []
 
-    # Parallele Verarbeitung der TP/SL-Kombinationen innerhalb einer Feature-Gruppe
-    # XGBoost parallelisiert intern (n_jobs), daher begrenzen wir die Anzahl
-    # paralleler Combos um Überparallelisierung zu vermeiden
-    n_combos = len(combos)
-    max_combo_workers = min(4, n_combos)  # Max 4 parallele TP/SL-Combos
+    # SEQUENTIELLE Verarbeitung der TP/SL-Kombinationen
+    # KEINE Parallelisierung hier weil:
+    # 1. XGBoost nutzt intern bereits n_jobs für Threading (libgomp/OpenMP)
+    # 2. Verschachtelte ThreadPools führen zu Thread-Kontention
+    # 3. Feature-Gruppen-Ebene ist bereits parallelisiert
+    for combo in combos:
+        candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
 
-    if max_combo_workers > 1 and n_combos > 1:
-        # Parallele Verarbeitung
-        with ThreadPoolExecutor(max_workers=max_combo_workers) as combo_executor:
-            futures = {combo_executor.submit(_process_tp_sl_combo_wrapper, combo): combo[3]
-                       for combo in combos}
+        if progress_callback:
+            progress_callback(idx + 1, grid_per_fg)
 
-            for future in futures:
-                try:
-                    candidate, grid_result, idx = future.result()
-
-                    if progress_callback:
-                        progress_callback(idx + 1, grid_per_fg)
-
-                    if candidate:
-                        candidates.append(candidate)
-                    if grid_result:
-                        grid_results.append(grid_result)
-                except Exception as e:
-                    log(1, f"Fehler bei Grid-Combo: {e}", sym)
-    else:
-        # Sequentielle Verarbeitung (nur 1 Combo oder Worker)
-        for combo in combos:
-            candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
-
-            if progress_callback:
-                progress_callback(idx + 1, grid_per_fg)
-
-            if candidate:
-                candidates.append(candidate)
-            if grid_result:
-                grid_results.append(grid_result)
+        if candidate:
+            candidates.append(candidate)
+        if grid_result:
+            grid_results.append(grid_result)
 
     return candidates, grid_results
 
