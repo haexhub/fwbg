@@ -42,37 +42,38 @@ class AssetRegistry:
     _assets: Dict[str, AssetConfig]
 
     # Default Asset-Konfigurationen
+    # Spreads from IG Demo Account (Jan 2026)
     DEFAULT_ASSETS = {
         # FOREX - Majors
-        "EURUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00020, "currency": ["EUR", "USD"]},
-        "GBPUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00024, "currency": ["GBP", "USD"]},
-        "USDJPY": {"class": "FOREX", "point": 0.01, "spread": 0.020, "currency": ["USD", "JPY"]},
-        "USDCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["USD", "CHF"]},
-        "USDCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["USD", "CAD"]},
-        "AUDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00024, "currency": ["AUD", "USD"]},
-        "NZDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["NZD", "USD"]},
+        "EURUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00018, "currency": ["EUR", "USD"]},   # 1.8 pips
+        "GBPUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00058, "currency": ["GBP", "USD"]},   # 5.8 pips
+        "USDJPY": {"class": "FOREX", "point": 0.01, "spread": 0.060, "currency": ["USD", "JPY"]},       # 6.0 pips
+        "USDCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00029, "currency": ["USD", "CHF"]},   # 2.9 pips
+        "USDCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00035, "currency": ["USD", "CAD"]},   # 3.5 pips
+        "AUDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["AUD", "USD"]},   # 3.0 pips
+        "NZDUSD": {"class": "FOREX", "point": 0.0001, "spread": 0.00093, "currency": ["NZD", "USD"]},   # 9.3 pips
         # FOREX - Crosses
-        "EURGBP": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["EUR", "GBP"]},
-        "EURCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00040, "currency": ["EUR", "CAD"]},
-        "EURCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00036, "currency": ["EUR", "CHF"]},
-        "EURNZD": {"class": "FOREX", "point": 0.0001, "spread": 0.00050, "currency": ["EUR", "NZD"]},
-        # Indizes
-        "DAX": {"class": "INDEX", "point": 1.0, "spread": 3.0, "currency": ["EUR"]},
-        "DOW30": {"class": "INDEX", "point": 1.0, "spread": 4.0, "currency": ["USD"]},
-        "SPX500": {"class": "INDEX", "point": 0.1, "spread": 1.0, "currency": ["USD"]},
-        "NAS100": {"class": "INDEX", "point": 0.1, "spread": 2.0, "currency": ["USD"]},
-        "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 3.0, "currency": ["GBP"]},
+        "EURGBP": {"class": "FOREX", "point": 0.0001, "spread": 0.00040, "currency": ["EUR", "GBP"]},   # 4.0 pips
+        "EURCAD": {"class": "FOREX", "point": 0.0001, "spread": 0.00117, "currency": ["EUR", "CAD"]},   # 11.7 pips
+        "EURCHF": {"class": "FOREX", "point": 0.0001, "spread": 0.00030, "currency": ["EUR", "CHF"]},   # 3.0 pips
+        "EURNZD": {"class": "FOREX", "point": 0.0001, "spread": 0.00180, "currency": ["EUR", "NZD"]},   # 18.0 pips
+        # Indices
+        "DAX": {"class": "INDEX", "point": 1.0, "spread": 7.0, "currency": ["EUR"]},                    # 7.0 points
+        "DOW30": {"class": "INDEX", "point": 1.0, "spread": 4.8, "currency": ["USD"]},                  # 4.8 points
+        "SPX500": {"class": "INDEX", "point": 0.1, "spread": 0.6, "currency": ["USD"]},                 # 0.6 points
+        "NAS100": {"class": "INDEX", "point": 0.1, "spread": 2.0, "currency": ["USD"]},                 # 2.0 points
+        "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 4.0, "currency": ["GBP"]},                # 4.0 points
         # Commodities
-        "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},
-        "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},
-        "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},
-        "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},
-        "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.060, "currency": ["USD"]},
+        "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},            # 0.60 USD
+        "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},              # 0.60 USD
+        "XAGUSD": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},          # 0.04 USD
+        "SILVER": {"class": "COMMODITY", "point": 0.01, "spread": 0.040, "currency": ["USD"]},          # 0.04 USD
+        "BRENT": {"class": "COMMODITY", "point": 0.01, "spread": 0.078, "currency": ["USD"]},           # 7.8 cents
         # Crypto
-        "BTCUSD": {"class": "CRYPTO", "point": 1.0, "spread": 100.0, "currency": ["USD"]},
-        "ETHUSD": {"class": "CRYPTO", "point": 0.1, "spread": 4.0, "currency": ["USD"]},
+        "BTCUSD": {"class": "CRYPTO", "point": 1.0, "spread": 581.0, "currency": ["USD"]},              # 581 USD
+        "ETHUSD": {"class": "CRYPTO", "point": 0.1, "spread": 4.0, "currency": ["USD"]},                # 4.0 USD
         # Test
-        "TESTUSD": {"class": "TEST", "point": 0.0001, "spread": 0.00020, "currency": ["USD"]},
+        "TESTUSD": {"class": "TEST", "point": 0.0001, "spread": 0.00018, "currency": ["USD"]},
     }
 
     def __new__(cls) -> "AssetRegistry":
