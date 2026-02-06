@@ -410,34 +410,22 @@ def _process_feature_groups_parallel(
     # 3. Feature-Gruppen sind I/O-bound (DataFrame-Slicing) + CPU-bound (XGBoost)
     # 4. XGBoost releases GIL während der Berechnung
     # Der Hauptteil der CPU-Arbeit geschieht in XGBoost (C++), nicht in Python.
-
-    def can_start_feature_group(active_workers: int) -> bool:
-        """
-        Prüft ob eine weitere Feature-Gruppe gestartet werden kann.
-
-        WICHTIG: Feature-Gruppen-Parallelisierung ist INNERHALB eines Assets.
-        Die Asset-Ebene (AdaptivePoolManager) kontrolliert bereits die Gesamtlast.
-        Hier prüfen wir nur RAM, um den lokalen Thread-Pool nicht zu überladen.
-        CPU-Check ist auf Asset-Ebene bereits gemacht worden.
-        """
-        if active_workers >= max_workers:
-            return False
-
-        # RAM-Check: Genug freier RAM für eine weitere Feature-Gruppe?
-        current_free_ram = psutil.virtual_memory().available / (1024**3)
-        if current_free_ram < min_free_ram_gb + ram_per_thread_gb:
-            return False
-
-        return True
+    #
+    # RAM-Check wurde entfernt: max_workers berücksichtigt bereits RAM-Kapazität.
+    # Laufzeit-RAM-Checks waren kontraproduktiv und verlangsamten den Start.
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
         fg_iter = iter(enumerate(feature_groups))
         active_count = 0
 
-        # Starte konservativ mit 1 Feature-Gruppe
-        try:
-            fg_idx, feature_group = next(fg_iter)
+        # Starte sofort alle Feature-Gruppen bis zum max_workers Limit
+        # RAM-Check entfernt: max_workers berücksichtigt bereits RAM-Kapazität
+        for fg_idx, feature_group in fg_iter:
+            if active_count >= max_workers:
+                # Iterator zurücksetzen für restliche Feature-Gruppen
+                fg_iter = iter([(i, fg) for i, fg in enumerate(feature_groups) if i > fg_idx])
+                break
             future = executor.submit(
                 _process_feature_group,
                 fg_idx, feature_group, full_pool, inner_folds,
@@ -448,15 +436,14 @@ def _process_feature_groups_parallel(
             )
             futures[future] = feature_group
             active_count += 1
-            log(2, f"Gestartet: Feature-Gruppe '{feature_group}' (1/{n_feature_groups})", sym)
-        except StopIteration:
-            pass
 
-        # Adaptive Verarbeitung: Starte neue Tasks wenn Ressourcen frei
-        fg_remaining = True
-        last_scale_check = time.time()
+        log(2, f"Gestartet: {active_count} von {n_feature_groups} Feature-Gruppen (max: {max_workers})", sym)
 
-        while futures or fg_remaining:
+        # Restliche Feature-Gruppen als Liste für einfacheren Zugriff
+        remaining_fgs = [(i, fg) for i, fg in enumerate(feature_groups) if i >= active_count]
+        fg_idx_offset = active_count
+
+        while futures or remaining_fgs:
             # Fertige Tasks einsammeln
             done_futures = [f for f in list(futures.keys()) if f.done()]
 
@@ -470,42 +457,30 @@ def _process_feature_groups_parallel(
                     all_candidates.extend(fg_candidates)
                     all_grid_results.extend(fg_grid_results)
 
-                    current_mem = psutil.virtual_memory()
-                    current_cpu = psutil.cpu_percent(interval=0.1)
                     elapsed = time.time() - start_time
                     log(2, f"Feature-Gruppe '{feature_group}' fertig ({completed}/{n_feature_groups}) "
-                           f"- {len(fg_candidates)} Kandidaten, "
-                           f"RAM: {current_mem.percent:.1f}% ({current_mem.available/(1024**3):.1f}GB frei), "
-                           f"CPU: {current_cpu:.1f}%, Zeit: {elapsed:.1f}s", sym)
+                           f"- {len(fg_candidates)} Kandidaten, Zeit: {elapsed:.1f}s", sym)
                 except Exception as e:
                     log(1, f"Fehler bei Feature-Gruppe '{feature_group}': {e}", sym)
 
-            # Periodisch prüfen ob neue Feature-Gruppen gestartet werden können
-            now = time.time()
-            if fg_remaining and now - last_scale_check >= 1.0:
-                last_scale_check = now
+                # Sofort nächste Feature-Gruppe starten wenn noch welche warten
+                if remaining_fgs and active_count < max_workers:
+                    fg_idx, next_fg = remaining_fgs.pop(0)
+                    future = executor.submit(
+                        _process_feature_group,
+                        fg_idx, next_fg, full_pool, inner_folds,
+                        grid, ctx, regime_config, sym, n_feature_groups,
+                        parallel_mode=True,
+                        progress_callback=progress_callback,
+                        inner_df=inner_df,
+                    )
+                    futures[future] = next_fg
+                    active_count += 1
+                    log(2, f"Gestartet: Feature-Gruppe '{next_fg}' ({active_count} aktiv)", sym)
 
-                while fg_remaining and can_start_feature_group(active_count):
-                    try:
-                        fg_idx, feature_group = next(fg_iter)
-                        future = executor.submit(
-                            _process_feature_group,
-                            fg_idx, feature_group, full_pool, inner_folds,
-                            grid, ctx, regime_config, sym, n_feature_groups,
-                            parallel_mode=True,
-                            progress_callback=progress_callback,
-                            inner_df=inner_df,
-                        )
-                        futures[future] = feature_group
-                        active_count += 1
-                        log(2, f"Gestartet: Feature-Gruppe '{feature_group}' ({active_count} aktiv)", sym)
-                    except StopIteration:
-                        fg_remaining = False
-                        break
-
-            # Kurz warten
+            # Kurz warten wenn noch Tasks laufen
             if futures:
-                time.sleep(0.2)
+                time.sleep(0.1)
 
     total_elapsed = time.time() - start_time
     final_mem = psutil.virtual_memory()
