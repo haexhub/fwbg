@@ -89,7 +89,7 @@ class PriceActionIndicators(BaseIndicator):
         features["pa_trend_structure"] = (features["pa_hh"] + features["pa_hl"]) - (features["pa_ll"] + features["pa_lh"])
 
         # Gap Analysis
-        gap = (df["O"] - df["C"].shift(1)) / df["C"].shift(1)
+        gap = safe_divide(df["O"] - df["C"].shift(1), df["C"].shift(1))
         features["pa_gap"] = gap
         features["pa_gap_abs"] = abs(gap)
 
@@ -148,7 +148,9 @@ class PriceActionIndicators(BaseIndicator):
 
                 # On Balance Volume Change
                 obv = ta.volume.on_balance_volume(df["C"], volume)
-                features["vol_obv_change"] = obv.pct_change(periods=5)
+                features["vol_obv_change"] = safe_divide(
+                    obv - obv.shift(5), obv.shift(5)
+                )
 
                 # Money Flow Index
                 features["vol_mfi"] = ta.volume.money_flow_index(
