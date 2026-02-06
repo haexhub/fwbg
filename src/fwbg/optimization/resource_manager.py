@@ -154,20 +154,27 @@ class AdaptivePoolManager:
         # mehrere Feature-Group-Threads mit XGBoost, die jeweils n_jobs nutzen.
         #
         # Geschätzte Threads pro Asset (wenn nicht angegeben):
-        # - ~6 Feature-Groups (trend, volatility, reversal, structure, timing, ichimoku)
-        # - XGBoost nutzt n_jobs = total_cores / max_workers (automatisch)
-        # - Effektiv: ~8-12 Threads pro Asset bei mittlerer Systemgröße
+        # - Feature-Groups laufen parallel (aber nicht alle CPU-intensiv gleichzeitig)
+        # - XGBoost nutzt GPU wenn verfügbar (reduziert CPU-Last erheblich)
+        # - Effektiv: ~5-6 Threads pro Asset bei GPU, ~7-8 bei CPU-only
         if threads_per_asset > 0:
             estimated_threads = threads_per_asset
         else:
-            # Auto: Schätze basierend auf Systemgröße
-            # Kleine Systeme (≤8 Cores): 6 Threads/Asset
-            # Mittlere Systeme (9-16 Cores): 7 Threads/Asset
-            # Große Systeme (>16 Cores): 7 Threads/Asset (mehr Parallelisierung)
-            if self.total_cores <= 8:
-                estimated_threads = 6
+            # Auto: Schätze basierend auf Systemgröße und GPU-Verfügbarkeit
+            # GPU reduziert CPU-Last da XGBoost auf GPU läuft
+            from fwbg.utils.xgb_config import is_gpu_available
+            has_gpu = is_gpu_available()
+
+            if has_gpu:
+                # Mit GPU: XGBoost CPU-Last ist minimal
+                # Kleine Systeme (≤8 Cores): 4 Threads/Asset
+                # Mittlere/Große Systeme (>8 Cores): 5 Threads/Asset
+                estimated_threads = 4 if self.total_cores <= 8 else 5
             else:
-                estimated_threads = 7
+                # Ohne GPU: XGBoost nutzt CPU intensiv
+                # Kleine Systeme (≤8 Cores): 6 Threads/Asset
+                # Mittlere/Große Systeme (>8 Cores): 7 Threads/Asset
+                estimated_threads = 6 if self.total_cores <= 8 else 7
 
         # CPU-basiertes Limit: Wie viele Assets können parallel laufen ohne Überlastung?
         # Erlaube leichte Überbuchung (runden statt abschneiden) da nicht alle
