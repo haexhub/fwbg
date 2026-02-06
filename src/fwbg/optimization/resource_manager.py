@@ -12,6 +12,22 @@ from typing import Callable, List, Any, Optional, Dict
 
 import psutil
 
+# GPU-Verfügbarkeit - lazy import um zirkuläre Imports zu vermeiden
+_GPU_AVAILABLE_CACHED = None
+
+def _check_gpu_available() -> bool:
+    """Prüft GPU-Verfügbarkeit mit Caching (lazy evaluation)."""
+    global _GPU_AVAILABLE_CACHED
+    if _GPU_AVAILABLE_CACHED is not None:
+        return _GPU_AVAILABLE_CACHED
+
+    try:
+        from fwbg.utils.xgb_config import is_gpu_available
+        _GPU_AVAILABLE_CACHED = is_gpu_available()
+    except Exception:
+        _GPU_AVAILABLE_CACHED = False
+    return _GPU_AVAILABLE_CACHED
+
 # Globale Referenz auf aktiven Executor für Cleanup
 _active_executor = None
 _active_futures = []
@@ -162,8 +178,7 @@ class AdaptivePoolManager:
         else:
             # Auto: Schätze basierend auf Systemgröße und GPU-Verfügbarkeit
             # GPU reduziert CPU-Last da XGBoost auf GPU läuft
-            from fwbg.utils.xgb_config import is_gpu_available
-            has_gpu = is_gpu_available()
+            has_gpu = _check_gpu_available()
 
             if has_gpu:
                 # Mit GPU: XGBoost CPU-Last ist minimal
