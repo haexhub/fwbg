@@ -51,6 +51,15 @@ def _check_gpu_available() -> bool:
             _GPU_AVAILABLE = False
             return False
 
+        # GPU standardmäßig deaktiviert wegen CUDA-Versionsinkompatibilität
+        # XGBoost ist für CUDA 12.8 kompiliert, aber System hat oft andere Version
+        # Mit 24 CPU-Cores ist CPU-Training schnell genug
+        # Zum Aktivieren: FWBG_USE_GPU=1 setzen
+        if os.environ.get("FWBG_USE_GPU", "").lower() not in ("1", "true", "yes"):
+            logger.debug("GPU deaktiviert (Standard) - nutze FWBG_USE_GPU=1 zum Aktivieren")
+            _GPU_AVAILABLE = False
+            return False
+
         try:
             # Versuche XGBoost mit GPU zu initialisieren
             import xgboost as xgb
