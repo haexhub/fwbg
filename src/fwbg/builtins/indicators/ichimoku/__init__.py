@@ -87,7 +87,7 @@ class IchimokuIndicators(BaseIndicator):
         cloud_bottom = pd.concat([senkou_a, senkou_b], axis=1).min(axis=1)
 
         # Cloud Thickness (normalisiert)
-        features["ichi_cloud_thick"] = (cloud_top - cloud_bottom) / df["C"]
+        features["ichi_cloud_thick"] = safe_divide(cloud_top - cloud_bottom, df["C"])
 
         # Cloud Position
         features["ichi_cloud_pos"] = safe_divide(df["C"] - cloud_bottom, cloud_top - cloud_bottom)
@@ -100,7 +100,7 @@ class IchimokuIndicators(BaseIndicator):
         features["ichi_in_cloud"] = ((df["C"] >= cloud_bottom) & (df["C"] <= cloud_top)).astype(int)
 
         # TK Cross
-        tk_cross = (tenkan - kijun) / df["C"]
+        tk_cross = safe_divide(tenkan - kijun, df["C"])
         features["ichi_tk_cross"] = tk_cross
 
         # TK Cross Direction Change
@@ -110,7 +110,7 @@ class IchimokuIndicators(BaseIndicator):
         features["ichi_tk_bearish_cross"] = (~tk_bullish & tk_bullish_prev).astype(int)
 
         # Price-Kijun Distance
-        features["ichi_price_kijun"] = (df["C"] - kijun) / df["C"]
+        features["ichi_price_kijun"] = safe_divide(df["C"] - kijun, df["C"])
 
         # Kijun Flat
         kijun_change = kijun.diff().abs()
@@ -143,8 +143,8 @@ class IchimokuIndicators(BaseIndicator):
         ).astype(int)
 
         # Distance to Cloud
-        dist_to_top = (cloud_top - df["C"]) / df["C"]
-        dist_to_bottom = (df["C"] - cloud_bottom) / df["C"]
+        dist_to_top = safe_divide(cloud_top - df["C"], df["C"])
+        dist_to_bottom = safe_divide(df["C"] - cloud_bottom, df["C"])
         features["ichi_dist_to_cloud"] = np.where(
             above_cloud == 1, dist_to_bottom,
             np.where(below_cloud == 1, -dist_to_top, 0)

@@ -79,7 +79,7 @@ class MultiTimeframeIndicators(BaseIndicator):
         # H4 EMA Distances
         for period in ema_periods:
             h4_ema = ta.trend.ema_indicator(df["C"], window=period * h4_bars)
-            features[f"mtf_h4_ema{period}_dist"] = (df["C"] - h4_ema) / df["C"]
+            features[f"mtf_h4_ema{period}_dist"] = safe_divide(df["C"] - h4_ema, df["C"])
 
         # H4 Technical Indicators
         features["mtf_h4_adx"] = ta.trend.adx(h4_high, h4_low, df["C"], window=14)
@@ -87,7 +87,7 @@ class MultiTimeframeIndicators(BaseIndicator):
         features["mtf_h4_rsi"] = h4_rsi
 
         h4_atr = ta.volatility.average_true_range(h4_high, h4_low, df["C"], window=14)
-        h4_atr_pct = h4_atr / df["C"]
+        h4_atr_pct = safe_divide(h4_atr, df["C"])
         features["mtf_h4_atr_pct"] = h4_atr_pct
 
         h4_bb = ta.volatility.BollingerBands(df["C"], window=20 * h4_bars)
@@ -102,14 +102,14 @@ class MultiTimeframeIndicators(BaseIndicator):
 
         for period in ema_periods:
             d1_ema = ta.trend.ema_indicator(df["C"], window=period * d1_bars)
-            features[f"mtf_d1_ema{period}_dist"] = (df["C"] - d1_ema) / df["C"]
+            features[f"mtf_d1_ema{period}_dist"] = safe_divide(df["C"] - d1_ema, df["C"])
 
         d1_ema_slow = ta.trend.ema_indicator(df["C"], window=20 * d1_bars)
         features["mtf_d1_trend_strength"] = d1_ema_slow.pct_change(d1_bars) * 100
 
         # === Trend Alignment ===
         h1_ema_21 = ta.trend.ema_indicator(df["C"], window=21)
-        h1_trend = (df["C"] - h1_ema_21) / df["C"]
+        h1_trend = safe_divide(df["C"] - h1_ema_21, df["C"])
         h4_trend = features["mtf_h4_ema20_dist"]
         d1_trend = features["mtf_d1_ema20_dist"]
 
@@ -123,7 +123,7 @@ class MultiTimeframeIndicators(BaseIndicator):
 
         # === Volatility Ratio ===
         h1_atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
-        h1_atr_pct = h1_atr / df["C"]
+        h1_atr_pct = safe_divide(h1_atr, df["C"])
         features["mtf_vol_ratio_h1h4"] = safe_divide(h1_atr_pct, h4_atr_pct)
 
         # === Momentum Divergence ===
@@ -136,8 +136,8 @@ class MultiTimeframeIndicators(BaseIndicator):
 
         features["mtf_d1_above_prev_high"] = (df["C"] > d1_prev_high).astype(int)
         features["mtf_d1_below_prev_low"] = (df["C"] < d1_prev_low).astype(int)
-        features["mtf_d1_dist_to_high"] = (d1_prev_high - df["C"]) / df["C"]
-        features["mtf_d1_dist_to_low"] = (df["C"] - d1_prev_low) / df["C"]
+        features["mtf_d1_dist_to_high"] = safe_divide(d1_prev_high - df["C"], df["C"])
+        features["mtf_d1_dist_to_low"] = safe_divide(df["C"] - d1_prev_low, df["C"])
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
         features_df = shift_features(features, df.index)
