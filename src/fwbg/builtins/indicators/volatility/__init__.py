@@ -8,6 +8,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features
 from fwbg.core import register_indicator
 
 
@@ -78,11 +79,7 @@ class VolatilityIndicators(BaseIndicator):
         features["vol_dc_wband"] = dc.donchian_channel_wband()
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
-        # At bar i, the model should use features from bar i-1, not bar i
-        # because Close/High/Low of bar i are not yet known when making the signal decision
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 

@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features
 from fwbg.core import register_indicator
 
 
@@ -131,10 +132,7 @@ class TimeSeasonIndicators(BaseIndicator):
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
         # Even though time features don't use OHLC, we shift for consistency
-        # and to ensure features at bar i come from the known state at bar i-1
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 

@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features, EPSILON
 from fwbg.core import register_indicator
 
 
@@ -26,7 +27,7 @@ def _compute_hurst_exponent(series: np.ndarray, max_lag: int = 100) -> float:
         return 0.5
 
     # Log-Returns für bessere Skalierung
-    returns = np.diff(np.log(series + 1e-10))
+    returns = np.diff(np.log(series + EPSILON))
     returns = returns[~np.isnan(returns)]
 
     if len(returns) < max_lag:
@@ -52,7 +53,7 @@ def _compute_hurst_exponent(series: np.ndarray, max_lag: int = 100) -> float:
             r = np.max(cumdev) - np.min(cumdev)
             s = np.std(subseries, ddof=1)
 
-            if s > 1e-10:
+            if s > EPSILON:
                 rs_lag.append(r / s)
 
         if rs_lag:
@@ -156,9 +157,7 @@ class RegimeIndicators(BaseIndicator):
             )
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 

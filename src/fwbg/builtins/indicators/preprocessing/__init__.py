@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 from statsmodels.tsa.stattools import adfuller
 
+from fwbg.plugins.indicator import safe_divide
+
 
 def get_frac_diff_weights(d: float, size: int, threshold: float = 1e-4) -> np.ndarray:
     """
@@ -170,7 +172,7 @@ def apply_normalize_preprocessing(df: pd.DataFrame, window: int = 100) -> pd.Dat
         if col in df.columns:
             rolling_mean = df[col].rolling(window).mean()
             rolling_std = df[col].rolling(window).std()
-            df[col] = (df[col] - rolling_mean) / (rolling_std + 1e-10)
+            df[col] = safe_divide(df[col] - rolling_mean, rolling_std)
 
     df = df.iloc[window:]
 

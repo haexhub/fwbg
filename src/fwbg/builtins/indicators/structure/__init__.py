@@ -19,6 +19,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features, safe_divide, EPSILON
 from fwbg.core import register_indicator
 
 
@@ -77,26 +78,27 @@ def _compute_fft_features(close: np.ndarray, window: int) -> dict:
         power_no_dc = power[1:]
         freqs_no_dc = freqs[1:]
 
-        if len(power_no_dc) == 0 or np.sum(power_no_dc) < 1e-10:
+        power_sum = np.sum(power_no_dc)
+        if len(power_no_dc) == 0 or power_sum < EPSILON:
             continue
 
         # Dominante Frequenz
         dom_idx = np.argmax(power_no_dc)
         dominant_freq[i] = freqs_no_dc[dom_idx]
-        dominant_power[i] = power_no_dc[dom_idx] / (np.sum(power_no_dc) + 1e-10)
+        dominant_power[i] = power_no_dc[dom_idx] / power_sum
 
         # Spektrale Energie (normalisiert)
-        spectral_energy[i] = np.log1p(np.sum(power_no_dc))
+        spectral_energy[i] = np.log1p(power_sum)
 
         # Spektrale Entropie
-        power_norm = power_no_dc / (np.sum(power_no_dc) + 1e-10)
-        power_norm = power_norm[power_norm > 1e-10]
+        power_norm = power_no_dc / power_sum
+        power_norm = power_norm[power_norm > EPSILON]
         spectral_entropy[i] = -np.sum(power_norm * np.log(power_norm))
 
         # Low-Frequency Ratio
         cutoff = len(power_no_dc) // 4
         if cutoff > 0:
-            low_freq_ratio[i] = np.sum(power_no_dc[:cutoff]) / (np.sum(power_no_dc) + 1e-10)
+            low_freq_ratio[i] = np.sum(power_no_dc[:cutoff]) / power_sum
 
     return {
         "dom_freq": dominant_freq,
@@ -180,7 +182,7 @@ class StructureIndicators(BaseIndicator):
             abs_changes = abs(close_series.diff())
             path_length = abs_changes.rolling(window).sum()
 
-            pe = net_change / (path_length + 1e-10)
+            pe = safe_divide(net_change, path_length)
             features[f"path_efficiency_{window}"] = pe
             features[f"fractal_dim_{window}"] = 1 + (1 - pe)
 
@@ -198,7 +200,7 @@ class StructureIndicators(BaseIndicator):
             ema_slope = ema.diff()
             ema_convexity = ema_slope.diff()
 
-            convex = ema_convexity / (df["C"] + 1e-10) * 1000
+            convex = safe_divide(ema_convexity, df["C"]) * 1000
             features[f"convex_ema_{period}"] = convex
             features[f"convex_ema_{period}_smooth"] = convex.rolling(5).mean()
 
@@ -208,7 +210,9 @@ class StructureIndicators(BaseIndicator):
         if 21 in convexity_periods:
             convex_21 = features["convex_ema_21_smooth"]
             convex_std = convex_21.rolling(100).std()
-            features["convex_zscore"] = (convex_21 - convex_21.rolling(100).mean()) / (convex_std + 1e-10)
+            features["convex_zscore"] = safe_divide(
+                convex_21 - convex_21.rolling(100).mean(), convex_std
+            )
 
         # === Event Features ===
         for period in event_periods:
@@ -264,9 +268,7 @@ class StructureIndicators(BaseIndicator):
         features["structure_bars_since_vwap_cross"] = _bars_since_event(vwap_cross)
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 

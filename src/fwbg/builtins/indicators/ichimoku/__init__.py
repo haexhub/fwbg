@@ -19,6 +19,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core import register_indicator
 
 
@@ -89,7 +90,7 @@ class IchimokuIndicators(BaseIndicator):
         features["ichi_cloud_thick"] = (cloud_top - cloud_bottom) / df["C"]
 
         # Cloud Position
-        features["ichi_cloud_pos"] = (df["C"] - cloud_bottom) / (cloud_top - cloud_bottom + 1e-10)
+        features["ichi_cloud_pos"] = safe_divide(df["C"] - cloud_bottom, cloud_top - cloud_bottom)
 
         # Preis über/unter Cloud
         above_cloud = (df["C"] > cloud_top).astype(int)
@@ -150,9 +151,7 @@ class IchimokuIndicators(BaseIndicator):
         )
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 

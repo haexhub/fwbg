@@ -3,16 +3,13 @@ Trend Indicator Plugin.
 
 Enthält: ADX, EMA, SMA, MACD, CCI, Aroon, Efficiency Ratio.
 """
-from typing import List, TYPE_CHECKING
-import numpy as np
+from typing import List
 import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
+from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core import register_indicator
-
-if TYPE_CHECKING:
-    pass
 
 
 @register_indicator("trend")
@@ -97,17 +94,14 @@ class TrendIndicators(BaseIndicator):
         for period in [10, 20, 50]:
             change = abs(df["C"] - df["C"].shift(period))
             volatility = abs(df["C"].diff()).rolling(period).sum()
-            features[f"trend_er_{period}"] = change / (volatility + 1e-10)
+            features[f"trend_er_{period}"] = safe_divide(change, volatility)
 
         # ER Change
         features["trend_er_10_chg"] = features["trend_er_10"] - features["trend_er_10"].shift(5)
         features["trend_er_20_chg"] = features["trend_er_20"] - features["trend_er_20"].shift(10)
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
-        # At bar i, the model should use features from bar i-1, not bar i
-        features_df = pd.DataFrame(features, index=df.index)
-        for col in features_df.columns:
-            features_df[col] = features_df[col].shift(1)
+        features_df = shift_features(features, df.index)
 
         return pd.concat([df, features_df], axis=1)
 
