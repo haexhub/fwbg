@@ -32,7 +32,7 @@ from fwbg.results.storage import (
 )
 from fwbg.optimization.resource_manager import AdaptivePoolManager, get_resource_info
 from fwbg.simulation.equity import simulate_equity, filter_correlated_assets
-from fwbg.results.plotting import create_incremental_plot, create_elite_plot
+from fwbg.results.plotting import create_asset_plot
 from .commands import (
     show_runs,
     show_comparison,
@@ -259,7 +259,7 @@ def run_optimizer(
             # Plot erstellen
             if result.get("tr_trace") and plots_path:
                 try:
-                    create_incremental_plot(result, plots_path)
+                    create_asset_plot(result, plots_path)
                     print(f"  Plot: {plots_path}/{sym}.png")
                 except Exception as e:
                     print(f"  Plot-Fehler: {e}")
@@ -349,12 +349,13 @@ def run_optimizer(
         trades_detailed = e.get("trades_detailed", [])
         trade_directions = [td.get("direction", "LONG") for td in trades_detailed]
 
-        # Elite-Plot erstellen
+        # Elite-Plot erstellen (mit Long/Short Unterscheidung)
         if plots_path:
-            n_long, n_short, long_wr, short_wr = create_elite_plot(
-                e, plots_path, trade_directions, profit_per_trade,
-                eq, drawdowns, max_dd, rrr
-            )
+            plot_stats = create_asset_plot(e, plots_path, trade_directions=trade_directions)
+            if plot_stats:
+                n_long, n_short, long_wr, short_wr = plot_stats
+            else:
+                n_long = n_short = long_wr = short_wr = 0
         else:
             n_long = sum(1 for d in trade_directions if d == "LONG")
             n_short = sum(1 for d in trade_directions if d == "SHORT")
