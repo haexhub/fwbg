@@ -164,14 +164,12 @@ class AdaptivePoolManager:
         else:
             # Auto: Schätze basierend auf Systemgröße
             # Kleine Systeme (≤8 Cores): 6 Threads/Asset
-            # Mittlere Systeme (9-16 Cores): 8 Threads/Asset
-            # Große Systeme (>16 Cores): 10 Threads/Asset
+            # Mittlere Systeme (9-16 Cores): 7 Threads/Asset
+            # Große Systeme (>16 Cores): 7 Threads/Asset (mehr Parallelisierung)
             if self.total_cores <= 8:
                 estimated_threads = 6
-            elif self.total_cores <= 16:
-                estimated_threads = 8
             else:
-                estimated_threads = 10
+                estimated_threads = 7
 
         # CPU-basiertes Limit: Wie viele Assets können parallel laufen ohne Überlastung?
         # Erlaube leichte Überbuchung (runden statt abschneiden) da nicht alle
