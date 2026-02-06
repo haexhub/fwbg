@@ -8,6 +8,7 @@ import os
 import time
 import numpy as np
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
 
 from fwbg.data.config import (
     DATA_PATH, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
@@ -61,35 +62,52 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
         report_phase(sym, "Makro-Indikatoren...")
 
-        # === ALLE MAKRO-INDIKATOREN LADEN ===
+        # === ALLE MAKRO-INDIKATOREN PARALLEL LADEN ===
         t0 = time.time()
-        date_series = df.index.date  # Kein Assignment, nur temporäre Variable
-        macro_count = 0
+        date_series = df.index.date
 
-        for filename, prefix in MACRO_INDICATORS.items():
+        # 1. Parallel alle Makro-Dateien laden
+        def _load_macro(item):
+            filename, prefix = item
             macro_path = f"{DATA_PATH}/{filename}.csv"
             macro_df = load_macro_csv(macro_path)
             if macro_df is not None:
-                try:
-                    macro_lookup = macro_df["Close"].to_dict()
+                return prefix, macro_df["Close"].to_dict()
+            return None
 
-                    col_name = f"macro_{prefix}"
-                    df[col_name] = pd.Series(date_series, index=df.index).map(lambda d: macro_lookup.get(pd.Timestamp(d), np.nan))
-                    df[col_name] = df[col_name].ffill()
+        macro_items = list(MACRO_INDICATORS.items())
+        macro_data = {}
 
-                    # Stunden-basierte Lookbacks
-                    for lb_h in LOOKBACKS_HOURS:
-                        df[f"{col_name}_chg_{lb_h}h"] = df[col_name].pct_change(lb_h) * 100
+        with ThreadPoolExecutor(max_workers=min(8, len(macro_items))) as executor:
+            results = list(executor.map(_load_macro, macro_items))
 
-                    # Tages-basierte Lookbacks
-                    for lb_d in LOOKBACKS_DAYS:
-                        df[f"{col_name}_chg_{lb_d}d"] = df[col_name].pct_change(24 * lb_d) * 100
+        for result in results:
+            if result is not None:
+                prefix, lookup = result
+                macro_data[prefix] = lookup
 
-                    macro_count += 1
-                except Exception:
-                    pass
+        # 2. Alle Spalten in einem Batch erstellen (effizienter als einzeln)
+        new_columns = {}
+        date_timestamps = pd.Series(date_series, index=df.index).map(pd.Timestamp)
 
-        log(2, f"Makro-Indikatoren: {macro_count} geladen ({time.time()-t0:.1f}s)", sym)
+        for prefix, lookup in macro_data.items():
+            col_name = f"macro_{prefix}"
+            base_values = date_timestamps.map(lambda d: lookup.get(d, np.nan)).ffill()
+            new_columns[col_name] = base_values
+
+            # Stunden-basierte Lookbacks
+            for lb_h in LOOKBACKS_HOURS:
+                new_columns[f"{col_name}_chg_{lb_h}h"] = base_values.pct_change(lb_h) * 100
+
+            # Tages-basierte Lookbacks
+            for lb_d in LOOKBACKS_DAYS:
+                new_columns[f"{col_name}_chg_{lb_d}d"] = base_values.pct_change(24 * lb_d) * 100
+
+        # 3. Alle Spalten auf einmal hinzufügen
+        if new_columns:
+            df = df.assign(**new_columns)
+
+        log(2, f"Makro-Indikatoren: {len(macro_data)} geladen ({time.time()-t0:.1f}s)", sym)
 
         # === ABGELEITETE FEATURES (Spreads & Ratios) ===
         t0 = time.time()

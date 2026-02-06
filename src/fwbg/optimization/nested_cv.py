@@ -10,6 +10,7 @@ Struktur:
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor
 from xgboost import XGBClassifier
 
 from fwbg.core.context import SimulationContext
@@ -589,18 +590,33 @@ def evaluate_on_validation(
         )
 
     # Standard: Gemeinsamer CT für Long und Short
-    best_ct = None
-    best_pnl = float("-inf")
-    trades_by_ct = {}
-
-    for ct in ctx.grid_ct:
+    # Parallele Evaluierung aller CT-Werte
+    def _eval_ct(ct):
         result = simulate_trades_sequential(
             val_df, probs_long, probs_short, long_win_idx, short_win_idx,
             ct, tp, sl, ctx, return_detailed=False, timeout_bars=timeout_bars
         )
-        ct_trades = result["trades"]
-        trades_by_ct[ct] = ct_trades
+        return ct, result["trades"]
 
+    trades_by_ct = {}
+    ct_list = list(ctx.grid_ct)
+
+    if len(ct_list) > 1:
+        # Parallele Evaluierung
+        with ThreadPoolExecutor(max_workers=min(4, len(ct_list))) as executor:
+            results = list(executor.map(_eval_ct, ct_list))
+        for ct, ct_trades in results:
+            trades_by_ct[ct] = ct_trades
+    else:
+        # Sequentiell für einzelnen CT
+        for ct in ct_list:
+            _, ct_trades = _eval_ct(ct)
+            trades_by_ct[ct] = ct_trades
+
+    # Besten CT finden
+    best_ct = None
+    best_pnl = float("-inf")
+    for ct, ct_trades in trades_by_ct.items():
         if len(ct_trades) >= 10:
             ct_pnl = sum(ct_trades)
             if ct_pnl > best_pnl:
@@ -639,18 +655,32 @@ def _optimize_ct_for_direction(
     Returns:
         (best_ct, best_pnl, trades_by_ct)
     """
-    best_ct = None
-    best_pnl = float("-inf")
-    trades_by_ct = {}
-
-    for ct in ct_values:
+    # Parallele Evaluierung aller CT-Werte
+    def _eval_ct(ct):
         result = _simulate_single_direction(
             val_df, probs, win_idx, ct, tp, sl, ctx,
             direction=direction, timeout_bars=timeout_bars
         )
-        trades = result["trades"]
-        trades_by_ct[ct] = trades
+        return ct, result["trades"]
 
+    trades_by_ct = {}
+
+    if len(ct_values) > 1:
+        # Parallele Evaluierung
+        with ThreadPoolExecutor(max_workers=min(4, len(ct_values))) as executor:
+            results = list(executor.map(_eval_ct, ct_values))
+        for ct, trades in results:
+            trades_by_ct[ct] = trades
+    else:
+        # Sequentiell für einzelnen CT
+        for ct in ct_values:
+            _, trades = _eval_ct(ct)
+            trades_by_ct[ct] = trades
+
+    # Besten CT finden
+    best_ct = None
+    best_pnl = float("-inf")
+    for ct, trades in trades_by_ct.items():
         if len(trades) >= min_trades:
             pnl = sum(trades)
             if pnl > best_pnl:
@@ -925,8 +955,22 @@ def run_inner_cv(
             continue
 
         # Inner CV: Verwende reduzierte Parameter für schnelleres Ranking
-        mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades, ctx, use_reduced_params=True) if has_long else None
-        mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades, ctx, use_reduced_params=True) if has_short else None
+        # Long und Short Modelle parallel trainieren
+        if has_long and has_short:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future_long = executor.submit(
+                    train_model, train_df, targets_long, selected_features_long,
+                    ctx.min_trades, ctx, True
+                )
+                future_short = executor.submit(
+                    train_model, train_df, targets_short, selected_features_short,
+                    ctx.min_trades, ctx, True
+                )
+                mod_long = future_long.result()
+                mod_short = future_short.result()
+        else:
+            mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades, ctx, use_reduced_params=True) if has_long else None
+            mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades, ctx, use_reduced_params=True) if has_short else None
 
         best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
             val_df, mod_long, mod_short,
