@@ -539,7 +539,28 @@ def train_model(
     params.update(get_xgboost_params())
 
     model = XGBClassifier(**params)
-    model.fit(train_df[features], targets)
+
+    try:
+        model.fit(train_df[features], targets)
+    except Exception as e:
+        error_msg = str(e).lower()
+        # Bei GPU/CUDA-Fehlern automatisch auf CPU zurückfallen
+        if "cuda" in error_msg or "gpu" in error_msg or "device" in error_msg:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"GPU-Fehler in _build_model, Fallback auf CPU: {e}"
+            )
+            # Neues Modell mit CPU-Parametern erstellen
+            cpu_params = {k: v for k, v in params.items()
+                         if k not in ("device", "tree_method")}
+            cpu_params["tree_method"] = "hist"
+            cpu_params["device"] = "cpu"
+            model = XGBClassifier(**cpu_params)
+            model.fit(train_df[features], targets)
+        else:
+            # Andere Fehler durchreichen
+            raise
+
     return model
 
 
