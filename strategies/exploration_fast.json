@@ -1,0 +1,104 @@
+{
+  "name": "Exploration Fast",
+  "description": "Schnelle Exploration ohne Preprocessing - für initiale Feature-Suche",
+  "tags": ["exploration", "fast", "no_preprocessing"],
+  "hypothesis": "Schnelle Exploration zur Identifikation vielversprechender Parameter-Bereiche",
+  "expected_outcome": "Grobe Feature-Identifikation in kürzerer Zeit",
+
+  "indicators": [
+    "trend", "momentum", "volatility", "regime", "structure",
+    "risk", "price_action", "time_season", "distribution", "dynamics"
+  ],
+
+  "indicator_params": {
+    "trend": {
+      "adx_periods": [14],
+      "ema_periods": [21, 50, 200],
+      "sma_periods": [20, 50],
+      "er_periods": [20]
+    },
+    "momentum": {
+      "rsi_periods": [14],
+      "stoch_periods": [14],
+      "roc_periods": [10]
+    },
+    "volatility": {
+      "bb_periods": [20],
+      "atr_periods": [14]
+    }
+  },
+
+  "exit_strategy": "fixed",
+  "exit_params": {},
+
+  "feature_selector": "boruta",
+  "feature_params": {
+    "max_features": 30,
+    "n_iter": 5,
+    "n_estimators": 50,
+    "max_depth": 4,
+    "min_z_score": 0.5
+  },
+
+  "preprocessing": [],
+
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "trade_directions": ["long", "short"],
+    "hyperparameters": {
+      "n_estimators": 150,
+      "max_depth": 5,
+      "learning_rate": 0.1,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "random_state": 42
+    }
+  },
+
+  "grids": {
+    "FOREX": {
+      "tp": [15, 25],
+      "sl": [20, 40],
+      "ct": [0.6, 0.65]
+    },
+    "INDEX": {
+      "tp": [20, 40],
+      "sl": [30, 60],
+      "ct": [0.6, 0.65]
+    },
+    "COMMODITY": {
+      "tp": [15, 30],
+      "sl": [30, 60],
+      "ct": [0.6, 0.65]
+    },
+    "CRYPTO": {
+      "tp": [30, 60],
+      "sl": [50, 100],
+      "ct": [0.6, 0.65]
+    }
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "min_trades": 50,
+    "n_inner_folds": 5
+  },
+
+  "filters": {
+    "min_rrr": 0,
+    "min_trades": 30,
+    "min_annual_return": 0,
+    "min_sharpe": 0,
+    "max_drawdown": 1.0
+  },
+
+  "resources": {
+    "ram_per_worker_gb": 0.5,
+    "min_free_ram_percent": 0.10,
+    "max_cpu_percent": 0.9,
+    "xgboost_n_jobs": 0
+  }
+}
