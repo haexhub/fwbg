@@ -10,7 +10,6 @@ Struktur:
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
-from concurrent.futures import ThreadPoolExecutor
 from xgboost import XGBClassifier
 
 from fwbg.core.context import SimulationContext
@@ -590,28 +589,15 @@ def evaluate_on_validation(
         )
 
     # Standard: Gemeinsamer CT für Long und Short
-    # Parallele Evaluierung aller CT-Werte
-    def _eval_ct(ct):
+    # SEQUENTIELLE Evaluierung - kein nested Threading
+    # (Feature-Gruppen sind bereits parallelisiert)
+    trades_by_ct = {}
+    for ct in ctx.grid_ct:
         result = simulate_trades_sequential(
             val_df, probs_long, probs_short, long_win_idx, short_win_idx,
             ct, tp, sl, ctx, return_detailed=False, timeout_bars=timeout_bars
         )
-        return ct, result["trades"]
-
-    trades_by_ct = {}
-    ct_list = list(ctx.grid_ct)
-
-    if len(ct_list) > 1:
-        # Parallele Evaluierung
-        with ThreadPoolExecutor(max_workers=min(4, len(ct_list))) as executor:
-            results = list(executor.map(_eval_ct, ct_list))
-        for ct, ct_trades in results:
-            trades_by_ct[ct] = ct_trades
-    else:
-        # Sequentiell für einzelnen CT
-        for ct in ct_list:
-            _, ct_trades = _eval_ct(ct)
-            trades_by_ct[ct] = ct_trades
+        trades_by_ct[ct] = result["trades"]
 
     # Besten CT finden
     best_ct = None
@@ -655,27 +641,14 @@ def _optimize_ct_for_direction(
     Returns:
         (best_ct, best_pnl, trades_by_ct)
     """
-    # Parallele Evaluierung aller CT-Werte
-    def _eval_ct(ct):
+    # SEQUENTIELLE Evaluierung - kein nested Threading
+    trades_by_ct = {}
+    for ct in ct_values:
         result = _simulate_single_direction(
             val_df, probs, win_idx, ct, tp, sl, ctx,
             direction=direction, timeout_bars=timeout_bars
         )
-        return ct, result["trades"]
-
-    trades_by_ct = {}
-
-    if len(ct_values) > 1:
-        # Parallele Evaluierung
-        with ThreadPoolExecutor(max_workers=min(4, len(ct_values))) as executor:
-            results = list(executor.map(_eval_ct, ct_values))
-        for ct, trades in results:
-            trades_by_ct[ct] = trades
-    else:
-        # Sequentiell für einzelnen CT
-        for ct in ct_values:
-            _, trades = _eval_ct(ct)
-            trades_by_ct[ct] = trades
+        trades_by_ct[ct] = result["trades"]
 
     # Besten CT finden
     best_ct = None
@@ -955,22 +928,10 @@ def run_inner_cv(
             continue
 
         # Inner CV: Verwende reduzierte Parameter für schnelleres Ranking
-        # Long und Short Modelle parallel trainieren
-        if has_long and has_short:
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                future_long = executor.submit(
-                    train_model, train_df, targets_long, selected_features_long,
-                    ctx.min_trades, ctx, True
-                )
-                future_short = executor.submit(
-                    train_model, train_df, targets_short, selected_features_short,
-                    ctx.min_trades, ctx, True
-                )
-                mod_long = future_long.result()
-                mod_short = future_short.result()
-        else:
-            mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades, ctx, use_reduced_params=True) if has_long else None
-            mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades, ctx, use_reduced_params=True) if has_short else None
+        # KEINE Parallelisierung hier: XGBoost nutzt intern bereits n_jobs für Threading.
+        # Paralleles Training würde zu Thread-Kontention führen.
+        mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades, ctx, use_reduced_params=True) if has_long else None
+        mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades, ctx, use_reduced_params=True) if has_short else None
 
         best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
             val_df, mod_long, mod_short,
