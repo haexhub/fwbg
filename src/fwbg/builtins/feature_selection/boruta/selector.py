@@ -73,10 +73,9 @@ def boruta_iteration(
         error_msg = str(e).lower()
         # Bei GPU/CUDA-Fehlern automatisch auf CPU zurückfallen
         if "cuda" in error_msg or "gpu" in error_msg or "device" in error_msg:
-            import logging
-            logging.getLogger(__name__).warning(
-                f"GPU-Fehler in Boruta, Fallback auf CPU: {e}"
-            )
+            # GPU global deaktivieren nach erstem Fehler
+            from fwbg.utils.xgb_config import disable_gpu
+            disable_gpu()
             # Neues Modell mit CPU erstellen
             model = XGBClassifier(
                 n_estimators=n_estimators,

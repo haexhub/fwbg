@@ -127,3 +127,28 @@ def get_xgboost_params() -> dict:
 def is_gpu_available() -> bool:
     """Prüft ob GPU für XGBoost verfügbar ist."""
     return _check_gpu_available()
+
+
+_GPU_DISABLED_LOGGED = False
+
+
+def disable_gpu():
+    """
+    Deaktiviert GPU global nach einem CUDA-Fehler.
+
+    Wird einmalig aufgerufen wenn ein CUDA-Fehler während der Verarbeitung auftritt.
+    Alle weiteren XGBoost-Aufrufe nutzen dann CPU.
+    """
+    global _GPU_AVAILABLE, _GPU_DISABLED_LOGGED
+
+    with _GPU_CHECK_LOCK:
+        if _GPU_AVAILABLE is False:
+            return  # Bereits deaktiviert
+
+        _GPU_AVAILABLE = False
+
+        if not _GPU_DISABLED_LOGGED:
+            _GPU_DISABLED_LOGGED = True
+            logger.warning(
+                "GPU deaktiviert nach CUDA-Fehler - alle weiteren Berechnungen nutzen CPU"
+            )
