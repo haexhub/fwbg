@@ -17,7 +17,7 @@ from typing import List, Tuple, Optional
 from xgboost import XGBClassifier
 from scipy import stats
 
-from fwbg.utils.xgb_config import get_xgboost_n_jobs
+from fwbg.utils.xgb_config import get_xgboost_n_jobs, get_xgboost_params
 
 
 def create_shadow_features(X: pd.DataFrame) -> pd.DataFrame:
@@ -55,12 +55,16 @@ def boruta_iteration(
     Returns:
         (feature_importances, shadow_max) - Importances und max Shadow-Importance
     """
+    # GPU-Beschleunigung (automatischer Fallback auf CPU)
+    gpu_params = get_xgboost_params()
+
     model = XGBClassifier(
         n_estimators=n_estimators,
         max_depth=max_depth,
         n_jobs=get_xgboost_n_jobs(),
         random_state=np.random.randint(10000),
         verbosity=0,
+        **gpu_params,
     )
     model.fit(X, y)
 
@@ -261,9 +265,10 @@ def select_features_boruta(
 
     # Importances für Logging (approximiert durch letztes Modell)
     if selected:
+        gpu_params = get_xgboost_params()
         model = XGBClassifier(
             n_estimators=50, max_depth=4, n_jobs=get_xgboost_n_jobs(),
-            random_state=42, verbosity=0,
+            random_state=42, verbosity=0, **gpu_params,
         )
         model.fit(X[selected], targets)
         importances = dict(zip(selected, model.feature_importances_))
