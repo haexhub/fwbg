@@ -15,11 +15,11 @@ from datetime import datetime, timedelta
 
 
 class TestWalkForwardSplit:
-    """Tests für die Walk-Forward Split Funktion."""
+    """Tests für die Nested CV Split Funktion."""
 
-    def test_split_returns_train_val_test_tuples(self):
-        """Walk-Forward sollte (train, val, test) Tupel zurückgeben."""
-        from fwbg.optimization.process import walk_forward_split
+    def test_split_returns_inner_folds_and_holdout(self):
+        """Nested CV sollte inner_folds (train, val) und holdout_df zurückgeben."""
+        from fwbg.optimization.nested_cv import nested_cv_split
 
         # Erstelle Dummy-DataFrame
         n_rows = 50000
@@ -29,67 +29,78 @@ class TestWalkForwardSplit:
             "L": np.random.randn(n_rows),
         }, index=pd.date_range("2020-01-01", periods=n_rows, freq="h"))
 
-        folds = walk_forward_split(df, n_folds=4, oos_size=4000)
+        result = nested_cv_split(df, holdout_ratio=0.20, n_inner_folds=4, oos_size=4000)
 
-        assert len(folds) > 0, "Sollte mindestens einen Fold haben"
+        assert "inner_folds" in result, "Sollte inner_folds enthalten"
+        assert "holdout_df" in result, "Sollte holdout_df enthalten"
+        assert "inner_df" in result, "Sollte inner_df enthalten"
+        assert len(result["inner_folds"]) > 0, "Sollte mindestens einen Inner-Fold haben"
 
-        for train, val, test in folds:
+        for train, val in result["inner_folds"]:
             assert isinstance(train, pd.DataFrame)
             assert isinstance(val, pd.DataFrame)
-            assert isinstance(test, pd.DataFrame)
 
-    def test_split_sizes_approximate_60_20_20(self):
-        """Val und Test sollten etwa gleich groß sein (20/20)."""
-        from fwbg.optimization.process import walk_forward_split
+        assert isinstance(result["holdout_df"], pd.DataFrame)
+
+    def test_split_holdout_ratio(self):
+        """Holdout sollte ca. 20% der Daten sein."""
+        from fwbg.optimization.nested_cv import nested_cv_split
 
         n_rows = 50000
         df = pd.DataFrame({
             "C": np.random.randn(n_rows),
         }, index=pd.date_range("2020-01-01", periods=n_rows, freq="h"))
 
-        folds = walk_forward_split(df, n_folds=4, oos_size=4000)
+        result = nested_cv_split(df, holdout_ratio=0.20, n_inner_folds=4, oos_size=4000)
 
-        for train, val, test in folds:
-            # Val und Test sollten gleich groß sein
-            assert len(val) == len(test), f"Val ({len(val)}) und Test ({len(test)}) sollten gleich groß sein"
-            # Test sollte oos_size sein
-            assert len(test) == 4000, f"Test sollte 4000 sein, ist {len(test)}"
+        holdout_ratio = len(result["holdout_df"]) / n_rows
+        # Sollte ca. 20% sein (mit Toleranz)
+        assert 0.18 <= holdout_ratio <= 0.22, f"Holdout ratio {holdout_ratio:.2%} sollte ca. 20% sein"
 
     def test_no_data_leakage_between_splits(self):
-        """Es darf keine Überlappung zwischen Train/Val/Test geben."""
-        from fwbg.optimization.process import walk_forward_split
+        """Es darf keine Überlappung zwischen Train/Val und Holdout geben."""
+        from fwbg.optimization.nested_cv import nested_cv_split
 
         n_rows = 50000
         df = pd.DataFrame({
             "C": np.arange(n_rows),  # Eindeutige Werte
         }, index=pd.date_range("2020-01-01", periods=n_rows, freq="h"))
 
-        folds = walk_forward_split(df, n_folds=4, oos_size=4000)
+        result = nested_cv_split(df, holdout_ratio=0.20, n_inner_folds=4, oos_size=4000)
 
-        for train, val, test in folds:
+        holdout_idx = set(result["holdout_df"].index)
+        inner_idx = set(result["inner_df"].index)
+
+        # Keine Überlappung zwischen inner und holdout
+        assert len(inner_idx & holdout_idx) == 0, "Inner und Holdout überlappen sich"
+
+        # Keine Überlappung innerhalb der Folds
+        for train, val in result["inner_folds"]:
             train_idx = set(train.index)
             val_idx = set(val.index)
-            test_idx = set(test.index)
 
-            # Keine Überlappung
             assert len(train_idx & val_idx) == 0, "Train und Val überlappen sich"
-            assert len(train_idx & test_idx) == 0, "Train und Test überlappen sich"
-            assert len(val_idx & test_idx) == 0, "Val und Test überlappen sich"
+            assert len(train_idx & holdout_idx) == 0, "Train und Holdout überlappen sich"
+            assert len(val_idx & holdout_idx) == 0, "Val und Holdout überlappen sich"
 
     def test_chronological_order(self):
-        """Train kommt vor Val, Val kommt vor Test."""
-        from fwbg.optimization.process import walk_forward_split
+        """Inner kommt vor Holdout, Train vor Val."""
+        from fwbg.optimization.nested_cv import nested_cv_split
 
         n_rows = 50000
         df = pd.DataFrame({
             "C": np.arange(n_rows),
         }, index=pd.date_range("2020-01-01", periods=n_rows, freq="h"))
 
-        folds = walk_forward_split(df, n_folds=4, oos_size=4000)
+        result = nested_cv_split(df, holdout_ratio=0.20, n_inner_folds=4, oos_size=4000)
 
-        for train, val, test in folds:
+        # Inner muss vor Holdout sein
+        assert result["inner_df"].index.max() < result["holdout_df"].index.min(), \
+            "Inner muss vor Holdout sein"
+
+        # Innerhalb der Inner Folds: Train vor Val
+        for train, val in result["inner_folds"]:
             assert train.index.max() < val.index.min(), "Train muss vor Val sein"
-            assert val.index.max() < test.index.min(), "Val muss vor Test sein"
 
 
 class TestMonteCarloPermutation:
@@ -678,42 +689,46 @@ class TestDataLeakagePrevention:
     - Modell sieht zukünftige Daten (FALSCH)
     """
 
-    def test_val_comes_before_test_chronologically(self):
-        """Validation-Daten müssen chronologisch VOR Test-Daten liegen."""
-        from fwbg.optimization.process import walk_forward_split
+    def test_val_comes_before_holdout_chronologically(self):
+        """Validation-Daten müssen chronologisch VOR Holdout-Daten liegen."""
+        from fwbg.optimization.nested_cv import nested_cv_split
 
         n_rows = 50000
         df = pd.DataFrame({
             "C": np.arange(n_rows),  # Werte = Index (chronologisch)
         }, index=pd.date_range("2020-01-01", periods=n_rows, freq="h"))
 
-        folds = walk_forward_split(df, n_folds=4, oos_size=4000)
+        result = nested_cv_split(df, holdout_ratio=0.20, n_inner_folds=4, oos_size=4000)
 
-        for i, (train, val, test) in enumerate(folds):
-            # Alle Val-Werte müssen kleiner sein als alle Test-Werte
+        holdout = result["holdout_df"]
+        min_holdout_value = holdout["C"].min()
+
+        for i, (train, val) in enumerate(result["inner_folds"]):
+            # Alle Val-Werte müssen kleiner sein als alle Holdout-Werte
             max_val_value = val["C"].max()
-            min_test_value = test["C"].min()
 
-            assert max_val_value < min_test_value, \
-                f"Fold {i}: Val max ({max_val_value}) >= Test min ({min_test_value}) - Data Leakage!"
+            assert max_val_value < min_holdout_value, \
+                f"Fold {i}: Val max ({max_val_value}) >= Holdout min ({min_holdout_value}) - Data Leakage!"
 
-    def test_train_never_sees_test_data(self):
-        """Training darf niemals Test-Daten sehen."""
-        from fwbg.optimization.process import walk_forward_split
+    def test_train_never_sees_holdout_data(self):
+        """Training darf niemals Holdout-Daten sehen."""
+        from fwbg.optimization.nested_cv import nested_cv_split
 
         n_rows = 50000
         df = pd.DataFrame({
             "C": np.arange(n_rows),
         }, index=pd.date_range("2020-01-01", periods=n_rows, freq="h"))
 
-        folds = walk_forward_split(df, n_folds=4, oos_size=4000)
+        result = nested_cv_split(df, holdout_ratio=0.20, n_inner_folds=4, oos_size=4000)
 
-        for i, (train, val, test) in enumerate(folds):
+        holdout = result["holdout_df"]
+        min_holdout_value = holdout["C"].min()
+
+        for i, (train, val) in enumerate(result["inner_folds"]):
             max_train_value = train["C"].max()
-            min_test_value = test["C"].min()
 
-            assert max_train_value < min_test_value, \
-                f"Fold {i}: Train sieht Test-Daten! Max Train ({max_train_value}) >= Min Test ({min_test_value})"
+            assert max_train_value < min_holdout_value, \
+                f"Fold {i}: Train sieht Holdout-Daten! Max Train ({max_train_value}) >= Min Holdout ({min_holdout_value})"
 
 
 class TestEarlyTermination:
