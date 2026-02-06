@@ -34,67 +34,6 @@ from .nested_cv import nested_cv_split, evaluate_on_holdout
 from .grid_search import _process_feature_group, _process_feature_groups_parallel
 
 
-def walk_forward_split(df, n_folds=WALK_FORWARD_FOLDS, oos_size=OOS_SIZE):
-    """
-    Generiert Walk-Forward Fenster: [(train_df, val_df, test_df), ...]
-
-    DEPRECATED: Nutze nested_cv_split() für unbiased Evaluation.
-    Diese Funktion wird nur noch für Abwärtskompatibilität beibehalten.
-
-    Jeder Fold hat (60/20/20 Split relativ zum verfügbaren Bereich):
-    - train_df: Für Modell-Training (~60%)
-    - val_df: Für Hyperparameter-Optimierung (~20%, z.B. Confidence Threshold)
-    - test_df: Für finale Out-of-Sample Evaluation (~20%, KEINE Parameterauswahl!)
-
-    Args:
-        df: DataFrame mit allen Daten
-        n_folds: Anzahl der Walk-Forward Folds
-        oos_size: Größe des OOS-Fensters pro Fold (definiert die 20% OOS)
-    """
-    total_len = len(df)
-    min_train = total_len - (n_folds * oos_size)
-
-    # Validation-Größe = gleich wie OOS für 60/20/20 Split
-    val_size = oos_size
-
-    if min_train < oos_size * 3:
-        # Nicht genug Daten für Walk-Forward mit 60/20/20
-        # Fallback: 60/20/20 auf gesamten Datensatz
-        test_size = int(total_len * 0.2)
-        val_size = int(total_len * 0.2)
-        train_size = total_len - test_size - val_size
-
-        train_df = df.iloc[:train_size].copy()
-        val_df = df.iloc[train_size:train_size + val_size].copy()
-        test_df = df.iloc[train_size + val_size:].copy()
-        return [(train_df, val_df, test_df)]
-
-    folds = []
-    for i in range(n_folds):
-        # OOS (Test) Bereich
-        test_end = total_len - (i * oos_size)
-        test_start = test_end - oos_size
-
-        # Validation Bereich (gleich groß wie OOS, direkt davor)
-        val_end = test_start
-        val_start = val_end - val_size
-
-        # Training Bereich (alles davor)
-        train_end = val_start
-
-        if train_end < oos_size:
-            # Nicht genug Daten für diesen Fold
-            continue
-
-        train_df = df.iloc[:train_end].copy()
-        val_df = df.iloc[val_start:val_end].copy()
-        test_df = df.iloc[test_start:test_end].copy()
-
-        folds.append((train_df, val_df, test_df))
-
-    return list(reversed(folds))  # Chronologisch sortieren
-
-
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     """
     Verarbeitet ein einzelnes Symbol mit Walk-Forward Optimierung.

@@ -20,22 +20,6 @@ from fwbg.utils.xgb_config import set_xgboost_n_jobs
 from .nested_cv import run_inner_cv
 
 
-def _wait_for_resources(
-    max_cpu_percent: float = 0.80,
-    min_free_ram_percent: float = 0.15,
-    sym: str = None
-):
-    """
-    DEPRECATED: Ressourcen-Kontrolle erfolgt jetzt im ResourceManager beim Worker-Start.
-
-    Diese Funktion ist jetzt ein No-Op. Der ResourceManager startet neue Assets
-    erst wenn CPU/RAM-Kapazität frei ist, was Deadlocks verhindert wenn mehrere
-    Assets gleichzeitig Grid-Search machen würden.
-    """
-    # No-Op: Kontrolle erfolgt auf ResourceManager-Ebene
-    pass
-
-
 def _process_single_grid_combo(
     tp: int,
     sl: int,
@@ -242,26 +226,43 @@ def _process_feature_group(
     candidates = []
     grid_results = []
 
-    # Sequentielle Verarbeitung der TP/SL-Kombinationen
-    # (Parallelisierung erfolgt auf Feature-Gruppen-Ebene mit Ressourcen-Check)
-    for combo in combos:
-        # Ressourcen-Check: Pausiere wenn CPU/RAM zu hoch
-        # Wartet unbegrenzt bis Ressourcen verfügbar sind
-        _wait_for_resources(
-            max_cpu_percent=ctx.max_cpu_percent,
-            min_free_ram_percent=ctx.min_free_ram_percent,
-            sym=sym
-        )
+    # Parallele Verarbeitung der TP/SL-Kombinationen innerhalb einer Feature-Gruppe
+    # XGBoost parallelisiert intern (n_jobs), daher begrenzen wir die Anzahl
+    # paralleler Combos um Überparallelisierung zu vermeiden
+    n_combos = len(combos)
+    max_combo_workers = min(4, n_combos)  # Max 4 parallele TP/SL-Combos
 
-        candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
+    if max_combo_workers > 1 and n_combos > 1:
+        # Parallele Verarbeitung
+        with ThreadPoolExecutor(max_workers=max_combo_workers) as combo_executor:
+            futures = {combo_executor.submit(_process_tp_sl_combo_wrapper, combo): combo[3]
+                       for combo in combos}
 
-        if progress_callback:
-            progress_callback(idx + 1, grid_per_fg)
+            for future in futures:
+                try:
+                    candidate, grid_result, idx = future.result()
 
-        if candidate:
-            candidates.append(candidate)
-        if grid_result:
-            grid_results.append(grid_result)
+                    if progress_callback:
+                        progress_callback(idx + 1, grid_per_fg)
+
+                    if candidate:
+                        candidates.append(candidate)
+                    if grid_result:
+                        grid_results.append(grid_result)
+                except Exception as e:
+                    log(1, f"Fehler bei Grid-Combo: {e}", sym)
+    else:
+        # Sequentielle Verarbeitung (nur 1 Combo oder Worker)
+        for combo in combos:
+            candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
+
+            if progress_callback:
+                progress_callback(idx + 1, grid_per_fg)
+
+            if candidate:
+                candidates.append(candidate)
+            if grid_result:
+                grid_results.append(grid_result)
 
     return candidates, grid_results
 
