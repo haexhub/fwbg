@@ -224,24 +224,25 @@ class AdaptivePoolManager:
         Berücksichtigt:
         - Hartes Worker-Limit (basierend auf CPU und RAM)
         - Aktuell freier RAM
-        - Aktuelle CPU-Auslastung
         - Geschätzter RAM-Bedarf für laufende + neuen Worker
+
+        HINWEIS: CPU-Check wurde entfernt, da er zu restriktiv war.
+        Die Worker-Anzahl wird bereits beim Start basierend auf CPU berechnet.
+        Zur Laufzeit ist CPU-Throttling kontraproduktiv, da laufende Assets
+        ohnehin die CPU belasten bis sie fertig sind.
 
         Returns:
             True wenn genug Ressourcen für einen weiteren Worker
         """
-        # Hartes Limit prüfen
+        # Hartes Limit prüfen (bereits CPU-basiert berechnet)
         if current_workers >= self.max_workers:
             return False
 
-        # CPU-Check: Nicht starten wenn CPU bereits über max_cpu_percent
-        # Mehrere Samples nehmen um Momentan-Schwankungen auszugleichen
-        current_cpu = self.get_cpu_percent(samples=3)
-        cpu_threshold = self.max_cpu_percent * 100
-
-        if current_cpu > cpu_threshold:
-            self.ram_throttle_count += 1  # Reuse counter for any throttle
-            return False
+        # CPU-Check ENTFERNT: Das max_workers Limit basiert bereits auf CPU-Kapazität.
+        # Laufzeit-CPU-Checks sind kontraproduktiv weil:
+        # 1. Laufende Assets belasten CPU bis sie fertig sind
+        # 2. Neue Assets würden nie starten wenn 2 Assets gerade Grid-Search machen
+        # 3. Das führt dazu, dass effektiv nur initial_workers laufen
 
         # Berechne benötigten RAM für alle Worker (inkl. neuem)
         needed_workers = current_workers + 1
@@ -343,16 +344,21 @@ class AdaptivePoolManager:
         with ProcessPoolExecutor(**executor_kwargs) as executor:
             _active_executor = executor
 
-            # Gestaffelter Start: Beginne mit 2 Workers, dann adaptiv nachstarten
-            # Das verhindert CPU-Überlastung wenn alle gleichzeitig Grid-Search starten
+            # Starte alle Worker bis zum max_workers Limit
+            # CPU-basierte Throttling wurde entfernt - das max_workers Limit
+            # berücksichtigt bereits die CPU-Kapazität bei der Berechnung
             futures = {}
             pending_items = list(enumerate(items))  # (idx, item) Paare
             active_count = 0
 
-            # Starte initial nur 2 Worker (oder weniger wenn weniger Items)
-            initial_workers = min(2, total)
+            # Starte initial so viele Worker wie erlaubt (bis max_workers)
+            initial_workers = min(self.max_workers, total)
             for _ in range(initial_workers):
                 if not pending_items:
+                    break
+                # RAM-Check vor jedem Worker
+                if not self.can_spawn_worker(active_count):
+                    self.log(f"RAM-Limit erreicht bei {active_count} Workern", force=True)
                     break
                 idx, item = pending_items.pop(0)
                 future = executor.submit(func, item)
@@ -360,7 +366,8 @@ class AdaptivePoolManager:
                 _active_futures.append(future)
                 active_count += 1
 
-            self.log(f"Gestartet: {active_count} von {total} Workers (adaptives Nachstarten)", force=True)
+            self.peak_workers = active_count
+            self.log(f"Gestartet: {active_count} von {total} Workers (max: {self.max_workers})", force=True)
 
             while futures or pending_items:
                 # Fertige Tasks einsammeln
