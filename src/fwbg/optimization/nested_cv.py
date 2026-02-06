@@ -17,7 +17,7 @@ from fwbg.simulation.trade import simulate_pro_trade, compute_targets_numba
 from fwbg.builtins.feature_selection.plateau import select_plateau_features
 from fwbg.builtins.feature_selection.boruta import select_features_boruta
 from fwbg.utils.progress import report_progress
-from fwbg.utils.xgb_config import get_xgboost_n_jobs
+from fwbg.utils.xgb_config import get_xgboost_n_jobs, get_xgboost_params
 from fwbg.builtins.exit_strategies import get_strategy
 from fwbg.builtins.exit_strategies.base import GridParams
 
@@ -534,6 +534,9 @@ def train_model(
     params.setdefault("random_state", 42)
     params.setdefault("verbosity", 0)
     params["n_jobs"] = get_xgboost_n_jobs()
+
+    # GPU-Beschleunigung (automatischer Fallback auf CPU)
+    params.update(get_xgboost_params())
 
     model = XGBClassifier(**params)
     model.fit(train_df[features], targets)
