@@ -211,7 +211,7 @@ class TestROC:
     """Tests für Rate of Change."""
 
     def test_roc_equals_percentage_change(self):
-        """ROC sollte exakt der prozentualen Änderung entsprechen."""
+        """ROC sollte exakt der prozentualen Änderung entsprechen (shifted by 1)."""
         n = 100
         close = np.linspace(100, 150, n)
         df = create_ohlc(close)
@@ -219,11 +219,13 @@ class TestROC:
 
         roc_10 = result["mom_roc_10"].dropna()
         # Manuell berechnet: (C_t - C_{t-10}) / C_{t-10} * 100
+        # WICHTIG: Features sind um 1 geshiptet, also Feature bei i = Wert von i-1
         expected = (close[10:] - close[:-10]) / close[:-10] * 100
 
+        # Vergleiche geshiptet: Feature-Werte bei [-50:] entsprechen expected[-51:-1]
         np.testing.assert_array_almost_equal(
             roc_10.iloc[-50:].values,
-            expected[-50:],
+            expected[-51:-1],
             decimal=5
         )
 
@@ -301,9 +303,11 @@ class TestATR:
         low = close * 0.99
 
         # Gap am Ende: Previous close = 100, aber heute Open/High/Low/Close = 110
-        close[-1] = 110
-        high[-1] = 111
-        low[-1] = 109
+        # WICHTIG: Da Features um 1 geshiptet sind, muss der Gap 2 Bars vor Ende sein
+        # damit wir ihn im letzten Feature-Wert sehen
+        close[-2] = 110
+        high[-2] = 111
+        low[-2] = 109
 
         df = pd.DataFrame({
             'O': close * 0.999, 'H': high, 'L': low, 'C': close,
@@ -311,8 +315,8 @@ class TestATR:
         result = compute_indicator_pool(df)
 
         atr = result["vol_atr_pct_14"].dropna()
-        # ATR sollte nach Gap steigen
-        assert atr.iloc[-1] > atr.iloc[-10], "ATR should increase after gap"
+        # ATR sollte nach Gap steigen (vergleiche letzten Wert mit früherem)
+        assert atr.iloc[-1] > atr.iloc[-11], "ATR should increase after gap"
 
 
 # === PRICE ACTION FEATURES ===
@@ -411,17 +415,18 @@ class TestGap:
         """Gap sollte positiv sein bei Gap Up."""
         n = 50
         close = np.full(n, 100.0)
-        close[-1] = 100.0
         open_price = close.copy()
-        # Gap Up: Heute's Open ist höher als Yesterday's Close
-        open_price[-1] = 105.0  # 5% Gap Up
-        close[-2] = 100.0
+        # Gap Up: Open ist höher als Previous Close
+        # WICHTIG: Da Features um 1 geshiptet sind, muss der Gap 2 Bars vor Ende sein
+        open_price[-2] = 105.0  # 5% Gap Up bei Bar -2
+        close[-3] = 100.0  # Previous close bei Bar -3
 
         df = pd.DataFrame({
             'O': open_price, 'H': close * 1.01, 'L': close * 0.99, 'C': close,
         }, index=pd.date_range('2024-01-01', periods=n, freq='h'))
         result = compute_indicator_pool(df)
 
+        # Feature bei -1 zeigt Wert von Bar -2 (wegen shift)
         gap = result["pa_gap"].iloc[-1]
         assert gap > 0.04, f"Expected positive gap ~5%, got {gap*100:.1f}%"
 
@@ -430,13 +435,15 @@ class TestGap:
         n = 50
         close = np.full(n, 100.0)
         open_price = close.copy()
-        open_price[-1] = 95.0  # 5% Gap Down
+        # WICHTIG: Da Features um 1 geshiptet sind, muss der Gap 2 Bars vor Ende sein
+        open_price[-2] = 95.0  # 5% Gap Down bei Bar -2
 
         df = pd.DataFrame({
             'O': open_price, 'H': close * 1.01, 'L': close * 0.99, 'C': close,
         }, index=pd.date_range('2024-01-01', periods=n, freq='h'))
         result = compute_indicator_pool(df)
 
+        # Feature bei -1 zeigt Wert von Bar -2 (wegen shift)
         gap = result["pa_gap"].iloc[-1]
         assert gap < -0.04, f"Expected negative gap ~-5%, got {gap*100:.1f}%"
 
@@ -447,7 +454,7 @@ class TestTimeFeatures:
     """Tests für Zeit-Features."""
 
     def test_hour_correctly_extracted(self):
-        """Stunde sollte korrekt extrahiert werden."""
+        """Stunde sollte korrekt extrahiert werden (shifted by 1)."""
         n = 48  # 2 Tage
         close = np.full(n, 100.0)
         # Start um 08:00
@@ -456,13 +463,14 @@ class TestTimeFeatures:
         }, index=pd.date_range('2024-01-01 08:00', periods=n, freq='h'))
         result = compute_indicator_pool(df)
 
-        # Erste Stunde sollte 8 sein
-        assert result["time_hour"].iloc[0] == 8
-        # 12 Stunden später sollte 20 sein
-        assert result["time_hour"].iloc[12] == 20
+        # WICHTIG: Features sind um 1 geshiptet
+        # Feature bei Index 1 zeigt Wert von Bar 0 (8 Uhr)
+        assert result["time_hour"].iloc[1] == 8
+        # Feature bei Index 13 zeigt Wert von Bar 12 (20 Uhr)
+        assert result["time_hour"].iloc[13] == 20
 
     def test_sin_cos_encoding_correct(self):
-        """Sin/Cos Encoding sollte korrekt sein."""
+        """Sin/Cos Encoding sollte korrekt sein (shifted by 1)."""
         # Need enough bars for compute_indicator_pool to work
         n = 100
         np.random.seed(42)
@@ -475,20 +483,23 @@ class TestTimeFeatures:
         }, index=pd.date_range('2024-01-01 00:00', periods=n, freq='h'))
         result = compute_indicator_pool(df)
 
+        # WICHTIG: Features sind um 1 geshiptet
+        # Feature bei Index 1 zeigt Wert von Bar 0 (00:00)
         # Um 00:00 sollte sin = 0, cos = 1
-        assert abs(result["time_hour_sin"].iloc[0]) < 0.01
-        assert abs(result["time_hour_cos"].iloc[0] - 1) < 0.01
+        assert abs(result["time_hour_sin"].iloc[1]) < 0.01
+        assert abs(result["time_hour_cos"].iloc[1] - 1) < 0.01
 
+        # Feature bei Index 7 zeigt Wert von Bar 6 (06:00)
         # Um 06:00 sollte sin = 1, cos = 0 (peak)
-        assert abs(result["time_hour_sin"].iloc[6] - 1) < 0.01
-        assert abs(result["time_hour_cos"].iloc[6]) < 0.01
+        assert abs(result["time_hour_sin"].iloc[7] - 1) < 0.01
+        assert abs(result["time_hour_cos"].iloc[7]) < 0.01
 
 
 class TestSeasonalityFeatures:
     """Tests für Saisonalitäts-Features."""
 
     def test_month_correctly_extracted(self):
-        """Monat sollte korrekt extrahiert werden."""
+        """Monat sollte korrekt extrahiert werden (shifted by 1)."""
         # 365 Tage, stündlich = viel zu viel, nehme tägliche Daten
         dates = pd.date_range('2024-01-15', periods=100, freq='h')
         df = pd.DataFrame({
@@ -496,8 +507,9 @@ class TestSeasonalityFeatures:
         }, index=dates)
         result = compute_indicator_pool(df)
 
-        # Januar sollte 1 sein
-        assert result["season_month"].iloc[0] == 1
+        # WICHTIG: Features sind um 1 geshiptet
+        # Feature bei Index 1 zeigt Wert von Bar 0 (Januar)
+        assert result["season_month"].iloc[1] == 1
 
 
 # === DYNAMIK FEATURES ===

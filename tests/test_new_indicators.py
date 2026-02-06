@@ -217,7 +217,7 @@ class TestMicrostructureIndicator:
         assert vwap.std() > 0  # Sollte variieren
 
     def test_volume_weighted_without_volume(self, no_volume_df):
-        """Ohne Volume sollte Fallback greifen."""
+        """Ohne Volume sollte Fallback greifen (shifted by 1)."""
         from fwbg.builtins.indicators.microstructure import MicrostructureIndicator
 
         # Füge leere V-Spalte hinzu
@@ -227,7 +227,8 @@ class TestMicrostructureIndicator:
         df = indicator.compute(no_volume_df.copy())
 
         # Relative Volume sollte Fallback (1.0) sein
-        assert (df["micro_relative_volume"] == 1.0).all()
+        # WICHTIG: Features sind um 1 geshiptet, erste Zeile ist NaN
+        assert (df["micro_relative_volume"].iloc[1:] == 1.0).all()
 
     def test_custom_parameters(self, sample_ohlcv_df):
         """Benutzerdefinierte Parameter sollten funktionieren."""
@@ -245,23 +246,32 @@ class TestMicrostructureIndicator:
         assert "micro_pressure_sum" in df.columns
 
     def test_pressure_score_sign(self, sample_ohlcv_df):
-        """Pressure Score sollte Vorzeichen von (C-O) haben."""
+        """Pressure Score sollte Vorzeichen von (C-O) bei vorheriger Bar haben (shifted by 1)."""
         from fwbg.builtins.indicators.microstructure import MicrostructureIndicator
 
         indicator = MicrostructureIndicator()
         df = indicator.compute(sample_ohlcv_df.copy())
 
-        # Bullish Bar (C > O) sollte positive Pressure haben
-        bullish_mask = df["C"] > df["O"]
-        if bullish_mask.any():
-            bullish_pressure = df.loc[bullish_mask, "micro_pressure_score"].dropna()
-            assert (bullish_pressure >= 0).all()
+        # WICHTIG: Features sind um 1 geshiptet
+        # Pressure bei Index i reflektiert Bar i-1
+        # Also: wenn Bar i-1 bullish war (C > O), dann sollte Feature bei i positiv sein
+        pressure = df["micro_pressure_score"].dropna()
 
-        # Bearish Bar (C < O) sollte negative Pressure haben
-        bearish_mask = df["C"] < df["O"]
+        # Erstelle Mask für vorherige Bar
+        prev_bullish = (df["C"].shift(1) > df["O"].shift(1))
+        prev_bearish = (df["C"].shift(1) < df["O"].shift(1))
+
+        # Bullish vorherige Bar sollte positive Pressure Feature haben
+        bullish_mask = prev_bullish & ~pressure.isna()
+        if bullish_mask.any():
+            bullish_pressure = df.loc[bullish_mask, "micro_pressure_score"]
+            assert (bullish_pressure >= 0).all(), "Bullish bars should have positive pressure"
+
+        # Bearish vorherige Bar sollte negative Pressure Feature haben
+        bearish_mask = prev_bearish & ~pressure.isna()
         if bearish_mask.any():
-            bearish_pressure = df.loc[bearish_mask, "micro_pressure_score"].dropna()
-            assert (bearish_pressure <= 0).all()
+            bearish_pressure = df.loc[bearish_mask, "micro_pressure_score"]
+            assert (bearish_pressure <= 0).all(), "Bearish bars should have negative pressure"
 
     def test_rolling_sum_accumulation(self, sample_ohlcv_df):
         """Rolling Sums sollten korrekt akkumulieren."""
