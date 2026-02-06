@@ -180,6 +180,29 @@ def _process_feature_group(
 
     group_features = filter_features_by_group(full_pool, feature_group)
 
+    # Filtere Features mit inf/nan-Werten im inner_df heraus
+    # Dies verhindert XGBoost-Fehler: "Input data contains `inf` or a value too large"
+    if inner_df is not None and len(group_features) > 0:
+        clean_features = []
+        for feat in group_features:
+            if feat in inner_df.columns:
+                col = inner_df[feat]
+                has_inf = np.isinf(col).any()
+                nan_ratio = col.isna().mean()
+                if has_inf:
+                    log(2, f"  Feature '{feat}' hat inf-Werte - übersprungen", sym)
+                elif nan_ratio > 0.5:
+                    log(2, f"  Feature '{feat}' hat {nan_ratio*100:.0f}% NaN - übersprungen", sym)
+                else:
+                    clean_features.append(feat)
+            else:
+                # Feature nicht im DataFrame - sollte nicht vorkommen
+                log(2, f"  Feature '{feat}' nicht in inner_df - übersprungen", sym)
+
+        if len(clean_features) < len(group_features):
+            log(2, f"  Feature-Gruppe '{feature_group}': {len(group_features) - len(clean_features)} Features mit inf/nan gefiltert", sym)
+        group_features = clean_features
+
     if len(group_features) < 3:
         log(2, f"  Feature-Gruppe '{feature_group}': nur {len(group_features)} Features - übersprungen", sym)
         return [], []
