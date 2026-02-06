@@ -125,7 +125,6 @@ class AdaptivePoolManager:
         threads_per_asset: int = 0,
         check_interval: float = 2.0,
         verbose: bool = True,
-        progress_dict: Optional[Dict] = None,
         progress_queue = None
     ):
         """
@@ -136,7 +135,6 @@ class AdaptivePoolManager:
             threads_per_asset: Geschätzte CPU-Threads pro Asset (0=auto)
             check_interval: Sekunden zwischen RAM-Checks
             verbose: Detaillierte Ausgaben
-            progress_dict: DEPRECATED - nicht mehr verwendet
             progress_queue: multiprocessing.Queue für Progress-Updates
         """
         # Normalisiere Prozent-Werte: 80 -> 0.80, 0.80 -> 0.80
