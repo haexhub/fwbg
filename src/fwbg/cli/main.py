@@ -115,6 +115,7 @@ def run_optimizer(
         "max_cpu_percent": strategy.resources.max_cpu_percent,
         "min_free_ram_percent": strategy.resources.min_free_ram_percent,
         "ram_per_worker_gb": strategy.resources.ram_per_worker_gb,
+        "threads_per_asset": strategy.resources.threads_per_asset,
     }
 
     # Filter nach bestimmten Assets wenn angegeben
@@ -175,6 +176,7 @@ def run_optimizer(
         max_cpu_percent=resource_settings["max_cpu_percent"],
         min_free_ram_percent=resource_settings["min_free_ram_percent"],
         ram_per_worker_gb=resource_settings["ram_per_worker_gb"],
+        threads_per_asset=resource_settings["threads_per_asset"],
         verbose=True,
         progress_queue=progress_queue,
     )
