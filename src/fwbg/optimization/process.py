@@ -33,6 +33,8 @@ from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log
 from .nested_cv import nested_cv_split, evaluate_on_holdout
 from .grid_search import _process_feature_group, _process_feature_groups_parallel
+from .robust_validation import create_walk_forward_folds
+from .bias_checks import check_asset_bias
 
 
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
@@ -149,16 +151,16 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         log(3, f"Abgeleitete Features berechnet ({time.time()-t0:.1f}s)", sym)
 
         # === LOOKAHEAD BIAS PREVENTION ===
-        # KRITISCH: Split VOR Indikator-Berechnung!
-        # Rolling Windows in Indikatoren würden sonst Zukunftsdaten aus dem Holdout sehen.
+        # KRITISCH: Walk-Forward Splits VOR Indikator-Berechnung!
+        # Rolling Windows in Indikatoren würden sonst Zukunftsdaten sehen.
         #
         # Reihenfolge:
         # 1. OHLC + Makro laden (OK, Makro ist täglich ohne Rolling)
-        # 2. Split in Inner/Holdout (auf OHLC-Basis)
-        # 3. Indikatoren SEPARAT für Inner und Holdout berechnen
+        # 2. Create Walk-Forward Folds (auf OHLC-Basis)
+        # 3. Für jeden Fold: Indikatoren SEPARAT berechnen
 
-        if len(df) < MIN_TRADES * 4:
-            log(1, f"SKIP - Zu wenig Daten vor Split ({len(df)} < {MIN_TRADES * 4})", sym)
+        if len(df) < MIN_TRADES * 8:  # Need enough data for walk-forward
+            log(1, f"SKIP - Zu wenig Daten für Walk-Forward ({len(df)} < {MIN_TRADES * 8})", sym)
             return {"symbol": sym, "status": "insufficient_data", "rows": len(df)}
 
         # Asset-Konfiguration laden
@@ -170,401 +172,353 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Kurzreferenzen für lokale Verwendung
         grid = strategy.get_grid_for_class(asset.asset_class)
 
-        # === SPLIT VOR INDIKATOR-BERECHNUNG ===
-        # Spalte df in Inner (80%) und Holdout (20%)
-        report_phase(sym, "Split vor Indikatoren...")
-        holdout_ratio = 0.20
-        holdout_size = int(len(df) * holdout_ratio)
-        inner_size = len(df) - holdout_size
+        # === WALK-FORWARD FOLDS ERSTELLEN ===
+        report_phase(sym, f"Creating {WALK_FORWARD_FOLDS} walk-forward folds...")
+        try:
+            wf_folds = create_walk_forward_folds(
+                df,
+                n_folds=WALK_FORWARD_FOLDS,
+                test_size=4000,
+                min_train_size=20000,
+                anchored=True,
+            )
+        except ValueError as e:
+            log(1, f"SKIP - {str(e)}", sym)
+            return {"symbol": sym, "status": "insufficient_data_for_folds", "error": str(e)}
 
-        # Kopiere OHLC + Makro-Daten (noch keine Indikatoren!)
-        df_inner_raw = df.iloc[:inner_size].copy()
-        df_holdout_raw = df.iloc[inner_size:].copy()
+        log(1, f"Walk-Forward: {len(wf_folds)} folds created (prevents sample bias)", sym)
+        for fold in wf_folds:
+            log(2, f"  Fold {fold.fold_id}: Train[{fold.train_end - fold.train_start}] Test[{fold.test_end - fold.test_start}]", sym)
 
-        log(2, f"Pre-Split: {len(df_inner_raw)} Inner / {len(df_holdout_raw)} Holdout", sym)
+        # === WALK-FORWARD LOOP: Process each fold ===
+        # For each fold, we:
+        # 1. Compute indicators separately (no lookahead!)
+        # 2. Run grid search on train
+        # 3. Evaluate on test
+        # 4. Store results
 
-        # === INDIKATOREN SEPARAT BERECHNEN ===
-        def indicator_progress(name, idx, total):
-            report_phase(sym, f"Indikatoren: {name} ({idx}/{total})")
+        all_fold_results = []
 
-        # Inner-Set: Indikatoren berechnen (nur auf Inner-Daten!)
-        report_phase(sym, "Berechne Inner-Indikatoren...")
-        t0 = time.time()
-        inner_df = compute_indicator_pool(
-            df_inner_raw,
-            indicators=strategy.indicators,
-            progress_callback=indicator_progress
-        )
-        inner_df = inner_df.copy()  # Defragmentieren
-        inner_df = inner_df.dropna()
-        log(2, f"Inner-Indikatoren: {inner_df.shape} ({time.time()-t0:.1f}s)", sym)
+        for fold_idx, fold in enumerate(wf_folds):
+            log(1, f"=== Processing Fold {fold.fold_id + 1}/{len(wf_folds)} ===", sym)
+            report_phase(sym, f"Fold {fold.fold_id + 1}/{len(wf_folds)}: Computing indicators...")
 
-        # Holdout-Set: Indikatoren SEPARAT berechnen (kein Lookahead!)
-        report_phase(sym, "Berechne Holdout-Indikatoren...")
-        t0 = time.time()
-        holdout_df = compute_indicator_pool(
-            df_holdout_raw,
-            indicators=strategy.indicators,
-            progress_callback=None  # Kein Progress für Holdout (geht schneller)
-        )
-        holdout_df = holdout_df.copy()  # Defragmentieren
-        holdout_df = holdout_df.dropna()
-        log(2, f"Holdout-Indikatoren: {holdout_df.shape} ({time.time()-t0:.1f}s)", sym)
+            def indicator_progress(name, idx, total):
+                report_phase(sym, f"Fold {fold.fold_id + 1}: Indicators {name} ({idx}/{total})")
 
-        if len(inner_df) < MIN_TRADES * 2:
-            log(1, f"SKIP - Zu wenig Inner-Daten nach dropna ({len(inner_df)} < {MIN_TRADES * 2})", sym)
-            return {"symbol": sym, "status": "insufficient_data", "rows": len(inner_df)}
+            # Train-Set: Indikatoren berechnen (nur auf Train-Daten!)
+            t0 = time.time()
+            train_df = compute_indicator_pool(
+                fold.train_df,
+                indicators=strategy.indicators,
+                progress_callback=indicator_progress
+            )
+            train_df = train_df.copy()
+            train_df = train_df.dropna()
 
-        if len(holdout_df) < MIN_TRADES:
-            log(1, f"SKIP - Zu wenig Holdout-Daten nach dropna ({len(holdout_df)} < {MIN_TRADES})", sym)
-            return {"symbol": sym, "status": "insufficient_holdout_data", "rows": len(holdout_df)}
+            # Test-Set: Indikatoren SEPARAT berechnen (kein Lookahead!)
+            test_df = compute_indicator_pool(
+                fold.test_df,
+                indicators=strategy.indicators,
+                progress_callback=None
+            )
+            test_df = test_df.copy()
+            test_df = test_df.dropna()
 
-        # Feature-Pool aus Inner-Daten (Holdout sollte gleiche Features haben)
-        full_pool = get_feature_columns(inner_df)
-        log(2, f"Feature-Pool: {len(full_pool)} Features", sym)
+            log(2, f"  Fold {fold.fold_id + 1}: Train={train_df.shape} Test={test_df.shape} ({time.time()-t0:.1f}s)", sym)
 
-        # Entferne Features mit inf/nan (XGBoost verträgt keine inf)
-        t0 = time.time()
-        clean_pool = []
-        excluded_inf = 0
-        excluded_nan = 0
-        for col in full_pool:
-            if col in inner_df.columns:
-                has_inf = np.isinf(inner_df[col]).any()
-                nan_ratio = inner_df[col].isna().sum() / len(inner_df)
-                if has_inf:
-                    excluded_inf += 1
-                elif nan_ratio >= 0.1:
-                    excluded_nan += 1
+            if len(train_df) < MIN_TRADES * 2:
+                log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Train-Daten ({len(train_df)})", sym)
+                continue
+
+            if len(test_df) < MIN_TRADES:
+                log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Test-Daten ({len(test_df)})", sym)
+                continue
+
+            # Feature-Pool aus Train-Daten
+            full_pool = get_feature_columns(train_df)
+
+            # Entferne Features mit inf/nan (XGBoost verträgt keine inf)
+            clean_pool = []
+            excluded_inf = 0
+            excluded_nan = 0
+            for col in full_pool:
+                if col in train_df.columns:
+                    has_inf = np.isinf(train_df[col]).any()
+                    nan_ratio = train_df[col].isna().sum() / len(train_df)
+                    if has_inf:
+                        excluded_inf += 1
+                    elif nan_ratio >= 0.1:
+                        excluded_nan += 1
+                    else:
+                        clean_pool.append(col)
+            full_pool = clean_pool
+            log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features (excl: {excluded_inf} inf, {excluded_nan} nan)", sym)
+
+            if len(full_pool) < 5:
+                log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Features ({len(full_pool)})", sym)
+                continue
+
+            candidates = []
+            all_grid_results = []
+
+            # Feature-Gruppen aus Strategy-Config
+            feature_groups_to_test = ctx.feature_groups
+
+            # Regime-Filter Kombinationen aus Grid (falls definiert)
+            regime_filter_combinations = grid.regime_filter_grid.get_combinations()
+            n_regime_combos = len(regime_filter_combinations)
+
+            # Berechne Gesamtzahl der Kombinationen inkl. Regime-Filter
+            base_combos = ctx.total_grid_combinations()
+            total_combos = base_combos * n_regime_combos
+
+            if fold.fold_id == 0:  # Only log once
+                log(1, f"Grid-Search: {len(feature_groups_to_test)} FG x {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} x {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
+                if ctx.min_rrr > 0:
+                    log(1, f"Min RRR Filter: {ctx.min_rrr}", sym)
+
+            # === NESTED CV: Inner Folds erstellen (auf Train-Daten dieses Folds) ===
+            report_phase(sym, f"Fold {fold.fold_id + 1}: Grid-Search...")
+            cv_split = nested_cv_split(train_df, holdout_ratio=0.0, n_inner_folds=5)
+            inner_folds = cv_split["inner_folds"]
+
+            log(2, f"  Fold {fold.fold_id + 1}: Nested CV with {len(inner_folds)} inner folds", sym)
+
+            # === REGIME-FILTER KOMBINATIONEN ===
+            for rf_idx, regime_config in enumerate(regime_filter_combinations):
+                # Erstelle RegimeFilterConfig aus Kombination
+                regime_params = RegimeFilterConfig.from_dict(regime_config)
+
+                # Berechne _regime_ok SEPARAT für Train und Test (kein Lookahead!)
+                train_df["_regime_ok"] = compute_regime_filter(train_df, regime_params)
+                test_df["_regime_ok"] = compute_regime_filter(test_df, regime_params)
+
+                # Update inner_folds mit neuem regime_ok
+                for train_df_fold, val_df_fold in inner_folds:
+                    train_df_fold["_regime_ok"] = train_df.loc[train_df_fold.index, "_regime_ok"]
+                    val_df_fold["_regime_ok"] = train_df.loc[val_df_fold.index, "_regime_ok"]
+
+                # Log Regime-Filter Info
+                regime_desc = []
+                if regime_params.adx_enabled:
+                    regime_desc.append(f"ADX>={regime_params.adx_min}")
+                if regime_params.vix_enabled:
+                    regime_desc.append(f"VIX<={regime_params.vix_max}")
+                if regime_params.hurst_enabled:
+                    hurst_parts = []
+                    if regime_params.hurst_min is not None:
+                        hurst_parts.append(f"H>={regime_params.hurst_min}")
+                    if regime_params.hurst_max is not None:
+                        hurst_parts.append(f"H<={regime_params.hurst_max}")
+                    regime_desc.append(" & ".join(hurst_parts) if hurst_parts else "Hurst")
+                regime_str = " + ".join(regime_desc) if regime_desc else "No Filter"
+
+                if n_regime_combos > 1 and fold.fold_id == 0:  # Only log once
+                    log(2, f"  Regime {rf_idx+1}/{n_regime_combos}: {regime_str}", sym)
+
+                # Feature-Gruppen verarbeiten
+                n_feature_groups = len(feature_groups_to_test)
+
+                if n_feature_groups <= 1:
+                    for fg_idx, feature_group in enumerate(feature_groups_to_test):
+                        fg_candidates, fg_grid_results = _process_feature_group(
+                            fg_idx, feature_group, full_pool, inner_folds,
+                            grid, ctx, regime_config, sym, n_feature_groups,
+                            inner_df=train_df
+                        )
+                        candidates.extend(fg_candidates)
+                        all_grid_results.extend(fg_grid_results)
                 else:
-                    clean_pool.append(col)
-        full_pool = clean_pool
-        log(2, f"Clean Pool: {len(full_pool)} Features (excl: {excluded_inf} inf, {excluded_nan} nan) ({time.time()-t0:.1f}s)", sym)
-
-        if len(full_pool) < 5:
-            log(1, f"SKIP - Zu wenig saubere Features ({len(full_pool)} < 5)", sym)
-            return {"symbol": sym, "status": "insufficient_features", "features": len(full_pool)}
-
-        candidates = []
-        all_grid_results = []  # Alle Kombinationen tracken
-
-        # Feature-Gruppen aus Strategy-Config
-        feature_groups_to_test = ctx.feature_groups
-
-        # Regime-Filter Kombinationen aus Grid (falls definiert)
-        regime_filter_combinations = grid.regime_filter_grid.get_combinations()
-        n_regime_combos = len(regime_filter_combinations)
-
-        # Berechne Gesamtzahl der Kombinationen inkl. Regime-Filter
-        base_combos = ctx.total_grid_combinations()
-        total_combos = base_combos * n_regime_combos
-        log(1, f"Grid-Search: {len(feature_groups_to_test)} FG x {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} x {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
-        if ctx.min_rrr > 0:
-            log(1, f"Min RRR Filter: {ctx.min_rrr} (Scalping-Strategien mit RRR < {ctx.min_rrr} werden gefiltert)", sym)
-
-        # === NESTED CV: Inner Folds erstellen (auf bereits berechneten Inner-Daten) ===
-        report_phase(sym, "Grid-Search...")
-        # nested_cv_split wird nur für Inner-Folds verwendet (holdout_ratio=0 da bereits gesplittet)
-        cv_split = nested_cv_split(inner_df, holdout_ratio=0.0, n_inner_folds=5)
-        inner_folds = cv_split["inner_folds"]
-
-        log(1, f"Nested CV: {len(inner_df)} Inner / {len(holdout_df)} Holdout (KEIN Lookahead - Features separat berechnet)", sym)
-
-        # === ÄUSSERSTE SCHLEIFE: Regime-Filter Kombinationen ===
-        for rf_idx, regime_config in enumerate(regime_filter_combinations):
-            # Erstelle RegimeFilterConfig aus Kombination
-            regime_params = RegimeFilterConfig.from_dict(regime_config)
-
-            # Berechne _regime_ok SEPARAT für Inner und Holdout (kein Lookahead!)
-            inner_df["_regime_ok"] = compute_regime_filter(inner_df, regime_params)
-            holdout_df["_regime_ok"] = compute_regime_filter(holdout_df, regime_params)
-
-            # Update inner_folds mit neuem regime_ok
-            # inner_folds ist eine Liste von (train_df, val_df) Tupeln
-            for train_df_fold, val_df_fold in inner_folds:
-                train_df_fold["_regime_ok"] = inner_df.loc[train_df_fold.index, "_regime_ok"]
-                val_df_fold["_regime_ok"] = inner_df.loc[val_df_fold.index, "_regime_ok"]
-
-            # Log Regime-Filter Info
-            regime_desc = []
-            if regime_params.adx_enabled:
-                regime_desc.append(f"ADX>={regime_params.adx_min}")
-            if regime_params.vix_enabled:
-                regime_desc.append(f"VIX<={regime_params.vix_max}")
-            if regime_params.hurst_enabled:
-                hurst_parts = []
-                if regime_params.hurst_min is not None:
-                    hurst_parts.append(f"H>={regime_params.hurst_min}")
-                if regime_params.hurst_max is not None:
-                    hurst_parts.append(f"H<={regime_params.hurst_max}")
-                regime_desc.append(" & ".join(hurst_parts) if hurst_parts else "Hurst")
-            regime_str = " + ".join(regime_desc) if regime_desc else "No Filter"
-
-            if n_regime_combos > 1:
-                log(1, f"Regime {rf_idx+1}/{n_regime_combos}: {regime_str}", sym)
-
-            # Feature-Gruppen verarbeiten mit adaptivem Threading
-            n_feature_groups = len(feature_groups_to_test)
-
-            if n_feature_groups <= 1:
-                # Nur 1 Feature-Gruppe: sequentiell
-                for fg_idx, feature_group in enumerate(feature_groups_to_test):
-                    fg_candidates, fg_grid_results = _process_feature_group(
-                        fg_idx, feature_group, full_pool, inner_folds,
-                        grid, ctx, regime_config, sym, n_feature_groups,
-                        inner_df=inner_df
+                    fg_candidates, fg_grid_results = _process_feature_groups_parallel(
+                        feature_groups_to_test, full_pool, inner_folds,
+                        grid, ctx, regime_config, sym, inner_df=train_df
                     )
                     candidates.extend(fg_candidates)
                     all_grid_results.extend(fg_grid_results)
-            else:
-                # Mehrere Feature-Gruppen: parallel ohne zusätzliche RAM-Prüfung
-                # RAM-Kontrolle erfolgt auf Asset-Ebene im AdaptivePoolManager
-                fg_candidates, fg_grid_results = _process_feature_groups_parallel(
-                    feature_groups_to_test, full_pool, inner_folds,
-                    grid, ctx, regime_config, sym, inner_df=inner_df
-                )
-                candidates.extend(fg_candidates)
-                all_grid_results.extend(fg_grid_results)
 
-        log(2, f"Inner CV fertig: {len(candidates)} Kandidaten ({time.time()-t_start:.1f}s)", sym)
+            log(2, f"  Fold {fold.fold_id + 1}: Grid search done, {len(candidates)} candidates", sym)
 
-        grid_results = all_grid_results
+            grid_results = all_grid_results
 
-        if not candidates:
-            log(1, "SKIP - Keine profitablen Kandidaten", sym)
-            report_done(sym, "no_candidates")
-            return {"symbol": sym, "status": "no_candidates", "grid_results": grid_results}
-
-        # === PLATEAU-BASIERTE AUSWAHL (basierend auf Inner CV PnL) ===
-        # Sortiere nach Inner Validation PnL für Plateau-Berechnung
-        for c in candidates:
-            c["score"] = c["inner_val_pnl"]
-
-        candidates = calculate_param_plateau_score(
-            candidates,
-            grid.tp,
-            grid.sl,
-            grid.ct
-        )
-
-        # Wähle besten Plateau-Kandidaten
-        b = select_best_plateau_candidate(
-            candidates,
-            grid.tp,
-            grid.sl,
-            grid.ct,
-            min_neighbors=2
-        )
-
-        if not b:
-            # Fallback: Bester nach Inner Val PnL
-            candidates.sort(key=lambda x: x["inner_val_pnl"], reverse=True)
-            b = candidates[0] if candidates else None
-
-        if not b:
-            report_done(sym, "no_plateau")
-            return {"symbol": sym, "status": "no_plateau", "grid_results": grid_results}
-
-        # === TOP-N KANDIDATEN SAMMELN (für Vergleich) ===
-        # Sortiere alle Kandidaten nach Inner Val PnL und behalte Top 5
-        # mit unterschiedlichen RRR-Werten für Diversität
-        TOP_N = 5
-        MIN_ANNUAL_RETURN = strategy.filters.min_annual_return  # Aus Strategie-Config
-        candidates.sort(key=lambda x: x.get("inner_val_pnl", 0), reverse=True)
-
-        # Berechne Inner CV Zeitraum für Jahresrendite-Schätzung
-        n_inner_folds = len(inner_folds)
-        inner_val_size = len(inner_folds[0][1]) if inner_folds else OOS_SIZE
-        inner_total_bars = n_inner_folds * inner_val_size
-        bars_per_year = tf_cfg["bars_per_hour"] * 24 * 250  # 250 Trading-Tage pro Jahr
-        inner_years = inner_total_bars / bars_per_year if bars_per_year > 0 else 1
-
-        def estimate_annual_return(inner_val_pnl):
-            """Schätzt Jahresrendite aus Inner CV PnL."""
-            if inner_val_pnl <= 0 or inner_years <= 0:
-                return -100
-            final_equity = 100 + inner_val_pnl
-            return ((final_equity / 100.0) ** (1 / inner_years) - 1) * 100
-
-        # Sammle Top-N mit RRR-Diversität und Mindest-Rendite
-        top_candidates_for_export = []
-        seen_rrr = set()
-        skipped_low_return = 0
-        for c in candidates:
-            # Prüfe Mindest-Rendite
-            est_return = estimate_annual_return(c.get("inner_val_pnl", 0))
-            if est_return < MIN_ANNUAL_RETURN:
-                skipped_low_return += 1
+            if not candidates:
+                log(2, f"  Fold {fold.fold_id + 1}: No profitable candidates, skipping", sym)
                 continue
 
-            rrr_bucket = round(c["rrr"], 1)  # Bucket auf 0.1 gerundet
-            if rrr_bucket not in seen_rrr or len(top_candidates_for_export) < 3:
-                top_candidates_for_export.append({
-                    "rank": len(top_candidates_for_export) + 1,
-                    "params": c["params"],
-                    "rrr": c["rrr"],
-                    "inner_val_pnl": c.get("inner_val_pnl", 0),
-                    "est_annual_return": est_return,
-                    "feature_group": c.get("feature_group", "unknown"),
-                    "feats": c.get("feats", []),
-                    "plateau_score": c.get("plateau_score", 0),
-                    "selected_features_long": c.get("selected_features_long", []),
-                    "selected_features_short": c.get("selected_features_short", []),
-                })
-                seen_rrr.add(rrr_bucket)
-            if len(top_candidates_for_export) >= TOP_N:
-                break
+            # === PLATEAU-BASIERTE AUSWAHL ===
+            for c in candidates:
+                c["score"] = c["inner_val_pnl"]
 
-        if skipped_low_return > 0:
-            log(2, f"  {skipped_low_return} Kandidaten übersprungen (< {MIN_ANNUAL_RETURN}%/Jahr)", sym)
-        log(2, f"Top-{len(top_candidates_for_export)} Kandidaten gesammelt (RRR: {[c['rrr'] for c in top_candidates_for_export]})", sym)
+            candidates = calculate_param_plateau_score(candidates, grid.tp, grid.sl, grid.ct)
+            b = select_best_plateau_candidate(candidates, grid.tp, grid.sl, grid.ct, min_neighbors=2)
 
-        # === HOLDOUT EVALUATION ===
-        # JETZT erst evaluieren wir auf dem Holdout-Set (nie vorher gesehen!)
-        ct_param = b['params'][2]
-        if isinstance(ct_param, tuple):
-            ct_str = f"CT_L={ct_param[0]:.2f}/CT_S={ct_param[1]:.2f}"
-        else:
-            ct_str = f"CT={ct_param:.2f}"
-        log(1, f"Holdout-Evaluation für besten Kandidaten (TP={b['params'][0]}, SL={b['params'][1]}, {ct_str})", sym)
+            if not b:
+                candidates.sort(key=lambda x: x["inner_val_pnl"], reverse=True)
+                b = candidates[0] if candidates else None
 
-        holdout_result = evaluate_on_holdout(holdout_df, inner_df, b, ctx)
+            if not b:
+                log(2, f"  Fold {fold.fold_id + 1}: No plateau candidate found", sym)
+                continue
 
-        if holdout_result["n_trades"] < ctx.min_trades:
-            log(1, f"SKIP - Zu wenig Holdout-Trades ({holdout_result['n_trades']} < {ctx.min_trades})", sym)
-            report_done(sym, "insufficient_holdout_trades")
-            return {"symbol": sym, "status": "insufficient_holdout_trades", "grid_results": grid_results}
+            # === TEST EVALUATION (on this fold's test set) ===
+            ct_param = b['params'][2]
+            if isinstance(ct_param, tuple):
+                ct_str = f"CT_L={ct_param[0]:.2f}/CT_S={ct_param[1]:.2f}"
+            else:
+                ct_str = f"CT={ct_param:.2f}"
 
-        # Füge Holdout-Ergebnisse zum Kandidaten hinzu
-        b["tr"] = holdout_result["trades"]
-        b["trades_detailed"] = holdout_result["trades_detailed"]
-        b["pnl"] = holdout_result["pnl"]
-        b["holdout_win_rate"] = holdout_result["win_rate"]
+            test_result = evaluate_on_holdout(test_df, train_df, b, ctx)
 
-        # Berechne Metriken auf Holdout-Trades
-        wr = holdout_result["win_rate"]
-        tr = holdout_result["trades"]
+            if test_result["n_trades"] < ctx.min_trades:
+                log(2, f"  Fold {fold.fold_id + 1}: Too few test trades ({test_result['n_trades']})", sym)
+                continue
 
-        preliminary_kelly = max(0, min(0.05, (
-            (wr * b["rrr"] - (1 - wr)) / b["rrr"]
-        ) / 4)) if wr > 0 else 0.01
+            # Store fold results
+            fold_result = {
+                "fold_id": fold.fold_id,
+                "train_size": len(train_df),
+                "test_size": len(test_df),
+                "inner_val_pnl": b.get("inner_val_pnl", 0),
+                "test_pnl": test_result["pnl"],
+                "test_win_rate": test_result["win_rate"],
+                "test_trades": test_result["n_trades"],
+                "test_trades_trace": test_result["trades"],
+                "best_config": {
+                    "tp": b["params"][0],
+                    "sl": b["params"][1],
+                    "ct": b["params"][2],
+                    "rrr": b["rrr"],
+                },
+                "selected_features_long": b.get("selected_features_long", []),
+                "selected_features_short": b.get("selected_features_short", []),
+                "feature_group": b.get("feature_group", "unknown"),
+            }
 
-        trade_returns = [preliminary_kelly * b["rrr"] if r > 0 else -preliminary_kelly for r in tr]
+            all_fold_results.append(fold_result)
 
-        # Trades pro Jahr = (Anzahl Trades / Anzahl Bars) * Bars pro Jahr
-        holdout_bars = len(holdout_df)
-        trades_per_year = (len(tr) / holdout_bars) * bars_per_year if holdout_bars > 0 else len(tr)
-        b["sharpe"] = calculate_sharpe_ratio(trade_returns, trades_per_year=trades_per_year)
-        b["calmar"] = calculate_calmar_ratio(tr, preliminary_kelly, b["rrr"])
-        b["smoothness"] = calculate_equity_smoothness(tr, preliminary_kelly, b["rrr"])
+            # Calculate bias ratio
+            bias_ratio = fold_result["test_pnl"] / fold_result["inner_val_pnl"] if fold_result["inner_val_pnl"] > 0 else 0
 
-        # Good hours aus Holdout
-        hour_pnl = {}
-        for t in holdout_result["trades_detailed"]:
-            h = t["hour"]
-            hour_pnl[h] = hour_pnl.get(h, 0) + t["result"]
-        b["good_hours"] = sorted([h for h, pnl in hour_pnl.items() if pnl > 0]) or list(range(24))
+            log(1, f"  Fold {fold.fold_id + 1}: WR={test_result['win_rate']:.1%} "
+                   f"PnL={test_result['pnl']:.1f} Trades={test_result['n_trades']} "
+                   f"Bias={bias_ratio:.2f}x", sym)
 
-        # 1/4 Kelly
-        p = wr
-        q = 1 - p
-        rrr = b["rrr"]
-        full_kelly = (p * rrr - q) / rrr if rrr > 0 else 0
+        # === END OF WALK-FORWARD LOOP ===
+        # Now aggregate results across all folds
+
+        if len(all_fold_results) == 0:
+            log(1, "SKIP - No successful folds", sym)
+            report_done(sym, "no_successful_folds")
+            return {"symbol": sym, "status": "no_successful_folds"}
+
+        log(1, f"=== Walk-Forward Complete: {len(all_fold_results)}/{len(wf_folds)} successful folds ===", sym)
+
+        # Aggregate metrics across all folds
+        win_rates = [r["test_win_rate"] for r in all_fold_results]
+        pnls = [r["test_pnl"] for r in all_fold_results]
+        trades_counts = [r["test_trades"] for r in all_fold_results]
+        bias_ratios = [r["test_pnl"] / r["inner_val_pnl"] if r["inner_val_pnl"] > 0 else 0
+                      for r in all_fold_results]
+
+        mean_wr = np.mean(win_rates)
+        std_wr = np.std(win_rates)
+        mean_pnl = np.mean(pnls)
+        std_pnl = np.std(pnls)
+        total_trades = sum(trades_counts)
+        mean_bias_ratio = np.mean(bias_ratios)
+
+        # Detect sample bias
+        sample_bias_detected = any(ratio > 2.0 for ratio in bias_ratios if ratio > 0)
+
+        log(1, f"Walk-Forward Results:", sym)
+        log(1, f"  Win-Rate: {mean_wr*100:.1f}% ± {std_wr*100:.1f}% (range: {min(win_rates)*100:.1f}%-{max(win_rates)*100:.1f}%)", sym)
+        log(1, f"  PnL: {mean_pnl:.1f} ± {std_pnl:.1f} (range: {min(pnls):.1f}-{max(pnls):.1f})", sym)
+        log(1, f"  Total Trades: {total_trades}", sym)
+        log(1, f"  Bias Ratios: {[f'{r:.2f}x' for r in bias_ratios]}", sym)
+
+        if sample_bias_detected:
+            log(1, f"  WARNING: Sample bias detected in some folds (>2x ratio)", sym)
+
+        # Use first fold's best config as representative (they should be similar)
+        representative_fold = all_fold_results[0]
+        b_config = representative_fold["best_config"]
+
+        # Calculate Kelly on aggregated results
+        rrr = b_config["rrr"]
+        full_kelly = (mean_wr * rrr - (1 - mean_wr)) / rrr if rrr > 0 else 0
         fk = max(0, min(0.05, full_kelly / 4))
 
         if fk <= 0:
             report_done(sym, "no_kelly")
-            # Speichere trotzdem Holdout-Info für Analyse
             return {
                 "symbol": sym,
                 "status": "no_kelly",
-                "grid_results": grid_results,
-                "best_candidate": {
-                    "params": {"tp": b["params"][0], "sl": b["params"][1], "ct": b["params"][2]},
-                    "rrr": b["rrr"],
-                    "inner_val_pnl": b.get("inner_val_pnl", 0),
+                "walk_forward_results": {
+                    "n_folds": len(all_fold_results),
+                    "mean_win_rate": mean_wr,
+                    "mean_pnl": mean_pnl,
+                    "sample_bias_detected": sample_bias_detected,
                 },
-                "holdout_result": {
-                    "win_rate": wr,
-                    "n_trades": holdout_result["n_trades"],
-                    "pnl": holdout_result["pnl"],
-                    "full_kelly": full_kelly,
-                    "reason": f"Kelly <= 0 (WR={wr*100:.1f}%, RRR={rrr:.2f}, benötigt WR >= {1/(rrr+1)*100:.1f}%)"
-                }
+                "reason": f"Kelly <= 0 (WR={mean_wr*100:.1f}%, RRR={rrr:.2f})"
             }
 
-        # === MONTE CARLO TESTS ===
-        # Prüfe ob Ergebnisse statistisch signifikant sind
+        # === MONTE CARLO TESTS (on aggregated trades from all folds) ===
         report_phase(sym, "Monte Carlo Validierung...")
-        log(2, "=== Monte Carlo Validierung ===", sym)
-        log(2, "  Starte Permutations-Test (1000 Samples)...", sym)
-        t_mc = time.time()
-        mc_perm = monte_carlo_permutation_test(b["tr"], n_permutations=1000)
-        log(2, "  Starte Equity-Simulation (500 Samples)...", sym)
-        mc_equity = monte_carlo_equity_simulation(b["tr"], fk, rrr, n_simulations=500)
 
-        log(2, f"  Monte Carlo fertig: p={mc_perm['p_value']:.3f}, "
+        # Combine all trades from all folds
+        all_trades = []
+        for fold in all_fold_results:
+            all_trades.extend(fold["test_trades_trace"])
+
+        t_mc = time.time()
+        mc_perm = monte_carlo_permutation_test(all_trades, n_permutations=1000)
+        mc_equity = monte_carlo_equity_simulation(all_trades, fk, rrr, n_simulations=500)
+
+        log(2, f"  Monte Carlo: p={mc_perm['p_value']:.3f}, "
                f"Equity median={mc_equity['median_equity']:.1f}, "
                f"bankruptcy={mc_equity['bankruptcy_rate']:.1%} ({time.time()-t_mc:.1f}s)", sym)
 
-        # Filtere nicht-signifikante Ergebnisse
         if not mc_perm["is_significant"]:
-            log(1, f"SKIP - Nicht signifikant (p={mc_perm['p_value']:.3f} >= 0.05)", sym)
+            log(1, f"SKIP - Not significant (p={mc_perm['p_value']:.3f})", sym)
             report_done(sym, "not_significant")
             return {
                 "symbol": sym,
                 "status": "not_significant",
                 "p_value": mc_perm["p_value"],
-                "grid_results": grid_results
+                "walk_forward_folds": len(all_fold_results),
             }
 
-        # Warne bei hoher Bankruptcy-Rate
         if mc_equity["bankruptcy_rate"] > 0.1:
-            log(1, f"WARNUNG: {mc_equity['bankruptcy_rate']:.1%} Bankruptcy-Rate in MC-Simulation", sym)
+            log(1, f"WARNING: {mc_equity['bankruptcy_rate']:.1%} Bankruptcy-Rate", sym)
 
         # === KELLY-ANPASSUNG FÜR ZIEL-DRAWDOWN ===
-        # Passe Kelly an, um Max DD auf ~30% zu begrenzen
-        kelly_adjustment = adjust_kelly_for_target_dd(b["tr"], fk, rrr, target_max_dd=0.30)
+        kelly_adjustment = adjust_kelly_for_target_dd(all_trades, fk, rrr, target_max_dd=0.30)
         if kelly_adjustment["scale_factor"] < 1.0:
-            log(2, f"Kelly angepasst: {fk*100:.2f}% -> {kelly_adjustment['adjusted_kelly']*100:.2f}% "
-                   f"(DD: {kelly_adjustment['original_dd']*100:.0f}% -> {kelly_adjustment['adjusted_dd']*100:.0f}%)", sym)
+            log(2, f"Kelly adjusted: {fk*100:.2f}% -> {kelly_adjustment['adjusted_kelly']*100:.2f}%", sym)
             fk = kelly_adjustment["adjusted_kelly"]
 
         # === CIRCUIT BREAKER OPTIMIERUNG ===
-        # Finde optimale Pause-Parameter
         circuit_breaker = find_optimal_circuit_breaker(
-            b["tr"], fk, rrr,
-            loss_range=(3, 8),      # Pausiere nach 3-8 Verlusten
-            pause_range=(5, 30)     # Pause für 5-30 Trades
+            all_trades, fk, rrr,
+            loss_range=(3, 8),
+            pause_range=(5, 30)
         )
 
         if circuit_breaker["optimal_pause_after_losses"] > 0:
-            log(2, f"Circuit Breaker: Pause nach {circuit_breaker['optimal_pause_after_losses']} Verlusten "
-                   f"für {circuit_breaker['optimal_pause_bars']} Trades "
-                   f"(DD: {circuit_breaker['baseline_dd']*100:.0f}% -> {circuit_breaker['optimized_dd']*100:.0f}%)", sym)
+            log(2, f"Circuit Breaker: Pause after {circuit_breaker['optimal_pause_after_losses']} losses "
+                   f"for {circuit_breaker['optimal_pause_bars']} trades", sym)
 
-        # Ensemble-Gewichte (Top-3 nach Inner Val PnL, ohne den Besten)
-        ensemble_weights = []
-        candidates.sort(key=lambda x: x.get("inner_val_pnl", 0), reverse=True)
-        top_candidates = [c for c in candidates[:3] if c != b]
-        total_inner_pnl = sum(c.get("inner_val_pnl", 0) for c in top_candidates) + b.get("inner_val_pnl", 0)
+        # Calculate metrics on aggregated trades
+        bars_per_year = tf_cfg["bars_per_hour"] * 24 * 250
+        trade_returns = [fk * rrr if r > 0 else -fk for r in all_trades]
+        sharpe = calculate_sharpe_ratio(trade_returns, trades_per_year=total_trades / len(all_trades) * bars_per_year)
+        calmar = calculate_calmar_ratio(all_trades, fk, rrr)
 
-        if total_inner_pnl > 0:
-            for c in top_candidates:
-                c_inner_pnl = c.get("inner_val_pnl", 0)
-                if c_inner_pnl > 0:
-                    ensemble_weights.append({
-                        "tp_mult": c["params"][0],
-                        "sl_mult": c["params"][1],
-                        "conf_thresh": c["params"][2],
-                        "weight": c_inner_pnl / total_inner_pnl,
-                    })
-
-        # CT-Werte extrahieren (kann Tuple sein bei separate_long_short)
-        ct_value = b["params"][2]
+        # CT values
+        ct_value = b_config["ct"]
         if isinstance(ct_value, tuple):
             ct_long, ct_short = ct_value
-            ct_display = ct_long  # Für Kompatibilität mit altem Code
+            ct_display = ct_long
         else:
             ct_long = ct_short = ct_value
             ct_display = ct_value
@@ -572,51 +526,56 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         result = {
             "symbol": sym,
             "status": "ok",
-            "pnl": b["pnl"],
+            "pnl": mean_pnl,
             "config": {
                 "kelly_risk": fk,
                 "point_value": asset.point,
                 "spread": ctx.spread,
-                "tp_mult": b["params"][0],
-                "sl_mult": b["params"][1],
+                "tp_mult": b_config["tp"],
+                "sl_mult": b_config["sl"],
                 "conf_thresh": ct_display,
-                # Separate CTs bei long_short_separate
                 "ct_long": ct_long,
                 "ct_short": ct_short,
                 "separate_long_short": ctx.separate_long_short,
-                "feature_group": b.get("feature_group", "unknown"),
-                "features": b["feats"],
-                "good_hours": b.get("good_hours", list(range(24))),
-                "ensemble": ensemble_weights if ensemble_weights else None,
+                "feature_group": representative_fold["feature_group"],
+                "features": representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", []),
+                "good_hours": list(range(24)),  # Can be computed from aggregated trades if needed
                 "dd_scaling": {"10": 0.5, "20": 0.25},
-                # Circuit Breaker Parameter (von KI optimiert)
                 "circuit_breaker": {
                     "pause_after_losses": circuit_breaker["optimal_pause_after_losses"],
                     "pause_bars": circuit_breaker["optimal_pause_bars"],
                     "enabled": circuit_breaker["optimal_pause_after_losses"] > 0,
                 },
-                # Kelly-Anpassung Info
                 "kelly_adjustment": {
                     "original_kelly": kelly_adjustment["adjusted_kelly"] / kelly_adjustment["scale_factor"] if kelly_adjustment["scale_factor"] > 0 else fk,
                     "scale_factor": kelly_adjustment["scale_factor"],
                     "target_dd": 0.30,
                 },
-                # Regime-Filter (optimaler aus Grid-Search)
-                "regime_filter": b.get("regime_filter", {}),
             },
-            "tr_trace": b["tr"],
-            "trades_detailed": b.get("trades_detailed", []),  # Volle Trade-Details mit Zeiten, Preisen etc.
-            "rrr": b["rrr"],
-            "win_rate": wr,
-            "sharpe": b["sharpe"],
-            "calmar": b["calmar"],
+            "tr_trace": all_trades,
+            "rrr": rrr,
+            "win_rate": mean_wr,
+            "sharpe": sharpe,
+            "calmar": calmar,
             "currencies": asset.currencies,
-            "grid_results": grid_results,  # Alle getesteten Kombinationen
-            # Top-N Kandidaten für Export (mit RRR-Diversität)
-            "top_candidates": top_candidates_for_export,
-            # Fold-Stabilität (aus Inner CV)
-            "fold_stability": b.get("fold_stability", 0),
-            # Monte Carlo Statistiken
+            # Walk-Forward specific results
+            "walk_forward": {
+                "n_folds": len(all_fold_results),
+                "successful_folds": len(all_fold_results),
+                "mean_win_rate": mean_wr,
+                "std_win_rate": std_wr,
+                "min_win_rate": min(win_rates),
+                "max_win_rate": max(win_rates),
+                "mean_pnl": mean_pnl,
+                "std_pnl": std_pnl,
+                "min_pnl": min(pnls),
+                "max_pnl": max(pnls),
+                "total_trades": total_trades,
+                "sample_bias_detected": sample_bias_detected,
+                "bias_ratios": bias_ratios,
+                "mean_bias_ratio": mean_bias_ratio,
+                "fold_details": all_fold_results,
+            },
             "monte_carlo": {
                 "p_value": mc_perm["p_value"],
                 "is_significant": mc_perm["is_significant"],
@@ -626,43 +585,19 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "equity_p95": mc_equity["p95_equity"],
                 "bankruptcy_rate": mc_equity["bankruptcy_rate"],
             },
-            # Equity-Smoothness
-            "smoothness": b.get("smoothness", {}),
-            # Nested CV Info
-            "nested_cv": {
-                "inner_samples": len(inner_df),
-                "holdout_samples": len(holdout_df),
-                "inner_val_pnl": b.get("inner_val_pnl", 0),
-                "holdout_pnl": holdout_result["pnl"],
-                "fold_stability": b.get("fold_stability", 0),
-            },
-            # Optimaler Regime-Filter (vom Grid-Search gefunden)
-            "regime_filter": b.get("regime_filter", {}),
         }
 
-        # Bei separater L/S Optimierung: Statistiken pro Richtung hinzufügen
-        if ctx.separate_long_short:
-            long_stats = holdout_result.get("long_stats", {})
-            short_stats = holdout_result.get("short_stats", {})
-            result["long_short_stats"] = {
-                "long": {
-                    "n_trades": long_stats.get("n_trades", 0),
-                    "win_rate": long_stats.get("win_rate", 0),
-                    "pnl": long_stats.get("pnl", 0),
-                    "ct": ct_long,
-                },
-                "short": {
-                    "n_trades": short_stats.get("n_trades", 0),
-                    "win_rate": short_stats.get("win_rate", 0),
-                    "pnl": short_stats.get("pnl", 0),
-                    "ct": ct_short,
-                },
-            }
+        log(1, f"OK (Walk-Forward) - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
+               f"p={mc_perm['p_value']:.3f} Trades={total_trades} ({time.time()-t_start:.1f}s)", sym)
 
-        smoothness_info = b.get("smoothness", {})
-        smoothness_score = smoothness_info.get("smoothness_score", 0)
-        log(1, f"OK (Holdout) - WR={wr:.1%} Sharpe={b['sharpe']:.2f} Smooth={smoothness_score:.2f} "
-               f"p={mc_perm['p_value']:.3f} Trades={len(b['tr'])} ({time.time()-t_start:.1f}s)", sym)
+        if sample_bias_detected:
+            log(1, f"  NOTE: Sample bias detected in {sum(1 for r in bias_ratios if r > 2.0)} folds", sym)
+
+        # === LIVE BIAS CHECK ===
+        # Check sofort nach jedem Asset für Echtzeit-Feedback
+        bias_check_result = check_asset_bias(result, verbose=True)
+        result["bias_check"] = bias_check_result
+
         report_done(sym, "ok")
         return result
 

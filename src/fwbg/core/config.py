@@ -259,11 +259,13 @@ class ResourceConfig:
     - min_free_ram_percent: Mindest-freier RAM (System pausiert wenn unterschritten)
     - max_cpu_percent: Maximale CPU-Auslastung (System pausiert wenn überschritten)
     - xgboost_n_jobs: XGBoost-Threading (0=auto, 1=single, -1=alle Kerne)
+    - threads_per_asset: CPU-Threads pro Asset (0=auto basierend auf GPU-Verfügbarkeit)
     """
     ram_per_worker_gb: float = 4.0
     min_free_ram_percent: float = 0.15
     max_cpu_percent: float = 0.80
     xgboost_n_jobs: int = 0
+    threads_per_asset: int = 0
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ResourceConfig":
@@ -284,6 +286,7 @@ class ResourceConfig:
             min_free_ram_percent=min_free_ram,
             max_cpu_percent=max_cpu,
             xgboost_n_jobs=data.get("xgboost_n_jobs", 0),
+            threads_per_asset=data.get("threads_per_asset", 0),
         )
 
 
