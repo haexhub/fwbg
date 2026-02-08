@@ -449,18 +449,63 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         fk = max(0, min(0.05, full_kelly / 4))
 
         if fk <= 0:
-            report_done(sym, "no_kelly")
-            return {
+            # Build FULL result with best config, even though Kelly is negative
+            # User wants to see what was found, even if not profitable
+            ct_value = b_config["ct"]
+            if isinstance(ct_value, tuple):
+                ct_long, ct_short = ct_value
+                ct_display = ct_long
+            else:
+                ct_long = ct_short = ct_value
+                ct_display = ct_value
+
+            result = {
                 "symbol": sym,
                 "status": "no_kelly",
-                "walk_forward_results": {
+                "pnl": mean_pnl,
+                "win_rate": mean_wr,
+                "rrr": rrr,
+                "sharpe": 0,  # Can't calculate without Kelly
+                "calmar": 0,
+                "best_config": {
+                    "tp_mult": b_config["tp"],
+                    "sl_mult": b_config["sl"],
+                    "conf_thresh": ct_display,
+                    "ct_long": ct_long,
+                    "ct_short": ct_short,
+                    "feature_group": representative_fold["feature_group"],
+                    "features": representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", []),
+                },
+                "walk_forward": {
                     "n_folds": len(all_fold_results),
+                    "successful_folds": len(all_fold_results),
                     "mean_win_rate": mean_wr,
+                    "std_win_rate": std_wr,
+                    "min_win_rate": min(win_rates),
+                    "max_win_rate": max(win_rates),
                     "mean_pnl": mean_pnl,
+                    "std_pnl": std_pnl,
+                    "min_pnl": min(pnls),
+                    "max_pnl": max(pnls),
+                    "total_trades": total_trades,
                     "sample_bias_detected": sample_bias_detected,
+                    "bias_ratios": bias_ratios,
+                    "mean_bias_ratio": mean_bias_ratio,
+                    "fold_details": all_fold_results,
                 },
                 "reason": f"Kelly <= 0 (WR={mean_wr*100:.1f}%, RRR={rrr:.2f})"
             }
+
+            # Run bias check
+            bias_check_result = check_asset_bias(result, verbose=True)
+            result["bias_check"] = bias_check_result
+
+            log(1, f"NO_KELLY - WR={mean_wr:.1%}±{std_wr:.1%} RRR={rrr:.2f} "
+                   f"TP={b_config['tp']} SL={b_config['sl']} CT={ct_display:.2f} "
+                   f"Trades={total_trades}", sym)
+
+            report_done(sym, "no_kelly")
+            return result
 
         # === MONTE CARLO TESTS (on aggregated trades from all folds) ===
         report_phase(sym, "Monte Carlo Validierung...")
@@ -480,13 +525,80 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         if not mc_perm["is_significant"]:
             log(1, f"SKIP - Not significant (p={mc_perm['p_value']:.3f})", sym)
-            report_done(sym, "not_significant")
-            return {
+
+            # Build FULL result with best config and Monte Carlo results
+            # User wants to see what was found, even if not statistically significant
+            bars_per_year = tf_cfg["bars_per_hour"] * 24 * 250
+            trade_returns = [fk * rrr if r > 0 else -fk for r in all_trades]
+            sharpe = calculate_sharpe_ratio(trade_returns, trades_per_year=total_trades / len(all_trades) * bars_per_year)
+            calmar = calculate_calmar_ratio(all_trades, fk, rrr)
+
+            ct_value = b_config["ct"]
+            if isinstance(ct_value, tuple):
+                ct_long, ct_short = ct_value
+                ct_display = ct_long
+            else:
+                ct_long = ct_short = ct_value
+                ct_display = ct_value
+
+            result = {
                 "symbol": sym,
                 "status": "not_significant",
-                "p_value": mc_perm["p_value"],
-                "walk_forward_folds": len(all_fold_results),
+                "pnl": mean_pnl,
+                "win_rate": mean_wr,
+                "rrr": rrr,
+                "sharpe": sharpe,
+                "calmar": calmar,
+                "kelly_risk": fk,
+                "best_config": {
+                    "kelly_risk": fk,
+                    "tp_mult": b_config["tp"],
+                    "sl_mult": b_config["sl"],
+                    "conf_thresh": ct_display,
+                    "ct_long": ct_long,
+                    "ct_short": ct_short,
+                    "feature_group": representative_fold["feature_group"],
+                    "features": representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", []),
+                },
+                "walk_forward": {
+                    "n_folds": len(all_fold_results),
+                    "successful_folds": len(all_fold_results),
+                    "mean_win_rate": mean_wr,
+                    "std_win_rate": std_wr,
+                    "min_win_rate": min(win_rates),
+                    "max_win_rate": max(win_rates),
+                    "mean_pnl": mean_pnl,
+                    "std_pnl": std_pnl,
+                    "min_pnl": min(pnls),
+                    "max_pnl": max(pnls),
+                    "total_trades": total_trades,
+                    "sample_bias_detected": sample_bias_detected,
+                    "bias_ratios": bias_ratios,
+                    "mean_bias_ratio": mean_bias_ratio,
+                    "fold_details": all_fold_results,
+                },
+                "monte_carlo": {
+                    "p_value": mc_perm["p_value"],
+                    "is_significant": False,
+                    "percentile": mc_perm["percentile"],
+                    "equity_median": mc_equity["median_equity"],
+                    "equity_p5": mc_equity["p5_equity"],
+                    "equity_p95": mc_equity["p95_equity"],
+                    "bankruptcy_rate": mc_equity["bankruptcy_rate"],
+                },
+                "reason": f"Not statistically significant (p={mc_perm['p_value']:.3f})"
             }
+
+            # Run bias check
+            bias_check_result = check_asset_bias(result, verbose=True)
+            result["bias_check"] = bias_check_result
+
+            log(1, f"NOT_SIGNIFICANT - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
+                   f"p={mc_perm['p_value']:.3f} TP={b_config['tp']} SL={b_config['sl']} "
+                   f"CT={ct_display:.2f} Trades={total_trades}", sym)
+
+            report_done(sym, "not_significant")
+            return result
 
         if mc_equity["bankruptcy_rate"] > 0.1:
             log(1, f"WARNING: {mc_equity['bankruptcy_rate']:.1%} Bankruptcy-Rate", sym)

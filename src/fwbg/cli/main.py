@@ -214,6 +214,12 @@ def run_optimizer(
             "grid_results": result.get("grid_results", []),
         }
 
+        # Walk-Forward und Bias-Check für ALLE Assets speichern (nicht nur ok)
+        if result.get("walk_forward"):
+            grid_data["walk_forward"] = result["walk_forward"]
+        if result.get("bias_check"):
+            grid_data["bias_check"] = result["bias_check"]
+
         # Bei erfolgreichen Assets: Holdout-Ergebnisse und Best-Config sofort speichern
         if status == "ok":
             grid_data["selected_config"] = result.get("config", {})
@@ -228,6 +234,23 @@ def run_optimizer(
             grid_data["nested_cv"] = result.get("nested_cv", {})
             grid_data["monte_carlo"] = result.get("monte_carlo", {})
             grid_data["smoothness"] = result.get("smoothness", {})
+
+        # Für nicht-erfolgreiche Assets: Volle Auswertung speichern
+        if status in ["no_kelly", "not_significant"]:
+            if result.get("best_config"):
+                grid_data["best_config"] = result["best_config"]
+            if result.get("pnl") is not None:
+                grid_data["metrics"] = {
+                    "pnl": result.get("pnl", 0),
+                    "win_rate": result.get("win_rate", 0),
+                    "rrr": result.get("rrr", 0),
+                    "sharpe": result.get("sharpe", 0),
+                    "calmar": result.get("calmar", 0),
+                }
+            if result.get("monte_carlo"):
+                grid_data["monte_carlo"] = result["monte_carlo"]
+            if result.get("reason"):
+                grid_data["reason"] = result["reason"]
 
         # Für nicht-erfolgreiche Assets mit Holdout-Daten (z.B. no_kelly)
         if result.get("holdout_result"):
@@ -265,16 +288,42 @@ def run_optimizer(
                     print(f"  Plot: {plots_path}/{sym}.png")
                 except Exception as e:
                     print(f"  Plot-Fehler: {e}")
+        elif status in ["no_kelly", "not_significant"]:
+            # Volle Auswertung auch für nicht-erfolgreiche Assets
+            best_config = result.get("best_config", {})
+            wr = result.get("win_rate", 0)
+            rrr = result.get("rrr", 0)
+            pnl = result.get("pnl", 0)
+            sharpe = result.get("sharpe", 0)
+
+            wf = result.get("walk_forward", {})
+            total_trades = wf.get("total_trades", 0)
+            mean_bias = wf.get("mean_bias_ratio", 0)
+
+            tp = best_config.get("tp_mult", "?")
+            sl = best_config.get("sl_mult", "?")
+            ct = best_config.get("conf_thresh", "?")
+
+            print(f"\n{'='*60}")
+            print(f"✗ {sym} - {status.upper()}")
+            print(f"{'='*60}")
+            print(f"  Best Config: TP={tp}, SL={sl}, CT={ct:.2f}")
+            print(f"  Walk-Forward: WR={wr:.1%}±{wf.get('std_win_rate', 0):.1%}, RRR={rrr:.2f}")
+            print(f"  Performance: PnL={pnl:.1f}, Sharpe={sharpe:.2f}, Trades={total_trades}")
+            print(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in wf.get('bias_ratios', [])]}")
+
+            if status == "no_kelly":
+                kelly_raw = (wr * rrr - (1 - wr)) / rrr if rrr > 0 else 0
+                print(f"  Reason: Kelly={kelly_raw:.4f} <= 0")
+            elif status == "not_significant":
+                mc = result.get("monte_carlo", {})
+                p_val = mc.get("p_value", 0)
+                print(f"  Reason: p-value={p_val:.3f} (not significant)")
+
         else:
+            # Andere Status (insufficient_data, etc.)
             grid_count = len(result.get("grid_results", []))
             print(f"\n✗ {sym} - {status} ({grid_count} Kombinationen getestet)")
-            if status == "no_kelly" and result.get("holdout_result"):
-                hr = result["holdout_result"]
-                bc = result.get("best_candidate", {})
-                params = bc.get("params", {})
-                print(f"  Best Candidate: TP={params.get('tp')}, SL={params.get('sl')}, CT={params.get('ct')}")
-                print(f"  Holdout: WR={hr['win_rate']:.1%}, Trades={hr['n_trades']}, PnL={hr['pnl']:.1f}")
-                print(f"  {hr['reason']}")
 
     print(f"\nStarte Verarbeitung von {len(files)} Assets...\n")
     progress_tracker.start()
