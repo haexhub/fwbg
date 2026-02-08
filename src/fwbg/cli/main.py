@@ -262,63 +262,64 @@ def run_optimizer(
             json.dump(grid_data, f, indent=2, default=str)
 
         # Zusammenfassung ausgeben
-        if status == "ok":
-            config = result.get("config", {})
-            tp = config.get("tp_mult", "?")
-            sl = config.get("sl_mult", "?")
-            ct = config.get("conf_thresh", "?")
-            wr = result.get("win_rate", 0)
-            rrr = result.get("rrr", 0)
-            trades = len(result.get("tr_trace", []))
-            pnl = result.get("pnl", 0)
+        if status in ["ok", "no_kelly", "not_significant"]:
+            # Config extrahieren (entweder aus "config" oder "best_config")
+            cfg = result.get("config") or result.get("best_config", {})
+            tp = cfg.get("tp_mult", "?")
+            sl = cfg.get("sl_mult", "?")
+            ct = cfg.get("conf_thresh", "?")
 
-            kelly_raw = (wr * rrr - (1 - wr)) / rrr if rrr > 0 else 0
-
-            print(f"\n{'='*60}")
-            print(f"✓ {sym} - PROFITABLE")
-            print(f"{'='*60}")
-            print(f"  Parameter: TP={tp}, SL={sl}, CT={ct:.2f}")
-            print(f"  Performance: WR={wr:.1%}, RRR={rrr:.2f}, Trades={trades}")
-            print(f"  PnL={pnl:.1f}, Kelly={kelly_raw:.4f}")
-
-            # Plot erstellen
-            if result.get("tr_trace") and plots_path:
-                try:
-                    create_asset_plot(result, plots_path)
-                    print(f"  Plot: {plots_path}/{sym}.png")
-                except Exception as e:
-                    print(f"  Plot-Fehler: {e}")
-        elif status in ["no_kelly", "not_significant"]:
-            # Volle Auswertung auch für nicht-erfolgreiche Assets
-            best_config = result.get("best_config", {})
+            # Metriken
             wr = result.get("win_rate", 0)
             rrr = result.get("rrr", 0)
             pnl = result.get("pnl", 0)
             sharpe = result.get("sharpe", 0)
+            calmar = result.get("calmar", 0)
 
+            # Walk-Forward
             wf = result.get("walk_forward", {})
-            total_trades = wf.get("total_trades", 0)
+            std_wr = wf.get("std_win_rate", 0)
+            std_pnl = wf.get("std_pnl", 0)
+            n_folds = wf.get("n_folds", 0)
             mean_bias = wf.get("mean_bias_ratio", 0)
+            bias_ratios = wf.get("bias_ratios", [])
+            total_trades = wf.get("total_trades", len(result.get("tr_trace", [])))
 
-            tp = best_config.get("tp_mult", "?")
-            sl = best_config.get("sl_mult", "?")
-            ct = best_config.get("conf_thresh", "?")
+            # Monte Carlo
+            mc = result.get("monte_carlo", {})
+            p_value = mc.get("p_value", 0)
 
+            # Kelly
+            kelly_raw = (wr * rrr - (1 - wr)) / rrr if rrr > 0 else 0
+            kelly_risk = cfg.get("kelly_risk", 0)
+
+            # Header
+            status_symbol = "✓" if status == "ok" else "✗"
+            status_text = "PROFITABLE" if status == "ok" else status.upper()
             print(f"\n{'='*60}")
-            print(f"✗ {sym} - {status.upper()}")
+            print(f"{status_symbol} {sym} - {status_text}")
             print(f"{'='*60}")
-            print(f"  Best Config: TP={tp}, SL={sl}, CT={ct:.2f}")
-            print(f"  Walk-Forward: WR={wr:.1%}±{wf.get('std_win_rate', 0):.1%}, RRR={rrr:.2f}")
-            print(f"  Performance: PnL={pnl:.1f}, Sharpe={sharpe:.2f}, Trades={total_trades}")
-            print(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in wf.get('bias_ratios', [])]}")
 
-            if status == "no_kelly":
-                kelly_raw = (wr * rrr - (1 - wr)) / rrr if rrr > 0 else 0
+            # Details
+            print(f"  Best Config: TP={tp}, SL={sl}, CT={ct:.2f}")
+            print(f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}")
+            print(f"  Performance: Sharpe={sharpe:.2f}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
+            print(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
+
+            # Status-spezifische Zeilen
+            if status == "ok":
+                print(f"  Kelly: {kelly_raw:.4f} → Risk={kelly_risk:.4f}, p={p_value:.3f}")
+                # Plot erstellen
+                if result.get("tr_trace") and plots_path:
+                    try:
+                        create_asset_plot(result, plots_path)
+                        print(f"  Plot: {plots_path}/{sym}.png")
+                    except Exception as e:
+                        print(f"  Plot-Fehler: {e}")
+            elif status == "no_kelly":
                 print(f"  Reason: Kelly={kelly_raw:.4f} <= 0")
             elif status == "not_significant":
-                mc = result.get("monte_carlo", {})
-                p_val = mc.get("p_value", 0)
-                print(f"  Reason: p-value={p_val:.3f} (not significant)")
+                print(f"  Reason: p-value={p_value:.3f} (not significant)")
 
         else:
             # Andere Status (insufficient_data, etc.)
