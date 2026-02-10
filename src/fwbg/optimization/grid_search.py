@@ -8,6 +8,8 @@ Enthält:
 - _process_feature_groups_parallel: Parallele Feature-Gruppen-Verarbeitung
 """
 import time
+from typing import Tuple, Optional, List
+
 import numpy as np
 import multiprocessing as mp
 import psutil
@@ -18,6 +20,70 @@ from fwbg.utils.progress import report_progress, report_phase, set_parallel_mode
 from fwbg.utils.logging import log
 from fwbg.utils.xgb_config import set_xgboost_n_jobs, is_gpu_available
 from .nested_cv import run_inner_cv
+
+
+def select_features_for_group(
+    inner_folds: list,
+    group_features: list,
+    ctx,
+    sym: str,
+) -> Tuple[Optional[List[str]], Optional[List[str]]]:
+    """
+    Führt Feature Selection einmal pro Feature-Gruppe durch.
+
+    Verwendet den ERSTEN Inner Fold für Feature Selection.
+    Dies passiert VOR dem Grid-Search und reduziert Boruta-Läufe drastisch.
+
+    Args:
+        inner_folds: Liste von (train_df, val_df) Tuples
+        group_features: Features dieser Gruppe
+        ctx: SimulationContext
+        sym: Symbol für Logging
+
+    Returns:
+        Tuple von (selected_features_long, selected_features_short)
+    """
+    from .nested_cv import select_features_from_fold, compute_targets
+
+    if not inner_folds or len(group_features) < 3:
+        return None, None
+
+    # Verwende ersten Inner Fold für Feature Selection
+    train_df, _ = inner_folds[0]
+
+    # Berechne Targets mit Default TP/SL (Median der Grid-Werte)
+    # Feature Selection ist unabhängig von TP/SL!
+    default_tp = ctx.grid_tp[len(ctx.grid_tp) // 2] if ctx.grid_tp else 20
+    default_sl = ctx.grid_sl[len(ctx.grid_sl) // 2] if ctx.grid_sl else 30
+
+    targets_long, targets_short, has_long, has_short = compute_targets(
+        train_df, default_tp, default_sl, ctx, timeout_bars=None
+    )
+
+    selected_long = None
+    selected_short = None
+
+    if has_long:
+        selected_long, _ = select_features_from_fold(
+            train_df, targets_long, group_features, ctx.min_trades,
+            feature_selection=ctx.feature_selection,
+            max_features=ctx.max_features,
+            min_z_score=ctx.min_z_score,
+        )
+        if selected_long:
+            log(2, f"  Feature Selection (Long): {len(selected_long)} Features ausgewählt", sym)
+
+    if has_short:
+        selected_short, _ = select_features_from_fold(
+            train_df, targets_short, group_features, ctx.min_trades,
+            feature_selection=ctx.feature_selection,
+            max_features=ctx.max_features,
+            min_z_score=ctx.min_z_score,
+        )
+        if selected_short:
+            log(2, f"  Feature Selection (Short): {len(selected_short)} Features ausgewählt", sym)
+
+    return selected_long, selected_short
 
 
 def _process_single_grid_combo(
