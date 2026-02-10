@@ -826,6 +826,8 @@ def run_inner_cv(
     total_grid_combos: int,
     timeout_bars: int = None,
     cached_targets: Optional[Dict] = None,
+    selected_features_long: Optional[List[str]] = None,
+    selected_features_short: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Führt Inner Cross-Validation für eine Grid-Kombination durch.
@@ -849,8 +851,8 @@ def run_inner_cv(
         erreicht werden → Abbruch.
     """
     inner_val_pnls = []
-    selected_features_long = None
-    selected_features_short = None
+    # selected_features_long und selected_features_short kommen jetzt aus den Funktionsparametern
+    # Wenn sie None sind, wird Feature Selection lokal durchgeführt (Fallback)
     best_ct_votes = {}
 
     # Early Termination Setup
