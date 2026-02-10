@@ -98,6 +98,8 @@ def _process_single_grid_combo(
     global_grid_pos: int,
     total_grid_combos: int,
     cached_targets: dict,
+    selected_features_long: list = None,
+    selected_features_short: list = None,
 ) -> tuple:
     """
     Verarbeitet eine einzelne Grid-Kombination (TP/SL/Timeout).
@@ -115,6 +117,8 @@ def _process_single_grid_combo(
         global_grid_pos, total_grid_combos,
         timeout_bars=timeout_bars,
         cached_targets=cached_targets,
+        selected_features_long=selected_features_long,
+        selected_features_short=selected_features_short,
     )
 
     if not inner_result["success"]:
@@ -203,7 +207,9 @@ def _process_tp_sl_combo_wrapper(args):
         tp, sl, timeout_bars,
         group_features, inner_folds, ctx, regime_config,
         feature_group, global_grid_pos, total_grid_combos,
-        cached_targets
+        cached_targets,
+        selected_features_long=selected_features_long,
+        selected_features_short=selected_features_short,
     )
 
     return candidate, grid_result, combo_idx
