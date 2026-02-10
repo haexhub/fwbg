@@ -171,7 +171,8 @@ def _process_tp_sl_combo_wrapper(args):
         Tuple von (candidate_or_none, grid_result_or_none, combo_idx)
     """
     (tp, sl, timeout_bars, combo_idx, group_features, inner_folds, ctx, regime_config,
-     feature_group, grid_offset, total_grid_combos, inner_df) = args
+     feature_group, grid_offset, total_grid_combos, inner_df,
+     selected_features_long, selected_features_short) = args
 
     from .nested_cv import compute_targets_cached, slice_targets_for_fold
 
@@ -282,6 +283,20 @@ def _process_feature_group(
     total_grid_combos = ctx.total_grid_combinations()
     grid_offset = fg_idx * grid_per_fg
 
+    # === FEATURE SELECTION (einmal pro Feature-Gruppe) ===
+    # Boruta läuft hier EINMAL statt für jede TP/SL-Kombination
+    selected_features_long, selected_features_short = select_features_for_group(
+        inner_folds, group_features, ctx, sym
+    )
+
+    if not selected_features_long and not selected_features_short:
+        log(2, f"  Feature-Gruppe '{feature_group}': Keine Features selektiert - übersprungen", sym)
+        return [], []
+
+    # Reduzierte Feature-Liste für Grid-Search
+    effective_features = selected_features_long or selected_features_short or group_features
+    log(2, f"  Feature-Gruppe '{feature_group}': {len(effective_features)} selektierte Features für Grid-Search", sym)
+
     # Timeout-Werte: Bei adaptive_timeout nur [None], sonst Grid-Werte
     adaptive_timeout = ctx.exit_params.get("adaptive_timeout", False)
     if adaptive_timeout:
@@ -306,7 +321,8 @@ def _process_feature_group(
                 combos.append((
                     tp, sl, timeout_bars, combo_idx,
                     group_features, inner_folds, ctx, regime_config,
-                    feature_group, grid_offset, total_grid_combos, inner_df
+                    feature_group, grid_offset, total_grid_combos, inner_df,
+                    selected_features_long, selected_features_short
                 ))
                 combo_idx += 1
 
