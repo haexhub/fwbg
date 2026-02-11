@@ -7,12 +7,13 @@ Fractional Differentiation nach López de Prado:
 - d=1: Volle Differentiation (wie pct_change, verliert Memory)
 - d=0.3-0.5: Optimal für Trading (stationär + Memory)
 """
-from typing import List
+from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 from scipy.special import gamma
 
-from fwbg.plugins import BasePreprocessor
+from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg.pipeline.context import PipelineContext
 from fwbg.core import register_preprocessor
 
 
@@ -93,7 +94,7 @@ def _find_optimal_d(
 
 
 @register_preprocessor("fractional_diff")
-class FractionalDiffPreprocessor(BasePreprocessor):
+class FractionalDiffPreprocessor(BasePlugin):
     """
     Fractional Differentiation Preprocessor.
 
@@ -101,26 +102,50 @@ class FractionalDiffPreprocessor(BasePreprocessor):
 
     Folgt sklearn fit/transform Pattern um Lookahead Bias zu verhindern:
     - fit() lernt optimales d NUR von Train-Daten UND speichert History
-    - transform() wendet das gelernte d an (auf Train/Test/OOS)
+    - execute() wendet das gelernte d an (auf Train/Test/OOS)
 
     WICHTIG: Für Val/Test-Daten wird die in fit() gespeicherte History
     verwendet, um NaNs am Anfang zu vermeiden. Das ist kein Lookahead Bias,
     da die History aus den TRAIN-Daten stammt (zeitlich VOR Val/Test).
     """
 
+    # Required BasePlugin class attributes
+    name = "fractional_diff"
+    version = "2.0.0"
+    phase = PluginPhase.PREPROCESSING
+    stateful = True
+    cacheable = False
+
     order = 10  # Früh ausführen
 
     # Max window für frac_diff (bestimmt wie viel History wir brauchen)
     MAX_WINDOW = 500
 
+    def __init__(self) -> None:
+        """Initialize plugin instance state."""
+        super().__init__()
+        self.d_: float = 0.0
+        self.history_: pd.DataFrame | None = None
+        self.train_end_idx_ = None
+        self.columns_: List[str] = []
+
+    def validate(self) -> bool:
+        """
+        Validate that the plugin is properly configured.
+
+        Returns:
+            True if valid, False otherwise
+        """
+        return True
+
     def fit(
         self,
-        df: pd.DataFrame,
+        ctx: PipelineContext,
         auto_d: bool = True,
         default_d: float = 0.4,
         columns: List[str] = None,
         **params
-    ) -> "FractionalDiffPreprocessor":
+    ) -> None:
         """
         Lernt optimales d von Train-Daten und speichert History für spätere transforms.
 
@@ -128,14 +153,13 @@ class FractionalDiffPreprocessor(BasePreprocessor):
         um Lookahead Bias zu verhindern!
 
         Args:
-            df: Train DataFrame mit OHLC-Daten
+            ctx: PipelineContext mit Train DataFrame
             auto_d: Automatische d-Optimierung via ADF-Test (NUR auf Train-Daten!)
             default_d: Default d-Wert wenn auto_d=False
             columns: Spalten zu transformieren (default: O, H, L, C)
-
-        Returns:
-            self (fitted preprocessor)
         """
+        df = ctx.df
+
         if columns is None:
             columns = ["O", "H", "L", "C"]
 
@@ -145,8 +169,8 @@ class FractionalDiffPreprocessor(BasePreprocessor):
         if not self.columns_:
             self.d_ = 0.0  # Keine Transformation
             self.history_ = None
-            self.fitted_ = True
-            return self
+            super().fit(ctx, **params)
+            return
 
         # Optimales d finden (NUR auf Train-Daten!)
         if auto_d:
@@ -155,7 +179,7 @@ class FractionalDiffPreprocessor(BasePreprocessor):
             self.d_ = default_d
 
         # History speichern: Die letzten MAX_WINDOW Zeilen des Train-DataFrames
-        # Diese werden bei transform() von Val/Test-Daten prepended,
+        # Diese werden bei execute() von Val/Test-Daten prepended,
         # um NaNs am Anfang zu vermeiden (kein Lookahead - das sind TRAIN-Daten!)
         history_size = min(self.MAX_WINDOW, len(df))
         self.history_ = df.iloc[-history_size:].copy()
@@ -164,14 +188,13 @@ class FractionalDiffPreprocessor(BasePreprocessor):
         # um später zu erkennen ob wir Train oder Val/Test transformieren
         self.train_end_idx_ = df.index[-1]
 
-        self.fitted_ = True
-        return self
+        super().fit(ctx, **params)
 
-    def transform(
+    def execute(
         self,
-        df: pd.DataFrame,
+        ctx: PipelineContext,
         **params
-    ) -> pd.DataFrame:
+    ) -> PipelineContext:
         """
         Wendet Fractional Differentiation mit gelerntem d an.
 
@@ -183,21 +206,23 @@ class FractionalDiffPreprocessor(BasePreprocessor):
         Lookahead Bias, da die History aus TRAIN-Daten stammt!
 
         Args:
-            df: Input DataFrame mit OHLC-Daten
+            ctx: PipelineContext mit DataFrame
 
         Returns:
-            Transformierter DataFrame
+            Updated PipelineContext mit transformiertem DataFrame
 
         Raises:
             RuntimeError: Wenn fit() noch nicht aufgerufen wurde
         """
-        if not self.fitted_:
+        if not self._fitted:
             raise RuntimeError(
-                "FractionalDiffPreprocessor: fit() must be called before transform()"
+                "FractionalDiffPreprocessor: fit() must be called before execute()"
             )
 
+        df = ctx.df
+
         if not self.columns_ or self.d_ == 0.0:
-            return df
+            return ctx
 
         # Prüfe ob das Train-Daten oder Val/Test-Daten sind
         # Train-Daten: Erster Index <= train_end_idx (überlappend oder identisch)
@@ -243,10 +268,12 @@ class FractionalDiffPreprocessor(BasePreprocessor):
         # Metadata speichern
         df.attrs["frac_diff_d"] = self.d_
 
-        return df
+        # Update context with transformed DataFrame
+        ctx.df = df
+        return ctx
 
     @classmethod
-    def get_default_params(cls) -> dict:
+    def get_default_params(cls) -> Dict[str, Any]:
         return {
             "auto_d": True,
             "default_d": 0.4,
