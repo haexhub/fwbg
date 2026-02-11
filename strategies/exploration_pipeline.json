@@ -1,0 +1,108 @@
+{
+  "name": "Exploration Pipeline",
+  "description": "Example strategy using the new pipeline format with explicit plugin configuration",
+  "tags": ["exploration", "pipeline", "ml_driven"],
+  "hypothesis": "ML learns optimal features and market conditions - no hard filters, maximum feature diversity",
+  "expected_outcome": "Identification of important features through Boruta feature selection",
+
+  "pipeline": {
+    "preprocessing": [
+      {
+        "name": "fractional_diff",
+        "params": {
+          "auto_d": true,
+          "default_d": 0.4,
+          "columns": ["O", "H", "L", "C"]
+        }
+      }
+    ],
+    "indicators": [
+      {"name": "trend", "params": {"ema_periods": [8, 21, 50, 100, 200]}},
+      {"name": "momentum", "params": {"rsi_periods": [7, 14, 21]}},
+      {"name": "volatility", "params": {"atr_periods": [7, 14, 21]}},
+      {"name": "regime", "params": {"hurst_windows": [100, 200]}},
+      {"name": "structure", "params": {}},
+      {"name": "risk", "params": {"dd_windows": [50, 100]}},
+      {"name": "price_action", "params": {}},
+      {"name": "time_season", "params": {}},
+      {"name": "distribution", "params": {"windows": [20, 50]}},
+      {"name": "dynamics", "params": {}},
+      {"name": "multi_timeframe", "params": {}},
+      {"name": "cross_features", "params": {}},
+      {"name": "ichimoku", "params": {}},
+      {"name": "microstructure", "params": {}},
+      {"name": "macro_surprise", "params": {}}
+    ],
+    "feature_selection": [
+      {
+        "name": "boruta",
+        "params": {
+          "max_features": 40,
+          "n_estimators": 100,
+          "max_iter": 50
+        }
+      }
+    ]
+  },
+
+  "exit_strategy": "atr_based",
+  "exit_params": {
+    "atr_period": 14
+  },
+
+  "grids": {
+    "FOREX": {
+      "tp": [1.0, 1.5, 2.0, 2.5, 3.0],
+      "sl": [1.0, 1.5, 2.0],
+      "ct": [0.50, 0.52, 0.55, 0.58, 0.60],
+      "timeout_bars": [null]
+    },
+    "CRYPTO": {
+      "tp": [1.5, 2.0, 2.5, 3.0, 4.0],
+      "sl": [1.0, 1.5, 2.0, 2.5],
+      "ct": [0.50, 0.52, 0.55, 0.58, 0.60],
+      "timeout_bars": [null]
+    },
+    "INDEX": {
+      "tp": [1.0, 1.5, 2.0, 2.5],
+      "sl": [1.0, 1.5, 2.0],
+      "ct": [0.50, 0.52, 0.55, 0.60],
+      "timeout_bars": [null]
+    }
+  },
+
+  "model": {
+    "type": "xgboost",
+    "architecture": "unified",
+    "trade_directions": ["long", "short"],
+    "hyperparameters": {
+      "n_estimators": 200,
+      "max_depth": 5,
+      "learning_rate": 0.1,
+      "random_state": 42
+    }
+  },
+
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8,
+    "oos_size": 4000,
+    "min_trades": 50,
+    "holdout_ratio": 0.20,
+    "n_inner_folds": 5
+  },
+
+  "filters": {
+    "min_rrr": 0.0,
+    "min_trades": 50,
+    "min_annual_return": 10.0,
+    "max_drawdown": 1.0,
+    "min_sharpe": 0.0
+  },
+
+  "resources": {
+    "ram_per_worker_gb": 4.0,
+    "min_free_ram_percent": 15,
+    "max_cpu_percent": 80
+  }
+}
