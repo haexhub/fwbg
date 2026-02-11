@@ -143,7 +143,7 @@ class PluginRegistry:
 
         return results
 
-    def discover_from_directory(self, directory: Path) -> None:
+    def discover_from_directory(self, directory: Path) -> List[str]:
         """
         Discover plugins from directories with manifest.json.
 
@@ -153,11 +153,15 @@ class PluginRegistry:
 
         Args:
             directory: Directory to scan for plugin packages
+
+        Returns:
+            List of discovered plugin names
         """
+        discovered: List[str] = []
         directory = Path(directory)
 
         if not directory.is_dir():
-            return
+            return discovered
 
         # Scan for subdirectories
         for subdir in directory.iterdir():
@@ -205,10 +209,13 @@ class PluginRegistry:
                         and not inspect.isabstract(attr)
                     ):
                         self.register(attr)
+                        discovered.append(attr.name)
 
             except Exception as e:
                 logger.warning(f"Failed to load plugin package from {subdir}: {e}")
                 continue
+
+        return discovered
 
     def get_manifest(self, package_name: str) -> dict:
         """
@@ -221,6 +228,56 @@ class PluginRegistry:
             The manifest dictionary
         """
         return self._manifests.get(package_name, {})
+
+    def auto_discover(self) -> List[str]:
+        """
+        Automatically discover plugins from core and user directories.
+
+        Discovers plugins from:
+        1. Core builtins (indicators, preprocessing)
+        2. User plugins (~/.fwbg/plugins/)
+
+        Returns:
+            List of discovered plugin names
+        """
+        discovered: List[str] = []
+
+        # Core plugins - indicators
+        core_indicators = get_core_plugins_dir() / "indicators"
+        if core_indicators.exists():
+            discovered.extend(self.discover_from_directory(core_indicators))
+
+        # Core plugins - preprocessing
+        core_preprocessing = get_core_plugins_dir() / "preprocessing"
+        if core_preprocessing.exists():
+            discovered.extend(self.discover_from_directory(core_preprocessing))
+
+        # User plugins (can override core)
+        user_dir = get_user_plugins_dir()
+        if user_dir.exists():
+            discovered.extend(self.discover_from_directory(user_dir))
+
+        return discovered
+
+
+def get_user_plugins_dir() -> Path:
+    """
+    Get user plugins directory (~/.fwbg/plugins/).
+
+    Returns:
+        Path to user plugins directory
+    """
+    return Path.home() / ".fwbg" / "plugins"
+
+
+def get_core_plugins_dir() -> Path:
+    """
+    Get core plugins directory (builtins).
+
+    Returns:
+        Path to core plugins directory
+    """
+    return Path(__file__).parent.parent / "builtins"
 
 
 # Global registry singleton

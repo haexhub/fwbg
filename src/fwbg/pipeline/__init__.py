@@ -39,6 +39,8 @@ from fwbg.pipeline.registry import (
     PluginValidationError,
     get_registry,
     reset_registry,
+    get_user_plugins_dir,
+    get_core_plugins_dir,
 )
 from fwbg.pipeline.config import (
     PluginConfig,
@@ -59,6 +61,8 @@ __all__ = [
     "PluginValidationError",
     "get_registry",
     "reset_registry",
+    "get_user_plugins_dir",
+    "get_core_plugins_dir",
     # Config
     "PluginConfig",
     "PipelineConfig",

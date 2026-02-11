@@ -1,0 +1,8 @@
+{
+  "name": "custom_indicator",
+  "version": "1.0.0",
+  "description": "Example custom indicator plugin for FWBG",
+  "phase": "indicators",
+  "author": "Your Name",
+  "dependencies": ["numpy", "pandas"]
+}
