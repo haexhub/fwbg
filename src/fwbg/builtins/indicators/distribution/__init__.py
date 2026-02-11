@@ -18,10 +18,12 @@ import pandas as pd
 from fwbg.plugins import BaseIndicator
 from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core import register_indicator
+from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg.pipeline.context import PipelineContext
 
 
 @register_indicator("distribution")
-class DistributionIndicators(BaseIndicator):
+class DistributionIndicators(BasePlugin):
     """
     Return-Verteilungs-Features.
 
@@ -32,7 +34,41 @@ class DistributionIndicators(BaseIndicator):
     - Skewness/Kurtosis Änderungen
     """
 
+    # BasePlugin required attributes
+    name = "distribution"
+    version = "2.0.0"
+    phase = PluginPhase.INDICATORS
+
+    # Optional attributes
+    stateful = False
+    cacheable = True
+
+    # Legacy attribute for backwards compatibility
     group = "distribution"
+
+    def __init__(self) -> None:
+        """Initialize DistributionIndicators plugin."""
+        super().__init__()
+        self._feature_columns: List[str] = []
+
+    def validate(self) -> bool:
+        """Validate that the plugin is properly configured."""
+        return True
+
+    def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
+        """
+        Execute the distribution indicators on the pipeline context.
+
+        Args:
+            ctx: Pipeline context with DataFrame
+            **params: Optional parameters for compute()
+
+        Returns:
+            Updated pipeline context with distribution indicator columns
+        """
+        result_df = self.compute(ctx.df, **params)
+        ctx.df = result_df
+        return ctx
 
     def compute(
         self,
