@@ -17,10 +17,12 @@ from typing import List
 from fwbg.plugins import BaseIndicator
 from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core.registry import register_indicator
+from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg.pipeline.context import PipelineContext
 
 
 @register_indicator("microstructure")
-class MicrostructureIndicator(BaseIndicator):
+class MicrostructureIndicator(BasePlugin):
     """
     Microstructure/Execution Layer Features.
 
@@ -32,7 +34,41 @@ class MicrostructureIndicator(BaseIndicator):
     - Rolling Features: Akkumulierte Imbalances
     """
 
+    # BasePlugin required attributes
+    name = "microstructure"
+    version = "2.0.0"
+    phase = PluginPhase.INDICATORS
+
+    # Optional attributes
+    stateful = False
+    cacheable = True
+
+    # Legacy attribute for backwards compatibility
     group = "microstructure"
+
+    def __init__(self) -> None:
+        """Initialize MicrostructureIndicator plugin."""
+        super().__init__()
+        self._feature_columns: List[str] = []
+
+    def validate(self) -> bool:
+        """Validate that the plugin is properly configured."""
+        return True
+
+    def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
+        """
+        Execute the microstructure indicators on the pipeline context.
+
+        Args:
+            ctx: Pipeline context with DataFrame
+            **params: Optional parameters for compute()
+
+        Returns:
+            Updated pipeline context with microstructure indicator columns
+        """
+        result_df = self.compute(ctx.df, **params)
+        ctx.df = result_df
+        return ctx
 
     def compute(
         self,
