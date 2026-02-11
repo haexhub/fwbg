@@ -22,6 +22,8 @@ import ta
 from fwbg.plugins import BaseIndicator
 from fwbg.plugins.indicator import safe_divide, shift_features
 from fwbg.core import register_indicator
+from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg.pipeline.context import PipelineContext
 
 
 def _bars_since_event(event_series: pd.Series) -> pd.Series:
@@ -57,7 +59,7 @@ def _compute_rolling_cvar(
 
 
 @register_indicator("risk")
-class RiskIndicators(BaseIndicator):
+class RiskIndicators(BasePlugin):
     """
     Risk/Tail-Risk Features.
 
@@ -69,7 +71,41 @@ class RiskIndicators(BaseIndicator):
     - Correlation Features (SPX, VIX - falls verfügbar)
     """
 
+    # BasePlugin required attributes
+    name = "risk"
+    version = "2.0.0"
+    phase = PluginPhase.INDICATORS
+
+    # Optional attributes
+    stateful = False
+    cacheable = True
+
+    # Legacy attribute for backwards compatibility
     group = "risk"
+
+    def __init__(self) -> None:
+        """Initialize RiskIndicators plugin."""
+        super().__init__()
+        self._feature_columns: List[str] = []
+
+    def validate(self) -> bool:
+        """Validate that the plugin is properly configured."""
+        return True
+
+    def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
+        """
+        Execute the risk indicators on the pipeline context.
+
+        Args:
+            ctx: Pipeline context with DataFrame
+            **params: Optional parameters for compute()
+
+        Returns:
+            Updated pipeline context with risk indicator columns
+        """
+        result_df = self.compute(ctx.df, **params)
+        ctx.df = result_df
+        return ctx
 
     def compute(
         self,
