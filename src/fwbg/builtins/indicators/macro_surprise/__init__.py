@@ -17,10 +17,12 @@ from typing import List
 from fwbg.plugins import BaseIndicator
 from fwbg.plugins.indicator import shift_features, safe_divide
 from fwbg.core.registry import register_indicator
+from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg.pipeline.context import PipelineContext
 
 
 @register_indicator("macro_surprise")
-class MacroSurpriseIndicator(BaseIndicator):
+class MacroSurpriseIndicator(BasePlugin):
     """
     Macro Surprise / Information Flow Features.
 
@@ -31,7 +33,41 @@ class MacroSurpriseIndicator(BaseIndicator):
     - Return Decomposition: Intraday vs. Overnight
     """
 
+    # BasePlugin required attributes
+    name = "macro_surprise"
+    version = "2.0.0"
+    phase = PluginPhase.INDICATORS
+
+    # Optional attributes
+    stateful = False
+    cacheable = True
+
+    # Legacy attribute for backwards compatibility
     group = "macro_surprise"
+
+    def __init__(self) -> None:
+        """Initialize MacroSurpriseIndicator plugin."""
+        super().__init__()
+        self._feature_columns: List[str] = []
+
+    def validate(self) -> bool:
+        """Validate that the plugin is properly configured."""
+        return True
+
+    def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
+        """
+        Execute the macro surprise indicators on the pipeline context.
+
+        Args:
+            ctx: Pipeline context with DataFrame
+            **params: Optional parameters for compute()
+
+        Returns:
+            Updated pipeline context with macro surprise indicator columns
+        """
+        result_df = self.compute(ctx.df, **params)
+        ctx.df = result_df
+        return ctx
 
     def compute(
         self,
