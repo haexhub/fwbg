@@ -1,0 +1,8 @@
+{
+  "name": "microstructure",
+  "version": "2.0.0",
+  "description": "Market microstructure indicators including bid-ask spread and volume analysis",
+  "phase": "indicators",
+  "author": "FWBG Core Team",
+  "dependencies": ["numpy", "pandas"]
+}

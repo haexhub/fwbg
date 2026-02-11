@@ -1,0 +1,8 @@
+{
+  "name": "risk",
+  "version": "2.0.0",
+  "description": "Risk indicators including drawdown metrics and volatility-adjusted measures",
+  "phase": "indicators",
+  "author": "FWBG Core Team",
+  "dependencies": ["numpy", "pandas"]
+}

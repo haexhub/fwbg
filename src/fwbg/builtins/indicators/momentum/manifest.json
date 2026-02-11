@@ -1,0 +1,8 @@
+{
+  "name": "momentum",
+  "version": "2.0.0",
+  "description": "Momentum indicators including RSI, Stochastic, CCI, and Williams %R",
+  "phase": "indicators",
+  "author": "FWBG Core Team",
+  "dependencies": ["numpy", "pandas"]
+}
