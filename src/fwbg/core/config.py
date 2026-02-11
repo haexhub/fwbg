@@ -295,17 +295,29 @@ class StrategyConfig:
     """
     Zentrale Konfigurationsklasse für eine Trading-Strategie.
 
-    Neue Plugin-basierte Struktur:
-    - indicators: Liste der zu verwendenden Indicator-Plugins
-    - exit_strategy: Name des Exit-Strategy-Plugins
-    - feature_selector: Name des Feature-Selector-Plugins
-    - preprocessing: Liste der Preprocessor-Plugins
+    Supports two configuration formats:
+
+    1. New Pipeline Format (preferred):
+       "pipeline": {
+         "preprocessing": [{"name": "...", "params": {...}}],
+         "indicators": [{"name": "...", "params": {...}}],
+         "feature_selection": [{"name": "...", "params": {...}}]
+       }
+
+    2. Legacy Format (backwards compatible):
+       "indicators": ["trend", "momentum", ...],
+       "indicator_params": {"trend": {...}, ...},
+       "preprocessing": ["fractional_diff"],
+       "preprocessing_params": {"fractional_diff": {...}}
     """
     name: str = "Default Strategy"
     description: str = ""
     tags: List[str] = field(default_factory=list)
 
-    # Plugin-Konfiguration
+    # New Pipeline Format - takes precedence if present
+    pipeline: Optional[Dict[str, Any]] = None
+
+    # Legacy Plugin-Konfiguration (used if pipeline not set)
     indicators: List[str] = field(default_factory=list)
     indicator_params: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
@@ -335,6 +347,11 @@ class StrategyConfig:
     hypothesis: str = ""
     expected_outcome: str = ""
 
+    @property
+    def uses_pipeline_format(self) -> bool:
+        """Check if strategy uses new pipeline format."""
+        return self.pipeline is not None and len(self.pipeline) > 0
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StrategyConfig":
         """Erstellt StrategyConfig aus Dictionary (z.B. aus JSON-Datei)."""
@@ -342,18 +359,55 @@ class StrategyConfig:
         for asset_class, grid_data in data.get("grids", {}).items():
             grids[asset_class] = GridConfig.from_dict(grid_data)
 
+        # Handle new pipeline format - extract legacy format fields for compatibility
+        pipeline = data.get("pipeline")
+        indicators = data.get("indicators", [])
+        indicator_params = data.get("indicator_params", {})
+        preprocessing = data.get("preprocessing", [])
+        preprocessing_params = data.get("preprocessing_params", {})
+        feature_selector = data.get("feature_selector", "boruta")
+        feature_params = data.get("feature_params", {})
+
+        # If pipeline format is used, extract legacy-compatible config
+        if pipeline:
+            # Extract indicators from pipeline
+            if not indicators and "indicators" in pipeline:
+                for plugin in pipeline["indicators"]:
+                    name = plugin.get("name", "")
+                    if name and name not in indicators:
+                        indicators.append(name)
+                        if plugin.get("params"):
+                            indicator_params[name] = plugin["params"]
+
+            # Extract preprocessing from pipeline
+            if not preprocessing and "preprocessing" in pipeline:
+                for plugin in pipeline["preprocessing"]:
+                    name = plugin.get("name", "")
+                    if name and name not in preprocessing:
+                        preprocessing.append(name)
+                        if plugin.get("params"):
+                            preprocessing_params[name] = plugin["params"]
+
+            # Extract feature selection from pipeline
+            if "feature_selection" in pipeline and pipeline["feature_selection"]:
+                fs_plugin = pipeline["feature_selection"][0]
+                feature_selector = fs_plugin.get("name", feature_selector)
+                if fs_plugin.get("params"):
+                    feature_params = fs_plugin["params"]
+
         return cls(
             name=data.get("name", "Default Strategy"),
             description=data.get("description", ""),
             tags=data.get("tags", []),
-            indicators=data.get("indicators", []),
-            indicator_params=data.get("indicator_params", {}),
+            pipeline=pipeline,
+            indicators=indicators,
+            indicator_params=indicator_params,
             exit_strategy=data.get("exit_strategy", "atr_based"),
             exit_params=data.get("exit_params", {}),
-            feature_selector=data.get("feature_selector", "boruta"),
-            feature_params=data.get("feature_params", {}),
-            preprocessing=data.get("preprocessing", []),
-            preprocessing_params=data.get("preprocessing_params", {}),
+            feature_selector=feature_selector,
+            feature_params=feature_params,
+            preprocessing=preprocessing,
+            preprocessing_params=preprocessing_params,
             grids=grids,
             assets=data.get("assets", {}),
             model=ModelConfig.from_dict(data.get("model", {})),
