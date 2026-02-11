@@ -1,0 +1,8 @@
+{
+  "name": "ichimoku",
+  "version": "2.0.0",
+  "description": "Ichimoku Cloud indicators including Tenkan, Kijun, Senkou, and Chikou",
+  "phase": "indicators",
+  "author": "FWBG Core Team",
+  "dependencies": ["numpy", "pandas"]
+}

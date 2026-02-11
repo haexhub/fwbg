@@ -1,0 +1,8 @@
+{
+  "name": "trend",
+  "version": "2.0.0",
+  "description": "Trend indicators including SMA, EMA, MACD, ADX, and Bollinger Bands",
+  "phase": "indicators",
+  "author": "FWBG Core Team",
+  "dependencies": ["numpy", "pandas"]
+}

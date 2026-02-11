@@ -1,0 +1,8 @@
+{
+  "name": "multi_timeframe",
+  "version": "2.0.0",
+  "description": "Multi-timeframe indicators for cross-timeframe analysis",
+  "phase": "indicators",
+  "author": "FWBG Core Team",
+  "dependencies": ["numpy", "pandas"]
+}

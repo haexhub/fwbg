@@ -1,0 +1,8 @@
+{
+  "name": "time_season",
+  "version": "2.0.0",
+  "description": "Time and seasonality indicators for temporal patterns",
+  "phase": "indicators",
+  "author": "FWBG Core Team",
+  "dependencies": ["numpy", "pandas"]
+}

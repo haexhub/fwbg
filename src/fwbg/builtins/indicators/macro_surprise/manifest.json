@@ -1,0 +1,8 @@
+{
+  "name": "macro_surprise",
+  "version": "2.0.0",
+  "description": "Macroeconomic surprise indicators for fundamental analysis",
+  "phase": "indicators",
+  "author": "FWBG Core Team",
+  "dependencies": ["numpy", "pandas"]
+}
