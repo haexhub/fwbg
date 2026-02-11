@@ -17,6 +17,8 @@ import pandas as pd
 from fwbg.plugins import BaseIndicator
 from fwbg.plugins.indicator import shift_features, EPSILON
 from fwbg.core import register_indicator
+from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg.pipeline.context import PipelineContext
 
 
 def _compute_hurst_exponent(series: np.ndarray, max_lag: int = 100) -> float:
@@ -93,7 +95,7 @@ def _compute_rolling_hurst(
 
 
 @register_indicator("regime")
-class RegimeIndicators(BaseIndicator):
+class RegimeIndicators(BasePlugin):
     """
     Regime-Detection Features.
 
@@ -103,7 +105,41 @@ class RegimeIndicators(BaseIndicator):
     - Hurst-Divergenz (kurzfristig vs langfristig)
     """
 
+    # BasePlugin required attributes
+    name = "regime"
+    version = "2.0.0"
+    phase = PluginPhase.INDICATORS
+
+    # Optional attributes
+    stateful = False
+    cacheable = True
+
+    # Legacy attribute for backwards compatibility
     group = "regime"
+
+    def __init__(self) -> None:
+        """Initialize RegimeIndicators plugin."""
+        super().__init__()
+        self._feature_columns: List[str] = []
+
+    def validate(self) -> bool:
+        """Validate that the plugin is properly configured."""
+        return True
+
+    def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
+        """
+        Execute the regime indicators on the pipeline context.
+
+        Args:
+            ctx: Pipeline context with DataFrame
+            **params: Optional parameters for compute()
+
+        Returns:
+            Updated pipeline context with regime indicator columns
+        """
+        result_df = self.compute(ctx.df, **params)
+        ctx.df = result_df
+        return ctx
 
     def compute(
         self,

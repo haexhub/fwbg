@@ -10,10 +10,12 @@ import ta
 from fwbg.plugins import BaseIndicator
 from fwbg.plugins.indicator import shift_features
 from fwbg.core import register_indicator
+from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg.pipeline.context import PipelineContext
 
 
 @register_indicator("momentum")
-class MomentumIndicators(BaseIndicator):
+class MomentumIndicators(BasePlugin):
     """
     Momentum-Indikatoren für Trading-Strategien.
 
@@ -25,7 +27,41 @@ class MomentumIndicators(BaseIndicator):
     - Rate of Change (5, 10, 20 Perioden)
     """
 
+    # BasePlugin required attributes
+    name = "momentum"
+    version = "2.0.0"
+    phase = PluginPhase.INDICATORS
+
+    # Optional attributes
+    stateful = False
+    cacheable = True
+
+    # Legacy attribute for backwards compatibility
     group = "momentum"
+
+    def __init__(self) -> None:
+        """Initialize MomentumIndicators plugin."""
+        super().__init__()
+        self._feature_columns: List[str] = []
+
+    def validate(self) -> bool:
+        """Validate that the plugin is properly configured."""
+        return True
+
+    def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
+        """
+        Execute the momentum indicators on the pipeline context.
+
+        Args:
+            ctx: Pipeline context with DataFrame
+            **params: Optional parameters for compute()
+
+        Returns:
+            Updated pipeline context with momentum indicator columns
+        """
+        result_df = self.compute(ctx.df, **params)
+        ctx.df = result_df
+        return ctx
 
     def compute(
         self,
