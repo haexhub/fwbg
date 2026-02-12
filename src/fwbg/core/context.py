@@ -5,10 +5,23 @@ Wird durch den gesamten Simulationsprozess gereicht und enthält alle
 Parameter die für eine einzelne Asset-Optimierung benötigt werden.
 """
 from dataclasses import dataclass, field
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .config import StrategyConfig
+
+
+def _get_first_or_none(items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Get first item from list or None if empty."""
+    return items[0] if items else None
+
+
+def _get_feature_param(strategy: "StrategyConfig", param: str, default: Any) -> Any:
+    """Get a parameter from the first feature_selection plugin."""
+    feature_plugins = strategy.get_feature_selection()
+    if feature_plugins:
+        return feature_plugins[0].get("params", {}).get(param, default)
+    return default
 
 
 @dataclass
@@ -67,9 +80,9 @@ class SimulationContext:
     long_enabled: bool = True
     short_enabled: bool = True
 
-    # Features (Indicator-Plugins)
-    feature_groups: List[str] = None
-    feature_selection: str = "boruta"
+    # Features (from Pipeline)
+    indicator_plugins: List[dict] = None  # List of {"name": ..., "params": ...}
+    feature_selection_plugin: dict = None  # {"name": ..., "params": ...}
     max_features: int = 0
     min_z_score: float = 0.3  # Boruta Z-Score Threshold
 
@@ -90,6 +103,11 @@ class SimulationContext:
     max_cpu_percent: float = 0.90  # Maximal 90% CPU nutzen
     xgboost_n_jobs: int = 0  # 0 = Auto, 1 = Single-threaded, -1 = Alle Kerne
 
+    # Validation
+    n_inner_folds: int = 5  # Anzahl Inner-Folds für Nested CV
+    embargo_bars: int = 0  # Embargo-Gap zwischen Train/Test Folds (AFML Ch. 7)
+    sample_weights: bool = False  # Uniqueness-basierte Sample Weights (AFML Ch. 4)
+
     # Exit-Strategy (Plugin)
     exit_strategy: str = "atr_based"
     exit_params: dict = field(default_factory=dict)
@@ -97,9 +115,8 @@ class SimulationContext:
     # Model Hyperparameters (from StrategyConfig)
     model_hyperparameters: dict = field(default_factory=dict)
 
-    # Preprocessing (Plugin-basiert)
-    preprocessing: List[str] = field(default_factory=list)  # Liste von Preprocessor-Namen
-    preprocessing_params: dict = field(default_factory=dict)  # Parameters pro Preprocessor
+    # Preprocessing (from Pipeline)
+    preprocessing_plugins: List[dict] = None  # List of {"name": ..., "params": ...}
 
     @classmethod
     def create(
@@ -145,10 +162,12 @@ class SimulationContext:
             separate_long_short=grid.separate_long_short,
             long_enabled=strategy.model.long_enabled,
             short_enabled=strategy.model.short_enabled,
-            feature_groups=strategy.get_feature_groups(),
-            feature_selection=strategy.feature_selector,
-            max_features=strategy.feature_params.get("max_features", 0),
-            min_z_score=strategy.feature_params.get("min_z_score", 0.3),
+            # Pipeline: Indicators
+            indicator_plugins=strategy.get_indicators(),
+            # Pipeline: Feature Selection
+            feature_selection_plugin=_get_first_or_none(strategy.get_feature_selection()),
+            max_features=_get_feature_param(strategy, "max_features", 0),
+            min_z_score=_get_feature_param(strategy, "min_z_score", 0.3),
             # Ressourcen-Limits aus Strategy-Config (Globale Limits)
             ram_per_worker_gb=strategy.resources.ram_per_worker_gb,
             min_free_ram_percent=strategy.resources.min_free_ram_percent,
@@ -159,9 +178,12 @@ class SimulationContext:
             exit_params=strategy.exit_params,
             # Model Hyperparameters
             model_hyperparameters=strategy.model.hyperparameters,
-            # Preprocessing
-            preprocessing=strategy.preprocessing,
-            preprocessing_params=strategy.preprocessing_params,
+            # Pipeline: Preprocessing
+            preprocessing_plugins=strategy.get_preprocessing(),
+            # Validation
+            n_inner_folds=strategy.validation.n_inner_folds,
+            embargo_bars=strategy.validation.embargo_bars,
+            sample_weights=strategy.validation.sample_weights,
         )
 
     def get_long_grid(self) -> tuple:
@@ -192,19 +214,20 @@ class SimulationContext:
     def total_grid_combinations(self) -> int:
         """Berechnet Gesamtzahl der Grid-Kombinationen."""
         n_timeout = self._effective_timeout_grid_size()
-        n_groups = len(self.feature_groups) if self.feature_groups else 1
+        # With pipeline, we don't iterate over feature groups anymore
+        # All indicator plugins are applied together
 
         if self.separate_long_short:
             long_tp, long_sl, _ = self.get_long_grid()
             short_tp, short_sl, _ = self.get_short_grid()
             long_combos = len(long_tp) * len(long_sl) * n_timeout
             short_combos = len(short_tp) * len(short_sl) * n_timeout
-            return (long_combos + short_combos) * n_groups
+            return long_combos + short_combos
 
-        return len(self.grid_tp) * len(self.grid_sl) * n_timeout * n_groups
+        return len(self.grid_tp) * len(self.grid_sl) * n_timeout
 
-    def grid_combinations_per_feature_group(self) -> int:
-        """Berechnet Grid-Kombinationen pro Feature-Gruppe."""
+    def grid_combinations_per_run(self) -> int:
+        """Berechnet Grid-Kombinationen pro Run."""
         n_timeout = self._effective_timeout_grid_size()
 
         if self.separate_long_short:
@@ -216,6 +239,13 @@ class SimulationContext:
             )
 
         return len(self.grid_tp) * len(self.grid_sl) * n_timeout
+
+    @property
+    def feature_selection(self) -> str:
+        """Returns feature selection method name (for compatibility)."""
+        if self.feature_selection_plugin:
+            return self.feature_selection_plugin.get("name", "boruta")
+        return "boruta"
 
 
 # Type hint import für AssetConfig
