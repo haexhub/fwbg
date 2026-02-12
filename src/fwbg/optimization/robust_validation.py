@@ -109,6 +109,7 @@ def create_walk_forward_folds(
     test_size: int = 4000,
     min_train_size: int = 20000,
     anchored: bool = True,
+    embargo_bars: int = 0,
 ) -> List[WalkForwardFold]:
     """
     Erstellt Walk-Forward Folds.
@@ -144,12 +145,12 @@ def create_walk_forward_folds(
         if anchored:
             # Anchored: Training grows from start
             train_start = 0
-            train_end = test_start
+            train_end = test_start - embargo_bars
         else:
             # Rolling: Training window slides
             train_size = test_start // (fold_id + 1)  # Shrink training as we go
             train_start = max(0, test_start - train_size)
-            train_end = test_start
+            train_end = test_start - embargo_bars
 
         # Ensure minimum training size
         if train_end - train_start < min_train_size:

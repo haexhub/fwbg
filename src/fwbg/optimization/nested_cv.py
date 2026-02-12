@@ -30,7 +30,8 @@ def nested_cv_split(
     df: pd.DataFrame,
     holdout_ratio: float = 0.20,
     n_inner_folds: int = 5,
-    oos_size: int = 4000
+    oos_size: int = 4000,
+    embargo_bars: int = 0,
 ) -> Dict[str, Any]:
     """
     Nested Cross-Validation Split für unbiased Evaluation.
@@ -56,7 +57,7 @@ def nested_cv_split(
     for i in range(n_inner_folds):
         val_end = inner_size - (i * val_size)
         val_start = val_end - val_size
-        train_end = val_start
+        train_end = val_start - embargo_bars
 
         if train_end < val_size * 2:
             continue
