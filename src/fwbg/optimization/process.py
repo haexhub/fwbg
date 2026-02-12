@@ -18,16 +18,14 @@ from fwbg.core.config import StrategyConfig, RegimeFilterConfig
 from fwbg.data.assets import get_asset
 from fwbg.core.context import SimulationContext
 from fwbg.data.loader import load_data_aligned, load_macro_csv
-from fwbg.builtins.indicators import (
-    compute_indicator_pool, get_feature_columns, compute_regime_filter
+from fwbg.pipeline import (
+    compute_indicator_pool, get_feature_columns, compute_regime_filter,
+    calculate_param_plateau_score, select_best_plateau_candidate
 )
 from fwbg.simulation.trade import (
     calculate_sharpe_ratio, calculate_calmar_ratio,
     monte_carlo_permutation_test, monte_carlo_equity_simulation,
     adjust_kelly_for_target_dd, find_optimal_circuit_breaker, calculate_equity_smoothness
-)
-from fwbg.builtins.feature_selection.plateau import (
-    calculate_param_plateau_score, select_best_plateau_candidate
 )
 from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log
@@ -181,6 +179,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 test_size=4000,
                 min_train_size=20000,
                 anchored=True,
+                embargo_bars=ctx.embargo_bars,
             )
         except ValueError as e:
             log(1, f"SKIP - {str(e)}", sym)
@@ -198,6 +197,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # 4. Store results
 
         all_fold_results = []
+        accumulated_grid_results = []  # Sammelt grid_results über alle Folds
 
         for fold_idx, fold in enumerate(wf_folds):
             log(1, f"=== Processing Fold {fold.fold_id + 1}/{len(wf_folds)} ===", sym)
@@ -206,11 +206,62 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             def indicator_progress(name, idx, total):
                 report_phase(sym, f"Fold {fold.fold_id + 1}: Indicators {name} ({idx}/{total})")
 
-            # Train-Set: Indikatoren berechnen (nur auf Train-Daten!)
+            # Preprocessing VOR Indikatoren anwenden (López de Prado):
+            # Fracdiff macht OHLC stationär → Indikatoren auf stationären Daten.
+            # Original-OHLC wird für Targets/Trade-Simulation aufbewahrt.
             t0 = time.time()
+            indicators = strategy.get_indicators()
+            preprocessing_configs = strategy.get_preprocessing()
+
+            pp_train_raw = fold.train_df
+            pp_test_raw = fold.test_df
+            orig_train_ohlc = None
+            orig_test_ohlc = None
+            ohlc_cols = ['O', 'H', 'L', 'C']
+
+            if preprocessing_configs:
+                from fwbg.core import get_preprocessor
+                from fwbg.pipeline.context import PipelineContext
+
+                orig_train_ohlc = {col: fold.train_df[col].copy() for col in ohlc_cols}
+                orig_test_ohlc = {col: fold.test_df[col].copy() for col in ohlc_cols}
+
+                for pp_config in preprocessing_configs:
+                    pp_name = pp_config.get("name", "")
+                    pp_params = pp_config.get("params", {})
+                    try:
+                        pp_cls = get_preprocessor(pp_name)
+                        pp = pp_cls()
+
+                        # Fit auf Train-Daten (kein Lookahead)
+                        train_ctx = PipelineContext(
+                            df=pp_train_raw.copy(), symbol=sym, asset_class=ctx.asset_class
+                        )
+                        pp.fit(train_ctx, **pp_params)
+
+                        # Execute auf Train
+                        train_ctx = PipelineContext(
+                            df=pp_train_raw.copy(), symbol=sym, asset_class=ctx.asset_class
+                        )
+                        train_ctx = pp.execute(train_ctx, **pp_params)
+                        pp_train_raw = train_ctx.df
+
+                        # Execute auf Test (nutzt History vom Train-Fit)
+                        test_ctx = PipelineContext(
+                            df=pp_test_raw.copy(), symbol=sym, asset_class=ctx.asset_class
+                        )
+                        test_ctx = pp.execute(test_ctx, **pp_params)
+                        pp_test_raw = test_ctx.df
+                    except Exception as e:
+                        log(1, f"  Preprocessing {pp_name} failed: {e}", sym)
+
+                log(2, f"  Preprocessing: Train {len(fold.train_df)}→{len(pp_train_raw)}, "
+                       f"Test {len(fold.test_df)}→{len(pp_test_raw)}", sym)
+
+            # Train-Set: Indikatoren auf (ggf. preprocessed) Daten berechnen
             train_df = compute_indicator_pool(
-                fold.train_df,
-                indicators=strategy.indicators,
+                pp_train_raw,
+                indicators=indicators,
                 progress_callback=indicator_progress
             )
             train_df = train_df.copy()
@@ -218,12 +269,18 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
             # Test-Set: Indikatoren SEPARAT berechnen (kein Lookahead!)
             test_df = compute_indicator_pool(
-                fold.test_df,
-                indicators=strategy.indicators,
+                pp_test_raw,
+                indicators=indicators,
                 progress_callback=None
             )
             test_df = test_df.copy()
             test_df = test_df.dropna()
+
+            # Original-OHLC wiederherstellen (für Targets und Trade-Simulation)
+            if orig_train_ohlc:
+                for col in ohlc_cols:
+                    train_df[col] = orig_train_ohlc[col].reindex(train_df.index)
+                    test_df[col] = orig_test_ohlc[col].reindex(test_df.index)
 
             log(2, f"  Fold {fold.fold_id + 1}: Train={train_df.shape} Test={test_df.shape} ({time.time()-t0:.1f}s)", sym)
 
@@ -262,8 +319,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             candidates = []
             all_grid_results = []
 
-            # Feature-Gruppen aus Strategy-Config
-            feature_groups_to_test = ctx.feature_groups
+            # Feature-Gruppen: In der neuen Pipeline gibt es nur noch "all"
+            # Alle Indikatoren werden zusammen berechnet
+            feature_groups_to_test = ["all"]
 
             # Regime-Filter Kombinationen aus Grid (falls definiert)
             regime_filter_combinations = grid.regime_filter_grid.get_combinations()
@@ -280,7 +338,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
             # === NESTED CV: Inner Folds erstellen (auf Train-Daten dieses Folds) ===
             report_phase(sym, f"Fold {fold.fold_id + 1}: Grid-Search...")
-            cv_split = nested_cv_split(train_df, holdout_ratio=0.0, n_inner_folds=5)
+            cv_split = nested_cv_split(train_df, holdout_ratio=0.0, n_inner_folds=ctx.n_inner_folds, embargo_bars=ctx.embargo_bars)
             inner_folds = cv_split["inner_folds"]
 
             log(2, f"  Fold {fold.fold_id + 1}: Nested CV with {len(inner_folds)} inner folds", sym)
@@ -321,11 +379,25 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 n_feature_groups = len(feature_groups_to_test)
 
                 if n_feature_groups <= 1:
+                    # Single-FG: Progress-Reporting direkt hier
+                    total_grid_combos = ctx.total_grid_combinations()
+                    fold_idx_1based = fold.fold_id + 1
+                    total_folds = len(wf_folds)
+
+                    # Progress-Callback für Grid-Search Updates
+                    # (kein initialer 0/total - Feature Selection Phase wird stattdessen angezeigt)
+                    from fwbg.utils.progress import report_progress
+                    def single_fg_progress_callback(grid_count, grid_per_fg, fg_idx=None):
+                        report_progress(sym, fold_idx_1based, total_folds, "grid_search",
+                                       grid_count, total_grid_combos)
+
                     for fg_idx, feature_group in enumerate(feature_groups_to_test):
+                        report_phase(sym, f"Fold {fold_idx_1based}/{total_folds}: Feature Selection [{ctx.feature_selection}]...")
                         fg_candidates, fg_grid_results = _process_feature_group(
                             fg_idx, feature_group, full_pool, inner_folds,
                             grid, ctx, regime_config, sym, n_feature_groups,
-                            inner_df=train_df
+                            inner_df=train_df,
+                            progress_callback=single_fg_progress_callback
                         )
                         candidates.extend(fg_candidates)
                         all_grid_results.extend(fg_grid_results)
@@ -340,6 +412,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(2, f"  Fold {fold.fold_id + 1}: Grid search done, {len(candidates)} candidates", sym)
 
             grid_results = all_grid_results
+            accumulated_grid_results.extend(all_grid_results)  # Akkumuliere über alle Folds
 
             if not candidates:
                 log(2, f"  Fold {fold.fold_id + 1}: No profitable candidates, skipping", sym)
@@ -409,7 +482,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if len(all_fold_results) == 0:
             log(1, "SKIP - No successful folds", sym)
             report_done(sym, "no_successful_folds")
-            return {"symbol": sym, "status": "no_successful_folds"}
+            return {"symbol": sym, "status": "no_successful_folds", "grid_results": accumulated_grid_results}
 
         log(1, f"=== Walk-Forward Complete: {len(all_fold_results)}/{len(wf_folds)} successful folds ===", sym)
 
@@ -443,6 +516,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         representative_fold = all_fold_results[0]
         b_config = representative_fold["best_config"]
 
+        # Combine all trades from all folds (needed for all branches)
+        all_trades = []
+        for fold_result in all_fold_results:
+            all_trades.extend(fold_result["test_trades_trace"])
+
         # Calculate Kelly on aggregated results
         rrr = b_config["rrr"]
         full_kelly = (mean_wr * rrr - (1 - mean_wr)) / rrr if rrr > 0 else 0
@@ -465,8 +543,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "pnl": mean_pnl,
                 "win_rate": mean_wr,
                 "rrr": rrr,
-                "sharpe": 0,  # Can't calculate without Kelly
+                "sharpe": 0,
                 "calmar": 0,
+                "tr_trace": all_trades,
                 "best_config": {
                     "tp_mult": b_config["tp"],
                     "sl_mult": b_config["sl"],
@@ -510,11 +589,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # === MONTE CARLO TESTS (on aggregated trades from all folds) ===
         report_phase(sym, "Monte Carlo Validierung...")
 
-        # Combine all trades from all folds
-        all_trades = []
-        for fold in all_fold_results:
-            all_trades.extend(fold["test_trades_trace"])
-
         t_mc = time.time()
         mc_perm = monte_carlo_permutation_test(all_trades, n_permutations=1000)
         mc_equity = monte_carlo_equity_simulation(all_trades, fk, rrr, n_simulations=500)
@@ -550,6 +624,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "sharpe": sharpe,
                 "calmar": calmar,
                 "kelly_risk": fk,
+                "tr_trace": all_trades,
                 "best_config": {
                     "kelly_risk": fk,
                     "tp_mult": b_config["tp"],
@@ -586,7 +661,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     "equity_p95": mc_equity["p95_equity"],
                     "bankruptcy_rate": mc_equity["bankruptcy_rate"],
                 },
-                "reason": f"Not statistically significant (p={mc_perm['p_value']:.3f})"
+                "reason": f"Not statistically significant (p={mc_perm['p_value']:.3f})",
+                "grid_results": accumulated_grid_results,
             }
 
             # Run bias check
@@ -697,6 +773,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "equity_p95": mc_equity["p95_equity"],
                 "bankruptcy_rate": mc_equity["bankruptcy_rate"],
             },
+            "grid_results": accumulated_grid_results,
         }
 
         log(1, f"OK (Walk-Forward) - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
