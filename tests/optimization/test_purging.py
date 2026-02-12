@@ -145,3 +145,57 @@ class TestComputeTargetsWithDurations:
 
         np.testing.assert_array_equal(tgt_l, tgt_l2)
         np.testing.assert_array_equal(tgt_s, tgt_s2)
+
+
+class TestConcurrentLabels:
+    def test_no_overlap(self):
+        """Duration=1 → kein Overlap → alle concurrent=1."""
+        from fwbg.optimization.purging import compute_concurrent_labels
+        n = 10
+        durations = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1, 0], dtype=np.int64)
+        concurrent = compute_concurrent_labels(n, durations)
+        assert np.all(concurrent[:9] == 1.0)
+        assert concurrent[9] == 0.0
+
+    def test_full_overlap(self):
+        """Lange Durations → viel Overlap."""
+        from fwbg.optimization.purging import compute_concurrent_labels
+        n = 10
+        durations = np.array([5, 5, 5, 5, 5, 5, 5, 5, 5, 0], dtype=np.int64)
+        concurrent = compute_concurrent_labels(n, durations)
+        # Zeitpunkt 0: nur Label 0 aktiv
+        assert concurrent[0] == 1.0
+        # Zeitpunkt 4: Labels 0,1,2,3,4 alle aktiv
+        assert concurrent[4] == 5.0
+
+
+class TestSampleWeights:
+    def test_sum_to_n(self):
+        """Gewichte müssen auf n_samples normalisiert sein."""
+        from fwbg.optimization.purging import compute_sample_weights
+        n = 100
+        dur_l = np.full(n, 10, dtype=np.int64)
+        dur_s = np.full(n, 8, dtype=np.int64)
+        weights = compute_sample_weights(dur_l, dur_s, n)
+        assert abs(weights.sum() - n) < 0.01
+
+    def test_unique_higher_weight(self):
+        """Samples mit wenig Overlap bekommen höheres Gewicht."""
+        from fwbg.optimization.purging import compute_sample_weights
+        n = 20
+        dur_l = np.zeros(n, dtype=np.int64)
+        dur_l[:10] = 2    # kurze Trades → wenig Overlap
+        dur_l[10:] = 10   # lange Trades → viel Overlap
+        dur_s = np.zeros(n, dtype=np.int64)
+        weights = compute_sample_weights(dur_l, dur_s, n)
+        assert weights[:10].mean() > weights[10:].mean()
+
+    def test_zero_durations(self):
+        """Bei Duration=0 überall → uniform Gewichte."""
+        from fwbg.optimization.purging import compute_sample_weights
+        n = 50
+        dur_l = np.zeros(n, dtype=np.int64)
+        dur_s = np.zeros(n, dtype=np.int64)
+        weights = compute_sample_weights(dur_l, dur_s, n)
+        # Alle Gewichte sollten gleich 1.0 sein
+        np.testing.assert_allclose(weights, 1.0)
