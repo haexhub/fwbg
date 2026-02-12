@@ -199,3 +199,107 @@ class TestSampleWeights:
         weights = compute_sample_weights(dur_l, dur_s, n)
         # Alle Gewichte sollten gleich 1.0 sein
         np.testing.assert_allclose(weights, 1.0)
+
+
+class TestComputeTargetsCachedDurations:
+    """Integration: compute_targets_cached with return_durations=True."""
+
+    def test_fixed_strategy_returns_4_arrays(self):
+        from fwbg.optimization.targets import compute_targets_cached
+        from unittest.mock import Mock
+
+        ctx = Mock()
+        ctx.spread = 0.0003
+        ctx.max_trade_bars = None
+        ctx.exit_strategy = "fixed"
+        ctx.exit_params = {}
+
+        n = 500
+        rng = np.random.default_rng(42)
+        prices = rng.standard_normal(n).cumsum() + 1.1
+        df = pd.DataFrame({
+            "O": prices,
+            "C": prices + rng.standard_normal(n) * 0.001,
+            "H": prices + np.abs(rng.standard_normal(n) * 0.002),
+            "L": prices - np.abs(rng.standard_normal(n) * 0.002),
+        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+
+        result = compute_targets_cached(
+            df, tp=20, sl=10, ctx=ctx, timeout_bars=48,
+            exit_strategy_mode="fixed", return_durations=True,
+        )
+        assert len(result) == 4
+        tgt_l, tgt_s, dur_l, dur_s = result
+        assert tgt_l.shape == (n,)
+        assert dur_l.shape == (n,)
+        assert np.all(dur_l >= 0)
+
+    def test_fixed_without_durations_returns_2_arrays(self):
+        from fwbg.optimization.targets import compute_targets_cached
+        from unittest.mock import Mock
+
+        ctx = Mock()
+        ctx.spread = 0.0003
+        ctx.max_trade_bars = None
+
+        n = 200
+        rng = np.random.default_rng(42)
+        prices = rng.standard_normal(n).cumsum() + 1.1
+        df = pd.DataFrame({
+            "O": prices,
+            "C": prices + rng.standard_normal(n) * 0.001,
+            "H": prices + np.abs(rng.standard_normal(n) * 0.002),
+            "L": prices - np.abs(rng.standard_normal(n) * 0.002),
+        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+
+        result = compute_targets_cached(
+            df, tp=20, sl=10, ctx=ctx, timeout_bars=48,
+            exit_strategy_mode="fixed", return_durations=False,
+        )
+        assert len(result) == 2
+
+
+class TestTrainModelWithWeights:
+    """Integration: train_model accepts sample_weight parameter."""
+
+    def test_train_model_with_weights(self):
+        from fwbg.optimization.nested_cv import train_model
+        from unittest.mock import Mock
+
+        ctx = Mock()
+        ctx.model_hyperparameters = {"n_estimators": 10, "max_depth": 3}
+        ctx.min_trades = 10
+
+        n = 200
+        rng = np.random.default_rng(42)
+        df = pd.DataFrame({
+            "f1": rng.standard_normal(n),
+            "f2": rng.standard_normal(n),
+        })
+        targets = (rng.random(n) > 0.5).astype(float)
+        weights = rng.random(n) + 0.5  # positive weights
+
+        model = train_model(
+            df, targets, ["f1", "f2"], min_trades=10, ctx=ctx,
+            sample_weight=weights,
+        )
+        assert model is not None
+
+    def test_train_model_without_weights(self):
+        from fwbg.optimization.nested_cv import train_model
+        from unittest.mock import Mock
+
+        ctx = Mock()
+        ctx.model_hyperparameters = {"n_estimators": 10, "max_depth": 3}
+        ctx.min_trades = 10
+
+        n = 200
+        rng = np.random.default_rng(42)
+        df = pd.DataFrame({
+            "f1": rng.standard_normal(n),
+            "f2": rng.standard_normal(n),
+        })
+        targets = (rng.random(n) > 0.5).astype(float)
+
+        model = train_model(df, targets, ["f1", "f2"], min_trades=10, ctx=ctx)
+        assert model is not None
