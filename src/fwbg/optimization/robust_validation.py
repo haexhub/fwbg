@@ -21,8 +21,8 @@ from fwbg.optimization.nested_cv import (
     nested_cv_split,
     run_inner_cv,
     evaluate_on_holdout,
-    compute_targets,
 )
+from fwbg.optimization.targets import compute_targets
 from fwbg.core.context import SimulationContext
 
 
