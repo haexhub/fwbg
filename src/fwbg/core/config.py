@@ -1,19 +1,12 @@
 """
 StrategyConfig - Zentrale Konfigurationsklasse für Trading-Strategien.
 
-Neue Plugin-basierte Struktur ohne Legacy-Support.
+Plugin-basierte Struktur mit Pipeline-Format.
 Alle Config-Klassen sind hier definiert - keine Duplikate in anderen Modulen.
 """
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import json
-
-
-# Default Feature-Gruppen (werden durch Indicator-Plugins bereitgestellt)
-DEFAULT_FEATURE_GROUPS = [
-    "trend", "momentum", "volatility", "regime", "structure",
-    "risk", "price_action", "time_season", "distribution", "dynamics",
-]
 
 
 @dataclass
@@ -188,6 +181,8 @@ class ValidationConfig:
     min_trades: int = 50
     holdout_ratio: float = 0.20
     n_inner_folds: int = 5
+    embargo_bars: int = 0
+    sample_weights: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ValidationConfig":
@@ -198,6 +193,8 @@ class ValidationConfig:
             min_trades=data.get("min_trades", 50),
             holdout_ratio=data.get("holdout_ratio", 0.20),
             n_inner_folds=data.get("n_inner_folds", 5),
+            embargo_bars=data.get("embargo_bars", 0),
+            sample_weights=data.get("sample_weights", False),
         )
 
 
@@ -295,40 +292,23 @@ class StrategyConfig:
     """
     Zentrale Konfigurationsklasse für eine Trading-Strategie.
 
-    Supports two configuration formats:
-
-    1. New Pipeline Format (preferred):
+    Pipeline Format:
        "pipeline": {
          "preprocessing": [{"name": "...", "params": {...}}],
          "indicators": [{"name": "...", "params": {...}}],
          "feature_selection": [{"name": "...", "params": {...}}]
        }
-
-    2. Legacy Format (backwards compatible):
-       "indicators": ["trend", "momentum", ...],
-       "indicator_params": {"trend": {...}, ...},
-       "preprocessing": ["fractional_diff"],
-       "preprocessing_params": {"fractional_diff": {...}}
     """
     name: str = "Default Strategy"
     description: str = ""
     tags: List[str] = field(default_factory=list)
 
-    # New Pipeline Format - takes precedence if present
-    pipeline: Optional[Dict[str, Any]] = None
+    # Pipeline configuration
+    pipeline: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
-    # Legacy Plugin-Konfiguration (used if pipeline not set)
-    indicators: List[str] = field(default_factory=list)
-    indicator_params: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-
+    # Exit strategy
     exit_strategy: str = "atr_based"
     exit_params: Dict[str, Any] = field(default_factory=dict)
-
-    feature_selector: str = "boruta"
-    feature_params: Dict[str, Any] = field(default_factory=dict)
-
-    preprocessing: List[str] = field(default_factory=list)
-    preprocessing_params: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     # Grid-Konfiguration
     grids: Dict[str, GridConfig] = field(default_factory=dict)
@@ -347,11 +327,6 @@ class StrategyConfig:
     hypothesis: str = ""
     expected_outcome: str = ""
 
-    @property
-    def uses_pipeline_format(self) -> bool:
-        """Check if strategy uses new pipeline format."""
-        return self.pipeline is not None and len(self.pipeline) > 0
-
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StrategyConfig":
         """Erstellt StrategyConfig aus Dictionary (z.B. aus JSON-Datei)."""
@@ -359,55 +334,15 @@ class StrategyConfig:
         for asset_class, grid_data in data.get("grids", {}).items():
             grids[asset_class] = GridConfig.from_dict(grid_data)
 
-        # Handle new pipeline format - extract legacy format fields for compatibility
-        pipeline = data.get("pipeline")
-        indicators = data.get("indicators", [])
-        indicator_params = data.get("indicator_params", {})
-        preprocessing = data.get("preprocessing", [])
-        preprocessing_params = data.get("preprocessing_params", {})
-        feature_selector = data.get("feature_selector", "boruta")
-        feature_params = data.get("feature_params", {})
-
-        # If pipeline format is used, extract legacy-compatible config
-        if pipeline:
-            # Extract indicators from pipeline
-            if not indicators and "indicators" in pipeline:
-                for plugin in pipeline["indicators"]:
-                    name = plugin.get("name", "")
-                    if name and name not in indicators:
-                        indicators.append(name)
-                        if plugin.get("params"):
-                            indicator_params[name] = plugin["params"]
-
-            # Extract preprocessing from pipeline
-            if not preprocessing and "preprocessing" in pipeline:
-                for plugin in pipeline["preprocessing"]:
-                    name = plugin.get("name", "")
-                    if name and name not in preprocessing:
-                        preprocessing.append(name)
-                        if plugin.get("params"):
-                            preprocessing_params[name] = plugin["params"]
-
-            # Extract feature selection from pipeline
-            if "feature_selection" in pipeline and pipeline["feature_selection"]:
-                fs_plugin = pipeline["feature_selection"][0]
-                feature_selector = fs_plugin.get("name", feature_selector)
-                if fs_plugin.get("params"):
-                    feature_params = fs_plugin["params"]
+        pipeline = data.get("pipeline", {})
 
         return cls(
             name=data.get("name", "Default Strategy"),
             description=data.get("description", ""),
             tags=data.get("tags", []),
             pipeline=pipeline,
-            indicators=indicators,
-            indicator_params=indicator_params,
             exit_strategy=data.get("exit_strategy", "atr_based"),
             exit_params=data.get("exit_params", {}),
-            feature_selector=feature_selector,
-            feature_params=feature_params,
-            preprocessing=preprocessing,
-            preprocessing_params=preprocessing_params,
             grids=grids,
             assets=data.get("assets", {}),
             model=ModelConfig.from_dict(data.get("model", {})),
@@ -434,11 +369,17 @@ class StrategyConfig:
             )
         return GridConfig()
 
-    def get_feature_groups(self) -> List[str]:
-        """Gibt die zu testenden Feature-Gruppen zurück."""
-        if self.indicators:
-            return self.indicators
-        return DEFAULT_FEATURE_GROUPS
+    def get_indicators(self) -> List[Dict[str, Any]]:
+        """Returns configured indicator plugins from pipeline."""
+        return self.pipeline.get("indicators", [])
+
+    def get_preprocessing(self) -> List[Dict[str, Any]]:
+        """Returns configured preprocessing plugins from pipeline."""
+        return self.pipeline.get("preprocessing", [])
+
+    def get_feature_selection(self) -> List[Dict[str, Any]]:
+        """Returns configured feature selection plugins from pipeline."""
+        return self.pipeline.get("feature_selection", [])
 
     def to_dict(self) -> Dict[str, Any]:
         """Konvertiert zu Dictionary für JSON-Serialisierung."""
@@ -446,14 +387,9 @@ class StrategyConfig:
             "name": self.name,
             "description": self.description,
             "tags": self.tags,
-            "indicators": self.indicators,
-            "indicator_params": self.indicator_params,
+            "pipeline": self.pipeline,
             "exit_strategy": self.exit_strategy,
             "exit_params": self.exit_params,
-            "feature_selector": self.feature_selector,
-            "feature_params": self.feature_params,
-            "preprocessing": self.preprocessing,
-            "preprocessing_params": self.preprocessing_params,
             "grids": {
                 k: {"tp": v.tp, "sl": v.sl, "ct": v.ct, "timeout_bars": v.timeout_bars}
                 for k, v in self.grids.items()
@@ -487,8 +423,7 @@ class StrategyConfig:
         log_func(f"  Exit Strategy: {self.exit_strategy}")
         log_func(f"  Min RRR: {self.filters.min_rrr}")
         log_func(f"  Min Trades: {self.filters.min_trades}")
-        groups = self.get_feature_groups()
+        indicators = self.get_indicators()
         log_func(
-            f"  Indicators: {len(groups)} "
-            f"({', '.join(groups[:3])}{'...' if len(groups) > 3 else ''})"
+            f"  Indicators: {len(indicators)} plugins"
         )
