@@ -58,7 +58,7 @@ class TestImportPaths:
     def test_filter_features_import_in_process(self):
         """Test: filter_features_by_group wird korrekt importiert."""
         # Diese Import-Zeile in _process_feature_group sollte funktionieren
-        from fwbg.builtins.indicators import filter_features_by_group
+        from fwbg.pipeline import filter_features_by_group
 
         # Test dass die Funktion existiert und funktioniert
         features = ["trend_rsi_14", "mom_stoch_14", "vol_atr_14"]
@@ -66,13 +66,13 @@ class TestImportPaths:
         assert "trend_rsi_14" in filtered
         assert "mom_stoch_14" not in filtered
 
-    def test_nested_cv_imports(self):
-        """Test: nested_cv.py hat korrekte Imports."""
-        from fwbg.optimization.nested_cv import (
+    def test_optimization_imports(self):
+        """Test: optimization modules have correct imports."""
+        from fwbg.optimization.targets import (
             compute_targets_cached,
             slice_targets_for_fold,
-            run_inner_cv,
         )
+        from fwbg.optimization.nested_cv import run_inner_cv
 
 
 class TestSimulationContextAttributes:
@@ -139,7 +139,7 @@ class TestExitStrategyDispatch:
 
     def test_atr_based_strategy_dispatch(self):
         """Test: ATR-basierte Strategie wird korrekt aufgerufen."""
-        from fwbg.builtins.exit_strategies import get_strategy
+        from fwbg.core import get_exit_strategy as get_strategy
         from fwbg.core.context import SimulationContext
 
         # Strategie laden
@@ -174,7 +174,7 @@ class TestExitStrategyDispatch:
 
     def test_compute_targets_cached_with_atr(self):
         """Test: compute_targets_cached funktioniert mit ATR-Strategie."""
-        from fwbg.optimization.nested_cv import compute_targets_cached
+        from fwbg.optimization.targets import compute_targets_cached
         from fwbg.core.context import SimulationContext
 
         ctx = SimulationContext(
@@ -198,7 +198,7 @@ class TestExitStrategyDispatch:
 
     def test_fixed_strategy_dispatch(self):
         """Test: Fixed-Strategie funktioniert weiterhin."""
-        from fwbg.optimization.nested_cv import compute_targets_cached
+        from fwbg.optimization.targets import compute_targets_cached
         from fwbg.core.context import SimulationContext
 
         ctx = SimulationContext(
@@ -223,7 +223,7 @@ class TestFeatureGroupFiltering:
 
     def test_filter_trend_features(self):
         """Test: Trend-Features werden korrekt gefiltert."""
-        from fwbg.builtins.indicators import filter_features_by_group
+        from fwbg.pipeline import filter_features_by_group
 
         all_features = [
             "trend_rsi_14", "trend_adx_14", "trend_ema_21",
@@ -240,7 +240,7 @@ class TestFeatureGroupFiltering:
 
     def test_filter_unknown_group_returns_all(self):
         """Test: Unbekannte Gruppe gibt alle Features zurück."""
-        from fwbg.builtins.indicators import filter_features_by_group
+        from fwbg.pipeline import filter_features_by_group
 
         all_features = ["feat_a", "feat_b", "feat_c"]
 
@@ -249,15 +249,24 @@ class TestFeatureGroupFiltering:
 
         assert result == all_features
 
-    def test_strategy_feature_groups(self):
-        """Test: Strategy.get_feature_groups() funktioniert."""
+    def test_strategy_get_indicators(self):
+        """Test: Strategy.get_indicators() returns pipeline indicators."""
         strategy = StrategyConfig(
-            indicators=["trend", "momentum", "volatility"]
+            pipeline={
+                "indicators": [
+                    {"name": "trend", "params": {}},
+                    {"name": "momentum", "params": {}},
+                    {"name": "volatility", "params": {}},
+                ]
+            }
         )
 
-        groups = strategy.get_feature_groups()
+        indicators = strategy.get_indicators()
 
-        assert groups == ["trend", "momentum", "volatility"]
+        assert len(indicators) == 3
+        assert indicators[0]["name"] == "trend"
+        assert indicators[1]["name"] == "momentum"
+        assert indicators[2]["name"] == "volatility"
 
 
 class TestStrategyConfigIntegration:
@@ -305,24 +314,30 @@ class TestProcessFeatureGroup:
         from fwbg.optimization.process import _process_feature_group
 
     def test_feature_group_with_few_features(self):
-        """Test: Feature-Gruppe mit weniger als 3 Features wird übersprungen."""
-        from fwbg.optimization.process import _process_feature_group
-        from fwbg.core.context import SimulationContext
+        """Test: Feature-Gruppe mit 1 Feature funktioniert (kein Skip mehr)."""
+        from fwbg.optimization.grid_search import _process_feature_group
         from fwbg.core.config import GridConfig
+        import pandas as pd
+        import numpy as np
 
         # Mock-Context mit minimalen Attributen
         ctx = Mock()
         ctx.symbol = "TEST"
-        ctx.grid_combinations_per_feature_group = Mock(return_value=4)
-        ctx.total_grid_combinations = Mock(return_value=4)
+        ctx.grid_combinations_per_run = Mock(return_value=1)
+        ctx.total_grid_combinations = Mock(return_value=1)
         ctx.min_rrr = 0
         ctx.exit_strategy = "fixed"
         ctx.exit_params = {}
 
         grid = GridConfig(tp=[1.0], sl=[1.0], ct=[0.5])
 
-        # Nur 1 Feature (weniger als 3)
+        # Nur 1 Feature - wird jetzt verarbeitet (kein Skip bei < 3)
         full_pool = ["trend_rsi_14"]
+
+        # Dummy inner_df
+        inner_df = pd.DataFrame({
+            "trend_rsi_14": np.random.randn(100)
+        })
 
         candidates, grid_results = _process_feature_group(
             fg_idx=0,
@@ -334,8 +349,9 @@ class TestProcessFeatureGroup:
             regime_config={},
             sym="TEST",
             n_feature_groups=1,
+            inner_df=inner_df,
         )
 
-        # Sollte leer zurückkehren (übersprungen)
+        # Sollte leer zurückkehren (keine inner_folds)
         assert candidates == []
         assert grid_results == []

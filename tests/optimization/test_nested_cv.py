@@ -15,13 +15,15 @@ from unittest.mock import Mock, patch, MagicMock
 
 from fwbg.optimization.nested_cv import (
     nested_cv_split,
-    compute_targets,
-    compute_targets_cached,
-    slice_targets_for_fold,
     select_features_from_fold,
     train_model,
     run_inner_cv,
     evaluate_on_holdout,
+)
+from fwbg.optimization.targets import (
+    compute_targets,
+    compute_targets_cached,
+    slice_targets_for_fold,
     simulate_trades_sequential,
 )
 from fwbg.core.context import SimulationContext
@@ -91,8 +93,7 @@ def create_mock_context(
         "learning_rate": 0.1,
         "random_state": 42
     }
-    ctx.preprocessing = []  # No preprocessing by default
-    ctx.preprocessing_params = {}
+    ctx.preprocessing_plugins = []  # No preprocessing by default
     return ctx
 
 
@@ -557,7 +558,7 @@ class TestSeparateCTEvaluation:
 
     def test_separate_ct_returns_tuple(self):
         """Test: Separate CT gibt Tuple (ct_long, ct_short) zurück."""
-        from fwbg.optimization.nested_cv import _evaluate_separate_ct
+        from fwbg.optimization.targets import _evaluate_separate_ct
 
         df = create_test_df(500)
         ctx = create_mock_context()
@@ -585,7 +586,7 @@ class TestSeparateCTEvaluation:
 
     def test_separate_ct_early_termination_no_trades(self):
         """Test: Early Termination wenn keine Trades generiert werden."""
-        from fwbg.optimization.nested_cv import _evaluate_separate_ct
+        from fwbg.optimization.targets import _evaluate_separate_ct
 
         df = create_test_df(500)
         df["_regime_ok"] = False  # Keine Trades möglich
@@ -609,7 +610,7 @@ class TestSeparateCTEvaluation:
 
     def test_separate_ct_independent_optimization(self):
         """Test: Long und Short werden unabhängig optimiert (O(2n) statt O(n²))."""
-        from fwbg.optimization.nested_cv import _evaluate_separate_ct
+        from fwbg.optimization.targets import _evaluate_separate_ct
 
         df = create_test_df(500)
         ctx = create_mock_context()
@@ -643,7 +644,7 @@ class TestSeparateCTEvaluation:
 
     def test_separate_ct_only_short_enabled(self):
         """Test: Nur Short aktiviert, Long sollte Default-CT bekommen."""
-        from fwbg.optimization.nested_cv import _evaluate_separate_ct
+        from fwbg.optimization.targets import _evaluate_separate_ct
 
         df = create_test_df(500)
         ctx = create_mock_context()

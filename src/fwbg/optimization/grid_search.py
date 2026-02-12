@@ -15,11 +15,11 @@ import multiprocessing as mp
 import psutil
 from concurrent.futures import ThreadPoolExecutor
 
-from fwbg.builtins.indicators import filter_features_by_group
+from fwbg.pipeline import filter_features_by_group
 from fwbg.utils.progress import report_progress, report_phase, set_parallel_mode
 from fwbg.utils.logging import log
 from fwbg.utils.xgb_config import set_xgboost_n_jobs, is_gpu_available
-from .nested_cv import run_inner_cv
+from .nested_cv import run_inner_cv, select_features_from_fold
 
 
 def select_features_for_group(
@@ -43,7 +43,7 @@ def select_features_for_group(
     Returns:
         Tuple von (selected_features_long, selected_features_short)
     """
-    from .nested_cv import select_features_from_fold, compute_targets
+    from .targets import compute_targets
 
     if not inner_folds or len(group_features) < 3:
         return None, None
@@ -178,18 +178,17 @@ def _process_tp_sl_combo_wrapper(args):
      feature_group, grid_offset, total_grid_combos, inner_df,
      selected_features_long, selected_features_short) = args
 
-    from .nested_cv import compute_targets_cached, slice_targets_for_fold
+    from .targets import compute_targets_cached, slice_targets_for_fold
 
     global_grid_pos = grid_offset + combo_idx + 1
 
-    # Berechne Targets für diese Kombination
-    # WICHTIG: NUR cachen wenn KEIN Preprocessing aktiv ist!
-    # Bei Preprocessing werden die DataFrames transformiert und Targets müssen
-    # auf den transformierten Daten neu berechnet werden (in run_inner_cv).
+    # Berechne Targets für diese Kombination auf dem ORIGINALEN inner_df.
+    # Preprocessing ist bereits in _process_feature_group erledigt, und
+    # OHLC-Spalten sind in den preprocessed folds wiederhergestellt.
+    # Targets können daher immer gecacht werden.
     cached_targets = None
-    has_preprocessing = ctx.preprocessing and len(ctx.preprocessing) > 0
 
-    if inner_df is not None and not has_preprocessing:
+    if inner_df is not None:
         # Ohne Preprocessing können wir Targets vorab berechnen und cachen
         full_targets_long, full_targets_short = compute_targets_cached(
             inner_df, tp, sl, ctx, timeout_bars,
@@ -276,8 +275,13 @@ def _process_feature_group(
             log(2, f"  Feature-Gruppe '{feature_group}': {len(group_features) - len(clean_features)} Features mit inf/nan gefiltert", sym)
         group_features = clean_features
 
-    if len(group_features) < 3:
-        log(2, f"  Feature-Gruppe '{feature_group}': nur {len(group_features)} Features - übersprungen", sym)
+    if len(group_features) < 1:
+        log(2, f"  Feature-Gruppe '{feature_group}': keine Features verfügbar - übersprungen", sym)
+        # Report progress für alle Grid-Kombinationen dieser Feature-Gruppe
+        if progress_callback:
+            grid_per_fg = ctx.grid_combinations_per_run()
+            for i in range(grid_per_fg):
+                progress_callback(i + 1, grid_per_fg)
         return [], []
 
     # DIAGNOSE: Feature-Gruppen Details
@@ -285,23 +289,31 @@ def _process_feature_group(
 
     log(1, f"Feature-Gruppe {fg_idx+1}/{n_feature_groups}: {feature_group} ({len(group_features)} Features)", sym)
 
-    grid_per_fg = ctx.grid_combinations_per_feature_group()
+    grid_per_fg = ctx.grid_combinations_per_run()
     total_grid_combos = ctx.total_grid_combinations()
     grid_offset = fg_idx * grid_per_fg
 
     # === FEATURE SELECTION (einmal pro Feature-Gruppe) ===
     # Boruta läuft hier EINMAL statt für jede TP/SL-Kombination
+    # Phase-Report kommt von process.py (hat Fold-Kontext)
     selected_features_long, selected_features_short = select_features_for_group(
         inner_folds, group_features, ctx, sym
     )
 
     if not selected_features_long and not selected_features_short:
         log(2, f"  Feature-Gruppe '{feature_group}': Keine Features selektiert - übersprungen", sym)
+        # Report progress für alle Grid-Kombinationen dieser Feature-Gruppe
+        if progress_callback:
+            for i in range(grid_per_fg):
+                progress_callback(i + 1, grid_per_fg)
         return [], []
 
     # Reduzierte Feature-Liste für Grid-Search
     effective_features = selected_features_long or selected_features_short or group_features
     log(2, f"  Feature-Gruppe '{feature_group}': {len(effective_features)} selektierte Features für Grid-Search", sym)
+
+    # Preprocessing ist bereits in process.py VOR Indikator-Berechnung erledigt.
+    # Daten kommen mit Features auf preprocessed OHLC und Original-OHLC für Targets.
 
     # Timeout-Werte: Bei adaptive_timeout nur [None], sonst Grid-Werte
     adaptive_timeout = ctx.exit_params.get("adaptive_timeout", False)
@@ -313,13 +325,14 @@ def _process_feature_group(
     # Erstelle alle Kombinationen
     combos = []
     combo_idx = 0
+    skipped_count = 0  # Zählt übersprungene Combos (RRR-Filter)
 
-    skipped_combos = 0
     for tp in grid.tp:
         for sl in grid.sl:
             rrr = tp / sl
             if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                skipped_combos += len(timeout_values)
+                # RRR-Skip: Zähle nur, reporte später
+                skipped_count += len(timeout_values)
                 log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
                 continue
 
@@ -332,11 +345,6 @@ def _process_feature_group(
                 ))
                 combo_idx += 1
 
-    # Progress-Update für übersprungene Combos (alle auf einmal)
-    if skipped_combos > 0 and progress_callback:
-        for _ in range(skipped_combos):
-            progress_callback(0, grid_per_fg)
-
     candidates = []
     grid_results = []
 
@@ -348,13 +356,23 @@ def _process_feature_group(
     # 1. XGBoost nutzt intern bereits n_jobs für Threading (libgomp/OpenMP)
     # 2. Verschachtelte ThreadPools führen zu Thread-Kontention
     # 3. Feature-Gruppen-Ebene ist bereits parallelisiert
+    # Laufender Progress-Zähler (1-basiert)
+    # Berücksichtigt sowohl verarbeitete als auch übersprungene Combos
+    progress_reported = skipped_count  # Starte nach den übersprungenen
+
+    # Report übersprungene Combos (RRR-Filter) am Anfang
+    if skipped_count > 0 and progress_callback:
+        for i in range(1, skipped_count + 1):
+            progress_callback(i, grid_per_fg)
+
     try:
         for i, combo in enumerate(combos):
             try:
-                candidate, grid_result, idx = _process_tp_sl_combo_wrapper(combo)
+                candidate, grid_result, combo_idx = _process_tp_sl_combo_wrapper(combo)
+                progress_reported += 1
 
                 if progress_callback:
-                    progress_callback(idx + 1, grid_per_fg)
+                    progress_callback(progress_reported, grid_per_fg)
 
                 if candidate:
                     candidates.append(candidate)
@@ -364,6 +382,10 @@ def _process_feature_group(
                 log(1, f"  [DIAG] ERROR in combo {i}: {type(e).__name__}: {e}", sym)
                 import traceback
                 log(2, f"  [DIAG] Traceback: {traceback.format_exc()}", sym)
+                # Report progress auch bei Fehlern
+                progress_reported += 1
+                if progress_callback:
+                    progress_callback(progress_reported, grid_per_fg)
     except Exception as outer_e:
         log(1, f"  [DIAG] OUTER ERROR: {type(outer_e).__name__}: {outer_e}", sym)
 

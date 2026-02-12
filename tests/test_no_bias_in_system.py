@@ -17,7 +17,8 @@ from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from fwbg.plugins.indicator import shift_features
-from fwbg.optimization.nested_cv import compute_targets, train_model
+from fwbg.optimization.targets import compute_targets
+from fwbg.optimization.nested_cv import train_model
 from fwbg.core.context import SimulationContext
 from fwbg.simulation.numba_core import _simulate_trade_numba
 
@@ -416,10 +417,17 @@ class TestSystematicBiasInResults:
 
         walk_forward_assets = []
         non_walk_forward = []
+        skipped_assets = []  # Assets with no_candidates or error status
 
         for json_file in json_files:
             with open(json_file) as f:
                 data = json.load(f)
+
+            # Skip assets that had no candidates or errors - they can't have walk-forward data
+            status = data.get('status', '')
+            if status in ('no_candidates', 'error', 'skipped'):
+                skipped_assets.append(data['symbol'])
+                continue
 
             wf_results = data.get('walk_forward', {})
             if wf_results and 'n_folds' in wf_results:
