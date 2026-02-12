@@ -254,7 +254,8 @@ def compute_targets_cached(
     timeout_bars: int = None,
     exit_strategy_mode: str = "fixed",
     grid_params: GridParams = None,
-) -> Tuple[np.ndarray, np.ndarray]:
+    return_durations: bool = False,
+) -> tuple:
     """
     Berechnet Targets einmal auf dem gesamten DataFrame (für Caching).
 
@@ -273,22 +274,21 @@ def compute_targets_cached(
         timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
         exit_strategy_mode: "fixed" oder "atr_based"
         grid_params: GridParams-Objekt mit allen Parametern (wenn vorhanden, werden tp/sl ignoriert)
+        return_durations: Wenn True, auch Trade-Durations zurückgeben (für Sample Weights)
 
     Returns:
-        (targets_long, targets_short) - Arrays mit gleicher Länge wie full_df
+        (targets_long, targets_short) oder
+        (targets_long, targets_short, durations_long, durations_short) wenn return_durations=True
     """
     # Dispatch zu Exit-Strategie
     if exit_strategy_mode == "atr_based":
-        # ATR-basierte Exit-Strategie verwenden
         strategy_cls = get_strategy("atr_based")
         strategy = strategy_cls()
 
-        # Extra-Parameter aus Context (atr_period, min_tp_pips, etc.)
         extra = {}
         if hasattr(ctx, 'exit_params') and ctx.exit_params:
             extra = ctx.exit_params.copy()
 
-        # GridParams-Objekt erstellen
         grid_params = GridParams(
             tp_value=float(tp),
             sl_value=float(sl),
@@ -296,7 +296,9 @@ def compute_targets_cached(
             extra=extra,
         )
 
-        return strategy.compute_targets(full_df, ctx, params=grid_params)
+        return strategy.compute_targets(
+            full_df, ctx, params=grid_params, return_durations=return_durations
+        )
 
     # Default: Fixed Exit Strategy (Numba-optimiert)
     opn_v = full_df["O"].values.astype(np.float64)
@@ -304,16 +306,19 @@ def compute_targets_cached(
     hgh_v = full_df["H"].values.astype(np.float64)
     low_v = full_df["L"].values.astype(np.float64)
 
-    # Distanzen berechnen (gleiche Logik wie simulate_pro_trade)
     tp_distance = ctx.spread * tp
     sl_distance = ctx.spread * sl
     slippage = ctx.spread * 0.5
-
-    # max_bars: Wie weit maximal simuliert wird (None = bis zum Ende)
     max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(full_df)
-
-    # timeout_bars: Wann Trade geschlossen wird (0 = kein Timeout)
     timeout_val = timeout_bars if timeout_bars else 0
+
+    if return_durations:
+        from fwbg.simulation.numba_core import compute_targets_with_durations_numba
+        return compute_targets_with_durations_numba(
+            opn_v, cls_v, hgh_v, low_v,
+            tp_distance, sl_distance, ctx.spread, slippage,
+            max_bars, timeout_val
+        )
 
     return compute_targets_numba(
         opn_v, cls_v, hgh_v, low_v,

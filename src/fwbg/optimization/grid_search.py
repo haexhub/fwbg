@@ -189,17 +189,32 @@ def _process_tp_sl_combo_wrapper(args):
     cached_targets = None
 
     if inner_df is not None:
-        # Ohne Preprocessing können wir Targets vorab berechnen und cachen
-        full_targets_long, full_targets_short = compute_targets_cached(
-            inner_df, tp, sl, ctx, timeout_bars,
-            exit_strategy_mode=ctx.exit_strategy,
-        )
+        use_durations = ctx.sample_weights
+
+        if use_durations:
+            full_tgt_l, full_tgt_s, full_dur_l, full_dur_s = compute_targets_cached(
+                inner_df, tp, sl, ctx, timeout_bars,
+                exit_strategy_mode=ctx.exit_strategy,
+                return_durations=True,
+            )
+        else:
+            full_tgt_l, full_tgt_s = compute_targets_cached(
+                inner_df, tp, sl, ctx, timeout_bars,
+                exit_strategy_mode=ctx.exit_strategy,
+            )
+
         cached_targets = {}
         for fold_idx, (train_df, _) in enumerate(inner_folds):
-            fold_targets_long, fold_targets_short, _, _ = slice_targets_for_fold(
-                full_targets_long, full_targets_short, inner_df, train_df, ctx
+            fold_tgt_l, fold_tgt_s, _, _ = slice_targets_for_fold(
+                full_tgt_l, full_tgt_s, inner_df, train_df, ctx
             )
-            cached_targets[fold_idx] = (fold_targets_long, fold_targets_short)
+            if use_durations:
+                fold_dur_l, fold_dur_s, _, _ = slice_targets_for_fold(
+                    full_dur_l, full_dur_s, inner_df, train_df, ctx
+                )
+                cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s, fold_dur_l, fold_dur_s)
+            else:
+                cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s)
 
     # Inner CV ausführen
     candidate, grid_result = _process_single_grid_combo(
