@@ -177,36 +177,37 @@ def train_model(
     features: Optional[List[str]],
     min_trades: int,
     ctx: SimulationContext,
-    use_reduced_params: bool = False
+    use_reduced_params: bool = False,
+    sample_weight: Optional[np.ndarray] = None,
 ) -> Optional[XGBClassifier]:
     """
     Trainiert ein XGBoost-Modell.
 
     Args:
         use_reduced_params: Wenn True, werden Hyperparameter halbiert (für Inner CV)
+        sample_weight: Optional - Uniqueness-basierte Sample Weights (AFML Ch. 4)
     """
     if features is None or np.count_nonzero(targets) < min_trades // 2:
         return None
 
-    # Hole Hyperparameter aus Context (aus StrategyConfig)
     params = ctx.model_hyperparameters.copy()
 
-    # Für Inner CV: Halbiere n_estimators für schnelleres Ranking
     if use_reduced_params:
         params["n_estimators"] = max(10, params.get("n_estimators", 100) // 2)
 
-    # Standard-Parameter falls nicht gesetzt
     params.setdefault("random_state", 42)
     params.setdefault("verbosity", 0)
     params["n_jobs"] = get_xgboost_n_jobs()
 
-    # GPU-Beschleunigung (automatischer Fallback auf CPU)
     params.update(get_xgboost_params())
 
     model = XGBClassifier(**params)
+    fit_kwargs = {}
+    if sample_weight is not None:
+        fit_kwargs["sample_weight"] = sample_weight
 
     try:
-        model.fit(train_df[features], targets)
+        model.fit(train_df[features], targets, **fit_kwargs)
     except Exception as e:
         error_msg = str(e).lower()
         if "cuda" in error_msg or "gpu" in error_msg or "device" in error_msg:
@@ -217,7 +218,7 @@ def train_model(
             cpu_params["tree_method"] = "hist"
             cpu_params["device"] = "cpu"
             model = XGBClassifier(**cpu_params)
-            model.fit(train_df[features], targets)
+            model.fit(train_df[features], targets, **fit_kwargs)
         else:
             raise
 
@@ -280,8 +281,16 @@ def run_inner_cv(
                 break
 
         # Use cached targets if available
+        weights = None
         if cached_targets is not None and fold_idx in cached_targets:
-            targets_long, targets_short = cached_targets[fold_idx]
+            entry = cached_targets[fold_idx]
+            if len(entry) == 4:
+                targets_long, targets_short, dur_long, dur_short = entry
+                if ctx.sample_weights:
+                    from .purging import compute_sample_weights
+                    weights = compute_sample_weights(dur_long, dur_short, len(train_df))
+            else:
+                targets_long, targets_short = entry
             has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
         else:
             targets_long, targets_short, has_long, has_short = compute_targets(
@@ -313,8 +322,8 @@ def run_inner_cv(
             failed_count += 1
             continue
 
-        mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades, ctx, use_reduced_params=True) if has_long else None
-        mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades, ctx, use_reduced_params=True) if has_short else None
+        mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades, ctx, use_reduced_params=True, sample_weight=weights) if has_long else None
+        mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades, ctx, use_reduced_params=True, sample_weight=weights) if has_short else None
 
         best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
             val_df, mod_long, mod_short,
@@ -416,10 +425,25 @@ def evaluate_on_holdout(
     features_long = candidate.get("selected_features_long")
     features_short = candidate.get("selected_features_short")
 
-    targets_long, targets_short, has_long, has_short = compute_targets(inner_df, tp, sl, ctx, timeout_bars)
+    # Berechne Targets (und optional Durations für Sample Weights)
+    weights = None
+    if ctx.sample_weights:
+        from .targets import compute_targets_cached
+        result = compute_targets_cached(
+            inner_df, tp, sl, ctx, timeout_bars,
+            exit_strategy_mode=ctx.exit_strategy,
+            return_durations=True,
+        )
+        targets_long, targets_short, dur_long, dur_short = result
+        has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
 
-    mod_long = train_model(inner_df, targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False) if has_long and features_long else None
-    mod_short = train_model(inner_df, targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False) if has_short and features_short else None
+        from .purging import compute_sample_weights
+        weights = compute_sample_weights(dur_long, dur_short, len(inner_df))
+    else:
+        targets_long, targets_short, has_long, has_short = compute_targets(inner_df, tp, sl, ctx, timeout_bars)
+
+    mod_long = train_model(inner_df, targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights) if has_long and features_long else None
+    mod_short = train_model(inner_df, targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights) if has_short and features_short else None
 
     if not mod_long and not mod_short:
         return {"trades": [], "trades_detailed": [], "pnl": 0, "win_rate": 0, "n_trades": 0}
