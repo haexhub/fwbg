@@ -11,134 +11,113 @@
   "hypothesis": "ML soll selbst lernen, welche Features und Marktbedingungen relevant sind - keine harten Filter, maximale Feature-Vielfalt",
   "expected_outcome": "Identifikation der wichtigsten Features und profitablen Parameter-Bereiche durch Boruta Feature-Selektion",
 
-  "indicators": [
-    "trend",
-    "momentum",
-    "volatility",
-    "regime",
-    "structure",
-    "risk",
-    "price_action",
-    "time_season",
-    "distribution",
-    "dynamics",
-    "multi_timeframe",
-    "cross_features",
-    "ichimoku",
-    "microstructure",
-    "macro_surprise"
-  ],
-
-  "indicator_params": {
-    "trend": {
-      "adx_periods": [7, 14, 21],
-      "ema_periods": [8, 21, 50, 100, 200],
-      "sma_periods": [20, 50, 200],
-      "cci_periods": [14, 20],
-      "aroon_period": 25,
-      "er_periods": [10, 20, 50]
-    },
-    "momentum": {
-      "rsi_periods": [7, 14, 21],
-      "stoch_periods": [14, 21],
-      "williams_periods": [14, 21],
-      "roc_periods": [5, 10, 20]
-    },
-    "volatility": {
-      "bb_periods": [20],
-      "atr_periods": [7, 14, 21]
-    },
-    "regime": {
-      "hurst_windows": [100, 200, 500],
-      "step": 10
-    },
-    "structure": {
-      "fft_windows": [64, 128, 256],
-      "path_windows": [10, 20, 50, 100],
-      "convexity_periods": [21, 50],
-      "event_periods": [20, 50],
-      "vwap_windows": [20, 50, 100]
-    },
-    "risk": {
-      "dd_windows": [50, 100, 200],
-      "cvar_windows": [50, 100],
-      "cvar_percentiles": [5, 1],
-      "vov_windows": [20, 50, 100],
-      "compute_correlations": true
-    },
-    "price_action": {
-      "hh_ll_period": 5,
-      "compute_volume": true
-    },
-    "time_season": {
-      "include_raw": true,
-      "include_encoded": true
-    },
-    "distribution": {
-      "windows": [20, 50, 100],
-      "z_score_lookback": 200,
-      "compute_changes": true
-    },
-    "dynamics": {
-      "lookbacks": [4, 8, 24],
-      "lag_periods": [4, 8, 24, 48]
-    },
-    "multi_timeframe": {
-      "h4_bars": 4,
-      "d1_bars": 24,
-      "ema_periods": [20, 50]
-    },
-    "cross_features": {
-      "rsi_overbought": 70,
-      "rsi_oversold": 30
-    },
-    "ichimoku": {
-      "tenkan_period": 9,
-      "kijun_period": 26,
-      "senkou_b_period": 52
-    },
-    "microstructure": {
-      "atr_period": 14,
-      "rolling_window": 5
-    },
-    "macro_surprise": {
-      "vol_lookback": 20,
-      "surprise_threshold": 2.0,
-      "gap_ma_period": 10
-    }
+  "pipeline": {
+    "preprocessing": [
+      {
+        "name": "fractional_diff",
+        "params": {
+          "auto_d": false,
+          "default_d": 0.4,
+          "columns": ["O", "H", "L", "C"]
+        }
+      }
+    ],
+    "indicators": [
+      {
+        "name": "trend",
+        "params": {
+          "adx_periods": [7, 14, 21],
+          "ema_periods": [8, 21, 50, 100, 200],
+          "sma_periods": [20, 50, 200],
+          "cci_periods": [14, 20],
+          "aroon_period": 25,
+          "er_periods": [10, 20, 50],
+          "supertrend_period": 14,
+          "supertrend_multiplier": 3.0
+        }
+      },
+      {
+        "name": "momentum",
+        "params": {
+          "rsi_periods": [7, 14, 21],
+          "stoch_periods": [14, 21],
+          "williams_periods": [14, 21],
+          "roc_periods": [5, 10, 20]
+        }
+      },
+      {
+        "name": "volatility",
+        "params": {
+          "bb_periods": [20],
+          "atr_periods": [7, 14, 21],
+          "vol_est_windows": [20, 50]
+        }
+      },
+      {
+        "name": "regime",
+        "params": {
+          "hurst_windows": [100, 200, 500],
+          "step": 10,
+          "entropy_windows": [50, 100],
+          "vr_windows": [100, 200],
+          "vr_lags": [5, 10]
+        }
+      },
+      {
+        "name": "structure",
+        "params": {
+          "fft_windows": [64, 128, 256],
+          "path_windows": [10, 20, 50, 100],
+          "convexity_periods": [21, 50],
+          "event_periods": [20, 50],
+          "vwap_windows": [20, 50, 100]
+        }
+      },
+      {
+        "name": "risk",
+        "params": {
+          "dd_windows": [50, 100, 200],
+          "cvar_windows": [50, 100],
+          "cvar_percentiles": [5, 1],
+          "vov_windows": [20, 50, 100],
+          "compute_correlations": true
+        }
+      },
+      {"name": "price_action", "params": {"hh_ll_period": 5, "compute_volume": true}},
+      {"name": "time_season", "params": {"include_raw": true, "include_encoded": true}},
+      {"name": "distribution", "params": {"windows": [20, 50, 100], "z_score_lookback": 200, "compute_changes": true}},
+      {"name": "dynamics", "params": {"lookbacks": [4, 8, 24], "lag_periods": [4, 8, 24, 48]}},
+      {"name": "multi_timeframe", "params": {"h4_bars": 4, "d1_bars": 24, "ema_periods": [20, 50]}},
+      {"name": "cross_features", "params": {"rsi_overbought": 70, "rsi_oversold": 30}},
+      {"name": "ichimoku", "params": {"tenkan_period": 9, "kijun_period": 26, "senkou_b_period": 52}},
+      {"name": "microstructure", "params": {"atr_period": 14, "rolling_window": 5}},
+      {"name": "macro_surprise", "params": {"vol_lookback": 20, "surprise_threshold": 2.0, "gap_ma_period": 10}}
+    ],
+    "feature_selection": [
+      {
+        "name": "boruta",
+        "params": {
+          "max_features": 20,
+          "n_iter": 5,
+          "n_estimators": 30,
+          "max_depth": 4,
+          "min_z_score": 0.5
+        }
+      }
+    ]
   },
 
   "exit_strategy": "fixed",
 
   "exit_params": {},
 
-  "feature_selector": "boruta",
-
-  "feature_params": {
-    "max_features": 50,
-    "n_iter": 8,
-    "n_estimators": 50,
-    "max_depth": 4,
-    "min_z_score": 0.5
-  },
-
-  "preprocessing": ["fractional_diff"],
-
-  "preprocessing_params": {
-    "fractional_diff": {
-      "auto_d": false,
-      "default_d": 0.4,
-      "columns": ["O", "H", "L", "C"]
-    }
-  },
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
     "trade_directions": ["long", "short"],
     "hyperparameters": {
-      "n_estimators": 200,
-      "max_depth": 6,
+      "n_estimators": 100,
+      "max_depth": 4,
       "learning_rate": 0.1,
       "subsample": 0.8,
       "colsample_bytree": 0.8,
@@ -148,24 +127,24 @@
 
   "grids": {
     "FOREX": {
-      "tp": [5, 10, 15, 20, 30, 40, 50, 60],
-      "sl": [10, 15, 20, 30, 40, 50, 60, 80],
-      "ct": [0.50, 0.55, 0.60, 0.65]
+      "tp": [5, 10, 15, 20, 30],
+      "sl": [20, 30, 40, 50, 60],
+      "ct": [0.5, 0.55, 0.6, 0.65]
     },
     "INDEX": {
-      "tp": [5, 15, 20, 30, 40, 50, 60, 80],
-      "sl": [15, 20, 30, 40, 50, 60, 80, 100],
-      "ct": [0.50, 0.55, 0.60, 0.65]
+      "tp": [5, 15, 20, 30, 40],
+      "sl": [30, 40, 60, 80, 100],
+      "ct": [0.5, 0.55, 0.6, 0.65]
     },
     "COMMODITY": {
-      "tp": [5, 15, 20, 30, 40, 50, 60, 80],
-      "sl": [15, 20, 30, 40, 50, 60, 80, 100],
-      "ct": [0.50, 0.55, 0.60, 0.65]
+      "tp": [5, 15, 20, 30, 40],
+      "sl": [30, 40, 60, 80, 100],
+      "ct": [0.5, 0.55, 0.6, 0.65]
     },
     "CRYPTO": {
-      "tp": [10, 20, 30, 50, 70, 100, 120, 150],
-      "sl": [20, 30, 50, 70, 100, 120, 150, 200],
-      "ct": [0.50, 0.55, 0.60, 0.65]
+      "tp": [10, 20, 30, 50, 70],
+      "sl": [50, 70, 100, 120, 150],
+      "ct": [0.5, 0.55, 0.6, 0.65]
     }
   },
 
@@ -174,7 +153,9 @@
     "folds": 8,
     "oos_size": 4000,
     "min_trades": 50,
-    "n_inner_folds": 5
+    "n_inner_folds": 3,
+    "embargo_bars": 100,
+    "sample_weights": true
   },
 
   "filters": {
@@ -186,10 +167,10 @@
   },
 
   "resources": {
-    "ram_per_worker_gb": 10.0,
+    "ram_per_worker_gb": 8.0,
     "min_free_ram_percent": 0.15,
-    "max_cpu_percent": 0.85,
-    "xgboost_n_jobs": 0,
-    "threads_per_asset": 4
+    "max_cpu_percent": 0.95,
+    "max_concurrent_assets": 2,
+    "xgboost_n_jobs": 0
   }
 }

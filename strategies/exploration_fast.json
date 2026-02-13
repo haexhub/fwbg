@@ -1,129 +1,46 @@
 {
   "name": "Exploration Fast",
-  "description": "Volle Exploration ohne Preprocessing - ermöglicht Target-Caching für schnellere Grid-Suche",
+  "description": "Volle Exploration ohne Preprocessing - ermoeglicht Target-Caching fuer schnellere Grid-Suche",
   "tags": ["exploration", "fast", "no_preprocessing", "cached_targets"],
-  "hypothesis": "ML soll selbst lernen, welche Features relevant sind - ohne Preprocessing für Target-Caching",
+  "hypothesis": "ML soll selbst lernen, welche Features relevant sind - ohne Preprocessing fuer Target-Caching",
   "expected_outcome": "Identifikation der wichtigsten Features mit beschleunigter Grid-Suche durch Caching",
 
-  "indicators": [
-    "trend",
-    "momentum",
-    "volatility",
-    "regime",
-    "structure",
-    "risk",
-    "price_action",
-    "time_season",
-    "distribution",
-    "dynamics",
-    "multi_timeframe",
-    "cross_features",
-    "ichimoku",
-    "microstructure",
-    "macro_surprise"
-  ],
-
-  "indicator_params": {
-    "trend": {
-      "adx_periods": [7, 14, 21],
-      "ema_periods": [8, 21, 50, 100, 200],
-      "sma_periods": [20, 50, 200],
-      "cci_periods": [14, 20],
-      "aroon_period": 25,
-      "er_periods": [10, 20, 50]
-    },
-    "momentum": {
-      "rsi_periods": [7, 14, 21],
-      "stoch_periods": [14, 21],
-      "williams_periods": [14, 21],
-      "roc_periods": [5, 10, 20]
-    },
-    "volatility": {
-      "bb_periods": [20],
-      "atr_periods": [7, 14, 21]
-    },
-    "regime": {
-      "hurst_windows": [100, 200, 500],
-      "step": 10
-    },
-    "structure": {
-      "fft_windows": [64, 128, 256],
-      "path_windows": [10, 20, 50, 100],
-      "convexity_periods": [21, 50],
-      "event_periods": [20, 50],
-      "vwap_windows": [20, 50, 100]
-    },
-    "risk": {
-      "dd_windows": [50, 100, 200],
-      "cvar_windows": [50, 100],
-      "cvar_percentiles": [5, 1],
-      "vov_windows": [20, 50, 100],
-      "compute_correlations": true
-    },
-    "price_action": {
-      "hh_ll_period": 5,
-      "compute_volume": true
-    },
-    "time_season": {
-      "include_raw": true,
-      "include_encoded": true
-    },
-    "distribution": {
-      "windows": [20, 50, 100],
-      "z_score_lookback": 200,
-      "compute_changes": true
-    },
-    "dynamics": {
-      "lookbacks": [4, 8, 24],
-      "lag_periods": [4, 8, 24, 48]
-    },
-    "multi_timeframe": {
-      "h4_bars": 4,
-      "d1_bars": 24,
-      "ema_periods": [20, 50]
-    },
-    "cross_features": {
-      "rsi_overbought": 70,
-      "rsi_oversold": 30
-    },
-    "ichimoku": {
-      "tenkan_period": 9,
-      "kijun_period": 26,
-      "senkou_b_period": 52
-    },
-    "microstructure": {
-      "atr_period": 14,
-      "rolling_window": 5
-    },
-    "macro_surprise": {
-      "vol_lookback": 20,
-      "surprise_threshold": 2.0,
-      "gap_ma_period": 10
-    }
+  "pipeline": {
+    "preprocessing": [
+      {"name": "fractional_diff", "params": {"auto_d": false, "default_d": 0.4, "columns": ["O", "H", "L", "C"]}}
+    ],
+    "indicators": [
+      {"name": "trend", "params": {"adx_periods": [7, 14, 21], "ema_periods": [8, 21, 50, 100, 200], "supertrend_period": 14, "supertrend_multiplier": 3.0}},
+      {"name": "momentum", "params": {"rsi_periods": [7, 14, 21]}},
+      {"name": "volatility", "params": {"atr_periods": [7, 14, 21], "vol_est_windows": [20, 50]}},
+      {"name": "regime", "params": {"hurst_windows": [100, 200, 500], "entropy_windows": [50, 100], "vr_windows": [100, 200], "vr_lags": [5, 10]}},
+      {"name": "structure", "params": {}},
+      {"name": "risk", "params": {"dd_windows": [50, 100, 200]}},
+      {"name": "price_action", "params": {}},
+      {"name": "time_season", "params": {}},
+      {"name": "distribution", "params": {"windows": [20, 50, 100]}},
+      {"name": "dynamics", "params": {}},
+      {"name": "multi_timeframe", "params": {}},
+      {"name": "cross_features", "params": {}},
+      {"name": "ichimoku", "params": {}},
+      {"name": "microstructure", "params": {}},
+      {"name": "macro_surprise", "params": {}}
+    ],
+    "feature_selection": [
+      {"name": "boruta", "params": {"max_features": 50, "n_estimators": 50, "max_depth": 4, "min_z_score": 0.5}}
+    ]
   },
 
   "exit_strategy": "fixed",
 
   "exit_params": {},
 
-  "feature_selector": "boruta",
-
-  "feature_params": {
-    "max_features": 50,
-    "n_iter": 8,
-    "n_estimators": 50,
-    "max_depth": 4,
-    "min_z_score": 0.5
-  },
-
-  "preprocessing": [],
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
     "trade_directions": ["long", "short"],
     "hyperparameters": {
-      "n_estimators": 200,
+      "n_estimators": 100,
       "max_depth": 6,
       "learning_rate": 0.1,
       "subsample": 0.8,
@@ -160,7 +77,9 @@
     "folds": 8,
     "oos_size": 4000,
     "min_trades": 50,
-    "n_inner_folds": 5
+    "n_inner_folds": 5,
+    "embargo_bars": 100,
+    "sample_weights": true
   },
 
   "filters": {
@@ -175,6 +94,7 @@
     "ram_per_worker_gb": 2.0,
     "min_free_ram_percent": 0.10,
     "max_cpu_percent": 0.9,
+    "max_concurrent_assets": 2,
     "xgboost_n_jobs": 0
   }
 }
