@@ -101,14 +101,18 @@ class InvalidPlugin(BasePlugin):
         return False
 
 
+# Namespace for test plugins
+TEST_NS = "test"
+
+
 @pytest.fixture
 def registry():
-    """Create a registry with test plugins registered."""
+    """Create a registry with test plugins registered using namespace."""
     reg = PluginRegistry()
-    reg.register(AddColumnPlugin)
-    reg.register(MultiplyPlugin)
-    reg.register(StatefulPlugin)
-    reg.register(InvalidPlugin)
+    reg.register(AddColumnPlugin, namespace=TEST_NS)
+    reg.register(MultiplyPlugin, namespace=TEST_NS)
+    reg.register(StatefulPlugin, namespace=TEST_NS)
+    reg.register(InvalidPlugin, namespace=TEST_NS)
     return reg
 
 
@@ -125,7 +129,7 @@ class TestPipelineRunner:
     def test_runner_execute_single_plugin(self, registry, sample_context):
         """Test running a single plugin through the runner."""
         config = PipelineConfig(
-            indicators=[PluginConfig(name="add_column", params={"column_name": "test_col", "value": 42})]
+            indicators=[PluginConfig(name=f"{TEST_NS}:add_column", params={"column_name": "test_col", "value": 42})]
         )
         runner = PipelineRunner(registry, config)
 
@@ -139,8 +143,8 @@ class TestPipelineRunner:
         # Multiply is PREPROCESSING phase, AddColumn is INDICATORS phase
         # Even if listed in different order in config, should execute in phase order
         config = PipelineConfig(
-            indicators=[PluginConfig(name="add_column", params={"column_name": "indicator_col", "value": 100})],
-            preprocessing=[PluginConfig(name="multiply", params={"column": "value", "factor": 2})],
+            indicators=[PluginConfig(name=f"{TEST_NS}:add_column", params={"column_name": "indicator_col", "value": 100})],
+            preprocessing=[PluginConfig(name=f"{TEST_NS}:multiply", params={"column": "value", "factor": 2})],
         )
         runner = PipelineRunner(registry, config)
 
@@ -165,7 +169,7 @@ class TestPipelineRunner:
         test_ctx = PipelineContext(df=test_df, symbol="EURUSD", asset_class="FOREX")
 
         config = PipelineConfig(
-            preprocessing=[PluginConfig(name="stateful_mean_subtractor", params={"column": "value"})]
+            preprocessing=[PluginConfig(name=f"{TEST_NS}:stateful_mean_subtractor", params={"column": "value"})]
         )
         runner = PipelineRunner(registry, config)
 
@@ -182,31 +186,31 @@ class TestPipelineRunner:
         """Test validate returns validation results for all plugins."""
         config = PipelineConfig(
             preprocessing=[
-                PluginConfig(name="multiply"),
-                PluginConfig(name="invalid_plugin"),
+                PluginConfig(name=f"{TEST_NS}:multiply"),
+                PluginConfig(name=f"{TEST_NS}:invalid_plugin"),
             ],
-            indicators=[PluginConfig(name="add_column")],
+            indicators=[PluginConfig(name=f"{TEST_NS}:add_column")],
         )
         runner = PipelineRunner(registry, config)
 
         results = runner.validate()
 
-        # Should have results for all three plugins
-        assert "multiply" in results
-        assert "invalid_plugin" in results
-        assert "add_column" in results
+        # Should have results for all three plugins (keyed by FQN)
+        assert f"{TEST_NS}:multiply" in results
+        assert f"{TEST_NS}:invalid_plugin" in results
+        assert f"{TEST_NS}:add_column" in results
 
         # Valid plugins should pass
-        assert results["multiply"]["valid"] is True
-        assert results["add_column"]["valid"] is True
+        assert results[f"{TEST_NS}:multiply"]["valid"] is True
+        assert results[f"{TEST_NS}:add_column"]["valid"] is True
 
         # Invalid plugin should fail
-        assert results["invalid_plugin"]["valid"] is False
+        assert results[f"{TEST_NS}:invalid_plugin"]["valid"] is False
 
     def test_runner_unknown_plugin_error(self, registry):
         """Test that unknown plugin names raise PluginNotFoundError."""
         config = PipelineConfig(
-            preprocessing=[PluginConfig(name="nonexistent_plugin")]
+            preprocessing=[PluginConfig(name=f"{TEST_NS}:nonexistent_plugin")]
         )
         runner = PipelineRunner(registry, config)
 
@@ -221,15 +225,15 @@ class TestPipelineRunner:
         train_ctx = PipelineContext(df=train_df, symbol="EURUSD", asset_class="FOREX")
 
         config = PipelineConfig(
-            preprocessing=[PluginConfig(name="stateful_mean_subtractor", params={"column": "value"})]
+            preprocessing=[PluginConfig(name=f"{TEST_NS}:stateful_mean_subtractor", params={"column": "value"})]
         )
         runner = PipelineRunner(registry, config)
 
         # Fit the stateful plugin
         runner.fit(train_ctx)
 
-        # Get instance and verify it's fitted
-        instance = runner.get_instance("stateful_mean_subtractor")
+        # Get instance and verify it's fitted (use FQN)
+        instance = runner.get_instance(f"{TEST_NS}:stateful_mean_subtractor")
         assert instance is not None
         assert instance._fitted is True
         assert instance._mean == 30.0

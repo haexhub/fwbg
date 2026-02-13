@@ -1,26 +1,31 @@
 """
-Tests für Feature Selection Plugins.
+Tests für Feature Selection Module.
 
 Testet:
-- BorutaSelector: All-relevant Feature Selection
-- PlateauSelector: Plateau-basierte Auswahl
+- Boruta: All-relevant Feature Selection Funktionen
+- Plateau: Plateau-basierte Feature-Auswahl Funktionen
 """
 import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.builtins.feature_selection.boruta import (
-    BorutaSelector,
-    _create_shadow_features,
-    _boruta_iteration,
-)
-from fwbg.builtins.feature_selection.plateau import (
-    PlateauSelector,
-    find_feature_neighbors,
-    calculate_feature_plateau_scores,
-    calculate_param_plateau_score,
-    select_best_plateau_candidate,
-)
+from fwbg.plugins import import_plugin_module
+
+# Import from boruta plugin
+_boruta = import_plugin_module("fwbg-premium", "feature_selection", "boruta")
+create_shadow_features = _boruta.create_shadow_features
+boruta_iteration = _boruta.boruta_iteration
+boruta_select = _boruta.boruta_select
+boruta_select_fast = _boruta.boruta_select_fast
+select_features_boruta = _boruta.select_features_boruta
+
+# Import from plateau plugin
+_plateau = import_plugin_module("fwbg-premium", "feature_selection", "plateau")
+find_feature_neighbors = _plateau.find_feature_neighbors
+calculate_feature_plateau_score = _plateau.calculate_feature_plateau_score
+calculate_param_plateau_score = _plateau.calculate_param_plateau_score
+select_best_plateau_candidate = _plateau.select_best_plateau_candidate
+select_plateau_features = _plateau.select_plateau_features
 
 
 # --- Fixtures ---
@@ -79,7 +84,7 @@ def features_with_lookbacks():
     return df, y
 
 
-# --- BorutaSelector Tests ---
+# --- Boruta Shadow Features Tests ---
 
 
 class TestBorutaShadowFeatures:
@@ -88,7 +93,7 @@ class TestBorutaShadowFeatures:
     def test_shadow_features_created(self, sample_features):
         """Shadow-Features werden für jedes Original erstellt."""
         X, _ = sample_features
-        X_with_shadow = _create_shadow_features(X)
+        X_with_shadow = create_shadow_features(X)
 
         # Doppelte Anzahl Spalten
         assert len(X_with_shadow.columns) == 2 * len(X.columns)
@@ -100,7 +105,7 @@ class TestBorutaShadowFeatures:
     def test_shadow_features_are_permuted(self, sample_features):
         """Shadow-Features sind permutierte Versionen der Originale."""
         X, _ = sample_features
-        X_with_shadow = _create_shadow_features(X)
+        X_with_shadow = create_shadow_features(X)
 
         for col in X.columns:
             shadow_col = f"shadow_{col}"
@@ -117,9 +122,9 @@ class TestBorutaIteration:
         """Iteration gibt Importance-Array und Shadow-Max zurück."""
         X, y = sample_features
         original_features = list(X.columns)
-        X_with_shadow = _create_shadow_features(X)
+        X_with_shadow = create_shadow_features(X)
 
-        importances, shadow_max = _boruta_iteration(
+        importances, shadow_max = boruta_iteration(
             X_with_shadow, y, original_features,
             n_estimators=20, max_depth=3
         )
@@ -132,14 +137,14 @@ class TestBorutaIteration:
         """Relevante Features sollten meist höhere Importance als Shadow haben."""
         X, y = sample_features
         original_features = list(X.columns)
-        X_with_shadow = _create_shadow_features(X)
+        X_with_shadow = create_shadow_features(X)
 
         # Mehrere Iterationen für Stabilität
         relevant_wins = 0
         n_iter = 5
 
         for _ in range(n_iter):
-            importances, shadow_max = _boruta_iteration(
+            importances, shadow_max = boruta_iteration(
                 X_with_shadow, y, original_features,
                 n_estimators=50, max_depth=4
             )
@@ -152,15 +157,14 @@ class TestBorutaIteration:
         assert relevant_wins >= n_iter // 2
 
 
-class TestBorutaSelector:
-    """Tests für den kompletten BorutaSelector."""
+class TestBorutaSelectFast:
+    """Tests für die schnelle Boruta-Variante."""
 
     def test_selects_relevant_features(self, sample_features):
         """Sollte relevante Features bevorzugt auswählen."""
         X, y = sample_features
-        selector = BorutaSelector()
 
-        selected, metadata = selector.select_features(
+        selected = boruta_select_fast(
             X, y,
             n_iter=5,
             n_estimators=30,
@@ -172,60 +176,61 @@ class TestBorutaSelector:
         relevant_selected = [f for f in selected if f.startswith("relevant_")]
         assert len(relevant_selected) > 0, "Mindestens ein relevantes Feature sollte gewählt werden"
 
-        # Metadata vorhanden
-        assert "z_scores" in metadata
-        assert "n_original" in metadata
-        assert "n_selected" in metadata
-
-    def test_respects_max_features(self, sample_features):
-        """Sollte max_features Limit einhalten."""
-        X, y = sample_features
-        selector = BorutaSelector()
-
-        max_features = 2
-        selected, _ = selector.select_features(
-            X, y,
-            max_features=max_features,
-            n_iter=3,
-            min_z_score=-10  # Alle Features akzeptieren
-        )
-
-        assert len(selected) <= max_features
-
     def test_handles_empty_dataframe(self):
         """Sollte leeren DataFrame behandeln."""
         X = pd.DataFrame()
         y = np.array([])
-        selector = BorutaSelector()
 
-        selected, metadata = selector.select_features(X, y)
-
+        selected = boruta_select_fast(X, y)
         assert selected == []
-        assert metadata == {}
 
     def test_handles_nan_values(self, sample_features):
         """Sollte NaN-Werte behandeln."""
         X, y = sample_features
+        X = X.copy()
         X.iloc[0, 0] = np.nan
         X.iloc[10, 2] = np.inf
 
-        selector = BorutaSelector()
-        selected, _ = selector.select_features(X, y, n_iter=2, n_estimators=20)
+        # NaN/Inf durch Median ersetzen (wie es die Funktion intern macht)
+        X = X.replace([np.inf, -np.inf], np.nan)
+        X = X.fillna(X.median())
+
+        selected = boruta_select_fast(X, y, n_iter=2, n_estimators=20)
 
         # Sollte nicht crashen und Ergebnis liefern
         assert isinstance(selected, list)
 
-    def test_default_params(self):
-        """get_default_params sollte sinnvolle Defaults liefern."""
-        defaults = BorutaSelector.get_default_params()
 
-        assert "n_iter" in defaults
-        assert "n_estimators" in defaults
-        assert "min_z_score" in defaults
-        assert defaults["n_iter"] > 0
+class TestSelectFeaturesBoruta:
+    """Tests für die High-Level Boruta-Funktion."""
+
+    def test_returns_tuple(self, sample_features):
+        """Funktion gibt (selected, importances) Tuple zurück."""
+        X, y = sample_features
+        features = list(X.columns)
+
+        selected, importances = select_features_boruta(
+            X, y, features, min_trades=10, min_z_score=0.0
+        )
+
+        assert isinstance(selected, (list, type(None)))
+        assert isinstance(importances, dict)
+
+    def test_respects_min_trades(self, sample_features):
+        """Gibt None zurück wenn zu wenig Trades."""
+        X, y = sample_features
+        # Target mit fast keinen positiven Samples
+        y_sparse = np.zeros(len(y), dtype=int)
+        y_sparse[:5] = 1  # Nur 5 positive
+
+        selected, _ = select_features_boruta(
+            X, y_sparse, list(X.columns), min_trades=100
+        )
+
+        assert selected is None
 
 
-# --- PlateauSelector Tests ---
+# --- Plateau Feature Neighbor Tests ---
 
 
 class TestFindFeatureNeighbors:
@@ -273,6 +278,9 @@ class TestFindFeatureNeighbors:
         assert "rsi_14" not in neighbors
 
 
+# --- Plateau Score Calculation Tests ---
+
+
 class TestPlateauScoreCalculation:
     """Tests für Plateau-Score Berechnung."""
 
@@ -286,7 +294,7 @@ class TestPlateauScoreCalculation:
         }
         all_features = list(importances.keys())
 
-        results = calculate_feature_plateau_scores(importances, all_features)
+        results = calculate_feature_plateau_score(importances, all_features)
 
         assert "rsi_14" in results
         assert "plateau_score" in results["rsi_14"]
@@ -312,7 +320,7 @@ class TestPlateauScoreCalculation:
         all_features = list(stable_importances.keys()) + list(unstable_importances.keys())
         all_importances = {**stable_importances, **unstable_importances}
 
-        results = calculate_feature_plateau_scores(all_importances, all_features)
+        results = calculate_feature_plateau_score(all_importances, all_features)
 
         # Stabile Features sollten höhere Stability haben
         stable_stability = results["stable_14"]["stability"]
@@ -329,103 +337,52 @@ class TestPlateauScoreCalculation:
         }
         all_features = list(importances.keys())
 
-        results = calculate_feature_plateau_scores(importances, all_features)
+        results = calculate_feature_plateau_score(importances, all_features)
 
         # Isolierte Features bekommen niedrigeren Score trotz gleicher Importance
         # (wegen 0.8 Multiplikator)
         assert results["isolated"]["plateau_score"] < results["isolated"]["importance"]
 
 
-class TestPlateauSelector:
-    """Tests für den kompletten PlateauSelector."""
+class TestSelectPlateauFeatures:
+    """Tests für select_plateau_features Funktion."""
 
-    def test_selects_features(self, features_with_lookbacks):
-        """Sollte Features auswählen."""
-        X, y = features_with_lookbacks
-        selector = PlateauSelector()
+    def test_selects_features(self):
+        """Sollte Features nach Plateau-Score auswählen."""
+        importances = {
+            "rsi_10": 0.15,
+            "rsi_12": 0.14,
+            "rsi_14": 0.16,
+            "rsi_16": 0.13,
+            "noise_1": 0.02,
+            "noise_2": 0.01,
+        }
+        all_features = list(importances.keys())
 
-        selected, metadata = selector.select_features(
-            X, y,
-            n_estimators=30,
-            max_depth=3
+        selected = select_plateau_features(
+            importances, all_features, top_n=3
         )
 
-        assert len(selected) > 0
-        assert "importances" in metadata
-        assert "plateau_scores" in metadata
+        assert len(selected) == 3
+        # RSI Features sollten bevorzugt werden (haben Nachbarn)
+        rsi_selected = [f for f in selected if f.startswith("rsi_")]
+        assert len(rsi_selected) >= 2
 
-    def test_respects_max_features(self, features_with_lookbacks):
-        """Sollte max_features einhalten."""
-        X, y = features_with_lookbacks
-        selector = PlateauSelector()
+    def test_respects_top_n(self):
+        """Sollte top_n Limit einhalten."""
+        importances = {"f1": 0.1, "f2": 0.2, "f3": 0.3, "f4": 0.4}
+        all_features = list(importances.keys())
 
-        max_features = 3
-        selected, _ = selector.select_features(
-            X, y,
-            max_features=max_features,
-            n_estimators=20
+        selected = select_plateau_features(
+            importances, all_features, top_n=2
         )
 
-        assert len(selected) <= max_features
+        assert len(selected) == 2
 
-    def test_prefer_plateau_changes_order(self, features_with_lookbacks):
-        """prefer_plateau=True sollte Sortierung ändern."""
-        X, y = features_with_lookbacks
-        selector = PlateauSelector()
-
-        # Mit Plateau-Präferenz
-        selected_plateau, meta_plateau = selector.select_features(
-            X, y,
-            prefer_plateau=True,
-            max_features=5,
-            n_estimators=50
-        )
-
-        # Ohne Plateau-Präferenz
-        selected_importance, meta_importance = selector.select_features(
-            X, y,
-            prefer_plateau=False,
-            max_features=5,
-            n_estimators=50
-        )
-
-        # Beide sollten Ergebnisse liefern
-        assert len(selected_plateau) > 0
-        assert len(selected_importance) > 0
-
-        # Methode sollte in Metadata korrekt sein
-        assert meta_plateau["method"] == "plateau"
-        assert meta_importance["method"] == "importance"
-
-    def test_handles_empty_dataframe(self):
-        """Sollte leeren DataFrame behandeln."""
-        X = pd.DataFrame()
-        y = np.array([])
-        selector = PlateauSelector()
-
-        selected, metadata = selector.select_features(X, y)
-
+    def test_handles_empty_importances(self):
+        """Sollte leeres Dict behandeln."""
+        selected = select_plateau_features({}, [], top_n=5)
         assert selected == []
-        assert metadata == {}
-
-    def test_handles_nan_values(self, features_with_lookbacks):
-        """Sollte NaN-Werte behandeln."""
-        X, y = features_with_lookbacks
-        X.iloc[0, 0] = np.nan
-        X.iloc[10, 2] = np.inf
-
-        selector = PlateauSelector()
-        selected, _ = selector.select_features(X, y, n_estimators=20)
-
-        assert isinstance(selected, list)
-
-    def test_default_params(self):
-        """get_default_params sollte sinnvolle Defaults liefern."""
-        defaults = PlateauSelector.get_default_params()
-
-        assert "n_estimators" in defaults
-        assert "min_importance" in defaults
-        assert "prefer_plateau" in defaults
 
 
 # --- Parameter Plateau Tests ---

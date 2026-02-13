@@ -222,10 +222,9 @@ class TestSimulationContextCombinations:
             grid_tp=[15, 20, 25],  # 3
             grid_sl=[10, 15],  # 2
             grid_ct=[0.5],  # Nicht in Kombinationen
-            feature_groups=["trend"],  # 1
         )
 
-        # 3 TP × 2 SL × 1 Timeout × 1 Gruppe = 6
+        # 3 TP × 2 SL × 1 Timeout = 6
         assert ctx.total_grid_combinations() == 6
 
     def test_total_grid_combinations_with_timeout(self):
@@ -239,14 +238,13 @@ class TestSimulationContextCombinations:
             grid_sl=[10, 15],  # 2
             grid_ct=[0.5],
             grid_timeout_bars=[None, 10, 20],  # 3
-            feature_groups=["trend"],  # 1
         )
 
-        # 2 × 2 × 3 × 1 = 12
+        # 2 × 2 × 3 = 12
         assert ctx.total_grid_combinations() == 12
 
-    def test_total_grid_combinations_with_feature_groups(self):
-        """Feature-Groups sollten in Kombinationen eingehen."""
+    def test_total_grid_combinations_with_indicators(self):
+        """Indicator plugins are used together (not multiplied)."""
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
@@ -255,11 +253,15 @@ class TestSimulationContextCombinations:
             grid_tp=[15, 20],  # 2
             grid_sl=[10],  # 1
             grid_ct=[0.5],
-            feature_groups=["trend", "momentum", "volatility"],  # 3
+            indicator_plugins=[
+                {"name": "trend", "params": {}},
+                {"name": "momentum", "params": {}},
+            ],
         )
 
-        # 2 × 1 × 1 × 3 = 6
-        assert ctx.total_grid_combinations() == 6
+        # With pipeline, all indicators are applied together
+        # So grid combinations = 2 × 1 × 1 = 2 (not multiplied by indicators)
+        assert ctx.total_grid_combinations() == 2
 
     def test_total_grid_combinations_separate_long_short(self):
         """Separate Long/Short sollten korrekt addiert werden."""
@@ -278,16 +280,15 @@ class TestSimulationContextCombinations:
             short_grid_tp=[10, 15],  # 2
             short_grid_sl=[20],  # 1
             short_grid_ct=[0.5],
-            feature_groups=["trend"],  # 1
         )
 
         # Long: 3 × 2 × 1 = 6
         # Short: 2 × 1 × 1 = 2
-        # Total: (6 + 2) × 1 = 8
+        # Total: 6 + 2 = 8
         assert ctx.total_grid_combinations() == 8
 
-    def test_grid_combinations_per_feature_group(self):
-        """Kombinationen pro Feature-Gruppe sollten korrekt sein."""
+    def test_grid_combinations_per_run(self):
+        """Kombinationen pro Run sollten korrekt sein."""
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
@@ -296,14 +297,13 @@ class TestSimulationContextCombinations:
             grid_tp=[15, 20, 25],  # 3
             grid_sl=[10, 15],  # 2
             grid_ct=[0.5],
-            feature_groups=["trend", "momentum"],  # Nicht relevant hier
         )
 
         # 3 × 2 × 1 (timeout) = 6
-        assert ctx.grid_combinations_per_feature_group() == 6
+        assert ctx.grid_combinations_per_run() == 6
 
-    def test_grid_combinations_per_feature_group_separate(self):
-        """Kombinationen pro Gruppe mit separate Long/Short."""
+    def test_grid_combinations_per_run_separate(self):
+        """Kombinationen pro Run mit separate Long/Short."""
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
@@ -324,7 +324,7 @@ class TestSimulationContextCombinations:
         # Long: 2 × 1 = 2
         # Short: 3 × 2 = 6
         # Total: (2 + 6) × 1 (timeout) = 8
-        assert ctx.grid_combinations_per_feature_group() == 8
+        assert ctx.grid_combinations_per_run() == 8
 
 
 class TestSimulationContextEdgeCases:
@@ -358,8 +358,8 @@ class TestSimulationContextEdgeCases:
 
         assert ctx.total_grid_combinations() == 0
 
-    def test_none_feature_groups(self):
-        """None feature_groups sollte als 1 gezählt werden."""
+    def test_none_indicator_plugins(self):
+        """None indicator_plugins sollte funktionieren."""
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
@@ -368,10 +368,10 @@ class TestSimulationContextEdgeCases:
             grid_tp=[15],
             grid_sl=[10],
             grid_ct=[0.5],
-            feature_groups=None,
+            indicator_plugins=None,
         )
 
-        # 1 × 1 × 1 × 1 = 1
+        # 1 × 1 × 1 = 1
         assert ctx.total_grid_combinations() == 1
 
     def test_none_timeout_bars(self):
@@ -399,11 +399,10 @@ class TestSimulationContextEdgeCases:
             grid_tp=[15],
             grid_sl=[10],
             grid_ct=[0.5],
-            feature_groups=["trend"],
         )
 
         assert ctx.total_grid_combinations() == 1
-        assert ctx.grid_combinations_per_feature_group() == 1
+        assert ctx.grid_combinations_per_run() == 1
 
     def test_very_large_grids(self):
         """Sehr große Grids sollten korrekt berechnet werden."""
@@ -416,11 +415,10 @@ class TestSimulationContextEdgeCases:
             grid_sl=list(range(10, 60, 5)),  # 10 Werte
             grid_ct=[0.5],
             grid_timeout_bars=[None, 10, 20, 30, 40],  # 5 Werte
-            feature_groups=["trend", "momentum", "volatility"],  # 3 Gruppen
         )
 
-        # 10 × 10 × 5 × 3 = 1500
-        assert ctx.total_grid_combinations() == 1500
+        # 10 × 10 × 5 = 500 (no feature group multiplier in pipeline)
+        assert ctx.total_grid_combinations() == 500
 
     def test_float_spread_point(self):
         """Float-Werte für spread und point sollten funktionieren."""

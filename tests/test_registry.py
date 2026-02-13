@@ -14,26 +14,22 @@ from fwbg.core.registry import (
     EXIT_STRATEGY_REGISTRY,
     FEATURE_SELECTOR_REGISTRY,
     PREPROCESSOR_REGISTRY,
-    DATA_ADAPTER_REGISTRY,
-    EXECUTION_ADAPTER_REGISTRY,
+    BROKER_ADAPTER_REGISTRY,
     register_indicator,
     register_exit_strategy,
     register_feature_selector,
     register_preprocessor,
-    register_data_adapter,
-    register_execution_adapter,
+    register_broker_adapter,
     get_indicator,
     get_exit_strategy,
     get_feature_selector,
     get_preprocessor,
-    get_data_adapter,
-    get_execution_adapter,
+    get_broker_adapter,
     list_indicators,
     list_exit_strategies,
     list_feature_selectors,
     list_preprocessors,
-    list_data_adapters,
-    list_execution_adapters,
+    list_broker_adapters,
     discover_plugins,
 )
 
@@ -151,36 +147,20 @@ class TestRegisterPreprocessor:
         del PREPROCESSOR_REGISTRY["test_pp_1"]
 
 
-class TestRegisterDataAdapter:
-    """Tests für @register_data_adapter Decorator."""
+class TestRegisterBrokerAdapter:
+    """Tests für @register_broker_adapter Decorator."""
 
     def test_registers_class(self):
         """Decorator sollte Klasse registrieren."""
-        @register_data_adapter("test_da_1")
-        class TestDA1:
+        @register_broker_adapter("test_ba_1")
+        class TestBA1:
             pass
 
-        assert "test_da_1" in DATA_ADAPTER_REGISTRY
-        assert TestDA1.adapter_type == "test_da_1"
+        assert "test_ba_1" in BROKER_ADAPTER_REGISTRY
+        assert TestBA1.adapter_type == "test_ba_1"
 
         # Cleanup
-        del DATA_ADAPTER_REGISTRY["test_da_1"]
-
-
-class TestRegisterExecutionAdapter:
-    """Tests für @register_execution_adapter Decorator."""
-
-    def test_registers_class(self):
-        """Decorator sollte Klasse registrieren."""
-        @register_execution_adapter("test_ea_1")
-        class TestEA1:
-            pass
-
-        assert "test_ea_1" in EXECUTION_ADAPTER_REGISTRY
-        assert TestEA1.adapter_type == "test_ea_1"
-
-        # Cleanup
-        del EXECUTION_ADAPTER_REGISTRY["test_ea_1"]
+        del BROKER_ADAPTER_REGISTRY["test_ba_1"]
 
 
 # --- Getter Tests ---
@@ -264,26 +244,15 @@ class TestGetPreprocessor:
         assert "nonexistent_pp_xyz" in str(exc_info.value)
 
 
-class TestGetDataAdapter:
-    """Tests für get_data_adapter()."""
+class TestGetBrokerAdapter:
+    """Tests für get_broker_adapter()."""
 
     def test_raises_for_unknown(self):
         """Sollte ValueError für unbekannten Namen werfen."""
         with pytest.raises(ValueError) as exc_info:
-            get_data_adapter("nonexistent_da_xyz")
+            get_broker_adapter("nonexistent_ba_xyz")
 
-        assert "nonexistent_da_xyz" in str(exc_info.value)
-
-
-class TestGetExecutionAdapter:
-    """Tests für get_execution_adapter()."""
-
-    def test_raises_for_unknown(self):
-        """Sollte ValueError für unbekannten Namen werfen."""
-        with pytest.raises(ValueError) as exc_info:
-            get_execution_adapter("nonexistent_ea_xyz")
-
-        assert "nonexistent_ea_xyz" in str(exc_info.value)
+        assert "nonexistent_ba_xyz" in str(exc_info.value)
 
 
 # --- List Functions Tests ---
@@ -312,14 +281,9 @@ class TestListFunctions:
         result = list_preprocessors()
         assert isinstance(result, list)
 
-    def test_list_data_adapters_returns_list(self):
-        """list_data_adapters sollte Liste zurückgeben."""
-        result = list_data_adapters()
-        assert isinstance(result, list)
-
-    def test_list_execution_adapters_returns_list(self):
-        """list_execution_adapters sollte Liste zurückgeben."""
-        result = list_execution_adapters()
+    def test_list_broker_adapters_returns_list(self):
+        """list_broker_adapters sollte Liste zurückgeben."""
+        result = list_broker_adapters()
         assert isinstance(result, list)
 
     def test_list_reflects_registry(self):
@@ -347,12 +311,16 @@ class TestDiscoverPlugins:
         discover_plugins()
 
     def test_loads_builtin_indicators(self):
-        """Sollte Built-in Indikatoren laden."""
-        discover_plugins()
+        """Sollte Built-in Indikatoren via Pipeline-Registry laden."""
+        # Indikatoren werden jetzt über das Pipeline-Registry-System geladen
+        from fwbg.pipeline import get_registry
+        registry = get_registry()
+        registry.auto_discover()
 
         # Mindestens einige Standard-Indikatoren sollten vorhanden sein
-        indicators = list_indicators()
-        assert len(indicators) > 0, "Sollte Built-in Indikatoren laden"
+        plugins = list(registry._plugins.keys())
+        indicator_plugins = [p for p in plugins if 'trend' in p or 'momentum' in p]
+        assert len(indicator_plugins) > 0, "Sollte Built-in Indikatoren laden"
 
     def test_loads_builtin_exit_strategies(self):
         """Sollte Built-in Exit-Strategien laden."""
@@ -458,8 +426,6 @@ class TestRegistryIntegration:
         """Vollständiger Workflow: Register -> Get -> Use."""
         @register_indicator("workflow_test")
         class WorkflowIndicator:
-            group = "test"
-
             def compute(self, df):
                 return df
 
@@ -473,7 +439,7 @@ class TestRegistryIntegration:
 
             # Instantiate
             instance = cls()
-            assert instance.group == "test"
+            assert instance.name == "workflow_test"
 
             # List
             assert "workflow_test" in list_indicators()
@@ -487,15 +453,15 @@ class TestRegistryIntegration:
         # Indicators
         for name in list_indicators():
             cls = get_indicator(name)
-            # Sollte compute und get_feature_columns haben
-            assert hasattr(cls, "compute") or hasattr(cls, "group")
+            # Sollte name Attribut haben
+            assert hasattr(cls, "name")
 
         # Exit Strategies
         for name in list_exit_strategies():
             cls = get_exit_strategy(name)
             assert hasattr(cls, "compute_targets") or hasattr(cls, "iterate_grid")
 
-        # Preprocessors müssen transform() haben (nicht process()!)
+        # Preprocessors müssen execute() haben (neues Plugin-System)
         for name in list_preprocessors():
             cls = get_preprocessor(name)
-            assert hasattr(cls, "transform"), f"Preprocessor {name} has no transform() method"
+            assert hasattr(cls, "execute"), f"Preprocessor {name} has no execute() method"

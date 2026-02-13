@@ -9,8 +9,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.builtins.exit_strategies.fixed import FixedExitStrategy
-from fwbg.builtins.exit_strategies.atr_based import AtrExitStrategy
+from fwbg.plugins import import_plugin_module
+
+# Import exit strategies from plugins
+_fixed = import_plugin_module("fwbg-core", "exit_strategies", "fixed")
+_atr = import_plugin_module("fwbg-premium", "exit_strategies", "atr_based")
+
+FixedExitStrategy = _fixed.FixedExitStrategy
+AtrExitStrategy = _atr.AtrExitStrategy
 from fwbg.core.context import SimulationContext
 
 
