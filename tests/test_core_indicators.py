@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.builtins.indicators import (
+from fwbg.pipeline import (
     compute_indicator_pool,
     get_feature_columns,
     filter_features_by_group,

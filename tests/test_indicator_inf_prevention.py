@@ -68,7 +68,7 @@ class TestIndicatorsNoInf:
 
     def test_volatility_no_inf(self, realistic_ohlc):
         """Volatility-Indikatoren dürfen keine inf-Werte produzieren."""
-        from fwbg.builtins.indicators import compute_indicator_pool
+        from fwbg.pipeline import compute_indicator_pool
 
         result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["volatility"])
 
@@ -81,7 +81,7 @@ class TestIndicatorsNoInf:
 
     def test_trend_no_inf(self, realistic_ohlc):
         """Trend-Indikatoren dürfen keine inf-Werte produzieren."""
-        from fwbg.builtins.indicators import compute_indicator_pool
+        from fwbg.pipeline import compute_indicator_pool
 
         result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["trend"])
 
@@ -94,7 +94,7 @@ class TestIndicatorsNoInf:
 
     def test_dynamics_no_inf(self, realistic_ohlc):
         """Dynamics-Indikatoren dürfen keine inf-Werte produzieren."""
-        from fwbg.builtins.indicators import compute_indicator_pool
+        from fwbg.pipeline import compute_indicator_pool
 
         result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["dynamics"])
 
@@ -107,7 +107,7 @@ class TestIndicatorsNoInf:
 
     def test_ichimoku_no_inf(self, realistic_ohlc):
         """Ichimoku-Indikatoren dürfen keine inf-Werte produzieren."""
-        from fwbg.builtins.indicators import compute_indicator_pool
+        from fwbg.pipeline import compute_indicator_pool
 
         result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["ichimoku"])
 
@@ -120,7 +120,7 @@ class TestIndicatorsNoInf:
 
     def test_multi_timeframe_no_inf(self, realistic_ohlc):
         """Multi-Timeframe-Indikatoren dürfen keine inf-Werte produzieren."""
-        from fwbg.builtins.indicators import compute_indicator_pool
+        from fwbg.pipeline import compute_indicator_pool
 
         result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["multi_timeframe"])
 
@@ -133,7 +133,7 @@ class TestIndicatorsNoInf:
 
     def test_price_action_no_inf(self, realistic_ohlc):
         """Price-Action-Indikatoren dürfen keine inf-Werte produzieren."""
-        from fwbg.builtins.indicators import compute_indicator_pool
+        from fwbg.pipeline import compute_indicator_pool
 
         result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["price_action"])
 
@@ -146,7 +146,7 @@ class TestIndicatorsNoInf:
 
     def test_all_indicators_no_inf_with_edge_cases(self, edge_case_ohlc):
         """ALLE Indikatoren dürfen auch bei Edge Cases keine inf-Werte produzieren."""
-        from fwbg.builtins.indicators import compute_indicator_pool
+        from fwbg.pipeline import compute_indicator_pool
 
         all_indicators = [
             "trend", "momentum", "volatility", "dynamics",

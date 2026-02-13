@@ -72,7 +72,12 @@ class TestStrategyLoading:
 
         strategy_data = {
             "name": "TestStrategy",
-            "indicators": ["trend", "momentum"],
+            "pipeline": {
+                "indicators": [
+                    {"name": "trend", "params": {}},
+                    {"name": "momentum", "params": {}},
+                ]
+            },
             "grids": {
                 "FOREX": {
                     "tp": [1.5, 2.0],
@@ -84,8 +89,10 @@ class TestStrategyLoading:
 
         config = StrategyConfig.from_dict(strategy_data)
         assert config.name == "TestStrategy"
-        assert "trend" in config.indicators
-        assert "momentum" in config.indicators
+        indicators = config.get_indicators()
+        assert len(indicators) == 2
+        assert indicators[0]["name"] == "trend"
+        assert indicators[1]["name"] == "momentum"
         forex_grid = config.get_grid_for_class("FOREX")
         assert 1.5 in forex_grid.tp
         assert 2.0 in forex_grid.tp
@@ -99,7 +106,9 @@ class TestStrategyLoading:
             "version": "1.0",
             "account": "custom_account",
             "timeframe": "MINUTE_15",
-            "indicators": ["trend"],
+            "pipeline": {
+                "indicators": [{"name": "trend", "params": {}}]
+            },
             "grid": {"tp": [2.0], "sl": [1.0], "ct": [0.5]}
         }
 
@@ -108,23 +117,26 @@ class TestStrategyLoading:
         assert config.name == "TestWithAccount"
 
     def test_load_strategy_with_preprocessing(self):
-        """Test: Strategy mit Preprocessing-Plugins."""
+        """Test: Strategy mit Preprocessing-Plugins (Pipeline-Format)."""
         from fwbg.core.config import StrategyConfig
 
         strategy_data = {
             "name": "TestPreprocessing",
             "version": "1.0",
-            "preprocessing": ["fractional_diff"],
-            "preprocessing_params": {
-                "fractional_diff": {"d": 0.4}
+            "pipeline": {
+                "preprocessing": [
+                    {"name": "fractional_diff", "params": {"d": 0.4}}
+                ],
+                "indicators": [{"name": "trend", "params": {}}]
             },
-            "indicators": ["trend"],
             "grid": {"tp": [2.0], "sl": [1.0], "ct": [0.5]}
         }
 
         config = StrategyConfig.from_dict(strategy_data)
-        assert config.preprocessing == ["fractional_diff"]
-        assert config.preprocessing_params.get("fractional_diff") == {"d": 0.4}
+        preprocessing = config.get_preprocessing()
+        assert len(preprocessing) == 1
+        assert preprocessing[0]["name"] == "fractional_diff"
+        assert preprocessing[0]["params"]["d"] == 0.4
 
     def test_load_invalid_json(self):
         """Test: Ungültige JSON-Daten."""
@@ -142,7 +154,7 @@ class TestStrategyLoading:
         config = StrategyConfig.from_dict({})
         assert config.name == "Default Strategy"
         assert config.exit_strategy == "atr_based"
-        assert config.preprocessing == []
+        assert config.get_preprocessing() == []
 
 
 class TestAccountTimeframeOverride:
@@ -169,22 +181,28 @@ class TestAccountTimeframeOverride:
 
 
 class TestPreprocessingPluginFormat:
-    """Tests für das neue Preprocessing-Plugin-Format."""
+    """Tests für das neue Preprocessing-Plugin-Format (Pipeline)."""
 
     def test_preprocessing_is_list(self):
-        """Test: preprocessing sollte Liste von Plugin-Namen sein."""
+        """Test: preprocessing sollte Liste von Plugin-Configs sein."""
         from fwbg.core.config import StrategyConfig
 
         config = StrategyConfig.from_dict({
             "name": "Test",
             "version": "1.0",
-            "preprocessing": ["fractional_diff", "normalize"],
-            "preprocessing_params": {"fractional_diff": {"d": 0.5}}
+            "pipeline": {
+                "preprocessing": [
+                    {"name": "fractional_diff", "params": {"d": 0.5}},
+                    {"name": "normalize", "params": {}}
+                ]
+            }
         })
 
-        assert isinstance(config.preprocessing, list)
-        assert "fractional_diff" in config.preprocessing
-        assert "normalize" in config.preprocessing
+        preprocessing = config.get_preprocessing()
+        assert isinstance(preprocessing, list)
+        assert len(preprocessing) == 2
+        assert preprocessing[0]["name"] == "fractional_diff"
+        assert preprocessing[1]["name"] == "normalize"
 
     def test_empty_preprocessing(self):
         """Test: Leere Preprocessing-Liste."""
@@ -192,8 +210,9 @@ class TestPreprocessingPluginFormat:
 
         config = StrategyConfig.from_dict({"name": "Test", "version": "1.0"})
 
-        assert config.preprocessing == []
-        assert not config.preprocessing  # Evaluiert zu False
+        preprocessing = config.get_preprocessing()
+        assert preprocessing == []
+        assert not preprocessing  # Evaluiert zu False
 
 
 class TestFeatureGroups:
@@ -201,7 +220,7 @@ class TestFeatureGroups:
 
     def test_feature_groups_structure(self):
         """Test: FEATURE_GROUPS hat korrekte Struktur."""
-        from fwbg.builtins.indicators import FEATURE_GROUPS
+        from fwbg.pipeline import FEATURE_GROUPS
 
         assert "trend" in FEATURE_GROUPS
         assert "momentum" in FEATURE_GROUPS
@@ -214,7 +233,7 @@ class TestFeatureGroups:
 
     def test_filter_features_by_group(self):
         """Test: filter_features_by_group funktioniert."""
-        from fwbg.builtins.indicators import filter_features_by_group
+        from fwbg.pipeline import filter_features_by_group
 
         all_features = [
             "trend_adx_14", "trend_ema_20",
@@ -233,7 +252,7 @@ class TestFeatureGroups:
 
     def test_unknown_group_returns_all(self):
         """Test: Unbekannte Gruppe gibt alle Features zurück."""
-        from fwbg.builtins.indicators import filter_features_by_group
+        from fwbg.pipeline import filter_features_by_group
 
         all_features = ["trend_adx_14", "mom_rsi_14"]
         result = filter_features_by_group(all_features, "nonexistent_group")
@@ -248,21 +267,21 @@ class TestComputeIndicatorPool:
         """Test: Grundlegende Indikator-Berechnung."""
         import pandas as pd
         import numpy as np
-        from fwbg.builtins.indicators import compute_indicator_pool
+        from fwbg.pipeline import compute_indicator_pool
 
-        # Erstelle Test-DataFrame
+        # Erstelle Test-DataFrame mit DateTimeIndex (benötigt für time_season)
         n = 500
         df = pd.DataFrame({
             "O": np.random.randn(n).cumsum() + 100,
             "H": np.random.randn(n).cumsum() + 101,
             "L": np.random.randn(n).cumsum() + 99,
             "C": np.random.randn(n).cumsum() + 100,
-        })
+        }, index=pd.date_range("2024-01-01", periods=n, freq="h"))
         df["H"] = df[["O", "H", "C"]].max(axis=1) + 0.1
         df["L"] = df[["O", "L", "C"]].min(axis=1) - 0.1
-        original_cols = len(df.columns)
 
-        result = compute_indicator_pool(df)
+        # Test mit nur trend indicators (schneller)
+        result = compute_indicator_pool(df, indicators=["trend"])
 
         # compute_indicator_pool gibt den DataFrame MIT Indikatoren zurück
         # Es sollte mindestens Indikator-Spalten hinzugefügt haben
@@ -274,7 +293,7 @@ class TestComputeIndicatorPool:
         """Test: compute_indicator_pool akzeptiert kein symbol Argument."""
         import pandas as pd
         import numpy as np
-        from fwbg.builtins.indicators import compute_indicator_pool
+        from fwbg.pipeline import compute_indicator_pool
         import inspect
 
         sig = inspect.signature(compute_indicator_pool)
@@ -289,7 +308,7 @@ class TestExitStrategies:
 
     def test_get_strategy(self):
         """Test: get_strategy gibt korrekte Klasse zurück."""
-        from fwbg.builtins.exit_strategies import get_strategy
+        from fwbg.core import get_exit_strategy as get_strategy
 
         atr_strategy = get_strategy("atr_based")
         assert atr_strategy is not None
@@ -299,14 +318,14 @@ class TestExitStrategies:
 
     def test_get_nonexistent_strategy(self):
         """Test: get_strategy mit unbekanntem Namen wirft ValueError."""
-        from fwbg.builtins.exit_strategies import get_strategy
+        from fwbg.core import get_exit_strategy as get_strategy
 
         with pytest.raises(ValueError):
             get_strategy("nonexistent_strategy")
 
     def test_grid_params(self):
         """Test: GridParams Klasse."""
-        from fwbg.builtins.exit_strategies.base import GridParams
+        from fwbg.core import GridParams
 
         params = GridParams(tp_value=2.0, sl_value=1.0)
 
@@ -316,7 +335,7 @@ class TestExitStrategies:
 
     def test_grid_params_to_dict(self):
         """Test: GridParams.to_dict()."""
-        from fwbg.builtins.exit_strategies.base import GridParams
+        from fwbg.core import GridParams
 
         params = GridParams(tp_value=2.0, sl_value=1.0, timeout_bars=50)
         d = params.to_dict()
