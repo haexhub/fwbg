@@ -68,13 +68,15 @@ def create_asset_plot(result, plots_path, trade_directions=None):
                           farbliche Unterscheidung
     """
     sym = result.get("symbol", "?")
-    config = result.get("config", {})
+    config = result.get("config") or result.get("best_config", {})
     trades = result.get("tr_trace", [])
 
     if not trades:
         return None
 
     kelly = config.get("kelly_risk", 0.01)
+    if kelly <= 0:
+        kelly = 0.01  # Minimum für Visualisierung
     rrr = result.get("rrr", 1.0)
 
     # Equity simulieren

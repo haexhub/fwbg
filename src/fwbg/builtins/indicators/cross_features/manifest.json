@@ -1,8 +1,0 @@
-{
-  "name": "cross_features",
-  "version": "2.0.0",
-  "description": "Cross-feature indicators combining multiple indicator signals",
-  "phase": "indicators",
-  "author": "FWBG Core Team",
-  "dependencies": ["numpy", "pandas"]
-}

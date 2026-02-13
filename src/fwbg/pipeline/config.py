@@ -2,6 +2,8 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from fwbg.pipeline.features import normalize_plugin_name
+
 
 @dataclass
 class PluginConfig:
@@ -37,8 +39,11 @@ class PluginConfig:
         if "name" not in data:
             raise ValueError("Plugin config must have 'name' key")
 
+        # Normalize short names to fully qualified names
+        fq_name = normalize_plugin_name(data["name"])
+
         return cls(
-            name=data["name"],
+            name=fq_name,
             params=data.get("params", {}),
             stateful=data.get("stateful"),
             cacheable=data.get("cacheable"),

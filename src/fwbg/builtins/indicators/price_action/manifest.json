@@ -1,8 +1,0 @@
-{
-  "name": "price_action",
-  "version": "2.0.0",
-  "description": "Price action indicators including candlestick patterns and price levels",
-  "phase": "indicators",
-  "author": "FWBG Core Team",
-  "dependencies": ["numpy", "pandas"]
-}

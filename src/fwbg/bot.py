@@ -38,8 +38,8 @@ import ta
 from xgboost import XGBClassifier
 
 from fwbg.adapters.broker import BrokerAdapter, OrderSide, BarData
-from fwbg.builtins.indicators import compute_indicator_pool
-from fwbg.builtins.utils import load_macro_indicators, load_interest_rates
+from fwbg.pipeline import compute_indicator_pool
+from fwbg.utils import load_macro_indicators, load_interest_rates
 
 logger = logging.getLogger(__name__)
 

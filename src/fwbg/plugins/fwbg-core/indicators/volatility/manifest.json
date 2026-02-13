@@ -1,0 +1,7 @@
+{
+  "name": "volatility",
+  "version": "3.0.0",
+  "description": "Volatility indicators: ATR, Bollinger Bands, Keltner/Donchian Channel, Garman-Klass, Parkinson, Yang-Zhang",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

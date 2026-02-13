@@ -48,6 +48,22 @@ from fwbg.pipeline.config import (
     parse_pipeline_config,
 )
 from fwbg.pipeline.runner import PipelineRunner
+from fwbg.pipeline.features import (
+    CORE_INDICATORS,
+    PREMIUM_INDICATORS,
+    ALL_INDICATORS,
+    FEATURE_GROUPS,
+    get_feature_columns,
+    filter_features_by_group,
+    compute_regime_filter,
+    compute_indicator_pool,
+    normalize_plugin_name,
+    # Feature selection
+    select_features_boruta,
+    select_plateau_features,
+    calculate_param_plateau_score,
+    select_best_plateau_candidate,
+)
 
 __all__ = [
     # Context
@@ -69,4 +85,19 @@ __all__ = [
     "parse_pipeline_config",
     # Runner
     "PipelineRunner",
+    # Features
+    "CORE_INDICATORS",
+    "PREMIUM_INDICATORS",
+    "ALL_INDICATORS",
+    "FEATURE_GROUPS",
+    "get_feature_columns",
+    "filter_features_by_group",
+    "compute_regime_filter",
+    "compute_indicator_pool",
+    "normalize_plugin_name",
+    # Feature selection
+    "select_features_boruta",
+    "select_plateau_features",
+    "calculate_param_plateau_score",
+    "select_best_plateau_candidate",
 ]

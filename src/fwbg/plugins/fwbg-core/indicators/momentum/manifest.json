@@ -1,0 +1,7 @@
+{
+  "name": "momentum",
+  "version": "1.0.0",
+  "description": "Momentum indicators: RSI, Stochastic, Williams %R, Ultimate Oscillator, ROC",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

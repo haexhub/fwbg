@@ -125,5 +125,3 @@ def get_asset(symbol: str) -> AssetConfig:
     return AssetRegistry().get(symbol)
 
 
-# ASSETS dict für Legacy-Kompatibilität
-ASSETS = AssetRegistry.DEFAULT_ASSETS

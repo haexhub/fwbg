@@ -263,6 +263,7 @@ class ResourceConfig:
     max_cpu_percent: float = 0.80
     xgboost_n_jobs: int = 0
     threads_per_asset: int = 0
+    max_concurrent_assets: int = 0  # 0 = auto (CPU/RAM-basiert)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ResourceConfig":
@@ -284,6 +285,7 @@ class ResourceConfig:
             max_cpu_percent=max_cpu,
             xgboost_n_jobs=data.get("xgboost_n_jobs", 0),
             threads_per_asset=data.get("threads_per_asset", 0),
+            max_concurrent_assets=data.get("max_concurrent_assets", 0),
         )
 
 
@@ -309,6 +311,10 @@ class StrategyConfig:
     # Exit strategy
     exit_strategy: str = "atr_based"
     exit_params: Dict[str, Any] = field(default_factory=dict)
+
+    # Risk management
+    risk_management: str = "kelly"
+    risk_params: Dict[str, Any] = field(default_factory=dict)
 
     # Grid-Konfiguration
     grids: Dict[str, GridConfig] = field(default_factory=dict)
@@ -343,6 +349,8 @@ class StrategyConfig:
             pipeline=pipeline,
             exit_strategy=data.get("exit_strategy", "atr_based"),
             exit_params=data.get("exit_params", {}),
+            risk_management=data.get("risk_management", "kelly"),
+            risk_params=data.get("risk_params", {}),
             grids=grids,
             assets=data.get("assets", {}),
             model=ModelConfig.from_dict(data.get("model", {})),
@@ -390,6 +398,8 @@ class StrategyConfig:
             "pipeline": self.pipeline,
             "exit_strategy": self.exit_strategy,
             "exit_params": self.exit_params,
+            "risk_management": self.risk_management,
+            "risk_params": self.risk_params,
             "grids": {
                 k: {"tp": v.tp, "sl": v.sl, "ct": v.ct, "timeout_bars": v.timeout_bars}
                 for k, v in self.grids.items()

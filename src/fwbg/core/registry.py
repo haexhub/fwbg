@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from ..plugins.exit_strategy import BaseExitStrategy
     from ..plugins.feature_selector import BaseFeatureSelector
     from ..plugins.preprocessor import BasePreprocessor
+    from ..plugins.risk_manager import BaseRiskManager
     from ..adapters.broker import BrokerAdapter
 
 log = logging.getLogger(__name__)
@@ -22,9 +23,7 @@ EXIT_STRATEGY_REGISTRY: Dict[str, Type["BaseExitStrategy"]] = {}
 FEATURE_SELECTOR_REGISTRY: Dict[str, Type["BaseFeatureSelector"]] = {}
 PREPROCESSOR_REGISTRY: Dict[str, Type["BasePreprocessor"]] = {}
 BROKER_ADAPTER_REGISTRY: Dict[str, Type["BrokerAdapter"]] = {}
-# Legacy aliases for backwards compatibility
-DATA_ADAPTER_REGISTRY: Dict[str, type] = {}  # Deprecated
-EXECUTION_ADAPTER_REGISTRY: Dict[str, type] = {}  # Deprecated
+RISK_MANAGER_REGISTRY: Dict[str, Type["BaseRiskManager"]] = {}
 
 
 def register_indicator(name: str):
@@ -137,23 +136,24 @@ def register_broker_adapter(name: str):
     return decorator
 
 
-# Legacy decorators for backwards compatibility
-def register_data_adapter(name: str):
-    """Deprecated: Use register_broker_adapter instead."""
-    def decorator(cls):
-        DATA_ADAPTER_REGISTRY[name] = cls
-        cls.adapter_type = name
-        log.debug(f"Registered data adapter: {name} (deprecated)")
-        return cls
-    return decorator
+def register_risk_manager(name: str):
+    """
+    Decorator zum Registrieren eines Risk Managers.
 
+    Beispiel:
+        ```python
+        from fwbg.core import register_risk_manager
+        from fwbg.plugins import BaseRiskManager
 
-def register_execution_adapter(name: str):
-    """Deprecated: Use register_broker_adapter instead."""
+        @register_risk_manager("kelly")
+        class KellyRiskManager(BaseRiskManager):
+            ...
+        ```
+    """
     def decorator(cls):
-        EXECUTION_ADAPTER_REGISTRY[name] = cls
-        cls.adapter_type = name
-        log.debug(f"Registered execution adapter: {name} (deprecated)")
+        RISK_MANAGER_REGISTRY[name] = cls
+        cls.name = name
+        log.debug(f"Registered risk manager: {name}")
         return cls
     return decorator
 
@@ -162,20 +162,17 @@ def discover_plugins():
     """
     Entdeckt und lädt alle installierten Plugins via Entry Points.
 
+    NOTE: Plugins werden jetzt primär über import_plugin_module() geladen.
+    Diese Funktion ist nur noch für Backwards-Compatibility mit pip-installierten
+    Plugins vorhanden. Fehlende Module werden ignoriert (nur debug log).
+
     Entry Point Groups:
-    - fwbg.indicators
-    - fwbg.exit_strategies
-    - fwbg.feature_selectors
-    - fwbg.preprocessors
-    - fwbg.broker_adapters
+    - fwbg.broker_adapters (einzige noch aktive Gruppe)
 
     Wird automatisch beim Import von fwbg aufgerufen.
     """
+    # Nur noch broker_adapters - andere Plugins werden über import_plugin_module geladen
     groups = [
-        ("fwbg.indicators", INDICATOR_REGISTRY),
-        ("fwbg.exit_strategies", EXIT_STRATEGY_REGISTRY),
-        ("fwbg.feature_selectors", FEATURE_SELECTOR_REGISTRY),
-        ("fwbg.preprocessors", PREPROCESSOR_REGISTRY),
         ("fwbg.broker_adapters", BROKER_ADAPTER_REGISTRY),
     ]
 
@@ -189,7 +186,8 @@ def discover_plugins():
                     cls.name = ep.name
                     log.debug(f"Loaded {group_name}: {ep.name}")
                 except Exception as e:
-                    log.warning(f"Failed to load plugin {ep.name}: {e}")
+                    # Debug statt warning - fehlende Module sind OK
+                    log.debug(f"Could not load plugin {ep.name}: {e}")
         except Exception as e:
             log.debug(f"No plugins found for {group_name}: {e}")
 
@@ -199,6 +197,7 @@ def discover_plugins():
         + len(FEATURE_SELECTOR_REGISTRY)
         + len(PREPROCESSOR_REGISTRY)
         + len(BROKER_ADAPTER_REGISTRY)
+        + len(RISK_MANAGER_REGISTRY)
     )
 
     if total > 0:
@@ -208,7 +207,8 @@ def discover_plugins():
             f"{len(EXIT_STRATEGY_REGISTRY)} exit strategies, "
             f"{len(FEATURE_SELECTOR_REGISTRY)} feature selectors, "
             f"{len(PREPROCESSOR_REGISTRY)} preprocessors, "
-            f"{len(BROKER_ADAPTER_REGISTRY)} broker adapters"
+            f"{len(BROKER_ADAPTER_REGISTRY)} broker adapters, "
+            f"{len(RISK_MANAGER_REGISTRY)} risk managers"
         )
 
 
@@ -247,6 +247,16 @@ def get_exit_strategy(name: str) -> Type["BaseExitStrategy"]:
     Raises:
         ValueError: Wenn Exit-Strategy nicht gefunden
     """
+    # Lazy-load exit strategies from plugins if not yet loaded
+    if not EXIT_STRATEGY_REGISTRY:
+        try:
+            from fwbg.plugins import import_plugin_module
+            # Import triggers @register_exit_strategy decorator
+            import_plugin_module("fwbg-core", "exit_strategies", "fixed")
+            import_plugin_module("fwbg-premium", "exit_strategies", "atr_based")
+        except ImportError:
+            pass
+
     if name not in EXIT_STRATEGY_REGISTRY:
         available = list(EXIT_STRATEGY_REGISTRY.keys())
         raise ValueError(
@@ -347,34 +357,23 @@ def list_broker_adapters() -> list:
     return list(BROKER_ADAPTER_REGISTRY.keys())
 
 
-# Legacy functions for backwards compatibility
-def get_data_adapter(name: str) -> type:
-    """Deprecated: Use get_broker_adapter instead."""
-    if name not in DATA_ADAPTER_REGISTRY:
-        available = list(DATA_ADAPTER_REGISTRY.keys())
+def get_risk_manager(name: str) -> Type["BaseRiskManager"]:
+    """Gibt Risk-Manager-Klasse anhand des Namens zurück."""
+    if not RISK_MANAGER_REGISTRY:
+        try:
+            from fwbg.plugins import import_plugin_module
+            import_plugin_module("fwbg-core", "risk_management", "kelly")
+        except ImportError:
+            pass
+
+    if name not in RISK_MANAGER_REGISTRY:
+        available = list(RISK_MANAGER_REGISTRY.keys())
         raise ValueError(
-            f"Unknown data adapter: '{name}'. "
-            f"Available: {available}"
+            f"Unknown risk manager: '{name}'. Available: {available}"
         )
-    return DATA_ADAPTER_REGISTRY[name]
+    return RISK_MANAGER_REGISTRY[name]
 
 
-def get_execution_adapter(name: str) -> type:
-    """Deprecated: Use get_broker_adapter instead."""
-    if name not in EXECUTION_ADAPTER_REGISTRY:
-        available = list(EXECUTION_ADAPTER_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown execution adapter: '{name}'. "
-            f"Available: {available}"
-        )
-    return EXECUTION_ADAPTER_REGISTRY[name]
-
-
-def list_data_adapters() -> list:
-    """Deprecated: Use list_broker_adapters instead."""
-    return list(DATA_ADAPTER_REGISTRY.keys())
-
-
-def list_execution_adapters() -> list:
-    """Deprecated: Use list_broker_adapters instead."""
-    return list(EXECUTION_ADAPTER_REGISTRY.keys())
+def list_risk_managers() -> list:
+    """Listet alle registrierten Risk-Manager."""
+    return list(RISK_MANAGER_REGISTRY.keys())

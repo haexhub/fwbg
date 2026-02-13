@@ -1,0 +1,7 @@
+{
+  "name": "time_season",
+  "version": "1.0.0",
+  "description": "Time and seasonality features: hour, day of week, trading sessions",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

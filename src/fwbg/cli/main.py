@@ -23,7 +23,7 @@ from fwbg.data.config import (
 )
 from fwbg.core.config import StrategyConfig
 from fwbg.optimization.process import process_symbol
-from fwbg.utils.progress import ProgressTracker, init_progress_queue
+from fwbg.utils.progress import ProgressTracker, init_progress_queue, report_result
 from fwbg.results.storage import (
     generate_run_id,
     create_run_directory,
@@ -116,6 +116,7 @@ def run_optimizer(
         "min_free_ram_percent": strategy.resources.min_free_ram_percent,
         "ram_per_worker_gb": strategy.resources.ram_per_worker_gb,
         "threads_per_asset": strategy.resources.threads_per_asset,
+        "max_concurrent_assets": strategy.resources.max_concurrent_assets,
     }
 
     # Filter nach bestimmten Assets wenn angegeben
@@ -177,6 +178,7 @@ def run_optimizer(
         min_free_ram_percent=resource_settings["min_free_ram_percent"],
         ram_per_worker_gb=resource_settings["ram_per_worker_gb"],
         threads_per_asset=resource_settings["threads_per_asset"],
+        max_concurrent_assets=resource_settings["max_concurrent_assets"],
         verbose=True,
         progress_queue=progress_queue,
     )
@@ -187,6 +189,9 @@ def run_optimizer(
     def update_progress(completed, total):
         progress_tracker.update_completed(completed)
 
+    # Buffer für Ergebnis-Ausgaben (werden nach Progress-UI-Stop ausgegeben)
+    result_output_buffer = []
+
     # Callback für inkrementelle Ergebnis-Speicherung
     def on_result_ready(result):
         """Wird nach jedem fertigen Asset aufgerufen."""
@@ -194,13 +199,37 @@ def run_optimizer(
             return
 
         sym = result.get("symbol", "?")
+        status = result.get("status", "unknown")
 
         # Asset als fertig markieren (für UI "Fertig" statt "Wartend")
-        progress_tracker.update_completed(progress_tracker.completed_assets, sym)
+        progress_tracker.update_completed(progress_tracker.completed_assets + 1, sym)
+
+        # Sofortige Kurz-Zusammenfassung anzeigen
+        cfg = result.get("config") or result.get("best_config", {})
+        wr = result.get("win_rate", 0)
+        pnl = result.get("pnl", 0)
+        rrr_val = result.get("rrr", 0)
+        tp = cfg.get("tp_mult", "?")
+        sl = cfg.get("sl_mult", "?")
+        n_trades = result.get("walk_forward", {}).get("total_trades", len(result.get("tr_trace", [])))
+
+        if status == "ok":
+            sharpe = result.get("sharpe", 0)
+            summary = f"WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T)"
+        elif status == "no_kelly":
+            summary = f"Kelly≤0 WR={wr:.1%} PnL={pnl:.1f} RRR={rrr_val:.2f} TP={tp} SL={sl} ({n_trades}T)"
+        elif status == "not_significant":
+            p_val = result.get("monte_carlo", {}).get("p_value", 0)
+            sharpe = result.get("sharpe", 0)
+            summary = f"p={p_val:.3f} WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T)"
+        elif status == "no_successful_folds":
+            summary = "Keine profitablen Konfigurationen"
+        else:
+            summary = status
+        report_result(sym, status, summary)
 
         if not save_results or not run_path:
             return
-        status = result.get("status", "unknown")
 
         # Grid-Details sofort speichern
         grid_details_path = os.path.join(run_path, "grid_details")
@@ -261,7 +290,8 @@ def run_optimizer(
         with open(grid_file, "w") as f:
             json.dump(grid_data, f, indent=2, default=str)
 
-        # Zusammenfassung ausgeben
+        # Zusammenfassung für später sammeln (wird nach Progress-UI ausgegeben)
+        output_lines = []
         if status in ["ok", "no_kelly", "not_significant"]:
             # Config extrahieren (entweder aus "config" oder "best_config")
             cfg = result.get("config") or result.get("best_config", {})
@@ -296,35 +326,39 @@ def run_optimizer(
             # Header
             status_symbol = "✓" if status == "ok" else "✗"
             status_text = "PROFITABLE" if status == "ok" else status.upper()
-            print(f"\n{'='*60}")
-            print(f"{status_symbol} {sym} - {status_text}")
-            print(f"{'='*60}")
+            output_lines.append(f"\n{'='*60}")
+            output_lines.append(f"{status_symbol} {sym} - {status_text}")
+            output_lines.append(f"{'='*60}")
 
             # Details
-            print(f"  Best Config: TP={tp}, SL={sl}, CT={ct:.2f}")
-            print(f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}")
-            print(f"  Performance: Sharpe={sharpe:.2f}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
-            print(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
+            output_lines.append(f"  Best Config: TP={tp}, SL={sl}, CT={ct:.2f}")
+            output_lines.append(f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}")
+            output_lines.append(f"  Performance: Sharpe={sharpe:.2f}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
+            output_lines.append(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
 
             # Status-spezifische Zeilen
             if status == "ok":
-                print(f"  Kelly: {kelly_raw:.4f} → Risk={kelly_risk:.4f}, p={p_value:.3f}")
-                # Plot erstellen
-                if result.get("tr_trace") and plots_path:
-                    try:
-                        create_asset_plot(result, plots_path)
-                        print(f"  Plot: {plots_path}/{sym}.png")
-                    except Exception as e:
-                        print(f"  Plot-Fehler: {e}")
+                output_lines.append(f"  Kelly: {kelly_raw:.4f} → Risk={kelly_risk:.4f}, p={p_value:.3f}")
             elif status == "no_kelly":
-                print(f"  Reason: Kelly={kelly_raw:.4f} <= 0")
+                output_lines.append(f"  Reason: Kelly={kelly_raw:.4f} <= 0")
             elif status == "not_significant":
-                print(f"  Reason: p-value={p_value:.3f} (not significant)")
+                output_lines.append(f"  Reason: p-value={p_value:.3f} (not significant)")
+
+            # Plot für ALLE Assets mit Trades erstellen
+            if result.get("tr_trace") and plots_path:
+                try:
+                    create_asset_plot(result, plots_path)
+                    output_lines.append(f"  Plot: {plots_path}/{sym}.png")
+                except Exception as e:
+                    output_lines.append(f"  Plot-Fehler: {e}")
 
         else:
             # Andere Status (insufficient_data, etc.)
             grid_count = len(result.get("grid_results", []))
-            print(f"\n✗ {sym} - {status} ({grid_count} Kombinationen getestet)")
+            output_lines.append(f"\n✗ {sym} - {status} ({grid_count} Kombinationen getestet)")
+
+        # In Buffer speichern für Ausgabe nach Progress-UI-Stop
+        result_output_buffer.append("\n".join(output_lines))
 
     print(f"\nStarte Verarbeitung von {len(files)} Assets...\n")
     progress_tracker.start()
@@ -340,6 +374,11 @@ def run_optimizer(
     )
 
     progress_tracker.stop()
+
+    # Gepufferte Ergebnis-Ausgaben jetzt anzeigen
+    for output in result_output_buffer:
+        if output:
+            print(output)
 
     # Stats ausgeben
     stats = pool_manager.get_status()
@@ -584,7 +623,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     # Account/Timeframe aus CLI oder Strategy übernehmen
 
     if args.list_features:
-        from fwbg.builtins.indicators import FEATURE_GROUPS
+        from fwbg.pipeline import FEATURE_GROUPS
         DEFAULT_FEATURE_GROUPS = ["trend", "momentum", "volatility"]
 
         print("\n" + "=" * 70)
