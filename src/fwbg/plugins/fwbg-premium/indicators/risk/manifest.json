@@ -1,0 +1,7 @@
+{
+  "name": "risk",
+  "version": "1.0.0",
+  "description": "Risk metrics: drawdown, CVaR, vol-of-vol, crash probability",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

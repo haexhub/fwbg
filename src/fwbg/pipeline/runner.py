@@ -47,6 +47,11 @@ class PipelineRunner:
         self._execution_order: List[Tuple[PluginConfig, BasePlugin]] = []
         self._initialized: bool = False
 
+    @property
+    def config(self) -> PipelineConfig:
+        """Access to the pipeline configuration."""
+        return self._config
+
     def _initialize(self) -> None:
         """
         Lazy initialization of plugin instances.

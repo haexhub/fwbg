@@ -1,8 +1,0 @@
-{
-  "name": "fractional_diff",
-  "version": "2.0.0",
-  "description": "Fractional Differentiation preprocessor for making time series stationary while preserving memory",
-  "phase": "preprocessing",
-  "author": "FWBG Core Team",
-  "dependencies": ["numpy", "pandas", "scipy", "statsmodels"]
-}

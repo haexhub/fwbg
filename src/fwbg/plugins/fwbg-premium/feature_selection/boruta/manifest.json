@@ -1,0 +1,6 @@
+{
+  "name": "boruta",
+  "version": "1.0.0",
+  "description": "Boruta feature selection using random forest",
+  "phase": "feature_selection"
+}

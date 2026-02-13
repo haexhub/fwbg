@@ -1,0 +1,7 @@
+{
+  "name": "ichimoku",
+  "version": "1.0.0",
+  "description": "Ichimoku cloud: Tenkan-sen, Kijun-sen, Senkou spans, Chikou span",
+  "phase": "indicators",
+  "benefits_from_stationary": true
+}

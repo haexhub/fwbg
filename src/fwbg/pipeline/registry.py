@@ -1,4 +1,4 @@
-"""Plugin registry with directory-based discovery."""
+"""Plugin registry with directory-based discovery and namespace support."""
 import importlib.util
 import inspect
 import json
@@ -28,21 +28,29 @@ class PluginRegistry:
     """
     Registry for managing and discovering pipeline plugins.
 
-    Handles plugin registration, discovery from directories, and
-    provides methods for querying plugin metadata.
+    Supports namespaced plugins in format "package:plugin" (e.g., "fwbg-core:trend").
+    All plugin names must be fully qualified with namespace.
     """
 
     def __init__(self) -> None:
         """Initialize the plugin registry."""
+        # Store plugins with fully qualified names: "package:plugin"
         self._plugins: Dict[str, Type[BasePlugin]] = {}
-        self._manifests: Dict[str, dict] = {}
+        # Package-level manifests
+        self._package_manifests: Dict[str, dict] = {}
+        # Plugin-level manifests
+        self._plugin_manifests: Dict[str, dict] = {}
 
-    def register(self, plugin_cls: Type[BasePlugin]) -> None:
+    def register(self, plugin_cls: Type[BasePlugin], namespace: str) -> str:
         """
-        Register a plugin class.
+        Register a plugin class with namespace.
 
         Args:
             plugin_cls: Plugin class to register (must be BasePlugin subclass)
+            namespace: Package namespace (e.g., "fwbg-core")
+
+        Returns:
+            Fully qualified plugin name (e.g., "fwbg-core:trend")
 
         Raises:
             PluginValidationError: If plugin_cls is not a valid BasePlugin subclass
@@ -52,65 +60,95 @@ class PluginRegistry:
                 f"{plugin_cls} is not a valid BasePlugin subclass"
             )
 
-        # Check it's not the abstract base class itself
         if plugin_cls is BasePlugin:
             raise PluginValidationError("Cannot register abstract BasePlugin class")
 
-        self._plugins[plugin_cls.name] = plugin_cls
+        fqn = f"{namespace}:{plugin_cls.name}"
+        self._plugins[fqn] = plugin_cls
+        return fqn
 
     def get(self, name: str) -> Type[BasePlugin]:
         """
-        Get a plugin class by name.
+        Get a plugin class by fully qualified name.
 
         Args:
-            name: Plugin name to look up
+            name: Fully qualified plugin name (e.g., "fwbg-core:trend")
 
         Returns:
             The plugin class
 
         Raises:
             PluginNotFoundError: If plugin not found
+            ValueError: If name is not fully qualified (missing namespace)
         """
+        if ":" not in name:
+            raise ValueError(
+                f"Plugin name '{name}' must be fully qualified with namespace "
+                f"(e.g., 'fwbg-core:{name}'). Available: {self.list_plugins()}"
+            )
+
         if name not in self._plugins:
             raise PluginNotFoundError(f"Plugin '{name}' not found in registry")
         return self._plugins[name]
 
-    def list_plugins(self, phase: Optional[PluginPhase] = None) -> List[str]:
+    def list_plugins(
+        self,
+        phase: Optional[PluginPhase] = None,
+        namespace: Optional[str] = None,
+    ) -> List[str]:
         """
         List all registered plugin names.
 
         Args:
             phase: Optional phase to filter by
+            namespace: Optional namespace to filter by
 
         Returns:
-            List of plugin names
+            List of fully qualified plugin names
         """
-        if phase is None:
-            return list(self._plugins.keys())
+        plugins = list(self._plugins.keys())
 
-        return [
-            name
-            for name, plugin_cls in self._plugins.items()
-            if plugin_cls.phase == phase
-        ]
+        if namespace is not None:
+            plugins = [p for p in plugins if p.startswith(f"{namespace}:")]
+
+        if phase is not None:
+            plugins = [
+                name
+                for name in plugins
+                if self._plugins[name].phase == phase
+            ]
+
+        return plugins
+
+    def list_namespaces(self) -> List[str]:
+        """
+        List all registered namespaces.
+
+        Returns:
+            List of namespace names
+        """
+        return list(self._package_manifests.keys())
 
     def get_info(self, name: str) -> Dict[str, Any]:
         """
         Get plugin metadata.
 
         Args:
-            name: Plugin name
+            name: Fully qualified plugin name
 
         Returns:
-            Dict with name, version, phase, stateful, cacheable, default_params
+            Dict with name, namespace, version, phase, stateful, cacheable, default_params
 
         Raises:
             PluginNotFoundError: If plugin not found
         """
-        plugin_cls = self.get(name)  # Raises PluginNotFoundError if not found
+        plugin_cls = self.get(name)
+        namespace, plugin_name = name.split(":", 1)
 
         return {
             "name": plugin_cls.name,
+            "namespace": namespace,
+            "fqn": name,
             "version": plugin_cls.version,
             "phase": plugin_cls.phase,
             "stateful": plugin_cls.stateful,
@@ -123,7 +161,7 @@ class PluginRegistry:
         Validate all registered plugins.
 
         Returns:
-            Dict mapping plugin name to {valid: bool, error: str}
+            Dict mapping fully qualified name to {valid: bool, error: str}
         """
         results: Dict[str, Dict[str, Any]] = {}
 
@@ -143,39 +181,85 @@ class PluginRegistry:
 
         return results
 
-    def discover_from_directory(self, directory: Path) -> List[str]:
+    def discover_package(self, package_dir: Path) -> List[str]:
         """
-        Discover plugins from directories with manifest.json.
+        Discover plugins from a namespaced package directory.
 
-        Scans the directory for subdirectories containing manifest.json
-        and __init__.py, loads them as modules, and registers any
-        BasePlugin subclasses found.
+        Expected structure:
+        package_dir/
+        ├── manifest.json       # Package manifest with "name" field
+        ├── indicators/
+        │   ├── trend/
+        │   │   ├── __init__.py
+        │   │   └── manifest.json
+        │   └── ...
+        ├── preprocessing/
+        └── ...
 
         Args:
-            directory: Directory to scan for plugin packages
+            package_dir: Directory containing the package
 
         Returns:
-            List of discovered plugin names
+            List of fully qualified plugin names discovered
         """
         discovered: List[str] = []
-        directory = Path(directory)
+        package_dir = Path(package_dir)
 
-        if not directory.is_dir():
+        if not package_dir.is_dir():
             return discovered
 
-        # Scan for subdirectories
-        for subdir in directory.iterdir():
-            if not subdir.is_dir():
+        # Load package manifest
+        package_manifest_file = package_dir / "manifest.json"
+        if not package_manifest_file.exists():
+            logger.warning(f"No manifest.json in package directory: {package_dir}")
+            return discovered
+
+        try:
+            with open(package_manifest_file) as f:
+                package_manifest = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Failed to load package manifest from {package_manifest_file}: {e}")
+            return discovered
+
+        namespace = package_manifest.get("name", package_dir.name)
+        self._package_manifests[namespace] = package_manifest
+
+        # Scan for plugin categories
+        for category in ["indicators", "preprocessing", "feature_selection", "exit_strategies", "risk_management"]:
+            category_dir = package_dir / category
+            if category_dir.is_dir():
+                discovered.extend(
+                    self._discover_plugins_in_category(category_dir, namespace)
+                )
+
+        return discovered
+
+    def _discover_plugins_in_category(
+        self, category_dir: Path, namespace: str
+    ) -> List[str]:
+        """
+        Discover plugins within a category directory.
+
+        Args:
+            category_dir: Directory containing plugin subdirectories
+            namespace: Package namespace
+
+        Returns:
+            List of fully qualified plugin names
+        """
+        discovered: List[str] = []
+
+        for plugin_dir in category_dir.iterdir():
+            if not plugin_dir.is_dir():
                 continue
 
-            manifest_file = subdir / "manifest.json"
-            init_file = subdir / "__init__.py"
+            manifest_file = plugin_dir / "manifest.json"
+            init_file = plugin_dir / "__init__.py"
 
-            # Skip if missing required files
             if not manifest_file.exists() or not init_file.exists():
                 continue
 
-            # Load manifest
+            # Load plugin manifest
             try:
                 with open(manifest_file) as f:
                     manifest = json.load(f)
@@ -183,15 +267,14 @@ class PluginRegistry:
                 logger.warning(f"Failed to load manifest from {manifest_file}: {e}")
                 continue
 
-            package_name = subdir.name
-            self._manifests[package_name] = manifest
+            plugin_name = manifest.get("name", plugin_dir.name)
+            fqn = f"{namespace}:{plugin_name}"
+            self._plugin_manifests[fqn] = manifest
 
             # Dynamically import the module
             try:
-                module_name = f"_plugin_{package_name}"
-                spec = importlib.util.spec_from_file_location(
-                    module_name, init_file
-                )
+                module_name = f"_plugin_{namespace}_{plugin_name}"
+                spec = importlib.util.spec_from_file_location(module_name, init_file)
                 if spec is None or spec.loader is None:
                     continue
 
@@ -208,54 +291,127 @@ class PluginRegistry:
                         and attr is not BasePlugin
                         and not inspect.isabstract(attr)
                     ):
-                        self.register(attr)
-                        discovered.append(attr.name)
+                        registered_fqn = self.register(attr, namespace)
+                        discovered.append(registered_fqn)
+                        # Propagate manifest attributes to plugin class
+                        if "benefits_from_stationary" in manifest:
+                            attr.benefits_from_stationary = manifest["benefits_from_stationary"]
 
             except Exception as e:
-                logger.warning(f"Failed to load plugin package from {subdir}: {e}")
+                logger.warning(f"Failed to load plugin from {plugin_dir}: {e}")
                 continue
 
         return discovered
 
-    def get_manifest(self, package_name: str) -> dict:
+    def get_package_manifest(self, namespace: str) -> dict:
         """
-        Get manifest for a plugin package.
+        Get manifest for a package namespace.
 
         Args:
-            package_name: Name of the plugin package directory
+            namespace: Package namespace (e.g., "fwbg-core")
 
         Returns:
-            The manifest dictionary
+            The package manifest dictionary
         """
-        return self._manifests.get(package_name, {})
+        return self._package_manifests.get(namespace, {})
+
+    def get_plugin_manifest(self, fqn: str) -> dict:
+        """
+        Get manifest for a specific plugin.
+
+        Args:
+            fqn: Fully qualified plugin name
+
+        Returns:
+            The plugin manifest dictionary
+        """
+        return self._plugin_manifests.get(fqn, {})
 
     def auto_discover(self) -> List[str]:
         """
-        Automatically discover plugins from core and user directories.
+        Automatically discover plugins from core packages and user directory.
 
         Discovers plugins from:
-        1. Core builtins (indicators, preprocessing)
-        2. User plugins (~/.fwbg/plugins/)
+        1. Core packages (fwbg-core, fwbg-premium) in plugins/
+        2. User packages (~/.fwbg/plugins/)
 
         Returns:
-            List of discovered plugin names
+            List of fully qualified plugin names discovered
         """
         discovered: List[str] = []
+        plugins_dir = get_core_plugins_dir()
 
-        # Core plugins - indicators
-        core_indicators = get_core_plugins_dir() / "indicators"
-        if core_indicators.exists():
-            discovered.extend(self.discover_from_directory(core_indicators))
+        # Discover from core packages
+        if plugins_dir.exists():
+            for package_dir in plugins_dir.iterdir():
+                if package_dir.is_dir() and (package_dir / "manifest.json").exists():
+                    discovered.extend(self.discover_package(package_dir))
 
-        # Core plugins - preprocessing
-        core_preprocessing = get_core_plugins_dir() / "preprocessing"
-        if core_preprocessing.exists():
-            discovered.extend(self.discover_from_directory(core_preprocessing))
-
-        # User plugins (can override core)
+        # User plugins
         user_dir = get_user_plugins_dir()
         if user_dir.exists():
-            discovered.extend(self.discover_from_directory(user_dir))
+            for package_dir in user_dir.iterdir():
+                if package_dir.is_dir() and (package_dir / "manifest.json").exists():
+                    discovered.extend(self.discover_package(package_dir))
+
+        return discovered
+
+    # Legacy compatibility - will be removed
+    def discover_from_directory(self, directory: Path) -> List[str]:
+        """
+        Legacy method - discovers plugins without namespace.
+
+        DEPRECATED: Use discover_package() instead.
+        """
+        logger.warning(
+            "discover_from_directory is deprecated. Use discover_package() instead."
+        )
+        discovered: List[str] = []
+        directory = Path(directory)
+
+        if not directory.is_dir():
+            return discovered
+
+        for subdir in directory.iterdir():
+            if not subdir.is_dir():
+                continue
+
+            manifest_file = subdir / "manifest.json"
+            init_file = subdir / "__init__.py"
+
+            if not manifest_file.exists() or not init_file.exists():
+                continue
+
+            try:
+                with open(manifest_file) as f:
+                    manifest = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                continue
+
+            try:
+                module_name = f"_plugin_legacy_{subdir.name}"
+                spec = importlib.util.spec_from_file_location(module_name, init_file)
+                if spec is None or spec.loader is None:
+                    continue
+
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
+
+                for attr_name in dir(module):
+                    attr = getattr(module, attr_name)
+                    if (
+                        isinstance(attr, type)
+                        and issubclass(attr, BasePlugin)
+                        and attr is not BasePlugin
+                        and not inspect.isabstract(attr)
+                    ):
+                        # Register with "legacy" namespace
+                        fqn = self.register(attr, "legacy")
+                        discovered.append(fqn)
+
+            except Exception:
+                continue
 
         return discovered
 
@@ -272,12 +428,12 @@ def get_user_plugins_dir() -> Path:
 
 def get_core_plugins_dir() -> Path:
     """
-    Get core plugins directory (builtins).
+    Get core plugins directory.
 
     Returns:
-        Path to core plugins directory
+        Path to core plugins directory (src/fwbg/plugins/)
     """
-    return Path(__file__).parent.parent / "builtins"
+    return Path(__file__).parent.parent / "plugins"
 
 
 # Global registry singleton

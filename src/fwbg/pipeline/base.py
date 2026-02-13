@@ -1,7 +1,8 @@
 """Base plugin class and phase enum for the pipeline system."""
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from fwbg.pipeline.context import PipelineContext
@@ -46,28 +47,29 @@ class BasePlugin(ABC):
         """Validate that required class attributes are defined."""
         super().__init_subclass__(**kwargs)
 
-        # Skip validation for abstract subclasses
+        # Skip validation for abstract subclasses (have ABC in their bases or abstractmethods)
         if ABC in cls.__bases__:
             return
 
-        # Check required attributes - must be actual values, not just annotations
-        # Use vars(cls) to check if attribute is defined in this class (not inherited annotation)
-        cls_attrs = vars(cls)
+        # Skip if this is an intermediate base class (has abstract methods)
+        if getattr(cls, "__abstractmethods__", None):
+            return
 
-        # name must be defined as actual value
-        if "name" not in cls_attrs or not isinstance(cls_attrs.get("name"), str):
+        # Check required attributes - can be inherited from parent or defined in class
+        # name must be defined
+        if not hasattr(cls, "name") or not isinstance(getattr(cls, "name", None), str):
             raise TypeError(
                 f"Plugin class {cls.__name__} must define 'name' attribute"
             )
 
-        # version must be defined as actual value
-        if "version" not in cls_attrs or not isinstance(cls_attrs.get("version"), str):
+        # version must be defined
+        if not hasattr(cls, "version") or not isinstance(getattr(cls, "version", None), str):
             raise TypeError(
                 f"Plugin class {cls.__name__} must define 'version' attribute"
             )
 
-        # phase must be defined as actual value
-        if "phase" not in cls_attrs or not isinstance(cls_attrs.get("phase"), PluginPhase):
+        # phase must be defined (can be inherited from parent like BaseIndicator)
+        if not hasattr(cls, "phase") or not isinstance(getattr(cls, "phase", None), PluginPhase):
             raise TypeError(
                 f"Plugin class {cls.__name__} must define 'phase' attribute"
             )
@@ -153,3 +155,100 @@ class BasePlugin(ABC):
         """
         if callback is not None:
             callback(current=current, total=total, message=message)
+
+    @classmethod
+    def get_test_module_path(cls) -> Optional[Path]:
+        """
+        Get the path to this plugin's test module.
+
+        Returns:
+            Path to tests.py if it exists, None otherwise
+        """
+        import inspect
+        module = inspect.getmodule(cls)
+        if module is None or module.__file__ is None:
+            return None
+
+        plugin_dir = Path(module.__file__).parent
+        test_file = plugin_dir / "tests.py"
+        return test_file if test_file.exists() else None
+
+    @classmethod
+    def run_tests(cls, verbose: bool = False) -> Tuple[int, int, List[str]]:
+        """
+        Run the plugin's test suite.
+
+        Each plugin should have a tests.py file in its directory with
+        pytest-compatible test functions.
+
+        Args:
+            verbose: If True, print verbose test output
+
+        Returns:
+            Tuple of (passed, failed, error_messages)
+        """
+        import importlib.util
+        import sys
+
+        test_path = cls.get_test_module_path()
+        if test_path is None:
+            return (0, 0, [f"No tests.py found for plugin {cls.name}"])
+
+        # Load the test module
+        module_name = f"fwbg.plugins.tests.{cls.name}"
+        spec = importlib.util.spec_from_file_location(module_name, test_path)
+        if spec is None or spec.loader is None:
+            return (0, 0, [f"Could not load test module from {test_path}"])
+
+        test_module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = test_module
+
+        try:
+            spec.loader.exec_module(test_module)
+        except Exception as e:
+            return (0, 0, [f"Error loading test module: {e}"])
+
+        # Run pytest on the test module
+        try:
+            import pytest
+            args = [str(test_path)]
+            if verbose:
+                args.append("-v")
+            result = pytest.main(args)
+
+            if result == 0:
+                return (1, 0, [])
+            else:
+                return (0, 1, [f"Tests failed with exit code {result}"])
+        except ImportError:
+            # Fallback: run tests manually without pytest
+            passed = 0
+            failed = 0
+            errors: List[str] = []
+
+            for name in dir(test_module):
+                if name.startswith("test_"):
+                    test_func = getattr(test_module, name)
+                    if callable(test_func):
+                        try:
+                            test_func()
+                            passed += 1
+                            if verbose:
+                                print(f"  ✓ {name}")
+                        except AssertionError as e:
+                            failed += 1
+                            errors.append(f"{name}: {e}")
+                            if verbose:
+                                print(f"  ✗ {name}: {e}")
+                        except Exception as e:
+                            failed += 1
+                            errors.append(f"{name}: {e}")
+                            if verbose:
+                                print(f"  ✗ {name}: {e}")
+
+            return (passed, failed, errors)
+
+    @classmethod
+    def has_tests(cls) -> bool:
+        """Check if this plugin has a test suite."""
+        return cls.get_test_module_path() is not None

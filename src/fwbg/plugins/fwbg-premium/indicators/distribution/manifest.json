@@ -1,0 +1,7 @@
+{
+  "name": "distribution",
+  "version": "1.0.0",
+  "description": "Distribution features: skewness, kurtosis, tail risk",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

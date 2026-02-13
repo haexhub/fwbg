@@ -73,35 +73,8 @@ full = [
 fwbg = "fwbg.cli:main"
 
 # Entry Points für Plugin-Discovery
-[project.entry-points."fwbg.indicators"]
-# Core Indicators
-trend = "fwbg.builtins.indicators.trend:TrendIndicators"
-momentum = "fwbg.builtins.indicators.momentum:MomentumIndicators"
-volatility = "fwbg.builtins.indicators.volatility:VolatilityIndicators"
-# Advanced Indicators
-regime = "fwbg.builtins.indicators.regime:RegimeIndicators"
-structure = "fwbg.builtins.indicators.structure:StructureIndicators"
-risk = "fwbg.builtins.indicators.risk:RiskIndicators"
-price_action = "fwbg.builtins.indicators.price_action:PriceActionIndicators"
-time_season = "fwbg.builtins.indicators.time_season:TimeSeasonIndicators"
-distribution = "fwbg.builtins.indicators.distribution:DistributionIndicators"
-dynamics = "fwbg.builtins.indicators.dynamics:DynamicsIndicators"
-multi_timeframe = "fwbg.builtins.indicators.multi_timeframe:MultiTimeframeIndicators"
-cross_features = "fwbg.builtins.indicators.cross_features:CrossFeatureIndicators"
-ichimoku = "fwbg.builtins.indicators.ichimoku:IchimokuIndicators"
-microstructure = "fwbg.builtins.indicators.microstructure:MicrostructureIndicator"
-macro_surprise = "fwbg.builtins.indicators.macro_surprise:MacroSurpriseIndicator"
-
-[project.entry-points."fwbg.exit_strategies"]
-fixed = "fwbg.builtins.exit_strategies.fixed:FixedExitStrategy"
-atr_based = "fwbg.builtins.exit_strategies.atr_based:AtrExitStrategy"
-
-[project.entry-points."fwbg.feature_selectors"]
-boruta = "fwbg.builtins.feature_selection.boruta:BorutaSelector"
-plateau = "fwbg.builtins.feature_selection.plateau:PlateauSelector"
-
-[project.entry-points."fwbg.preprocessors"]
-fractional_diff = "fwbg.builtins.preprocessing.fractional_diff:FractionalDiffPreprocessor"
+# Plugins are now dynamically discovered from src/fwbg/plugins/
+# using the import_plugin_module function (no entry points needed)
 
 [project.entry-points."fwbg.broker_adapters"]
 ig = "fwbg.adapters.broker.ig:IGBrokerAdapter"

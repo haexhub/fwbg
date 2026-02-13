@@ -1,0 +1,7 @@
+{
+  "name": "trend",
+  "version": "3.0.0",
+  "description": "Trend indicators: ADX, EMA, SMA, MACD, CCI, Aroon, Efficiency Ratio, Supertrend",
+  "phase": "indicators",
+  "benefits_from_stationary": true
+}

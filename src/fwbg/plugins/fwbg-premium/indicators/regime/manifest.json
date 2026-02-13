@@ -1,0 +1,7 @@
+{
+  "name": "regime",
+  "version": "3.0.0",
+  "description": "Market regime detection: Hurst exponent, Shannon entropy, variance ratio",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

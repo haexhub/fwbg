@@ -1,0 +1,7 @@
+{
+  "name": "macro_surprise",
+  "version": "1.0.0",
+  "description": "Macro surprise indicators: economic data surprises, gaps",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

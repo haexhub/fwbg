@@ -1,0 +1,6 @@
+{
+  "name": "atr_based",
+  "version": "1.0.0",
+  "description": "ATR-based dynamic stop loss and take profit",
+  "phase": "exit_strategy"
+}

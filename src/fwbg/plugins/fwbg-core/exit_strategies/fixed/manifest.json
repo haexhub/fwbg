@@ -1,0 +1,6 @@
+{
+  "name": "fixed",
+  "version": "1.0.0",
+  "description": "Fixed pip-based stop loss and take profit",
+  "phase": "exit_strategy"
+}

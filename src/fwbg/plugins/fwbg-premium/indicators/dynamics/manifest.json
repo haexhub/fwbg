@@ -1,0 +1,7 @@
+{
+  "name": "dynamics",
+  "version": "1.0.0",
+  "description": "Dynamics features: acceleration, lags, indicator changes",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

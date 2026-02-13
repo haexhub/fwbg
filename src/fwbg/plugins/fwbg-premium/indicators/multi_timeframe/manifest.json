@@ -1,0 +1,7 @@
+{
+  "name": "multi_timeframe",
+  "version": "1.0.0",
+  "description": "Multi-timeframe features: H4/D1 alignment, trend consistency",
+  "phase": "indicators",
+  "benefits_from_stationary": true
+}

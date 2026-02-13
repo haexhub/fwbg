@@ -1,0 +1,7 @@
+{
+  "name": "price_action",
+  "version": "1.0.0",
+  "description": "Price action features: candle patterns, HH/LL, gaps, volume",
+  "phase": "indicators",
+  "benefits_from_stationary": true
+}

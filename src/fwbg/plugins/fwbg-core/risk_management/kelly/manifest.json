@@ -1,0 +1,6 @@
+{
+  "name": "kelly",
+  "version": "1.0.0",
+  "description": "Kelly criterion position sizing with drawdown adjustment and circuit breaker",
+  "phase": "risk_management"
+}

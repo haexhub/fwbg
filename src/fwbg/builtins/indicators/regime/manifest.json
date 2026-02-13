@@ -1,8 +1,0 @@
-{
-  "name": "regime",
-  "version": "2.0.0",
-  "description": "Market regime indicators for trend/range detection",
-  "phase": "indicators",
-  "author": "FWBG Core Team",
-  "dependencies": ["numpy", "pandas"]
-}

@@ -2,9 +2,14 @@
 BaseIndicator - Abstrakte Basisklasse für Indicator-Plugins.
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Union
+from typing import List, Dict, Union, TYPE_CHECKING
 import numpy as np
 import pandas as pd
+
+from fwbg.pipeline.base import BasePlugin, PluginPhase
+
+if TYPE_CHECKING:
+    from fwbg.pipeline.context import PipelineContext
 
 
 # Epsilon für Division-durch-Null Vermeidung (einheitlich für alle Indikatoren)
@@ -63,9 +68,11 @@ def shift_features(
     return features_df
 
 
-class BaseIndicator(ABC):
+class BaseIndicator(BasePlugin, ABC):
     """
     Basisklasse für Indicator-Plugins.
+
+    Inherits from BasePlugin and adds indicator-specific functionality.
 
     Indicators berechnen technische Features basierend auf OHLCV-Daten.
 
@@ -81,9 +88,12 @@ class BaseIndicator(ABC):
         ```python
         from fwbg.plugins import BaseIndicator
         from fwbg.plugins.indicator import shift_features, safe_divide
+        from fwbg.core import register_indicator
 
+        @register_indicator("rsi")
         class RSIIndicator(BaseIndicator):
-            group = "momentum"
+            name = "rsi"
+            version = "1.0.0"
 
             def compute(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
                 features = {}
@@ -100,11 +110,49 @@ class BaseIndicator(ABC):
         ```
     """
 
-    # Plugin-Name (wird vom Registry gesetzt)
-    name: str = "base"
+    # Required from BasePlugin (all indicators are in INDICATORS phase)
+    phase = PluginPhase.INDICATORS
+
+    # Optional attributes with defaults
+    stateful = False
+    cacheable = True
 
     # Feature-Gruppe für Kategorisierung
     group: str = "custom"
+
+    # Whether this indicator benefits from stationary (preprocessed) input data.
+    # True: compute per fold on preprocessed OHLC (e.g., trend, ichimoku)
+    # False: compute once upfront on raw data (e.g., momentum, volatility)
+    benefits_from_stationary: bool = False
+
+    def __init__(self) -> None:
+        """Initialize indicator plugin."""
+        super().__init__()
+        self._feature_columns: List[str] = []
+
+    def execute(self, ctx: "PipelineContext", **params) -> "PipelineContext":
+        """
+        Execute the indicator on the pipeline context.
+
+        Args:
+            ctx: Pipeline context with DataFrame
+            **params: Optional parameters for compute()
+
+        Returns:
+            Updated pipeline context with indicator columns
+        """
+        result_df = self.compute(ctx.df, **params)
+        ctx.df = result_df
+        return ctx
+
+    def validate(self) -> bool:
+        """
+        Validate that the indicator is properly configured.
+
+        Returns:
+            True if valid, False otherwise
+        """
+        return True
 
     @abstractmethod
     def compute(self, df: pd.DataFrame, **params) -> pd.DataFrame:
@@ -121,9 +169,8 @@ class BaseIndicator(ABC):
         WICHTIG: Alle Features müssen mit shift_features() um 1 Bar
         geshiptet werden um Lookahead Bias zu vermeiden!
         """
-        pass
+        ...
 
-    @abstractmethod
     def get_feature_columns(self) -> List[str]:
         """
         Gibt Liste der berechneten Feature-Spalten zurück.
@@ -131,14 +178,4 @@ class BaseIndicator(ABC):
         Returns:
             Liste der Spaltennamen die vom Indicator erzeugt werden
         """
-        pass
-
-    @classmethod
-    def get_default_params(cls) -> dict:
-        """
-        Default-Parameter für den Indicator.
-
-        Returns:
-            Dict mit Default-Werten für alle Parameter
-        """
-        return {}
+        return self._feature_columns

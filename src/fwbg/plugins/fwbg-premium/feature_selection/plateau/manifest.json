@@ -1,0 +1,6 @@
+{
+  "name": "plateau",
+  "version": "1.0.0",
+  "description": "Plateau-based feature selection for robust parameter selection",
+  "phase": "feature_selection"
+}

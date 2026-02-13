@@ -1,0 +1,7 @@
+{
+  "name": "microstructure",
+  "version": "1.0.0",
+  "description": "Market microstructure: order flow, tick patterns",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

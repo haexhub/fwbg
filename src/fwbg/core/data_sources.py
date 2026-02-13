@@ -99,10 +99,10 @@ class CSVSourceConfig(DataSourceConfig):
         Hinweis: Der CSVDataAdapter muss separat implementiert
         oder als Plugin installiert werden.
         """
-        from fwbg.core.registry import DATA_ADAPTER_REGISTRY
+        from fwbg.core.registry import BROKER_ADAPTER_REGISTRY
 
-        if "csv" in DATA_ADAPTER_REGISTRY:
-            adapter_cls = DATA_ADAPTER_REGISTRY["csv"]
+        if "csv" in BROKER_ADAPTER_REGISTRY:
+            adapter_cls = BROKER_ADAPTER_REGISTRY["csv"]
             tf_value = self.timeframe_map.get(timeframe, timeframe)
             pattern = self.file_pattern.format(symbol="{symbol}", timeframe=tf_value)
             return adapter_cls(
@@ -178,10 +178,10 @@ class RESTSourceConfig(DataSourceConfig):
         oder als Plugin installiert werden.
         """
         # Versuche REST Adapter aus Registry zu laden
-        from fwbg.core.registry import DATA_ADAPTER_REGISTRY
+        from fwbg.core.registry import BROKER_ADAPTER_REGISTRY
 
-        if "rest" in DATA_ADAPTER_REGISTRY:
-            adapter_cls = DATA_ADAPTER_REGISTRY["rest"]
+        if "rest" in BROKER_ADAPTER_REGISTRY:
+            adapter_cls = BROKER_ADAPTER_REGISTRY["rest"]
             return adapter_cls(config=self, **kwargs)
 
         raise NotImplementedError(
@@ -230,10 +230,10 @@ class WebSocketSourceConfig(DataSourceConfig):
         Hinweis: Der WebSocketDataAdapter muss separat implementiert
         oder als Plugin installiert werden.
         """
-        from fwbg.core.registry import DATA_ADAPTER_REGISTRY
+        from fwbg.core.registry import BROKER_ADAPTER_REGISTRY
 
-        if "websocket" in DATA_ADAPTER_REGISTRY:
-            adapter_cls = DATA_ADAPTER_REGISTRY["websocket"]
+        if "websocket" in BROKER_ADAPTER_REGISTRY:
+            adapter_cls = BROKER_ADAPTER_REGISTRY["websocket"]
             return adapter_cls(config=self, **kwargs)
 
         raise NotImplementedError(
@@ -361,24 +361,6 @@ def register_websocket_source(
     _DATA_SOURCES[name] = source
     log.debug(f"Registered WebSocket source: {name} -> {url}")
     return source
-
-
-# Alias für Backward-Compatibility
-def register_data_source(
-    name: str,
-    path: str | Path,
-    file_pattern: str = "{symbol}.csv",
-    description: str = "",
-    timeframe_map: Dict[str, str] = None,
-) -> CSVSourceConfig:
-    """Alias für register_csv_source (Backward-Compatibility)."""
-    return register_csv_source(
-        name=name,
-        path=path,
-        file_pattern=file_pattern,
-        description=description,
-        timeframe_map=timeframe_map,
-    )
 
 
 def get_data_source(name: str) -> DataSource:
@@ -556,7 +538,6 @@ __all__ = [
     "register_csv_source",
     "register_rest_source",
     "register_websocket_source",
-    "register_data_source",  # Alias für CSV
     # Getters
     "get_data_source",
     "list_data_sources",

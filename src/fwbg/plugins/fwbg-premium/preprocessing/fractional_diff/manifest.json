@@ -1,0 +1,7 @@
+{
+  "name": "fractional_diff",
+  "version": "1.0.0",
+  "description": "Fractional differentiation for stationarity while preserving memory",
+  "phase": "preprocessing",
+  "stateful": true
+}

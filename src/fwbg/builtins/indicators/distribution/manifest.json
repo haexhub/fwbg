@@ -1,8 +1,0 @@
-{
-  "name": "distribution",
-  "version": "2.0.0",
-  "description": "Statistical distribution indicators including skewness and kurtosis",
-  "phase": "indicators",
-  "author": "FWBG Core Team",
-  "dependencies": ["numpy", "pandas", "scipy"]
-}

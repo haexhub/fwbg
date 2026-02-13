@@ -1,0 +1,16 @@
+{
+  "name": "fwbg-premium",
+  "version": "1.0.0",
+  "description": "Premium plugins for FWBG trading bot - advanced features",
+  "author": "fwbg-team",
+  "license": "Commercial",
+  "plugins": {
+    "indicators": [
+      "regime", "structure", "risk", "distribution", "dynamics",
+      "cross_features", "ichimoku", "multi_timeframe", "macro_surprise", "microstructure"
+    ],
+    "preprocessing": ["fractional_diff"],
+    "feature_selection": ["boruta", "plateau"],
+    "exit_strategies": ["atr_based"]
+  }
+}

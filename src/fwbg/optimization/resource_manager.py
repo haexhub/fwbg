@@ -139,6 +139,7 @@ class AdaptivePoolManager:
         min_free_ram_percent: float = 0.25,
         ram_per_worker_gb: float = 4.0,
         threads_per_asset: int = 0,
+        max_concurrent_assets: int = 0,
         check_interval: float = 2.0,
         verbose: bool = True,
         progress_queue = None
@@ -204,9 +205,14 @@ class AdaptivePoolManager:
 
         self.max_workers = min(cpu_limit, ram_limit)
 
+        # Hard-Cap: User kann max parallele Assets direkt begrenzen
+        if max_concurrent_assets > 0:
+            self.max_workers = min(self.max_workers, max_concurrent_assets)
+
         # Für Logging speichern
         self._cpu_limit = cpu_limit
         self._ram_limit = ram_limit
+        self._max_concurrent_assets = max_concurrent_assets
         self._estimated_threads = estimated_threads
 
         # Stats
@@ -241,45 +247,34 @@ class AdaptivePoolManager:
         """
         Prüft, ob ein neuer Worker gestartet werden kann.
 
-        Berücksichtigt:
-        - Hartes Worker-Limit (basierend auf CPU und RAM)
-        - Aktuell freier RAM
-        - Geschätzter RAM-Bedarf für laufende + neuen Worker
+        WICHTIG: Bei ProcessPoolExecutor sind die Worker-Prozesse bereits gestartet!
+        Diese Methode entscheidet nur, ob ein neuer TASK an einen wartenden Worker
+        gegeben werden kann.
 
-        HINWEIS: CPU-Check wurde entfernt, da er zu restriktiv war.
-        Die Worker-Anzahl wird bereits beim Start basierend auf CPU berechnet.
-        Zur Laufzeit ist CPU-Throttling kontraproduktiv, da laufende Assets
-        ohnehin die CPU belasten bis sie fertig sind.
+        Die Worker-Prozesse belegen ihren RAM bereits, egal ob sie Tasks verarbeiten
+        oder warten. Deshalb müssen wir NICHT prüfen, ob "neuer Worker" RAM braucht.
+        Wir müssen nur prüfen:
+        1. Ob wir unter max_workers sind (CPU-Limit)
+        2. Ob genug RAM-Reserve für Spitzen bleibt
 
         Returns:
-            True wenn genug Ressourcen für einen weiteren Worker
+            True wenn ein weiterer Task gestartet werden kann
         """
         # Hartes Limit prüfen (bereits CPU-basiert berechnet)
         if current_workers >= self.max_workers:
             return False
 
-        # CPU-Check ENTFERNT: Das max_workers Limit basiert bereits auf CPU-Kapazität.
-        # Laufzeit-CPU-Checks sind kontraproduktiv weil:
-        # 1. Laufende Assets belasten CPU bis sie fertig sind
-        # 2. Neue Assets würden nie starten wenn 2 Assets gerade Grid-Search machen
-        # 3. Das führt dazu, dass effektiv nur initial_workers laufen
-
-        # Berechne benötigten RAM für alle Worker (inkl. neuem)
-        needed_workers = current_workers + 1
-        needed_ram_gb = needed_workers * self.ram_per_worker_gb
-
-        # Verfügbarer RAM für Worker (nach Reserve)
+        # VEREINFACHT: Da ProcessPoolExecutor die Prozesse bereits hält,
+        # müssen wir nur prüfen ob die RAM-Reserve eingehalten wird.
+        # Die Worker sind bereits da - sie brauchen keinen "neuen" RAM.
         reserved_ram = self.total_ram_gb * self.min_free_ram_percent
-        available_ram = self.total_ram_gb - reserved_ram
-
-        if needed_ram_gb > available_ram:
-            self.ram_throttle_count += 1
-            return False
-
-        # Zusätzlich: Aktuellen freien RAM prüfen (falls System schon belastet)
         current_free = self.get_free_ram_gb()
-        if current_free < (reserved_ram + self.ram_per_worker_gb):
+
+        # Nur Reserve prüfen, nicht "neuer Worker RAM"
+        # Der Worker-Prozess existiert bereits!
+        if current_free < reserved_ram:
             self.ram_throttle_count += 1
+            self.log(f"RAM-Reserve unterschritten: frei={current_free:.1f}GB < reserve={reserved_ram:.1f}GB")
             return False
 
         return True
@@ -344,7 +339,10 @@ class AdaptivePoolManager:
         # Status ausgeben
         status = self.get_status()
         self.log(f"System: {status['total_cores']} Cores, {status['total_ram_gb']:.1f} GB RAM")
-        self.log(f"Parallele Assets: max {self.max_workers} (CPU-Limit: {self._cpu_limit}, RAM-Limit: {self._ram_limit})")
+        limit_info = f"CPU-Limit: {self._cpu_limit}, RAM-Limit: {self._ram_limit}"
+        if self._max_concurrent_assets > 0:
+            limit_info += f", User-Limit: {self._max_concurrent_assets}"
+        self.log(f"Parallele Assets: max {self.max_workers} ({limit_info})")
         self.log(f"  CPU: {self._estimated_threads} Threads/Asset × {self.max_workers} = {self._estimated_threads * self.max_workers} von {int(self.total_cores * self.max_cpu_percent)} nutzbaren Kernen")
         self.log(f"  RAM: {self.ram_per_worker_gb}GB/Asset, Reserve {self.min_free_ram_percent*100:.0f}%")
         self.log(f"Aktuell: {status['free_ram_gb']:.1f} GB RAM frei, CPU bei {initial_cpu:.0f}%")
@@ -403,22 +401,34 @@ class AdaptivePoolManager:
                         result = future.result()
                         if result is not None:
                             results.append(result)
+                            # Logging nur für Dict-Ergebnisse (Optimizer-Results)
+                            if isinstance(result, dict):
+                                self.log(f"Worker #{idx} fertig: {result.get('symbol', '?')} -> {result.get('status', '?')}", force=True)
                             if result_callback:
                                 try:
                                     result_callback(result)
                                 except Exception as cb_err:
-                                    self.log(f"Result-Callback Fehler: {cb_err}")
+                                    self.log(f"Result-Callback Fehler: {cb_err}", force=True)
                     except Exception as e:
-                        self.log(f"Worker-Fehler: {e}")
+                        self.log(f"Worker-Fehler bei #{idx}: {e}", force=True)
 
                     if progress_callback:
                         progress_callback(completed, total)
 
+                # Log wenn Worker fertig sind aber noch Items warten
+                if done_futures and pending_items:
+                    self.log(f"Worker fertig: {len(done_futures)}, aktiv={active_count}, wartend={len(pending_items)}, max={self.max_workers}", force=True)
+
                 # Versuche neue Worker zu starten wenn Kapazität frei und Items warten
                 while pending_items and active_count < self.max_workers:
-                    # CPU-Check vor jedem neuen Worker
-                    if not self.can_spawn_worker(active_count):
-                        # CPU/RAM zu hoch - warte und versuche später
+                    # RAM-Check vor jedem neuen Worker
+                    can_spawn = self.can_spawn_worker(active_count)
+                    if not can_spawn:
+                        # RAM zu hoch - logge warum und versuche später
+                        mem = psutil.virtual_memory()
+                        self.log(f"Kann keinen Worker starten: {active_count} aktiv, "
+                                f"max={self.max_workers}, free_ram={mem.available/(1024**3):.1f}GB, "
+                                f"ram_throttle={self.ram_throttle_count}")
                         break
 
                     idx, item = pending_items.pop(0)
@@ -428,7 +438,7 @@ class AdaptivePoolManager:
                     active_count += 1
                     if active_count > self.peak_workers:
                         self.peak_workers = active_count
-                    self.log(f"Neuer Worker gestartet ({active_count} aktiv, {len(pending_items)} wartend)")
+                    self.log(f"Neuer Worker gestartet ({active_count} aktiv, {len(pending_items)} wartend)", force=True)
 
                 # Kurz warten bevor nächster Check
                 if futures or pending_items:

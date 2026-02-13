@@ -1,0 +1,7 @@
+{
+  "name": "cross_features",
+  "version": "1.0.0",
+  "description": "Cross features: indicator combinations, confluences, divergences",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
