@@ -22,11 +22,13 @@ from fwbg.pipeline import (
     compute_indicator_pool, get_feature_columns, compute_regime_filter,
     calculate_param_plateau_score, select_best_plateau_candidate
 )
+from fwbg.pipeline.features import split_indicators_by_stationarity
 from fwbg.simulation.trade import (
     calculate_sharpe_ratio, calculate_calmar_ratio,
     monte_carlo_permutation_test, monte_carlo_equity_simulation,
-    adjust_kelly_for_target_dd, find_optimal_circuit_breaker, calculate_equity_smoothness
+    calculate_equity_smoothness,
 )
+from fwbg.core import get_risk_manager
 from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log
 from .nested_cv import nested_cv_split, evaluate_on_holdout
@@ -189,6 +191,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         for fold in wf_folds:
             log(2, f"  Fold {fold.fold_id}: Train[{fold.train_end - fold.train_start}] Test[{fold.test_end - fold.test_start}]", sym)
 
+        # Grid-Summary
+        grid_per_fold = ctx.total_grid_combinations()
+        total_trainings = grid_per_fold * len(wf_folds)
+        log(1, f"Grid: {grid_per_fold} combos/fold × {len(wf_folds)} folds = {total_trainings} total trainings", sym)
+
         # === WALK-FORWARD LOOP: Process each fold ===
         # For each fold, we:
         # 1. Compute indicators separately (no lookahead!)
@@ -199,6 +206,34 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         all_fold_results = []
         accumulated_grid_results = []  # Sammelt grid_results über alle Folds
 
+        # === INDICATOR PRECOMPUTATION ===
+        # Split indicators: those that benefit from stationary input compute per fold,
+        # the rest are precomputed once on raw data (saves ~60% indicator computation).
+        indicators = strategy.get_indicators()
+        preprocessing_configs = strategy.get_preprocessing()
+        has_preprocessing = bool(preprocessing_configs)
+
+        stationary_indicators, raw_indicators = split_indicators_by_stationarity(
+            indicators, has_preprocessing=has_preprocessing
+        )
+
+        precomputed_raw_df = None
+        if raw_indicators:
+            t0 = time.time()
+            report_phase(sym, "Precomputing raw indicators...")
+            precomputed_raw_df = compute_indicator_pool(
+                df, indicators=raw_indicators, progress_callback=None
+            )
+            raw_feature_cols = [c for c in precomputed_raw_df.columns
+                                if c not in ['O', 'H', 'L', 'C', 'V']
+                                and not c.startswith('_') and not c.startswith('macro_')]
+            precomputed_raw_df = precomputed_raw_df[raw_feature_cols]
+            log(1, f"Precomputed {len(raw_indicators)} raw indicators: "
+                   f"{len(raw_feature_cols)} features ({time.time()-t0:.1f}s)", sym)
+
+        fold_indicators = stationary_indicators if has_preprocessing else []
+        log(2, f"Per-fold indicators: {len(fold_indicators)}, Precomputed: {len(raw_indicators)}", sym)
+
         for fold_idx, fold in enumerate(wf_folds):
             log(1, f"=== Processing Fold {fold.fold_id + 1}/{len(wf_folds)} ===", sym)
             report_phase(sym, f"Fold {fold.fold_id + 1}/{len(wf_folds)}: Computing indicators...")
@@ -207,11 +242,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 report_phase(sym, f"Fold {fold.fold_id + 1}: Indicators {name} ({idx}/{total})")
 
             # Preprocessing VOR Indikatoren anwenden (López de Prado):
-            # Fracdiff macht OHLC stationär → Indikatoren auf stationären Daten.
+            # Fracdiff macht OHLC stationär → stationary-benefiting Indikatoren darauf.
             # Original-OHLC wird für Targets/Trade-Simulation aufbewahrt.
             t0 = time.time()
-            indicators = strategy.get_indicators()
-            preprocessing_configs = strategy.get_preprocessing()
 
             pp_train_raw = fold.train_df
             pp_test_raw = fold.test_df
@@ -258,21 +291,27 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 log(2, f"  Preprocessing: Train {len(fold.train_df)}→{len(pp_train_raw)}, "
                        f"Test {len(fold.test_df)}→{len(pp_test_raw)}", sym)
 
-            # Train-Set: Indikatoren auf (ggf. preprocessed) Daten berechnen
-            train_df = compute_indicator_pool(
-                pp_train_raw,
-                indicators=indicators,
-                progress_callback=indicator_progress
-            )
+            # Compute per-fold indicators (only stationary-benefiting, or none if no preprocessing)
+            if fold_indicators:
+                train_df = compute_indicator_pool(
+                    pp_train_raw, indicators=fold_indicators, progress_callback=indicator_progress
+                )
+                test_df = compute_indicator_pool(
+                    pp_test_raw, indicators=fold_indicators, progress_callback=None
+                )
+            else:
+                train_df = pp_train_raw.copy()
+                test_df = pp_test_raw.copy()
+
+            # Merge precomputed raw indicator features
+            if precomputed_raw_df is not None:
+                raw_train = precomputed_raw_df.reindex(train_df.index)
+                raw_test = precomputed_raw_df.reindex(test_df.index)
+                train_df = pd.concat([train_df, raw_train], axis=1)
+                test_df = pd.concat([test_df, raw_test], axis=1)
+
             train_df = train_df.copy()
             train_df = train_df.dropna()
-
-            # Test-Set: Indikatoren SEPARAT berechnen (kein Lookahead!)
-            test_df = compute_indicator_pool(
-                pp_test_raw,
-                indicators=indicators,
-                progress_callback=None
-            )
             test_df = test_df.copy()
             test_df = test_df.dropna()
 
@@ -521,10 +560,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         for fold_result in all_fold_results:
             all_trades.extend(fold_result["test_trades_trace"])
 
-        # Calculate Kelly on aggregated results
+        # Quick Kelly check for early exit (before Monte Carlo)
         rrr = b_config["rrr"]
         full_kelly = (mean_wr * rrr - (1 - mean_wr)) / rrr if rrr > 0 else 0
-        fk = max(0, min(0.05, full_kelly / 4))
+        kelly_fraction = strategy.risk_params.get("kelly_fraction", 0.25)
+        max_risk = strategy.risk_params.get("max_risk", 0.05)
+        fk = max(0, min(max_risk, full_kelly * kelly_fraction))
 
         if fk <= 0:
             # Build FULL result with best config, even though Kelly is negative
@@ -679,22 +720,21 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if mc_equity["bankruptcy_rate"] > 0.1:
             log(1, f"WARNING: {mc_equity['bankruptcy_rate']:.1%} Bankruptcy-Rate", sym)
 
-        # === KELLY-ANPASSUNG FÜR ZIEL-DRAWDOWN ===
-        kelly_adjustment = adjust_kelly_for_target_dd(all_trades, fk, rrr, target_max_dd=0.30)
-        if kelly_adjustment["scale_factor"] < 1.0:
-            log(2, f"Kelly adjusted: {fk*100:.2f}% -> {kelly_adjustment['adjusted_kelly']*100:.2f}%", sym)
-            fk = kelly_adjustment["adjusted_kelly"]
-
-        # === CIRCUIT BREAKER OPTIMIERUNG ===
-        circuit_breaker = find_optimal_circuit_breaker(
-            all_trades, fk, rrr,
-            loss_range=(3, 8),
-            pause_range=(5, 30)
+        # === RISK MANAGEMENT PLUGIN ===
+        risk_mgr_cls = get_risk_manager(strategy.risk_management)
+        risk_mgr = risk_mgr_cls()
+        risk_result = risk_mgr.compute_risk_params(
+            all_trades, mean_wr, rrr, **strategy.risk_params
         )
+        fk = risk_result["kelly_risk"]
+        circuit_breaker = risk_result["circuit_breaker"]
+        kelly_adjustment = risk_result["kelly_adjustment"]
 
-        if circuit_breaker["optimal_pause_after_losses"] > 0:
-            log(2, f"Circuit Breaker: Pause after {circuit_breaker['optimal_pause_after_losses']} losses "
-                   f"for {circuit_breaker['optimal_pause_bars']} trades", sym)
+        if kelly_adjustment["scale_factor"] < 1.0:
+            log(2, f"Kelly adjusted: scale_factor={kelly_adjustment['scale_factor']:.2f}", sym)
+        if circuit_breaker["enabled"]:
+            log(2, f"Circuit Breaker: Pause after {circuit_breaker['pause_after_losses']} losses "
+                   f"for {circuit_breaker['pause_bars']} trades", sym)
 
         # Calculate metrics on aggregated trades
         bars_per_year = tf_cfg["bars_per_hour"] * 24 * 250
@@ -729,16 +769,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "features": representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", []),
                 "good_hours": list(range(24)),  # Can be computed from aggregated trades if needed
                 "dd_scaling": {"10": 0.5, "20": 0.25},
-                "circuit_breaker": {
-                    "pause_after_losses": circuit_breaker["optimal_pause_after_losses"],
-                    "pause_bars": circuit_breaker["optimal_pause_bars"],
-                    "enabled": circuit_breaker["optimal_pause_after_losses"] > 0,
-                },
-                "kelly_adjustment": {
-                    "original_kelly": kelly_adjustment["adjusted_kelly"] / kelly_adjustment["scale_factor"] if kelly_adjustment["scale_factor"] > 0 else fk,
-                    "scale_factor": kelly_adjustment["scale_factor"],
-                    "target_dd": 0.30,
-                },
+                "circuit_breaker": circuit_breaker,
+                "kelly_adjustment": kelly_adjustment,
             },
             "tr_trace": all_trades,
             "rrr": rrr,
