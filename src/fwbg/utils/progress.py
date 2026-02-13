@@ -135,6 +135,29 @@ def report_phase(symbol: str, phase: str):
             pass
 
 
+def report_result(symbol: str, status: str, summary: str):
+    """
+    Meldet ein fertiges Ergebnis für sofortige Anzeige im Progress-UI.
+
+    Args:
+        symbol: Asset-Symbol (z.B. "EURUSD")
+        status: Status ("ok", "no_kelly", "not_significant", etc.)
+        summary: Kurze Zusammenfassung (eine Zeile)
+    """
+    if _progress_queue is not None:
+        try:
+            _progress_queue.put_nowait({
+                "type": "result",
+                "pid": os.getpid(),
+                "symbol": symbol,
+                "status": status,
+                "summary": summary,
+                "time": time.time(),
+            })
+        except Exception:
+            pass
+
+
 class ProgressTracker:
     """
     Progress-Tracker mit Queue-basierter Worker-Kommunikation.
@@ -156,6 +179,8 @@ class ProgressTracker:
         self.queue = queue
         self.worker_status: Dict[int, dict] = {}  # pid -> status
         self.worker_phases: Dict[str, str] = {}  # symbol -> aktuelle Phase
+        self.worker_phase_times: Dict[str, float] = {}  # symbol -> Zeitstempel der letzten Phase
+        self.worker_results: Dict[str, str] = {}  # symbol -> Ergebnis-Zusammenfassung
         self.start_time = None
         self._stop_event = threading.Event()
         self._display_thread = None
@@ -226,24 +251,71 @@ class ProgressTracker:
         while not self._stop_event.is_set():
             try:
                 msg = self.queue.get(timeout=0.1)
-                with self._lock:
-                    if msg["type"] == "progress":
-                        # Index by symbol, not PID (multiple threads share same PID)
-                        symbol = msg.get("symbol", msg["pid"])
-                        self.worker_status[symbol] = msg
-                    elif msg["type"] == "phase":
-                        # Phase-Update: Symbol -> Phase-Text speichern
-                        self.worker_phases[msg["symbol"]] = msg["phase"]
-                    elif msg["type"] == "done":
-                        # Remove by symbol
-                        symbol = msg.get("symbol")
-                        if symbol:
-                            self.worker_status.pop(symbol, None)
-                            self.worker_phases.pop(symbol, None)
+                msg_type = msg.get("type")
+
+                if msg_type == "result":
+                    # Ergebnis-Zusammenfassung speichern für "Fertig"-Zeile
+                    with self._lock:
+                        sym = msg.get("symbol")
+                        if sym:
+                            status = msg.get("status", "?")
+                            summary = msg.get("summary", "")
+                            icon = "✓" if status == "ok" else "✗"
+                            self.worker_results[sym] = f"{icon} {summary}"
+                    # Sofortige Ergebnis-Anzeige (außerhalb des Locks)
+                    self._show_result(msg)
+                else:
+                    with self._lock:
+                        if msg_type == "progress":
+                            # Index by symbol, not PID (multiple threads share same PID)
+                            symbol = msg.get("symbol", msg["pid"])
+                            self.worker_status[symbol] = msg
+                        elif msg_type == "phase":
+                            # Phase-Update: Symbol -> Phase-Text speichern
+                            self.worker_phases[msg["symbol"]] = msg["phase"]
+                            self.worker_phase_times[msg["symbol"]] = msg.get("time", time.time())
+                        elif msg_type == "done":
+                            # Remove by symbol
+                            symbol = msg.get("symbol")
+                            if symbol:
+                                self.worker_status.pop(symbol, None)
+                                self.worker_phases.pop(symbol, None)
+                                self.worker_phase_times.pop(symbol, None)
+                                # Sofort als fertig markieren für Display
+                                # (Result kommt später per IPC/Pickle)
+                                if symbol not in self.completed_symbols:
+                                    self.completed_symbols.append(symbol)
             except Empty:
                 continue
             except Exception:
                 break
+
+    def _show_result(self, msg: dict):
+        """Zeigt ein Ergebnis sofort an (unter der Progress-UI)."""
+        symbol = msg.get("symbol", "?")
+        status = msg.get("status", "?")
+        summary = msg.get("summary", "")
+
+        # Status-Symbol
+        if status == "ok":
+            icon = "✓"
+        else:
+            icon = "✗"
+
+        # Ausgabe formatieren
+        result_line = f"{icon} {symbol}: {summary}"
+
+        if self._is_tty:
+            # TTY: Display temporär löschen, Ergebnis ausgeben, Display neu zeichnen
+            self._clear_display()
+            print(result_line)
+            sys.stdout.flush()
+            # Display wird beim nächsten Render automatisch neu gezeichnet
+            self._last_display_lines = 0
+        else:
+            # Non-TTY: Einfach ausgeben
+            print(result_line)
+            sys.stdout.flush()
 
     def _clear_display(self):
         """Löscht das gesamte Display (Multi-Line)."""
@@ -269,18 +341,24 @@ class ProgressTracker:
     def _render(self):
         """Rendert den aktuellen Status."""
         with self._lock:
-            completed = self.completed_assets
+            # completed_symbols wird sofort bei "done" aktualisiert (via Queue),
+            # completed_assets erst wenn das Result per IPC/Pickle ankommt.
+            # Verwende den höheren Wert für korrekte Anzeige.
+            completed = max(self.completed_assets, len(self.completed_symbols))
             completed_symbols = self.completed_symbols[:]
             workers = dict(self.worker_status)
             phases = dict(self.worker_phases)
+            phase_times = dict(self.worker_phase_times)
+            results = dict(self.worker_results)
 
         elapsed = time.time() - self.start_time if self.start_time else 0
 
-        # Aktive Worker filtern (nur die letzten 5 Minuten)
+        # Aktive Worker filtern (nur die letzte Stunde - Combos mit Preprocessing
+        # können bei großen Grids >5 Minuten pro Combo dauern)
         now = time.time()
         active_workers = {
             pid: info for pid, info in workers.items()
-            if now - info.get("time", 0) < 300
+            if now - info.get("time", 0) < 3600
         }
 
         # Gesamt-Fortschritt berechnen (inkl. Grid-Fortschritt der aktiven Worker)
@@ -293,14 +371,16 @@ class ProgressTracker:
 
         if self._is_tty:
             # TTY: Fixes Fenster mit Cursor-Steuerung
-            self._render_fixed_window(completed, total_progress, pct, elapsed_str, eta_str, active_workers, completed_symbols, phases)
+            self._render_fixed_window(completed, total_progress, pct, elapsed_str, eta_str, active_workers, completed_symbols, phases, phase_times, results)
         else:
             # Non-TTY: Kompakte einzeilige Ausgabe
             self._render_compact(completed, pct, elapsed_str, eta_str, phases)
 
     def _render_fixed_window(self, completed: int, total_progress: float, pct: float,
                               elapsed_str: str, eta_str: str, active_workers: Dict,
-                              completed_symbols: List[str], phases: Dict[str, str]):
+                              completed_symbols: List[str], phases: Dict[str, str],
+                              phase_times: Dict[str, float] = None,
+                              results: Dict[str, str] = None):
         """Rendert ein fixes Fenster mit allen Assets und deren Fortschritt."""
         lines = []
 
@@ -313,9 +393,9 @@ class ProgressTracker:
         filled = min(filled, bar_width)
         bar = "█" * filled + "░" * (bar_width - filled)
 
-        # Header
+        # Header mit mehr Details
         lines.append("╔" + "═" * (WIDTH - 2) + "╗")
-        lines.append(f"║  FWBG Optimizer - {completed}/{self.total_assets} Assets | {elapsed_str} | ETA: {eta_str}".ljust(WIDTH - 1) + "║")
+        lines.append(f"║  FWBG Optimizer │ {completed}/{self.total_assets} Assets │ {elapsed_str} │ ETA: {eta_str}".ljust(WIDTH - 1) + "║")
         lines.append(f"║  [{bar}] {pct:5.1f}%".ljust(WIDTH - 1) + "║")
         lines.append("╠" + "═" * (WIDTH - 2) + "╣")
 
@@ -328,26 +408,55 @@ class ProgressTracker:
 
             # Status ermitteln
             if sym in completed_symbols:
-                # Fertig
-                lines.append(f"║  ✓ {sym:<10} [████████████████] 100%  Fertig".ljust(WIDTH - 1) + "║")
+                # Fertig - mit Ergebnis-Zusammenfassung wenn vorhanden
+                result_summary = results.get(sym) if results else None
+                if result_summary:
+                    # Kürzen falls nötig (Platz: WIDTH - "║  ✓ SYM      " - "║")
+                    max_summary = WIDTH - 16
+                    if len(result_summary) > max_summary:
+                        result_summary = result_summary[:max_summary-2] + ".."
+                    lines.append(f"║  {sym:<8} {result_summary}".ljust(WIDTH - 1) + "║")
+                else:
+                    lines.append(f"║  ✓ {sym:<8} Fertig".ljust(WIDTH - 1) + "║")
             else:
                 # Noch aktiv oder wartend
-                # Worker-Info direkt per Symbol abrufen (nicht mehr per PID)
                 worker_info = active_workers.get(sym)
 
                 grid_pos = worker_info.get("grid_pos", 0) if worker_info else 0
                 grid_total = worker_info.get("grid_total", 0) if worker_info else 0
+                fold = worker_info.get("fold", 0) if worker_info else 0
+                total_folds = worker_info.get("total_folds", 0) if worker_info else 0
+                progress_time = worker_info.get("time", 0) if worker_info else 0
                 phase = phases.get(sym, "")
+                phase_time = phase_times.get(sym, 0) if phase_times else 0
 
-                if grid_total > 0:
-                    # Hat Grid-Fortschritt - Progress-Bar und Text aus gleicher Quelle!
-                    worker_pct = int(grid_pos / grid_total * 100)
-                    worker_bar_width = 16
-                    worker_filled = int(worker_bar_width * grid_pos / grid_total)
-                    worker_bar = "▓" * worker_filled + "░" * (worker_bar_width - worker_filled)
-                    grid_phase = f"Grid: {grid_pos}/{grid_total} ({worker_pct}%)"
+                # Show phase text if it's newer than last progress update
+                # (e.g. between folds during indicator computation)
+                show_grid = grid_total > 0 and progress_time >= phase_time
 
-                    lines.append(f"║  → {sym:<10} [{worker_bar}] {worker_pct:3d}%  {grid_phase}".ljust(WIDTH - 1) + "║")
+                if show_grid:
+                    bar_width = 12
+
+                    if fold > 0 and total_folds > 0:
+                        # Gesamt-Asset-Fortschritt über alle Folds (monoton steigend)
+                        asset_progress = ((fold - 1) + (grid_pos / grid_total)) / total_folds
+                        asset_pct = asset_progress * 100
+                        filled = int(bar_width * asset_progress)
+                        bar = "▓" * filled + "░" * (bar_width - filled)
+
+                        # Kumulativer Grid-Fortschritt über alle Folds
+                        cumul_done = (fold - 1) * grid_total + grid_pos
+                        cumul_total = total_folds * grid_total
+
+                        # Format: SYMBOL [████░░░░] 18.8% F2/8 (101/128)
+                        line = f"║  → {sym:<8} [{bar}] {asset_pct:5.1f}% F{fold}/{total_folds} ({cumul_done}/{cumul_total})"
+                    else:
+                        fold_pct = grid_pos / grid_total * 100
+                        filled = int(bar_width * grid_pos / grid_total)
+                        bar = "▓" * filled + "░" * (bar_width - filled)
+                        line = f"║  → {sym:<8} [{bar}] {fold_pct:5.1f}% ({grid_pos}/{grid_total})"
+
+                    lines.append(line.ljust(WIDTH - 1) + "║")
                 elif phase:
                     max_phase = WIDTH - 20
                     if len(phase) > max_phase:
@@ -377,11 +486,28 @@ class ProgressTracker:
     def _render_compact(self, completed: int, pct: float, elapsed_str: str,
                         eta_str: str, phases: Dict[str, str]):
         """Rendert kompakte einzeilige Ausgabe für Non-TTY (Logs/Pipes)."""
+        # Kopiere worker_status für Thread-Sicherheit
+        with self._lock:
+            workers = dict(self.worker_status)
+
         # Sammle Asset-Status
         asset_info = []
         for sym in self.asset_names[:6]:  # Max 6 anzeigen
             if sym in self.completed_symbols:
                 asset_info.append(f"{sym}:✓")
+            elif sym in workers and workers[sym].get("grid_total", 0) > 0:
+                # Grid-Progress anzeigen
+                info = workers[sym]
+                grid_pos = info.get("grid_pos", 0)
+                grid_total = info.get("grid_total", 1)
+                fold = info.get("fold", 0)
+                total_folds = info.get("total_folds", 0)
+                if fold > 0 and total_folds > 0:
+                    asset_pct = ((fold - 1) + (grid_pos / grid_total)) / total_folds * 100
+                    asset_info.append(f"{sym}:F{fold}/{total_folds} {asset_pct:.0f}%")
+                else:
+                    pct_done = grid_pos / grid_total * 100
+                    asset_info.append(f"{sym}:{pct_done:.0f}%")
             elif sym in phases:
                 # Phase kürzen
                 phase = phases[sym][:15]
@@ -397,13 +523,22 @@ class ProgressTracker:
         sys.stdout.flush()
 
     def _calculate_total_progress(self, completed: int, active_workers: Dict) -> float:
-        """Berechnet Gesamt-Fortschritt inkl. Grid-Progress der aktiven Worker."""
+        """Berechnet Gesamt-Fortschritt inkl. Fold- und Grid-Progress der aktiven Worker."""
         total_progress = float(completed)
 
         for info in active_workers.values():
+            fold = info.get("fold", 0)
+            total_folds = info.get("total_folds", 1)
             grid_pos = info.get("grid_pos", 0)
             grid_total = info.get("grid_total", 1)
-            if grid_total > 0:
+
+            if total_folds > 0 and grid_total > 0 and fold > 0:
+                # Fortschritt = (abgeschlossene Folds + aktueller Fold-Fortschritt) / total_folds
+                # fold ist 1-basiert, also fold-1 für abgeschlossene Folds
+                fold_progress = max(0, (fold - 1)) / total_folds  # Abgeschlossene Folds (nie negativ)
+                current_fold_progress = (grid_pos / grid_total) / total_folds  # Aktueller Fold
+                total_progress += fold_progress + current_fold_progress
+            elif grid_total > 0:
                 total_progress += grid_pos / grid_total
 
         return total_progress
