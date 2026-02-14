@@ -373,7 +373,7 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
                         "tp_mult": r["config"]["tp_mult"],
                         "sl_mult": r["config"]["sl_mult"],
                         "conf_thresh": r["config"]["conf_thresh"],
-                        "kelly_risk": r["config"]["kelly_risk"],
+                        "risk_per_trade": r["config"]["risk_per_trade"],
                         "features": r["config"]["features"],
                     }
                     grid_data["selected_metrics"] = {

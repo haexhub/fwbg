@@ -75,13 +75,13 @@ def create_asset_plot(result, plots_path, trade_directions=None):
     if not trades:
         return None
 
-    kelly = config.get("kelly_risk", 0.01)
-    if kelly <= 0:
-        kelly = 0.01  # Minimum für Visualisierung
+    risk = config.get("risk_per_trade", 0.01)
+    if risk <= 0:
+        risk = 0.01  # Minimum für Visualisierung
     rrr = result.get("rrr", 1.0)
 
     # Equity simulieren
-    eq_result = simulate_equity(trades, kelly, rrr)
+    eq_result = simulate_equity(trades, risk, rrr)
     eq = eq_result["equity_curve"]
     drawdowns = eq_result["drawdowns"]
     max_dd = eq_result["max_drawdown"]

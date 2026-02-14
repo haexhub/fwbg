@@ -25,9 +25,9 @@ class BaseRiskManager(ABC):
         Compute risk parameters from trade results.
 
         Returns dict with at minimum:
-            - kelly_risk: float (position size as fraction of capital)
+            - risk_per_trade: float (position size as fraction of capital)
             - circuit_breaker: dict (pause_after_losses, pause_bars, enabled)
-            - kelly_adjustment: dict (original_kelly, scale_factor, target_dd)
+            - risk_adjustment: dict (original_risk, scale_factor, target_dd)
         """
         ...
 

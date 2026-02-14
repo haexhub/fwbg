@@ -50,7 +50,7 @@ class AssetConfig:
     symbol: str
     features: List[str]
     conf_thresh: float = 0.55
-    kelly_risk: float = 0.005
+    risk_per_trade: float = 0.005
     point_value: float = 0.0001
     sl_mult: float = 25.0
     tp_mult: float = 40.0
@@ -65,7 +65,7 @@ class AssetConfig:
             symbol=symbol,
             features=data.get("features", []),
             conf_thresh=data.get("conf_thresh", 0.55),
-            kelly_risk=data.get("kelly_risk", 0.005),
+            risk_per_trade=data.get("risk_per_trade", 0.005),
             point_value=data.get("point_value", 0.0001),
             sl_mult=data.get("sl_mult", 25.0),
             tp_mult=data.get("tp_mult", 40.0),
@@ -540,7 +540,7 @@ class TradingBot:
             ).iloc[-1]
 
             # Position Sizing
-            risk_cash = min(balance * cfg.kelly_risk, balance * self.max_risk_percent)
+            risk_cash = min(balance * cfg.risk_per_trade, balance * self.max_risk_percent)
             sl_dist = max(10, int((atr * cfg.sl_mult) / cfg.point_value))
             tp_dist = int((atr * cfg.tp_mult) / cfg.point_value)
             size = max(self.min_lot_size, round(risk_cash / sl_dist, 2))
