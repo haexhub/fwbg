@@ -56,9 +56,7 @@ from fwbg.pipeline.features import (
     compute_regime_filter,
     compute_indicator_pool,
     normalize_plugin_name,
-    # Feature selection
-    select_features_boruta,
-    select_plateau_features,
+    # Parameter plateau (grid search candidate selection)
     calculate_param_plateau_score,
     select_best_plateau_candidate,
 )
@@ -91,9 +89,7 @@ __all__ = [
     "compute_regime_filter",
     "compute_indicator_pool",
     "normalize_plugin_name",
-    # Feature selection
-    "select_features_boruta",
-    "select_plateau_features",
+    # Parameter plateau (grid search candidate selection)
     "calculate_param_plateau_score",
     "select_best_plateau_candidate",
 ]

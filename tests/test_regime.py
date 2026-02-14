@@ -2,58 +2,26 @@
 Tests für Regime-Detection Features und Regime-Filter.
 
 Testet:
-- Hurst-Exponent Berechnung (Plugin + features.py)
-- Rolling Hurst
-- Regime-Filter (compute_regime_filter mit ADX, VIX, Hurst)
+- Regime-Filter (compute_regime_filter mit generischen Bedingungen)
 - RegimeFilterGridConfig (Kombinationen, Parsing)
+- RegimeFilterConfig (conditions-based)
 - Regime-Plugin Feature-Berechnung
 """
 import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.pipeline.features import compute_regime_filter, _hurst_exponent, _compute_rolling_hurst
+from fwbg.pipeline.features import compute_regime_filter
 from fwbg.core.config import (
     RegimeFilterGridConfig,
     RegimeFilterConfig,
+    RegimeCondition,
     GridConfig,
     StrategyConfig,
 )
 
 
 # === FIXTURES ===
-
-@pytest.fixture
-def trending_series():
-    """Stark trending Zeitreihe (sollte H > 0.5 haben)."""
-    np.random.seed(42)
-    n = 500
-    trend = np.linspace(100, 200, n)
-    noise = np.random.randn(n) * 1
-    return trend + noise
-
-
-@pytest.fixture
-def mean_reverting_series():
-    """Mean-reverting Zeitreihe (sollte H < 0.5 haben)."""
-    np.random.seed(42)
-    n = 500
-    series = np.zeros(n)
-    series[0] = 100
-    for i in range(1, n):
-        deviation = series[i-1] - 100
-        series[i] = series[i-1] - 0.3 * deviation + np.random.randn() * 2
-    return series
-
-
-@pytest.fixture
-def random_walk():
-    """Random Walk (sollte H ~ 0.5 haben)."""
-    np.random.seed(42)
-    n = 500
-    returns = np.random.randn(n)
-    return 100 + np.cumsum(returns)
-
 
 @pytest.fixture
 def sample_ohlc():
@@ -75,57 +43,21 @@ def sample_ohlc():
     return df
 
 
-# === TESTS FÜR _hurst_exponent (features.py) ===
-
-class TestHurstExponent:
-    """Tests für _hurst_exponent() in features.py."""
-
-    def test_returns_value_between_0_and_1(self, random_walk):
-        h = _hurst_exponent(random_walk)
-        assert 0 <= h <= 1
-
-    def test_trending_series_computable(self, trending_series):
-        h = _hurst_exponent(trending_series)
-        assert 0 <= h <= 1
-        assert np.isfinite(h)
-
-    def test_mean_reverting_computable(self, mean_reverting_series):
-        h = _hurst_exponent(mean_reverting_series)
-        assert 0 <= h <= 1
-        assert np.isfinite(h)
-
-    def test_returns_default_for_short_series(self):
-        short_series = np.array([100.0, 101.0, 99.0])
-        h = _hurst_exponent(short_series)
-        assert h == 0.5
-
-
-# === TESTS FÜR _compute_rolling_hurst (features.py) ===
-
-class TestComputeRollingHurst:
-    """Tests für _compute_rolling_hurst() in features.py."""
-
-    def test_output_length_matches_input(self, random_walk):
-        result = _compute_rolling_hurst(random_walk, window=100, step=10)
-        assert len(result) == len(random_walk)
-
-    def test_values_between_0_and_1(self, random_walk):
-        result = _compute_rolling_hurst(random_walk, window=100, step=10)
-        valid = result[~np.isnan(result)]
-        assert all(0 <= v <= 1 for v in valid)
-
-    def test_forward_fills_gaps(self, random_walk):
-        result = _compute_rolling_hurst(random_walk, window=100, step=20)
-        first_valid_idx = np.where(~np.isnan(result))[0]
-        if len(first_valid_idx) > 0:
-            first = first_valid_idx[0]
-            assert not any(np.isnan(result[first:]))
+@pytest.fixture
+def df_with_indicators(sample_ohlc):
+    """OHLC mit vorberechneten Indikator-Spalten für Regime-Filter."""
+    df = sample_ohlc.copy()
+    n = len(df)
+    df["trend_adx_14"] = np.linspace(10, 40, n)
+    df["macro_vix"] = np.linspace(15, 35, n)
+    df["regime_hurst_100"] = np.linspace(0.3, 0.7, n)
+    return df
 
 
 # === TESTS FÜR compute_regime_filter ===
 
 class TestComputeRegimeFilter:
-    """Tests für compute_regime_filter()."""
+    """Tests für compute_regime_filter() mit generischen Bedingungen."""
 
     def test_no_params_allows_all_trades(self, sample_ohlc):
         result = compute_regime_filter(sample_ohlc, regime_params=None)
@@ -133,95 +65,63 @@ class TestComputeRegimeFilter:
         assert len(result) == len(sample_ohlc)
         assert result.all()
 
-    def test_adx_filter_blocks_some_trades(self, sample_ohlc):
-        params = RegimeFilterConfig(adx_enabled=True, adx_min=30)
-        result = compute_regime_filter(sample_ohlc, regime_params=params)
-        assert result.dtype == bool
-        assert not result.all(), "ADX=30 sollte einige Bars filtern"
-
-    def test_adx_zero_means_no_filter(self, sample_ohlc):
-        params = RegimeFilterConfig(adx_enabled=True, adx_min=0)
-        result = compute_regime_filter(sample_ohlc, regime_params=params)
-        assert result.all(), "adx_min=0 sollte keinen Filter anwenden"
-
-    def test_hurst_filter(self, sample_ohlc):
-        params = RegimeFilterConfig(hurst_enabled=True, hurst_min=0.45, hurst_max=0.55)
-        result = compute_regime_filter(sample_ohlc, regime_params=params)
-        assert result.dtype == bool
-        assert len(result) == len(sample_ohlc)
-
-    def test_hurst_filter_min_only(self, sample_ohlc):
-        params = RegimeFilterConfig(hurst_enabled=True, hurst_min=0.45)
-        result = compute_regime_filter(sample_ohlc, regime_params=params)
-        assert result.dtype == bool
-
-    def test_vix_filter_with_macro_vix_column(self, sample_ohlc):
-        """VIX-Filter nutzt macro_vix Spalte."""
-        df = sample_ohlc.copy()
-        df["macro_vix"] = np.linspace(15, 40, len(df))
-
-        params = RegimeFilterConfig(vix_enabled=True, vix_max=30)
-        result = compute_regime_filter(df, regime_params=params)
-        assert result.dtype == bool
-        # Bars mit VIX > 30 sollten gefiltert werden
-        assert not result.all()
-        # Bars mit VIX < 30 sollten erlaubt sein
-        assert result.any()
-
-    def test_vix_filter_with_sent_vix_fallback(self, sample_ohlc):
-        """VIX-Filter fällt auf sent_vix zurück wenn macro_vix fehlt."""
-        df = sample_ohlc.copy()
-        df["sent_vix"] = np.linspace(15, 40, len(df))
-
-        params = RegimeFilterConfig(vix_enabled=True, vix_max=30)
-        result = compute_regime_filter(df, regime_params=params)
-        assert not result.all(), "sent_vix > 30 sollte gefiltert werden"
-
-    def test_vix_filter_prefers_macro_vix(self, sample_ohlc):
-        """VIX-Filter bevorzugt macro_vix über sent_vix."""
-        df = sample_ohlc.copy()
-        # macro_vix: alle unter 30 -> alles erlaubt
-        df["macro_vix"] = 20.0
-        # sent_vix: alle über 30 -> würde alles filtern
-        df["sent_vix"] = 40.0
-
-        params = RegimeFilterConfig(vix_enabled=True, vix_max=30)
-        result = compute_regime_filter(df, regime_params=params)
-        # Sollte macro_vix verwenden -> alles erlaubt
-        assert result.all(), "Sollte macro_vix bevorzugen (alle < 30)"
-
-    def test_vix_filter_no_column_available(self, sample_ohlc):
-        """VIX-Filter ohne VIX-Spalte filtert nichts."""
-        params = RegimeFilterConfig(vix_enabled=True, vix_max=30)
-        result = compute_regime_filter(sample_ohlc, regime_params=params)
-        # Kein VIX-Daten -> Filter greift nicht
+    def test_empty_conditions_allows_all(self, df_with_indicators):
+        params = RegimeFilterConfig(conditions=[])
+        result = compute_regime_filter(df_with_indicators, regime_params=params)
         assert result.all()
 
-    def test_combined_adx_and_hurst(self, sample_ohlc):
-        """Kombinierter ADX + Hurst Filter."""
-        params = RegimeFilterConfig(
-            adx_enabled=True, adx_min=25,
-            hurst_enabled=True, hurst_min=0.45,
-        )
-        result = compute_regime_filter(sample_ohlc, regime_params=params)
+    def test_gte_condition_blocks_some(self, df_with_indicators):
+        """ADX >= 25 condition blocks bars with low ADX."""
+        params = RegimeFilterConfig(conditions=[
+            RegimeCondition("trend_adx_14", ">=", 25.0)
+        ])
+        result = compute_regime_filter(df_with_indicators, regime_params=params)
         assert result.dtype == bool
-        # Kombinierter Filter sollte restriktiver sein als einzeln
-        adx_only = compute_regime_filter(sample_ohlc, RegimeFilterConfig(adx_enabled=True, adx_min=25))
-        assert result.sum() <= adx_only.sum()
+        assert not result.all()
+        assert result.any()
 
-    def test_combined_adx_vix_hurst(self, sample_ohlc):
-        """Alle drei Filter gleichzeitig."""
-        df = sample_ohlc.copy()
-        df["macro_vix"] = np.linspace(15, 40, len(df))
+    def test_lte_condition(self, df_with_indicators):
+        """VIX <= 25 condition blocks bars with high VIX."""
+        params = RegimeFilterConfig(conditions=[
+            RegimeCondition("macro_vix", "<=", 25.0)
+        ])
+        result = compute_regime_filter(df_with_indicators, regime_params=params)
+        assert not result.all()
+        assert result.any()
 
-        params = RegimeFilterConfig(
-            adx_enabled=True, adx_min=25,
-            vix_enabled=True, vix_max=30,
-            hurst_enabled=True, hurst_min=0.45,
-        )
-        result = compute_regime_filter(df, regime_params=params)
+    def test_missing_column_does_not_filter(self, df_with_indicators):
+        """Condition on missing column has no effect."""
+        params = RegimeFilterConfig(conditions=[
+            RegimeCondition("nonexistent_col", ">=", 25.0)
+        ])
+        result = compute_regime_filter(df_with_indicators, regime_params=params)
+        assert result.all()
+
+    def test_combined_conditions(self, df_with_indicators):
+        """Multiple conditions are AND-combined."""
+        params = RegimeFilterConfig(conditions=[
+            RegimeCondition("trend_adx_14", ">=", 25.0),
+            RegimeCondition("macro_vix", "<=", 25.0),
+        ])
+        result = compute_regime_filter(df_with_indicators, regime_params=params)
         assert result.dtype == bool
-        assert len(result) == len(df)
+
+        # Combined should be more restrictive
+        single = compute_regime_filter(df_with_indicators, RegimeFilterConfig(
+            conditions=[RegimeCondition("trend_adx_14", ">=", 25.0)]
+        ))
+        assert result.sum() <= single.sum()
+
+    def test_three_conditions(self, df_with_indicators):
+        """ADX + VIX + Hurst combined."""
+        params = RegimeFilterConfig(conditions=[
+            RegimeCondition("trend_adx_14", ">=", 25.0),
+            RegimeCondition("macro_vix", "<=", 25.0),
+            RegimeCondition("regime_hurst_100", ">=", 0.45),
+        ])
+        result = compute_regime_filter(df_with_indicators, regime_params=params)
+        assert result.dtype == bool
+        assert len(result) == len(df_with_indicators)
 
 
 # === TESTS FÜR RegimeFilterGridConfig ===
@@ -233,81 +133,61 @@ class TestRegimeFilterGridConfig:
         config = RegimeFilterGridConfig()
         combos = config.get_combinations()
         assert len(combos) == 1
-        assert combos[0]["adx_enabled"] is False
-        assert combos[0]["vix_enabled"] is False
-        assert combos[0]["hurst_enabled"] is False
+        assert combos[0]["conditions"] == []
 
     def test_total_combinations_matches_get_combinations(self):
-        config = RegimeFilterGridConfig(
-            adx_min=[0, 25],
-            vix_max=[None, 30],
-            hurst=[None, {"min": 0.45}],
-        )
+        config = RegimeFilterGridConfig.from_dict({
+            "condition_grids": [
+                {"column": "trend_adx_14", "operator": ">=", "values": [None, 25]},
+                {"column": "macro_vix", "operator": "<=", "values": [None, 30]},
+                {"column": "regime_hurst_100", "operator": ">=", "values": [None, 0.45]},
+            ]
+        })
         assert config.total_combinations() == len(config.get_combinations())
 
     def test_exploration_config_produces_8_combinations(self):
-        """Die aktuelle Exploration-Konfiguration: 2 ADX × 2 VIX × 2 Hurst = 8."""
-        config = RegimeFilterGridConfig(
-            adx_min=[0, 25],
-            vix_max=[None, 30],
-            hurst=[None, {"min": 0.45}],
-        )
+        """2 ADX × 2 VIX × 2 Hurst = 8."""
+        config = RegimeFilterGridConfig.from_dict({
+            "condition_grids": [
+                {"column": "trend_adx_14", "operator": ">=", "values": [None, 25]},
+                {"column": "macro_vix", "operator": "<=", "values": [None, 30]},
+                {"column": "regime_hurst_100", "operator": ">=", "values": [None, 0.45]},
+            ]
+        })
         combos = config.get_combinations()
         assert len(combos) == 8
 
-    def test_combination_flags_correct(self):
-        """Prüft dass enabled-Flags korrekt gesetzt werden."""
-        config = RegimeFilterGridConfig(
-            adx_min=[0, 25],
-            vix_max=[None, 30],
-            hurst=[None, {"min": 0.45}],
-        )
+    def test_no_filter_combo_has_empty_conditions(self):
+        """Null values in all grids → no conditions."""
+        config = RegimeFilterGridConfig.from_dict({
+            "condition_grids": [
+                {"column": "trend_adx_14", "operator": ">=", "values": [None, 25]},
+                {"column": "macro_vix", "operator": "<=", "values": [None, 30]},
+            ]
+        })
         combos = config.get_combinations()
+        no_filter = [c for c in combos if len(c["conditions"]) == 0]
+        assert len(no_filter) == 1
 
-        # Finde "no filter" Kombi (adx=0, vix=None, hurst=None)
-        no_filter = [c for c in combos if not c["adx_enabled"] and not c["vix_enabled"] and not c["hurst_enabled"]]
-        assert len(no_filter) == 1, "Genau eine 'kein Filter' Kombination erwartet"
-
-        # Finde "all filters" Kombi (adx=25, vix=30, hurst=0.45)
-        all_filters = [c for c in combos if c["adx_enabled"] and c["vix_enabled"] and c["hurst_enabled"]]
-        assert len(all_filters) == 1, "Genau eine 'alle Filter' Kombination erwartet"
-        assert all_filters[0]["adx_min"] == 25
-        assert all_filters[0]["vix_max"] == 30
-        assert all_filters[0]["hurst_min"] == 0.45
-
-    def test_hurst_dict_parsed_correctly(self):
-        """Hurst-Dict mit min/max wird korrekt geparsed."""
-        config = RegimeFilterGridConfig(
-            adx_min=[0],
-            vix_max=[None],
-            hurst=[{"min": 0.4, "max": 0.6}],
-        )
+    def test_all_filter_combo_has_all_conditions(self):
+        """Non-null values in all grids → all conditions present."""
+        config = RegimeFilterGridConfig.from_dict({
+            "condition_grids": [
+                {"column": "trend_adx_14", "operator": ">=", "values": [None, 25]},
+                {"column": "macro_vix", "operator": "<=", "values": [None, 30]},
+            ]
+        })
         combos = config.get_combinations()
-        assert len(combos) == 1
-        assert combos[0]["hurst_enabled"] is True
-        assert combos[0]["hurst_min"] == 0.4
-        assert combos[0]["hurst_max"] == 0.6
+        all_conds = [c for c in combos if len(c["conditions"]) == 2]
+        assert len(all_conds) == 1
+        assert all_conds[0]["conditions"][0]["column"] == "trend_adx_14"
+        assert all_conds[0]["conditions"][0]["value"] == 25
+        assert all_conds[0]["conditions"][1]["column"] == "macro_vix"
+        assert all_conds[0]["conditions"][1]["value"] == 30
 
     def test_from_dict_none_returns_default(self):
         config = RegimeFilterGridConfig.from_dict(None)
         assert config.total_combinations() == 1
-
-    def test_from_dict_parses_strategy_format(self):
-        """Parsed das Format aus unseren Strategy-JSONs."""
-        data = {
-            "adx_min": [0, 25],
-            "vix_max": [None, 30],
-            "hurst": [None, {"min": 0.45}],
-        }
-        config = RegimeFilterGridConfig.from_dict(data)
-        assert config.total_combinations() == 8
-
-    def test_from_dict_scalar_to_list(self):
-        """Einzelwerte werden zu Listen konvertiert."""
-        data = {"adx_min": 25, "vix_max": 30}
-        config = RegimeFilterGridConfig.from_dict(data)
-        assert config.adx_min == [25]
-        assert config.vix_max == [30]
 
     def test_grid_config_includes_regime_filter(self):
         """GridConfig.from_dict parsed regime_filter_grid."""
@@ -316,9 +196,11 @@ class TestRegimeFilterGridConfig:
             "sl": [20, 30],
             "ct": [0.6],
             "regime_filter_grid": {
-                "adx_min": [0, 25],
-                "vix_max": [None, 30],
-                "hurst": [None, {"min": 0.45}],
+                "condition_grids": [
+                    {"column": "trend_adx_14", "operator": ">=", "values": [None, 25]},
+                    {"column": "macro_vix", "operator": "<=", "values": [None, 30]},
+                    {"column": "regime_hurst_100", "operator": ">=", "values": [None, 0.45]},
+                ]
             },
         }
         grid = GridConfig.from_dict(data)
@@ -334,50 +216,41 @@ class TestRegimeFilterGridConfig:
 # === TESTS FÜR RegimeFilterConfig ===
 
 class TestRegimeFilterConfig:
-    """Tests für RegimeFilterConfig (einzelne Regime-Konfiguration)."""
+    """Tests für RegimeFilterConfig (conditions-based)."""
 
-    def test_default_all_disabled(self):
+    def test_default_empty_conditions(self):
         config = RegimeFilterConfig()
-        assert not config.adx_enabled
-        assert not config.vix_enabled
-        assert not config.hurst_enabled
+        assert config.conditions == []
 
-    def test_from_dict_none_returns_default(self):
+    def test_from_dict_none_returns_empty(self):
         config = RegimeFilterConfig.from_dict(None)
-        assert not config.adx_enabled
+        assert config.conditions == []
 
-    def test_from_dict_with_values(self):
+    def test_from_dict_with_conditions(self):
         data = {
-            "adx_enabled": True,
-            "adx_min": 25,
-            "vix_enabled": True,
-            "vix_max": 30,
-            "hurst_enabled": True,
-            "hurst_min": 0.45,
+            "conditions": [
+                {"column": "trend_adx_14", "operator": ">=", "value": 25},
+                {"column": "macro_vix", "operator": "<=", "value": 30},
+            ]
         }
         config = RegimeFilterConfig.from_dict(data)
-        assert config.adx_enabled
-        assert config.adx_min == 25
-        assert config.vix_enabled
-        assert config.vix_max == 30
-        assert config.hurst_enabled
-        assert config.hurst_min == 0.45
+        assert len(config.conditions) == 2
+        assert config.conditions[0].column == "trend_adx_14"
+        assert config.conditions[0].value == 25
 
     def test_grid_combo_to_filter_config(self):
-        """RegimeFilterGridConfig Combos können als RegimeFilterConfig verwendet werden."""
-        grid_config = RegimeFilterGridConfig(
-            adx_min=[0, 25],
-            vix_max=[None, 30],
-            hurst=[None, {"min": 0.45}],
-        )
+        """RegimeFilterGridConfig Combos can be used as RegimeFilterConfig."""
+        grid_config = RegimeFilterGridConfig.from_dict({
+            "condition_grids": [
+                {"column": "trend_adx_14", "operator": ">=", "values": [None, 25]},
+                {"column": "macro_vix", "operator": "<=", "values": [None, 30]},
+            ]
+        })
         combos = grid_config.get_combinations()
 
         for combo_dict in combos:
             config = RegimeFilterConfig.from_dict(combo_dict)
-            # Sollte gültig sein
-            assert isinstance(config.adx_enabled, bool)
-            assert isinstance(config.vix_enabled, bool)
-            assert isinstance(config.hurst_enabled, bool)
+            assert isinstance(config.conditions, list)
 
 
 # === TESTS FÜR Strategy-Laden mit Regime-Filter ===
@@ -414,7 +287,7 @@ class TestStrategyRegimeConfig:
         grid = config.get_grid_for_class("FOREX")
         combos = grid.regime_filter_grid.get_combinations()
 
-        no_filter = [c for c in combos if not c["adx_enabled"] and not c["vix_enabled"] and not c["hurst_enabled"]]
+        no_filter = [c for c in combos if len(c["conditions"]) == 0]
         assert len(no_filter) == 1
 
 
@@ -504,7 +377,6 @@ class TestRegimePlugin:
 
         hurst = result["regime_hurst_100"].dropna()
         assert len(hurst) > 0
-        # Sollte sinnvolle Werte haben (nicht nur 0.5)
         assert all(0 <= v <= 1 for v in hurst)
 
     def test_plugin_benefits_from_stationary_false(self):

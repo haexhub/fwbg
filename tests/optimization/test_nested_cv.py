@@ -78,9 +78,7 @@ def create_mock_context(
     ctx.long_grid_ct = None  # None = verwende grid_ct
     ctx.short_grid_ct = None  # None = verwende grid_ct
     ctx.separate_long_short = False
-    ctx.feature_selection = "boruta"
-    ctx.max_features = 0
-    ctx.min_z_score = 0.5
+    ctx.feature_selection_plugins = [{"name": "boruta", "params": {"min_z_score": 0.5}}]
     ctx.early_termination = True
     ctx.min_fold_stability = 0.5
     ctx.first_fold_sanity_check = True
@@ -94,6 +92,8 @@ def create_mock_context(
         "random_state": 42
     }
     ctx.preprocessing_plugins = []  # No preprocessing by default
+    ctx.exit_strategy = "fixed"
+    ctx.exit_params = {}
     return ctx
 
 
@@ -329,15 +329,20 @@ class TestSelectFeaturesFromFold:
 
         assert selected is None
 
-    def test_boruta_selection(self):
-        """Test: Boruta Feature Selection."""
+    def test_boruta_via_plugin(self):
+        """Test: Feature Selection via Plugin-Interface."""
         df = create_test_df(1000)
         # Targets die mit einem Feature korrelieren
         targets = (df["trend_rsi_14"].values > 50).astype(int)
         features = ["trend_rsi_14", "trend_adx_14", "mom_stoch_14"]
 
-        selected, importances = select_features_from_fold(
-            df, targets, features, min_trades=10, feature_selection="boruta"
+        plugins = [{"name": "boruta", "params": {
+            "n_iter": 3, "n_estimators": 20, "max_depth": 3, "min_z_score": 0.0
+        }}]
+
+        selected, metadata = select_features_from_fold(
+            df, targets, features, min_trades=10,
+            feature_selection_plugins=plugins,
         )
 
         # Sollte mindestens einige Features auswählen (oder None)

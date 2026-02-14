@@ -68,9 +68,11 @@
       "ct": [0.5, 0.55, 0.6, 0.65],
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
-        "adx_min": [0, 25],
-        "vix_max": [null, 30],
-        "hurst": [null, {"min": 0.45}]
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+        ]
       }
     },
     "INDEX": {
@@ -79,9 +81,11 @@
       "ct": [0.5, 0.55, 0.6, 0.65],
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
-        "adx_min": [0, 25],
-        "vix_max": [null, 30],
-        "hurst": [null, {"min": 0.45}]
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+        ]
       }
     },
     "COMMODITY": {
@@ -90,9 +94,11 @@
       "ct": [0.5, 0.55, 0.6, 0.65],
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
-        "adx_min": [0, 25],
-        "vix_max": [null, 30],
-        "hurst": [null, {"min": 0.45}]
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+        ]
       }
     },
     "CRYPTO": {
@@ -101,9 +107,11 @@
       "ct": [0.5, 0.55, 0.6, 0.65],
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
-        "adx_min": [0, 25],
-        "vix_max": [null, 30],
-        "hurst": [null, {"min": 0.45}]
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+        ]
       }
     }
   },

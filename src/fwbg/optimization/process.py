@@ -12,7 +12,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fwbg.data.config import (
     DATA_PATH, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
-    OOS_SIZE, tf_cfg, MIN_TRADES, WALK_FORWARD_FOLDS
+    tf_cfg, MIN_TRADES, WALK_FORWARD_FOLDS,
+    compute_macro_derived, compute_interest_rates,
 )
 from fwbg.core.config import StrategyConfig, RegimeFilterConfig
 from fwbg.data.assets import get_asset
@@ -26,7 +27,6 @@ from fwbg.pipeline.features import split_indicators_by_stationarity
 from fwbg.simulation.trade import (
     calculate_sharpe_ratio, calculate_calmar_ratio,
     monte_carlo_permutation_test, monte_carlo_equity_simulation,
-    calculate_equity_smoothness,
 )
 from fwbg.core import get_risk_manager
 from fwbg.utils.progress import report_done, report_phase
@@ -113,41 +113,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # === ABGELEITETE FEATURES (Spreads & Ratios) ===
         t0 = time.time()
-        if "macro_tnx" in df.columns and "macro_irx" in df.columns:
-            df["macro_yield_curve_10y_3m"] = df["macro_tnx"] - df["macro_irx"]
-        if "macro_tnx" in df.columns and "macro_fvx" in df.columns:
-            df["macro_yield_curve_10y_5y"] = df["macro_tnx"] - df["macro_fvx"]
-
-        if "macro_vix" in df.columns and "macro_vvix" in df.columns:
-            df["macro_vix_vvix_ratio"] = df["macro_vix"] / (df["macro_vvix"] + 1e-10)
-
-        if "macro_spx" in df.columns and "macro_tlt" in df.columns:
-            df["macro_risk_ratio_spx_tlt"] = df["macro_spx"] / (df["macro_tlt"] + 1e-10)
-        if "macro_hyg" in df.columns and "macro_lqd" in df.columns:
-            df["macro_credit_spread_proxy"] = df["macro_hyg"] / (df["macro_lqd"] + 1e-10)
-
-        if "macro_russell" in df.columns and "macro_spx" in df.columns:
-            df["macro_smallcap_ratio"] = df["macro_russell"] / (df["macro_spx"] + 1e-10)
-
-        if "macro_xlk" in df.columns and "macro_xlu" in df.columns:
-            df["macro_tech_defensive_ratio"] = df["macro_xlk"] / (df["macro_xlu"] + 1e-10)
-
-        # Zinsdaten laden
-        for rate_name, rate_file in [("fed", "FED_RATE.csv"), ("ecb", "ECB_RATE.csv")]:
-            rate_path = f"{DATA_PATH}/{rate_file}"
-            if os.path.exists(rate_path):
-                try:
-                    rate_df = pd.read_csv(rate_path, parse_dates=["Date"], index_col="Date")
-                    rate_series = rate_df["Rate"].reindex(df.index, method="ffill")
-                    df[f"macro_{rate_name}_rate"] = rate_series
-                    for lb in [30, 90, 180]:
-                        df[f"macro_{rate_name}_chg_{lb}d"] = df[f"macro_{rate_name}_rate"].diff(24 * lb)
-                except Exception:
-                    pass
-
-        if "macro_fed_rate" in df.columns and "macro_ecb_rate" in df.columns:
-            df["macro_rate_diff_usd_eur"] = df["macro_fed_rate"] - df["macro_ecb_rate"]
-
+        df = compute_macro_derived(df)
+        df = compute_interest_rates(df, DATA_PATH)
         log(3, f"Abgeleitete Features berechnet ({time.time()-t0:.1f}s)", sym)
 
         # === LOOKAHEAD BIAS PREVENTION ===
@@ -393,18 +360,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     val_df_fold["_regime_ok"] = train_df.loc[val_df_fold.index, "_regime_ok"]
 
                 # Log Regime-Filter Info
-                regime_desc = []
-                if regime_params.adx_enabled:
-                    regime_desc.append(f"ADX>={regime_params.adx_min}")
-                if regime_params.vix_enabled:
-                    regime_desc.append(f"VIX<={regime_params.vix_max}")
-                if regime_params.hurst_enabled:
-                    hurst_parts = []
-                    if regime_params.hurst_min is not None:
-                        hurst_parts.append(f"H>={regime_params.hurst_min}")
-                    if regime_params.hurst_max is not None:
-                        hurst_parts.append(f"H<={regime_params.hurst_max}")
-                    regime_desc.append(" & ".join(hurst_parts) if hurst_parts else "Hurst")
+                regime_desc = [
+                    f"{c.column}{c.operator}{c.value}" for c in regime_params.conditions
+                ]
                 regime_str = " + ".join(regime_desc) if regime_desc else "No Filter"
 
                 if n_regime_combos > 1 and fold.fold_id == 0:  # Only log once
@@ -420,7 +378,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     report_progress(sym, fold_idx_1based, total_folds, "grid_search",
                                    grid_count, total_grid_combos)
 
-                report_phase(sym, f"Fold {fold_idx_1based}/{total_folds}: Feature Selection [{ctx.feature_selection}]...")
+                fs_names = [p["name"] for p in (ctx.feature_selection_plugins or [])] or ["none"]
+                report_phase(sym, f"Fold {fold_idx_1based}/{total_folds}: Feature Selection [{' > '.join(fs_names)}]...")
                 gs_candidates, gs_grid_results = run_grid_search(
                     full_pool, inner_folds,
                     grid, ctx, regime_config, sym,
@@ -432,7 +391,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
             log(2, f"  Fold {fold.fold_id + 1}: Grid search done, {len(candidates)} candidates", sym)
 
-            grid_results = all_grid_results
             accumulated_grid_results.extend(all_grid_results)  # Akkumuliere über alle Folds
 
             if not candidates:
@@ -455,12 +413,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 continue
 
             # === TEST EVALUATION (on this fold's test set) ===
-            ct_param = b['params'][2]
-            if isinstance(ct_param, tuple):
-                ct_str = f"CT_L={ct_param[0]:.2f}/CT_S={ct_param[1]:.2f}"
-            else:
-                ct_str = f"CT={ct_param:.2f}"
-
             test_result = evaluate_on_holdout(test_df, train_df, b, ctx)
 
             if test_result["n_trades"] < ctx.min_trades:

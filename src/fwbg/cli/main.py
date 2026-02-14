@@ -435,7 +435,6 @@ def run_optimizer(
         final_equity = sim["final_equity"]
         max_dd = sim["max_drawdown"]
         max_dd_pct = max_dd * 100
-        drawdowns = sim["drawdowns"]
 
         # Gewinn pro Trade berechnen
         profit_per_trade = []
@@ -450,13 +449,12 @@ def run_optimizer(
         if plots_path:
             plot_stats = create_asset_plot(e, plots_path, trade_directions=trade_directions)
             if plot_stats:
-                n_long, n_short, long_wr, short_wr = plot_stats
+                n_long, n_short, _, _ = plot_stats
             else:
-                n_long = n_short = long_wr = short_wr = 0
+                n_long = n_short = 0
         else:
             n_long = sum(1 for d in trade_directions if d == "LONG")
             n_short = sum(1 for d in trade_directions if d == "SHORT")
-            long_wr = short_wr = 0
 
         # Profitabilitätsprüfung
         sharpe = e.get("sharpe", 0)

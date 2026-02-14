@@ -11,7 +11,7 @@ from .trade import (
     calculate_calmar_ratio,
     monte_carlo_permutation_test,
     monte_carlo_equity_simulation,
-    adjust_kelly_for_target_dd,
+    adjust_risk_for_target_dd,
     find_optimal_circuit_breaker,
     calculate_equity_smoothness,
 )
@@ -25,7 +25,7 @@ __all__ = [
     "calculate_calmar_ratio",
     "monte_carlo_permutation_test",
     "monte_carlo_equity_simulation",
-    "adjust_kelly_for_target_dd",
+    "adjust_risk_for_target_dd",
     "find_optimal_circuit_breaker",
     "calculate_equity_smoothness",
     "simulate_equity",

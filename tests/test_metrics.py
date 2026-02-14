@@ -21,7 +21,7 @@ from fwbg.simulation.trade import (
     calculate_calmar_ratio,
     monte_carlo_permutation_test,
     monte_carlo_equity_simulation,
-    adjust_kelly_for_target_dd,
+    adjust_risk_for_target_dd,
     calculate_equity_smoothness,
 )
 from fwbg.simulation.equity import simulate_equity
@@ -196,10 +196,10 @@ class TestKellyCriterion:
         kelly = 0.05
         rrr = 1.0
 
-        result = adjust_kelly_for_target_dd(trades, kelly, rrr, target_max_dd=0.30)
+        result = adjust_risk_for_target_dd(trades, kelly, rrr, target_max_dd=0.30)
 
-        assert result["adjusted_kelly"] <= kelly, \
-            f"Adjusted Kelly ({result['adjusted_kelly']}) sollte <= original ({kelly}) sein"
+        assert result["adjusted_risk"] <= kelly, \
+            f"Adjusted risk ({result['adjusted_risk']}) sollte <= original ({kelly}) sein"
         assert result["scale_factor"] <= 1.0
 
 
@@ -410,10 +410,10 @@ class TestMonteCarloEquity:
         trades = [1] * 60 + [-1] * 40
 
         result_low_kelly = monte_carlo_equity_simulation(
-            trades, kelly_risk=0.01, rrr=1.0, n_simulations=200
+            trades, risk_per_trade=0.01, rrr=1.0, n_simulations=200
         )
         result_high_kelly = monte_carlo_equity_simulation(
-            trades, kelly_risk=0.10, rrr=1.0, n_simulations=200
+            trades, risk_per_trade=0.10, rrr=1.0, n_simulations=200
         )
 
         # Hoher Kelly sollte mehr Bankruptcies haben

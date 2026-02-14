@@ -272,6 +272,15 @@ def get_feature_selector(name: str) -> Type["BaseFeatureSelector"]:
     Raises:
         ValueError: Wenn Feature-Selector nicht gefunden
     """
+    # Lazy-load feature selection plugins if not yet loaded
+    if not FEATURE_SELECTOR_REGISTRY:
+        try:
+            from fwbg.plugins import import_plugin_module
+            import_plugin_module("fwbg-premium", "feature_selection", "boruta")
+            import_plugin_module("fwbg-premium", "feature_selection", "plateau")
+        except ImportError:
+            pass
+
     if name not in FEATURE_SELECTOR_REGISTRY:
         available = list(FEATURE_SELECTOR_REGISTRY.keys())
         raise ValueError(

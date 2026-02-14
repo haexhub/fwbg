@@ -10,46 +10,56 @@ import json
 
 
 @dataclass
+class RegimeCondition:
+    """A single regime filter condition on a DataFrame column."""
+    column: str      # e.g. "trend_adx_14", "macro_vix"
+    operator: str    # ">=", "<=", ">", "<"
+    value: float
+
+
+@dataclass
 class RegimeFilterGridConfig:
     """Konfiguration für Regime-Filter als Grid-Parameter."""
-    adx_min: List[float] = field(default_factory=lambda: [0.0])
-    vix_max: List[float] = field(default_factory=lambda: [None])
-    hurst: List[Dict[str, float]] = field(default_factory=lambda: [None])
+    condition_grids: List[Dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RegimeFilterGridConfig":
         if data is None:
             return cls()
-        adx_raw = data.get("adx_min", [0.0])
-        if not isinstance(adx_raw, list):
-            adx_raw = [adx_raw]
-        vix_raw = data.get("vix_max", [None])
-        if not isinstance(vix_raw, list):
-            vix_raw = [vix_raw]
-        hurst_raw = data.get("hurst", [None])
-        if not isinstance(hurst_raw, list):
-            hurst_raw = [hurst_raw]
-        return cls(adx_min=adx_raw, vix_max=vix_raw, hurst=hurst_raw)
+        grids = data.get("condition_grids", [])
+        return cls(condition_grids=grids)
 
     def get_combinations(self) -> List[Dict[str, Any]]:
-        """Generiert alle Regime-Filter-Kombinationen."""
+        """Generiert alle Regime-Filter-Kombinationen als Kartesisches Produkt."""
         import itertools
+
+        if not self.condition_grids:
+            return [{"conditions": []}]
+
+        # Each grid has values list — build cartesian product
+        value_lists = [grid["values"] for grid in self.condition_grids]
         combinations = []
-        for adx, vix, hurst in itertools.product(self.adx_min, self.vix_max, self.hurst):
-            config = {
-                "adx_enabled": adx is not None and adx > 0,
-                "adx_min": adx if adx and adx > 0 else 0,
-                "vix_enabled": vix is not None,
-                "vix_max": vix if vix else 25.0,
-                "hurst_enabled": hurst is not None,
-                "hurst_min": hurst.get("min") if isinstance(hurst, dict) else None,
-                "hurst_max": hurst.get("max") if isinstance(hurst, dict) else None,
-            }
-            combinations.append(config)
+
+        for values in itertools.product(*value_lists):
+            conditions = []
+            for grid, val in zip(self.condition_grids, values):
+                if val is not None:
+                    conditions.append({
+                        "column": grid["column"],
+                        "operator": grid["operator"],
+                        "value": val,
+                    })
+            combinations.append({"conditions": conditions})
+
         return combinations
 
     def total_combinations(self) -> int:
-        return len(self.adx_min) * len(self.vix_max) * len(self.hurst)
+        if not self.condition_grids:
+            return 1
+        result = 1
+        for grid in self.condition_grids:
+            result *= len(grid["values"])
+        return result
 
 
 @dataclass
@@ -220,30 +230,23 @@ class FilterConfig:
 
 @dataclass
 class RegimeFilterConfig:
-    """Parameter für Regime-Filter."""
-    adx_enabled: bool = False
-    adx_min: float = 0.0
-    vix_enabled: bool = False
-    vix_max: float = None
-    hurst_enabled: bool = False
-    hurst_min: float = None
-    hurst_max: float = None
-    hurst_window: int = 100
+    """Parameter für Regime-Filter (generic conditions)."""
+    conditions: List[RegimeCondition] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RegimeFilterConfig":
         if data is None:
             return cls()
-        return cls(
-            adx_enabled=data.get("adx_enabled", False),
-            adx_min=data.get("adx_min", 0.0),
-            vix_enabled=data.get("vix_enabled", False),
-            vix_max=data.get("vix_max"),
-            hurst_enabled=data.get("hurst_enabled", False),
-            hurst_min=data.get("hurst_min"),
-            hurst_max=data.get("hurst_max"),
-            hurst_window=data.get("hurst_window", 100),
-        )
+        raw_conditions = data.get("conditions", [])
+        conditions = [
+            RegimeCondition(
+                column=c["column"],
+                operator=c["operator"],
+                value=c["value"],
+            )
+            for c in raw_conditions
+        ]
+        return cls(conditions=conditions)
 
 
 @dataclass
@@ -309,11 +312,11 @@ class StrategyConfig:
     pipeline: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
     # Exit strategy
-    exit_strategy: str = "atr_based"
+    exit_strategy: str = "fixed"
     exit_params: Dict[str, Any] = field(default_factory=dict)
 
     # Risk management
-    risk_management: str = "kelly"
+    risk_management: str = "none"
     risk_params: Dict[str, Any] = field(default_factory=dict)
 
     # Grid-Konfiguration
@@ -347,9 +350,9 @@ class StrategyConfig:
             description=data.get("description", ""),
             tags=data.get("tags", []),
             pipeline=pipeline,
-            exit_strategy=data.get("exit_strategy", "atr_based"),
+            exit_strategy=data.get("exit_strategy", "fixed"),
             exit_params=data.get("exit_params", {}),
-            risk_management=data.get("risk_management", "kelly"),
+            risk_management=data.get("risk_management", "none"),
             risk_params=data.get("risk_params", {}),
             grids=grids,
             assets=data.get("assets", {}),

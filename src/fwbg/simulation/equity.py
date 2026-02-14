@@ -9,13 +9,13 @@ Enthält:
 from fwbg.data.config import CORR_THRESHOLD
 
 
-def simulate_equity(trades, kelly_risk, rrr, start_equity=100.0, compound_cap=1e6):
+def simulate_equity(trades, risk_per_trade, rrr, start_equity=100.0, compound_cap=1e6):
     """
     Simuliert die Equity-Kurve basierend auf Trade-Ergebnissen.
 
     Args:
         trades: Liste von Trade-Ergebnissen (>0 = Gewinn, <=0 = Verlust)
-        kelly_risk: Risk pro Trade als Anteil des Kapitals (z.B. 0.02 = 2%)
+        risk_per_trade: Risk pro Trade als Anteil des Kapitals (z.B. 0.02 = 2%)
         rrr: Risk-Reward-Ratio (z.B. 2.0 = TP ist 2x SL)
         start_equity: Startkapital (default: 100.0)
         compound_cap: Ab diesem Equity-Wert wird nicht mehr kompoundiert,
@@ -39,11 +39,11 @@ def simulate_equity(trades, kelly_risk, rrr, start_equity=100.0, compound_cap=1e
         effective_equity = min(equity, compound_cap)
 
         if trade_result > 0:
-            # Gewinn: Kelly * RRR (basierend auf effektiver Equity)
-            equity += effective_equity * kelly_risk * rrr
+            # Gewinn: Risk * RRR (basierend auf effektiver Equity)
+            equity += effective_equity * risk_per_trade * rrr
         else:
-            # Verlust: Kelly (basierend auf effektiver Equity)
-            equity -= effective_equity * kelly_risk
+            # Verlust: Risk (basierend auf effektiver Equity)
+            equity -= effective_equity * risk_per_trade
 
         equity_curve.append(equity)
 

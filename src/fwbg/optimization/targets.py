@@ -10,7 +10,7 @@ from xgboost import XGBClassifier
 
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_exit_strategy as get_strategy, GridParams
-from fwbg.simulation.trade import simulate_pro_trade, compute_targets_numba
+from fwbg.simulation.trade import simulate_pro_trade
 
 
 def _validate_targets(
@@ -259,36 +259,31 @@ def compute_targets_cached(
     """
     Berechnet Targets einmal auf dem gesamten DataFrame (für Caching).
 
-    Diese Funktion berechnet Targets nur einmal pro TP/SL/Timeout-Kombination.
-    Die Ergebnisse können dann für jeden Fold per Index-Slice wiederverwendet werden.
-
-    Unterstützt verschiedene Exit-Strategien:
-    - "fixed": Fixe TP/SL-Werte (spread-basiert)
-    - "atr_based": ATR-basierte dynamische TP/SL
+    Dispatcht an die Exit-Strategie via Plugin-Registry.
 
     Args:
         full_df: Gesamter Inner-DataFrame (nicht nur ein Fold!)
-        tp: Take-Profit Wert (Spread-Multiplikator bei fixed, ATR-Multiplikator bei atr_based)
-        sl: Stop-Loss Wert (Spread-Multiplikator bei fixed, ATR-Multiplikator bei atr_based)
+        tp: Take-Profit Wert
+        sl: Stop-Loss Wert
         ctx: SimulationContext
         timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
-        exit_strategy_mode: "fixed" oder "atr_based"
-        grid_params: GridParams-Objekt mit allen Parametern (wenn vorhanden, werden tp/sl ignoriert)
+        exit_strategy_mode: Name der Exit-Strategie (Plugin-Registry Key)
+        grid_params: GridParams-Objekt (wenn vorhanden, werden tp/sl ignoriert)
         return_durations: Wenn True, auch Trade-Durations zurückgeben (für Sample Weights)
 
     Returns:
         (targets_long, targets_short) oder
         (targets_long, targets_short, durations_long, durations_short) wenn return_durations=True
     """
-    # Dispatch zu Exit-Strategie
-    if exit_strategy_mode == "atr_based":
-        strategy_cls = get_strategy("atr_based")
-        strategy = strategy_cls()
+    # Dispatch to exit strategy plugin
+    strategy_cls = get_strategy(exit_strategy_mode)
+    strategy = strategy_cls()
 
-        extra = {}
-        if hasattr(ctx, 'exit_params') and ctx.exit_params:
-            extra = ctx.exit_params.copy()
+    extra = {}
+    if hasattr(ctx, 'exit_params') and ctx.exit_params:
+        extra = ctx.exit_params.copy()
 
+    if grid_params is None:
         grid_params = GridParams(
             tp_value=float(tp),
             sl_value=float(sl),
@@ -296,34 +291,8 @@ def compute_targets_cached(
             extra=extra,
         )
 
-        return strategy.compute_targets(
-            full_df, ctx, params=grid_params, return_durations=return_durations
-        )
-
-    # Default: Fixed Exit Strategy (Numba-optimiert)
-    opn_v = full_df["O"].values.astype(np.float64)
-    cls_v = full_df["C"].values.astype(np.float64)
-    hgh_v = full_df["H"].values.astype(np.float64)
-    low_v = full_df["L"].values.astype(np.float64)
-
-    tp_distance = ctx.spread * tp
-    sl_distance = ctx.spread * sl
-    slippage = ctx.spread * 0.5
-    max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(full_df)
-    timeout_val = timeout_bars if timeout_bars else 0
-
-    if return_durations:
-        from fwbg.simulation.numba_core import compute_targets_with_durations_numba
-        return compute_targets_with_durations_numba(
-            opn_v, cls_v, hgh_v, low_v,
-            tp_distance, sl_distance, ctx.spread, slippage,
-            max_bars, timeout_val
-        )
-
-    return compute_targets_numba(
-        opn_v, cls_v, hgh_v, low_v,
-        tp_distance, sl_distance, ctx.spread, slippage,
-        max_bars, timeout_val
+    return strategy.compute_targets(
+        full_df, ctx, params=grid_params, return_durations=return_durations
     )
 
 
@@ -577,11 +546,9 @@ def _evaluate_separate_ct(
     # Fallback auf mittleren CT-Wert wenn eine Richtung keine Trades hat
     if best_ct_long is None:
         best_ct_long = long_cts[len(long_cts) // 2] if long_cts else 0.5
-        best_pnl_long = 0.0
 
     if best_ct_short is None:
         best_ct_short = short_cts[len(short_cts) // 2] if short_cts else 0.5
-        best_pnl_short = 0.0
 
     # Kombinierter PnL (für Vergleich mit anderen Grid-Kombinationen)
     # Simuliere einmal mit den optimalen CTs um echten kombinierten PnL zu bekommen

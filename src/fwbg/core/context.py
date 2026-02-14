@@ -5,23 +5,11 @@ Wird durch den gesamten Simulationsprozess gereicht und enthält alle
 Parameter die für eine einzelne Asset-Optimierung benötigt werden.
 """
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .config import StrategyConfig
 
-
-def _get_first_or_none(items: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """Get first item from list or None if empty."""
-    return items[0] if items else None
-
-
-def _get_feature_param(strategy: "StrategyConfig", param: str, default: Any) -> Any:
-    """Get a parameter from the first feature_selection plugin."""
-    feature_plugins = strategy.get_feature_selection()
-    if feature_plugins:
-        return feature_plugins[0].get("params", {}).get(param, default)
-    return default
 
 
 @dataclass
@@ -82,9 +70,7 @@ class SimulationContext:
 
     # Features (from Pipeline)
     indicator_plugins: List[dict] = None  # List of {"name": ..., "params": ...}
-    feature_selection_plugin: dict = None  # {"name": ..., "params": ...}
-    max_features: int = 0
-    min_z_score: float = 0.3  # Boruta Z-Score Threshold
+    feature_selection_plugins: List[dict] = None  # List of {"name": ..., "params": ...}
 
     # Trade-Simulation
     max_trade_bars: int = None
@@ -109,7 +95,7 @@ class SimulationContext:
     sample_weights: bool = False  # Uniqueness-basierte Sample Weights (AFML Ch. 4)
 
     # Exit-Strategy (Plugin)
-    exit_strategy: str = "atr_based"
+    exit_strategy: str = "fixed"
     exit_params: dict = field(default_factory=dict)
 
     # Model Hyperparameters (from StrategyConfig)
@@ -164,10 +150,8 @@ class SimulationContext:
             short_enabled=strategy.model.short_enabled,
             # Pipeline: Indicators
             indicator_plugins=strategy.get_indicators(),
-            # Pipeline: Feature Selection
-            feature_selection_plugin=_get_first_or_none(strategy.get_feature_selection()),
-            max_features=_get_feature_param(strategy, "max_features", 0),
-            min_z_score=_get_feature_param(strategy, "min_z_score", 0.3),
+            # Pipeline: Feature Selection (list of plugins, chained)
+            feature_selection_plugins=strategy.get_feature_selection() or None,
             # Ressourcen-Limits aus Strategy-Config (Globale Limits)
             ram_per_worker_gb=strategy.resources.ram_per_worker_gb,
             min_free_ram_percent=strategy.resources.min_free_ram_percent,
@@ -239,13 +223,6 @@ class SimulationContext:
             )
 
         return len(self.grid_tp) * len(self.grid_sl) * n_timeout
-
-    @property
-    def feature_selection(self) -> str:
-        """Returns feature selection method name from plugin config."""
-        if self.feature_selection_plugin:
-            return self.feature_selection_plugin.get("name", "boruta")
-        return "boruta"
 
 
 # Type hint import für AssetConfig

@@ -55,9 +55,11 @@
       "sl": [20, 30, 50],
       "ct": [0.6, 0.65],
       "regime_filter_grid": {
-        "adx_min": [0, 25],
-        "vix_max": [null, 30],
-        "hurst": [null, {"min": 0.45}]
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+        ]
       }
     },
     "INDEX": {
@@ -65,9 +67,11 @@
       "sl": [30, 50, 70],
       "ct": [0.6, 0.65],
       "regime_filter_grid": {
-        "adx_min": [0, 25],
-        "vix_max": [null, 30],
-        "hurst": [null, {"min": 0.45}]
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+        ]
       }
     },
     "COMMODITY": {
@@ -75,9 +79,11 @@
       "sl": [30, 50, 70],
       "ct": [0.6, 0.65],
       "regime_filter_grid": {
-        "adx_min": [0, 25],
-        "vix_max": [null, 30],
-        "hurst": [null, {"min": 0.45}]
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+        ]
       }
     },
     "CRYPTO": {
@@ -85,9 +91,11 @@
       "sl": [50, 80, 120],
       "ct": [0.6, 0.65],
       "regime_filter_grid": {
-        "adx_min": [0, 25],
-        "vix_max": [null, 30],
-        "hurst": [null, {"min": 0.45}]
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+        ]
       }
     }
   },
