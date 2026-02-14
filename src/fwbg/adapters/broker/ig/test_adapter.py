@@ -5,13 +5,12 @@ Testet alle Broker-Funktionalitäten mit gemockter IG API.
 """
 import pytest
 from datetime import datetime
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 import pandas as pd
 
 from fwbg.core.enums import Symbol, Timeframe
 from fwbg.adapters.broker import (
-    OrderSide, OrderType, OrderStatus, OrderResult,
-    Position, AccountInfo, BarData,
+    OrderSide, OrderStatus, Position, AccountInfo,
 )
 
 
@@ -246,7 +245,7 @@ class TestIGBrokerAdapterHistoricalData:
                 ]))
                 mock_yf.download.return_value = mock_df
 
-                df = adapter.get_historical_bars(Symbol.EURUSD, Timeframe.H1)
+                adapter.get_historical_bars(Symbol.EURUSD, Timeframe.H1)
 
                 mock_yf.download.assert_called_once()
 

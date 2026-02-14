@@ -169,7 +169,7 @@ class TestMonteCarloEquity:
         trades = [1.0] * 50 + [-1.0] * 50
 
         result = monte_carlo_equity_simulation(
-            trades, kelly_risk=0.25, rrr=1.0, n_simulations=500
+            trades, risk_per_trade=0.25, rrr=1.0, n_simulations=500
         )
 
         # Bei 25% Risk und 50% WR sollte die Equity stark sinken (geometric decay)
@@ -185,7 +185,7 @@ class TestMonteCarloEquity:
         trades = [1.0] * 60 + [-1.0] * 40
 
         result = monte_carlo_equity_simulation(
-            trades, kelly_risk=0.01, rrr=1.0, n_simulations=500
+            trades, risk_per_trade=0.01, rrr=1.0, n_simulations=500
         )
 
         # Bei 1% Risk sollte es keine Bankrotte geben
@@ -198,7 +198,7 @@ class TestMonteCarloEquity:
         trades = [1.0] * 60 + [-1.0] * 40
 
         result = monte_carlo_equity_simulation(
-            trades, kelly_risk=0.02, rrr=1.5, n_simulations=500
+            trades, risk_per_trade=0.02, rrr=1.5, n_simulations=500
         )
 
         assert result["p5_equity"] <= result["p25_equity"]
@@ -258,10 +258,10 @@ class TestSyntheticStrategy:
 
         # Bekannte Trades: 4 Wins, 1 Loss
         trades = [1.0, 1.0, 1.0, -1.0, 1.0]
-        kelly_risk = 0.10  # 10%
+        risk_per_trade = 0.10  # 10%
         rrr = 2.0  # Risk-Reward-Ratio von 2
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, risk_per_trade, rrr)
 
         # Manuelle Berechnung:
         # Start: 100
@@ -282,10 +282,10 @@ class TestSyntheticStrategy:
 
         # Trades die einen klaren Drawdown erzeugen
         trades = [1.0, 1.0, -1.0, -1.0, -1.0, 1.0]  # Peak nach 2, dann 3 Losses
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 1.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, risk_per_trade, rrr)
 
         # Peak nach 2 Wins: 100 * 1.1 * 1.1 = 121
         # Nach 3 Losses: 121 * 0.9 * 0.9 * 0.9 = 88.209
@@ -355,10 +355,10 @@ class TestEquityDrawdownConsistency:
 
         # Trades mit bekanntem Muster
         trades = [1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 1.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, risk_per_trade, rrr)
         eq = result["equity_curve"]
         dd = result["drawdowns"]
 
@@ -380,10 +380,10 @@ class TestEquityDrawdownConsistency:
         from fwbg.simulation.equity import simulate_equity
 
         trades = [1.0, 1.0, -1.0, -1.0, -1.0, 1.0, 1.0, -1.0]
-        kelly_risk = 0.15
+        risk_per_trade = 0.15
         rrr = 1.5
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, risk_per_trade, rrr)
 
         max_from_list = max(result["drawdowns"]) / 100  # Liste ist in Prozent
         max_from_result = result["max_drawdown"]
@@ -397,10 +397,10 @@ class TestEquityDrawdownConsistency:
 
         # Nur Gewinne = jeder Punkt ist ein neuer Peak
         trades = [1.0, 1.0, 1.0, 1.0, 1.0]
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 1.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, risk_per_trade, rrr)
 
         # Alle Drawdowns sollten 0 sein (jeder Trade ist ein neuer Peak)
         for i, dd in enumerate(result["drawdowns"]):
@@ -412,10 +412,10 @@ class TestEquityDrawdownConsistency:
 
         # Erst Gewinne (Peak bilden), dann Verluste
         trades = [1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0]
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 1.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, risk_per_trade, rrr)
         dd = result["drawdowns"]
 
         # Nach den 3 Gewinnen beginnen die Verluste (Index 4, 5, 6, 7)
@@ -431,10 +431,10 @@ class TestEquityDrawdownConsistency:
         # Konstruiere einen Fall mit bekanntem Drawdown
         # 10 Verluste bei 10% Kelly: (0.9)^10 = 0.3487 → ~65% DD
         trades = [-1.0] * 10
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 1.0
 
-        result = simulate_equity(trades, kelly_risk, rrr)
+        result = simulate_equity(trades, risk_per_trade, rrr)
 
         # Peak ist 100 (Start-Equity)
         peak = 100.0
@@ -456,13 +456,13 @@ class TestEquityDrawdownConsistency:
         """Ein 80% DD bei 1.67% Kelly benötigt ~100 aufeinanderfolgende Verluste."""
         import math
 
-        kelly_risk = 0.0167  # 1.67%
+        risk_per_trade = 0.0167  # 1.67%
         target_dd = 0.82     # 82% Drawdown
 
         # Berechne benötigte Verluste für diesen DD
         # (1 - kelly)^n = 1 - target_dd
         # n = log(1 - target_dd) / log(1 - kelly)
-        required_losses = math.log(1 - target_dd) / math.log(1 - kelly_risk)
+        required_losses = math.log(1 - target_dd) / math.log(1 - risk_per_trade)
 
         # Bei 1.67% Kelly braucht man ~102 aufeinanderfolgende Verluste für 82% DD
         assert required_losses > 100, \
@@ -517,11 +517,11 @@ class TestSyntheticEquityScenarios:
 
         # 100 Gewinne bei 5% Kelly und RRR=2
         trades = [1.0] * 100
-        kelly_risk = 0.05
+        risk_per_trade = 0.05
         rrr = 2.0
 
         # Nutze hohes compound_cap um reines Compounding zu testen
-        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
+        result = simulate_equity(trades, risk_per_trade, rrr, compound_cap=1e20)
 
         # Erwartete Equity: 100 * (1 + 0.05*2)^100 = 100 * 1.1^100
         expected = 100 * (1.1 ** 100)
@@ -537,10 +537,10 @@ class TestSyntheticEquityScenarios:
 
         # 20 Verluste bei 10% Kelly
         trades = [-1.0] * 20
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 1.0  # RRR irrelevant bei Verlusten
 
-        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
+        result = simulate_equity(trades, risk_per_trade, rrr, compound_cap=1e20)
 
         # Erwartete Equity: 100 * 0.9^20
         expected = 100 * (0.9 ** 20)
@@ -558,10 +558,10 @@ class TestSyntheticEquityScenarios:
 
         # Win, Loss, Win, Loss... (10x)
         trades = [1.0, -1.0] * 10
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 1.0
 
-        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
+        result = simulate_equity(trades, risk_per_trade, rrr, compound_cap=1e20)
 
         # Bei RRR=1: Win multipliziert mit 1.1, Loss mit 0.9
         # Nach 10 Paaren: 100 * (1.1 * 0.9)^10 = 100 * 0.99^10
@@ -575,10 +575,10 @@ class TestSyntheticEquityScenarios:
 
         # 5 Verluste, dann 20 Gewinne
         trades = [-1.0] * 5 + [1.0] * 20
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 2.0
 
-        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
+        result = simulate_equity(trades, risk_per_trade, rrr, compound_cap=1e20)
 
         # Nach 5 Verlusten: 100 * 0.9^5 = 59.05
         # Max DD an diesem Punkt: 1 - 0.9^5 = 0.4095 (40.95%)
@@ -599,10 +599,10 @@ class TestSyntheticEquityScenarios:
         # RRR = 0.5 bedeutet: Gewinn = 5%, Verlust = 10%
         # Bei 50/50 Win Rate sollte Equity sinken
         trades = [1.0, -1.0] * 50
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 0.5
 
-        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
+        result = simulate_equity(trades, risk_per_trade, rrr, compound_cap=1e20)
 
         # Win: 1.05, Loss: 0.9
         # Nach 50 Paaren: 100 * (1.05 * 0.9)^50
@@ -628,10 +628,10 @@ class TestSyntheticEquityScenarios:
         trades = wins + losses
         random.shuffle(trades)
 
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 3.0
 
-        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
+        result = simulate_equity(trades, risk_per_trade, rrr, compound_cap=1e20)
 
         # Erwartung: 30 Wins x 1.3, 70 Losses x 0.9
         # = 100 * 1.3^30 * 0.9^70
@@ -656,10 +656,10 @@ class TestSyntheticEquityScenarios:
         # 10 Verluste: 161.05 * 0.9^10 = 56.17 (DD = 65.1%)
         # 3 Gewinne: 56.17 * 1.1^3 = 74.76 (immer noch unter Peak, DD = 53.6%)
         trades = [1.0] * 5 + [-1.0] * 10 + [1.0] * 3
-        kelly_risk = 0.10
+        risk_per_trade = 0.10
         rrr = 1.0
 
-        result = simulate_equity(trades, kelly_risk, rrr, compound_cap=1e20)
+        result = simulate_equity(trades, risk_per_trade, rrr, compound_cap=1e20)
         eq = result["equity_curve"]
         dd = result["drawdowns"]
 

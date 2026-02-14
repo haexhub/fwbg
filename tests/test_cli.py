@@ -138,7 +138,7 @@ class TestStrategyLoading:
         # Sollte mit Defaults funktionieren
         config = StrategyConfig.from_dict({})
         assert config.name == "Default Strategy"
-        assert config.exit_strategy == "atr_based"
+        assert config.exit_strategy == "fixed"
         assert config.get_preprocessing() == []
 
 

@@ -96,7 +96,7 @@ def calculate_sharpe_ratio(returns, risk_free_rate=0.0, trades_per_year=None):
     return np.mean(excess_returns) / np.std(excess_returns) * annualization
 
 
-def calculate_equity_smoothness(trades, kelly_risk, rrr, window_size=50):
+def calculate_equity_smoothness(trades, risk_per_trade, rrr, window_size=50):
     """
     Berechnet einen Smoothness-Score für die Equity-Kurve.
 
@@ -105,7 +105,7 @@ def calculate_equity_smoothness(trades, kelly_risk, rrr, window_size=50):
 
     Args:
         trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
-        kelly_risk: Risk pro Trade
+        risk_per_trade: Risk pro Trade
         rrr: Risk-Reward-Ratio
         window_size: Fenster für rollende Berechnung
 
@@ -128,9 +128,9 @@ def calculate_equity_smoothness(trades, kelly_risk, rrr, window_size=50):
     returns = []
     for t in trades:
         if t > 0:
-            returns.append(kelly_risk * rrr)
+            returns.append(risk_per_trade * rrr)
         else:
-            returns.append(-kelly_risk)
+            returns.append(-risk_per_trade)
 
     returns = np.array(returns)
 
@@ -160,7 +160,7 @@ def calculate_equity_smoothness(trades, kelly_risk, rrr, window_size=50):
         consistency = 0.5
 
     # Smoothness Score: Kombination aus niedriger Volatilität und Konsistenz
-    # Normalisiere Volatilität auf 0-1 Skala (5% Kelly = ~5% max single move)
+    # Normalisiere Volatilität auf 0-1 Skala (5% risk = ~5% max single move)
     vol_score = 1.0 / (1.0 + return_volatility * 10)
 
     smoothness_score = (vol_score * 0.5 + consistency * 0.5)
@@ -174,7 +174,7 @@ def calculate_equity_smoothness(trades, kelly_risk, rrr, window_size=50):
     }
 
 
-def calculate_calmar_ratio(returns, kelly_risk, rrr):
+def calculate_calmar_ratio(returns, risk_per_trade, rrr):
     """Berechnet Calmar Ratio (Return / Max Drawdown)."""
     if not returns:
         return 0.0
@@ -182,9 +182,9 @@ def calculate_calmar_ratio(returns, kelly_risk, rrr):
     equity = [100.0]
     for r in returns:
         if r > 0:
-            equity.append(equity[-1] * (1 + kelly_risk * rrr))
+            equity.append(equity[-1] * (1 + risk_per_trade * rrr))
         else:
-            equity.append(equity[-1] * (1 - kelly_risk))
+            equity.append(equity[-1] * (1 - risk_per_trade))
 
     peak = equity[0]
     max_dd = 0.0
@@ -480,7 +480,7 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
     return None
 
 
-def calculate_max_drawdown(returns, kelly_risk, rrr):
+def calculate_max_drawdown(returns, risk_per_trade, rrr):
     """Berechnet Maximum Drawdown aus Trade-Returns."""
     if not returns:
         return 0.0
@@ -488,9 +488,9 @@ def calculate_max_drawdown(returns, kelly_risk, rrr):
     equity = [100.0]
     for r in returns:
         if r > 0:
-            equity.append(equity[-1] * (1 + kelly_risk * rrr))
+            equity.append(equity[-1] * (1 + risk_per_trade * rrr))
         else:
-            equity.append(equity[-1] * (1 - kelly_risk))
+            equity.append(equity[-1] * (1 - risk_per_trade))
 
     peak = equity[0]
     max_dd = 0.0
@@ -504,7 +504,7 @@ def calculate_max_drawdown(returns, kelly_risk, rrr):
     return max_dd
 
 
-def calculate_annual_return(returns, kelly_risk, rrr, total_bars, bars_per_year=8760):
+def calculate_annual_return(returns, risk_per_trade, rrr, total_bars, bars_per_year=8760):
     """Berechnet annualisierte Rendite."""
     if not returns or total_bars == 0:
         return 0.0
@@ -512,9 +512,9 @@ def calculate_annual_return(returns, kelly_risk, rrr, total_bars, bars_per_year=
     equity = 100.0
     for r in returns:
         if r > 0:
-            equity *= (1 + kelly_risk * rrr)
+            equity *= (1 + risk_per_trade * rrr)
         else:
-            equity *= (1 - kelly_risk)
+            equity *= (1 - risk_per_trade)
 
     total_return = (equity - 100.0) / 100.0
     years = total_bars / bars_per_year
@@ -600,7 +600,7 @@ def monte_carlo_permutation_test(trades, n_permutations=1000, random_seed=42):
     }
 
 
-def monte_carlo_equity_simulation(trades, kelly_risk, rrr, n_simulations=1000, random_seed=42):
+def monte_carlo_equity_simulation(trades, risk_per_trade, rrr, n_simulations=1000, random_seed=42):
     """
     Monte Carlo Simulation der Equity-Kurve mit zufälligen Trade-Reihenfolgen.
 
@@ -609,7 +609,7 @@ def monte_carlo_equity_simulation(trades, kelly_risk, rrr, n_simulations=1000, r
 
     Args:
         trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
-        kelly_risk: Risk pro Trade (z.B. 0.02 = 2%)
+        risk_per_trade: Risk pro Trade (z.B. 0.02 = 2%)
         rrr: Risk-Reward-Ratio
         n_simulations: Anzahl der Simulationen
         random_seed: Seed für Reproduzierbarkeit
@@ -640,9 +640,9 @@ def monte_carlo_equity_simulation(trades, kelly_risk, rrr, n_simulations=1000, r
         equity = 100.0
         for t in trade_sequence:
             if t > 0:
-                equity *= 1 + (kelly_risk * rrr)
+                equity *= 1 + (risk_per_trade * rrr)
             else:
-                equity *= 1 - kelly_risk
+                equity *= 1 - risk_per_trade
             if equity <= 0:
                 return 0.0
         return equity
@@ -675,77 +675,77 @@ def monte_carlo_equity_simulation(trades, kelly_risk, rrr, n_simulations=1000, r
     }
 
 
-def adjust_kelly_for_target_dd(trades, base_kelly, rrr, target_max_dd=0.30):
+def adjust_risk_for_target_dd(trades, base_risk, rrr, target_max_dd=0.30):
     """
-    Passt den Kelly-Faktor an, um einen Ziel-Max-Drawdown zu erreichen.
+    Passt den Risk-Faktor an, um einen Ziel-Max-Drawdown zu erreichen.
 
     Args:
         trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
-        base_kelly: Basis Kelly-Faktor (z.B. 0.05)
+        base_risk: Basis Risk-Faktor (z.B. 0.05)
         rrr: Risk-Reward-Ratio
         target_max_dd: Gewünschter maximaler Drawdown (z.B. 0.30 = 30%)
 
     Returns:
         dict mit:
-            - adjusted_kelly: Angepasster Kelly-Faktor
-            - original_dd: Max DD mit Basis-Kelly
-            - adjusted_dd: Max DD mit angepasstem Kelly
-            - scale_factor: Skalierungsfaktor (adjusted_kelly / base_kelly)
+            - adjusted_risk: Angepasster Risk-Faktor
+            - original_dd: Max DD mit Basis-Risk
+            - adjusted_dd: Max DD mit angepasstem Risk
+            - scale_factor: Skalierungsfaktor (adjusted_risk / base_risk)
     """
-    if not trades or base_kelly <= 0:
+    if not trades or base_risk <= 0:
         return {
-            "adjusted_kelly": base_kelly,
+            "adjusted_risk": base_risk,
             "original_dd": 0.0,
             "adjusted_dd": 0.0,
             "scale_factor": 1.0,
         }
 
-    # Berechne Max DD mit Basis-Kelly
-    original_dd = calculate_max_drawdown(trades, base_kelly, rrr)
+    # Berechne Max DD mit Basis-Risk
+    original_dd = calculate_max_drawdown(trades, base_risk, rrr)
 
     if original_dd <= target_max_dd:
         # DD ist bereits unter Ziel - keine Anpassung nötig
         return {
-            "adjusted_kelly": base_kelly,
+            "adjusted_risk": base_risk,
             "original_dd": original_dd,
             "adjusted_dd": original_dd,
             "scale_factor": 1.0,
         }
 
-    # Binäre Suche nach dem optimalen Kelly
-    low_kelly = 0.001
-    high_kelly = base_kelly
+    # Binäre Suche nach dem optimalen Risk-Faktor
+    low_risk = 0.001
+    high_risk = base_risk
 
     for _ in range(20):  # Max 20 Iterationen
-        mid_kelly = (low_kelly + high_kelly) / 2
-        mid_dd = calculate_max_drawdown(trades, mid_kelly, rrr)
+        mid_risk = (low_risk + high_risk) / 2
+        mid_dd = calculate_max_drawdown(trades, mid_risk, rrr)
 
         if mid_dd > target_max_dd:
-            high_kelly = mid_kelly
+            high_risk = mid_risk
         else:
-            low_kelly = mid_kelly
+            low_risk = mid_risk
 
         if abs(mid_dd - target_max_dd) < 0.01:  # 1% Toleranz
             break
 
-    adjusted_kelly = low_kelly
-    adjusted_dd = calculate_max_drawdown(trades, adjusted_kelly, rrr)
+    adjusted_risk = low_risk
+    adjusted_dd = calculate_max_drawdown(trades, adjusted_risk, rrr)
 
     return {
-        "adjusted_kelly": adjusted_kelly,
+        "adjusted_risk": adjusted_risk,
         "original_dd": original_dd,
         "adjusted_dd": adjusted_dd,
-        "scale_factor": adjusted_kelly / base_kelly if base_kelly > 0 else 1.0,
+        "scale_factor": adjusted_risk / base_risk if base_risk > 0 else 1.0,
     }
 
 
-def simulate_with_circuit_breaker(trades, kelly_risk, rrr, pause_after_losses, pause_bars):
+def simulate_with_circuit_breaker(trades, risk_per_trade, rrr, pause_after_losses, pause_bars):
     """
     Simuliert Trading mit Circuit Breaker - pausiert nach N Verlusten in Serie.
 
     Args:
         trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
-        kelly_risk: Risk pro Trade
+        risk_per_trade: Risk pro Trade
         rrr: Risk-Reward-Ratio
         pause_after_losses: Nach wie vielen Verlusten in Serie pausieren (0 = deaktiviert)
         pause_bars: Wie viele Trades/Bars pausiert wird
@@ -762,16 +762,16 @@ def simulate_with_circuit_breaker(trades, kelly_risk, rrr, pause_after_losses, p
     """
     if not trades or pause_after_losses <= 0:
         # Circuit Breaker deaktiviert - normale Simulation
-        dd = calculate_max_drawdown(trades, kelly_risk, rrr) if trades else 0.0
+        dd = calculate_max_drawdown(trades, risk_per_trade, rrr) if trades else 0.0
         wr = sum(1 for t in trades if t > 0) / len(trades) if trades else 0.0
 
         # Berechne finale Equity
         equity = 100.0
         for t in trades:
             if t > 0:
-                equity *= 1 + (kelly_risk * rrr)
+                equity *= 1 + (risk_per_trade * rrr)
             else:
-                equity *= 1 - kelly_risk
+                equity *= 1 - risk_per_trade
 
         return {
             "trades_taken": len(trades),
@@ -806,10 +806,10 @@ def simulate_with_circuit_breaker(trades, kelly_risk, rrr, pause_after_losses, p
         filtered_trades.append(trade)
 
         if trade > 0:
-            equity *= 1 + (kelly_risk * rrr)
+            equity *= 1 + (risk_per_trade * rrr)
             consecutive_losses = 0
         else:
-            equity *= 1 - kelly_risk
+            equity *= 1 - risk_per_trade
             consecutive_losses += 1
 
             # Circuit Breaker auslösen?
@@ -843,7 +843,7 @@ def simulate_with_circuit_breaker(trades, kelly_risk, rrr, pause_after_losses, p
     }
 
 
-def find_optimal_circuit_breaker(trades, kelly_risk, rrr,
+def find_optimal_circuit_breaker(trades, risk_per_trade, rrr,
                                   loss_range=(3, 10),
                                   pause_range=(5, 50)):
     """
@@ -851,7 +851,7 @@ def find_optimal_circuit_breaker(trades, kelly_risk, rrr,
 
     Args:
         trades: Liste von Trade-Ergebnissen
-        kelly_risk: Risk pro Trade
+        risk_per_trade: Risk pro Trade
         rrr: Risk-Reward-Ratio
         loss_range: (min, max) Verluste vor Pause
         pause_range: (min, max) Pause-Länge
@@ -869,7 +869,7 @@ def find_optimal_circuit_breaker(trades, kelly_risk, rrr,
         }
 
     # Baseline ohne Circuit Breaker
-    baseline = simulate_with_circuit_breaker(trades, kelly_risk, rrr, 0, 0)
+    baseline = simulate_with_circuit_breaker(trades, risk_per_trade, rrr, 0, 0)
     baseline_dd = baseline["max_drawdown"]
     baseline_equity = baseline["final_equity"]
 
@@ -881,7 +881,7 @@ def find_optimal_circuit_breaker(trades, kelly_risk, rrr,
     for pause_after in range(loss_range[0], loss_range[1] + 1):
         for pause_bars in range(pause_range[0], pause_range[1] + 1, 5):  # 5er Schritte
             result = simulate_with_circuit_breaker(
-                trades, kelly_risk, rrr, pause_after, pause_bars
+                trades, risk_per_trade, rrr, pause_after, pause_bars
             )
 
             # Score: Maximiere Rendite bei minimiertem DD

@@ -15,7 +15,7 @@ import pandas as pd
 from typing import List
 
 from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import shift_features, safe_divide
+from fwbg.plugins.indicator import shift_features
 from fwbg.core.registry import register_indicator
 
 

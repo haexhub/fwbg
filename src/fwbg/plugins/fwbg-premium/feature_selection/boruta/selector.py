@@ -155,8 +155,6 @@ def boruta_select(
     tentative = []
 
     for i, feat in enumerate(original_features):
-        hit_rate = hits[i] / max_iter
-
         # Binomialtest: Ist hit_rate signifikant über 0.5?
         # H0: Feature ist nicht besser als Zufall (p = 0.5)
         p_value = stats.binom_test(

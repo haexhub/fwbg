@@ -10,7 +10,6 @@ Fractional Differentiation nach López de Prado:
 from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
-from scipy.special import gamma
 
 from fwbg.pipeline.base import BasePlugin, PluginPhase
 from fwbg.pipeline.context import PipelineContext

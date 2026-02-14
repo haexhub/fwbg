@@ -263,7 +263,7 @@ class TestEdgeCases:
     def test_d_zero_returns_unchanged(self, preprocessor, pipeline_context):
         """d=0 should not transform data."""
         preprocessor.fit(pipeline_context, auto_d=False, default_d=0.0)
-        result = preprocessor.execute(pipeline_context)
+        preprocessor.execute(pipeline_context)
 
         # d=0 means no transformation
         assert preprocessor.d_ == 0.0

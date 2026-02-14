@@ -132,6 +132,67 @@ MACRO_INDICATORS = {
 LOOKBACKS_HOURS = [1, 2, 4, 8, 12, 24]
 LOOKBACKS_DAYS = [2, 5, 10, 20, 60]
 
+# Abgeleitete Makro-Features (Spreads & Ratios)
+MACRO_DERIVED_FEATURES = [
+    {"name": "macro_yield_curve_10y_3m", "op": "subtract", "a": "macro_tnx", "b": "macro_irx"},
+    {"name": "macro_yield_curve_10y_5y", "op": "subtract", "a": "macro_tnx", "b": "macro_fvx"},
+    {"name": "macro_vix_vvix_ratio", "op": "ratio", "a": "macro_vix", "b": "macro_vvix"},
+    {"name": "macro_risk_ratio_spx_tlt", "op": "ratio", "a": "macro_spx", "b": "macro_tlt"},
+    {"name": "macro_credit_spread_proxy", "op": "ratio", "a": "macro_hyg", "b": "macro_lqd"},
+    {"name": "macro_smallcap_ratio", "op": "ratio", "a": "macro_russell", "b": "macro_spx"},
+    {"name": "macro_tech_defensive_ratio", "op": "ratio", "a": "macro_xlk", "b": "macro_xlu"},
+]
+
+# Zinsdaten
+INTEREST_RATES = [
+    {"name": "fed", "file": "FED_RATE.csv", "lookbacks_days": [30, 90, 180]},
+    {"name": "ecb", "file": "ECB_RATE.csv", "lookbacks_days": [30, 90, 180]},
+]
+
+# Zinsdifferenzen
+INTEREST_RATE_DIFFS = [
+    {"name": "macro_rate_diff_usd_eur", "a": "macro_fed_rate", "b": "macro_ecb_rate"},
+]
+
+
+def compute_macro_derived(df, config=None):
+    """Compute derived macro features from config (subtract/ratio operations)."""
+    for spec in (config or MACRO_DERIVED_FEATURES):
+        a, b = spec["a"], spec["b"]
+        if a in df.columns and b in df.columns:
+            if spec["op"] == "subtract":
+                df[spec["name"]] = df[a] - df[b]
+            elif spec["op"] == "ratio":
+                df[spec["name"]] = df[a] / (df[b] + 1e-10)
+    return df
+
+
+def compute_interest_rates(df, data_path):
+    """Load interest rate CSVs and compute rate diffs from config."""
+    import os
+    import pandas as pd
+
+    for rate_cfg in INTEREST_RATES:
+        rate_path = os.path.join(data_path, rate_cfg["file"])
+        if not os.path.exists(rate_path):
+            continue
+        try:
+            rate_df = pd.read_csv(rate_path, parse_dates=["Date"], index_col="Date")
+            rate_series = rate_df["Rate"].reindex(df.index, method="ffill")
+            col_name = f"macro_{rate_cfg['name']}_rate"
+            df[col_name] = rate_series
+            for lb in rate_cfg["lookbacks_days"]:
+                df[f"macro_{rate_cfg['name']}_chg_{lb}d"] = df[col_name].diff(24 * lb)
+        except Exception:
+            pass
+
+    for diff_cfg in INTEREST_RATE_DIFFS:
+        a, b = diff_cfg["a"], diff_cfg["b"]
+        if a in df.columns and b in df.columns:
+            df[diff_cfg["name"]] = df[a] - df[b]
+
+    return df
+
 
 def convert_numpy(obj):
     """Konvertiert numpy-Typen zu Python-nativen Typen für JSON-Serialisierung."""

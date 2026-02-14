@@ -8,7 +8,7 @@ import time
 import signal
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor
-from typing import Callable, List, Any, Optional, Dict
+from typing import Callable, List, Any, Optional
 
 import psutil
 

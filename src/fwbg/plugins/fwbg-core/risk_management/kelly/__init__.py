@@ -4,7 +4,7 @@ from typing import Dict, Any, List
 from fwbg.plugins import BaseRiskManager
 from fwbg.core import register_risk_manager
 from fwbg.simulation.trade import (
-    adjust_kelly_for_target_dd,
+    adjust_risk_for_target_dd,
     find_optimal_circuit_breaker,
 )
 
@@ -44,11 +44,11 @@ class KellyRiskManager(BaseRiskManager):
             }
 
         # Drawdown adjustment
-        kelly_adj = adjust_kelly_for_target_dd(
+        kelly_adj = adjust_risk_for_target_dd(
             trades, fk, rrr, target_max_dd=target_max_dd
         )
         if kelly_adj["scale_factor"] < 1.0:
-            fk = kelly_adj["adjusted_kelly"]
+            fk = kelly_adj["adjusted_risk"]
 
         # Circuit breaker
         cb = find_optimal_circuit_breaker(
@@ -67,7 +67,7 @@ class KellyRiskManager(BaseRiskManager):
                 "enabled": cb["optimal_pause_after_losses"] > 0,
             },
             "risk_adjustment": {
-                "original_risk": kelly_adj["adjusted_kelly"] / kelly_adj["scale_factor"]
+                "original_risk": kelly_adj["adjusted_risk"] / kelly_adj["scale_factor"]
                     if kelly_adj["scale_factor"] > 0 else fk,
                 "scale_factor": kelly_adj["scale_factor"],
                 "target_dd": target_max_dd,

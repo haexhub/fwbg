@@ -1,8 +1,6 @@
 """Feature utilities for the pipeline system."""
 from typing import List, Optional
-import numpy as np
 import pandas as pd
-import ta
 
 
 # =============================================================================
@@ -127,7 +125,7 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
     Returns:
         List of feature column names
     """
-    exclude = ["O", "H", "L", "C", "V", "Volume", "_atr", "_regime_ok", "_original_close", "_hurst"]
+    exclude = {"O", "H", "L", "C", "V", "Volume"}
     return [c for c in df.columns if c not in exclude and not c.startswith("_")]
 
 
@@ -137,124 +135,38 @@ def compute_regime_filter(
     regime_params=None
 ) -> pd.Series:
     """
-    Compute regime filter based on configurable conditions.
+    Compute regime filter based on generic conditions.
+
+    Each condition checks a DataFrame column against a threshold using
+    a comparison operator. Multiple conditions are AND-combined.
 
     Args:
         df: DataFrame with indicators
-        regime_params: Optional RegimeFilterConfig with configuration
+        regime_params: Optional RegimeFilterConfig with conditions list
 
     Returns:
         Boolean Series (True = trading allowed)
     """
-    # Default: No filter active (all trades allowed)
-    adx_min = 0
-    vix_max = None
-    hurst_min = None
-    hurst_max = None
+    if regime_params is None or not regime_params.conditions:
+        return pd.Series(True, index=df.index)
 
-    if regime_params is not None:
-        adx_min = regime_params.adx_min if regime_params.adx_enabled else 0
-        if regime_params.vix_enabled:
-            vix_max = regime_params.vix_max
-        if regime_params.hurst_enabled:
-            hurst_min = regime_params.hurst_min
-            hurst_max = regime_params.hurst_max
+    regime_ok = pd.Series(True, index=df.index)
 
-    # ADX Filter (adx_min=0 means no filter)
-    if adx_min > 0:
-        adx_14 = df.get("trend_adx_14", ta.trend.adx(df["H"], df["L"], df["C"], window=14))
-        regime_ok = adx_14 >= adx_min
-    else:
-        regime_ok = pd.Series(True, index=df.index)
+    for cond in regime_params.conditions:
+        if cond.column not in df.columns:
+            continue
 
-    # VIX Filter (only if explicitly configured)
-    if vix_max is not None:
-        vix_col = next(
-            (c for c in ["macro_vix", "sent_vix"] if c in df.columns),
-            None,
-        )
-        if vix_col is not None:
-            vix_ok = df[vix_col] < vix_max
-            regime_ok = regime_ok & vix_ok
-
-    # Hurst Filter
-    if hurst_min is not None or hurst_max is not None:
-        if "_hurst" not in df.columns:
-            close_values = (
-                df["_original_close"].values
-                if "_original_close" in df.columns
-                else df["C"].values
-            )
-            df["_hurst"] = _compute_rolling_hurst(close_values, window=100, step=10)
-
-        if hurst_min is not None:
-            regime_ok = regime_ok & (df["_hurst"] >= hurst_min)
-        if hurst_max is not None:
-            regime_ok = regime_ok & (df["_hurst"] <= hurst_max)
+        col = df[cond.column]
+        if cond.operator == ">=":
+            regime_ok = regime_ok & (col >= cond.value)
+        elif cond.operator == "<=":
+            regime_ok = regime_ok & (col <= cond.value)
+        elif cond.operator == ">":
+            regime_ok = regime_ok & (col > cond.value)
+        elif cond.operator == "<":
+            regime_ok = regime_ok & (col < cond.value)
 
     return regime_ok
-
-
-def _compute_rolling_hurst(
-    series: np.ndarray,
-    window: int = 100,
-    step: int = 10
-) -> np.ndarray:
-    """Compute rolling Hurst exponent for regime filter."""
-    n = len(series)
-    result = np.full(n, np.nan)
-
-    for i in range(window, n, step):
-        segment = series[i - window:i]
-        try:
-            h = _hurst_exponent(segment)
-            result[i] = h
-        except Exception:
-            pass
-
-    # Forward fill
-    result = pd.Series(result).ffill().values
-    return result
-
-
-def _hurst_exponent(series: np.ndarray) -> float:
-    """Calculate Hurst exponent using R/S analysis."""
-    n = len(series)
-    if n < 20:
-        return 0.5
-
-    # Calculate returns
-    returns = np.diff(np.log(series + 1e-10))
-
-    # R/S analysis
-    max_k = min(n // 2, 100)
-    rs_list = []
-    n_list = []
-
-    for k in range(10, max_k, 5):
-        rs_values = []
-        for start in range(0, len(returns) - k, k):
-            segment = returns[start:start + k]
-            mean_seg = np.mean(segment)
-            cumdev = np.cumsum(segment - mean_seg)
-            r = np.max(cumdev) - np.min(cumdev)
-            s = np.std(segment)
-            if s > 0:
-                rs_values.append(r / s)
-
-        if rs_values:
-            rs_list.append(np.mean(rs_values))
-            n_list.append(k)
-
-    if len(rs_list) < 2:
-        return 0.5
-
-    # Linear regression in log-log space
-    log_n = np.log(n_list)
-    log_rs = np.log(rs_list)
-
-    slope, _ = np.polyfit(log_n, log_rs, 1)
-    return float(np.clip(slope, 0, 1))
 
 
 # =============================================================================
@@ -326,22 +238,12 @@ def compute_indicator_pool(
 
 
 # =============================================================================
-# Feature Selection Re-exports
+# Parameter Plateau Re-exports (for grid search candidate selection)
 # =============================================================================
-# These are re-exported from plugins for convenience
-# Using lazy loading to avoid circular imports
+# These are NOT feature selection — they score TP/SL/CT parameter candidates.
+# Using lazy loading to avoid circular imports.
 
-_boruta_module = None
 _plateau_module = None
-
-
-def _get_boruta_module():
-    """Lazy-load boruta module to avoid circular imports."""
-    global _boruta_module
-    if _boruta_module is None:
-        from fwbg.plugins import import_plugin_module
-        _boruta_module = import_plugin_module("fwbg-premium", "feature_selection", "boruta")
-    return _boruta_module
 
 
 def _get_plateau_module():
@@ -351,22 +253,6 @@ def _get_plateau_module():
         from fwbg.plugins import import_plugin_module
         _plateau_module = import_plugin_module("fwbg-premium", "feature_selection", "plateau")
     return _plateau_module
-
-
-def select_features_boruta(*args, **kwargs):
-    """Wrapper for boruta.select_features_boruta."""
-    module = _get_boruta_module()
-    if module is None:
-        raise ImportError("Plugin 'fwbg-premium:boruta' not installed")
-    return module.select_features_boruta(*args, **kwargs)
-
-
-def select_plateau_features(*args, **kwargs):
-    """Wrapper for plateau.select_plateau_features."""
-    module = _get_plateau_module()
-    if module is None:
-        raise ImportError("Plugin 'fwbg-premium:plateau' not installed")
-    return module.select_plateau_features(*args, **kwargs)
 
 
 def calculate_param_plateau_score(*args, **kwargs):
@@ -391,16 +277,13 @@ __all__ = [
     "PREMIUM_INDICATORS",
     "ALL_INDICATORS",
     "PREMIUM_PREPROCESSING",
-    "PREMIUM_FEATURE_SELECTION",
     # Utility functions
     "get_feature_columns",
     "compute_regime_filter",
     "compute_indicator_pool",
     "normalize_plugin_name",
     "split_indicators_by_stationarity",
-    # Feature selection
-    "select_features_boruta",
-    "select_plateau_features",
+    # Parameter plateau (grid search)
     "calculate_param_plateau_score",
     "select_best_plateau_candidate",
 ]

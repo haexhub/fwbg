@@ -12,14 +12,12 @@ Patterns:
 - Topic-basiert: Handler können auf spezifische Symbole filtern
 - Async-ready: Unterstützt sowohl sync als auch async Handler
 """
-from typing import Callable, Dict, List, Set, Optional, Any, Union
-from dataclasses import dataclass, field
+from typing import Callable, Dict, List, Set, Optional, Union
+from dataclasses import dataclass
 from collections import defaultdict
-from datetime import datetime
 import threading
 import logging
 import queue
-import time
 
 from ..events import Event, EventType
 

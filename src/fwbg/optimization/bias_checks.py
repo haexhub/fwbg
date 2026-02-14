@@ -9,7 +9,6 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tests'))
 
 from typing import Dict, Any, List
-import numpy as np
 
 try:
     from test_sample_bias_detection import SampleBiasDetector
@@ -52,7 +51,6 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
     std_wr = wf.get("std_win_rate", 0)
     bias_ratios = wf.get("bias_ratios", [])
     mean_bias = wf.get("mean_bias_ratio", 0)
-    sample_bias_detected = wf.get("sample_bias_detected", False)
     total_trades = wf.get("total_trades", 0)
 
     # RRR berechnen

@@ -9,11 +9,10 @@ Boruta ist ein All-Relevant Feature Selection Algorithmus:
 
 Referenz: Kursa & Rudnicki (2010) "Feature Selection with the Boruta Package"
 """
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 import numpy as np
 import pandas as pd
 from xgboost import XGBClassifier
-from scipy import stats
 
 from fwbg.plugins import BaseFeatureSelector
 from fwbg.core import register_feature_selector

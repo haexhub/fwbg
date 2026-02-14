@@ -13,7 +13,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from xgboost import XGBClassifier
 
 from fwbg.core.context import SimulationContext
-from fwbg.pipeline.features import select_features_boruta
+from fwbg.core import get_feature_selector
 from fwbg.utils.xgb_config import get_xgboost_n_jobs, get_xgboost_params
 
 from .targets import (
@@ -79,73 +79,56 @@ def select_features_from_fold(
     targets: np.ndarray,
     group_features: List[str],
     min_trades: int,
-    feature_selection: str = "boruta",
-    max_features: int = 0,
-    min_z_score: float = 0.3,
-) -> Tuple[Optional[List[str]], Dict[str, float]]:
+    feature_selection_plugins: List[Dict] = None,
+) -> Tuple[Optional[List[str]], Dict]:
     """
-    Wählt Features basierend auf einem Training-Fold.
+    Wählt Features über das Plugin-Interface aus.
+
+    Iteriert über konfigurierte Feature-Selection-Plugins und kettet sie:
+    Jedes Plugin operiert auf dem Output des vorherigen.
 
     Args:
         train_df: Training DataFrame
         targets: Target Array
         group_features: Features der aktuellen Gruppe
         min_trades: Minimum Trades
-        feature_selection:
-            - "boruta" (default): Boruta findet alle relevanten Features
-            - "boruta_plateau": Boruta + Plateau-Validierung (kombiniert)
-        max_features: Maximum Features pro Modell (0 = Default 15)
-        min_z_score: Minimum Z-Score für Boruta Feature-Akzeptanz (Default 0.3)
+        feature_selection_plugins: Liste von Plugin-Configs
+            [{"name": "boruta", "params": {"min_z_score": 0.5}}, ...]
 
     Returns:
-        (selected_features, importances_dict) oder (None, {})
+        (selected_features, metadata) oder (None, {})
     """
     if np.count_nonzero(targets) < min_trades // 2:
         return None, {}
 
-    # Nur verfügbare Features nutzen
     available_features = [f for f in group_features if f in train_df.columns]
     if not available_features:
         return None, {}
 
-    if feature_selection == "boruta":
-        # Boruta: Findet relevante Features, begrenzt durch max_features
-        return select_features_boruta(
-            train_df, targets, available_features,
-            min_trades=min_trades,
-            min_z_score=min_z_score,
-            max_features=max_features,
+    if not feature_selection_plugins:
+        return available_features, {}
+
+    selected = available_features
+    metadata = {}
+
+    for plugin_config in feature_selection_plugins:
+        name = plugin_config["name"]
+        params = plugin_config.get("params", {}).copy()
+
+        selector_cls = get_feature_selector(name)
+        selector = selector_cls()
+
+        max_features = params.pop("max_features", None)
+        selected, meta = selector.select_features(
+            train_df[selected], targets,
+            max_features=max_features, **params
         )
 
-    elif feature_selection == "boruta_plateau":
-        # Kombination: Boruta findet relevante Features, Plateau filtert danach
-        boruta_features, importances = select_features_boruta(
-            train_df, targets, available_features,
-            min_trades=min_trades,
-            min_z_score=min_z_score * 0.8,
-            max_features=max_features,
-        )
+        if not selected or len(selected) < 2:
+            return None, metadata
+        metadata.update(meta)
 
-        if boruta_features and len(boruta_features) >= 2:
-            from .plateau import calculate_feature_plateau_score
-            plateau_results = calculate_feature_plateau_score(importances, boruta_features)
-
-            stable_features = [
-                f for f in boruta_features
-                if f in plateau_results and (
-                    plateau_results[f]["is_plateau"] or
-                    len(plateau_results[f]["neighbors"]) == 0
-                )
-            ]
-
-            if len(stable_features) >= 2:
-                return stable_features, importances
-            return boruta_features, importances
-
-        return boruta_features, importances
-
-    else:
-        raise ValueError(f"Unknown feature_selection method: '{feature_selection}'")
+    return selected, metadata
 
 
 def train_model(
@@ -283,16 +266,12 @@ def run_inner_cv(
             if has_long:
                 selected_features_long, _ = select_features_from_fold(
                     train_df, targets_long, group_features, ctx.min_trades,
-                    feature_selection=ctx.feature_selection,
-                    max_features=ctx.max_features,
-                    min_z_score=ctx.min_z_score,
+                    feature_selection_plugins=ctx.feature_selection_plugins,
                 )
             if has_short:
                 selected_features_short, _ = select_features_from_fold(
                     train_df, targets_short, group_features, ctx.min_trades,
-                    feature_selection=ctx.feature_selection,
-                    max_features=ctx.max_features,
-                    min_z_score=ctx.min_z_score,
+                    feature_selection_plugins=ctx.feature_selection_plugins,
                 )
 
         if not selected_features_long and not selected_features_short:

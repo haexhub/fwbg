@@ -83,7 +83,7 @@ class TestSimulationContextAttributes:
         )
 
         assert hasattr(ctx, "exit_strategy")
-        assert ctx.exit_strategy == "atr_based"  # Default
+        assert ctx.exit_strategy == "fixed"  # Default
 
     def test_context_has_exit_params(self):
         """Test: SimulationContext hat exit_params."""

@@ -9,31 +9,20 @@ class BasePreprocessor(ABC):
     """
     Basisklasse für Preprocessing-Plugins.
 
-    Preprocessors transformieren Daten NACH der Feature-Berechnung, aber
-    VOR dem Modell-Training. Sie folgen dem sklearn fit/transform Pattern
+    Preprocessors transformieren Daten VOR oder NACH der Feature-Berechnung.
+    Ob ein Preprocessor vor oder nach den Indicators läuft, wird über die
+    Manifest-Datei des jeweiligen Plugins konfiguriert (phase: "pre_indicators"
+    oder "post_indicators"). Features die von stationären Daten profitieren
+    (z.B. nach Fractional Differentiation) werden auf den bereits
+    transformierten Daten berechnet.
+
+    Preprocessors folgen dem sklearn fit/transform Pattern
     um Lookahead Bias zu verhindern.
 
     WICHTIG - Lookahead Bias Prevention:
     - fit() lernt Parameter NUR von Train-Daten
     - transform() wendet diese Parameter auf Test/OOS-Daten an
     - fit() wird für jeden CV-Fold SEPARAT aufgerufen
-
-    Beispiel:
-        ```python
-        from fwbg.plugins import BasePreprocessor
-
-        class FractionalDiffPreprocessor(BasePreprocessor):
-            order = 10  # Früh ausführen
-
-            def fit(self, df, **params):
-                # Lerne d von Train-Daten
-                self.d_ = self._find_optimal_d(df["C"])
-                return self
-
-            def transform(self, df, **params):
-                # Wende gelerntes d an
-                return self._apply_frac_diff(df, self.d_)
-        ```
     """
 
     # Plugin-Name (wird vom Registry gesetzt)

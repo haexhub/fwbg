@@ -13,7 +13,7 @@ Event-Kategorien:
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from abc import ABC
 import uuid
 

@@ -22,7 +22,7 @@ from fwbg.simulation.trade import (
     calculate_calmar_ratio,
     monte_carlo_permutation_test,
     calculate_equity_smoothness,
-    adjust_kelly_for_target_dd,
+    adjust_risk_for_target_dd,
     find_optimal_circuit_breaker,
 )
 
@@ -396,7 +396,7 @@ class TestCalculateCalmarRatio:
         # Mehr Wins als Losses
         trades = [1.0, 1.0, -1.0, 1.0, 1.0] * 20
 
-        calmar = calculate_calmar_ratio(trades, kelly_risk=0.02, rrr=2.0)
+        calmar = calculate_calmar_ratio(trades, risk_per_trade=0.02, rrr=2.0)
 
         assert calmar > 0, "Calmar sollte positiv sein"
 
@@ -405,14 +405,14 @@ class TestCalculateCalmarRatio:
         # Nur Wins - kein Drawdown
         trades = [1.0] * 50
 
-        calmar = calculate_calmar_ratio(trades, kelly_risk=0.02, rrr=2.0)
+        calmar = calculate_calmar_ratio(trades, risk_per_trade=0.02, rrr=2.0)
 
         # Bei keinem Drawdown: Sollte nicht crashen
         assert calmar >= 0 or calmar == float('inf') or np.isinf(calmar)
 
     def test_empty_trades(self):
         """Test: Leere Trade-Liste."""
-        calmar = calculate_calmar_ratio([], kelly_risk=0.02, rrr=2.0)
+        calmar = calculate_calmar_ratio([], risk_per_trade=0.02, rrr=2.0)
         assert calmar == 0.0
 
 
@@ -458,7 +458,7 @@ class TestEquitySmoothness:
         # Gleichmäßige Gewinne
         trades = [1.0, 1.0, 1.0, -1.0] * 50  # 75% Winrate, gleichmäßig
 
-        result = calculate_equity_smoothness(trades, kelly_risk=0.02, rrr=2.0)
+        result = calculate_equity_smoothness(trades, risk_per_trade=0.02, rrr=2.0)
 
         assert "smoothness_score" in result
         assert "return_volatility" in result
@@ -469,7 +469,7 @@ class TestEquitySmoothness:
         # Stark schwankende Ergebnisse
         trades = [1.0] * 10 + [-1.0] * 10 + [1.0] * 10 + [-1.0] * 10
 
-        result = calculate_equity_smoothness(trades, kelly_risk=0.05, rrr=3.0)
+        result = calculate_equity_smoothness(trades, risk_per_trade=0.05, rrr=3.0)
 
         # Sollte nicht crashen und vernünftige Werte liefern
         assert 0 <= result["smoothness_score"] <= 1
@@ -478,38 +478,38 @@ class TestEquitySmoothness:
         """Test: Zu wenige Trades für Berechnung."""
         trades = [1.0, -1.0]
 
-        result = calculate_equity_smoothness(trades, kelly_risk=0.02, rrr=2.0, window_size=50)
+        result = calculate_equity_smoothness(trades, risk_per_trade=0.02, rrr=2.0, window_size=50)
 
         assert result["smoothness_score"] == 0.5  # Default
 
 
 class TestAdjustKellyForTargetDd:
-    """Tests für adjust_kelly_for_target_dd."""
+    """Tests für adjust_risk_for_target_dd."""
 
     def test_reduces_kelly_for_high_dd(self):
         """Test: Kelly wird reduziert bei hohem Drawdown."""
         # Trades mit hohem Drawdown-Potenzial
         trades = [1.0, -1.0, -1.0, -1.0, 1.0] * 20
-        original_kelly = 0.05
+        original_risk = 0.05
 
-        result = adjust_kelly_for_target_dd(
-            trades, original_kelly, rrr=2.0, target_max_dd=0.15
+        result = adjust_risk_for_target_dd(
+            trades, original_risk, rrr=2.0, target_max_dd=0.15
         )
-        adjusted_kelly = result["adjusted_kelly"]
+        adjusted_risk = result["adjusted_risk"]
 
-        assert adjusted_kelly <= original_kelly
+        assert adjusted_risk <= original_risk
 
     def test_maintains_minimum(self):
         """Test: Kelly bleibt über Minimum."""
         trades = [-1.0] * 50  # Nur Verluste
-        original_kelly = 0.05
+        original_risk = 0.05
 
-        result = adjust_kelly_for_target_dd(
-            trades, original_kelly, rrr=2.0, target_max_dd=0.01
+        result = adjust_risk_for_target_dd(
+            trades, original_risk, rrr=2.0, target_max_dd=0.01
         )
-        adjusted_kelly = result["adjusted_kelly"]
+        adjusted_risk = result["adjusted_risk"]
 
-        assert adjusted_kelly >= 0.001  # Irgendein Minimum
+        assert adjusted_risk >= 0.001  # Irgendein Minimum
 
 
 class TestFindOptimalCircuitBreaker:
@@ -521,7 +521,7 @@ class TestFindOptimalCircuitBreaker:
         trades = [1.0] * 30 + [-1.0] * 10 + [1.0] * 30 + [-1.0] * 10
 
         result = find_optimal_circuit_breaker(
-            trades, kelly_risk=0.02, rrr=2.0,
+            trades, risk_per_trade=0.02, rrr=2.0,
             loss_range=(3, 10), pause_range=(5, 20)
         )
 

@@ -20,7 +20,7 @@ import pandas as pd
 import ta
 
 from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import safe_divide, shift_features
+from fwbg.plugins.indicator import safe_divide
 from fwbg.core import register_indicator
 
 

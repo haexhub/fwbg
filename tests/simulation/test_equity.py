@@ -17,7 +17,7 @@ class TestSimulateEquity:
     def test_all_wins(self):
         """Test: Alle Trades gewinnen."""
         trades = [1.0] * 10
-        result = simulate_equity(trades, kelly_risk=0.02, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.02, rrr=2.0, start_equity=100.0)
 
         assert result["final_equity"] > 100.0, "Equity sollte gestiegen sein"
         assert result["max_drawdown"] == 0.0, "Kein Drawdown bei nur Gewinnen"
@@ -27,7 +27,7 @@ class TestSimulateEquity:
     def test_all_losses(self):
         """Test: Alle Trades verlieren."""
         trades = [-1.0] * 10
-        result = simulate_equity(trades, kelly_risk=0.02, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.02, rrr=2.0, start_equity=100.0)
 
         assert result["final_equity"] < 100.0, "Equity sollte gefallen sein"
         assert result["max_drawdown"] > 0.0, "Drawdown sollte existieren"
@@ -37,7 +37,7 @@ class TestSimulateEquity:
         """Test: Gemischte Gewinne und Verluste."""
         # 60% Winrate mit RRR 2.0 sollte profitabel sein
         trades = [1.0] * 60 + [-1.0] * 40
-        result = simulate_equity(trades, kelly_risk=0.02, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.02, rrr=2.0, start_equity=100.0)
 
         # Erwarteter Gewinn pro Trade: 0.6 * 2.0 - 0.4 * 1.0 = 0.8 (in R)
         assert result["final_equity"] > 100.0, "60% Winrate mit RRR 2.0 sollte profitabel sein"
@@ -46,7 +46,7 @@ class TestSimulateEquity:
         """Test: Bankrott bei 100% Verlust."""
         # Mit 50% Kelly-Risk und genug Verlusten sollte nahe 0 kommen
         trades = [-1.0] * 100
-        result = simulate_equity(trades, kelly_risk=0.5, rrr=1.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.5, rrr=1.0, start_equity=100.0)
 
         # Wert konvergiert gegen 0, wird aber nie exakt 0 (geometrisches Schrumpfen)
         assert result["final_equity"] < 0.01, "Sollte nahe bankrott sein"
@@ -59,13 +59,13 @@ class TestSimulateEquity:
 
         # Mit niedrigem Cap
         result_capped = simulate_equity(
-            trades_many_wins, kelly_risk=0.05, rrr=3.0,
+            trades_many_wins, risk_per_trade=0.05, rrr=3.0,
             start_equity=100.0, compound_cap=200.0
         )
 
         # Ohne Cap (hoher Cap)
         result_uncapped = simulate_equity(
-            trades_many_wins, kelly_risk=0.05, rrr=3.0,
+            trades_many_wins, risk_per_trade=0.05, rrr=3.0,
             start_equity=100.0, compound_cap=1e12
         )
 
@@ -76,7 +76,7 @@ class TestSimulateEquity:
         """Test: Drawdown wird korrekt berechnet."""
         # Win, Win, Loss, Loss, Win
         trades = [1.0, 1.0, -1.0, -1.0, 1.0]
-        result = simulate_equity(trades, kelly_risk=0.10, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.10, rrr=2.0, start_equity=100.0)
 
         # Nach 2 Wins: Equity = 100 + 20 + 24.8 = 144.8
         # Nach Loss 1: Equity = 144.8 - 14.48 = 130.32
@@ -89,7 +89,7 @@ class TestSimulateEquity:
     def test_empty_trades(self):
         """Test: Keine Trades."""
         trades = []
-        result = simulate_equity(trades, kelly_risk=0.02, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.02, rrr=2.0, start_equity=100.0)
 
         assert result["final_equity"] == 100.0
         assert result["max_drawdown"] == 0.0
@@ -98,7 +98,7 @@ class TestSimulateEquity:
     def test_single_win(self):
         """Test: Ein Gewinn-Trade."""
         trades = [1.0]
-        result = simulate_equity(trades, kelly_risk=0.10, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.10, rrr=2.0, start_equity=100.0)
 
         # Gewinn = 100 * 0.10 * 2.0 = 20
         expected_equity = 120.0
@@ -107,7 +107,7 @@ class TestSimulateEquity:
     def test_single_loss(self):
         """Test: Ein Verlust-Trade."""
         trades = [-1.0]
-        result = simulate_equity(trades, kelly_risk=0.10, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.10, rrr=2.0, start_equity=100.0)
 
         # Verlust = 100 * 0.10 = 10
         expected_equity = 90.0
@@ -117,16 +117,16 @@ class TestSimulateEquity:
         """Test: Peak wird korrekt aktualisiert."""
         # Win, Loss, Loss, Win, Win (neuer Peak)
         trades = [1.0, -1.0, -1.0, 1.0, 1.0]
-        result = simulate_equity(trades, kelly_risk=0.05, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.05, rrr=2.0, start_equity=100.0)
 
         # Am Ende sollte ein neuer Peak erreicht werden
         # Equity-Kurve sollte steigen
         assert result["equity_curve"][-1] > result["equity_curve"][0]
 
-    def test_large_kelly_risk(self):
+    def test_large_risk_per_trade(self):
         """Test: Hoher Kelly-Wert führt zu starken Schwankungen."""
         trades = [1.0, -1.0] * 20
-        result = simulate_equity(trades, kelly_risk=0.25, rrr=1.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.25, rrr=1.0, start_equity=100.0)
 
         # Mit 50/50 und RRR 1.0 sollte es etwa breakeven sein
         # Aber hoher Kelly führt zu Schwankungen
@@ -135,7 +135,7 @@ class TestSimulateEquity:
     def test_zero_kelly_no_change(self):
         """Test: Kelly = 0 bedeutet keine Positionsgröße."""
         trades = [1.0] * 10 + [-1.0] * 10
-        result = simulate_equity(trades, kelly_risk=0.0, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.0, rrr=2.0, start_equity=100.0)
 
         # Keine Positionsgröße = keine Änderung
         assert result["final_equity"] == 100.0
@@ -237,7 +237,7 @@ class TestEquityEdgeCases:
     def test_negative_start_equity(self):
         """Test: Negative Start-Equity wird durch Bankrott-Check auf 0 gesetzt."""
         trades = [1.0]
-        result = simulate_equity(trades, kelly_risk=0.10, rrr=2.0, start_equity=-100.0)
+        result = simulate_equity(trades, risk_per_trade=0.10, rrr=2.0, start_equity=-100.0)
 
         # Negative Equity wird als Bankrott behandelt (equity <= 0)
         # Bei negativem Start wird equity sofort auf 0 gesetzt
@@ -247,7 +247,7 @@ class TestEquityEdgeCases:
         """Test: Sehr kleiner Kelly-Wert."""
         trades = [1.0] * 1000
         result = simulate_equity(
-            trades, kelly_risk=0.0001, rrr=2.0, start_equity=100.0
+            trades, risk_per_trade=0.0001, rrr=2.0, start_equity=100.0
         )
 
         # Sollte minimal wachsen
@@ -257,7 +257,7 @@ class TestEquityEdgeCases:
     def test_very_high_rrr(self):
         """Test: Sehr hohes Risk-Reward-Ratio."""
         trades = [1.0] * 10
-        result = simulate_equity(trades, kelly_risk=0.01, rrr=100.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.01, rrr=100.0, start_equity=100.0)
 
         # Jeder Gewinn = 1% * 100 = 100% Zuwachs
         assert result["final_equity"] > 1000.0
@@ -265,7 +265,7 @@ class TestEquityEdgeCases:
     def test_alternating_trades(self):
         """Test: Abwechselnde Gewinne/Verluste."""
         trades = [1.0, -1.0] * 50
-        result = simulate_equity(trades, kelly_risk=0.02, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.02, rrr=2.0, start_equity=100.0)
 
         # Win gibt +4%, Loss gibt -2%
         # Netto pro Paar: ~+2%
@@ -275,7 +275,7 @@ class TestEquityEdgeCases:
     def test_drawdown_never_exceeds_one(self):
         """Test: Drawdown ist immer zwischen 0 und 1."""
         trades = np.random.choice([1.0, -1.0], size=1000).tolist()
-        result = simulate_equity(trades, kelly_risk=0.05, rrr=1.5, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.05, rrr=1.5, start_equity=100.0)
 
         assert 0.0 <= result["max_drawdown"] <= 1.0
         assert all(0 <= dd <= 100 for dd in result["drawdowns"])
@@ -284,7 +284,7 @@ class TestEquityEdgeCases:
         """Test: Equity-Kurve hat korrekte Länge."""
         n_trades = 42
         trades = [1.0] * n_trades
-        result = simulate_equity(trades, kelly_risk=0.02, rrr=2.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.02, rrr=2.0, start_equity=100.0)
 
         assert len(result["equity_curve"]) == n_trades + 1
         assert len(result["drawdowns"]) == n_trades + 1
@@ -292,7 +292,7 @@ class TestEquityEdgeCases:
     def test_rrr_zero(self):
         """Test: RRR = 0 (kein Gewinn bei Wins)."""
         trades = [1.0] * 10 + [-1.0] * 5
-        result = simulate_equity(trades, kelly_risk=0.02, rrr=0.0, start_equity=100.0)
+        result = simulate_equity(trades, risk_per_trade=0.02, rrr=0.0, start_equity=100.0)
 
         # Wins bringen 0, Losses kosten 2%
         assert result["final_equity"] < 100.0

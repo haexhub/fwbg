@@ -12,7 +12,7 @@ Features:
 - Minimum-Trades Enforcement
 - Sample-Bias Detection (für Diagnose, nicht Auto-Filter)
 """
-from typing import List, Tuple, Dict, Any
+from typing import List, Dict, Any
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
@@ -22,7 +22,6 @@ from fwbg.optimization.nested_cv import (
     run_inner_cv,
     evaluate_on_holdout,
 )
-from fwbg.optimization.targets import compute_targets
 from fwbg.core.context import SimulationContext
 
 

@@ -6,12 +6,10 @@ Enthält:
 - _process_tp_sl_combo_wrapper: Wrapper für parallele Verarbeitung
 - run_grid_search: Grid-Search über TP/SL/Timeout Kombinationen
 """
-import time
 from typing import Tuple, Optional, List
 
 import numpy as np
 
-from fwbg.utils.progress import report_progress, report_phase
 from fwbg.utils.logging import log
 from .nested_cv import run_inner_cv, select_features_from_fold
 
@@ -23,10 +21,10 @@ def select_features(
     sym: str,
 ) -> Tuple[Optional[List[str]], Optional[List[str]]]:
     """
-    Führt Feature Selection einmal durch.
+    Führt Feature Selection einmal durch (via Plugin-Interface).
 
     Verwendet den ERSTEN Inner Fold für Feature Selection.
-    Dies passiert VOR dem Grid-Search und reduziert Boruta-Läufe drastisch.
+    Dies passiert VOR dem Grid-Search und reduziert Feature-Selection-Läufe.
 
     Args:
         inner_folds: Liste von (train_df, val_df) Tuples
@@ -60,9 +58,7 @@ def select_features(
     if has_long:
         selected_long, _ = select_features_from_fold(
             train_df, targets_long, features, ctx.min_trades,
-            feature_selection=ctx.feature_selection,
-            max_features=ctx.max_features,
-            min_z_score=ctx.min_z_score,
+            feature_selection_plugins=ctx.feature_selection_plugins,
         )
         if selected_long:
             log(2, f"  Feature Selection (Long): {len(selected_long)} Features ausgewählt", sym)
@@ -70,9 +66,7 @@ def select_features(
     if has_short:
         selected_short, _ = select_features_from_fold(
             train_df, targets_short, features, ctx.min_trades,
-            feature_selection=ctx.feature_selection,
-            max_features=ctx.max_features,
-            min_z_score=ctx.min_z_score,
+            feature_selection_plugins=ctx.feature_selection_plugins,
         )
         if selected_short:
             log(2, f"  Feature Selection (Short): {len(selected_short)} Features ausgewählt", sym)
