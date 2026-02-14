@@ -205,8 +205,8 @@ def run_optimizer(
         if status == "ok":
             sharpe = result.get("sharpe", 0)
             summary = f"WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T)"
-        elif status == "no_kelly":
-            summary = f"Kelly≤0 WR={wr:.1%} PnL={pnl:.1f} RRR={rrr_val:.2f} TP={tp} SL={sl} ({n_trades}T)"
+        elif status == "no_edge":
+            summary = f"No edge WR={wr:.1%} PnL={pnl:.1f} RRR={rrr_val:.2f} TP={tp} SL={sl} ({n_trades}T)"
         elif status == "not_significant":
             p_val = result.get("monte_carlo", {}).get("p_value", 0)
             sharpe = result.get("sharpe", 0)
@@ -244,7 +244,7 @@ def run_optimizer(
 
             # Jahresrendite berechnen
             _trades = result.get("tr_trace", [])
-            _kelly = result.get("config", {}).get("kelly_risk", 0.01)
+            _risk = result.get("config", {}).get("risk_per_trade", 0.01)
             _rrr = result.get("rrr", 1.0)
             _wf = result.get("walk_forward", {})
             _fold_details = _wf.get("fold_details", [])
@@ -254,7 +254,7 @@ def run_optimizer(
 
             # Equity simulieren für annual_return
             from fwbg.simulation.equity import simulate_equity as _sim_eq
-            _eq_result = _sim_eq(_trades, _kelly, _rrr)
+            _eq_result = _sim_eq(_trades, _risk, _rrr)
             _final_eq = _eq_result["final_equity"]
             _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
 
@@ -273,7 +273,7 @@ def run_optimizer(
             grid_data["smoothness"] = result.get("smoothness", {})
 
         # Für nicht-erfolgreiche Assets: Volle Auswertung speichern
-        if status in ["no_kelly", "not_significant"]:
+        if status in ["no_edge", "not_significant"]:
             if result.get("best_config"):
                 grid_data["best_config"] = result["best_config"]
             if result.get("pnl") is not None:
@@ -289,7 +289,7 @@ def run_optimizer(
             if result.get("reason"):
                 grid_data["reason"] = result["reason"]
 
-        # Für nicht-erfolgreiche Assets mit Holdout-Daten (z.B. no_kelly)
+        # Für nicht-erfolgreiche Assets mit Holdout-Daten (z.B. no_edge)
         if result.get("holdout_result"):
             grid_data["holdout_result"] = result["holdout_result"]
         if result.get("best_candidate"):
@@ -300,7 +300,7 @@ def run_optimizer(
 
         # Zusammenfassung für später sammeln (wird nach Progress-UI ausgegeben)
         output_lines = []
-        if status in ["ok", "no_kelly", "not_significant"]:
+        if status in ["ok", "no_edge", "not_significant"]:
             # Config extrahieren (entweder aus "config" oder "best_config")
             cfg = result.get("config") or result.get("best_config", {})
             tp = cfg.get("tp_mult", "?")
@@ -327,9 +327,7 @@ def run_optimizer(
             mc = result.get("monte_carlo", {})
             p_value = mc.get("p_value", 0)
 
-            # Kelly
-            kelly_raw = (wr * rrr - (1 - wr)) / rrr if rrr > 0 else 0
-            kelly_risk = cfg.get("kelly_risk", 0)
+            risk_per_trade = cfg.get("risk_per_trade", 0)
 
             # Header
             status_symbol = "✓" if status == "ok" else "✗"
@@ -346,9 +344,9 @@ def run_optimizer(
 
             # Status-spezifische Zeilen
             if status == "ok":
-                output_lines.append(f"  Kelly: {kelly_raw:.4f} → Risk={kelly_risk:.4f}, p={p_value:.3f}")
-            elif status == "no_kelly":
-                output_lines.append(f"  Reason: Kelly={kelly_raw:.4f} <= 0")
+                output_lines.append(f"  Risk/Trade={risk_per_trade:.4f}, p={p_value:.3f}")
+            elif status == "no_edge":
+                output_lines.append(f"  Reason: No profitable edge")
             elif status == "not_significant":
                 output_lines.append(f"  Reason: p-value={p_value:.3f} (not significant)")
 
@@ -426,12 +424,12 @@ def run_optimizer(
     table_data = []
 
     for e in elite:
-        e["config"]["kelly_risk"] *= shield
+        e["config"]["risk_per_trade"] *= shield
 
         # Equity-Simulation
-        kelly = e["config"]["kelly_risk"]
+        risk = e["config"]["risk_per_trade"]
         rrr = e["rrr"]
-        sim = simulate_equity(e["tr_trace"], kelly, rrr)
+        sim = simulate_equity(e["tr_trace"], risk, rrr)
 
         eq = sim["equity_curve"]
         final_equity = sim["final_equity"]
@@ -505,7 +503,7 @@ def run_optimizer(
         table_data.append(
             [
                 e["symbol"],
-                f"{e['config']['kelly_risk'] * 100:.2f}%",
+                f"{e['config']['risk_per_trade'] * 100:.2f}%",
                 f"{wr:.1%}",
                 f"{rrr:.2f}",
                 f"{sharpe:.2f}",
@@ -526,7 +524,7 @@ def run_optimizer(
             table_data,
             headers=[
                 "Asset",
-                "Kelly",
+                "Risk",
                 "WinRate",
                 "RRR",
                 "Sharpe",

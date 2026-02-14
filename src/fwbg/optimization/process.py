@@ -544,16 +544,26 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Extract binary results for Monte Carlo / Sharpe / Calmar (sign-based)
         all_trades_binary = [t["result"] for t in all_trades]
 
-        # Quick Kelly check for early exit (before Monte Carlo)
+        # === RISK MANAGEMENT PLUGIN ===
+        # Computes risk_per_trade, circuit_breaker, risk_adjustment.
+        # Must run BEFORE Monte Carlo so MC uses the correct risk value.
         rrr = b_config["rrr"]
-        full_kelly = (mean_wr * rrr - (1 - mean_wr)) / rrr if rrr > 0 else 0
-        kelly_fraction = strategy.risk_params.get("kelly_fraction", 0.25)
-        max_risk = strategy.risk_params.get("max_risk", 0.05)
-        fk = max(0, min(max_risk, full_kelly * kelly_fraction))
+        risk_mgr_cls = get_risk_manager(strategy.risk_management)
+        risk_mgr = risk_mgr_cls()
+        risk_result = risk_mgr.compute_risk_params(
+            all_trades_binary, mean_wr, rrr, **strategy.risk_params
+        )
+        fk = risk_result["risk_per_trade"]
+        circuit_breaker = risk_result["circuit_breaker"]
+        risk_adjustment = risk_result["risk_adjustment"]
+
+        if risk_adjustment["scale_factor"] < 1.0:
+            log(2, f"Risk adjusted: scale_factor={risk_adjustment['scale_factor']:.2f}", sym)
+        if circuit_breaker["enabled"]:
+            log(2, f"Circuit Breaker: Pause after {circuit_breaker['pause_after_losses']} losses "
+                   f"for {circuit_breaker['pause_bars']} bars", sym)
 
         if fk <= 0:
-            # Build FULL result with best config, even though Kelly is negative
-            # User wants to see what was found, even if not profitable
             ct_value = b_config["ct"]
             if isinstance(ct_value, tuple):
                 ct_long, ct_short = ct_value
@@ -564,7 +574,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
             result = {
                 "symbol": sym,
-                "status": "no_kelly",
+                "status": "no_edge",
                 "pnl": mean_pnl,
                 "win_rate": mean_wr,
                 "rrr": rrr,
@@ -596,18 +606,18 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     "mean_bias_ratio": mean_bias_ratio,
                     "fold_details": all_fold_results,
                 },
-                "reason": f"Kelly <= 0 (WR={mean_wr*100:.1f}%, RRR={rrr:.2f})"
+                "reason": f"No profitable edge (WR={mean_wr*100:.1f}%, RRR={rrr:.2f})"
             }
 
             # Run bias check
             bias_check_result = check_asset_bias(result, verbose=True)
             result["bias_check"] = bias_check_result
 
-            log(1, f"NO_KELLY - WR={mean_wr:.1%}±{std_wr:.1%} RRR={rrr:.2f} "
+            log(1, f"NO_EDGE - WR={mean_wr:.1%}±{std_wr:.1%} RRR={rrr:.2f} "
                    f"TP={b_config['tp']} SL={b_config['sl']} CT={ct_display:.2f} "
                    f"Trades={total_trades}", sym)
 
-            report_done(sym, "no_kelly")
+            report_done(sym, "no_edge")
             return result
 
         # === MONTE CARLO TESTS (on aggregated trades from all folds) ===
@@ -649,10 +659,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "rrr": rrr,
                 "sharpe": sharpe,
                 "calmar": calmar,
-                "kelly_risk": fk,
+                "risk_per_trade": fk,
                 "tr_trace": all_trades_binary,
                 "best_config": {
-                    "kelly_risk": fk,
+                    "risk_per_trade": fk,
                     "tp_mult": b_config["tp"],
                     "sl_mult": b_config["sl"],
                     "conf_thresh": ct_display,
@@ -704,22 +714,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if mc_equity["bankruptcy_rate"] > 0.1:
             log(1, f"WARNING: {mc_equity['bankruptcy_rate']:.1%} Bankruptcy-Rate", sym)
 
-        # === RISK MANAGEMENT PLUGIN ===
-        risk_mgr_cls = get_risk_manager(strategy.risk_management)
-        risk_mgr = risk_mgr_cls()
-        risk_result = risk_mgr.compute_risk_params(
-            all_trades_binary, mean_wr, rrr, **strategy.risk_params
-        )
-        fk = risk_result["kelly_risk"]
-        circuit_breaker = risk_result["circuit_breaker"]
-        kelly_adjustment = risk_result["kelly_adjustment"]
-
-        if kelly_adjustment["scale_factor"] < 1.0:
-            log(2, f"Kelly adjusted: scale_factor={kelly_adjustment['scale_factor']:.2f}", sym)
-        if circuit_breaker["enabled"]:
-            log(2, f"Circuit Breaker: Pause after {circuit_breaker['pause_after_losses']} losses "
-                   f"for {circuit_breaker['pause_bars']} trades", sym)
-
         # Calculate metrics on aggregated trades
         bars_per_year = tf_cfg["bars_per_hour"] * 24 * 250
         total_test_bars = sum(r["test_size"] for r in all_fold_results)
@@ -742,7 +736,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "status": "ok",
             "pnl": mean_pnl,
             "config": {
-                "kelly_risk": fk,
+                "risk_per_trade": fk,
                 "point_value": asset.point,
                 "spread": ctx.spread,
                 "tp_mult": b_config["tp"],
@@ -755,7 +749,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "good_hours": list(range(24)),  # Can be computed from aggregated trades if needed
                 "dd_scaling": {"10": 0.5, "20": 0.25},
                 "circuit_breaker": circuit_breaker,
-                "kelly_adjustment": kelly_adjustment,
+                "risk_adjustment": risk_adjustment,
             },
             "tr_trace": all_trades_binary,
             "rrr": rrr,

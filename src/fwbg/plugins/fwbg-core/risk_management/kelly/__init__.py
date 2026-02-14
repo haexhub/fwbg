@@ -32,14 +32,14 @@ class KellyRiskManager(BaseRiskManager):
 
         if fk <= 0:
             return {
-                "kelly_risk": 0,
+                "risk_per_trade": 0,
                 "is_profitable": False,
                 "full_kelly": full_kelly,
                 "circuit_breaker": {
                     "pause_after_losses": 0, "pause_bars": 0, "enabled": False,
                 },
-                "kelly_adjustment": {
-                    "original_kelly": 0, "scale_factor": 1.0, "target_dd": target_max_dd,
+                "risk_adjustment": {
+                    "original_risk": 0, "scale_factor": 1.0, "target_dd": target_max_dd,
                 },
             }
 
@@ -58,7 +58,7 @@ class KellyRiskManager(BaseRiskManager):
         )
 
         return {
-            "kelly_risk": fk,
+            "risk_per_trade": fk,
             "is_profitable": True,
             "full_kelly": full_kelly,
             "circuit_breaker": {
@@ -66,8 +66,8 @@ class KellyRiskManager(BaseRiskManager):
                 "pause_bars": cb["optimal_pause_bars"],
                 "enabled": cb["optimal_pause_after_losses"] > 0,
             },
-            "kelly_adjustment": {
-                "original_kelly": kelly_adj["adjusted_kelly"] / kelly_adj["scale_factor"]
+            "risk_adjustment": {
+                "original_risk": kelly_adj["adjusted_kelly"] / kelly_adj["scale_factor"]
                     if kelly_adj["scale_factor"] > 0 else fk,
                 "scale_factor": kelly_adj["scale_factor"],
                 "target_dd": target_max_dd,

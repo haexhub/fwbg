@@ -35,16 +35,16 @@ class TestKellyBasic:
         mgr = KellyRiskManager()
         trades = [1.0] * 60 + [-1.0] * 40
         result = mgr.compute_risk_params(trades, win_rate=0.60, rrr=1.5)
-        assert result["kelly_risk"] > 0
+        assert result["risk_per_trade"] > 0
         assert result["is_profitable"] is True
         assert "circuit_breaker" in result
-        assert "kelly_adjustment" in result
+        assert "risk_adjustment" in result
 
     def test_unprofitable_strategy(self):
         mgr = KellyRiskManager()
         trades = [1.0] * 30 + [-1.0] * 70
         result = mgr.compute_risk_params(trades, win_rate=0.30, rrr=1.0)
-        assert result["kelly_risk"] == 0
+        assert result["risk_per_trade"] == 0
         assert result["is_profitable"] is False
 
     def test_max_risk_cap(self):
@@ -53,14 +53,14 @@ class TestKellyBasic:
             [1.0] * 80 + [-1.0] * 20, win_rate=0.80, rrr=3.0,
             max_risk=0.02
         )
-        assert result["kelly_risk"] <= 0.02
+        assert result["risk_per_trade"] <= 0.02
 
     def test_zero_rrr(self):
         mgr = KellyRiskManager()
         result = mgr.compute_risk_params(
             [1.0] * 50 + [-1.0] * 50, win_rate=0.50, rrr=0.0
         )
-        assert result["kelly_risk"] == 0
+        assert result["risk_per_trade"] == 0
 
     def test_circuit_breaker_structure(self):
         mgr = KellyRiskManager()
@@ -72,13 +72,13 @@ class TestKellyBasic:
         assert "pause_bars" in cb
         assert "enabled" in cb
 
-    def test_kelly_adjustment_structure(self):
+    def test_risk_adjustment_structure(self):
         mgr = KellyRiskManager()
         result = mgr.compute_risk_params(
             [1.0] * 60 + [-1.0] * 40, win_rate=0.60, rrr=1.5
         )
-        ka = result["kelly_adjustment"]
-        assert "original_kelly" in ka
+        ka = result["risk_adjustment"]
+        assert "original_risk" in ka
         assert "scale_factor" in ka
         assert "target_dd" in ka
 
