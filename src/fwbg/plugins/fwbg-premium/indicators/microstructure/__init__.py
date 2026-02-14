@@ -6,6 +6,8 @@ Analysiert Intrabar-Dynamik und Marktmikrostruktur-Signale:
 - Intrabar Bias: Open-to-Close Bewegung relativ zur Range
 - Range over ATR: Normalisierte Volatilität
 - Pressure Score: Kauf-/Verkaufsdruck basierend auf Kerzenstruktur
+- Accumulation/Distribution Line: Volume-gewichteter Preistrend
+- Chaikin Money Flow (CMF): Geldfluss-Indikator
 
 Diese Features erfassen Informationen, die in OHLC-Daten
 versteckt sind aber selten genutzt werden.
@@ -135,10 +137,39 @@ class MicrostructureIndicator(BaseIndicator):
             # Relative Volume (vs. rolling average)
             v_avg = v.rolling(rolling_window * 4).mean()
             features["micro_relative_volume"] = v / v_avg
+
+            # --- Accumulation/Distribution Line ---
+            # CLV (Close Location Value): Wo der Close innerhalb der Range liegt
+            # CLV = ((C - L) - (H - C)) / (H - L) = (2C - L - H) / (H - L)
+            clv = safe_divide(2 * c - l - h, bar_range)
+            ad_flow = clv * v
+            features["micro_ad_line"] = ad_flow.cumsum()
+            # Normalisiert: A/D relativ zum Rolling-Mean (für Stationarität)
+            ad_cumsum = features["micro_ad_line"]
+            ad_mean = ad_cumsum.rolling(50).mean()
+            ad_std = ad_cumsum.rolling(50).std()
+            features["micro_ad_zscore"] = safe_divide(ad_cumsum - ad_mean, ad_std)
+
+            # --- Chaikin Money Flow (CMF) ---
+            # CMF = Sum(CLV * Volume, N) / Sum(Volume, N)
+            for cmf_window in [10, 20]:
+                features[f"micro_cmf_{cmf_window}"] = safe_divide(
+                    ad_flow.rolling(cmf_window).sum(),
+                    v.rolling(cmf_window).sum(),
+                )
         else:
             # Fallback wenn kein Volume
             features["micro_vwap_pressure"] = features["micro_pressure_sum"] / rolling_window
             features["micro_relative_volume"] = 1.0
+            # A/D und CMF brauchen Volume - nutze CLV als Proxy
+            clv = safe_divide(2 * c - l - h, bar_range)
+            features["micro_ad_line"] = clv.cumsum()
+            ad_cumsum = features["micro_ad_line"]
+            ad_mean = ad_cumsum.rolling(50).mean()
+            ad_std = ad_cumsum.rolling(50).std()
+            features["micro_ad_zscore"] = safe_divide(ad_cumsum - ad_mean, ad_std)
+            for cmf_window in [10, 20]:
+                features[f"micro_cmf_{cmf_window}"] = clv.rolling(cmf_window).mean()
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
         features_df = shift_features(features, df.index)
@@ -161,6 +192,11 @@ class MicrostructureIndicator(BaseIndicator):
             "micro_direction_consistency",
             "micro_vwap_pressure",
             "micro_relative_volume",
+            # Volume Flow
+            "micro_ad_line",
+            "micro_ad_zscore",
+            "micro_cmf_10",
+            "micro_cmf_20",
         ]
 
     @classmethod

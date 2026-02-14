@@ -13,7 +13,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from xgboost import XGBClassifier
 
 from fwbg.core.context import SimulationContext
-from fwbg.pipeline.features import select_plateau_features, select_features_boruta
+from fwbg.pipeline.features import select_features_boruta
 from fwbg.utils.xgb_config import get_xgboost_n_jobs, get_xgboost_params
 
 from .targets import (
@@ -94,7 +94,6 @@ def select_features_from_fold(
         feature_selection:
             - "boruta" (default): Boruta findet alle relevanten Features
             - "boruta_plateau": Boruta + Plateau-Validierung (kombiniert)
-            - "importance_based": Altes Verhalten mit top_n=5
         max_features: Maximum Features pro Modell (0 = Default 15)
         min_z_score: Minimum Z-Score für Boruta Feature-Akzeptanz (Default 0.3)
 
@@ -146,29 +145,7 @@ def select_features_from_fold(
         return boruta_features, importances
 
     else:
-        # Altes Verhalten: Importance + Plateau mit top_n=5
-        params = {
-            "n_estimators": 50,
-            "max_depth": 4,
-            "learning_rate": 0.1,
-            "random_state": 42,
-            "verbosity": 0,
-            "n_jobs": get_xgboost_n_jobs(),
-        }
-
-        model = XGBClassifier(**params)
-        model.fit(train_df[available_features], targets)
-        importances = pd.Series(model.feature_importances_, index=available_features)
-
-        plateau_features = select_plateau_features(
-            importances.to_dict(), available_features,
-            top_n=5, min_importance=0
-        )
-
-        if len(plateau_features) >= 2:
-            return plateau_features, importances.to_dict()
-
-        return None, importances.to_dict()
+        raise ValueError(f"Unknown feature_selection method: '{feature_selection}'")
 
 
 def train_model(
@@ -346,7 +323,7 @@ def run_inner_cv(
                 n_fold_trades = len(fold_trades)
 
                 if n_fold_trades > 0:
-                    fold_win_rate = fold_trades.count(1.0) / n_fold_trades
+                    fold_win_rate = sum(1 for t in fold_trades if t["result"] == 1.0) / n_fold_trades
 
                     is_catastrophic = (
                         fold_win_rate < first_fold_min_win_rate and
@@ -382,7 +359,7 @@ def run_inner_cv(
         return {"success": False}
 
     profitable_folds = sum(1 for pnl in inner_val_pnls if pnl > 0)
-    fold_stability = profitable_folds / len(inner_val_pnls) if inner_val_pnls else 0
+    fold_stability = profitable_folds / total_folds if total_folds > 0 else 0
 
     if best_ct_votes:
         best_ct = max(best_ct_votes.keys(), key=lambda x: best_ct_votes[x])
@@ -466,8 +443,8 @@ def evaluate_on_holdout(
 
     trades = result["trades"]
     trades_detailed = result["trades_detailed"]
-    pnl = sum(trades) if trades else 0
-    win_rate = trades.count(1.0) / len(trades) if trades else 0
+    pnl = sum(t["pnl_raw"] for t in trades) if trades else 0
+    win_rate = sum(1 for t in trades if t["result"] == 1.0) / len(trades) if trades else 0
 
     output = {
         "trades": trades,
@@ -484,13 +461,13 @@ def evaluate_on_holdout(
         output["long_stats"] = {
             "n_trades": len(long_trades),
             "wins": sum(1 for t in long_trades if t.get("result") == 1.0),
-            "pnl": sum(t.get("result", 0) for t in long_trades),
+            "pnl": sum(t.get("pnl_raw", 0) for t in long_trades),
             "win_rate": sum(1 for t in long_trades if t.get("result") == 1.0) / len(long_trades) if long_trades else 0,
         }
         output["short_stats"] = {
             "n_trades": len(short_trades),
             "wins": sum(1 for t in short_trades if t.get("result") == 1.0),
-            "pnl": sum(t.get("result", 0) for t in short_trades),
+            "pnl": sum(t.get("pnl_raw", 0) for t in short_trades),
             "win_rate": sum(1 for t in short_trades if t.get("result") == 1.0) / len(short_trades) if short_trades else 0,
         }
 

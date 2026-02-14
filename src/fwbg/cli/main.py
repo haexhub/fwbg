@@ -49,7 +49,6 @@ def run_optimizer(
     save_results=True,
     strategy_metadata=None,
     asset_filter=None,
-    feature_groups=None,
 ):
     """
     Führt die Walk-Forward Optimierung aus.
@@ -59,7 +58,6 @@ def run_optimizer(
         save_results: Wenn True, werden Ergebnisse in test_results/ gespeichert
         strategy_metadata: Strukturierte Strategie-Metadaten (dict oder via create_strategy_metadata())
         asset_filter: Liste von Assets die getestet werden sollen (None = alle)
-        feature_groups: Liste von Feature-Gruppen die getestet werden sollen (None = default)
     """
     # Lade nur Dateien für das gewählte Timeframe
     files = sorted(glob.glob(f"{DATA_PATH}/*_{TIMEFRAME}.csv"))
@@ -97,16 +95,7 @@ def run_optimizer(
 
     # Strategy-Config für Worker erstellen
     if strategy_metadata:
-        # CLI feature_groups überschreiben Strategy-Config
-        if feature_groups:
-            if "features" not in strategy_metadata:
-                strategy_metadata["features"] = {}
-            strategy_metadata["features"]["preferred_groups"] = feature_groups
-
         strategy = StrategyConfig.from_dict(strategy_metadata)
-    elif feature_groups:
-        strategy = StrategyConfig()
-        strategy.features.preferred_groups = feature_groups
     else:
         strategy = StrategyConfig()
 
@@ -252,13 +241,32 @@ def run_optimizer(
         # Bei erfolgreichen Assets: Holdout-Ergebnisse und Best-Config sofort speichern
         if status == "ok":
             grid_data["selected_config"] = result.get("config", {})
+
+            # Jahresrendite berechnen
+            _trades = result.get("tr_trace", [])
+            _kelly = result.get("config", {}).get("kelly_risk", 0.01)
+            _rrr = result.get("rrr", 1.0)
+            _wf = result.get("walk_forward", {})
+            _fold_details = _wf.get("fold_details", [])
+            _total_test_bars = sum(f.get("test_size", OOS_SIZE) for f in _fold_details) if _fold_details else WALK_FORWARD_FOLDS * OOS_SIZE
+            _bars_per_year = 24 * 250 if TIMEFRAME == "HOUR" else 96 * 250
+            _years = _total_test_bars / _bars_per_year if _bars_per_year > 0 else 1
+
+            # Equity simulieren für annual_return
+            from fwbg.simulation.equity import simulate_equity as _sim_eq
+            _eq_result = _sim_eq(_trades, _kelly, _rrr)
+            _final_eq = _eq_result["final_equity"]
+            _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
+
             grid_data["holdout_metrics"] = {
                 "pnl": result.get("pnl", 0),
                 "win_rate": result.get("win_rate", 0),
                 "rrr": result.get("rrr", 0),
                 "sharpe": result.get("sharpe", 0),
                 "calmar": result.get("calmar", 0),
-                "trades": len(result.get("tr_trace", [])),
+                "trades": len(_trades),
+                "annual_return": round(_annual_return, 1),
+                "test_period_years": round(_years, 2),
             }
             grid_data["nested_cv"] = result.get("nested_cv", {})
             grid_data["monte_carlo"] = result.get("monte_carlo", {})
@@ -592,7 +600,6 @@ Beispiele:
   python -m fwbg.cli --compare RUN1 RUN2               # Runs vergleichen
   python -m fwbg.cli --no-save                         # Ohne Speichern
   python -m fwbg.cli --assets EURUSD,GBPUSD            # Nur bestimmte Assets
-  python -m fwbg.cli --features trend,momentum         # Nur bestimmte Feature-Gruppen
   python -m fwbg.cli --reverse-worst RUN_ID            # Schlechteste Strategien umkehren
 
 Kategorien: baseline, feature_test, model_test, hyperparameter, production, experiment
@@ -609,8 +616,6 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     parser.add_argument("--load", type=str, metavar="RUN_ID", help="Details eines Runs anzeigen")
     parser.add_argument("--assets", type=str, help="Nur bestimmte Assets testen (komma-getrennt)")
     parser.add_argument("--asset-classes", type=str, help="Nur bestimmte Asset-Klassen testen (komma-getrennt)")
-    parser.add_argument("--features", type=str, help="Feature-Gruppen testen (komma-getrennt)")
-    parser.add_argument("--list-features", action="store_true", help="Verfügbare Feature-Gruppen anzeigen")
     parser.add_argument("--reverse-worst", type=str, metavar="RUN_ID", help="Analysiere schlechteste Strategien umgekehrt")
     parser.add_argument("--reverse-n", type=int, default=10, help="Anzahl der schlechtesten Strategien (default: 10)")
     parser.add_argument("--cpu", type=float, help="Max CPU-Auslastung (0.0-1.0)")
@@ -619,24 +624,6 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     parser.add_argument("--timeframe", type=str, help="Timeframe (überschreibt TIMEFRAME env)")
 
     args = parser.parse_args()
-
-    # Account/Timeframe aus CLI oder Strategy übernehmen
-
-    if args.list_features:
-        from fwbg.pipeline import FEATURE_GROUPS
-        DEFAULT_FEATURE_GROUPS = ["trend", "momentum", "volatility"]
-
-        print("\n" + "=" * 70)
-        print("VERFÜGBARE FEATURE-GRUPPEN")
-        print("=" * 70 + "\n")
-        for name, group in FEATURE_GROUPS.items():
-            default_mark = " [DEFAULT]" if name in DEFAULT_FEATURE_GROUPS else ""
-            print(f"{name}{default_mark}")
-            print(f"  Name: {group['name']}")
-            print(f"  Prefixes: {', '.join(group['prefixes'])}")
-            print()
-        print("Verwendung: python -m fwbg.cli --features trend,momentum,macro")
-        return
 
     # --tags impliziert --list
     if args.tags or args.list:
@@ -711,17 +698,11 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 print(f"Keine Assets für Klassen {classes} gefunden!")
                 return
 
-        # Parse feature groups filter
-        feature_groups = None
-        if args.features:
-            feature_groups = [g.strip() for g in args.features.split(",") if g.strip()]
-
         run_optimizer(
             description=args.description,
             save_results=not args.no_save,
             strategy_metadata=strategy_metadata if strategy_metadata else None,
             asset_filter=asset_filter,
-            feature_groups=feature_groups,
         )
 
 

@@ -32,7 +32,7 @@ from fwbg.core import get_risk_manager
 from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log
 from .nested_cv import nested_cv_split, evaluate_on_holdout
-from .grid_search import _process_feature_group, _process_feature_groups_parallel
+from .grid_search import run_grid_search
 from .robust_validation import create_walk_forward_folds
 from .bias_checks import check_asset_bias
 
@@ -358,10 +358,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             candidates = []
             all_grid_results = []
 
-            # Feature-Gruppen: In der neuen Pipeline gibt es nur noch "all"
-            # Alle Indikatoren werden zusammen berechnet
-            feature_groups_to_test = ["all"]
-
             # Regime-Filter Kombinationen aus Grid (falls definiert)
             regime_filter_combinations = grid.regime_filter_grid.get_combinations()
             n_regime_combos = len(regime_filter_combinations)
@@ -371,7 +367,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             total_combos = base_combos * n_regime_combos
 
             if fold.fold_id == 0:  # Only log once
-                log(1, f"Grid-Search: {len(feature_groups_to_test)} FG x {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} x {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
+                log(1, f"Grid-Search: {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} x {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
                 if ctx.min_rrr > 0:
                     log(1, f"Min RRR Filter: {ctx.min_rrr}", sym)
 
@@ -414,39 +410,25 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 if n_regime_combos > 1 and fold.fold_id == 0:  # Only log once
                     log(2, f"  Regime {rf_idx+1}/{n_regime_combos}: {regime_str}", sym)
 
-                # Feature-Gruppen verarbeiten
-                n_feature_groups = len(feature_groups_to_test)
+                # Grid-Search mit Progress-Reporting
+                total_grid_combos = ctx.total_grid_combinations()
+                fold_idx_1based = fold.fold_id + 1
+                total_folds = len(wf_folds)
 
-                if n_feature_groups <= 1:
-                    # Single-FG: Progress-Reporting direkt hier
-                    total_grid_combos = ctx.total_grid_combinations()
-                    fold_idx_1based = fold.fold_id + 1
-                    total_folds = len(wf_folds)
+                from fwbg.utils.progress import report_progress
+                def grid_progress_callback(grid_count, grid_total):
+                    report_progress(sym, fold_idx_1based, total_folds, "grid_search",
+                                   grid_count, total_grid_combos)
 
-                    # Progress-Callback für Grid-Search Updates
-                    # (kein initialer 0/total - Feature Selection Phase wird stattdessen angezeigt)
-                    from fwbg.utils.progress import report_progress
-                    def single_fg_progress_callback(grid_count, grid_per_fg, fg_idx=None):
-                        report_progress(sym, fold_idx_1based, total_folds, "grid_search",
-                                       grid_count, total_grid_combos)
-
-                    for fg_idx, feature_group in enumerate(feature_groups_to_test):
-                        report_phase(sym, f"Fold {fold_idx_1based}/{total_folds}: Feature Selection [{ctx.feature_selection}]...")
-                        fg_candidates, fg_grid_results = _process_feature_group(
-                            fg_idx, feature_group, full_pool, inner_folds,
-                            grid, ctx, regime_config, sym, n_feature_groups,
-                            inner_df=train_df,
-                            progress_callback=single_fg_progress_callback
-                        )
-                        candidates.extend(fg_candidates)
-                        all_grid_results.extend(fg_grid_results)
-                else:
-                    fg_candidates, fg_grid_results = _process_feature_groups_parallel(
-                        feature_groups_to_test, full_pool, inner_folds,
-                        grid, ctx, regime_config, sym, inner_df=train_df
-                    )
-                    candidates.extend(fg_candidates)
-                    all_grid_results.extend(fg_grid_results)
+                report_phase(sym, f"Fold {fold_idx_1based}/{total_folds}: Feature Selection [{ctx.feature_selection}]...")
+                gs_candidates, gs_grid_results = run_grid_search(
+                    full_pool, inner_folds,
+                    grid, ctx, regime_config, sym,
+                    inner_df=train_df,
+                    progress_callback=grid_progress_callback
+                )
+                candidates.extend(gs_candidates)
+                all_grid_results.extend(gs_grid_results)
 
             log(2, f"  Fold {fold.fold_id + 1}: Grid search done, {len(candidates)} candidates", sym)
 
@@ -503,7 +485,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 },
                 "selected_features_long": b.get("selected_features_long", []),
                 "selected_features_short": b.get("selected_features_short", []),
-                "feature_group": b.get("feature_group", "unknown"),
             }
 
             all_fold_results.append(fold_result)
@@ -560,6 +541,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         for fold_result in all_fold_results:
             all_trades.extend(fold_result["test_trades_trace"])
 
+        # Extract binary results for Monte Carlo / Sharpe / Calmar (sign-based)
+        all_trades_binary = [t["result"] for t in all_trades]
+
         # Quick Kelly check for early exit (before Monte Carlo)
         rrr = b_config["rrr"]
         full_kelly = (mean_wr * rrr - (1 - mean_wr)) / rrr if rrr > 0 else 0
@@ -586,14 +570,13 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "rrr": rrr,
                 "sharpe": 0,
                 "calmar": 0,
-                "tr_trace": all_trades,
+                "tr_trace": all_trades_binary,
                 "best_config": {
                     "tp_mult": b_config["tp"],
                     "sl_mult": b_config["sl"],
                     "conf_thresh": ct_display,
                     "ct_long": ct_long,
                     "ct_short": ct_short,
-                    "feature_group": representative_fold["feature_group"],
                     "features": representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", []),
                 },
                 "walk_forward": {
@@ -631,8 +614,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         report_phase(sym, "Monte Carlo Validierung...")
 
         t_mc = time.time()
-        mc_perm = monte_carlo_permutation_test(all_trades, n_permutations=1000)
-        mc_equity = monte_carlo_equity_simulation(all_trades, fk, rrr, n_simulations=500)
+        mc_perm = monte_carlo_permutation_test(all_trades_binary, n_permutations=1000)
+        mc_equity = monte_carlo_equity_simulation(all_trades_binary, fk, rrr, n_simulations=500)
 
         log(2, f"  Monte Carlo: p={mc_perm['p_value']:.3f}, "
                f"Equity median={mc_equity['median_equity']:.1f}, "
@@ -644,9 +627,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             # Build FULL result with best config and Monte Carlo results
             # User wants to see what was found, even if not statistically significant
             bars_per_year = tf_cfg["bars_per_hour"] * 24 * 250
-            trade_returns = [fk * rrr if r > 0 else -fk for r in all_trades]
-            sharpe = calculate_sharpe_ratio(trade_returns, trades_per_year=total_trades / len(all_trades) * bars_per_year)
-            calmar = calculate_calmar_ratio(all_trades, fk, rrr)
+            total_test_bars = sum(r["test_size"] for r in all_fold_results)
+            actual_trades_per_year = total_trades * bars_per_year / total_test_bars if total_test_bars > 0 else total_trades
+            trade_returns = [fk * rrr if r > 0 else -fk for r in all_trades_binary]
+            sharpe = calculate_sharpe_ratio(trade_returns, trades_per_year=actual_trades_per_year)
+            calmar = calculate_calmar_ratio(all_trades_binary, fk, rrr)
 
             ct_value = b_config["ct"]
             if isinstance(ct_value, tuple):
@@ -665,7 +650,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "sharpe": sharpe,
                 "calmar": calmar,
                 "kelly_risk": fk,
-                "tr_trace": all_trades,
+                "tr_trace": all_trades_binary,
                 "best_config": {
                     "kelly_risk": fk,
                     "tp_mult": b_config["tp"],
@@ -673,7 +658,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     "conf_thresh": ct_display,
                     "ct_long": ct_long,
                     "ct_short": ct_short,
-                    "feature_group": representative_fold["feature_group"],
                     "features": representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", []),
                 },
                 "walk_forward": {
@@ -724,7 +708,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         risk_mgr_cls = get_risk_manager(strategy.risk_management)
         risk_mgr = risk_mgr_cls()
         risk_result = risk_mgr.compute_risk_params(
-            all_trades, mean_wr, rrr, **strategy.risk_params
+            all_trades_binary, mean_wr, rrr, **strategy.risk_params
         )
         fk = risk_result["kelly_risk"]
         circuit_breaker = risk_result["circuit_breaker"]
@@ -738,9 +722,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # Calculate metrics on aggregated trades
         bars_per_year = tf_cfg["bars_per_hour"] * 24 * 250
-        trade_returns = [fk * rrr if r > 0 else -fk for r in all_trades]
-        sharpe = calculate_sharpe_ratio(trade_returns, trades_per_year=total_trades / len(all_trades) * bars_per_year)
-        calmar = calculate_calmar_ratio(all_trades, fk, rrr)
+        total_test_bars = sum(r["test_size"] for r in all_fold_results)
+        actual_trades_per_year = total_trades * bars_per_year / total_test_bars if total_test_bars > 0 else total_trades
+        trade_returns = [fk * rrr if r > 0 else -fk for r in all_trades_binary]
+        sharpe = calculate_sharpe_ratio(trade_returns, trades_per_year=actual_trades_per_year)
+        calmar = calculate_calmar_ratio(all_trades_binary, fk, rrr)
 
         # CT values
         ct_value = b_config["ct"]
@@ -765,14 +751,13 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "ct_long": ct_long,
                 "ct_short": ct_short,
                 "separate_long_short": ctx.separate_long_short,
-                "feature_group": representative_fold["feature_group"],
                 "features": representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", []),
                 "good_hours": list(range(24)),  # Can be computed from aggregated trades if needed
                 "dd_scaling": {"10": 0.5, "20": 0.25},
                 "circuit_breaker": circuit_breaker,
                 "kelly_adjustment": kelly_adjustment,
             },
-            "tr_trace": all_trades,
+            "tr_trace": all_trades_binary,
             "rrr": rrr,
             "win_rate": mean_wr,
             "sharpe": sharpe,

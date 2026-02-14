@@ -5,7 +5,6 @@ Testet die komplette Optimierungs-Pipeline inkl.:
 - Import-Pfade (keine relativen Imports zu nicht-existierenden Modulen)
 - SimulationContext Attribute
 - Exit-Strategy Dispatch
-- Feature-Group Filterung
 """
 import pytest
 import numpy as np
@@ -53,18 +52,11 @@ class TestImportPaths:
     def test_process_symbol_imports(self):
         """Test: process_symbol hat korrekte Imports."""
         # Import sollte nicht fehlschlagen
-        from fwbg.optimization.process import process_symbol, _process_feature_group
+        from fwbg.optimization.process import process_symbol
 
-    def test_filter_features_import_in_process(self):
-        """Test: filter_features_by_group wird korrekt importiert."""
-        # Diese Import-Zeile in _process_feature_group sollte funktionieren
-        from fwbg.pipeline import filter_features_by_group
-
-        # Test dass die Funktion existiert und funktioniert
-        features = ["trend_rsi_14", "mom_stoch_14", "vol_atr_14"]
-        filtered = filter_features_by_group(features, "trend")
-        assert "trend_rsi_14" in filtered
-        assert "mom_stoch_14" not in filtered
+    def test_grid_search_imports(self):
+        """Test: run_grid_search kann importiert werden."""
+        from fwbg.optimization.grid_search import run_grid_search
 
     def test_optimization_imports(self):
         """Test: optimization modules have correct imports."""
@@ -218,36 +210,8 @@ class TestExitStrategyDispatch:
         assert len(targets_l) == len(df)
 
 
-class TestFeatureGroupFiltering:
-    """Testet Feature-Group Filterung."""
-
-    def test_filter_trend_features(self):
-        """Test: Trend-Features werden korrekt gefiltert."""
-        from fwbg.pipeline import filter_features_by_group
-
-        all_features = [
-            "trend_rsi_14", "trend_adx_14", "trend_ema_21",
-            "mom_stoch_14", "mom_williams_14",
-            "vol_atr_14", "vol_bb_width",
-        ]
-
-        trend_features = filter_features_by_group(all_features, "trend")
-
-        assert "trend_rsi_14" in trend_features
-        assert "trend_adx_14" in trend_features
-        assert "mom_stoch_14" not in trend_features
-        assert "vol_atr_14" not in trend_features
-
-    def test_filter_unknown_group_returns_all(self):
-        """Test: Unbekannte Gruppe gibt alle Features zurück."""
-        from fwbg.pipeline import filter_features_by_group
-
-        all_features = ["feat_a", "feat_b", "feat_c"]
-
-        # "unknown_group" existiert nicht in FEATURE_GROUPS
-        result = filter_features_by_group(all_features, "unknown_group")
-
-        assert result == all_features
+class TestStrategyIndicators:
+    """Tests für Strategy-Indikatoren."""
 
     def test_strategy_get_indicators(self):
         """Test: Strategy.get_indicators() returns pipeline indicators."""
@@ -306,16 +270,16 @@ class TestStrategyConfigIntegration:
         assert None in grid.timeout_bars
 
 
-class TestProcessFeatureGroup:
-    """Tests für _process_feature_group Funktion."""
+class TestRunGridSearch:
+    """Tests für run_grid_search Funktion."""
 
     def test_function_exists_and_imports(self):
-        """Test: _process_feature_group kann importiert werden."""
-        from fwbg.optimization.process import _process_feature_group
+        """Test: run_grid_search kann importiert werden."""
+        from fwbg.optimization.grid_search import run_grid_search
 
-    def test_feature_group_with_few_features(self):
-        """Test: Feature-Gruppe mit 1 Feature funktioniert (kein Skip mehr)."""
-        from fwbg.optimization.grid_search import _process_feature_group
+    def test_grid_search_with_few_features(self):
+        """Test: Grid-Search mit 1 Feature funktioniert."""
+        from fwbg.optimization.grid_search import run_grid_search
         from fwbg.core.config import GridConfig
         import pandas as pd
         import numpy as np
@@ -331,7 +295,7 @@ class TestProcessFeatureGroup:
 
         grid = GridConfig(tp=[1.0], sl=[1.0], ct=[0.5])
 
-        # Nur 1 Feature - wird jetzt verarbeitet (kein Skip bei < 3)
+        # Nur 1 Feature
         full_pool = ["trend_rsi_14"]
 
         # Dummy inner_df
@@ -339,16 +303,13 @@ class TestProcessFeatureGroup:
             "trend_rsi_14": np.random.randn(100)
         })
 
-        candidates, grid_results = _process_feature_group(
-            fg_idx=0,
-            feature_group="trend",
+        candidates, grid_results = run_grid_search(
             full_pool=full_pool,
             inner_folds=[],
             grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TEST",
-            n_feature_groups=1,
             inner_df=inner_df,
         )
 

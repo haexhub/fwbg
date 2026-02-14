@@ -263,10 +263,12 @@ class RiskIndicators(BaseIndicator):
         result = {}
         close = df["C"]
 
-        # SPX Korrelation
+        # SPX Korrelation + Beta
         has_spx = "macro_spx" in df.columns
         if has_spx:
             spx = df["macro_spx"]
+            spx_returns = spx.pct_change()
+            asset_returns = close.pct_change()
 
             for window in [20, 50, 100]:
                 result[f"corr_spx_{window}"] = close.rolling(window).corr(spx)
@@ -279,6 +281,12 @@ class RiskIndicators(BaseIndicator):
             asset_mom = close.pct_change(20)
             spx_mom = spx.pct_change(20)
             result["lead_lag_spx"] = asset_mom - spx_mom
+
+            # Rolling Beta = Cov(asset, spx) / Var(spx)
+            for window in [50, 100]:
+                cov = asset_returns.rolling(window).cov(spx_returns)
+                var = spx_returns.rolling(window).var()
+                result[f"beta_spx_{window}"] = safe_divide(cov, var)
 
         # VIX Korrelation
         vix_col = (
@@ -320,6 +328,7 @@ class RiskIndicators(BaseIndicator):
             # Correlations (optional, nur wenn Makro-Daten vorhanden)
             "corr_spx_20", "corr_spx_50", "corr_spx_100",
             "corr_spx_stability", "corr_spx_decoupling", "lead_lag_spx",
+            "beta_spx_50", "beta_spx_100",
             "corr_vix_20", "corr_vix_50", "lead_lag_vix", "vix_lead_signal",
         ]
 

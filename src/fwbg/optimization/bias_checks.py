@@ -39,7 +39,7 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
     wf = result.get("walk_forward", {})
     if not wf:
         if verbose:
-            print(f"⚠️  {symbol}: No walk-forward results (legacy format?)")
+            print(f"⚠️  {symbol}: No walk-forward results")
         return {
             "symbol": symbol,
             "bias_check": "no_walk_forward",

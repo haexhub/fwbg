@@ -356,66 +356,6 @@ class PluginRegistry:
 
         return discovered
 
-    # Legacy compatibility - will be removed
-    def discover_from_directory(self, directory: Path) -> List[str]:
-        """
-        Legacy method - discovers plugins without namespace.
-
-        DEPRECATED: Use discover_package() instead.
-        """
-        logger.warning(
-            "discover_from_directory is deprecated. Use discover_package() instead."
-        )
-        discovered: List[str] = []
-        directory = Path(directory)
-
-        if not directory.is_dir():
-            return discovered
-
-        for subdir in directory.iterdir():
-            if not subdir.is_dir():
-                continue
-
-            manifest_file = subdir / "manifest.json"
-            init_file = subdir / "__init__.py"
-
-            if not manifest_file.exists() or not init_file.exists():
-                continue
-
-            try:
-                with open(manifest_file) as f:
-                    manifest = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                continue
-
-            try:
-                module_name = f"_plugin_legacy_{subdir.name}"
-                spec = importlib.util.spec_from_file_location(module_name, init_file)
-                if spec is None or spec.loader is None:
-                    continue
-
-                module = importlib.util.module_from_spec(spec)
-                sys.modules[module_name] = module
-                spec.loader.exec_module(module)
-
-                for attr_name in dir(module):
-                    attr = getattr(module, attr_name)
-                    if (
-                        isinstance(attr, type)
-                        and issubclass(attr, BasePlugin)
-                        and attr is not BasePlugin
-                        and not inspect.isabstract(attr)
-                    ):
-                        # Register with "legacy" namespace
-                        fqn = self.register(attr, "legacy")
-                        discovered.append(fqn)
-
-            except Exception:
-                continue
-
-        return discovered
-
-
 def get_user_plugins_dir() -> Path:
     """
     Get user plugins directory (~/.fwbg/plugins/).

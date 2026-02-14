@@ -436,8 +436,8 @@ class TestAtrExitStrategyGrid:
             assert c["tp_mult"] in [1.5, 2.0, 2.5]
             assert c["sl_mult"] in [1.0, 1.5]
 
-    def test_grid_accepts_legacy_tp_sl_keys(self, atr_context):
-        """Grid sollte auch 'tp' und 'sl' als Multiplikatoren interpretieren."""
+    def test_grid_accepts_tp_sl_keys(self, atr_context):
+        """Grid sollte 'tp' und 'sl' als Multiplikatoren interpretieren."""
         strategy = AtrExitStrategy()
 
         grid_config = {

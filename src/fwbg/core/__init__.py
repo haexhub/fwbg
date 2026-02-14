@@ -4,30 +4,6 @@ Core Module - Kern-Infrastruktur für FWBG.
 
 from .grid_params import ExitConfig, GridParams
 
-
-def _auto_load_exit_strategies():
-    """Load exit strategies from plugins to populate EXIT_STRATEGY_REGISTRY."""
-    try:
-        from fwbg.plugins import import_plugin_module
-        # Import triggers the @register_exit_strategy decorators
-        import_plugin_module("fwbg-core", "exit_strategies", "fixed")
-        import_plugin_module("fwbg-premium", "exit_strategies", "atr_based")
-    except ImportError:
-        pass  # Plugins may not be installed
-
-
-# Defer loading to avoid circular imports
-import atexit as _atexit
-_exit_strategies_loaded = False
-
-
-def _ensure_exit_strategies_loaded():
-    """Ensure exit strategies are loaded (called lazily)."""
-    global _exit_strategies_loaded
-    if not _exit_strategies_loaded:
-        _auto_load_exit_strategies()
-        _exit_strategies_loaded = True
-
 from .enums import (
     Timeframe,
     AssetClass,

@@ -13,7 +13,6 @@ import pytest
 from fwbg.pipeline import (
     compute_indicator_pool,
     get_feature_columns,
-    filter_features_by_group,
 )
 
 
@@ -625,8 +624,8 @@ class TestIndicatorPoolIntegration:
         features = get_feature_columns(result)
         assert len(features) > 100, f"Expected > 100 features, got {len(features)}"
 
-    def test_filter_features_by_group_correct(self):
-        """Feature-Filter sollte korrekt funktionieren."""
+    def test_trend_features_present(self):
+        """Trend-Features sollten in berechneten Indikatoren vorhanden sein."""
         np.random.seed(42)
         n = 300
         close = 100 * np.exp(np.cumsum(np.random.randn(n) * 0.01))
@@ -634,11 +633,7 @@ class TestIndicatorPoolIntegration:
         result = compute_indicator_pool(df)
 
         all_features = get_feature_columns(result)
-        trend_features = filter_features_by_group(all_features, "trend")
+        trend_features = [f for f in all_features if f.startswith("trend_")]
 
-        # Alle Trend-Features sollten mit trend_ oder ichi_ beginnen
-        for f in trend_features:
-            assert f.startswith("trend_") or f.startswith("ichi_"), f"Unexpected feature: {f}"
-
-        # Sollte mehrere Features haben
+        # Sollte mehrere Trend-Features haben
         assert len(trend_features) > 10, f"Expected > 10 trend features, got {len(trend_features)}"

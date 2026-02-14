@@ -212,7 +212,6 @@ def analyze_reversed_strategies(run_id, top_n=10):
                 all_grids.append(
                     {
                         "symbol": sym,
-                        "feature_group": config.get("feature_group", "unknown"),
                         "tp_mult": config.get("tp_mult", 0),
                         "sl_mult": config.get("sl_mult", 0),
                         "conf_thresh": config.get("conf_thresh", 0),
@@ -249,7 +248,6 @@ def analyze_reversed_strategies(run_id, top_n=10):
 
     for w in worst:
         sym = w.get("symbol", "?")
-        fg = w.get("feature_group", "?")
         tp = w.get("tp_mult", 0)
         sl = w.get("sl_mult", 0)
         ct = w.get("conf_thresh", 0)
@@ -263,7 +261,6 @@ def analyze_reversed_strategies(run_id, top_n=10):
         table_data.append(
             [
                 sym,
-                fg[:15],
                 f"{tp}/{sl}",
                 ct,
                 f"{wr:.1%}",
@@ -293,7 +290,6 @@ def analyze_reversed_strategies(run_id, top_n=10):
         reversed_table.append(
             [
                 sym,
-                fg[:15],
                 f"{sl}/{tp}",
                 ct,
                 f"{reversed_wr:.1%}",
@@ -309,7 +305,6 @@ def analyze_reversed_strategies(run_id, top_n=10):
             table_data,
             headers=[
                 "Symbol",
-                "Feature-Gruppe",
                 "TP/SL",
                 "CT",
                 "WinRate",
@@ -328,7 +323,6 @@ def analyze_reversed_strategies(run_id, top_n=10):
             reversed_table,
             headers=[
                 "Symbol",
-                "Feature-Gruppe",
                 "TP/SL",
                 "CT",
                 "WinRate",

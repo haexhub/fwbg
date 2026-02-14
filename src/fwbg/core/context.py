@@ -242,7 +242,7 @@ class SimulationContext:
 
     @property
     def feature_selection(self) -> str:
-        """Returns feature selection method name (for compatibility)."""
+        """Returns feature selection method name from plugin config."""
         if self.feature_selection_plugin:
             return self.feature_selection_plugin.get("name", "boruta")
         return "boruta"

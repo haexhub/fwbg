@@ -5,7 +5,6 @@ Testet:
 - CLI-Argument-Parsing
 - Strategy-Loading
 - Account/Timeframe-Overrides
-- Feature-Groups Listing
 - Runs Listing
 """
 import pytest
@@ -34,20 +33,6 @@ class TestCLIArgumentParsing:
         )
         assert result.returncode == 0
         assert "FWBG Strategy Backtester" in result.stdout
-
-    def test_list_features_command(self):
-        """Test: --list-features zeigt Feature-Gruppen."""
-        import subprocess
-        import sys
-        result = subprocess.run(
-            [sys.executable, "-m", "fwbg.cli", "--list-features"],
-            capture_output=True, text=True,
-            env={**os.environ, "PYTHONPATH": "src"}
-        )
-        assert result.returncode == 0
-        assert "FEATURE-GRUPPEN" in result.stdout
-        assert "trend" in result.stdout
-        assert "momentum" in result.stdout
 
     def test_list_runs_command(self):
         """Test: --list zeigt vorhandene Runs oder 'keine gefunden' Meldung."""
@@ -213,51 +198,6 @@ class TestPreprocessingPluginFormat:
         preprocessing = config.get_preprocessing()
         assert preprocessing == []
         assert not preprocessing  # Evaluiert zu False
-
-
-class TestFeatureGroups:
-    """Tests für Feature-Groups."""
-
-    def test_feature_groups_structure(self):
-        """Test: FEATURE_GROUPS hat korrekte Struktur."""
-        from fwbg.pipeline import FEATURE_GROUPS
-
-        assert "trend" in FEATURE_GROUPS
-        assert "momentum" in FEATURE_GROUPS
-        assert "volatility" in FEATURE_GROUPS
-
-        for name, group in FEATURE_GROUPS.items():
-            assert "name" in group, f"{name} fehlt 'name'"
-            assert "prefixes" in group, f"{name} fehlt 'prefixes'"
-            assert isinstance(group["prefixes"], list), f"{name} prefixes ist keine Liste"
-
-    def test_filter_features_by_group(self):
-        """Test: filter_features_by_group funktioniert."""
-        from fwbg.pipeline import filter_features_by_group
-
-        all_features = [
-            "trend_adx_14", "trend_ema_20",
-            "mom_rsi_14", "mom_stoch_14",
-            "vol_atr_14", "vol_bb_upper"
-        ]
-
-        trend_features = filter_features_by_group(all_features, "trend")
-        assert "trend_adx_14" in trend_features
-        assert "trend_ema_20" in trend_features
-        assert "mom_rsi_14" not in trend_features
-
-        mom_features = filter_features_by_group(all_features, "momentum")
-        assert "mom_rsi_14" in mom_features
-        assert "trend_adx_14" not in mom_features
-
-    def test_unknown_group_returns_all(self):
-        """Test: Unbekannte Gruppe gibt alle Features zurück."""
-        from fwbg.pipeline import filter_features_by_group
-
-        all_features = ["trend_adx_14", "mom_rsi_14"]
-        result = filter_features_by_group(all_features, "nonexistent_group")
-
-        assert result == all_features
 
 
 class TestComputeIndicatorPool:

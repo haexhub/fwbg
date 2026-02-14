@@ -9,42 +9,27 @@ import numpy as np
 
 
 class TestProcessSymbolProgressReporting:
-    """Tests für report_progress Aufrufe in process_symbol (Single-FG path)."""
+    """Tests für report_progress Aufrufe in process_symbol."""
 
-    def test_single_fg_path_passes_progress_callback(self):
-        """Im Single-FG Pfad sollte progress_callback an _process_feature_group übergeben werden."""
-        # Dieser Test prüft direkt den process.py Code
-        # um sicherzustellen, dass progress_callback im Single-FG Pfad übergeben wird
-
+    def test_process_symbol_passes_progress_callback(self):
+        """process_symbol sollte progress_callback an run_grid_search übergeben."""
         from fwbg.optimization import process
         import re
-
-        # Hole den Quellcode
         import inspect
+
         source = inspect.getsource(process.process_symbol)
 
-        # Finde den Single-FG Pfad (n_feature_groups <= 1 Block)
-        # und prüfe ob _process_feature_group mit progress_callback aufgerufen wird
-        single_fg_pattern = r"if n_feature_groups <= 1:.*?_process_feature_group\([^)]*\)"
-
-        match = re.search(single_fg_pattern, source, re.DOTALL)
-        assert match is not None, "Single-FG Pfad mit _process_feature_group Aufruf nicht gefunden"
-
-        fg_call = match.group(0)
-
-        # Der Aufruf sollte progress_callback enthalten
-        assert "progress_callback" in fg_call, (
-            f"_process_feature_group im Single-FG Pfad sollte progress_callback übergeben.\n"
-            f"Gefundener Aufruf: {fg_call}"
-        )
+        # Prüfe ob run_grid_search mit progress_callback aufgerufen wird
+        assert "run_grid_search" in source, "process_symbol sollte run_grid_search aufrufen"
+        assert "progress_callback" in source, "process_symbol sollte progress_callback verwenden"
 
 
 class TestGridProgressCallback:
-    """Tests für _process_feature_group progress_callback Aufrufe."""
+    """Tests für run_grid_search progress_callback Aufrufe."""
 
     def test_progress_callback_called_for_each_combo(self):
         """progress_callback sollte für jede abgeschlossene Grid-Kombination aufgerufen werden."""
-        from fwbg.optimization.grid_search import _process_feature_group
+        from fwbg.optimization.grid_search import run_grid_search
 
         # Setup: Mock-Objekte für die notwendigen Parameter
         progress_callback = MagicMock()
@@ -87,7 +72,7 @@ class TestGridProgressCallback:
         full_pool = ["trend_adx_14", "trend_ema_21", "trend_slope_21", "momentum_rsi_14"]
 
         # Aufruf der Funktion
-        with patch("fwbg.optimization.grid_search.select_features_for_group") as mock_select:
+        with patch("fwbg.optimization.grid_search.select_features") as mock_select:
             # Feature-Selection überspringen - Features direkt zurückgeben
             mock_select.return_value = (full_pool, full_pool)
 
@@ -98,16 +83,13 @@ class TestGridProgressCallback:
                     {"tp": 10, "sl": 20, "pnl": 100},  # grid_result
                 )
 
-                candidates, grid_results = _process_feature_group(
-                    fg_idx=0,
-                    feature_group="all",
+                candidates, grid_results = run_grid_search(
                     full_pool=full_pool,
                     inner_folds=inner_folds,
                     grid=grid,
                     ctx=ctx,
                     regime_config={},
                     sym="EURUSD",
-                    n_feature_groups=1,
                     progress_callback=progress_callback,
                     inner_df=inner_df,
                 )
@@ -128,7 +110,7 @@ class TestGridProgressCallback:
 
     def test_progress_callback_called_on_early_exit_no_features(self):
         """progress_callback sollte auch bei Early-Exit (keine Features) aufgerufen werden."""
-        from fwbg.optimization.grid_search import _process_feature_group
+        from fwbg.optimization.grid_search import run_grid_search
 
         progress_callback = MagicMock()
 
@@ -152,16 +134,13 @@ class TestGridProgressCallback:
         inner_folds = [MagicMock(train_idx=[0, 1], val_idx=[2])]
         full_pool = []  # Keine Features - Early-Exit
 
-        candidates, grid_results = _process_feature_group(
-            fg_idx=0,
-            feature_group="all",
+        candidates, grid_results = run_grid_search(
             full_pool=full_pool,
             inner_folds=inner_folds,
             grid=grid,
             ctx=ctx,
             regime_config={},
             sym="EURUSD",
-            n_feature_groups=1,
             progress_callback=progress_callback,
             inner_df=inner_df,
         )
@@ -176,7 +155,7 @@ class TestGridProgressCallback:
 
     def test_progress_callback_called_on_boruta_no_selection(self):
         """progress_callback sollte aufgerufen werden wenn Boruta keine Features selektiert."""
-        from fwbg.optimization.grid_search import _process_feature_group
+        from fwbg.optimization.grid_search import run_grid_search
 
         progress_callback = MagicMock()
 
@@ -202,20 +181,17 @@ class TestGridProgressCallback:
         inner_folds = [MagicMock(train_idx=list(range(80)), val_idx=list(range(80, 100)))]
         full_pool = ["feat1", "feat2", "feat3", "feat4"]
 
-        with patch("fwbg.optimization.grid_search.select_features_for_group") as mock_select:
+        with patch("fwbg.optimization.grid_search.select_features") as mock_select:
             # Boruta findet keine Features
             mock_select.return_value = ([], [])
 
-            candidates, grid_results = _process_feature_group(
-                fg_idx=0,
-                feature_group="all",
+            candidates, grid_results = run_grid_search(
                 full_pool=full_pool,
                 inner_folds=inner_folds,
                 grid=grid,
                 ctx=ctx,
                 regime_config={},
                 sym="EURUSD",
-                n_feature_groups=1,
                 progress_callback=progress_callback,
                 inner_df=inner_df,
             )
@@ -232,7 +208,7 @@ class TestProgressCallbackSequence:
 
     def test_progress_callback_increments_sequentially(self):
         """progress_callback sollte sequentiell von 1 bis total inkrementieren."""
-        from fwbg.optimization.grid_search import _process_feature_group
+        from fwbg.optimization.grid_search import run_grid_search
         from unittest.mock import MagicMock, patch
 
         progress_callback = MagicMock()
@@ -266,7 +242,7 @@ class TestProgressCallbackSequence:
         ]
         full_pool = ["feat1", "feat2"]
 
-        with patch("fwbg.optimization.grid_search.select_features_for_group") as mock_select:
+        with patch("fwbg.optimization.grid_search.select_features") as mock_select:
             mock_select.return_value = (full_pool, full_pool)
 
             with patch("fwbg.optimization.grid_search._process_single_grid_combo") as mock_combo:
@@ -275,16 +251,13 @@ class TestProgressCallbackSequence:
                     {"tp": 10, "sl": 20, "pnl": 100},
                 )
 
-                _process_feature_group(
-                    fg_idx=0,
-                    feature_group="all",
+                run_grid_search(
                     full_pool=full_pool,
                     inner_folds=inner_folds,
                     grid=grid,
                     ctx=ctx,
                     regime_config={},
                     sym="TEST",
-                    n_feature_groups=1,
                     progress_callback=progress_callback,
                     inner_df=inner_df,
                 )
@@ -300,7 +273,7 @@ class TestProgressCallbackSequence:
 
     def test_progress_callback_with_rrr_skipped_combos(self):
         """progress_callback sollte auch bei RRR-übersprungenen Combos korrekt zählen."""
-        from fwbg.optimization.grid_search import _process_feature_group
+        from fwbg.optimization.grid_search import run_grid_search
         from unittest.mock import MagicMock, patch
 
         progress_callback = MagicMock()
@@ -338,7 +311,7 @@ class TestProgressCallbackSequence:
         ]
         full_pool = ["feat1", "feat2"]
 
-        with patch("fwbg.optimization.grid_search.select_features_for_group") as mock_select:
+        with patch("fwbg.optimization.grid_search.select_features") as mock_select:
             mock_select.return_value = (full_pool, full_pool)
 
             with patch("fwbg.optimization.grid_search._process_single_grid_combo") as mock_combo:
@@ -347,16 +320,13 @@ class TestProgressCallbackSequence:
                     {"tp": 10, "sl": 20, "pnl": 100},
                 )
 
-                _process_feature_group(
-                    fg_idx=0,
-                    feature_group="all",
+                run_grid_search(
                     full_pool=full_pool,
                     inner_folds=inner_folds,
                     grid=grid,
                     ctx=ctx,
                     regime_config={},
                     sym="TEST",
-                    n_feature_groups=1,
                     progress_callback=progress_callback,
                     inner_df=inner_df,
                 )
