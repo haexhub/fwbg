@@ -160,18 +160,11 @@ def register_risk_manager(name: str):
 
 def discover_plugins():
     """
-    Entdeckt und lädt alle installierten Plugins via Entry Points.
-
-    NOTE: Plugins werden jetzt primär über import_plugin_module() geladen.
-    Diese Funktion ist nur noch für Backwards-Compatibility mit pip-installierten
-    Plugins vorhanden. Fehlende Module werden ignoriert (nur debug log).
+    Entdeckt und lädt pip-installierte Broker-Adapter Plugins via Entry Points.
 
     Entry Point Groups:
-    - fwbg.broker_adapters (einzige noch aktive Gruppe)
-
-    Wird automatisch beim Import von fwbg aufgerufen.
+    - fwbg.broker_adapters
     """
-    # Nur noch broker_adapters - andere Plugins werden über import_plugin_module geladen
     groups = [
         ("fwbg.broker_adapters", BROKER_ADAPTER_REGISTRY),
     ]

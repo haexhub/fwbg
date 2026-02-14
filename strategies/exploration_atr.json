@@ -66,25 +66,45 @@
       "tp": [0.5, 1.0, 1.5, 2.0, 2.5],
       "sl": [0.5, 1.0, 1.5, 2.0, 2.5],
       "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 24, 48]
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "adx_min": [0, 25],
+        "vix_max": [null, 30],
+        "hurst": [null, {"min": 0.45}]
+      }
     },
     "INDEX": {
       "tp": [0.5, 1.0, 1.5, 2.0, 3.0],
       "sl": [0.5, 1.0, 1.5, 2.0, 3.0],
       "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 24, 48]
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "adx_min": [0, 25],
+        "vix_max": [null, 30],
+        "hurst": [null, {"min": 0.45}]
+      }
     },
     "COMMODITY": {
       "tp": [0.5, 1.0, 1.5, 2.0, 2.5],
       "sl": [0.5, 1.0, 1.5, 2.0, 2.5],
       "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 24, 48]
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "adx_min": [0, 25],
+        "vix_max": [null, 30],
+        "hurst": [null, {"min": 0.45}]
+      }
     },
     "CRYPTO": {
       "tp": [0.5, 1.0, 1.5, 2.0, 3.0],
       "sl": [0.5, 1.0, 1.5, 2.0, 3.0],
       "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 24, 48]
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "adx_min": [0, 25],
+        "vix_max": [null, 30],
+        "hurst": [null, {"min": 0.45}]
+      }
     }
   },
 

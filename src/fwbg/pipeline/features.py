@@ -114,91 +114,6 @@ def split_indicators_by_stationarity(
 
 
 # =============================================================================
-# Feature Groups Configuration
-# =============================================================================
-
-FEATURE_GROUPS = {
-    "trend": {
-        "name": "Trend Indicators",
-        "prefixes": ["trend_"],
-    },
-    "momentum": {
-        "name": "Momentum Indicators",
-        "prefixes": ["mom_"],
-    },
-    "volatility": {
-        "name": "Volatility Indicators",
-        "prefixes": ["vol_"],
-    },
-    "regime": {
-        "name": "Regime Features",
-        "prefixes": ["regime_"],
-    },
-    "structure": {
-        "name": "Structure Features",
-        "prefixes": ["fft_", "path_", "conv_", "event_", "vwap_"],
-    },
-    "risk": {
-        "name": "Risk Features",
-        "prefixes": ["risk_", "dd_", "cvar_", "vov_", "crash_", "corr_"],
-    },
-    "price_action": {
-        "name": "Price Action Features",
-        "prefixes": ["pa_"],
-    },
-    "time_season": {
-        "name": "Time & Season Features",
-        "prefixes": ["time_", "season_"],
-    },
-    "distribution": {
-        "name": "Distribution Features",
-        "prefixes": ["dist_"],
-    },
-    "dynamics": {
-        "name": "Dynamics Features",
-        "prefixes": ["dyn_", "lag_", "accel_"],
-    },
-    "multi_timeframe": {
-        "name": "Multi-Timeframe Features",
-        "prefixes": ["mtf_"],
-    },
-    "cross_features": {
-        "name": "Cross Features",
-        "prefixes": ["cross_"],
-    },
-    "ichimoku": {
-        "name": "Ichimoku Features",
-        "prefixes": ["ichi_"],
-    },
-    "macro_surprise": {
-        "name": "Macro Surprise Features",
-        "prefixes": [
-            "macro_gap", "macro_total", "macro_overnight", "macro_intraday",
-            "macro_range", "macro_return", "macro_is_surprise", "macro_vol_ratio",
-            "macro_vol_zscore", "macro_surprise_streak"
-        ],
-    },
-    "microstructure": {
-        "name": "Microstructure Features",
-        "prefixes": ["micro_"],
-    },
-    "macro": {
-        "name": "Macro Features",
-        "prefixes": ["macro_", "sent_"],
-    },
-    # Combined groups
-    "trend_momentum": {
-        "name": "Trend + Momentum",
-        "prefixes": ["trend_", "mom_"],
-    },
-    "all_core": {
-        "name": "All Core Indicators",
-        "prefixes": ["trend_", "mom_", "vol_"],
-    },
-}
-
-
-# =============================================================================
 # Feature Utility Functions
 # =============================================================================
 
@@ -215,33 +130,6 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
     exclude = ["O", "H", "L", "C", "V", "Volume", "_atr", "_regime_ok", "_original_close", "_hurst"]
     return [c for c in df.columns if c not in exclude and not c.startswith("_")]
 
-
-def filter_features_by_group(all_features: List[str], group_name: str) -> List[str]:
-    """
-    Filter features by a feature group from FEATURE_GROUPS.
-
-    Args:
-        all_features: List of all available features
-        group_name: Name of the group (e.g., "trend", "momentum", "trend_momentum", "all")
-
-    Returns:
-        List of features belonging to the group
-    """
-    # "all" returns all features
-    if group_name == "all" or group_name not in FEATURE_GROUPS:
-        return all_features
-
-    group = FEATURE_GROUPS[group_name]
-    prefixes = group["prefixes"]
-
-    filtered = []
-    for feat in all_features:
-        for prefix in prefixes:
-            if feat.startswith(prefix):
-                filtered.append(feat)
-                break
-
-    return filtered
 
 
 def compute_regime_filter(
@@ -280,9 +168,14 @@ def compute_regime_filter(
         regime_ok = pd.Series(True, index=df.index)
 
     # VIX Filter (only if explicitly configured)
-    if vix_max is not None and "sent_vix" in df.columns:
-        vix_ok = df["sent_vix"] < vix_max
-        regime_ok = regime_ok & vix_ok
+    if vix_max is not None:
+        vix_col = next(
+            (c for c in ["macro_vix", "sent_vix"] if c in df.columns),
+            None,
+        )
+        if vix_col is not None:
+            vix_ok = df[vix_col] < vix_max
+            regime_ok = regime_ok & vix_ok
 
     # Hurst Filter
     if hurst_min is not None or hurst_max is not None:
@@ -499,11 +392,8 @@ __all__ = [
     "ALL_INDICATORS",
     "PREMIUM_PREPROCESSING",
     "PREMIUM_FEATURE_SELECTION",
-    # Feature groups
-    "FEATURE_GROUPS",
     # Utility functions
     "get_feature_columns",
-    "filter_features_by_group",
     "compute_regime_filter",
     "compute_indicator_pool",
     "normalize_plugin_name",

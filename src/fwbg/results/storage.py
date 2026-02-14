@@ -52,7 +52,7 @@ STRATEGY_SCHEMA = {
         "time_features": bool,
         "multi_timeframe": bool,
         "custom_features": list,  # Liste zusätzlicher Feature-Namen
-        "feature_selection": str,  # "importance_based", "correlation_filter", "none"
+        "feature_selection": str,  # "boruta", "boruta_plateau"
     },
 
     # Trade-Simulation
@@ -75,11 +75,6 @@ STRATEGY_SCHEMA = {
         "filter": list,    # z.B. ["EURUSD", "GBPUSD"] - None = alle Assets
         "exclude": list,   # z.B. ["BTCUSD"] - Assets die ausgeschlossen werden
         "classes": list,   # z.B. ["FOREX", "INDEX"] - Asset-Klassen filtern
-    },
-
-    # Feature-Gruppen
-    "feature_groups": {
-        "groups": list,    # z.B. ["trend", "momentum"] - None = DEFAULT_FEATURE_GROUPS
     },
 
     # Ressourcen-Einstellungen
@@ -153,7 +148,7 @@ def create_strategy_metadata(
     use_time=True,
     use_multi_timeframe=True,
     custom_features=None,
-    feature_selection="importance_based",
+    feature_selection="boruta",
     tp_sl_basis="spread_multiple",
     trailing_stop=True,
     slippage_model="fixed",
@@ -164,7 +159,6 @@ def create_strategy_metadata(
     assets_filter=None,
     assets_exclude=None,
     assets_classes=None,
-    feature_groups=None,
     # Ressourcen-Einstellungen
     max_cpu_percent=None,
     min_free_ram_percent=None,
@@ -228,9 +222,6 @@ def create_strategy_metadata(
             "filter": assets_filter,      # z.B. ["EURUSD", "GBPUSD"]
             "exclude": assets_exclude,    # z.B. ["BTCUSD"]
             "classes": assets_classes,    # z.B. ["FOREX", "INDEX"]
-        },
-        "feature_groups": {
-            "groups": feature_groups,     # z.B. ["trend", "momentum"]
         },
         "resources": {
             "max_cpu_percent": max_cpu_percent,        # z.B. 0.80
@@ -444,7 +435,6 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
                             "tp_mult": candidate["params"][0],
                             "sl_mult": candidate["params"][1],
                             "conf_thresh": candidate["params"][2],
-                            "feature_group": candidate.get("feature_group", "unknown"),
                             "features": candidate.get("feats", []),
                         },
                         "metrics": {

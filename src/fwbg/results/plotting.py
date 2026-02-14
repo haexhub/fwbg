@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter, NullFormatter
 import numpy as np
 
+from fwbg.data.config import WALK_FORWARD_FOLDS, OOS_SIZE, TIMEFRAME
 from fwbg.simulation.equity import simulate_equity
 
 
@@ -110,6 +111,21 @@ def create_asset_plot(result, plots_path, trade_directions=None):
     ax1.fill_between(range(len(eq)), eq, alpha=0.3)
     _setup_log_yaxis(ax1, eq)
 
+    # Jahresrendite berechnen
+    final_equity = eq[-1] if eq else 100.0
+    bars_per_year = 24 * 250 if TIMEFRAME == "HOUR" else 96 * 250
+    wf = result.get("walk_forward", {})
+    fold_details = wf.get("fold_details", [])
+    if fold_details:
+        total_test_bars = sum(f.get("test_size", OOS_SIZE) for f in fold_details)
+    else:
+        total_test_bars = WALK_FORWARD_FOLDS * OOS_SIZE
+    years = total_test_bars / bars_per_year if bars_per_year > 0 else 1
+    if final_equity > 0 and years > 0:
+        annual_return = ((final_equity / 100.0) ** (1 / years) - 1) * 100
+    else:
+        annual_return = -100
+
     # Titel zusammenbauen
     win_rate = result.get('win_rate', 0)
     sharpe = result.get('sharpe', 0)
@@ -123,7 +139,7 @@ def create_asset_plot(result, plots_path, trade_directions=None):
     title_line1 = f"{sym} | WR: {win_rate:.1%} | RRR: {rrr:.2f} | "
     if sharpe:
         title_line1 += f"Sharpe: {sharpe:.2f} | "
-    title_line1 += f"MaxDD: {max_dd*100:.0f}%"
+    title_line1 += f"MaxDD: {max_dd*100:.0f}% | {annual_return:+.0f}%/y ({years:.1f}y)"
 
     if trade_directions:
         title_line2 = f"\nLong: {n_long} ({long_wr:.0%}) | Short: {n_short} ({short_wr:.0%}) | {ct_str}"

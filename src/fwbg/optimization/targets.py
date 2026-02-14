@@ -112,7 +112,7 @@ def _simulate_trades_core(
                 timeout_bars=timeout_bars
             )
             if trade:
-                trades.append(trade["result"])
+                trades.append({"result": trade["result"], "pnl_raw": trade["pnl_raw"]})
                 next_allowed_entry = trade["exit_idx"] + 1
 
                 if return_detailed:
@@ -458,7 +458,7 @@ def evaluate_on_validation(
     best_pnl = float("-inf")
     for ct, ct_trades in trades_by_ct.items():
         if len(ct_trades) >= 10:
-            ct_pnl = sum(ct_trades)
+            ct_pnl = sum(t["pnl_raw"] for t in ct_trades)
             if ct_pnl > best_pnl:
                 best_pnl = ct_pnl
                 best_ct = ct
@@ -509,7 +509,7 @@ def _optimize_ct_for_direction(
     best_pnl = float("-inf")
     for ct, trades in trades_by_ct.items():
         if len(trades) >= min_trades:
-            pnl = sum(trades)
+            pnl = sum(t["pnl_raw"] for t in trades)
             if pnl > best_pnl:
                 best_pnl = pnl
                 best_ct = ct
@@ -591,7 +591,7 @@ def _evaluate_separate_ct(
         timeout_bars=timeout_bars
     )
     combined_trades = combined_result["trades"]
-    combined_pnl = sum(combined_trades) if len(combined_trades) >= 10 else float("-inf")
+    combined_pnl = sum(t["pnl_raw"] for t in combined_trades) if len(combined_trades) >= 10 else float("-inf")
 
     trades_info["combined"] = {
         "ct_long": best_ct_long,
