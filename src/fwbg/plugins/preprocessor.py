@@ -9,12 +9,13 @@ class BasePreprocessor(ABC):
     """
     Basisklasse für Preprocessing-Plugins.
 
-    Preprocessors transformieren Daten VOR oder NACH der Feature-Berechnung.
-    Ob ein Preprocessor vor oder nach den Indicators läuft, wird über die
-    Manifest-Datei des jeweiligen Plugins konfiguriert (phase: "pre_indicators"
-    oder "post_indicators"). Features die von stationären Daten profitieren
-    (z.B. nach Fractional Differentiation) werden auf den bereits
-    transformierten Daten berechnet.
+    Preprocessors transformieren OHLC-Daten VOR der Feature-Berechnung
+    (z.B. Fractional Differentiation für Stationarität). Indicator-Plugins
+    deklarieren per ``benefits_from_stationary`` in ihrer Manifest-Datei,
+    ob sie auf den transformierten Daten berechnet werden sollen.
+    Indicators mit ``benefits_from_stationary=True`` werden pro Fold
+    auf den preprocessed Daten berechnet; alle anderen werden einmalig
+    auf den Rohdaten vorberechnet.
 
     Preprocessors folgen dem sklearn fit/transform Pattern
     um Lookahead Bias zu verhindern.
