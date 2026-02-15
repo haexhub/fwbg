@@ -316,7 +316,7 @@ class StrategyConfig:
     exit_params: Dict[str, Any] = field(default_factory=dict)
 
     # Risk management
-    risk_management: str = "none"
+    risk_management: str = "kelly"
     risk_params: Dict[str, Any] = field(default_factory=dict)
 
     # Grid-Konfiguration
@@ -352,7 +352,7 @@ class StrategyConfig:
             pipeline=pipeline,
             exit_strategy=data.get("exit_strategy", "fixed"),
             exit_params=data.get("exit_params", {}),
-            risk_management=data.get("risk_management", "none"),
+            risk_management=data.get("risk_management", "kelly"),
             risk_params=data.get("risk_params", {}),
             grids=grids,
             assets=data.get("assets", {}),
