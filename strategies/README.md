@@ -1,6 +1,6 @@
 # Strategy Configuration Reference
 
-Diese Dokumentation beschreibt alle verfügbaren Parameter für Strategy-Konfigurationsdateien.
+Alle verfügbaren Parameter für Strategy-Konfigurationsdateien.
 
 ## Grundstruktur
 
@@ -8,172 +8,85 @@ Diese Dokumentation beschreibt alle verfügbaren Parameter für Strategy-Konfigu
 {
   "name": "Strategy Name",
   "description": "Beschreibung der Strategie",
-  "category": "trading_style",
   "tags": ["tag1", "tag2"],
   "hypothesis": "Was wir erwarten",
   "expected_outcome": "Erwartetes Ergebnis",
 
+  "pipeline": {
+    "preprocessing": [...],
+    "indicators": [...],
+    "feature_selection": [...],
+    "data_loading": [...]
+  },
+
+  "exit_strategy": "fixed",
+  "exit_params": {},
+
   "model": { ... },
-  "features": { ... },
-  "simulation": { ... },
-  "validation": { ... },
   "grids": { ... },
+  "validation": { ... },
   "filters": { ... },
-  "assets": { ... },
   "resources": { ... }
 }
 ```
 
 ---
 
-## Parameter-Referenz
+## pipeline - Feature-Pipeline
 
-### Basis-Informationen
+Die `pipeline`-Sektion konfiguriert die komplette Feature-Berechnung über das Plugin-System.
 
-| Parameter | Typ | Beschreibung | Beispiel |
-|-----------|-----|--------------|----------|
-| `name` | string | Name der Strategie | `"Scalping"` |
-| `description` | string | Kurzbeschreibung | `"Kurzfristige Trades"` |
-| `tags` | array | Tags für `--tags X,Y` zum Filtern | `["scalping", "high_winrate"]` |
-| `hypothesis` | string | Arbeitshypothese | `"Scalping sollte hohe WR haben"` |
-| `expected_outcome` | string | Erwartetes Ergebnis | `"Win Rate > 70%"` |
+### pipeline.indicators - Indikator-Plugins
 
----
+Jeder Indikator ist ein Plugin mit eigenem Namen und Parametern. Kurze Namen (`"trend"`) werden automatisch auf voll qualifizierte Namen (`"fwbg-core:trend"`) aufgelöst.
 
-### model - ML-Modell Konfiguration
+**Core Plugins (fwbg-core):**
 
-| Parameter | Typ | Default | Beschreibung |
-|-----------|-----|---------|--------------|
-| `architecture` | string | `"unified"` | Modell-Architektur (siehe unten) |
-| `trade_directions` | array | `["long", "short"]` | Erlaubte Trade-Richtungen |
-| `hyperparameters` | object | siehe unten | XGBoost Hyperparameter |
-
-**architecture - Optionen:**
-- `"unified"` - Ein Modell für Long und Short
-- `"long_short_separate"` - Separate Modelle für Long und Short
-
-**trade_directions - Optionen:**
-- `["long", "short"]` - Beide Richtungen (Default)
-- `["long"]` - Nur Long-Trades
-- `["short"]` - Nur Short-Trades
-
-**hyperparameters - Default-Werte:**
-```json
-{
-  "n_estimators": 100,
-  "max_depth": 5,
-  "random_state": 42
-}
-```
-
-**Beispiele:**
-
-```json
-// Standard Long/Short separate Modelle
-"model": {
-  "architecture": "long_short_separate"
-}
-
-// Long-only Strategie
-"model": {
-  "architecture": "unified",
-  "trade_directions": ["long"]
-}
-
-// Schneller Test mit weniger Bäumen
-"model": {
-  "hyperparameters": {
-    "n_estimators": 30,
-    "max_depth": 3
-  }
-}
-```
-
----
-
-### features - Feature-Gruppen & Selection
-
-| Parameter | Typ | Default | Beschreibung |
-|-----------|-----|---------|--------------|
-| `preferred_groups` | array | alle Gruppen | Feature-Gruppen die getestet werden |
-| `feature_selection` | string | `"boruta"` | Feature-Selection Methode |
-| `max_features` | int | `0` | Max Features pro Modell (0 = kein Limit) |
-
-**feature_selection - Optionen:**
-
-| Methode | Beschreibung | Limit |
-|---------|--------------|-------|
-| `boruta` | Findet alle statistisch relevanten Features | Optional (max_features) |
-| `boruta_plateau` | Boruta + Plateau-Validierung für Stabilität | Optional (max_features) |
-| `importance_based` | Top-5 Features nach Importance (Legacy) | Fest: 5 |
-
-**max_features:** Begrenzt die Anzahl der Features auf die Top-N nach Importance. Empfohlen: 20-30 um Overfitting bei großen Feature-Gruppen (macro, macro_vol) zu vermeiden.
-
-**Verfügbare Feature-Gruppen:**
-
-| Gruppe | Beschreibung | Prefixes |
+| Plugin | Beschreibung | Prefixes |
 |--------|--------------|----------|
-| `trend` | Trend Indikatoren - ADX, EMA, SMA, MACD, CCI, Aroon, Ichimoku | `trend_`, `ichi_` |
-| `momentum` | Momentum Indikatoren - RSI, Stochastic, Williams %R, ROC, Ultimate Oscillator | `mom_` |
-| `volatility` | Volatilität Indikatoren - Bollinger Bands, Keltner, Donchian, ATR | `vol_` |
-| `price_action` | Price Action - Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
-| `time` | Zeit Features - Stunde, Wochentag, Monat, Quartal, Saisonalität | `time_`, `season_` |
-| `macro` | Makro Indikatoren - VIX, Yields, DXY, Indices, Commodities, Sectors | `macro_` |
-| `dynamics` | Dynamik & Lags - Indikator-Änderungen, Lags, Beschleunigung | `dyn_`, `lag_`, `accel_` |
-| `mtf` | Multi-Timeframe - H4 aggregierte Features | `mtf_` |
-| `cross` | Cross-Indikator - Kombinierte Signale aus mehreren Indikatoren | `cross_` |
+| `trend` | ADX, EMA, SMA, MACD, CCI, Aroon, Supertrend, Efficiency Ratio | `trend_` |
+| `momentum` | RSI, Stochastic, Williams %R, ROC | `mom_` |
+| `volatility` | Bollinger Bands, ATR, Volatilitätsschätzer | `vol_` |
+| `price_action` | Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
+| `time_season` | Stunde, Wochentag, Monat, Quartal, Saisonalität | `time_`, `season_` |
 
-**Kombinierte Feature-Gruppen:**
+**Premium Plugins (fwbg-premium):**
 
-| Gruppe | Enthält | Beschreibung |
-|--------|---------|--------------|
-| `trend_momentum` | trend + momentum | Klassische technische Analyse Kombination |
-| `macro_vol` | macro + volatility | Fundamentale + Volatilitäts-basierte Signale |
-| `full_technical` | trend + momentum + volatility + price_action | Alle technischen Indikatoren ohne Makro/Zeit |
+| Plugin | Beschreibung | Prefixes |
+|--------|--------------|----------|
+| `regime` | Hurst Exponent, Entropy, Variance Ratio | `regime_` |
+| `structure` | FFT, Path Statistics, Convexity, Event Flow, VWAP | `struct_` |
+| `risk` | Drawdown, CVaR, Volatility of Volatility, Correlations | `risk_` |
+| `distribution` | Skewness, Kurtosis, Z-Score | `dist_` |
+| `dynamics` | Indikator-Änderungen, Lags, Beschleunigung | `dyn_`, `lag_`, `accel_` |
+| `multi_timeframe` | H4/D1 aggregierte Features | `mtf_` |
+| `cross_features` | Kombinierte Signale aus mehreren Indikatoren | `cross_` |
+| `ichimoku` | Ichimoku Cloud Komponenten | `ichi_` |
+| `macro_surprise` | Makro-Überraschungen, Gap-Analyse | `macro_surprise_` |
+| `microstructure` | Bar-Microstructure, Tick-Proxies | `micro_` |
 
-**WICHTIG - Redundanzen vermeiden:**
-
-Die kombinierten Gruppen enthalten Basis-Gruppen. Nicht zusammen verwenden:
-- `full_technical` enthält bereits `trend`, `momentum`, `volatility`, `price_action` und `trend_momentum`
-- `macro_vol` enthält bereits `macro` und `volatility`
-- `trend_momentum` enthält bereits `trend` und `momentum`
-
-**Beispiele:**
+**Beispiel:**
 
 ```json
-// Nur technische Indikatoren (EINE Gruppe reicht)
-"features": {
-  "preferred_groups": ["full_technical"]
-}
-
-// Makro + Dynamik (sinnvolle Kombination ohne Redundanz)
-"features": {
-  "preferred_groups": ["macro_vol", "dynamics"]
-}
-
-// Nur Momentum-basiert (für Mean Reversion)
-"features": {
-  "preferred_groups": ["momentum", "cross"]
-}
-
-// Zeit-basierte Strategie (Asian Session etc.)
-"features": {
-  "preferred_groups": ["time", "price_action", "volatility"]
+"pipeline": {
+  "indicators": [
+    {"name": "trend", "params": {"adx_periods": [7, 14, 21], "ema_periods": [8, 21, 50, 100, 200]}},
+    {"name": "momentum", "params": {"rsi_periods": [7, 14, 21]}},
+    {"name": "volatility", "params": {"atr_periods": [7, 14, 21]}},
+    {"name": "regime", "params": {"hurst_windows": [100, 200, 500]}},
+    {"name": "price_action", "params": {}},
+    {"name": "time_season", "params": {}}
+  ]
 }
 ```
 
-**Hinweis:** Wenn `preferred_groups` nicht angegeben wird, werden ALLE Feature-Gruppen getestet (12 Gruppen). Das kann sinnvoll sein für explorative Runs, dauert aber entsprechend länger.
+Jedes Plugin akzeptiert `params: {}` für seine Default-Werte.
 
 ---
 
-### preprocessing - Daten-Preprocessing
+### pipeline.preprocessing - Daten-Preprocessing
 
-Preprocessing wird **vor** Feature-Berechnung auf OHLC-Daten angewendet.
-
-| Parameter | Typ | Default | Beschreibung |
-|-----------|-----|---------|--------------|
-| `preprocessing` | array | `[]` | Liste der Preprocessing-Plugins |
-| `preprocessing_params` | object | `{}` | Parameter pro Plugin |
+Preprocessing wird **vor** Feature-Berechnung auf OHLC-Daten angewendet. Indikatoren mit `benefits_from_stationary = True` werden nach dem Preprocessing berechnet, die anderen vorher (damit Targets auf Originaldaten basieren).
 
 **Verfügbare Plugins:**
 
@@ -181,149 +94,143 @@ Preprocessing wird **vor** Feature-Berechnung auf OHLC-Daten angewendet.
 
 Macht Zeitreihen stationär unter Beibehaltung von Memory (nach López de Prado).
 
-**Parameter:**
-- `auto_d` (bool): Automatische d-Optimierung via ADF-Test (default: `true`)
-  - ⚠️ **WARNUNG**: `auto_d=true` verursacht Lookahead Bias! Der ADF-Test läuft auf dem GESAMTEN Datensatz (inkl. Future-Daten). Für valide Backtests: `auto_d=false` verwenden.
-- `default_d` (float): Fixer d-Wert (default: `0.4`)
-  - d=0: Keine Transformation (original)
-  - d=1: Volle Differentiation (verliert Memory)
-  - d=0.3-0.5: Optimal für Trading (stationär + Memory)
-- `columns` (list): Zu transformierende Spalten (default: `["O", "H", "L", "C"]`)
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `auto_d` | bool | `true` | Automatische d-Optimierung via ADF-Test. **WARNUNG**: Verursacht Lookahead Bias! |
+| `default_d` | float | `0.4` | Fixer d-Wert (0=keine Transformation, 1=volle Diff) |
+| `columns` | list | `["O", "H", "L", "C"]` | Zu transformierende Spalten |
 
-**Wann nützlich:**
-- Bei nicht-stationären Zeitreihen (Trends, Mean-Reversion)
-- Verbessert ML-Modell-Performance durch stationäre Features
-- Besonders wertvoll bei längeren Lookback-Perioden
+```json
+"preprocessing": [
+  {"name": "fractional_diff", "params": {"auto_d": false, "default_d": 0.4, "columns": ["O", "H", "L", "C"]}}
+]
+```
 
-**Beispiel:**
+---
 
+### pipeline.feature_selection - Feature-Selektion
+
+Wählt die relevantesten Features pro Fold aus.
+
+#### boruta
+
+Findet alle statistisch relevanten Features via Shadow-Feature-Vergleich.
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `max_features` | int | `0` | Max Features (0 = kein Limit) |
+| `n_iter` | int | `5` | Boruta-Iterationen |
+| `n_estimators` | int | `30` | Random Forest Bäume |
+| `max_depth` | int | `4` | Max Baumtiefe |
+| `min_z_score` | float | `0.5` | Mindest-Z-Score für Akzeptanz |
+
+```json
+"feature_selection": [
+  {"name": "boruta", "params": {"max_features": 20, "n_iter": 5, "min_z_score": 0.5}}
+]
+```
+
+---
+
+### pipeline.data_loading - Externe Datenquellen
+
+Lädt externe Daten (Makro, Zinsen, etc.) über das DataSource-System und berechnet abgeleitete Features.
+
+**Architektur:** DataSource (I/O) → Orchestrator (Index-Alignment) → Plugin (Computation)
+
+#### macro_data
+
+Lädt Makro-Indikatoren (VIX, Yields, DXY, etc.) und berechnet Lookbacks, Derived Features und Zinsdifferenzen.
+
+| Parameter | Typ | Beschreibung |
+|-----------|-----|--------------|
+| `source` | string | Datenquelle (z.B. `"forexsb"`) |
+
+Default-Konfiguration des Plugins umfasst 28 Makro-Indikatoren, Stunden-/Tages-Lookbacks und abgeleitete Features (Spread-Berechnungen, Ratios, Zinsdifferenzen).
+
+```json
+"data_loading": [
+  {"name": "macro_data", "source": "forexsb"}
+]
+```
+
+---
+
+## model - ML-Modell Konfiguration
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `type` | string | `"xgboost"` | Modell-Typ |
+| `architecture` | string | `"unified"` | `"unified"` oder `"long_short_separate"` |
+| `trade_directions` | array | `["long", "short"]` | Erlaubte Trade-Richtungen |
+| `hyperparameters` | object | siehe unten | XGBoost Hyperparameter |
+
+**hyperparameters - Default-Werte:**
 ```json
 {
-  "preprocessing": ["fractional_diff"],
-  "preprocessing_params": {
-    "fractional_diff": {
-      "auto_d": true,
-      "default_d": 0.4,
-      "columns": ["O", "H", "L", "C"]
-    }
-  }
+  "n_estimators": 100,
+  "max_depth": 5,
+  "learning_rate": 0.1,
+  "subsample": 0.8,
+  "colsample_bytree": 0.8,
+  "random_state": 42
 }
 ```
-
----
-
-### simulation - Trade-Simulation
-
-| Parameter | Typ | Default | Beschreibung |
-|-----------|-----|---------|--------------|
-| `max_trade_bars` | int | `9999` | Maximale Trade-Dauer in Bars (1 Bar = 1 Stunde), 9999 = unbegrenzt |
-
-**max_trade_bars - Wann setzen:**
-- Default `9999` = Trades laufen bis TP oder SL erreicht wird (empfohlen)
-- Nur explizit setzen wenn Timeout-Verhalten gewünscht ist:
-  - `72` - 3 Tage (Scalping mit Timeout)
-  - `120` - 5 Tage (Day Trading)
-  - `240` - 10 Tage (Swing Trading)
-  - `480` - 20 Tage (Position Trading)
-- `480` - 20 Tage (Swing Trading)
 
 **Beispiel:**
-
 ```json
-// Swing Trading mit 20 Tagen max Haltezeit
-"simulation": {
-  "max_trade_bars": 480
+"model": {
+  "type": "xgboost",
+  "architecture": "long_short_separate",
+  "trade_directions": ["long", "short"],
+  "hyperparameters": {"n_estimators": 100, "max_depth": 4}
 }
 ```
 
 ---
 
-### validation - Cross-Validation
-
-| Parameter | Typ | Default | Beschreibung |
-|-----------|-----|---------|--------------|
-| `folds` | int | `8` | Anzahl Walk-Forward Folds |
-| `oos_size` | int | `4000` | Out-of-Sample Größe pro Fold |
-| `holdout_ratio` | float | `0.20` | Holdout-Anteil für finale Validierung |
-
-**Beispiel:**
-
-```json
-// Schneller Test mit weniger Folds
-"validation": {
-  "folds": 2,
-  "oos_size": 500
-}
-```
-
----
-
-### exit_strategy - Exit-Strategie
+## exit_strategy / exit_params - Exit-Strategie
 
 Definiert wie TP/SL-Distanzen berechnet werden.
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
-| `mode` | string | `"fixed"` | Exit-Modus: `"fixed"` oder `"atr_based"` |
+| `exit_strategy` | string | `"fixed"` | `"fixed"` oder `"atr_based"` |
+| `exit_params` | object | `{}` | Parameter für die Exit-Strategie |
 
-**Mode-Optionen:**
+### fixed (Default)
 
-| Mode | Beschreibung | Grid-Werte |
-|------|--------------|------------|
-| `fixed` | TP/SL als Spread-Multiplikatoren (konstant) | Große Zahlen: 10-100 |
-| `atr_based` | TP/SL als ATR-Multiplikatoren (dynamisch) | Kleine Zahlen: 0.5-5.0 |
+TP/SL als Spread-Multiplikatoren (konstant).
 
-**ATR-Based Parameter:**
+```json
+"exit_strategy": "fixed",
+"exit_params": {}
+```
+
+Grid-Werte: `tp: 40` = 40 × Spread, `sl: 30` = 30 × Spread
+
+### atr_based
+
+TP/SL als ATR-Multiplikatoren (dynamisch pro Bar).
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
-| `atr_period` | int | `14` | ATR-Periode für Volatilitätsberechnung |
-| `min_tp_pips` | int | `10` | Mindest-TP in Spread-Multiples (Spread-Schutz) |
-| `min_sl_pips` | int | `15` | Mindest-SL in Spread-Multiples (Spread-Schutz) |
-
-**Beispiel - Fixed Exit (Default):**
+| `atr_period` | int | `14` | ATR-Periode |
+| `min_tp_pips` | int | `10` | Mindest-TP in Spread-Multiples |
+| `min_sl_pips` | int | `15` | Mindest-SL in Spread-Multiples |
 
 ```json
-"exit_strategy": {
-  "mode": "fixed"
-}
+"exit_strategy": "atr_based",
+"exit_params": {"atr_period": 14, "min_tp_pips": 10, "min_sl_pips": 15}
 ```
 
-Grid-Werte interpretiert als Spread-Multiplikatoren:
-- `tp: 40` = 40 × Spread
-- `sl: 30` = 30 × Spread
-
-**Beispiel - ATR-Based Exit:**
-
-```json
-"exit_strategy": {
-  "mode": "atr_based",
-  "atr_based": {
-    "atr_period": 14,
-    "min_tp_pips": 10,
-    "min_sl_pips": 15
-  }
-}
-```
-
-Grid-Werte interpretiert als ATR-Multiplikatoren:
-- `tp: 1.5` = 1.5 × ATR (dynamisch pro Bar)
-- `sl: 1.0` = 1.0 × ATR (dynamisch pro Bar)
-
-**Wichtig:** Bei beiden Modi werden Spread und Slippage berücksichtigt!
+Grid-Werte: `tp: 1.5` = 1.5 × ATR, `sl: 1.0` = 1.0 × ATR
 
 ---
 
-### grids - TP/SL/CT Grid-Search
+## grids - TP/SL/CT Grid-Search
 
 Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte pro Asset-Klasse.
-
-**Die Interpretation der `tp`/`sl`-Werte hängt vom `exit_strategy.mode` ab:**
-
-| Mode | tp/sl Interpretation | Typische Werte |
-|------|---------------------|----------------|
-| `fixed` | Spread-Multiplikatoren | 10, 20, 30, 50, 80, 100 |
-| `atr_based` | ATR-Multiplikatoren | 0.5, 1.0, 1.5, 2.0, 3.0 |
 
 **Asset-Klassen:** `FOREX`, `INDEX`, `COMMODITY`, `CRYPTO`
 
@@ -332,26 +239,40 @@ Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte
 | `tp` | array | Take-Profit Werte (Interpretation je nach exit_strategy) |
 | `sl` | array | Stop-Loss Werte (Interpretation je nach exit_strategy) |
 | `ct` | array[float] | Confidence Threshold (0.50-1.00) |
-| `timeout_bars` | array | Trade-Timeout in Bars (`[null, 24, 48]` = kein Timeout, 24h, 48h) |
+| `timeout_bars` | array | Trade-Timeout in Bars (`[null, 24, 48]`) |
+| `long_ct` | array[float] | Optional: CT nur für Long-Trades |
+| `short_ct` | array[float] | Optional: CT nur für Short-Trades |
+| `regime_filter_grid` | object | Optional: Regime-Filter Grid-Search |
 
-**Separate Long/Short CT (optional):**
+### regime_filter_grid
 
-| Parameter | Typ | Beschreibung |
-|-----------|-----|--------------|
-| `long_ct` | array[float] | CT nur für Long-Trades |
-| `short_ct` | array[float] | CT nur für Short-Trades |
+Testet Regime-Filter-Kombinationen im Grid-Search. Jede Condition prüft eine DataFrame-Spalte gegen einen Schwellenwert. `null` = kein Filter (Baseline).
+
+```json
+"regime_filter_grid": {
+  "condition_grids": [
+    {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+    {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
+    {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+  ]
+}
+```
+
+Alle Kombinationen werden getestet (kartesisches Produkt). Mehrere Conditions werden AND-verknüpft.
 
 **Beispiel - Fixed Exit Grid:**
 
 ```json
-"exit_strategy": {
-  "mode": "fixed"
-},
 "grids": {
   "FOREX": {
-    "tp": [15, 20, 25, 30, 40, 50, 60, 80],
-    "sl": [15, 20, 25, 30, 40, 50, 60, 80],
-    "ct": [0.50, 0.55, 0.60, 0.65, 0.70]
+    "tp": [5, 10, 15, 20, 30],
+    "sl": [20, 30, 40, 50, 60],
+    "ct": [0.5, 0.55, 0.6, 0.65],
+    "regime_filter_grid": {
+      "condition_grids": [
+        {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]}
+      ]
+    }
   }
 }
 ```
@@ -359,109 +280,80 @@ Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte
 **Beispiel - ATR-Based Exit Grid:**
 
 ```json
-"exit_strategy": {
-  "mode": "atr_based",
-  "atr_based": {
-    "atr_period": 14,
-    "min_tp_pips": 10,
-    "min_sl_pips": 15
-  }
-},
 "grids": {
   "FOREX": {
-    "tp": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0],
-    "sl": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
-    "ct": [0.50, 0.55, 0.60, 0.65],
+    "tp": [0.5, 1.0, 1.5, 2.0, 3.0],
+    "sl": [0.5, 1.0, 1.5, 2.0],
+    "ct": [0.50, 0.55, 0.60],
     "timeout_bars": [null, 24, 48, 96]
   }
 }
 ```
 
-**Beispiel - Swing Trading Grid (Fixed, große TP/SL):**
+---
+
+## validation - Cross-Validation
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `method` | string | `"walk_forward"` | Validierungsmethode |
+| `folds` | int | `8` | Anzahl Walk-Forward Folds |
+| `oos_size` | int | `4000` | Out-of-Sample Größe pro Fold |
+| `min_trades` | int | `50` | Minimum Trades für Validität |
+| `n_inner_folds` | int | `3` | Innere CV-Folds für Feature-Selektion |
+| `embargo_bars` | int | `100` | Embargo-Bars zwischen Train/Test (Purging) |
+| `sample_weights` | bool | `true` | Trade-Duration-basierte Sample Weights |
 
 ```json
-"grids": {
-  "FOREX": {
-    "tp": [100, 150, 200, 300, 500, 750, 1000],
-    "sl": [50, 75, 100, 150, 200, 300],
-    "ct": [0.55, 0.60, 0.65, 0.70, 0.75]
-  }
+"validation": {
+  "method": "walk_forward",
+  "folds": 8,
+  "oos_size": 4000,
+  "n_inner_folds": 3,
+  "embargo_bars": 100,
+  "sample_weights": true
 }
 ```
 
 ---
 
-### filters - Ergebnis-Filter
+## filters - Ergebnis-Filter
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
 | `min_rrr` | float | `0.0` | Minimum Risk-Reward-Ratio |
-| `min_trades` | int | `50` | Minimum Trades für Validität |
-
-**Beispiele:**
+| `min_trades` | int | `50` | Minimum Trades |
+| `min_annual_return` | float | `0` | Minimum annualisierte Rendite |
+| `min_sharpe` | float | `0` | Minimum Sharpe Ratio |
+| `max_drawdown` | float | `1.0` | Maximum Drawdown (1.0 = kein Limit) |
 
 ```json
-// Scalping (alle RRR erlaubt)
 "filters": {
-  "min_rrr": 0.0,
-  "min_trades": 50
-}
-
-// Swing Trading (mindestens 1:1 RRR)
-"filters": {
-  "min_rrr": 1.0,
-  "min_trades": 30
-}
-
-// Trend Following (mindestens 1.5:1 RRR)
-"filters": {
-  "min_rrr": 1.5,
-  "min_trades": 30
+  "min_rrr": 0,
+  "min_trades": 30,
+  "min_sharpe": 0,
+  "max_drawdown": 1.0
 }
 ```
 
 ---
 
-### assets - Asset-Filterung (optional)
-
-| Parameter | Typ | Default | Beschreibung |
-|-----------|-----|---------|--------------|
-| `classes` | array | alle Klassen | Nur diese Asset-Klassen testen |
-
-**Verfügbare Klassen:** `FOREX`, `INDEX`, `COMMODITY`, `CRYPTO`, `TEST`
-
-**Beispiel:**
-
-```json
-// Nur Commodities testen
-"assets": {
-  "classes": ["COMMODITY"]
-}
-
-// Nur Forex und Indices
-"assets": {
-  "classes": ["FOREX", "INDEX"]
-}
-```
-
----
-
-### resources - Ressourcen-Limits (optional)
+## resources - Ressourcen-Limits
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
 | `max_cpu_percent` | float | `0.80` | Maximale CPU-Auslastung (0.0-1.0) |
 | `min_free_ram_percent` | float | `0.25` | Minimum freier RAM (0.0-1.0) |
 | `ram_per_worker_gb` | float | `3.0` | RAM pro Worker in GB |
-
-**Beispiel:**
+| `max_concurrent_assets` | int | `2` | Parallele Assets |
+| `xgboost_n_jobs` | int | `0` | XGBoost Threads (0 = auto) |
 
 ```json
-// Ressourcen-schonender Test
 "resources": {
-  "max_cpu_percent": 0.5,
-  "min_free_ram_percent": 0.3,
-  "ram_per_worker_gb": 2.0
+  "ram_per_worker_gb": 4.0,
+  "min_free_ram_percent": 0.15,
+  "max_cpu_percent": 0.95,
+  "max_concurrent_assets": 2
 }
 ```
 
@@ -469,140 +361,137 @@ Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte
 
 ## Vollständige Beispiele
 
-### Minimale Konfiguration (nutzt alle Defaults)
+### Exploration (alle Features)
 
 ```json
 {
-  "name": "My Strategy",
-  "description": "Meine Test-Strategie"
+  "name": "Exploration",
+  "pipeline": {
+    "preprocessing": [
+      {"name": "fractional_diff", "params": {"auto_d": false, "default_d": 0.4, "columns": ["O", "H", "L", "C"]}}
+    ],
+    "indicators": [
+      {"name": "trend", "params": {"adx_periods": [7, 14, 21], "ema_periods": [8, 21, 50, 100, 200]}},
+      {"name": "momentum", "params": {"rsi_periods": [7, 14, 21]}},
+      {"name": "volatility", "params": {"atr_periods": [7, 14, 21]}},
+      {"name": "regime", "params": {"hurst_windows": [100, 200, 500]}},
+      {"name": "structure", "params": {}},
+      {"name": "risk", "params": {"dd_windows": [50, 100, 200]}},
+      {"name": "price_action", "params": {}},
+      {"name": "time_season", "params": {}},
+      {"name": "distribution", "params": {"windows": [20, 50, 100]}},
+      {"name": "dynamics", "params": {}},
+      {"name": "multi_timeframe", "params": {}},
+      {"name": "cross_features", "params": {}},
+      {"name": "ichimoku", "params": {}},
+      {"name": "microstructure", "params": {}},
+      {"name": "macro_surprise", "params": {}}
+    ],
+    "feature_selection": [
+      {"name": "boruta", "params": {"max_features": 20}}
+    ],
+    "data_loading": [
+      {"name": "macro_data", "source": "forexsb"}
+    ]
+  },
+  "exit_strategy": "fixed",
+  "model": {"architecture": "long_short_separate"},
+  "grids": {
+    "FOREX": {
+      "tp": [5, 10, 15, 20, 30],
+      "sl": [20, 30, 40, 50, 60],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30]}
+        ]
+      }
+    }
+  },
+  "validation": {"folds": 8, "oos_size": 4000, "embargo_bars": 100, "sample_weights": true}
 }
 ```
 
-### Scalping Strategie
+### Scalping (kurze Perioden, hohe Confidence)
 
 ```json
 {
   "name": "Scalping",
-  "description": "Kurzfristige Trades mit kleinen TP/SL-Zielen",
-  "category": "trading_style",
-  "tags": ["scalping", "high_winrate"],
-  "model": {
-    "architecture": "long_short_separate"
+  "pipeline": {
+    "indicators": [
+      {"name": "trend", "params": {"adx_periods": [5, 7, 14], "ema_periods": [5, 8, 13, 21, 50]}},
+      {"name": "momentum", "params": {"rsi_periods": [5, 7, 14], "stoch_periods": [5, 9, 14]}},
+      {"name": "volatility", "params": {"atr_periods": [5, 7, 14]}},
+      {"name": "dynamics", "params": {"lookbacks": [2, 4, 8]}},
+      {"name": "microstructure", "params": {"atr_period": 7, "rolling_window": 3}}
+    ],
+    "feature_selection": [
+      {"name": "boruta", "params": {"max_features": 25}}
+    ]
   },
+  "exit_strategy": "fixed",
   "grids": {
     "FOREX": {
-      "tp": [15, 20, 25, 30, 40, 50, 60, 80],
-      "sl": [15, 20, 25, 30, 40, 50, 60, 80],
-      "ct": [0.50, 0.52, 0.55, 0.58, 0.60, 0.65, 0.70]
+      "tp": [5, 8, 10, 15],
+      "sl": [8, 10, 15, 20],
+      "ct": [0.6, 0.65, 0.7]
     }
   },
-  "filters": {
-    "min_rrr": 0.0,
-    "min_trades": 50
-  }
+  "filters": {"min_rrr": 0.3, "min_trades": 50}
 }
 ```
 
-### Swing Trading Strategie
+### Swing Trading (lange Perioden, Trend-Fokus)
 
 ```json
 {
   "name": "Swing Trading",
-  "description": "Längerfristige Trades mit großen TP/SL-Zielen",
-  "category": "trading_style",
-  "tags": ["swing", "trend_following"],
-  "model": {
-    "architecture": "long_short_separate"
+  "pipeline": {
+    "indicators": [
+      {"name": "trend", "params": {"adx_periods": [14, 21, 30], "ema_periods": [21, 50, 100, 200]}},
+      {"name": "regime", "params": {"hurst_windows": [100, 200, 500]}},
+      {"name": "multi_timeframe", "params": {"h4_bars": 4, "d1_bars": 24, "ema_periods": [20, 50, 100]}},
+      {"name": "structure", "params": {}},
+      {"name": "risk", "params": {"dd_windows": [100, 200, 500]}}
+    ],
+    "feature_selection": [
+      {"name": "boruta", "params": {"max_features": 30}}
+    ]
   },
-  "simulation": {
-    "max_trade_bars": 480
-  },
+  "exit_strategy": "fixed",
   "grids": {
     "FOREX": {
-      "tp": [100, 150, 200, 300, 500, 750, 1000],
-      "sl": [50, 75, 100, 150, 200, 300],
-      "ct": [0.55, 0.60, 0.65, 0.70, 0.75]
+      "tp": [20, 30, 50, 80],
+      "sl": [20, 30, 40, 60],
+      "ct": [0.5, 0.55, 0.6]
     }
   },
-  "filters": {
-    "min_rrr": 1.0,
-    "min_trades": 30
-  }
+  "filters": {"min_rrr": 0.5, "min_trades": 30}
 }
 ```
 
-### Mean Reversion Strategie
+### ATR-Based Exit Strategie
 
 ```json
 {
-  "name": "Mean Reversion",
-  "description": "Handelt gegen Extrembewegungen",
-  "category": "mean_reversion",
-  "tags": ["mean_reversion", "contrarian"],
-  "features": {
-    "preferred_groups": ["momentum", "cross"]
+  "name": "ATR Exploration",
+  "pipeline": {
+    "indicators": [
+      {"name": "trend", "params": {}},
+      {"name": "momentum", "params": {}},
+      {"name": "volatility", "params": {}}
+    ]
   },
-  "simulation": {
-    "max_trade_bars": 72
-  },
+  "exit_strategy": "atr_based",
+  "exit_params": {"atr_period": 14, "min_tp_pips": 10, "min_sl_pips": 15},
   "grids": {
     "FOREX": {
-      "tp": [20, 30, 40, 50, 60],
-      "sl": [30, 40, 50, 60, 80],
-      "ct": [0.60, 0.65, 0.70, 0.75, 0.80]
-    }
-  },
-  "filters": {
-    "min_rrr": 0.0,
-    "min_trades": 50
-  }
-}
-```
-
-### Long-Only Strategie
-
-```json
-{
-  "name": "Long Only",
-  "description": "Nur Long-Positionen",
-  "model": {
-    "architecture": "unified",
-    "trade_directions": ["long"]
-  },
-  "grids": {
-    "INDEX": {
-      "tp": [20, 30, 50, 70, 100, 150],
-      "sl": [20, 30, 50, 70, 100, 150],
-      "ct": [0.50, 0.55, 0.60, 0.65, 0.70]
+      "tp": [0.5, 1.0, 1.5, 2.0, 3.0],
+      "sl": [0.5, 1.0, 1.5, 2.0],
+      "ct": [0.50, 0.55, 0.60],
+      "timeout_bars": [null, 24, 48, 96]
     }
   }
 }
 ```
-
-### Schneller Test
-
-```json
-{
-  "name": "Quick Test",
-  "category": "test",
-  "model": {
-    "architecture": "long_short_separate",
-    "hyperparameters": {
-      "n_estimators": 30,
-      "max_depth": 3
-    }
-  },
-  "validation": {
-    "folds": 2,
-    "oos_size": 500
-  },
-  "assets": {
-    "classes": ["TEST"]
-  },
-  "resources": {
-    "max_cpu_percent": 0.5,
-    "ram_per_worker_gb": 2.0
-  }
-}
-```
-
