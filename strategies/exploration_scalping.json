@@ -1,56 +1,115 @@
 {
   "name": "Exploration Scalping",
-  "description": "Scalping-Exploration: Kleine TP/SL mit gutem RRR, kurze Haltezeiten, Fokus auf Momentum und Microstructure",
-  "tags": ["exploration", "scalping", "short_term", "high_frequency"],
-  "hypothesis": "Scalping profitiert von kurzfristigen Momentum-Signalen, Microstructure-Features und hoher Confidence. Kurze Perioden und schnelle Indikatoren dominieren.",
-  "expected_outcome": "Identifikation profitabler Scalping-Parameter mit RRR >= 0.5 und hoher Trade-Frequenz",
+  "description": "Scalping bis Medium-Range Exploration: Breiter TP/SL-Bereich mit niedrigeren CT-Schwellen für mehr Trades und stabilere Signifikanz",
+  "tags": ["exploration", "scalping", "medium_range", "broad_search"],
+  "hypothesis": "Breiterer Parameterraum und niedrigere CT-Schwellen liefern mehr Trades pro Fold, was Monte Carlo stabilere Signifikanztests ermöglicht.",
+  "expected_outcome": "Identifikation profitabler Parameter im Bereich Scalping bis Medium-Range mit statistisch signifikantem Edge",
 
   "pipeline": {
     "preprocessing": [
-      {"name": "fractional_diff", "params": {"auto_d": false, "default_d": 0.4, "columns": ["O", "H", "L", "C"]}}
+      {
+        "name": "fractional_diff",
+        "params": {
+          "auto_d": false,
+          "default_d": 0.4,
+          "columns": ["O", "H", "L", "C"]
+        }
+      }
     ],
     "indicators": [
-      {"name": "trend", "params": {
-        "adx_periods": [5, 7, 14],
-        "ema_periods": [5, 8, 13, 21, 50],
-        "sma_periods": [10, 20, 50],
-        "cci_periods": [7, 14],
-        "aroon_period": 14,
-        "er_periods": [5, 10, 20],
-        "supertrend_period": 10,
-        "supertrend_multiplier": 2.0
-      }},
-      {"name": "momentum", "params": {
-        "rsi_periods": [5, 7, 14],
-        "stoch_periods": [5, 9, 14],
-        "williams_periods": [7, 14],
-        "roc_periods": [3, 5, 10]
-      }},
-      {"name": "volatility", "params": {
-        "bb_periods": [10, 20],
-        "atr_periods": [5, 7, 14],
-        "vol_est_windows": [10, 20]
-      }},
-      {"name": "regime", "params": {
-        "hurst_windows": [50, 100],
-        "step": 10,
-        "entropy_windows": [20, 50],
-        "vr_windows": [50, 100],
-        "vr_lags": [3, 5]
-      }},
-      {"name": "price_action", "params": {"hh_ll_period": 3, "compute_volume": true}},
-      {"name": "time_season", "params": {"include_raw": true, "include_encoded": true}},
-      {"name": "dynamics", "params": {"lookbacks": [2, 4, 8], "lag_periods": [2, 4, 8, 12]}},
-      {"name": "distribution", "params": {"windows": [10, 20, 50], "z_score_lookback": 100}},
-      {"name": "cross_features", "params": {"rsi_overbought": 70, "rsi_oversold": 30}},
-      {"name": "microstructure", "params": {"atr_period": 7, "rolling_window": 3}},
-      {"name": "ichimoku", "params": {"tenkan_period": 9, "kijun_period": 26, "senkou_b_period": 52}}
+      {
+        "name": "trend",
+        "params": {
+          "adx_periods": [5, 7, 14],
+          "ema_periods": [5, 8, 13, 21, 50],
+          "sma_periods": [10, 20, 50],
+          "cci_periods": [7, 14],
+          "aroon_period": 14,
+          "er_periods": [5, 10, 20],
+          "supertrend_period": 10,
+          "supertrend_multiplier": 2.0
+        }
+      },
+      {
+        "name": "momentum",
+        "params": {
+          "rsi_periods": [5, 7, 14],
+          "stoch_periods": [5, 9, 14],
+          "williams_periods": [7, 14],
+          "roc_periods": [3, 5, 10]
+        }
+      },
+      {
+        "name": "volatility",
+        "params": {
+          "bb_periods": [10, 20],
+          "atr_periods": [5, 7, 14],
+          "vol_est_windows": [10, 20]
+        }
+      },
+      {
+        "name": "regime",
+        "params": {
+          "hurst_windows": [50, 100],
+          "step": 10,
+          "entropy_windows": [20, 50],
+          "vr_windows": [50, 100],
+          "vr_lags": [3, 5]
+        }
+      },
+      {
+        "name": "price_action",
+        "params": { "hh_ll_period": 3, "compute_volume": true }
+      },
+      {
+        "name": "time_season",
+        "params": { "include_raw": true, "include_encoded": true }
+      },
+      {
+        "name": "dynamics",
+        "params": { "lookbacks": [2, 4, 8], "lag_periods": [2, 4, 8, 12] }
+      },
+      {
+        "name": "distribution",
+        "params": { "windows": [10, 20, 50], "z_score_lookback": 100 }
+      },
+      {
+        "name": "cross_features",
+        "params": { "rsi_overbought": 70, "rsi_oversold": 30 }
+      },
+      {
+        "name": "microstructure",
+        "params": { "atr_period": 7, "rolling_window": 3 }
+      },
+      {
+        "name": "ichimoku",
+        "params": {
+          "tenkan_period": 9,
+          "kijun_period": 26,
+          "senkou_b_period": 52
+        }
+      },
+      {"name": "structure", "params": {"fft_windows": [32, 64], "path_windows": [5, 10, 20], "convexity_periods": [10, 20], "event_periods": [10, 20], "vwap_windows": [10, 20, 50]}},
+      {"name": "risk", "params": {"dd_windows": [20, 50, 100], "cvar_windows": [20, 50], "cvar_percentiles": [5, 1], "vov_windows": [10, 20], "compute_correlations": true}},
+      {"name": "multi_timeframe", "params": {"h4_bars": 4, "d1_bars": 24, "ema_periods": [10, 20]}},
+      {"name": "macro_surprise", "params": {"vol_lookback": 10, "surprise_threshold": 2.0, "gap_ma_period": 5}},
+      {"name": "market_regime", "params": {"window": 50}}
     ],
     "feature_selection": [
-      {"name": "boruta", "params": {"max_features": 25, "n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5}}
+      {
+        "name": "boruta",
+        "params": {
+          "max_features": 25,
+          "n_iter": 5,
+          "n_estimators": 30,
+          "max_depth": 4,
+          "min_z_score": 0.5
+        }
+      }
     ],
     "data_loading": [
-      {"name": "macro_data", "source": "forexsb"}
+      {"name": "macro_data", "source": "forexsb"},
+      {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
 
@@ -73,24 +132,24 @@
 
   "grids": {
     "FOREX": {
-      "tp": [5, 8, 10, 15],
-      "sl": [8, 10, 15, 20],
-      "ct": [0.6, 0.65, 0.7]
+      "tp": [5, 8, 10, 15, 20, 30],
+      "sl": [8, 10, 15, 20, 30, 40],
+      "ct": [0.52, 0.55, 0.6, 0.65]
     },
     "INDEX": {
-      "tp": [5, 10, 15, 20],
-      "sl": [10, 15, 20, 30],
-      "ct": [0.6, 0.65, 0.7]
+      "tp": [5, 10, 15, 20, 30, 50],
+      "sl": [10, 15, 20, 30, 50, 70],
+      "ct": [0.52, 0.55, 0.6, 0.65]
     },
     "COMMODITY": {
-      "tp": [5, 10, 15, 20],
-      "sl": [10, 15, 20, 30],
-      "ct": [0.6, 0.65, 0.7]
+      "tp": [10, 15, 20, 30, 40],
+      "sl": [10, 15, 20, 30, 40, 60, 80, 100],
+      "ct": [0.52, 0.55, 0.6]
     },
     "CRYPTO": {
-      "tp": [10, 20, 30, 50],
-      "sl": [20, 30, 50, 70],
-      "ct": [0.6, 0.65, 0.7]
+      "tp": [10, 20, 30, 50, 70, 100],
+      "sl": [20, 30, 50, 70, 100, 150],
+      "ct": [0.52, 0.55, 0.6, 0.65]
     }
   },
 
@@ -98,7 +157,7 @@
     "method": "walk_forward",
     "folds": 8,
     "oos_size": 4000,
-    "min_trades": 80,
+    "min_trades": 50,
     "n_inner_folds": 3,
     "embargo_bars": 50,
     "sample_weights": true

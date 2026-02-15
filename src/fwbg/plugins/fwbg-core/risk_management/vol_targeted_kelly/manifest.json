@@ -1,0 +1,6 @@
+{
+  "name": "vol_targeted_kelly",
+  "version": "1.0.0",
+  "description": "Kelly criterion with per-trade volatility targeting",
+  "phase": "risk_management"
+}

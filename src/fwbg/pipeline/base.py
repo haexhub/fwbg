@@ -15,6 +15,8 @@ class PluginPhase(Enum):
     PREPROCESSING = "preprocessing"
     INDICATORS = "indicators"
     FEATURE_SELECTION = "feature_selection"
+    EXIT_STRATEGIES = "exit_strategies"
+    RISK_MANAGEMENT = "risk_management"
     LABELING = "labeling"
     MODEL = "model"
     VALIDATION = "validation"
@@ -26,18 +28,18 @@ class BasePlugin(ABC):
 
     Subclasses must define:
         - name: str - unique identifier for the plugin
-        - version: str - semantic version string
         - phase: PluginPhase - which pipeline phase this plugin belongs to
 
     Optional class attributes:
+        - version: str - semantic version string (default: "0.1.0")
         - stateful: bool - whether plugin maintains state across calls (default: False)
         - cacheable: bool - whether results can be cached (default: True)
     """
 
     # Required class attributes (must be defined by subclasses)
     name: str
-    version: str
     phase: PluginPhase
+    version: str = "0.1.0"
 
     # Optional class attributes with defaults
     stateful: bool = False
@@ -56,19 +58,11 @@ class BasePlugin(ABC):
             return
 
         # Check required attributes - can be inherited from parent or defined in class
-        # name must be defined
         if not hasattr(cls, "name") or not isinstance(getattr(cls, "name", None), str):
             raise TypeError(
                 f"Plugin class {cls.__name__} must define 'name' attribute"
             )
 
-        # version must be defined
-        if not hasattr(cls, "version") or not isinstance(getattr(cls, "version", None), str):
-            raise TypeError(
-                f"Plugin class {cls.__name__} must define 'version' attribute"
-            )
-
-        # phase must be defined (can be inherited from parent like BaseIndicator)
         if not hasattr(cls, "phase") or not isinstance(getattr(cls, "phase", None), PluginPhase):
             raise TypeError(
                 f"Plugin class {cls.__name__} must define 'phase' attribute"
@@ -78,31 +72,21 @@ class BasePlugin(ABC):
         """Initialize plugin instance state."""
         self._fitted: bool = False
 
-    @abstractmethod
     def execute(
         self, ctx: "PipelineContext", **params: Any
     ) -> "PipelineContext":
+        """Execute the plugin on the given context.
+
+        Subclasses like BaseIndicator override this. Plugin types that don't
+        use the PipelineRunner (exit strategies, risk managers) can leave the default.
         """
-        Execute the plugin on the given context.
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not implement execute()"
+        )
 
-        Args:
-            ctx: Pipeline context with DataFrame and metadata
-            **params: Plugin-specific parameters
-
-        Returns:
-            Updated pipeline context
-        """
-        ...
-
-    @abstractmethod
     def validate(self) -> bool:
-        """
-        Validate that the plugin is properly configured.
-
-        Returns:
-            True if valid, False otherwise
-        """
-        ...
+        """Validate that the plugin is properly configured."""
+        return True
 
     def fit(self, ctx: "PipelineContext", **params: Any) -> None:
         """

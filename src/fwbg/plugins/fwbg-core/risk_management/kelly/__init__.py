@@ -35,6 +35,7 @@ class KellyRiskManager(BaseRiskManager):
                 "risk_per_trade": 0,
                 "is_profitable": False,
                 "full_kelly": full_kelly,
+                "trade_returns": [0.0] * len(trades),
                 "circuit_breaker": {
                     "pause_after_losses": 0, "pause_bars": 0, "enabled": False,
                 },
@@ -57,10 +58,13 @@ class KellyRiskManager(BaseRiskManager):
             pause_range=circuit_breaker_pause_range,
         )
 
+        trade_returns = [fk * rrr if t > 0 else -fk for t in trades]
+
         return {
             "risk_per_trade": fk,
             "is_profitable": True,
             "full_kelly": full_kelly,
+            "trade_returns": trade_returns,
             "circuit_breaker": {
                 "pause_after_losses": cb["optimal_pause_after_losses"],
                 "pause_bars": cb["optimal_pause_bars"],

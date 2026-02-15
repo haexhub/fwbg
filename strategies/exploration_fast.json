@@ -24,13 +24,15 @@
       {"name": "cross_features", "params": {}},
       {"name": "ichimoku", "params": {}},
       {"name": "microstructure", "params": {}},
-      {"name": "macro_surprise", "params": {}}
+      {"name": "macro_surprise", "params": {}},
+      {"name": "market_regime", "params": {"window": 50}}
     ],
     "feature_selection": [
       {"name": "boruta", "params": {"max_features": 50, "n_estimators": 50, "max_depth": 4, "min_z_score": 0.5}}
     ],
     "data_loading": [
-      {"name": "macro_data", "source": "forexsb"}
+      {"name": "macro_data", "source": "forexsb"},
+      {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
 

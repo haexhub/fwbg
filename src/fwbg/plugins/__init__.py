@@ -23,6 +23,41 @@ def get_plugins_dir() -> Path:
     return Path(__file__).parent
 
 
+def _find_plugin_path(package: str, plugin_type: str, plugin_name: str) -> Optional[Path]:
+    """Find a plugin's __init__.py across built-in, entry_point, and user dirs."""
+    # 1. Built-in plugins
+    builtin = get_plugins_dir() / package / plugin_type / plugin_name / "__init__.py"
+    if builtin.exists():
+        return builtin
+
+    # 2. Entry-point-provided plugins
+    try:
+        from importlib.metadata import entry_points as _eps
+        seen = set()
+        for ep in _eps(group="fwbg.plugin_packages"):
+            try:
+                plugins_dir = ep.load()()
+                resolved = plugins_dir.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                candidate = plugins_dir / package / plugin_type / plugin_name / "__init__.py"
+                if candidate.exists():
+                    return candidate
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # 3. User plugins
+    user_dir = Path.home() / ".fwbg" / "plugins"
+    user = user_dir / package / plugin_type / plugin_name / "__init__.py"
+    if user.exists():
+        return user
+
+    return None
+
+
 def import_plugin_module(
     package: str,
     plugin_type: str,
@@ -30,6 +65,9 @@ def import_plugin_module(
 ) -> Optional[ModuleType]:
     """
     Import a plugin module dynamically.
+
+    Searches built-in plugins, installed packages (via entry_points),
+    and user plugins (~/.fwbg/plugins/).
 
     Args:
         package: Plugin package name (e.g., 'fwbg-core', 'fwbg-premium')
@@ -39,10 +77,8 @@ def import_plugin_module(
     Returns:
         Loaded module or None if not found
     """
-    plugins_dir = get_plugins_dir()
-    module_path = plugins_dir / package / plugin_type / plugin_name / "__init__.py"
-
-    if not module_path.exists():
+    module_path = _find_plugin_path(package, plugin_type, plugin_name)
+    if module_path is None:
         return None
 
     module_name = f"fwbg.plugins.{package.replace('-', '_')}.{plugin_type}.{plugin_name}"

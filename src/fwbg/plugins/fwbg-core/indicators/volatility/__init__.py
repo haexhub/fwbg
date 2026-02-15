@@ -161,6 +161,42 @@ class VolatilityIndicators(BaseIndicator):
                 features["vol_yz_20"], atr_pct_14
             )
 
+        # === Volatility Compression (Percentile Ranking) ===
+        compression_lookback = params.get("compression_lookback", 100)
+        for period in atr_periods:
+            key = f"vol_atr_pct_{period}"
+            if key in features:
+                features[f"{key}_rank"] = features[key].rolling(
+                    compression_lookback, min_periods=compression_lookback // 2
+                ).rank(pct=True)
+
+        bb_wband_key = f"vol_bb_wband_{bb_period}"
+        if bb_wband_key in features:
+            features[f"{bb_wband_key}_rank"] = features[bb_wband_key].rolling(
+                compression_lookback, min_periods=compression_lookback // 2
+            ).rank(pct=True)
+
+        # Compression flag: ATR14 and BB Width both below 20th percentile
+        atr_rank = features.get("vol_atr_pct_14_rank")
+        bb_rank = features.get(f"{bb_wband_key}_rank")
+        if atr_rank is not None and bb_rank is not None:
+            features["vol_compression"] = (
+                (atr_rank < 0.2) & (bb_rank < 0.2)
+            ).astype(float)
+
+        # === Realized Vol vs Implied Vol (VIX) ===
+        rv_window = params.get("rv_window", 20)
+        log_returns = np.log(df["C"] / (df["C"].shift(1) + EPSILON))
+        # Annualized realized vol (24h bars * 252 trading days)
+        rv = log_returns.rolling(rv_window * 24, min_periods=rv_window * 12).std()
+        rv_annualized = rv * np.sqrt(252 * 24) * 100  # as percentage
+        features[f"vol_rv_{rv_window}"] = rv_annualized
+
+        if "macro_vix" in df.columns:
+            vix = df["macro_vix"]
+            features["vol_rv_iv_spread"] = rv_annualized - vix
+            features["vol_rv_iv_ratio"] = safe_divide(rv_annualized, vix)
+
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
         features_df = shift_features(features, df.index)
 
@@ -183,6 +219,14 @@ class VolatilityIndicators(BaseIndicator):
             "vol_parkinson_20", "vol_parkinson_50",
             "vol_yz_20", "vol_yz_50",
             "vol_yz_atr_ratio",
+            # Compression (Percentile Rankings)
+            "vol_atr_pct_7_rank", "vol_atr_pct_14_rank", "vol_atr_pct_21_rank",
+            "vol_bb_wband_20_rank",
+            "vol_compression",
+            # Realized vs Implied Vol
+            "vol_rv_20",
+            "vol_rv_iv_spread",
+            "vol_rv_iv_ratio",
         ]
 
     @classmethod

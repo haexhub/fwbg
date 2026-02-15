@@ -208,6 +208,18 @@ def discover_plugins():
         )
 
 
+def _ensure_plugins_loaded():
+    """Trigger full plugin discovery if registries are empty."""
+    if INDICATOR_REGISTRY:
+        return
+    try:
+        from fwbg.pipeline.registry import get_registry
+        registry = get_registry()
+        registry.auto_discover()
+    except Exception:
+        pass
+
+
 def get_indicator(name: str) -> Type["BaseIndicator"]:
     """
     Gibt Indicator-Klasse anhand des Namens zurück.
@@ -221,6 +233,8 @@ def get_indicator(name: str) -> Type["BaseIndicator"]:
     Raises:
         ValueError: Wenn Indicator nicht gefunden
     """
+    if name not in INDICATOR_REGISTRY:
+        _ensure_plugins_loaded()
     if name not in INDICATOR_REGISTRY:
         available = list(INDICATOR_REGISTRY.keys())
         raise ValueError(
@@ -243,16 +257,8 @@ def get_exit_strategy(name: str) -> Type["BaseExitStrategy"]:
     Raises:
         ValueError: Wenn Exit-Strategy nicht gefunden
     """
-    # Lazy-load exit strategies from plugins if not yet loaded
     if not EXIT_STRATEGY_REGISTRY:
-        try:
-            from fwbg.plugins import import_plugin_module
-            # Import triggers @register_exit_strategy decorator
-            import_plugin_module("fwbg-core", "exit_strategies", "fixed")
-            import_plugin_module("fwbg-premium", "exit_strategies", "atr_based")
-        except ImportError:
-            pass
-
+        _ensure_plugins_loaded()
     if name not in EXIT_STRATEGY_REGISTRY:
         available = list(EXIT_STRATEGY_REGISTRY.keys())
         raise ValueError(
@@ -275,15 +281,8 @@ def get_feature_selector(name: str) -> Type["BaseFeatureSelector"]:
     Raises:
         ValueError: Wenn Feature-Selector nicht gefunden
     """
-    # Lazy-load feature selection plugins if not yet loaded
     if not FEATURE_SELECTOR_REGISTRY:
-        try:
-            from fwbg.plugins import import_plugin_module
-            import_plugin_module("fwbg-premium", "feature_selection", "boruta")
-            import_plugin_module("fwbg-premium", "feature_selection", "plateau")
-        except ImportError:
-            pass
-
+        _ensure_plugins_loaded()
     if name not in FEATURE_SELECTOR_REGISTRY:
         available = list(FEATURE_SELECTOR_REGISTRY.keys())
         raise ValueError(
@@ -306,6 +305,8 @@ def get_preprocessor(name: str) -> Type["BasePreprocessor"]:
     Raises:
         ValueError: Wenn Preprocessor nicht gefunden
     """
+    if not PREPROCESSOR_REGISTRY:
+        _ensure_plugins_loaded()
     if name not in PREPROCESSOR_REGISTRY:
         available = list(PREPROCESSOR_REGISTRY.keys())
         raise ValueError(
@@ -365,12 +366,7 @@ def list_broker_adapters() -> list:
 def get_risk_manager(name: str) -> Type["BaseRiskManager"]:
     """Gibt Risk-Manager-Klasse anhand des Namens zurück."""
     if not RISK_MANAGER_REGISTRY:
-        try:
-            from fwbg.plugins import import_plugin_module
-            import_plugin_module("fwbg-core", "risk_management", "kelly")
-        except ImportError:
-            pass
-
+        _ensure_plugins_loaded()
     if name not in RISK_MANAGER_REGISTRY:
         available = list(RISK_MANAGER_REGISTRY.keys())
         raise ValueError(
@@ -397,12 +393,7 @@ def register_data_loader(name: str):
 def get_data_loader(name: str) -> Type["BaseDataLoader"]:
     """Gibt DataLoader-Klasse anhand des Namens zurück."""
     if not DATA_LOADER_REGISTRY:
-        try:
-            from fwbg.plugins import import_plugin_module
-            import_plugin_module("fwbg-premium", "data_loading", "macro_data")
-        except ImportError:
-            pass
-
+        _ensure_plugins_loaded()
     if name not in DATA_LOADER_REGISTRY:
         available = list(DATA_LOADER_REGISTRY.keys())
         raise ValueError(

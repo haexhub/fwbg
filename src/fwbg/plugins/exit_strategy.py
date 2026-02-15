@@ -6,34 +6,21 @@ from typing import Tuple, Iterator, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from fwbg.pipeline.base import BasePlugin, PluginPhase
+
 if TYPE_CHECKING:
     from ..core.context import SimulationContext
 
 
-class BaseExitStrategy(ABC):
+class BaseExitStrategy(BasePlugin, ABC):
     """
     Basisklasse für Exit-Strategy-Plugins.
 
     Exit-Strategien definieren wie TP/SL berechnet werden und
     wie über Parameter-Kombinationen iteriert wird.
-
-    Beispiel:
-        ```python
-        from fwbg.plugins import BaseExitStrategy
-
-        class ATRExitStrategy(BaseExitStrategy):
-            def compute_targets(self, df, ctx, tp_mult=2.0, sl_mult=1.0):
-                # ATR-basierte TP/SL berechnen...
-                return targets_long, targets_short
-
-            def iterate_grid(self, grid_config, ctx):
-                for tp in grid_config.get('tp', [2.0]):
-                    for sl in grid_config.get('sl', [1.0]):
-                        yield {'tp_mult': tp, 'sl_mult': sl}
-        ```
     """
 
-    # Plugin-Name (wird vom Registry gesetzt)
+    phase = PluginPhase.EXIT_STRATEGIES
     name: str = "base"
 
     @abstractmethod

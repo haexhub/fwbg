@@ -54,6 +54,10 @@ class TestImportPaths:
         # Import sollte nicht fehlschlagen
         from fwbg.optimization.process import process_symbol
 
+    def test_process_fold_imports(self):
+        """Test: process_fold module can be imported."""
+        from fwbg.optimization.process_fold import precompute_indicators, process_single_fold
+
     def test_grid_search_imports(self):
         """Test: run_grid_search kann importiert werden."""
         from fwbg.optimization.grid_search import run_grid_search
@@ -375,3 +379,45 @@ class TestPrecomputedMergeNoDuplicates:
             # Must be a scalar bool, not a Series
             assert isinstance(has_inf, (bool, np.bool_)), \
                 f"has_inf for '{col}' is {type(has_inf)}, not bool — duplicate column?"
+
+
+class TestStrategyFilePluginResolution:
+    """All strategy JSON files must reference only resolvable plugin names.
+
+    Short names must resolve to a fully qualified name via the plugin
+    registry. Unresolvable names (no ':' after normalization) would crash
+    at runtime in PluginRegistry.get().
+    """
+
+    @staticmethod
+    def _collect_plugin_names(strategy):
+        """Extract all plugin names from a strategy's pipeline config."""
+        names = []
+        for ind in strategy.get_indicators():
+            names.append(("indicator", ind["name"]))
+        for pp in strategy.get_preprocessing():
+            names.append(("preprocessing", pp["name"]))
+        for fs in strategy.get_feature_selection():
+            names.append(("feature_selection", fs["name"]))
+        return names
+
+    def test_all_strategy_plugins_resolve(self):
+        """Every plugin name in strategies/*.json must resolve to a fully qualified name."""
+        import glob
+        from fwbg.pipeline.features import normalize_plugin_name
+
+        strategy_files = sorted(glob.glob("strategies/*.json"))
+        assert strategy_files, "No strategy files found"
+
+        errors = []
+        for path in strategy_files:
+            strategy = StrategyConfig.from_json_file(path)
+            for kind, name in self._collect_plugin_names(strategy):
+                fq_name = normalize_plugin_name(name)
+                if ":" not in fq_name:
+                    errors.append(f"{path}: {kind} '{name}' did not resolve (got '{fq_name}')")
+
+        assert not errors, (
+            "Unresolvable plugin names in strategy files:\n"
+            + "\n".join(errors)
+        )

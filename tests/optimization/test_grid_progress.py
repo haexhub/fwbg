@@ -11,17 +11,16 @@ import numpy as np
 class TestProcessSymbolProgressReporting:
     """Tests für report_progress Aufrufe in process_symbol."""
 
-    def test_process_symbol_passes_progress_callback(self):
-        """process_symbol sollte progress_callback an run_grid_search übergeben."""
-        from fwbg.optimization import process
-        import re
+    def test_process_single_fold_passes_progress_callback(self):
+        """process_single_fold sollte progress_callback an run_grid_search übergeben."""
+        from fwbg.optimization import process_fold
         import inspect
 
-        source = inspect.getsource(process.process_symbol)
+        source = inspect.getsource(process_fold.process_single_fold)
 
         # Prüfe ob run_grid_search mit progress_callback aufgerufen wird
-        assert "run_grid_search" in source, "process_symbol sollte run_grid_search aufrufen"
-        assert "progress_callback" in source, "process_symbol sollte progress_callback verwenden"
+        assert "run_grid_search" in source, "process_single_fold sollte run_grid_search aufrufen"
+        assert "progress_callback" in source, "process_single_fold sollte progress_callback verwenden"
 
 
 class TestGridProgressCallback:

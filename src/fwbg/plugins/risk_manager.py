@@ -2,8 +2,10 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 
+from fwbg.pipeline.base import BasePlugin, PluginPhase
 
-class BaseRiskManager(ABC):
+
+class BaseRiskManager(BasePlugin, ABC):
     """
     Base class for risk management plugins.
 
@@ -11,6 +13,7 @@ class BaseRiskManager(ABC):
     from trade history, win rate, and risk-reward ratio.
     """
 
+    phase = PluginPhase.RISK_MANAGEMENT
     name: str = "base"
 
     @abstractmethod
@@ -26,6 +29,7 @@ class BaseRiskManager(ABC):
 
         Returns dict with at minimum:
             - risk_per_trade: float (position size as fraction of capital)
+            - trade_returns: List[float] (per-trade returns for metrics)
             - circuit_breaker: dict (pause_after_losses, pause_bars, enabled)
             - risk_adjustment: dict (original_risk, scale_factor, target_dd)
         """

@@ -91,7 +91,8 @@
       {"name": "cross_features", "params": {"rsi_overbought": 70, "rsi_oversold": 30}},
       {"name": "ichimoku", "params": {"tenkan_period": 9, "kijun_period": 26, "senkou_b_period": 52}},
       {"name": "microstructure", "params": {"atr_period": 14, "rolling_window": 5}},
-      {"name": "macro_surprise", "params": {"vol_lookback": 20, "surprise_threshold": 2.0, "gap_ma_period": 10}}
+      {"name": "macro_surprise", "params": {"vol_lookback": 20, "surprise_threshold": 2.0, "gap_ma_period": 10}},
+      {"name": "market_regime", "params": {"window": 50}}
     ],
     "feature_selection": [
       {
@@ -106,7 +107,8 @@
       }
     ],
     "data_loading": [
-      {"name": "macro_data", "source": "forexsb"}
+      {"name": "macro_data", "source": "forexsb"},
+      {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
 
