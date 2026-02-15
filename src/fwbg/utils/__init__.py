@@ -10,7 +10,6 @@ from .progress import (
 )
 from .xgb_config import get_xgboost_n_jobs, set_xgboost_n_jobs
 from .data import clean_dataframe, clean_array
-from .macro_loader import load_macro_indicators, load_interest_rates, load_macro_csv
 
 __all__ = [
     "log",
@@ -24,7 +23,4 @@ __all__ = [
     "set_xgboost_n_jobs",
     "clean_dataframe",
     "clean_array",
-    "load_macro_indicators",
-    "load_interest_rates",
-    "load_macro_csv",
 ]

@@ -10,7 +10,6 @@ from datetime import datetime
 from fwbg.data.config import (
     TIMEFRAME, WALK_FORWARD_FOLDS, OOS_SIZE,
     CORR_THRESHOLD, MIN_TRADES,
-    CLASS_GRIDS, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
     convert_numpy
 )
 
@@ -276,10 +275,6 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
         "oos_size": OOS_SIZE,
         "corr_threshold": CORR_THRESHOLD,
         "min_trades": MIN_TRADES,
-        "class_grids": CLASS_GRIDS,
-        "macro_indicators": list(MACRO_INDICATORS.keys()),
-        "lookbacks_hours": LOOKBACKS_HOURS,
-        "lookbacks_days": LOOKBACKS_DAYS,
         "git": git_info,
     }
 
@@ -551,7 +546,6 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
         f.write(f"OOS Size:           {OOS_SIZE}\n")
         f.write(f"Min Trades:         {MIN_TRADES}\n")
         f.write(f"Corr Threshold:     {CORR_THRESHOLD}\n")
-        f.write(f"Macro Indicators:   {len(MACRO_INDICATORS)}\n")
         f.write("\n")
 
         # Ergebnisse

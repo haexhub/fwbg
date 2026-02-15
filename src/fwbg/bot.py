@@ -39,7 +39,7 @@ from xgboost import XGBClassifier
 
 from fwbg.adapters.broker import BrokerAdapter, OrderSide, BarData
 from fwbg.pipeline import compute_indicator_pool
-from fwbg.utils import load_macro_indicators, load_interest_rates
+from fwbg.data.loader import run_data_loading
 
 logger = logging.getLogger(__name__)
 
@@ -270,11 +270,9 @@ class TradingBot:
         # Technische Indikatoren via Plugin-System
         df = compute_indicator_pool(df)
 
-        # Makro-Indikatoren
-        df = load_macro_indicators(df)
-
-        # Zinsdaten
-        df = load_interest_rates(df)
+        # Data Loading (Macro etc.) via Plugin-System
+        if hasattr(self, '_data_loading_configs') and self._data_loading_configs:
+            df = run_data_loading(df, self._data_loading_configs)
 
         return df
 

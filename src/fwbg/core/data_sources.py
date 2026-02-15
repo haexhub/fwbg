@@ -38,10 +38,20 @@ from pathlib import Path
 from typing import Dict, List, Any
 import logging
 
+import pandas as pd
+
 log = logging.getLogger(__name__)
 
 # Default Basis-Pfad für Daten
 DEFAULT_DATA_ROOT = Path("data")
+
+
+@dataclass
+class LoadResult:
+    """Standardisiertes Ergebnis von DataSource.load()."""
+    data: Dict[str, pd.DataFrame] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    source_name: str = ""
 
 
 class SourceType(str, Enum):
@@ -49,6 +59,7 @@ class SourceType(str, Enum):
     CSV = "csv"
     REST = "rest"
     WEBSOCKET = "websocket"
+    DATABASE = "database"
 
 
 @dataclass
@@ -61,6 +72,18 @@ class DataSourceConfig(ABC):
     @abstractmethod
     def create_adapter(self, **kwargs):
         """Erstellt einen passenden DataAdapter."""
+        pass
+
+    @abstractmethod
+    def load(self, items: Dict[str, str], **params) -> "LoadResult":
+        """Load named data items from this source.
+
+        Args:
+            items: Mapping of item name to prefix (e.g. {"VIX_DAY": "vix"})
+
+        Returns:
+            LoadResult with loaded DataFrames and metadata
+        """
         pass
 
 
@@ -91,6 +114,39 @@ class CSVSourceConfig(DataSourceConfig):
         if not self.exists():
             return []
         return list(self.path.glob(pattern))
+
+    def load(self, items: Dict[str, str], **params) -> LoadResult:
+        """Load CSV files from self.path.
+
+        Args:
+            items: Mapping of filename (without .csv) to prefix
+
+        Returns:
+            LoadResult with loaded DataFrames indexed by date
+        """
+        data = {}
+        for filename, prefix in items.items():
+            csv_path = self.path / f"{filename}.csv"
+            if not csv_path.exists():
+                log.debug(f"CSV not found: {csv_path}")
+                continue
+            try:
+                raw_df = pd.read_csv(csv_path, nrows=1)
+                cols = list(raw_df.columns)
+                date_col = None
+                for candidate in ["DATE", "Datetime", "datetime", "Time", "time", "Date"]:
+                    if candidate in cols:
+                        date_col = candidate
+                        break
+                if date_col:
+                    df = pd.read_csv(csv_path, parse_dates=[date_col], index_col=date_col)
+                else:
+                    df = pd.read_csv(csv_path, parse_dates=[0], index_col=0)
+                data[prefix] = df
+            except Exception as e:
+                log.warning(f"Failed to load CSV {csv_path}: {e}")
+
+        return LoadResult(data=data, source_name=self.name)
 
     def create_adapter(self, timeframe: str = "HOUR", **kwargs):
         """
@@ -170,6 +226,16 @@ class RESTSourceConfig(DataSourceConfig):
             headers[self.api_key_header] = self.api_key
         return headers
 
+    def load(self, items: Dict[str, str], **params) -> LoadResult:
+        """Load data from REST API endpoints.
+
+        Not implemented for batch loading — use create_adapter() for live data.
+        """
+        raise NotImplementedError(
+            f"REST source '{self.name}' does not support batch loading. "
+            f"Use create_adapter() for live data fetching."
+        )
+
     def create_adapter(self, **kwargs):
         """
         Erstellt einen REST DataAdapter.
@@ -223,6 +289,13 @@ class WebSocketSourceConfig(DataSourceConfig):
         msg_str = msg_str.replace("{timeframe}", timeframe)
         return json.loads(msg_str)
 
+    def load(self, items: Dict[str, str], **params) -> LoadResult:
+        """WebSocket sources are streaming-only, no batch loading."""
+        raise NotImplementedError(
+            f"WebSocket source '{self.name}' is streaming-only. "
+            f"Use create_adapter() for real-time data."
+        )
+
     def create_adapter(self, **kwargs):
         """
         Erstellt einen WebSocket DataAdapter.
@@ -242,8 +315,41 @@ class WebSocketSourceConfig(DataSourceConfig):
         )
 
 
+@dataclass
+class DBSourceConfig(DataSourceConfig):
+    """Konfiguration für Datenbank-Datenquellen."""
+    connection_string: str = ""
+    driver: str = "sqlalchemy"
+
+    def __post_init__(self):
+        self.source_type = SourceType.DATABASE
+
+    def load(self, items: Dict[str, str], **params) -> LoadResult:
+        """Load data from database via SQL queries.
+
+        Args:
+            items: Mapping of SQL query/table name to prefix
+        """
+        try:
+            import sqlalchemy
+        except ImportError:
+            raise ImportError("sqlalchemy is required for database sources")
+
+        engine = sqlalchemy.create_engine(self.connection_string)
+        data = {}
+        for query_name, prefix in items.items():
+            df = pd.read_sql(query_name, engine)
+            data[prefix] = df
+        return LoadResult(data=data, source_name=self.name)
+
+    def create_adapter(self, **kwargs):
+        raise NotImplementedError(
+            f"Database source '{self.name}' does not support adapter creation."
+        )
+
+
 # Typ-Alias für alle Source-Configs
-DataSource = CSVSourceConfig | RESTSourceConfig | WebSocketSourceConfig
+DataSource = CSVSourceConfig | RESTSourceConfig | WebSocketSourceConfig | DBSourceConfig
 
 # Registry für Datenquellen
 _DATA_SOURCES: Dict[str, DataSource] = {}
@@ -360,6 +466,24 @@ def register_websocket_source(
     )
     _DATA_SOURCES[name] = source
     log.debug(f"Registered WebSocket source: {name} -> {url}")
+    return source
+
+
+def register_db_source(
+    name: str,
+    connection_string: str,
+    driver: str = "sqlalchemy",
+    description: str = "",
+) -> DBSourceConfig:
+    """Registriert eine Datenbank-Datenquelle."""
+    source = DBSourceConfig(
+        name=name,
+        connection_string=connection_string,
+        driver=driver,
+        description=description,
+    )
+    _DATA_SOURCES[name] = source
+    log.debug(f"Registered DB source: {name}")
     return source
 
 
@@ -529,15 +653,18 @@ _init_default_sources()
 __all__ = [
     # Types
     "SourceType",
+    "LoadResult",
     "DataSourceConfig",
     "CSVSourceConfig",
     "RESTSourceConfig",
     "WebSocketSourceConfig",
+    "DBSourceConfig",
     "DataSource",
     # Registration
     "register_csv_source",
     "register_rest_source",
     "register_websocket_source",
+    "register_db_source",
     # Getters
     "get_data_source",
     "list_data_sources",

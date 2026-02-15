@@ -15,6 +15,7 @@ from .exit_strategy import BaseExitStrategy
 from .feature_selector import BaseFeatureSelector
 from .preprocessor import BasePreprocessor
 from .risk_manager import BaseRiskManager
+from .data_loader import BaseDataLoader
 
 
 def get_plugins_dir() -> Path:
@@ -103,6 +104,7 @@ __all__ = [
     "BaseFeatureSelector",
     "BasePreprocessor",
     "BaseRiskManager",
+    "BaseDataLoader",
     "get_plugins_dir",
     "import_plugin_module",
     "run_plugin_tests",

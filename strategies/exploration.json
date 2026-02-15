@@ -104,6 +104,9 @@
           "min_z_score": 0.5
         }
       }
+    ],
+    "data_loading": [
+      {"name": "macro_data", "source": "forexsb"}
     ]
   },
 

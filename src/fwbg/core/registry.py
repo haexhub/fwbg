@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from ..plugins.feature_selector import BaseFeatureSelector
     from ..plugins.preprocessor import BasePreprocessor
     from ..plugins.risk_manager import BaseRiskManager
+    from ..plugins.data_loader import BaseDataLoader
     from ..adapters.broker import BrokerAdapter
 
 log = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ FEATURE_SELECTOR_REGISTRY: Dict[str, Type["BaseFeatureSelector"]] = {}
 PREPROCESSOR_REGISTRY: Dict[str, Type["BasePreprocessor"]] = {}
 BROKER_ADAPTER_REGISTRY: Dict[str, Type["BrokerAdapter"]] = {}
 RISK_MANAGER_REGISTRY: Dict[str, Type["BaseRiskManager"]] = {}
+DATA_LOADER_REGISTRY: Dict[str, Type["BaseDataLoader"]] = {}
 
 
 def register_indicator(name: str):
@@ -191,6 +193,7 @@ def discover_plugins():
         + len(PREPROCESSOR_REGISTRY)
         + len(BROKER_ADAPTER_REGISTRY)
         + len(RISK_MANAGER_REGISTRY)
+        + len(DATA_LOADER_REGISTRY)
     )
 
     if total > 0:
@@ -379,3 +382,35 @@ def get_risk_manager(name: str) -> Type["BaseRiskManager"]:
 def list_risk_managers() -> list:
     """Listet alle registrierten Risk-Manager."""
     return list(RISK_MANAGER_REGISTRY.keys())
+
+
+def register_data_loader(name: str):
+    """Decorator zum Registrieren eines DataLoaders."""
+    def decorator(cls):
+        DATA_LOADER_REGISTRY[name] = cls
+        cls.name = name
+        log.debug(f"Registered data loader: {name}")
+        return cls
+    return decorator
+
+
+def get_data_loader(name: str) -> Type["BaseDataLoader"]:
+    """Gibt DataLoader-Klasse anhand des Namens zurück."""
+    if not DATA_LOADER_REGISTRY:
+        try:
+            from fwbg.plugins import import_plugin_module
+            import_plugin_module("fwbg-premium", "data_loading", "macro_data")
+        except ImportError:
+            pass
+
+    if name not in DATA_LOADER_REGISTRY:
+        available = list(DATA_LOADER_REGISTRY.keys())
+        raise ValueError(
+            f"Unknown data loader: '{name}'. Available: {available}"
+        )
+    return DATA_LOADER_REGISTRY[name]
+
+
+def list_data_loaders() -> list:
+    """Listet alle registrierten DataLoader."""
+    return list(DATA_LOADER_REGISTRY.keys())

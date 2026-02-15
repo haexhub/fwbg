@@ -380,6 +380,10 @@ class StrategyConfig:
             )
         return GridConfig()
 
+    def get_data_loading(self) -> List[Dict[str, Any]]:
+        """Returns configured data loading plugins from pipeline."""
+        return self.pipeline.get("data_loading", [])
+
     def get_indicators(self) -> List[Dict[str, Any]]:
         """Returns configured indicator plugins from pipeline."""
         return self.pipeline.get("indicators", [])

@@ -8,17 +8,12 @@ import os
 import time
 import numpy as np
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
 
-from fwbg.data.config import (
-    DATA_PATH, MACRO_INDICATORS, LOOKBACKS_HOURS, LOOKBACKS_DAYS,
-    tf_cfg, MIN_TRADES, WALK_FORWARD_FOLDS,
-    compute_macro_derived, compute_interest_rates,
-)
+from fwbg.data.config import tf_cfg, MIN_TRADES, WALK_FORWARD_FOLDS
 from fwbg.core.config import StrategyConfig, RegimeFilterConfig
 from fwbg.data.assets import get_asset
 from fwbg.core.context import SimulationContext
-from fwbg.data.loader import load_data_aligned, load_macro_csv
+from fwbg.data.loader import load_data_aligned, run_data_loading
 from fwbg.pipeline import (
     compute_indicator_pool, get_feature_columns, compute_regime_filter,
     calculate_param_plateau_score, select_best_plateau_candidate
@@ -29,7 +24,7 @@ from fwbg.simulation.trade import (
     monte_carlo_permutation_test, monte_carlo_equity_simulation,
 )
 from fwbg.core import get_risk_manager
-from fwbg.utils.progress import report_done, report_phase
+from fwbg.utils.progress import report_done, report_meta, report_phase
 from fwbg.utils.logging import log
 from .nested_cv import nested_cv_split, evaluate_on_holdout
 from .grid_search import run_grid_search
@@ -62,60 +57,14 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(1, "SKIP - Keine Daten", sym)
             return {"symbol": sym, "status": "no_data"}
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
-        report_phase(sym, "Makro-Indikatoren...")
 
-        # === ALLE MAKRO-INDIKATOREN PARALLEL LADEN ===
-        t0 = time.time()
-        date_series = df.index.date
-
-        # 1. Parallel alle Makro-Dateien laden
-        def _load_macro(item):
-            filename, prefix = item
-            macro_path = f"{DATA_PATH}/{filename}.csv"
-            macro_df = load_macro_csv(macro_path)
-            if macro_df is not None:
-                return prefix, macro_df["Close"].to_dict()
-            return None
-
-        macro_items = list(MACRO_INDICATORS.items())
-        macro_data = {}
-
-        with ThreadPoolExecutor(max_workers=min(8, len(macro_items))) as executor:
-            results = list(executor.map(_load_macro, macro_items))
-
-        for result in results:
-            if result is not None:
-                prefix, lookup = result
-                macro_data[prefix] = lookup
-
-        # 2. Alle Spalten in einem Batch erstellen (effizienter als einzeln)
-        new_columns = {}
-        date_timestamps = pd.Series(date_series, index=df.index).map(pd.Timestamp)
-
-        for prefix, lookup in macro_data.items():
-            col_name = f"macro_{prefix}"
-            base_values = date_timestamps.map(lambda d: lookup.get(d, np.nan)).ffill()
-            new_columns[col_name] = base_values
-
-            # Stunden-basierte Lookbacks
-            for lb_h in LOOKBACKS_HOURS:
-                new_columns[f"{col_name}_chg_{lb_h}h"] = base_values.pct_change(lb_h) * 100
-
-            # Tages-basierte Lookbacks
-            for lb_d in LOOKBACKS_DAYS:
-                new_columns[f"{col_name}_chg_{lb_d}d"] = base_values.pct_change(24 * lb_d) * 100
-
-        # 3. Alle Spalten auf einmal hinzufügen
-        if new_columns:
-            df = df.assign(**new_columns)
-
-        log(2, f"Makro-Indikatoren: {len(macro_data)} geladen ({time.time()-t0:.1f}s)", sym)
-
-        # === ABGELEITETE FEATURES (Spreads & Ratios) ===
-        t0 = time.time()
-        df = compute_macro_derived(df)
-        df = compute_interest_rates(df, DATA_PATH)
-        log(3, f"Abgeleitete Features berechnet ({time.time()-t0:.1f}s)", sym)
+        # === DATA LOADING (generic orchestrator) ===
+        data_loading_configs = strategy.get_data_loading()
+        if data_loading_configs:
+            t0 = time.time()
+            report_phase(sym, "Data Loading...")
+            df = run_data_loading(df, data_loading_configs)
+            log(2, f"Data Loading abgeschlossen ({time.time()-t0:.1f}s)", sym)
 
         # === LOOKAHEAD BIAS PREVENTION ===
         # KRITISCH: Walk-Forward Splits VOR Indikator-Berechnung!
@@ -191,15 +140,20 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             precomputed_raw_df = compute_indicator_pool(
                 df, indicators=raw_indicators, progress_callback=None
             )
+            # Only keep NEW indicator features — exclude base columns
+            # (OHLCV, internal, and any columns already in df like macro_*)
+            base_cols = set(df.columns) | {'O', 'H', 'L', 'C', 'V'}
             raw_feature_cols = [c for c in precomputed_raw_df.columns
-                                if c not in ['O', 'H', 'L', 'C', 'V']
-                                and not c.startswith('_') and not c.startswith('macro_')]
+                                if c not in base_cols
+                                and not c.startswith('_')]
             precomputed_raw_df = precomputed_raw_df[raw_feature_cols]
             log(1, f"Precomputed {len(raw_indicators)} raw indicators: "
                    f"{len(raw_feature_cols)} features ({time.time()-t0:.1f}s)", sym)
 
         fold_indicators = stationary_indicators if has_preprocessing else []
+        total_indicators = len(raw_indicators) + len(fold_indicators)
         log(2, f"Per-fold indicators: {len(fold_indicators)}, Precomputed: {len(raw_indicators)}", sym)
+        report_meta(sym, indicator_count=total_indicators)
 
         for fold_idx, fold in enumerate(wf_folds):
             log(1, f"=== Processing Fold {fold.fold_id + 1}/{len(wf_folds)} ===", sym)
@@ -317,6 +271,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                         clean_pool.append(col)
             full_pool = clean_pool
             log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features (excl: {excluded_inf} inf, {excluded_nan} nan)", sym)
+
+            # Update meta with actual feature count (first fold only)
+            if fold_idx == 0:
+                report_meta(sym, indicator_count=total_indicators, feature_count=len(full_pool))
 
             if len(full_pool) < 5:
                 log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Features ({len(full_pool)})", sym)
