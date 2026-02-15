@@ -316,3 +316,62 @@ class TestRunGridSearch:
         # Sollte leer zurückkehren (keine inner_folds)
         assert candidates == []
         assert grid_results == []
+
+
+class TestPrecomputedMergeNoDuplicates:
+    """Precomputed raw indicator merge must not create duplicate columns.
+
+    Bug: When data_loading adds macro_* columns to df, and those same columns
+    pass through compute_indicator_pool into precomputed_raw_df, pd.concat
+    creates duplicates. Then train_df[col] returns a DataFrame instead of a
+    Series, causing 'truth value of Series is ambiguous' in the inf check.
+    """
+
+    def test_no_duplicate_columns_after_merge(self):
+        """Precomputed features must exclude columns already in base df."""
+        n = 500
+        dates = pd.date_range("2023-01-01", periods=n, freq="h")
+        df = pd.DataFrame({
+            "O": 100 + np.cumsum(np.random.randn(n) * 0.1),
+            "H": 101 + np.cumsum(np.random.randn(n) * 0.1),
+            "L": 99 + np.cumsum(np.random.randn(n) * 0.1),
+            "C": 100 + np.cumsum(np.random.randn(n) * 0.1),
+            "V": np.random.randint(100, 10000, n).astype(float),
+            # Simulate macro columns added by data_loading
+            "macro_vix": np.random.rand(n) * 30,
+            "macro_tnx": np.random.rand(n) * 5,
+        }, index=dates)
+
+        from fwbg.pipeline import compute_indicator_pool
+
+        # compute_indicator_pool passes through existing columns (incl. macro_*)
+        precomputed = compute_indicator_pool(
+            df, indicators=[{"name": "trend", "params": {"adx_periods": [14]}}]
+        )
+
+        # Filter: only NEW features, not columns already in df
+        base_cols = set(df.columns) | {"O", "H", "L", "C", "V"}
+        raw_feature_cols = [c for c in precomputed.columns
+                           if c not in base_cols and not c.startswith("_")]
+        precomputed_raw_df = precomputed[raw_feature_cols]
+
+        # macro columns must NOT be in precomputed_raw_df
+        assert "macro_vix" not in precomputed_raw_df.columns
+        assert "macro_tnx" not in precomputed_raw_df.columns
+
+        # Merge like process.py does
+        train_df = df.iloc[:400].copy()
+        merged = pd.concat([train_df, precomputed_raw_df.reindex(train_df.index)], axis=1)
+
+        # No duplicate columns
+        dupes = merged.columns[merged.columns.duplicated()].tolist()
+        assert dupes == [], f"Duplicate columns after merge: {dupes}"
+
+        # The inf check that was crashing must work on every column
+        for col in merged.columns:
+            if col in ["O", "H", "L", "C", "V"]:
+                continue
+            has_inf = np.isinf(merged[col]).any()
+            # Must be a scalar bool, not a Series
+            assert isinstance(has_inf, (bool, np.bool_)), \
+                f"has_inf for '{col}' is {type(has_inf)}, not bool — duplicate column?"

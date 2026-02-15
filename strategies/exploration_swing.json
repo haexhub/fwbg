@@ -63,6 +63,9 @@
     ],
     "feature_selection": [
       {"name": "boruta", "params": {"max_features": 30, "n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5}}
+    ],
+    "data_loading": [
+      {"name": "macro_data", "source": "forexsb"}
     ]
   },
 

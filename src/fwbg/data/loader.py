@@ -5,10 +5,7 @@ import os
 import pandas as pd
 import numpy as np
 
-from .config import (
-    TARGET_TZ, DATA_PATH, MACRO_INDICATORS,
-    LOOKBACKS_HOURS, LOOKBACKS_DAYS
-)
+from .config import TARGET_TZ, DATA_PATH
 
 
 def _has_header(path):
@@ -105,78 +102,80 @@ def load_macro_csv(path):
         return None
 
 
-def load_macro_indicators(df):
-    """Lädt alle Makro-Indikatoren und fügt sie zum DataFrame hinzu."""
-    df["_date"] = df.index.date
+# ============================================================================
+# Generic Data Loading Orchestrator
+# ============================================================================
 
-    for filename, prefix in MACRO_INDICATORS.items():
-        macro_path = f"{DATA_PATH}/{filename}.csv"
-        macro_df = load_macro_csv(macro_path)
-        if macro_df is not None:
+def run_data_loading(df, data_loading_configs):
+    """
+    Generic data-loading orchestrator.
+
+    For each config:
+    1. Resolve DataSource (source → CSV/REST/DB)
+    2. Call source.load(items) → LoadResult
+    3. Align raw data to DataFrame index (Daily→Intraday, Forward-Fill)
+    4. Add base columns to DataFrame
+    5. Call DATA_LOADING plugin → Computation
+    """
+    import logging
+    from fwbg.core.data_sources import get_data_source
+    from fwbg.core.registry import get_data_loader
+    from fwbg.pipeline.context import PipelineContext
+
+    log = logging.getLogger(__name__)
+
+    if not data_loading_configs:
+        return df
+
+    for cfg in data_loading_configs:
+        source_name = cfg.get("source")
+        plugin_name = cfg.get("name")
+        params = cfg.get("params", {})
+        items = params.get("indicators", {})
+
+        # No indicators specified → use plugin defaults
+        if not items and plugin_name:
             try:
-                macro_lookup = macro_df["Close"].to_dict()
-
-                col_name = f"macro_{prefix}"
-                df[col_name] = df["_date"].map(lambda d: macro_lookup.get(pd.Timestamp(d), np.nan))
-                df[col_name] = df[col_name].ffill()
-
-                # Stunden-basierte Lookbacks
-                for lb_h in LOOKBACKS_HOURS:
-                    df[f"{col_name}_chg_{lb_h}h"] = df[col_name].pct_change(lb_h) * 100
-
-                # Tages-basierte Lookbacks
-                for lb_d in LOOKBACKS_DAYS:
-                    df[f"{col_name}_chg_{lb_d}d"] = df[col_name].pct_change(24 * lb_d) * 100
-
-            except Exception:
+                cls = get_data_loader(plugin_name)
+                defaults = cls().get_default_params()
+                items = defaults.get("indicators", {})
+                params["indicators"] = items
+            except ValueError:
                 pass
 
-    df = df.drop(columns=["_date"], errors="ignore")
+        # 1. Load raw data from DataSource
+        if source_name and items:
+            source = get_data_source(source_name)
+            result = source.load(items)
 
-    # === ABGELEITETE FEATURES ===
-    # Yield Curve
-    if "macro_tnx" in df.columns and "macro_irx" in df.columns:
-        df["macro_yield_curve_10y_3m"] = df["macro_tnx"] - df["macro_irx"]
-    if "macro_tnx" in df.columns and "macro_fvx" in df.columns:
-        df["macro_yield_curve_10y_5y"] = df["macro_tnx"] - df["macro_fvx"]
+            # 2. Align daily data to intraday index via forward-fill
+            # IMPORTANT: Use PREVIOUS day's close to prevent lookahead bias.
+            # On day D, the daily close is only available after market close,
+            # so intraday bars on day D must use day D-1's value.
+            date_series = df.index.date
+            prev_date = pd.Series(date_series, index=df.index).map(
+                lambda d: pd.Timestamp(d) - pd.Timedelta(days=1)
+            )
 
-    # VIX/VVIX Ratio
-    if "macro_vix" in df.columns and "macro_vvix" in df.columns:
-        df["macro_vix_vvix_ratio"] = df["macro_vix"] / (df["macro_vvix"] + 1e-10)
+            for prefix, raw_df in result.data.items():
+                if "Close" in raw_df.columns:
+                    lookup = raw_df["Close"].to_dict()
+                    df[f"macro_{prefix}"] = prev_date.map(
+                        lambda d, lk=lookup: lk.get(d, np.nan)
+                    ).ffill()
 
-    # Risk On/Off Ratios
-    if "macro_spx" in df.columns and "macro_tlt" in df.columns:
-        df["macro_risk_ratio_spx_tlt"] = df["macro_spx"] / (df["macro_tlt"] + 1e-10)
-    if "macro_hyg" in df.columns and "macro_lqd" in df.columns:
-        df["macro_credit_spread_proxy"] = df["macro_hyg"] / (df["macro_lqd"] + 1e-10)
+            log.debug(
+                f"Loaded {len(result.data)} items from source '{source_name}'"
+            )
 
-    # Small Cap vs Large Cap
-    if "macro_russell" in df.columns and "macro_spx" in df.columns:
-        df["macro_smallcap_ratio"] = df["macro_russell"] / (df["macro_spx"] + 1e-10)
-
-    # Tech vs Defensive
-    if "macro_xlk" in df.columns and "macro_xlu" in df.columns:
-        df["macro_tech_defensive_ratio"] = df["macro_xlk"] / (df["macro_xlu"] + 1e-10)
-
-    return df
-
-
-def load_interest_rates(df):
-    """Lädt Fed und ECB Zinsdaten."""
-    for rate_name, rate_file in [("fed", "FED_RATE.csv"), ("ecb", "ECB_RATE.csv")]:
-        rate_path = f"{DATA_PATH}/{rate_file}"
-        if os.path.exists(rate_path):
+        # 3. Run computation plugin
+        if plugin_name:
             try:
-                rate_df = pd.read_csv(rate_path, parse_dates=["Date"], index_col="Date")
-                rate_series = rate_df["Rate"].reindex(df.index, method="ffill")
-                df[f"macro_{rate_name}_rate"] = rate_series
-                for lb in [30, 90, 180]:
-                    df[f"macro_{rate_name}_chg_{lb}d"] = df[f"macro_{rate_name}_rate"].diff(24 * lb)
-            except Exception:
-                pass
-
-    # Zinsdifferenz EUR/USD
-    if "macro_fed_rate" in df.columns and "macro_ecb_rate" in df.columns:
-        df["macro_rate_diff_usd_eur"] = df["macro_fed_rate"] - df["macro_ecb_rate"]
+                cls = get_data_loader(plugin_name)
+                ctx = PipelineContext(df=df, symbol="", asset_class="")
+                ctx = cls().execute(ctx, **params)
+                df = ctx.df
+            except ValueError:
+                log.debug(f"DataLoader plugin '{plugin_name}' not found, skipping")
 
     return df

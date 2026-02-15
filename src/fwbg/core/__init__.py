@@ -15,15 +15,18 @@ from .enums import (
 from .data_sources import (
     # Types
     SourceType,
+    LoadResult,
     DataSourceConfig,
     CSVSourceConfig,
     RESTSourceConfig,
     WebSocketSourceConfig,
+    DBSourceConfig,
     DataSource,
     # Registration
     register_csv_source,
     register_rest_source,
     register_websocket_source,
+    register_db_source,
     # Getters
     get_data_source,
     list_data_sources,
@@ -42,6 +45,7 @@ from .registry import (
     register_preprocessor,
     register_broker_adapter,
     register_risk_manager,
+    register_data_loader,
     # Plugin Getters
     get_indicator,
     get_exit_strategy,
@@ -49,6 +53,7 @@ from .registry import (
     get_preprocessor,
     get_broker_adapter,
     get_risk_manager,
+    get_data_loader,
     # Plugin Listers
     list_indicators,
     list_exit_strategies,
@@ -56,6 +61,7 @@ from .registry import (
     list_preprocessors,
     list_broker_adapters,
     list_risk_managers,
+    list_data_loaders,
     # Registries
     INDICATOR_REGISTRY,
     EXIT_STRATEGY_REGISTRY,
@@ -63,6 +69,7 @@ from .registry import (
     PREPROCESSOR_REGISTRY,
     BROKER_ADAPTER_REGISTRY,
     RISK_MANAGER_REGISTRY,
+    DATA_LOADER_REGISTRY,
 )
 
 __all__ = [
@@ -77,15 +84,18 @@ __all__ = [
     "SignalType",
     # Data Source Types
     "SourceType",
+    "LoadResult",
     "DataSourceConfig",
     "CSVSourceConfig",
     "RESTSourceConfig",
     "WebSocketSourceConfig",
+    "DBSourceConfig",
     "DataSource",
     # Data Source Registration
     "register_csv_source",
     "register_rest_source",
     "register_websocket_source",
+    "register_db_source",
     # Data Source Getters
     "get_data_source",
     "list_data_sources",
@@ -101,6 +111,7 @@ __all__ = [
     "register_preprocessor",
     "register_broker_adapter",
     "register_risk_manager",
+    "register_data_loader",
     # Plugin Getters
     "get_indicator",
     "get_exit_strategy",
@@ -108,6 +119,7 @@ __all__ = [
     "get_preprocessor",
     "get_broker_adapter",
     "get_risk_manager",
+    "get_data_loader",
     # Plugin Listers
     "list_indicators",
     "list_exit_strategies",
@@ -115,6 +127,7 @@ __all__ = [
     "list_preprocessors",
     "list_broker_adapters",
     "list_risk_managers",
+    "list_data_loaders",
     # Registries
     "INDICATOR_REGISTRY",
     "EXIT_STRATEGY_REGISTRY",
@@ -122,4 +135,5 @@ __all__ = [
     "PREPROCESSOR_REGISTRY",
     "BROKER_ADAPTER_REGISTRY",
     "RISK_MANAGER_REGISTRY",
+    "DATA_LOADER_REGISTRY",
 ]

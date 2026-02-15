@@ -225,7 +225,7 @@ class PluginRegistry:
         self._package_manifests[namespace] = package_manifest
 
         # Scan for plugin categories
-        for category in ["indicators", "preprocessing", "feature_selection", "exit_strategies", "risk_management"]:
+        for category in ["data_loading", "indicators", "preprocessing", "feature_selection", "exit_strategies", "risk_management"]:
             category_dir = package_dir / category
             if category_dir.is_dir():
                 discovered.extend(
