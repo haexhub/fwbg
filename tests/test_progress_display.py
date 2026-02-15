@@ -1,10 +1,13 @@
 """Tests für die Progress-Anzeige (Konsole)."""
+import os
 import time
 import pytest
+from multiprocessing import Queue
 from unittest.mock import MagicMock, patch
 
 from fwbg.utils.progress import (
     ProgressTracker,
+    report_meta,
     set_parallel_mode,
     is_parallel_mode,
 )
@@ -346,3 +349,126 @@ class TestQueueBasedUpdates:
 
         assert 1001 not in tracker.worker_status
         assert "EURUSD" not in tracker.worker_phases
+
+
+class TestReportMeta:
+    """Tests für report_meta() und Indikator-Anzeige im TUI."""
+
+    def test_report_meta_sends_queue_message(self):
+        """report_meta() sollte eine Meta-Message an die Queue senden."""
+        import fwbg.utils.progress as prog
+        q = Queue()
+        old_queue = prog._progress_queue
+        prog._progress_queue = q
+        try:
+            report_meta("EURUSD", indicator_count=11, feature_count=352)
+            msg = q.get(timeout=1)
+            assert msg["type"] == "meta"
+            assert msg["symbol"] == "EURUSD"
+            assert msg["indicator_count"] == 11
+            assert msg["feature_count"] == 352
+        finally:
+            prog._progress_queue = old_queue
+            q.close()
+
+    def test_report_meta_without_queue(self):
+        """report_meta() ohne Queue sollte nicht crashen."""
+        import fwbg.utils.progress as prog
+        old_queue = prog._progress_queue
+        prog._progress_queue = None
+        try:
+            report_meta("EURUSD", indicator_count=5)  # Should not raise
+        finally:
+            prog._progress_queue = old_queue
+
+    def test_tracker_stores_meta(self):
+        """ProgressTracker sollte Meta-Daten pro Symbol speichern."""
+        tracker = ProgressTracker(total_assets=3)
+
+        msg = {"type": "meta", "symbol": "EURUSD", "indicator_count": 11, "feature_count": 352}
+        tracker.worker_meta[msg["symbol"]] = {
+            k: v for k, v in msg.items() if k not in ("type", "symbol")
+        }
+
+        assert "EURUSD" in tracker.worker_meta
+        assert tracker.worker_meta["EURUSD"]["indicator_count"] == 11
+        assert tracker.worker_meta["EURUSD"]["feature_count"] == 352
+
+    def test_tracker_has_worker_meta_attribute(self):
+        """ProgressTracker sollte worker_meta Dict haben."""
+        tracker = ProgressTracker(total_assets=3)
+        assert hasattr(tracker, "worker_meta")
+        assert isinstance(tracker.worker_meta, dict)
+
+    def test_grid_line_shows_feature_count(self):
+        """Grid-Progress-Zeile sollte Feature-Anzahl enthalten wenn bekannt."""
+        tracker = ProgressTracker(total_assets=2, asset_names=["EURUSD", "GBPUSD"])
+        tracker._is_tty = True
+        tracker.start_time = time.time() - 60
+        tracker.completed_symbols = []
+
+        # Meta-Daten mit feature_count (nach erstem Fold bekannt)
+        tracker.worker_meta["EURUSD"] = {"indicator_count": 11, "feature_count": 352}
+
+        # Grid-Progress setzen
+        tracker.worker_status["EURUSD"] = {
+            "symbol": "EURUSD",
+            "fold": 2, "total_folds": 8,
+            "grid_pos": 12, "grid_total": 16,
+            "time": time.time(),
+        }
+
+        # Render und Output abfangen
+        with patch('sys.stdout') as mock_stdout:
+            mock_stdout.isatty = MagicMock(return_value=True)
+            mock_stdout.write = MagicMock()
+            mock_stdout.flush = MagicMock()
+            tracker._last_display_lines = 0
+            tracker._render()
+
+            output = "".join(
+                call.args[0] for call in mock_stdout.write.call_args_list
+            )
+            assert "352 Feat" in output
+            assert "F2/8" in output
+            assert "(12/16)" in output
+
+    def test_grid_line_shows_plugin_count_as_fallback(self):
+        """Vor erstem Fold: Plugin-Anzahl als Fallback anzeigen."""
+        tracker = ProgressTracker(total_assets=2, asset_names=["EURUSD", "GBPUSD"])
+        tracker._is_tty = True
+        tracker.start_time = time.time() - 60
+        tracker.completed_symbols = []
+
+        # Nur indicator_count (feature_count noch nicht bekannt)
+        tracker.worker_meta["EURUSD"] = {"indicator_count": 11}
+
+        tracker.worker_status["EURUSD"] = {
+            "symbol": "EURUSD",
+            "fold": 1, "total_folds": 8,
+            "grid_pos": 5, "grid_total": 16,
+            "time": time.time(),
+        }
+
+        with patch('sys.stdout') as mock_stdout:
+            mock_stdout.isatty = MagicMock(return_value=True)
+            mock_stdout.write = MagicMock()
+            mock_stdout.flush = MagicMock()
+            tracker._last_display_lines = 0
+            tracker._render()
+
+            output = "".join(
+                call.args[0] for call in mock_stdout.write.call_args_list
+            )
+            assert "11 Plugins" in output
+
+    def test_done_clears_meta(self):
+        """Done-Message sollte Meta-Daten für Symbol entfernen."""
+        tracker = ProgressTracker(total_assets=3)
+        tracker.worker_meta["EURUSD"] = {"indicator_count": 11}
+
+        # Simuliere done
+        msg = {"type": "done", "symbol": "EURUSD", "status": "ok"}
+        tracker.worker_meta.pop(msg["symbol"], None)
+
+        assert "EURUSD" not in tracker.worker_meta
