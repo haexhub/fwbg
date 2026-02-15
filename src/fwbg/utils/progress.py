@@ -135,6 +135,31 @@ def report_phase(symbol: str, phase: str):
             pass
 
 
+def report_meta(symbol: str, **kwargs):
+    """
+    Meldet statische Metadaten für ein Symbol (einmalig pro Run).
+
+    Wird im TUI neben dem Grid-Fortschritt angezeigt, damit
+    ersichtlich ist, warum manche Assets länger brauchen.
+
+    Args:
+        symbol: Asset-Symbol (z.B. "EURUSD")
+        **kwargs: Beliebige Metadaten, z.B. indicator_count=11, feature_count=352
+    """
+    if _progress_queue is not None:
+        try:
+            msg = {
+                "type": "meta",
+                "pid": os.getpid(),
+                "symbol": symbol,
+                "time": time.time(),
+            }
+            msg.update(kwargs)
+            _progress_queue.put_nowait(msg)
+        except Exception:
+            pass
+
+
 def report_result(symbol: str, status: str, summary: str):
     """
     Meldet ein fertiges Ergebnis für sofortige Anzeige im Progress-UI.
@@ -181,6 +206,7 @@ class ProgressTracker:
         self.worker_phases: Dict[str, str] = {}  # symbol -> aktuelle Phase
         self.worker_phase_times: Dict[str, float] = {}  # symbol -> Zeitstempel der letzten Phase
         self.worker_results: Dict[str, str] = {}  # symbol -> Ergebnis-Zusammenfassung
+        self.worker_meta: Dict[str, dict] = {}  # symbol -> statische Metadaten (indicator_count, etc.)
         self.start_time = None
         self._stop_event = threading.Event()
         self._display_thread = None
@@ -274,6 +300,14 @@ class ProgressTracker:
                             # Phase-Update: Symbol -> Phase-Text speichern
                             self.worker_phases[msg["symbol"]] = msg["phase"]
                             self.worker_phase_times[msg["symbol"]] = msg.get("time", time.time())
+                        elif msg_type == "meta":
+                            # Statische Metadaten (indicator_count, etc.)
+                            symbol = msg.get("symbol")
+                            if symbol:
+                                self.worker_meta[symbol] = {
+                                    k: v for k, v in msg.items()
+                                    if k not in ("type", "pid", "symbol", "time")
+                                }
                         elif msg_type == "done":
                             # Remove by symbol
                             symbol = msg.get("symbol")
@@ -281,6 +315,7 @@ class ProgressTracker:
                                 self.worker_status.pop(symbol, None)
                                 self.worker_phases.pop(symbol, None)
                                 self.worker_phase_times.pop(symbol, None)
+                                self.worker_meta.pop(symbol, None)
                                 # Sofort als fertig markieren für Display
                                 # (Result kommt später per IPC/Pickle)
                                 if symbol not in self.completed_symbols:
@@ -350,6 +385,7 @@ class ProgressTracker:
             phases = dict(self.worker_phases)
             phase_times = dict(self.worker_phase_times)
             results = dict(self.worker_results)
+            meta = dict(self.worker_meta)
 
         elapsed = time.time() - self.start_time if self.start_time else 0
 
@@ -371,7 +407,7 @@ class ProgressTracker:
 
         if self._is_tty:
             # TTY: Fixes Fenster mit Cursor-Steuerung
-            self._render_fixed_window(completed, total_progress, pct, elapsed_str, eta_str, active_workers, completed_symbols, phases, phase_times, results)
+            self._render_fixed_window(completed, total_progress, pct, elapsed_str, eta_str, active_workers, completed_symbols, phases, phase_times, results, meta)
         else:
             # Non-TTY: Kompakte einzeilige Ausgabe
             self._render_compact(completed, pct, elapsed_str, eta_str, phases)
@@ -380,7 +416,8 @@ class ProgressTracker:
                               elapsed_str: str, eta_str: str, active_workers: Dict,
                               completed_symbols: List[str], phases: Dict[str, str],
                               phase_times: Dict[str, float] = None,
-                              results: Dict[str, str] = None):
+                              results: Dict[str, str] = None,
+                              meta: Dict[str, dict] = None):
         """Rendert ein fixes Fenster mit allen Assets und deren Fortschritt."""
         lines = []
 
@@ -437,6 +474,17 @@ class ProgressTracker:
                 if show_grid:
                     bar_width = 12
 
+                    # Feature-Info aus Meta-Daten
+                    sym_meta = meta.get(sym, {}) if meta else {}
+                    feat_count = sym_meta.get("feature_count", 0)
+                    ind_count = sym_meta.get("indicator_count", 0)
+                    if feat_count:
+                        ind_suffix = f" {feat_count} Feat"
+                    elif ind_count:
+                        ind_suffix = f" {ind_count} Plugins"
+                    else:
+                        ind_suffix = ""
+
                     if fold > 0 and total_folds > 0:
                         # Gesamt-Asset-Fortschritt über alle Folds (monoton steigend)
                         asset_progress = ((fold - 1) + (grid_pos / grid_total)) / total_folds
@@ -444,17 +492,13 @@ class ProgressTracker:
                         filled = int(bar_width * asset_progress)
                         bar = "▓" * filled + "░" * (bar_width - filled)
 
-                        # Kumulativer Grid-Fortschritt über alle Folds
-                        cumul_done = (fold - 1) * grid_total + grid_pos
-                        cumul_total = total_folds * grid_total
-
-                        # Format: SYMBOL [████░░░░] 18.8% F2/8 (101/128)
-                        line = f"║  → {sym:<8} [{bar}] {asset_pct:5.1f}% F{fold}/{total_folds} ({cumul_done}/{cumul_total})"
+                        # Format: SYMBOL [████░░░░] 18.8% F2/8 (12/16) 352 Feat
+                        line = f"║  → {sym:<8} [{bar}] {asset_pct:5.1f}% F{fold}/{total_folds} ({grid_pos}/{grid_total}){ind_suffix}"
                     else:
                         fold_pct = grid_pos / grid_total * 100
                         filled = int(bar_width * grid_pos / grid_total)
                         bar = "▓" * filled + "░" * (bar_width - filled)
-                        line = f"║  → {sym:<8} [{bar}] {fold_pct:5.1f}% ({grid_pos}/{grid_total})"
+                        line = f"║  → {sym:<8} [{bar}] {fold_pct:5.1f}% ({grid_pos}/{grid_total}){ind_suffix}"
 
                     lines.append(line.ljust(WIDTH - 1) + "║")
                 elif phase:
