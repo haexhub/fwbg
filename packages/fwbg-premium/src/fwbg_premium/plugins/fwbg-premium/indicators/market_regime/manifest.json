@@ -1,0 +1,5 @@
+{
+  "name": "market_regime",
+  "version": "1.0.0",
+  "description": "Risk-On/Off composite regime indicator from macro data"
+}

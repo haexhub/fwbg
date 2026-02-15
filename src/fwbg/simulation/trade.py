@@ -200,6 +200,29 @@ def calculate_calmar_ratio(returns, risk_per_trade, rrr):
     return min(10.0, total_return / max_dd)
 
 
+def calculate_calmar_from_returns(trade_returns):
+    """Calmar Ratio from pre-computed per-trade returns (for variable position sizing)."""
+    if not trade_returns:
+        return 0.0
+
+    equity = [100.0]
+    for r in trade_returns:
+        equity.append(equity[-1] * (1 + r))
+
+    peak = equity[0]
+    max_dd = 0.0
+    for e in equity:
+        if e > peak:
+            peak = e
+        dd = (peak - e) / peak
+        if dd > max_dd:
+            max_dd = dd
+
+    max_dd = max(max_dd, 0.01)
+    total_return = (equity[-1] - equity[0]) / equity[0]
+    return min(10.0, total_return / max_dd)
+
+
 def _load_ohlc_csv(path):
     """
     Lädt eine OHLC CSV-Datei mit flexibler Format-Erkennung.
@@ -655,6 +678,59 @@ def monte_carlo_equity_simulation(trades, risk_per_trade, rrr, n_simulations=100
     bankruptcies = 0
     for _ in range(n_simulations):
         permuted = rng.permutation(trades_arr)
+        final_eq = simulate_equity(permuted)
+        final_equities.append(final_eq)
+        if final_eq <= 0:
+            bankruptcies += 1
+
+    final_equities = np.array(final_equities)
+
+    return {
+        "median_equity": float(np.median(final_equities)),
+        "mean_equity": float(np.mean(final_equities)),
+        "p5_equity": float(np.percentile(final_equities, 5)),
+        "p25_equity": float(np.percentile(final_equities, 25)),
+        "p75_equity": float(np.percentile(final_equities, 75)),
+        "p95_equity": float(np.percentile(final_equities, 95)),
+        "bankruptcy_rate": bankruptcies / n_simulations,
+        "observed_equity": float(observed_equity),
+        "n_simulations": n_simulations,
+    }
+
+
+def monte_carlo_equity_from_returns(trade_returns, n_simulations=1000, random_seed=42):
+    """Monte Carlo equity simulation from pre-computed per-trade returns.
+
+    Like monte_carlo_equity_simulation but accepts variable-sized returns
+    instead of binary trades + fixed risk. Used by vol_targeted_kelly.
+    """
+    if len(trade_returns) < 10:
+        return {
+            "median_equity": 100.0,
+            "p5_equity": 100.0,
+            "p95_equity": 100.0,
+            "bankruptcy_rate": 0.0,
+            "observed_equity": 100.0,
+            "n_simulations": 0,
+        }
+
+    rng = np.random.default_rng(random_seed)
+    returns_arr = np.array(trade_returns)
+
+    def simulate_equity(returns_seq):
+        equity = 100.0
+        for r in returns_seq:
+            equity *= 1 + r
+            if equity <= 0:
+                return 0.0
+        return equity
+
+    observed_equity = simulate_equity(returns_arr)
+
+    final_equities = []
+    bankruptcies = 0
+    for _ in range(n_simulations):
+        permuted = rng.permutation(returns_arr)
         final_eq = simulate_equity(permuted)
         final_equities.append(final_eq)
         if final_eq <= 0:

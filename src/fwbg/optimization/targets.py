@@ -81,6 +81,8 @@ def _simulate_trades_core(
     atr = df["_atr"].values if "_atr" in df.columns else np.zeros(len(df))
     regime = df["_regime_ok"].values
     timestamps = df.index.values
+    has_rv = "vol_rv_20" in df.columns
+    rv_values = df["vol_rv_20"].values if has_rv else None
 
     trades = []
     trades_detailed = [] if return_detailed else None
@@ -112,7 +114,12 @@ def _simulate_trades_core(
                 timeout_bars=timeout_bars
             )
             if trade:
-                trades.append({"result": trade["result"], "pnl_raw": trade["pnl_raw"]})
+                t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"]}
+                if has_rv:
+                    rv_val = float(rv_values[i])
+                    if not np.isnan(rv_val):
+                        t["rv_at_entry"] = rv_val
+                trades.append(t)
                 next_allowed_entry = trade["exit_idx"] + 1
 
                 if return_detailed:

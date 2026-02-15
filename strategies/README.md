@@ -46,7 +46,7 @@ Jeder Indikator ist ein Plugin mit eigenem Namen und Parametern. Kurze Namen (`"
 |--------|--------------|----------|
 | `trend` | ADX, EMA, SMA, MACD, CCI, Aroon, Supertrend, Efficiency Ratio | `trend_` |
 | `momentum` | RSI, Stochastic, Williams %R, ROC | `mom_` |
-| `volatility` | Bollinger Bands, ATR, Volatilitätsschätzer | `vol_` |
+| `volatility` | Bollinger Bands, ATR, Volatilitätsschätzer, Vol Compression, RV vs IV Spread | `vol_` |
 | `price_action` | Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
 | `time_season` | Stunde, Wochentag, Monat, Quartal, Saisonalität | `time_`, `season_` |
 
@@ -60,10 +60,11 @@ Jeder Indikator ist ein Plugin mit eigenem Namen und Parametern. Kurze Namen (`"
 | `distribution` | Skewness, Kurtosis, Z-Score | `dist_` |
 | `dynamics` | Indikator-Änderungen, Lags, Beschleunigung | `dyn_`, `lag_`, `accel_` |
 | `multi_timeframe` | H4/D1 aggregierte Features | `mtf_` |
-| `cross_features` | Kombinierte Signale aus mehreren Indikatoren | `cross_` |
+| `cross_features` | Kombinierte Signale, COT × Vol Interaction, Positioning Divergence | `cross_` |
 | `ichimoku` | Ichimoku Cloud Komponenten | `ichi_` |
 | `macro_surprise` | Makro-Überraschungen, Gap-Analyse | `macro_surprise_` |
 | `microstructure` | Bar-Microstructure, Tick-Proxies | `micro_` |
+| `market_regime` | Risk-On/Off Composite aus VIX, Credit, Equity, Treasury | `regime_vix_`, `regime_credit_`, `regime_risk_` |
 
 **Beispiel:**
 
@@ -150,7 +151,33 @@ Default-Konfiguration des Plugins umfasst 28 Makro-Indikatoren, Stunden-/Tages-L
 
 ```json
 "data_loading": [
-  {"name": "macro_data", "source": "forexsb"}
+  {"name": "macro_data", "source": "forexsb"},
+  {"name": "cot_positioning", "source": "forexsb"}
+]
+```
+
+#### cot_positioning
+
+Lädt CFTC Commitment of Traders Positioning-Daten und berechnet Z-Scores, Extreme-Flags und Wochen-Momentum.
+
+| Parameter | Typ | Beschreibung |
+|-----------|-----|--------------|
+| `source` | string | Datenquelle (z.B. `"forexsb"`) |
+
+Erwartet `macro_cot_*`-Spalten im DataFrame (geladen via DataSource aus `COT_{SYMBOL}_DAY.csv`).
+
+**Berechnete Features pro COT-Spalte:**
+- `cot_{pair}_zscore` — 52-Wochen Z-Score der Netto-Position
+- `cot_{pair}_extreme_long` / `cot_{pair}_extreme_short` — Extreme Positioning Flags (|z| > 2.0)
+- `cot_{pair}_crowded` — Crowded Trade Flag (|z| > 1.5)
+- `cot_{pair}_chg_{1,4,12,26}w` — Wochen-Momentum der Netto-Position
+
+Alle Features werden um 1 Bar geshiftet (Lookahead Prevention).
+
+```json
+"data_loading": [
+  {"name": "macro_data", "source": "forexsb"},
+  {"name": "cot_positioning", "source": "forexsb"}
 ]
 ```
 
@@ -385,13 +412,15 @@ Alle Kombinationen werden getestet (kartesisches Produkt). Mehrere Conditions we
       {"name": "cross_features", "params": {}},
       {"name": "ichimoku", "params": {}},
       {"name": "microstructure", "params": {}},
-      {"name": "macro_surprise", "params": {}}
+      {"name": "macro_surprise", "params": {}},
+      {"name": "market_regime", "params": {"window": 50}}
     ],
     "feature_selection": [
       {"name": "boruta", "params": {"max_features": 20}}
     ],
     "data_loading": [
-      {"name": "macro_data", "source": "forexsb"}
+      {"name": "macro_data", "source": "forexsb"},
+      {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
   "exit_strategy": "fixed",
@@ -424,10 +453,15 @@ Alle Kombinationen werden getestet (kartesisches Produkt). Mehrere Conditions we
       {"name": "momentum", "params": {"rsi_periods": [5, 7, 14], "stoch_periods": [5, 9, 14]}},
       {"name": "volatility", "params": {"atr_periods": [5, 7, 14]}},
       {"name": "dynamics", "params": {"lookbacks": [2, 4, 8]}},
-      {"name": "microstructure", "params": {"atr_period": 7, "rolling_window": 3}}
+      {"name": "microstructure", "params": {"atr_period": 7, "rolling_window": 3}},
+      {"name": "market_regime", "params": {"window": 50}}
     ],
     "feature_selection": [
       {"name": "boruta", "params": {"max_features": 25}}
+    ],
+    "data_loading": [
+      {"name": "macro_data", "source": "forexsb"},
+      {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
   "exit_strategy": "fixed",
@@ -453,10 +487,15 @@ Alle Kombinationen werden getestet (kartesisches Produkt). Mehrere Conditions we
       {"name": "regime", "params": {"hurst_windows": [100, 200, 500]}},
       {"name": "multi_timeframe", "params": {"h4_bars": 4, "d1_bars": 24, "ema_periods": [20, 50, 100]}},
       {"name": "structure", "params": {}},
-      {"name": "risk", "params": {"dd_windows": [100, 200, 500]}}
+      {"name": "risk", "params": {"dd_windows": [100, 200, 500]}},
+      {"name": "market_regime", "params": {"window": 50}}
     ],
     "feature_selection": [
       {"name": "boruta", "params": {"max_features": 30}}
+    ],
+    "data_loading": [
+      {"name": "macro_data", "source": "forexsb"},
+      {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
   "exit_strategy": "fixed",
@@ -480,7 +519,12 @@ Alle Kombinationen werden getestet (kartesisches Produkt). Mehrere Conditions we
     "indicators": [
       {"name": "trend", "params": {}},
       {"name": "momentum", "params": {}},
-      {"name": "volatility", "params": {}}
+      {"name": "volatility", "params": {}},
+      {"name": "market_regime", "params": {"window": 50}}
+    ],
+    "data_loading": [
+      {"name": "macro_data", "source": "forexsb"},
+      {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
   "exit_strategy": "atr_based",

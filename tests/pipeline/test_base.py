@@ -14,18 +14,28 @@ def test_plugin_phase_enum():
     assert PluginPhase.PREPROCESSING.value == "preprocessing"
     assert PluginPhase.INDICATORS.value == "indicators"
     assert PluginPhase.FEATURE_SELECTION.value == "feature_selection"
+    assert PluginPhase.EXIT_STRATEGIES.value == "exit_strategies"
+    assert PluginPhase.RISK_MANAGEMENT.value == "risk_management"
     assert PluginPhase.LABELING.value == "labeling"
     assert PluginPhase.MODEL.value == "model"
     assert PluginPhase.VALIDATION.value == "validation"
 
-    # Verify exactly 7 phases
-    assert len(PluginPhase) == 7
+    # Verify exactly 9 phases
+    assert len(PluginPhase) == 9
 
 
 def test_base_plugin_is_abstract():
-    """BasePlugin() raises TypeError because it's abstract."""
-    with pytest.raises(TypeError):
-        BasePlugin()
+    """BasePlugin is abstract (ABC) but has no abstract methods.
+    It can't pass __init_subclass__ validation without name/phase,
+    but direct instantiation works since execute/validate have defaults.
+    """
+    # BasePlugin itself can be instantiated (no abstractmethods)
+    # but __init_subclass__ prevents concrete subclasses without name/phase
+    plugin = BasePlugin()
+    assert plugin._fitted is False
+    # execute raises NotImplementedError by default
+    with pytest.raises(NotImplementedError):
+        plugin.execute(None)
 
 
 def test_base_plugin_required_attributes():
@@ -34,40 +44,13 @@ def test_base_plugin_required_attributes():
     with pytest.raises(TypeError, match="name"):
 
         class MissingName(BasePlugin):
-            version = "1.0.0"
             phase = PluginPhase.PREPROCESSING
-
-            def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
-                return ctx
-
-            def validate(self) -> bool:
-                return True
-
-    # Missing version
-    with pytest.raises(TypeError, match="version"):
-
-        class MissingVersion(BasePlugin):
-            name = "test_plugin"
-            phase = PluginPhase.PREPROCESSING
-
-            def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
-                return ctx
-
-            def validate(self) -> bool:
-                return True
 
     # Missing phase
     with pytest.raises(TypeError, match="phase"):
 
         class MissingPhase(BasePlugin):
             name = "test_plugin"
-            version = "1.0.0"
-
-            def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
-                return ctx
-
-            def validate(self) -> bool:
-                return True
 
 
 def test_concrete_plugin_implementation():
@@ -77,12 +60,6 @@ def test_concrete_plugin_implementation():
         name = "concrete_plugin"
         version = "1.0.0"
         phase = PluginPhase.INDICATORS
-
-        def execute(self, ctx: PipelineContext, **params) -> PipelineContext:
-            return ctx
-
-        def validate(self) -> bool:
-            return True
 
     plugin = ConcretePlugin()
 
@@ -101,6 +78,16 @@ def test_concrete_plugin_implementation():
     # Verify default methods return expected values
     assert plugin.get_default_params() == {}
     assert plugin.get_feature_columns() == []
+
+
+def test_concrete_plugin_version_default():
+    """Plugin without explicit version gets default 0.1.0."""
+
+    class MinimalPlugin(BasePlugin):
+        name = "minimal"
+        phase = PluginPhase.INDICATORS
+
+    assert MinimalPlugin.version == "0.1.0"
 
 
 def test_plugin_execute():

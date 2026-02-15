@@ -1,5 +1,12 @@
-"""Kelly Criterion Risk Manager Plugin."""
-from typing import Dict, Any, List
+"""Kelly Criterion + Volatility Targeting Risk Manager.
+
+Scales position size per trade based on realized volatility:
+low RV → bigger position, high RV → smaller position.
+Smooths equity curve and improves risk-adjusted returns.
+"""
+from typing import Dict, Any, List, Optional
+
+import numpy as np
 
 from fwbg.plugins import BaseRiskManager
 from fwbg.core import register_risk_manager
@@ -9,9 +16,9 @@ from fwbg.simulation.trade import (
 )
 
 
-@register_risk_manager("kelly")
-class KellyRiskManager(BaseRiskManager):
-    """Quarter-Kelly with DD adjustment and circuit breaker."""
+@register_risk_manager("vol_targeted_kelly")
+class VolTargetedKellyRiskManager(BaseRiskManager):
+    """Quarter-Kelly with per-trade volatility targeting."""
 
     def compute_risk_params(
         self,
@@ -24,9 +31,13 @@ class KellyRiskManager(BaseRiskManager):
         target_max_dd: float = 0.30,
         circuit_breaker_loss_range: tuple = (3, 8),
         circuit_breaker_pause_range: tuple = (5, 30),
+        target_vol: float = 15.0,
+        min_scale: float = 0.25,
+        max_scale: float = 2.0,
+        rv_values: Optional[List[float]] = None,
         **params
     ) -> Dict[str, Any]:
-        # Full Kelly formula
+        # Base Kelly
         full_kelly = (win_rate * rrr - (1 - win_rate)) / rrr if rrr > 0 else 0
         fk = max(0, min(max_risk, full_kelly * kelly_fraction))
 
@@ -35,7 +46,6 @@ class KellyRiskManager(BaseRiskManager):
                 "risk_per_trade": 0,
                 "is_profitable": False,
                 "full_kelly": full_kelly,
-                "trade_returns": [0.0] * len(trades),
                 "circuit_breaker": {
                     "pause_after_losses": 0, "pause_bars": 0, "enabled": False,
                 },
@@ -44,7 +54,7 @@ class KellyRiskManager(BaseRiskManager):
                 },
             }
 
-        # Drawdown adjustment
+        # DD adjustment
         kelly_adj = adjust_risk_for_target_dd(
             trades, fk, rrr, target_max_dd=target_max_dd
         )
@@ -58,13 +68,10 @@ class KellyRiskManager(BaseRiskManager):
             pause_range=circuit_breaker_pause_range,
         )
 
-        trade_returns = [fk * rrr if t > 0 else -fk for t in trades]
-
-        return {
+        result = {
             "risk_per_trade": fk,
             "is_profitable": True,
             "full_kelly": full_kelly,
-            "trade_returns": trade_returns,
             "circuit_breaker": {
                 "pause_after_losses": cb["optimal_pause_after_losses"],
                 "pause_bars": cb["optimal_pause_bars"],
@@ -78,6 +85,28 @@ class KellyRiskManager(BaseRiskManager):
             },
         }
 
+        # Vol targeting: per-trade position scaling
+        if rv_values and len(rv_values) == len(trades):
+            rv_arr = np.array(rv_values, dtype=float)
+            scales = np.clip(target_vol / np.clip(rv_arr, 1e-6, None), min_scale, max_scale)
+
+            result["trade_returns"] = [
+                fk * s * rrr if t > 0 else -fk * s
+                for t, s in zip(trades, scales)
+            ]
+            result["vol_targeting"] = {
+                "target_vol": target_vol,
+                "mean_scale": float(np.mean(scales)),
+                "min_scale_used": float(np.min(scales)),
+                "max_scale_used": float(np.max(scales)),
+                "mean_fk_adjusted": float(fk * np.mean(scales)),
+            }
+        else:
+            # No RV data: fixed sizing (same as Kelly)
+            result["trade_returns"] = [fk * rrr if t > 0 else -fk for t in trades]
+
+        return result
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {
@@ -86,7 +115,10 @@ class KellyRiskManager(BaseRiskManager):
             "target_max_dd": 0.30,
             "circuit_breaker_loss_range": [3, 8],
             "circuit_breaker_pause_range": [5, 30],
+            "target_vol": 15.0,
+            "min_scale": 0.25,
+            "max_scale": 2.0,
         }
 
 
-__all__ = ["KellyRiskManager"]
+__all__ = ["VolTargetedKellyRiskManager"]

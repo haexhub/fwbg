@@ -3,71 +3,18 @@ from typing import List, Optional
 import pandas as pd
 
 
-# =============================================================================
-# Plugin Names (Fully Qualified)
-# =============================================================================
-
-# Core package indicators (free)
-CORE_INDICATORS = [
-    "fwbg-core:trend",
-    "fwbg-core:momentum",
-    "fwbg-core:volatility",
-    "fwbg-core:time_season",
-    "fwbg-core:price_action",
-]
-
-# Premium package indicators
-PREMIUM_INDICATORS = [
-    "fwbg-premium:regime",
-    "fwbg-premium:structure",
-    "fwbg-premium:risk",
-    "fwbg-premium:distribution",
-    "fwbg-premium:dynamics",
-    "fwbg-premium:cross_features",
-    "fwbg-premium:ichimoku",
-    "fwbg-premium:multi_timeframe",
-    "fwbg-premium:macro_surprise",
-    "fwbg-premium:microstructure",
-]
-
-# All indicators (core + premium)
-ALL_INDICATORS = CORE_INDICATORS + PREMIUM_INDICATORS
-
-# Premium preprocessing
-PREMIUM_PREPROCESSING = [
-    "fwbg-premium:fractional_diff",
-]
-
-# Premium feature selection
-PREMIUM_FEATURE_SELECTION = [
-    "fwbg-premium:boruta",
-    "fwbg-premium:plateau",
-]
-
-# Mapping from short name to fully qualified name for convenience
-_SHORT_TO_FQ_NAME = {}
-for fq in ALL_INDICATORS + PREMIUM_PREPROCESSING + PREMIUM_FEATURE_SELECTION:
-    parts = fq.split(":")
-    if len(parts) == 2:
-        _SHORT_TO_FQ_NAME[parts[1]] = fq
-
-
 def normalize_plugin_name(name: str) -> str:
-    """
-    Normalize a plugin name to fully qualified form.
+    """Normalize a plugin name to fully qualified form.
 
-    Accepts both short names ("trend") and fully qualified names ("fwbg-core:trend").
-    Short names are resolved using the default package mapping.
-
-    Args:
-        name: Plugin name (short or fully qualified)
-
-    Returns:
-        Fully qualified plugin name
+    Resolves short names ("trend") dynamically from the plugin registry.
+    Already qualified names ("fwbg-core:trend") pass through unchanged.
     """
     if ":" in name:
-        return name  # Already fully qualified
-    return _SHORT_TO_FQ_NAME.get(name, name)  # Fallback to original if not found
+        return name
+    from fwbg.pipeline.registry import get_registry
+    registry = get_registry()
+    registry.auto_discover()
+    return registry.resolve_name(name)
 
 
 def split_indicators_by_stationarity(
@@ -176,7 +123,6 @@ def compute_regime_filter(
 def compute_indicator_pool(
     df: pd.DataFrame,
     indicators: Optional[List] = None,
-    include_premium: bool = True,
     progress_callback=None,
 ) -> pd.DataFrame:
     """
@@ -184,9 +130,8 @@ def compute_indicator_pool(
 
     Args:
         df: DataFrame with OHLC data (columns: O, H, L, C, optional V)
-        indicators: List of fully qualified indicator names (e.g., ["fwbg-core:trend"]).
-                   If None, uses ALL_INDICATORS or CORE_INDICATORS based on include_premium.
-        include_premium: Include premium indicators when indicators=None
+        indicators: List of indicator configs (dicts or strings).
+                   If None, uses all discovered indicator plugins.
         progress_callback: Optional callback(name, idx, total) for progress updates
 
     Returns:
@@ -195,13 +140,14 @@ def compute_indicator_pool(
     from fwbg.pipeline import (
         PipelineRunner, PipelineContext, PipelineConfig, PluginConfig, get_registry
     )
+    from fwbg.pipeline.base import PluginPhase
 
     registry = get_registry()
     registry.auto_discover()
 
     # Determine which indicators to use
     if indicators is None:
-        indicator_names = ALL_INDICATORS if include_premium else CORE_INDICATORS
+        indicator_names = registry.list_plugins(phase=PluginPhase.INDICATORS)
     else:
         indicator_names = indicators
 
@@ -272,18 +218,11 @@ def select_best_plateau_candidate(*args, **kwargs):
 
 
 __all__ = [
-    # Plugin names
-    "CORE_INDICATORS",
-    "PREMIUM_INDICATORS",
-    "ALL_INDICATORS",
-    "PREMIUM_PREPROCESSING",
-    # Utility functions
     "get_feature_columns",
     "compute_regime_filter",
     "compute_indicator_pool",
     "normalize_plugin_name",
     "split_indicators_by_stationarity",
-    # Parameter plateau (grid search)
     "calculate_param_plateau_score",
     "select_best_plateau_candidate",
 ]

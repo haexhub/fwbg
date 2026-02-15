@@ -7,6 +7,6 @@
   "plugins": {
     "indicators": ["trend", "momentum", "volatility", "time_season", "price_action"],
     "exit_strategies": ["fixed"],
-    "risk_management": ["kelly"]
+    "risk_management": ["kelly", "vol_targeted_kelly"]
   }
 }

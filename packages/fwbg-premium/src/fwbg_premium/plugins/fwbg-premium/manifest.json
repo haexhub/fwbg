@@ -7,11 +7,12 @@
   "plugins": {
     "indicators": [
       "regime", "structure", "risk", "distribution", "dynamics",
-      "cross_features", "ichimoku", "multi_timeframe", "macro_surprise", "microstructure"
+      "cross_features", "ichimoku", "multi_timeframe", "macro_surprise", "microstructure",
+      "market_regime"
     ],
     "preprocessing": ["fractional_diff"],
     "feature_selection": ["boruta", "plateau"],
     "exit_strategies": ["atr_based"],
-    "data_loading": ["macro_data"]
+    "data_loading": ["macro_data", "cot_positioning"]
   }
 }

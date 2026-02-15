@@ -190,10 +190,10 @@ class TestProcessSymbolRiskConsistency:
         source = inspect.getsource(process_symbol)
 
         risk_mgr_pos = source.find("get_risk_manager(")
-        mc_equity_pos = source.find("monte_carlo_equity_simulation(")
+        mc_equity_pos = source.find("monte_carlo_equity_from_returns(")
 
         assert risk_mgr_pos != -1, "get_risk_manager call not found"
-        assert mc_equity_pos != -1, "monte_carlo_equity_simulation call not found"
+        assert mc_equity_pos != -1, "monte_carlo_equity_from_returns call not found"
 
         assert risk_mgr_pos < mc_equity_pos, (
             f"Risk management (pos {risk_mgr_pos}) must come BEFORE "
@@ -235,7 +235,7 @@ class TestProcessSymbolRiskConsistency:
         for i, line in enumerate(lines):
             if 'fk = risk_result["risk_per_trade"]' in line:
                 risk_assign_line = i
-            if 'monte_carlo_equity_simulation(' in line:
+            if 'monte_carlo_equity_from_returns(' in line:
                 mc_equity_line = i
 
         assert risk_assign_line is not None, (
@@ -246,7 +246,7 @@ class TestProcessSymbolRiskConsistency:
 
         assert risk_assign_line < mc_equity_line, (
             f"fk = risk_result[\"risk_per_trade\"] (line {risk_assign_line}) "
-            f"must come BEFORE monte_carlo_equity_simulation (line {mc_equity_line})"
+            f"must come BEFORE monte_carlo_equity_from_returns (line {mc_equity_line})"
         )
 
     def test_no_hardcoded_kelly_formula(self):

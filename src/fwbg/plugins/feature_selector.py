@@ -6,25 +6,17 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
+from fwbg.pipeline.base import BasePlugin, PluginPhase
 
-class BaseFeatureSelector(ABC):
+
+class BaseFeatureSelector(BasePlugin, ABC):
     """
     Basisklasse für Feature-Selection-Plugins.
 
     Feature-Selectors wählen die wichtigsten Features für das ML-Modell aus.
-
-    Beispiel:
-        ```python
-        from fwbg.plugins import BaseFeatureSelector
-
-        class BorutaSelector(BaseFeatureSelector):
-            def select_features(self, X, y, max_features=30, n_estimators=100):
-                # Boruta Feature Selection...
-                return selected_features, {'importance': {...}}
-        ```
     """
 
-    # Plugin-Name (wird vom Registry gesetzt)
+    phase = PluginPhase.FEATURE_SELECTION
     name: str = "base"
 
     @abstractmethod

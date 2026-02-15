@@ -4,18 +4,15 @@ BasePreprocessor - Abstrakte Basisklasse für Preprocessing-Plugins.
 from abc import ABC, abstractmethod
 import pandas as pd
 
+from fwbg.pipeline.base import BasePlugin, PluginPhase
 
-class BasePreprocessor(ABC):
+
+class BasePreprocessor(BasePlugin, ABC):
     """
     Basisklasse für Preprocessing-Plugins.
 
     Preprocessors transformieren OHLC-Daten (z.B. Fractional Differentiation
-    für Stationarität). Indicator-Plugins deklarieren in ihrer Manifest-Datei
-    per ``benefits_from_stationary``, ob sie von stationären Daten profitieren.
-    Wenn ja, wird die Feature-Berechnung nach dem Preprocessing gemacht,
-    ansonsten auf den Original-Daten.
-
-    Preprocessors folgen dem sklearn fit/transform Pattern
+    für Stationarität). Folgen dem sklearn fit/transform Pattern
     um Lookahead Bias zu verhindern.
 
     WICHTIG - Lookahead Bias Prevention:
@@ -24,7 +21,7 @@ class BasePreprocessor(ABC):
     - fit() wird für jeden CV-Fold SEPARAT aufgerufen
     """
 
-    # Plugin-Name (wird vom Registry gesetzt)
+    phase = PluginPhase.PREPROCESSING
     name: str = "base"
 
     # Ausführungsreihenfolge (niedriger = früher)

@@ -150,6 +150,33 @@ class CrossFeatureIndicators(BaseIndicator):
         features["cross_bearish_count"] = bearish_signals
         features["cross_signal_bias"] = bullish_signals - bearish_signals
 
+        # === COT Positioning × Volatility Interaction ===
+        # Extreme COT + low vol = explosive breakout potential
+        cot_cols = [c for c in df.columns if c.startswith("macro_cot_")]
+        atr_pct_rank = atr_pct.rolling(100, min_periods=50).rank(pct=True)
+
+        for col in cot_cols:
+            pair = col.replace("macro_", "")  # e.g. "cot_eurusd"
+            net = df[col]
+
+            # Inline z-score (from raw COT data, not pre-shifted)
+            window = 52 * 5 * 24  # 52 weeks in H1 bars
+            roll_mean = net.rolling(window, min_periods=window // 4).mean()
+            roll_std = net.rolling(window, min_periods=window // 4).std().clip(lower=1e-6)
+            zscore = (net - roll_mean) / roll_std
+
+            # Positioning × Vol: extreme position + low vol = explosive
+            inv_vol_rank = 1.0 / atr_pct_rank.clip(lower=0.01)
+            features[f"cross_{pair}_vol_interaction"] = zscore * inv_vol_rank
+
+            # Positioning Divergence: price momentum vs COT momentum
+            price_mom = df["C"].pct_change(5 * 24) * 100  # 5-day price momentum
+            cot_mom = net.pct_change(5 * 24)  # 5-day COT momentum
+            # Normalize both to z-scores for comparability
+            price_z = (price_mom - price_mom.rolling(500).mean()) / price_mom.rolling(500).std().clip(lower=1e-6)
+            cot_z = (cot_mom - cot_mom.rolling(500).mean()) / cot_mom.rolling(500).std().clip(lower=1e-6)
+            features[f"cross_{pair}_price_divergence"] = price_z - cot_z
+
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
         features_df = shift_features(features, df.index)
 
@@ -186,7 +213,7 @@ class CrossFeatureIndicators(BaseIndicator):
         }
 
     def get_feature_columns(self) -> List[str]:
-        return [
+        cols = [
             # RSI Conditional
             "cross_rsi_high_rising", "cross_rsi_low_falling",
             "cross_rsi_high_falling", "cross_rsi_low_rising",
@@ -206,6 +233,12 @@ class CrossFeatureIndicators(BaseIndicator):
             # Signal Counts
             "cross_bullish_count", "cross_bearish_count", "cross_signal_bias",
         ]
+        # COT Positioning × Volatility (dynamic per pair)
+        for pair in ["cot_eurusd", "cot_usdjpy", "cot_gbpusd", "cot_usdcad",
+                      "cot_audusd", "cot_usdchf", "cot_nzdusd"]:
+            cols.append(f"cross_{pair}_vol_interaction")
+            cols.append(f"cross_{pair}_price_divergence")
+        return cols
 
     @classmethod
     def get_default_params(cls) -> dict:

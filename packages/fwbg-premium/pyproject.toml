@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fwbg-premium"
+version = "1.0.0"
+description = "Premium plugins for FWBG - advanced indicators, exit strategies & more"
+requires-python = ">=3.11"
+license = {text = "Commercial"}
+authors = [
+    {name = "FWBG Team"}
+]
+dependencies = ["fwbg>=2.2.1"]
+
+[project.entry-points."fwbg.plugin_packages"]
+fwbg-premium = "fwbg_premium:get_plugins_dir"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json"]

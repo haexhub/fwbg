@@ -91,6 +91,25 @@ class PluginRegistry:
             raise PluginNotFoundError(f"Plugin '{name}' not found in registry")
         return self._plugins[name]
 
+    def resolve_name(self, name: str) -> str:
+        """Resolve a short plugin name to fully qualified form.
+
+        Returns as-is if already qualified (contains ':').
+        Raises ValueError if ambiguous (multiple matches).
+        Returns original name unchanged if no match found.
+        """
+        if ":" in name:
+            return name
+        matches = [fqn for fqn in self._plugins if fqn.split(":", 1)[1] == name]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(
+                f"Ambiguous plugin name '{name}' matches: {matches}. "
+                f"Use fully qualified name."
+            )
+        return name
+
     def list_plugins(
         self,
         phase: Optional[PluginPhase] = None,
@@ -329,11 +348,13 @@ class PluginRegistry:
 
     def auto_discover(self) -> List[str]:
         """
-        Automatically discover plugins from core packages and user directory.
+        Automatically discover plugins from core packages, installed packages,
+        and user directory.
 
         Discovers plugins from:
-        1. Core packages (fwbg-core, fwbg-premium) in plugins/
-        2. User packages (~/.fwbg/plugins/)
+        1. Built-in packages (fwbg-core) in plugins/
+        2. Installed packages via entry_points (fwbg-premium etc.)
+        3. User packages (~/.fwbg/plugins/)
 
         Returns:
             List of fully qualified plugin names discovered
@@ -341,19 +362,56 @@ class PluginRegistry:
         discovered: List[str] = []
         plugins_dir = get_core_plugins_dir()
 
-        # Discover from core packages
+        # 1. Built-in packages
         if plugins_dir.exists():
             for package_dir in plugins_dir.iterdir():
                 if package_dir.is_dir() and (package_dir / "manifest.json").exists():
                     discovered.extend(self.discover_package(package_dir))
 
-        # User plugins
+        # 2. Installed packages via entry_points
+        discovered.extend(self._discover_from_entry_points())
+
+        # 3. User plugins
         user_dir = get_user_plugins_dir()
         if user_dir.exists():
             for package_dir in user_dir.iterdir():
                 if package_dir.is_dir() and (package_dir / "manifest.json").exists():
                     discovered.extend(self.discover_package(package_dir))
 
+        return discovered
+
+    def _discover_from_entry_points(self) -> List[str]:
+        """
+        Discover plugins from pip-installed packages via entry_points.
+
+        Looks for packages registered under the 'fwbg.plugin_packages' group.
+        Each entry point should be a callable returning a Path to a plugins directory.
+
+        Returns:
+            List of fully qualified plugin names discovered
+        """
+        from importlib.metadata import entry_points
+
+        discovered: List[str] = []
+        seen_dirs: set = set()
+        try:
+            eps = entry_points(group="fwbg.plugin_packages")
+            for ep in eps:
+                try:
+                    get_dir = ep.load()
+                    plugins_dir = get_dir()
+                    resolved = plugins_dir.resolve()
+                    if resolved in seen_dirs:
+                        continue
+                    seen_dirs.add(resolved)
+                    if plugins_dir.is_dir():
+                        for package_dir in plugins_dir.iterdir():
+                            if package_dir.is_dir() and (package_dir / "manifest.json").exists():
+                                discovered.extend(self.discover_package(package_dir))
+                except Exception as e:
+                    logger.warning(f"Failed to load plugin package '{ep.name}': {e}")
+        except Exception:
+            pass
         return discovered
 
 def get_user_plugins_dir() -> Path:

@@ -637,3 +637,52 @@ class TestIndicatorPoolIntegration:
 
         # Sollte mehrere Trend-Features haben
         assert len(trend_features) > 10, f"Expected > 10 trend features, got {len(trend_features)}"
+
+
+# === VOLATILITY COMPRESSION ===
+
+
+class TestVolCompression:
+    """Tests für Volatility Compression (Percentile-Ranking) Features."""
+
+    def test_rank_features_exist(self):
+        """Percentile-Ranking Features should be present in output."""
+        n = 200
+        close = 100 + np.random.randn(n) * 2
+        df = create_ohlc(close)
+        result = compute_indicator_pool(df)
+
+        for period in [7, 14, 21]:
+            assert f"vol_atr_pct_{period}_rank" in result.columns, \
+                f"Missing vol_atr_pct_{period}_rank"
+        assert "vol_bb_wband_20_rank" in result.columns
+        assert "vol_compression" in result.columns
+
+    def test_rank_values_between_0_and_1(self):
+        """Percentile ranks must be in [0, 1]."""
+        n = 300
+        close = 100 * np.exp(np.cumsum(np.random.randn(n) * 0.01))
+        df = create_ohlc(close)
+        result = compute_indicator_pool(df)
+
+        rank = result["vol_atr_pct_14_rank"].dropna()
+        assert rank.min() >= 0.0
+        assert rank.max() <= 1.0
+
+    def test_compression_flag_during_low_vol(self):
+        """Compression flag should be 1 during sustained low volatility."""
+        n = 300
+        # First 200 bars: high vol, then 100 bars: very low vol
+        close_high = 100 + np.cumsum(np.random.randn(200) * 2)
+        close_low = close_high[-1] + np.cumsum(np.random.randn(100) * 0.05)
+        close = np.concatenate([close_high, close_low])
+        df = create_ohlc(close, high_factor=1.001, low_factor=0.999)
+        # Override high/low for low-vol section to be very tight
+        df.iloc[200:, df.columns.get_loc("H")] = df.iloc[200:]["C"] * 1.0005
+        df.iloc[200:, df.columns.get_loc("L")] = df.iloc[200:]["C"] * 0.9995
+        result = compute_indicator_pool(df)
+
+        compression = result["vol_compression"].dropna()
+        # Should have some compression flags in the low-vol section
+        last_50 = compression.iloc[-50:]
+        assert last_50.sum() > 0, "Expected some compression flags during low vol"

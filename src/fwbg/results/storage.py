@@ -300,7 +300,8 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
     # Vollständige Ergebnisse
     results_path = os.path.join(run_path, "results.json")
     results_data = {
-        "raw_results_count": len(raw_results),
+        "total_processed": len(all_results) if all_results else len(raw_results),
+        "significant_count": len(raw_results),
         "filtered_results_count": len(filtered_results),
         "elite_count": len(elite_results),
         "profitable_count": len(final_assets),
@@ -354,9 +355,13 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
 
             sym = r["symbol"]
 
-            # Grid-Ergebnisse (kompakt, ohne Trade-Details)
+            # Grid-Details: on_result_ready schreibt bereits vollständige Dateien
+            # mit walk_forward, monte_carlo etc. Hier nur schreiben wenn noch
+            # keine Datei existiert (Fallback).
             if r.get("grid_results"):
                 grid_path = os.path.join(grid_dir, f"{sym}.json")
+                if os.path.exists(grid_path):
+                    continue
                 grid_data = {
                     "symbol": sym,
                     "status": r.get("status", "unknown"),
@@ -379,7 +384,6 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
                         "calmar": r.get("calmar", 0),
                         "trades": len(r.get("tr_trace", [])),
                     }
-                    # Top-5 Kandidaten für einfachen Zugriff
                     if r.get("top_candidates"):
                         grid_data["top_candidates"] = convert_numpy(r["top_candidates"])
                 with open(grid_path, "w") as f:
@@ -552,7 +556,9 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
         f.write(f"{'='*70}\n")
         f.write("ERGEBNISSE\n")
         f.write(f"{'='*70}\n\n")
-        f.write(f"Assets Processed:   {len(raw_results)}\n")
+        total_processed = len(all_results) if all_results else len(raw_results)
+        f.write(f"Assets Processed:   {total_processed}\n")
+        f.write(f"Significant (ok):   {len(raw_results)}\n")
         f.write(f"After Corr Filter:  {len(filtered_results)}\n")
         f.write(f"Elite (Top 10):     {len(elite_results)}\n")
         f.write(f"Profitable:         {len(final_assets)}\n")

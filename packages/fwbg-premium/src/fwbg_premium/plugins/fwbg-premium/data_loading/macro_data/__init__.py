@@ -27,6 +27,11 @@ DEFAULT_INDICATORS = {
     "XLF_DAY": "xlf", "XLE_DAY": "xle", "XLK_DAY": "xlk",
     "XLU_DAY": "xlu", "XLP_DAY": "xlp", "TLT_DAY": "tlt",
     "HYG_DAY": "hyg", "LQD_DAY": "lqd",
+    # US Treasury curve (for yield curve shape)
+    "US2Y_DAY": "us2y", "US5Y_DAY": "us5y", "US30Y_DAY": "us30y",
+    # International bond yields (for FX yield spreads)
+    "DE10Y_DAY": "de10y", "JP10Y_DAY": "jp10y",
+    "GB10Y_DAY": "gb10y", "AU10Y_DAY": "au10y",
 }
 
 DEFAULT_LOOKBACKS_HOURS = [1, 2, 4, 8, 12, 24]
@@ -35,11 +40,18 @@ DEFAULT_LOOKBACKS_DAYS = [2, 5, 10, 20, 60]
 DEFAULT_DERIVED_FEATURES = [
     {"name": "macro_yield_curve_10y_3m", "op": "subtract", "a": "macro_tnx", "b": "macro_irx"},
     {"name": "macro_yield_curve_10y_5y", "op": "subtract", "a": "macro_tnx", "b": "macro_fvx"},
+    {"name": "macro_yield_curve_10y_2y", "op": "subtract", "a": "macro_tnx", "b": "macro_us2y"},
+    {"name": "macro_yield_curve_30y_5y", "op": "subtract", "a": "macro_us30y", "b": "macro_us5y"},
     {"name": "macro_vix_vvix_ratio", "op": "ratio", "a": "macro_vix", "b": "macro_vvix"},
     {"name": "macro_risk_ratio_spx_tlt", "op": "ratio", "a": "macro_spx", "b": "macro_tlt"},
     {"name": "macro_credit_spread_proxy", "op": "ratio", "a": "macro_hyg", "b": "macro_lqd"},
     {"name": "macro_smallcap_ratio", "op": "ratio", "a": "macro_russell", "b": "macro_spx"},
     {"name": "macro_tech_defensive_ratio", "op": "ratio", "a": "macro_xlk", "b": "macro_xlu"},
+    # Yield spreads (US vs international — FX carry signal)
+    {"name": "macro_yield_spread_us_de", "op": "subtract", "a": "macro_tnx", "b": "macro_de10y"},
+    {"name": "macro_yield_spread_us_jp", "op": "subtract", "a": "macro_tnx", "b": "macro_jp10y"},
+    {"name": "macro_yield_spread_us_gb", "op": "subtract", "a": "macro_tnx", "b": "macro_gb10y"},
+    {"name": "macro_yield_spread_us_au", "op": "subtract", "a": "macro_tnx", "b": "macro_au10y"},
 ]
 
 DEFAULT_INTEREST_RATES = [
@@ -88,6 +100,15 @@ class MacroDataLoader(BaseDataLoader):
                 elif spec["op"] == "ratio":
                     df[spec["name"]] = df[a] / (df[b] + 1e-10)
 
+        # Lookbacks for derived features (spread momentum/trend)
+        derived_cols = [spec["name"] for spec in derived
+                        if spec["name"] in df.columns]
+        for col in derived_cols:
+            for lb in lookbacks_days:
+                chg_key = f"{col}_chg_{lb}d"
+                if chg_key not in df.columns:
+                    df[chg_key] = df[col].pct_change(24 * lb) * 100
+
         # Interest rate diffs
         for diff in rate_diffs:
             a, b = diff["a"], diff["b"]
@@ -125,5 +146,7 @@ class MacroDataLoader(BaseDataLoader):
 
         for spec in derived:
             cols.append(spec["name"])
+            for lb in lookbacks_days:
+                cols.append(f"{spec['name']}_chg_{lb}d")
 
         return cols

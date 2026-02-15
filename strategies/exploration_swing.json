@@ -59,13 +59,16 @@
       {"name": "multi_timeframe", "params": {"h4_bars": 4, "d1_bars": 24, "ema_periods": [20, 50, 100]}},
       {"name": "cross_features", "params": {"rsi_overbought": 65, "rsi_oversold": 35}},
       {"name": "ichimoku", "params": {"tenkan_period": 9, "kijun_period": 26, "senkou_b_period": 52}},
-      {"name": "macro_surprise", "params": {"vol_lookback": 50, "surprise_threshold": 1.5, "gap_ma_period": 20}}
+      {"name": "microstructure", "params": {"atr_period": 14, "rolling_window": 10}},
+      {"name": "macro_surprise", "params": {"vol_lookback": 50, "surprise_threshold": 1.5, "gap_ma_period": 20}},
+      {"name": "market_regime", "params": {"window": 50}}
     ],
     "feature_selection": [
       {"name": "boruta", "params": {"max_features": 30, "n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5}}
     ],
     "data_loading": [
-      {"name": "macro_data", "source": "forexsb"}
+      {"name": "macro_data", "source": "forexsb"},
+      {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
 

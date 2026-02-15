@@ -50,7 +50,7 @@ fwbg/
 │   │       ├── preprocessing/    # fractional_diff
 │   │       ├── feature_selection/ # boruta, plateau
 │   │       ├── exit_strategies/  # atr_based
-│   │       └── data_loading/     # macro_data
+│   │       └── data_loading/     # macro_data, cot_positioning
 │   ├── core/                     # Config, Registry, Context, DataSources
 │   ├── pipeline/                 # Plugin Runner & Pipeline System
 │   ├── optimization/             # Walk-Forward CV, Grid Search, Targets
@@ -77,16 +77,13 @@ Alle Plugins erben von `BasePlugin`:
 
 ```python
 class BasePlugin(ABC):
-    name: str           # Eindeutiger Name (z.B. "trend")
-    version: str        # Semantische Version (z.B. "1.0.0")
-    phase: PluginPhase  # Pipeline-Phase (z.B. PluginPhase.INDICATORS)
+    name: str                    # Eindeutiger Name (z.B. "trend")
+    phase: PluginPhase           # Pipeline-Phase (z.B. PluginPhase.INDICATORS)
+    version: str = "0.1.0"      # Semantische Version (optional)
     stateful: bool = False
     cacheable: bool = True
 
-    @abstractmethod
     def execute(self, ctx: PipelineContext, **params) -> PipelineContext: ...
-
-    @abstractmethod
     def validate(self) -> bool: ...
 
     @classmethod
@@ -149,9 +146,11 @@ Die Pipeline verarbeitet Daten in definierten Phasen. Der `PipelineRunner` orche
 2. PREPROCESSING     → OHLC-Daten transformieren (Stationarität)
 3. INDICATORS        → Technische Indikatoren berechnen
 4. FEATURE_SELECTION → Relevante Features auswählen
-5. LABELING          → Training-Labels generieren
-6. MODEL             → ML-Modell trainieren / vorhersagen
-7. VALIDATION        → Strategie-Performance validieren
+5. EXIT_STRATEGIES   → TP/SL-Berechnung
+6. RISK_MANAGEMENT   → Positionsgröße und Risk-Controls
+7. LABELING          → Training-Labels generieren
+8. MODEL             → ML-Modell trainieren / vorhersagen
+9. VALIDATION        → Strategie-Performance validieren
 ```
 
 ### PipelineContext
@@ -216,7 +215,7 @@ class BaseIndicator(BasePlugin, ABC):
 |--------|-------|--------------|----------|
 | `trend` | core | ADX, EMA, SMA, MACD, CCI, Aroon, Supertrend, Efficiency Ratio | `trend_` |
 | `momentum` | core | RSI, Stochastic, Williams %R, ROC | `mom_` |
-| `volatility` | core | Bollinger Bands, ATR, Volatilitätsschätzer | `vol_` |
+| `volatility` | core | Bollinger Bands, ATR, Volatilitätsschätzer, Vol Compression, RV vs IV | `vol_` |
 | `price_action` | core | Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
 | `time_season` | core | Stunde, Wochentag, Monat, Quartal, Saisonalität | `time_`, `season_` |
 | `regime` | premium | Hurst Exponent, Entropy, Variance Ratio | `regime_` |
@@ -225,10 +224,11 @@ class BaseIndicator(BasePlugin, ABC):
 | `distribution` | premium | Skewness, Kurtosis, Z-Score | `dist_` |
 | `dynamics` | premium | Indikator-Änderungen, Lags, Beschleunigung | `dyn_`, `lag_`, `accel_` |
 | `multi_timeframe` | premium | H4/D1 aggregierte Features | `mtf_` |
-| `cross_features` | premium | Kombinierte Signale aus mehreren Indikatoren | `cross_` |
+| `cross_features` | premium | Kombinierte Signale, COT × Vol Interaction, Positioning Divergence | `cross_` |
 | `ichimoku` | premium | Ichimoku Cloud Komponenten | `ichi_` |
 | `macro_surprise` | premium | Makro-Überraschungen, Gap-Analyse | `macro_surprise_` |
 | `microstructure` | premium | Bar-Microstructure, Tick-Proxies | `micro_` |
+| `market_regime` | premium | Risk-On/Off Composite aus VIX, Credit, Equity, Treasury | `regime_risk_`, `regime_vix_` |
 
 **Strategy-JSON:**
 ```json
@@ -236,7 +236,9 @@ class BaseIndicator(BasePlugin, ABC):
   "indicators": [
     {"name": "trend", "params": {"adx_periods": [7, 14, 21], "ema_periods": [8, 21, 50]}},
     {"name": "momentum", "params": {"rsi_periods": [7, 14]}},
-    {"name": "regime", "params": {}}
+    {"name": "volatility", "params": {"atr_periods": [7, 14, 21], "compression_lookback": 100}},
+    {"name": "regime", "params": {}},
+    {"name": "market_regime", "params": {"window": 50}}
   ]
 }
 ```
@@ -250,7 +252,8 @@ Transformiert OHLC-Daten vor der Feature-Berechnung. Folgt dem sklearn **fit/tra
 **Basisklasse:**
 
 ```python
-class BasePreprocessor(ABC):
+class BasePreprocessor(BasePlugin, ABC):
+    phase = PluginPhase.PREPROCESSING
     name: str = "base"
     order: int = 100       # Ausführungsreihenfolge (niedriger = früher)
     fitted_: bool = False  # Ob fit() bereits aufgerufen wurde
@@ -300,7 +303,8 @@ Wählt die relevantesten Features für das ML-Modell aus. Wird pro Fold aufgeruf
 **Basisklasse:**
 
 ```python
-class BaseFeatureSelector(ABC):
+class BaseFeatureSelector(BasePlugin, ABC):
+    phase = PluginPhase.FEATURE_SELECTION
     name: str = "base"
 
     @abstractmethod
@@ -346,7 +350,8 @@ Definieren wie TP/SL-Distanzen berechnet werden. Jede Strategie bestimmt die Int
 **Basisklasse:**
 
 ```python
-class BaseExitStrategy(ABC):
+class BaseExitStrategy(BasePlugin, ABC):
+    phase = PluginPhase.EXIT_STRATEGIES
     name: str = "base"
 
     @abstractmethod
@@ -417,13 +422,15 @@ class BaseDataLoader(BasePlugin, ABC):
 
 | Plugin | Paket | Beschreibung |
 |--------|-------|--------------|
-| `macro_data` | premium | Makro-Indikatoren (VIX, Yields, DXY, etc.) mit Lookbacks und Derived Features |
+| `macro_data` | premium | Makro-Indikatoren (VIX, Yields, DXY, Yield Spreads, etc.) mit Lookbacks und Derived Features |
+| `cot_positioning` | premium | CFTC COT Positioning — Z-Scores, Extremes, Crowded Trade Flags |
 
 **Strategy-JSON:**
 ```json
 "pipeline": {
   "data_loading": [
-    {"name": "macro_data", "source": "forexsb"}
+    {"name": "macro_data", "source": "forexsb"},
+    {"name": "cot_positioning", "source": "forexsb"}
   ]
 }
 ```
@@ -480,7 +487,8 @@ Berechnet Positionsgrößen und Risk-Controls basierend auf Trade-Historie und P
 **Basisklasse:**
 
 ```python
-class BaseRiskManager(ABC):
+class BaseRiskManager(BasePlugin, ABC):
+    phase = PluginPhase.RISK_MANAGEMENT
     name: str = "base"
 
     @abstractmethod
@@ -504,6 +512,7 @@ class BaseRiskManager(ABC):
 | Plugin | Paket | Beschreibung |
 |--------|-------|--------------|
 | `kelly` | core | Kelly Criterion — optimale Positionsgröße basierend auf Win Rate und RRR |
+| `vol_targeted_kelly` | core | Kelly Criterion mit Volatility Targeting — skaliert Positionsgröße mit target_vol / realized_vol |
 
 ---
 
@@ -673,7 +682,8 @@ Strategies werden in JSON-Dateien unter `strategies/` konfiguriert.
       {"name": "boruta", "params": {"max_features": 20}}
     ],
     "data_loading": [
-      {"name": "macro_data", "source": "forexsb"}
+      {"name": "macro_data", "source": "forexsb"},
+      {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
   "exit_strategy": "fixed",
@@ -699,6 +709,51 @@ Strategies werden in JSON-Dateien unter `strategies/` konfiguriert.
 
 ---
 
+## Daten-Updates
+
+Externe Daten müssen vor dem Optimizer-Lauf aktualisiert werden:
+
+```bash
+# Makro-Daten: DXY, VIX (yfinance) + internationale Bond Yields (FRED)
+python scripts/fetch_macro_data.py
+
+# CFTC COT Positioning: Asset Manager Net Positions für 7 FX-Paare
+python scripts/fetch_cot_data.py
+
+# Alle Quellen (Forex Strategy Builder Exports)
+python scripts/fetch_all_sources.py
+```
+
+**Datenquellen:**
+
+| Daten | Quelle | Frequenz | Historie |
+|-------|--------|----------|----------|
+| DXY, VIX (hourly) | yfinance | H1 | ~2 Jahre |
+| US2Y, US5Y, US30Y | FRED (daily, ffill) | D1 | 25+ Jahre |
+| DE10Y, JP10Y, GB10Y, AU10Y | FRED (monatlich, daily ffill) | D1 | 25+ Jahre |
+| COT EURUSD, USDJPY, GBPUSD, ... | CFTC TFF Reports | Wöchentlich (daily ffill) | 2006+ |
+| VIX, SPX, TNX, DXY, ... (daily) | Forex Strategy Builder | D1 | variiert |
+
+**Yield Curve Shape** — automatisch berechnete Derived Features:
+- `macro_yield_curve_10y_2y` — Yield Curve Slope (10Y-2Y, Inversions-Signal)
+- `macro_yield_curve_30y_5y` — Long-End Steepness (30Y-5Y)
+- `macro_yield_curve_10y_3m` — Term Spread (10Y-3M)
+
+**Yield Spreads** (International):
+- `macro_yield_spread_us_de` — US-Germany Zinsdifferenz (EURUSD Carry)
+- `macro_yield_spread_us_jp` — US-Japan (USDJPY Carry)
+- `macro_yield_spread_us_gb` — US-UK (GBPUSD Carry)
+- `macro_yield_spread_us_au` — US-Australia (AUDUSD Carry)
+
+Alle Derived Features inkl. Momentum: `_chg_2d`, `_chg_5d`, `_chg_10d`, `_chg_20d`, `_chg_60d`
+
+**Weitere automatische Features:**
+- `vol_rv_iv_ratio` / `vol_rv_iv_spread` — Realized Vol vs VIX (Mean-Reversion/Breakout Signal)
+- `cross_cot_{pair}_vol_interaction` — COT Positioning × Vol (Explosivitäts-Signal)
+- `cross_cot_{pair}_price_divergence` — Preis vs Positioning Divergenz (Distribution-Signal)
+
+---
+
 ## Ergebnisse
 
 Optimierungsergebnisse in `test_results/<timestamp>/`:
@@ -716,6 +771,89 @@ test_results/20260201_103045_abc123/
 | `significant` | Statistisch signifikanter Edge gefunden |
 | `not_significant` | Kein Edge (p-value >= 0.05) |
 | `no_candidates` | Keine validen Kandidaten |
+
+---
+
+## Statistische Validierung
+
+Der Optimizer prüft gefundene Strategien in drei Stufen auf statistische Robustheit:
+
+### 1. Monte Carlo Permutation Test
+
+Testet ob die beobachtete Win-Rate signifikant besser als Zufall ist:
+- **1000 Permutationen** der Trade-Ergebnisse
+- **p-value < 0.05** → Edge ist statistisch signifikant
+- Zusätzlich: Equity-Simulation (500 Pfade) für Bankruptcy-Rate
+
+### 2. Deflated Sharpe Ratio (DSR)
+
+*Bailey & López de Prado (2014)*
+
+Korrigiert den beobachteten Sharpe Ratio für **Multiple Testing** — je mehr Grid-Kombinationen getestet werden, desto wahrscheinlicher findet man zufällig einen hohen Sharpe.
+
+```
+DSR = Φ((SR_obs - E[max(SR)]) / σ(SR))
+```
+
+- **E[max(SR)]** — Erwarteter maximaler Sharpe unter Null-Hypothese (alle Strategien = Zufall)
+- **σ(SR)** — Standardabweichung des Sharpe-Schätzers (berücksichtigt Skewness/Kurtosis)
+- **DSR > 0.95** → Sharpe ist auch nach Korrektur für Multiple Testing signifikant
+
+### 3. Probability of Backtest Overfitting (PBO)
+
+*Bailey, Borwein, López de Prado, Zhu (2017)*
+
+Misst die Wahrscheinlichkeit, dass die beste In-Sample-Strategie Out-of-Sample schlecht abschneidet.
+
+**Methode: Combinatorial Symmetric Cross-Validation (CSCV)**
+- Bei 8 Walk-Forward Folds: **C(8,4) = 70** mögliche IS/OOS-Splits
+- Für jeden Split: Prüft ob der beste IS-Combo auch OOS gut rankt
+- **PBO > 0.50** → Wahrscheinlich Overfitting
+
+**Ergebnis-Werte im JSON:**
+
+```json
+"overfitting": {
+  "dsr": {
+    "dsr": 0.982,
+    "observed_sr": 1.85,
+    "expected_max_sr": 2.51,
+    "n_strategies": 144,
+    "is_significant": true
+  },
+  "pbo": {
+    "pbo": 0.12,
+    "n_cscv_splits": 70,
+    "is_overfit": false,
+    "degradation": 0.88,
+    "logit_mean": 1.45
+  }
+}
+```
+
+| Metrik | Gut | Schlecht | Bedeutung |
+|--------|-----|---------|-----------|
+| DSR | > 0.95 | < 0.50 | Sharpe übersteht Multiple-Testing-Korrektur |
+| PBO | < 0.20 | > 0.50 | Beste IS-Strategie bleibt auch OOS stark |
+
+### 4. Feature Stability
+
+Analysiert die Konsistenz der Feature-Selektion über alle Walk-Forward Folds hinweg:
+
+```json
+"feature_stability": {
+  "stable_count": 12,
+  "unstable_count": 3,
+  "details": {
+    "trend_adx_14": {"count": 8, "stability": 1.0},
+    "vol_atr_pct_14_rank": {"count": 6, "stability": 0.75},
+    "macro_yield_spread_us_de_chg_5d": {"count": 2, "stability": 0.25}
+  }
+}
+```
+
+- **stability >= 0.50** — Feature wird als stabil eingestuft (in mindestens 50% der Folds selektiert)
+- Instabile Features deuten auf Noise-Fitting hin
 
 ---
 
