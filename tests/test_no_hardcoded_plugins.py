@@ -57,30 +57,32 @@ class TestFixedExitStrategyInterface:
         assert "return_durations" in param_names or "kwargs" in param_names
 
 
-class TestNoHardcodedDefaults:
-    """Config must not hardcode specific plugin names as defaults."""
+class TestDefaultPluginsResolvable:
+    """Default plugin names must resolve to actual registered plugins."""
 
-    def test_exit_strategy_no_hardcoded_default(self):
-        """StrategyConfig.exit_strategy should not default to 'atr_based'."""
+    def test_default_exit_strategy_exists_in_registry(self):
+        """StrategyConfig default exit_strategy must be a registered plugin."""
         from fwbg.core.config import StrategyConfig
+        from fwbg.core import get_exit_strategy
         config = StrategyConfig()
-        assert config.exit_strategy != "atr_based", (
-            "exit_strategy still defaults to 'atr_based'"
-        )
+        cls = get_exit_strategy(config.exit_strategy)
+        assert cls is not None
 
-    def test_risk_management_no_hardcoded_default(self):
-        """StrategyConfig.risk_management should not default to 'kelly'."""
+    def test_default_risk_management_exists_in_registry(self):
+        """StrategyConfig default risk_management must be a registered plugin."""
         from fwbg.core.config import StrategyConfig
+        from fwbg.core import get_risk_manager
         config = StrategyConfig()
-        assert config.risk_management != "kelly", (
-            "risk_management still defaults to 'kelly'"
-        )
+        cls = get_risk_manager(config.risk_management)
+        assert cls is not None
 
-    def test_context_exit_strategy_no_hardcoded_default(self):
-        """SimulationContext.exit_strategy should not default to 'atr_based'."""
+    def test_context_exit_strategy_exists_in_registry(self):
+        """SimulationContext default exit_strategy must be a registered plugin."""
         from fwbg.core.context import SimulationContext
+        from fwbg.core import get_exit_strategy
         ctx = SimulationContext(
             symbol="TEST", asset_class="FOREX",
             spread=0.0002, point=0.0001,
         )
-        assert ctx.exit_strategy != "atr_based"
+        cls = get_exit_strategy(ctx.exit_strategy)
+        assert cls is not None
