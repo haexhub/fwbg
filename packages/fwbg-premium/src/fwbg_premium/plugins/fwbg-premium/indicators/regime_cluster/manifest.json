@@ -1,0 +1,7 @@
+{
+  "name": "regime_cluster",
+  "version": "1.0.0",
+  "description": "Composite regime score with quantile clustering from orthogonal market structure inputs",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

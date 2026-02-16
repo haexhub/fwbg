@@ -1,5 +1,6 @@
 """Feature utilities for the pipeline system."""
 from typing import List, Optional
+import numpy as np
 import pandas as pd
 
 
@@ -77,43 +78,51 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
 
 
 
-def compute_regime_filter(
+def compute_regime_bitmask(
     df: pd.DataFrame,
     regime_params=None
-) -> pd.Series:
+) -> np.ndarray:
     """
-    Compute regime filter based on generic conditions.
+    Compute regime bitmask from conditions.
 
-    Each condition checks a DataFrame column against a threshold using
-    a comparison operator. Multiple conditions are AND-combined.
+    Bitmask encoding (like Linux file permissions):
+        Bit 2 (4) = Long allowed
+        Bit 1 (2) = Short allowed
+        Bit 0 (1) = Sideways allowed (future use)
+        7 = all allowed, 6 = Long+Short, 4 = Long only, 2 = Short only, 0 = blocked
+
+    Each condition produces a per-bar bitmask.
+    Final result = AND of all condition bitmasks (intersection).
 
     Args:
         df: DataFrame with indicators
         regime_params: Optional RegimeFilterConfig with conditions list
 
     Returns:
-        Boolean Series (True = trading allowed)
+        int8 numpy array with bitmask values (0-7)
     """
     if regime_params is None or not regime_params.conditions:
-        return pd.Series(True, index=df.index)
+        return np.full(len(df), 7, dtype=np.int8)
 
-    regime_ok = pd.Series(True, index=df.index)
+    result = np.full(len(df), 7, dtype=np.int8)
 
     for cond in regime_params.conditions:
         if cond.column not in df.columns:
             continue
 
-        col = df[cond.column]
-        if cond.operator == ">=":
-            regime_ok = regime_ok & (col >= cond.value)
-        elif cond.operator == "<=":
-            regime_ok = regime_ok & (col <= cond.value)
-        elif cond.operator == ">":
-            regime_ok = regime_ok & (col > cond.value)
-        elif cond.operator == "<":
-            regime_ok = regime_ok & (col < cond.value)
+        col = df[cond.column].values
+        ops = {">=": np.greater_equal, "<=": np.less_equal,
+               ">": np.greater, "<": np.less}
+        op_fn = ops.get(cond.operator)
+        if op_fn is None:
+            continue
 
-    return regime_ok
+        mask = op_fn(col, cond.value)
+        # Where condition is True → directions, False → else_directions
+        cond_bitmask = np.where(mask, cond.directions, cond.else_directions).astype(np.int8)
+        result = result & cond_bitmask
+
+    return result
 
 
 # =============================================================================
@@ -219,7 +228,7 @@ def select_best_plateau_candidate(*args, **kwargs):
 
 __all__ = [
     "get_feature_columns",
-    "compute_regime_filter",
+    "compute_regime_bitmask",
     "compute_indicator_pool",
     "normalize_plugin_name",
     "split_indicators_by_stationarity",

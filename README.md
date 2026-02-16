@@ -223,7 +223,7 @@ class BaseIndicator(BasePlugin, ABC):
 | `risk` | premium | Drawdown, CVaR, Volatility of Volatility, Correlations | `risk_` |
 | `distribution` | premium | Skewness, Kurtosis, Z-Score | `dist_` |
 | `dynamics` | premium | Indikator-Änderungen, Lags, Beschleunigung | `dyn_`, `lag_`, `accel_` |
-| `multi_timeframe` | premium | H4/D1 aggregierte Features | `mtf_` |
+| `multi_timeframe` | premium | H4/D1/W1/Y1 Multi-Timeframe Features, Trend Alignment, Volatility Ratios | `mtf_` |
 | `cross_features` | premium | Kombinierte Signale, COT × Vol Interaction, Positioning Divergence | `cross_` |
 | `ichimoku` | premium | Ichimoku Cloud Komponenten | `ichi_` |
 | `macro_surprise` | premium | Makro-Überraschungen, Gap-Analyse | `macro_surprise_` |
@@ -694,7 +694,7 @@ Strategies werden in JSON-Dateien unter `strategies/` konfiguriert.
       "tp": [10, 20, 30], "sl": [20, 30, 50], "ct": [0.5, 0.55, 0.6],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]}
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0}
         ]
       }
     }

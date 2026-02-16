@@ -268,7 +268,7 @@ def run_robust_validation(
         # Get feature columns
         feature_cols = [
             c for c in fold.train_df.columns
-            if c not in ['O', 'H', 'L', 'C', 'V', '_atr', '_regime_ok']
+            if c not in ['O', 'H', 'L', 'C', 'V', '_atr', '_regime']
             and not c.startswith('_')
         ]
 

@@ -11,10 +11,19 @@ import json
 
 @dataclass
 class RegimeCondition:
-    """A single regime filter condition on a DataFrame column."""
-    column: str      # e.g. "trend_adx_14", "macro_vix"
-    operator: str    # ">=", "<=", ">", "<"
+    """A single regime filter condition on a DataFrame column.
+
+    Bitmask encoding (like Linux file permissions):
+        Bit 2 (4) = Long allowed
+        Bit 1 (2) = Short allowed
+        Bit 0 (1) = Sideways allowed (future use)
+        7 = all allowed, 6 = Long+Short, 4 = Long only, 2 = Short only, 0 = blocked
+    """
+    column: str           # e.g. "trend_adx_14", "macro_vix"
+    operator: str         # ">=", "<=", ">", "<"
     value: float
+    directions: int = 6       # Bitmask when condition is TRUE (default: Long+Short)
+    else_directions: int = 0  # Bitmask when condition is FALSE (default: blocked)
 
 
 @dataclass
@@ -48,6 +57,8 @@ class RegimeFilterGridConfig:
                         "column": grid["column"],
                         "operator": grid["operator"],
                         "value": val,
+                        "directions": grid.get("directions", 6),
+                        "else_directions": grid.get("else_directions", 0),
                     })
             combinations.append({"conditions": conditions})
 
@@ -243,6 +254,8 @@ class RegimeFilterConfig:
                 column=c["column"],
                 operator=c["operator"],
                 value=c["value"],
+                directions=c.get("directions", 6),
+                else_directions=c.get("else_directions", 0),
             )
             for c in raw_conditions
         ]

@@ -72,7 +72,7 @@ def _make_winning_long_df(n_trades=10, spread=0.0001, tp_mult=10, sl_mult=10):
     dates = pd.date_range("2023-01-01", periods=len(bars), freq="1h")
     df = pd.DataFrame(bars, index=dates)
     df["_atr"] = 0.001
-    df["_regime_ok"] = True
+    df["_regime"] = np.int8(7)
     return df
 
 
@@ -107,7 +107,7 @@ def _make_losing_long_df(n_trades=10, spread=0.0001, tp_mult=10, sl_mult=10):
     dates = pd.date_range("2023-01-01", periods=len(bars), freq="1h")
     df = pd.DataFrame(bars, index=dates)
     df["_atr"] = 0.001
-    df["_regime_ok"] = True
+    df["_regime"] = np.int8(7)
     return df
 
 
@@ -153,7 +153,7 @@ def _make_mixed_df(n_wins=6, n_losses=4, spread=0.0001, tp_mult=10, sl_mult=20):
     dates = pd.date_range("2023-01-01", periods=len(bars), freq="1h")
     df = pd.DataFrame(bars, index=dates)
     df["_atr"] = 0.001
-    df["_regime_ok"] = True
+    df["_regime"] = np.int8(7)
     return df
 
 

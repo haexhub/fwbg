@@ -44,6 +44,7 @@ class BasePlugin(ABC):
     # Optional class attributes with defaults
     stateful: bool = False
     cacheable: bool = True
+    depends_on: List[str] = []
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Validate that required class attributes are defined."""

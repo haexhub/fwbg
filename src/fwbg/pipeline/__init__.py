@@ -50,7 +50,7 @@ from fwbg.pipeline.config import (
 from fwbg.pipeline.runner import PipelineRunner
 from fwbg.pipeline.features import (
     get_feature_columns,
-    compute_regime_filter,
+    compute_regime_bitmask,
     compute_indicator_pool,
     normalize_plugin_name,
     # Parameter plateau (grid search candidate selection)
@@ -80,7 +80,7 @@ __all__ = [
     "PipelineRunner",
     # Features
     "get_feature_columns",
-    "compute_regime_filter",
+    "compute_regime_bitmask",
     "compute_indicator_pool",
     "normalize_plugin_name",
     # Parameter plateau (grid search candidate selection)

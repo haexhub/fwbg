@@ -47,7 +47,7 @@ def nested_cv_split(
     holdout_size = int(total_len * holdout_ratio)
     inner_size = total_len - holdout_size
 
-    # Copy nur für die Haupt-DataFrames (werden später modifiziert: _regime_ok)
+    # Copy nur für die Haupt-DataFrames (werden später modifiziert: _regime)
     inner_df = df.iloc[:inner_size].copy()
     holdout_df = df.iloc[inner_size:].copy()
 
