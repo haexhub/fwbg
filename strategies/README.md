@@ -65,6 +65,7 @@ Jeder Indikator ist ein Plugin mit eigenem Namen und Parametern. Kurze Namen (`"
 | `macro_surprise` | Makro-Überraschungen, Gap-Analyse | `macro_surprise_` |
 | `microstructure` | Bar-Microstructure, Tick-Proxies | `micro_` |
 | `market_regime` | Risk-On/Off Composite aus VIX, Credit, Equity, Treasury | `regime_vix_`, `regime_credit_`, `regime_risk_` |
+| `regime_cluster` | Composite Regime Score → K-Means Clustering (trending/mean-reverting/choppy) | `regime_cluster_` |
 
 **Beispiel:**
 
@@ -142,9 +143,32 @@ Macht Zeitreihen stationär unter Beibehaltung von Memory (nach López de Prado)
 
 Wählt die relevantesten Features pro Fold aus.
 
+#### stability (empfohlen)
+
+Bootstrap-basierte Stability Selection. Wrapped einen Inner Selector (z.B. Boruta) und behält nur Features die in >threshold der Bootstraps selektiert werden. Reduziert Overfitting deutlich.
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `inner_selector` | string | `"boruta"` | Inner Feature Selector |
+| `inner_params` | object | `{}` | Parameter für den Inner Selector |
+| `n_bootstrap` | int | `7` | Anzahl Bootstrap-Samples |
+| `threshold` | float | `0.6` | Min Anteil der Bootstraps in denen Feature selektiert sein muss |
+| `bootstrap_ratio` | float | `0.8` | Anteil der Daten pro Bootstrap |
+| `max_features` | int | `0` | Max Features (0 = kein Limit) |
+
+```json
+"feature_selection": [
+  {"name": "stability", "params": {
+    "inner_selector": "boruta",
+    "inner_params": {"n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5},
+    "n_bootstrap": 7, "threshold": 0.6, "bootstrap_ratio": 0.8, "max_features": 20
+  }}
+]
+```
+
 #### boruta
 
-Findet alle statistisch relevanten Features via Shadow-Feature-Vergleich.
+Findet alle statistisch relevanten Features via Shadow-Feature-Vergleich. Empfohlen als Inner Selector für `stability`.
 
 | Parameter | Typ | Default | Beschreibung |
 |-----------|-----|---------|--------------|
@@ -393,6 +417,20 @@ Hier: Preis über EMA50 → nur Longs (`4`), Preis unter EMA50 → nur Shorts (`
 | `n_inner_folds` | int | `3` | Innere CV-Folds für Feature-Selektion |
 | `embargo_bars` | int | `100` | Embargo-Bars zwischen Train/Test (Purging) |
 | `sample_weights` | bool | `true` | Trade-Duration-basierte Sample Weights |
+| `early_pruning` | object | `{}` | Early Pruning Konfiguration (siehe unten) |
+| `probability_calibration` | bool | `false` | Isotonic/Platt Calibration für Confidence-Scores |
+| `calibration_method` | string | `"isotonic"` | `"isotonic"` oder `"platt"` |
+| `meta_labeling` | bool | `false` | Meta-Labeling Trade Filter (AFML Ch. 3) |
+
+### early_pruning
+
+Zweiphasiger Grid-Search: Alle Combos auf dem ersten Inner Fold screenen, untere Hälfte prunen, nur Survivors vollständig evaluieren.
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `enabled` | bool | `false` | Early Pruning aktivieren |
+| `keep_ratio` | float | `0.5` | Top-Anteil der Combos die weiterkommen |
+| `min_survivors` | int | `10` | Mindestanzahl Survivors (auch bei aggressivem keep_ratio) |
 
 ```json
 "validation": {
@@ -401,7 +439,14 @@ Hier: Preis über EMA50 → nur Longs (`4`), Preis unter EMA50 → nur Shorts (`
   "oos_size": 4000,
   "n_inner_folds": 3,
   "embargo_bars": 100,
-  "sample_weights": true
+  "sample_weights": true,
+  "early_pruning": {
+    "enabled": true,
+    "keep_ratio": 0.5,
+    "min_survivors": 10
+  },
+  "probability_calibration": true,
+  "calibration_method": "isotonic"
 }
 ```
 
@@ -435,7 +480,8 @@ Hier: Preis über EMA50 → nur Longs (`4`), Preis unter EMA50 → nur Shorts (`
 | `max_cpu_percent` | float | `0.80` | Maximale CPU-Auslastung (0.0-1.0) |
 | `min_free_ram_percent` | float | `0.25` | Minimum freier RAM (0.0-1.0) |
 | `ram_per_worker_gb` | float | `3.0` | RAM pro Worker in GB |
-| `max_concurrent_assets` | int | `2` | Parallele Assets |
+| `max_concurrent_assets` | int | `0` | Max parallele Assets (0 = auto basierend auf CPU/RAM) |
+| `threads_per_asset` | int | `0` | Geschätzte CPU-Threads pro Asset (0 = auto) |
 | `xgboost_n_jobs` | int | `0` | XGBoost Threads (0 = auto) |
 
 ```json
@@ -444,6 +490,24 @@ Hier: Preis über EMA50 → nur Longs (`4`), Preis unter EMA50 → nur Shorts (`
   "min_free_ram_percent": 0.15,
   "max_cpu_percent": 0.95,
   "max_concurrent_assets": 2
+}
+```
+
+---
+
+## assets - Asset-Filter
+
+Optionale Sektion um nur bestimmte Assets zu testen oder auszuschließen. Kann auch per CLI überschrieben werden (`--assets`, `--asset-classes`).
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `filter` | array | `[]` | Nur diese Assets testen |
+| `exclude` | array | `[]` | Diese Assets ausschließen |
+
+```json
+"assets": {
+  "filter": ["EURUSD", "GBPUSD"],
+  "exclude": ["NZDUSD"]
 }
 ```
 
@@ -476,10 +540,15 @@ Hier: Preis über EMA50 → nur Longs (`4`), Preis unter EMA50 → nur Shorts (`
       {"name": "ichimoku", "params": {}},
       {"name": "microstructure", "params": {}},
       {"name": "macro_surprise", "params": {}},
-      {"name": "market_regime", "params": {"window": 50}}
+      {"name": "market_regime", "params": {"window": 50}},
+      {"name": "regime_cluster", "params": {"zscore_window": 200, "quantile_window": 500, "n_regimes": 3}}
     ],
     "feature_selection": [
-      {"name": "boruta", "params": {"max_features": 20}}
+      {"name": "stability", "params": {
+        "inner_selector": "boruta",
+        "inner_params": {"n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5},
+        "n_bootstrap": 7, "threshold": 0.6, "max_features": 20
+      }}
     ],
     "data_loading": [
       {"name": "macro_data", "source": "forexsb"},
@@ -501,7 +570,11 @@ Hier: Preis über EMA50 → nur Longs (`4`), Preis unter EMA50 → nur Shorts (`
       }
     }
   },
-  "validation": {"folds": 8, "oos_size": 4000, "embargo_bars": 100, "sample_weights": true}
+  "validation": {
+    "folds": 8, "oos_size": 4000, "n_inner_folds": 3, "embargo_bars": 100,
+    "sample_weights": true, "probability_calibration": true,
+    "early_pruning": {"enabled": true, "keep_ratio": 0.5, "min_survivors": 10}
+  }
 }
 ```
 
