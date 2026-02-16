@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fwbg-sdk"
+version = "1.0.0"
+description = "SDK for building FWBG plugins - indicators, preprocessors, exit strategies & more"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "FWBG Team"}
+]
+keywords = ["trading", "plugins", "sdk", "fwbg"]
+
+dependencies = [
+    "numpy>=2.2",
+    "pandas>=3.0",
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+]
+
+[project.scripts]
+fwbg-sdk = "fwbg_sdk.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
