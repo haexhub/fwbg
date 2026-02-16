@@ -53,7 +53,8 @@ class TestCanSpawnWorker:
             manager = AdaptivePoolManager(
                 max_cpu_percent=0.8,
                 min_free_ram_percent=0.25,
-                ram_per_worker_gb=4.0
+                ram_per_worker_gb=4.0,
+                threads_per_asset=1,
             )
 
             # Unter max_workers sollte True zurückkommen
@@ -132,6 +133,7 @@ class TestCanSpawnWorker:
                 max_cpu_percent=1.0,
                 min_free_ram_percent=0.25,  # 8GB Reserve
                 ram_per_worker_gb=4.0,
+                threads_per_asset=1,
                 verbose=False
             )
 
@@ -237,13 +239,12 @@ class TestWorkerCalculation:
         """max_workers sollte das Minimum aus CPU- und RAM-Limit sein."""
         from fwbg.optimization.resource_manager import AdaptivePoolManager
 
-        with patch('fwbg.optimization.resource_manager.psutil') as mock_psutil, \
-             patch('fwbg.optimization.resource_manager.mp') as mock_mp:
+        with patch('fwbg.optimization.resource_manager.psutil') as mock_psutil:
+            mock_psutil.cpu_count.return_value = 4
             mock_psutil.virtual_memory.return_value = Mock(
                 total=64 * 1024**3,
                 available=48 * 1024**3
             )
-            mock_mp.cpu_count.return_value = 4
 
             manager = AdaptivePoolManager(
                 max_cpu_percent=0.5,  # Nur 2 nutzbare Kerne

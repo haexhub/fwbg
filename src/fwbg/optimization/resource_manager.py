@@ -163,7 +163,7 @@ class AdaptivePoolManager:
         self.progress_queue = progress_queue
 
         # Systeminfo
-        self.total_cores = mp.cpu_count()
+        self.total_cores = psutil.cpu_count()
         self.total_ram_gb = psutil.virtual_memory().total / (1024**3)
 
         # Berechne max Workers basierend auf CPU UND RAM
