@@ -40,17 +40,12 @@ python -m bots.ig --no-streaming   # Polling-Modus
 ```
 fwbg/
 ├── src/fwbg/
-│   ├── plugins/                  # Plugin-Pakete
+│   ├── plugins/                  # Plugin-System
 │   │   ├── fwbg-core/            # Core Plugins (kostenlos)
 │   │   │   ├── indicators/       # trend, momentum, volatility, price_action, time_season
 │   │   │   ├── exit_strategies/  # fixed
-│   │   │   └── risk_management/  # kelly
-│   │   └── fwbg-premium/         # Premium Plugins
-│   │       ├── indicators/       # regime, structure, risk, distribution, dynamics, ...
-│   │       ├── preprocessing/    # fractional_diff
-│   │       ├── feature_selection/ # boruta, plateau
-│   │       ├── exit_strategies/  # atr_based
-│   │       └── data_loading/     # macro_data, cot_positioning
+│   │   │   └── risk_management/  # kelly, vol_targeted_kelly
+│   │   └── *.py                  # Plugin-Basisklassen
 │   ├── core/                     # Config, Registry, Context, DataSources
 │   ├── pipeline/                 # Plugin Runner & Pipeline System
 │   ├── optimization/             # Walk-Forward CV, Grid Search, Targets
@@ -59,6 +54,14 @@ fwbg/
 │   ├── results/                  # Ergebnis-Speicherung & Plotting
 │   ├── cli/                      # Command-Line Interface
 │   └── adapters/                 # Broker & Datenquellen-Adapter
+│
+├── packages/
+│   └── fwbg-premium/             # Premium Plugins (separates Package)
+│       └── indicators/           # regime, structure, risk, distribution, dynamics, ...
+│       ├── preprocessing/        # fractional_diff
+│       ├── feature_selection/    # boruta, plateau, stability
+│       ├── exit_strategies/      # atr_based
+│       └── data_loading/         # macro_data, cot_positioning
 │
 ├── strategies/                   # Strategy Configurations (JSON)
 ├── data/                         # Historical Data (CSV)
@@ -124,10 +127,11 @@ plugins/
 
 ### Plugin-Discovery
 
-Plugins werden automatisch aus zwei Verzeichnissen entdeckt:
+Plugins werden automatisch aus drei Quellen entdeckt:
 
-1. **Core-Pakete:** `src/fwbg/plugins/` (fwbg-core, fwbg-premium)
-2. **User-Pakete:** `~/.fwbg/plugins/` (eigene Plugins)
+1. **Core-Pakete:** `src/fwbg/plugins/fwbg-core/` (eingebaute Plugins)
+2. **Entry-Point-Pakete:** Installierte Packages mit `fwbg.plugin_packages` Entry Point (z.B. `fwbg-premium`)
+3. **User-Pakete:** `~/.fwbg/plugins/` (eigene Plugins)
 
 ### Plugin-Tests
 
@@ -229,6 +233,7 @@ class BaseIndicator(BasePlugin, ABC):
 | `macro_surprise` | premium | Makro-Überraschungen, Gap-Analyse | `macro_surprise_` |
 | `microstructure` | premium | Bar-Microstructure, Tick-Proxies | `micro_` |
 | `market_regime` | premium | Risk-On/Off Composite aus VIX, Credit, Equity, Treasury | `regime_risk_`, `regime_vix_` |
+| `regime_cluster` | premium | Composite Regime Score → K-Means Clustering (trending/mean-reverting/choppy) | `regime_cluster_` |
 
 **Strategy-JSON:**
 ```json
@@ -330,13 +335,18 @@ class BaseFeatureSelector(BasePlugin, ABC):
 | Plugin | Paket | Beschreibung |
 |--------|-------|--------------|
 | `boruta` | premium | Shadow-Feature-Vergleich — findet alle statistisch relevanten Features |
+| `stability` | premium | Bootstrap-basierte Stability Selection — wrapped einen Inner Selector (z.B. Boruta) und behält nur Features die in >threshold der Bootstraps selektiert werden |
 | `plateau` | premium | Plateau-basierte Selektion — bewertet Parameter-Stabilität |
 
 **Strategy-JSON:**
 ```json
 "pipeline": {
   "feature_selection": [
-    {"name": "boruta", "params": {"max_features": 20, "n_iter": 5, "min_z_score": 0.5}}
+    {"name": "stability", "params": {
+      "inner_selector": "boruta",
+      "inner_params": {"n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5},
+      "n_bootstrap": 7, "threshold": 0.6, "bootstrap_ratio": 0.8, "max_features": 20
+    }}
   ]
 }
 ```
@@ -660,6 +670,7 @@ Das Plugin wird beim Start automatisch aus `~/.fwbg/plugins/` entdeckt und regis
 | `--cpu` | Max CPU-Auslastung (0.0-1.0) | `--cpu 0.8` |
 | `--ram-reserve` | Min freier RAM-Anteil | `--ram-reserve 0.25` |
 | `--ram-per-worker` | RAM pro Worker in GB | `--ram-per-worker 4.0` |
+| `--timeframe` | Timeframe überschreiben | `--timeframe H4` |
 
 ---
 
@@ -699,9 +710,13 @@ Strategies werden in JSON-Dateien unter `strategies/` konfiguriert.
       }
     }
   },
-  "validation": {"folds": 8, "oos_size": 4000, "embargo_bars": 100, "sample_weights": true},
+  "validation": {
+    "folds": 8, "oos_size": 4000, "n_inner_folds": 3, "embargo_bars": 100,
+    "sample_weights": true, "probability_calibration": true, "calibration_method": "isotonic",
+    "early_pruning": {"enabled": true, "keep_ratio": 0.5, "min_survivors": 10}
+  },
   "filters": {"min_rrr": 0, "min_trades": 30},
-  "resources": {"ram_per_worker_gb": 4.0, "max_cpu_percent": 0.95}
+  "resources": {"ram_per_worker_gb": 4.0, "max_cpu_percent": 0.95, "max_concurrent_assets": 2}
 }
 ```
 
