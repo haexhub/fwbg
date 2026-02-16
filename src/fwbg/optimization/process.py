@@ -191,33 +191,39 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if sample_bias_detected:
             log(1, f"  WARNING: Sample bias detected in some folds (>2x ratio)", sym)
 
-        # Check if fold configs are consistent
+        # Check if fold configs are consistent (CV = coefficient of variation)
         configs = [r["best_config"] for r in all_fold_results]
         tp_values = [c["tp"] for c in configs]
         sl_values = [c["sl"] for c in configs]
         rrr_values = [c.get("rrr", 1.0) for c in configs]
 
-        tp_std = np.std(tp_values) if len(tp_values) > 1 else 0
-        sl_std = np.std(sl_values) if len(sl_values) > 1 else 0
+        tp_mean = np.mean(tp_values)
+        sl_mean = np.mean(sl_values)
+        tp_cv = np.std(tp_values) / tp_mean if tp_mean > 0 else 0
+        sl_cv = np.std(sl_values) / sl_mean if sl_mean > 0 else 0
         rrr_std = np.std(rrr_values) if len(rrr_values) > 1 else 0
 
-        # Configs are inconsistent if TP/SL/RRR vary significantly
-        is_consistent = tp_std <= 5 and sl_std <= 5 and rrr_std <= 0.15
+        # CV > 0.3 means TP/SL vary by more than 30% relative to their mean
+        is_consistent = tp_cv <= 0.3 and sl_cv <= 0.3 and rrr_std <= 0.15
+        config_inconsistent = not is_consistent and len(all_fold_results) > 1
 
-        if not is_consistent and len(all_fold_results) > 1:
+        if config_inconsistent:
             log(1, f"  WARNING: Fold configs are INCONSISTENT!", sym)
-            log(1, f"    TP: {tp_values} (std={tp_std:.1f})", sym)
-            log(1, f"    SL: {sl_values} (std={sl_std:.1f})", sym)
+            log(1, f"    TP: {tp_values} (CV={tp_cv:.2f})", sym)
+            log(1, f"    SL: {sl_values} (CV={sl_cv:.2f})", sym)
             log(1, f"    RRR: {[f'{r:.2f}' for r in rrr_values]} (std={rrr_std:.3f})", sym)
 
-            # Select BEST fold instead of first fold
-            representative_fold = max(all_fold_results, key=lambda f: f["test_pnl"])
+            # Select fold with best risk-adjusted performance (PnL per trade)
+            representative_fold = max(
+                all_fold_results,
+                key=lambda f: f["test_pnl"] / f["test_trades"] if f["test_trades"] > 0 else 0,
+            )
             log(1, f"  → Using BEST fold (Fold {representative_fold['fold_id']}) instead of aggregating", sym)
 
             # Use metrics from best fold, not average
             mean_wr = representative_fold["test_win_rate"]
             mean_pnl = representative_fold["test_pnl"]
-            std_wr = 0  # No spread for single fold
+            std_wr = 0
             std_pnl = 0
             total_trades = representative_fold["test_trades"]
 
@@ -229,11 +235,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         b_config = representative_fold["best_config"]
 
         # Combine trades: If configs are inconsistent, use only best fold's trades
-        if not is_consistent and len(all_fold_results) > 1:
+        if config_inconsistent:
             all_trades = representative_fold["test_trades_trace"]
             log(2, f"  Using only trades from best fold ({len(all_trades)} trades)", sym)
         else:
-            # Combine all trades from all folds (needed for all branches)
             all_trades = []
             for fold_result in all_fold_results:
                 all_trades.extend(fold_result["test_trades_trace"])
@@ -312,11 +317,14 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         }
 
         # Shared data for result building
-        best_fold_id = representative_fold.get("fold_id") if not is_consistent and len(all_fold_results) > 1 else None
+        best_fold_id = representative_fold.get("fold_id") if config_inconsistent else None
         wf_summary = _build_walk_forward_summary(
-            all_fold_results, win_rates, pnls, total_trades,
+            all_fold_results,
+            [mean_wr] if config_inconsistent else win_rates,
+            [mean_pnl] if config_inconsistent else pnls,
+            total_trades,
             sample_bias_detected, bias_ratios, mean_bias_ratio,
-            config_inconsistent=(not is_consistent and len(all_fold_results) > 1),
+            config_inconsistent=config_inconsistent,
             best_fold_id=best_fold_id,
         )
         features_list = representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", [])
