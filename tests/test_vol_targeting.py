@@ -17,7 +17,7 @@ def _make_df_with_rv(n=500):
         "L": close * 0.995,
         "C": close,
         "_atr": np.full(n, 0.001),
-        "_regime_ok": np.ones(n, dtype=bool),
+        "_regime": np.full(n, 7, dtype=np.int8),
         "vol_rv_20": 10.0 + rng.normal(0, 2, n),
     }, index=idx)
     return df

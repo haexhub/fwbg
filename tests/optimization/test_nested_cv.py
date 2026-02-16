@@ -47,7 +47,7 @@ def create_test_df(n_rows: int, seed: int = 42) -> pd.DataFrame:
         "L": low,
         "C": close,
         "_atr": np.abs(np.random.randn(n_rows) * 0.1) + 0.05,
-        "_regime_ok": np.ones(n_rows, dtype=bool),
+        "_regime": np.full(n_rows, 7, dtype=np.int8),
     }, index=pd.DatetimeIndex(dates))
 
     # Einige Feature-Spalten hinzufügen
@@ -405,7 +405,7 @@ class TestSimulateTradesSequential:
     def test_regime_filter(self):
         """Test: Regime-Filter blockiert Trades."""
         df = create_test_df(500)
-        df["_regime_ok"] = False  # Kein Trade erlaubt
+        df["_regime"] = np.int8(0)  # Kein Trade erlaubt
         ctx = create_mock_context()
 
         probs_long = np.ones((len(df), 2)) * 0.5
@@ -546,7 +546,7 @@ class TestEdgeCases:
     def test_all_regime_false(self):
         """Test: Alle Regime-Filter sind False."""
         df = create_test_df(500)
-        df["_regime_ok"] = False
+        df["_regime"] = np.int8(0)
         ctx = create_mock_context()
 
         probs = np.ones((len(df), 2)) * 0.9
@@ -594,7 +594,7 @@ class TestSeparateCTEvaluation:
         from fwbg.optimization.targets import _evaluate_separate_ct
 
         df = create_test_df(500)
-        df["_regime_ok"] = False  # Keine Trades möglich
+        df["_regime"] = np.int8(0)  # Keine Trades möglich
         ctx = create_mock_context()
         ctx.separate_long_short = True
         ctx.grid_ct = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75]  # 6 CT-Werte

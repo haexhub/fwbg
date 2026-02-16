@@ -94,7 +94,7 @@ class TestNoLookaheadBias:
             'L': prices * 0.99,
             'C': prices,
             '_atr': np.ones(n) * 2.0,
-            '_regime_ok': np.ones(n, dtype=bool),
+            '_regime': np.full(n, 7, dtype=np.int8),
         })
 
         # Create RANDOM features (should have NO predictive power)

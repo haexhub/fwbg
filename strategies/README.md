@@ -59,7 +59,7 @@ Jeder Indikator ist ein Plugin mit eigenem Namen und Parametern. Kurze Namen (`"
 | `risk` | Drawdown, CVaR, Volatility of Volatility, Correlations | `risk_` |
 | `distribution` | Skewness, Kurtosis, Z-Score | `dist_` |
 | `dynamics` | Indikator-Änderungen, Lags, Beschleunigung | `dyn_`, `lag_`, `accel_` |
-| `multi_timeframe` | H4/D1 aggregierte Features | `mtf_` |
+| `multi_timeframe` | H4/D1/W1/Y1 Multi-Timeframe Features, Trend Alignment, Volatility Ratios | `mtf_` |
 | `cross_features` | Kombinierte Signale, COT × Vol Interaction, Positioning Divergence | `cross_` |
 | `ichimoku` | Ichimoku Cloud Komponenten | `ichi_` |
 | `macro_surprise` | Makro-Überraschungen, Gap-Analyse | `macro_surprise_` |
@@ -82,6 +82,35 @@ Jeder Indikator ist ein Plugin mit eigenem Namen und Parametern. Kurze Namen (`"
 ```
 
 Jedes Plugin akzeptiert `params: {}` für seine Default-Werte.
+
+#### multi_timeframe - Parameter
+
+Berechnet Features für höhere Timeframes (H4, D1, W1, Y1) aus H1-Daten via Rolling Windows.
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `h4_bars` | int | `4` | Bars pro H4-Candle |
+| `d1_bars` | int | `24` | Bars pro D1-Candle |
+| `w1_bars` | int | `120` | Bars pro W1-Candle (5 × 24) |
+| `ema_periods` | list | `[20, 50]` | EMA-Perioden für MTF-Berechnung |
+| `include_yearly` | bool | `true` | Y1-Features berechnen (200d EMA, 52-Wochen Range) |
+
+**Features nach Timeframe:**
+
+| Gruppe | Features | Beschreibung |
+|--------|----------|--------------|
+| H4 | `mtf_h4_trend`, `mtf_h4_range_pos`, `mtf_h4_ema{N}_dist`, `mtf_h4_adx`, `mtf_h4_rsi`, `mtf_h4_atr_pct`, `mtf_h4_bb_pband` | 4-Stunden Trend, Range, Indikatoren |
+| D1 | `mtf_d1_range_pos`, `mtf_d1_ema{N}_dist`, `mtf_d1_trend_strength` | Tages-Range, EMA-Distanzen, Trend-Stärke |
+| W1 | `mtf_w1_range_pos`, `mtf_w1_ema{N}_dist`, `mtf_w1_trend_strength` | Wochen-Range, EMA-Distanzen, Trend-Stärke |
+| Y1 | `mtf_y1_ema200d_dist`, `mtf_y1_52w_range_pos`, `mtf_y1_52w_high_dist`, `mtf_y1_52w_low_dist` | 200-Tage EMA, 52-Wochen Range |
+| Alignment | `mtf_trend_alignment_h1h4`, `mtf_trend_alignment_h4d1`, `mtf_trend_alignment_d1w1`, `mtf_consensus`, `mtf_trend_strength` | Trend-Übereinstimmung zwischen Timeframes |
+| Volatility | `mtf_vol_ratio_h1h4` | H1/H4 ATR-Verhältnis |
+| Divergence | `mtf_rsi_divergence` | H1-H4 RSI-Divergenz |
+| S/R | `mtf_d1_above_prev_high`, `mtf_d1_below_prev_low`, `mtf_d1_dist_to_high`, `mtf_d1_dist_to_low` | Tages-Support/Resistance |
+
+```json
+{"name": "multi_timeframe", "params": {"h4_bars": 4, "d1_bars": 24, "w1_bars": 120, "ema_periods": [20, 50], "include_yearly": true}}
+```
 
 ---
 
@@ -273,19 +302,53 @@ Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte
 
 ### regime_filter_grid
 
-Testet Regime-Filter-Kombinationen im Grid-Search. Jede Condition prüft eine DataFrame-Spalte gegen einen Schwellenwert. `null` = kein Filter (Baseline).
+Testet Regime-Filter-Kombinationen im Grid-Search. Jede Condition prüft eine DataFrame-Spalte gegen einen Schwellenwert und steuert per **Bitmask**, welche Trade-Richtungen erlaubt sind. `null` = kein Filter (Baseline).
+
+#### Bitmask-Encoding
+
+Jede Condition erzeugt pro Bar eine Bitmask (int8, 0-7), die bestimmt welche Richtungen gehandelt werden dürfen:
+
+| Bit | Wert | Richtung |
+|-----|------|----------|
+| 2 | 4 | Long |
+| 1 | 2 | Short |
+| 0 | 1 | Sideways |
+
+**Häufige Kombinationen:** `7` = alle, `6` = Long+Short (Standard), `4` = nur Long, `2` = nur Short, `0` = blockiert
+
+#### Condition-Parameter
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `column` | string | — | DataFrame-Spalte |
+| `operator` | string | — | Vergleichsoperator (`>=`, `<=`, `>`, `<`) |
+| `values` | array | — | Schwellenwerte (`null` = kein Filter) |
+| `directions` | int | `6` | Bitmask wenn Condition TRUE |
+| `else_directions` | int | `0` | Bitmask wenn Condition FALSE |
+
+#### Kombinationslogik
+
+Mehrere Conditions werden per **Bitwise AND** kombiniert — ein Trade wird nur ausgeführt, wenn **alle** Conditions die entsprechende Richtung erlauben.
 
 ```json
 "regime_filter_grid": {
   "condition_grids": [
-    {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
-    {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
-    {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+    {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+    {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+    {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0}
   ]
 }
 ```
 
-Alle Kombinationen werden getestet (kartesisches Produkt). Mehrere Conditions werden AND-verknüpft.
+#### Richtungs-spezifische Filter
+
+Mit unterschiedlichen `directions`/`else_directions`-Werten können Conditions richtungs-selektiv filtern:
+
+```json
+{"column": "trend_ema_50_dist", "operator": ">=", "values": [null, 0], "directions": 4, "else_directions": 2}
+```
+
+Hier: Preis über EMA50 → nur Longs (`4`), Preis unter EMA50 → nur Shorts (`2`).
 
 **Beispiel - Fixed Exit Grid:**
 
@@ -297,7 +360,7 @@ Alle Kombinationen werden getestet (kartesisches Produkt). Mehrere Conditions we
     "ct": [0.5, 0.55, 0.6, 0.65],
     "regime_filter_grid": {
       "condition_grids": [
-        {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]}
+        {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0}
       ]
     }
   }
@@ -432,8 +495,8 @@ Alle Kombinationen werden getestet (kartesisches Produkt). Mehrere Conditions we
       "ct": [0.5, 0.55, 0.6, 0.65],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30]}
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0}
         ]
       }
     }

@@ -92,7 +92,8 @@
       {"name": "ichimoku", "params": {"tenkan_period": 9, "kijun_period": 26, "senkou_b_period": 52}},
       {"name": "microstructure", "params": {"atr_period": 14, "rolling_window": 5}},
       {"name": "macro_surprise", "params": {"vol_lookback": 20, "surprise_threshold": 2.0, "gap_ma_period": 10}},
-      {"name": "market_regime", "params": {"window": 50}}
+      {"name": "market_regime", "params": {"window": 50}},
+      {"name": "regime_cluster", "params": {"zscore_window": 200, "quantile_window": 500, "n_regimes": 3}}
     ],
     "feature_selection": [
       {
@@ -137,9 +138,10 @@
       "ct": [0.5, 0.55, 0.6, 0.65],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
         ]
       }
     },
@@ -149,9 +151,10 @@
       "ct": [0.5, 0.55, 0.6, 0.65],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
         ]
       }
     },
@@ -161,9 +164,10 @@
       "ct": [0.5, 0.55, 0.6, 0.65],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
         ]
       }
     },
@@ -173,9 +177,10 @@
       "ct": [0.5, 0.55, 0.6, 0.65],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25]},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30]},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45]}
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
         ]
       }
     }

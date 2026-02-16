@@ -37,6 +37,10 @@ def _validate_targets(
     return has_long, has_short
 
 
+REGIME_LONG = 4
+REGIME_SHORT = 2
+
+
 def _simulate_trades_core(
     df: pd.DataFrame,
     probs_long: Optional[np.ndarray],
@@ -56,7 +60,7 @@ def _simulate_trades_core(
     Kern-Funktion für Trade-Simulation (konsolidiert aus 3 ähnlichen Funktionen).
 
     Args:
-        df: DataFrame mit OHLC-Daten und _regime_ok
+        df: DataFrame mit OHLC-Daten und _regime bitmask column
         probs_long: Wahrscheinlichkeiten für Long-Trades (oder None)
         probs_short: Wahrscheinlichkeiten für Short-Trades (oder None)
         long_win_idx: Index der Win-Klasse im Long-Modell
@@ -79,7 +83,7 @@ def _simulate_trades_core(
     low = df["L"].values
     # ATR ist optional - wenn nicht vorhanden (volatility indicator nicht konfiguriert), Dummy-Array
     atr = df["_atr"].values if "_atr" in df.columns else np.zeros(len(df))
-    regime = df["_regime_ok"].values
+    regime = df["_regime"].values if "_regime" in df.columns else np.full(len(df), 7, dtype=np.int8)
     timestamps = df.index.values
     has_rv = "vol_rv_20" in df.columns
     rv_values = df["vol_rv_20"].values if has_rv else None
@@ -93,17 +97,14 @@ def _simulate_trades_core(
         if i < next_allowed_entry:
             continue
 
-        if not regime[i]:
-            continue
-
         direction = None
-        # Long-Check (wenn nicht gefiltert)
+        # Long-Check: regime bitmask must have REGIME_LONG bit set
         if direction_filter in (None, 1):
-            if ctx.long_enabled and probs_long is not None and probs_long[i, long_win_idx] >= ct_long:
+            if regime[i] & REGIME_LONG and ctx.long_enabled and probs_long is not None and probs_long[i, long_win_idx] >= ct_long:
                 direction = 1
-        # Short-Check (wenn nicht gefiltert und Long nicht getroffen)
+        # Short-Check: regime bitmask must have REGIME_SHORT bit set
         if direction is None and direction_filter in (None, -1):
-            if ctx.short_enabled and probs_short is not None and probs_short[i, short_win_idx] >= ct_short:
+            if regime[i] & REGIME_SHORT and ctx.short_enabled and probs_short is not None and probs_short[i, short_win_idx] >= ct_short:
                 direction = -1
 
         if direction:

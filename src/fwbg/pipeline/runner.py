@@ -1,10 +1,83 @@
 """Pipeline runner for orchestrating plugin execution in phase order."""
+from collections import defaultdict, deque
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from fwbg.pipeline.base import BasePlugin, PluginPhase
 from fwbg.pipeline.config import PipelineConfig, PluginConfig
 from fwbg.pipeline.context import PipelineContext
 from fwbg.pipeline.registry import PluginRegistry
+
+
+def _short_name(fq_name: str) -> str:
+    """Extract short name from fully-qualified plugin name ('fwbg-premium:regime' → 'regime')."""
+    return fq_name.split(":")[-1] if ":" in fq_name else fq_name
+
+
+def _topological_sort(
+    plugin_configs: List[PluginConfig],
+    registry: PluginRegistry,
+) -> List[PluginConfig]:
+    """Sort plugins within a phase by depends_on using Kahn's algorithm.
+
+    Validates that all dependencies are present and detects cycles.
+
+    Args:
+        plugin_configs: Plugin configs for a single phase
+        registry: Plugin registry for looking up plugin classes
+
+    Returns:
+        Topologically sorted list of PluginConfig
+
+    Raises:
+        ValueError: If a dependency is missing or a cycle is detected
+    """
+    if not plugin_configs:
+        return []
+
+    # Build short_name → fq_name mapping for this phase
+    short_to_fq: Dict[str, str] = {}
+    for pc in plugin_configs:
+        short = _short_name(pc.name)
+        short_to_fq[short] = pc.name
+
+    # Build adjacency list and in-degree count (using FQ names as node IDs)
+    in_degree: Dict[str, int] = {pc.name: 0 for pc in plugin_configs}
+    dependents: Dict[str, List[str]] = defaultdict(list)  # dep → [plugins that need it]
+
+    for pc in plugin_configs:
+        plugin_cls = registry.get(pc.name)
+        for dep_short in plugin_cls.depends_on:
+            if dep_short not in short_to_fq:
+                raise ValueError(
+                    f"Plugin '{_short_name(pc.name)}' depends on '{dep_short}', "
+                    f"but '{dep_short}' is not in the pipeline. Either add "
+                    f"'{dep_short}' to the pipeline or remove '{_short_name(pc.name)}'."
+                )
+            dep_fq = short_to_fq[dep_short]
+            dependents[dep_fq].append(pc.name)
+            in_degree[pc.name] += 1
+
+    # Kahn's algorithm
+    queue = deque(fq for fq, deg in in_degree.items() if deg == 0)
+    sorted_fqs: List[str] = []
+
+    while queue:
+        node = queue.popleft()
+        sorted_fqs.append(node)
+        for dependent in dependents[node]:
+            in_degree[dependent] -= 1
+            if in_degree[dependent] == 0:
+                queue.append(dependent)
+
+    if len(sorted_fqs) != len(plugin_configs):
+        cycle_nodes = [_short_name(fq) for fq, deg in in_degree.items() if deg > 0]
+        raise ValueError(
+            f"Circular dependency detected among plugins: {', '.join(cycle_nodes)}"
+        )
+
+    # Return PluginConfigs in sorted order
+    fq_to_config = {pc.name: pc for pc in plugin_configs}
+    return [fq_to_config[fq] for fq in sorted_fqs]
 
 
 class PipelineRunner:
@@ -56,7 +129,8 @@ class PipelineRunner:
         """
         Lazy initialization of plugin instances.
 
-        Creates plugin instances in phase order and builds the execution order list.
+        Creates plugin instances in phase order, validates dependencies,
+        and topologically sorts plugins within each phase.
         """
         if self._initialized:
             return
@@ -67,14 +141,13 @@ class PipelineRunner:
         # Build execution order by iterating phases in order
         for phase_name, _phase_enum in self.PHASE_ORDER:
             phase_configs = self._config.get_phase(phase_name)
-            for plugin_config in phase_configs:
-                # Get plugin class from registry
+
+            # Topological sort handles dependency validation + ordering
+            sorted_configs = _topological_sort(phase_configs, self._registry)
+
+            for plugin_config in sorted_configs:
                 plugin_cls = self._registry.get(plugin_config.name)
-
-                # Create instance
                 instance = plugin_cls()
-
-                # Store instance
                 self._instances[plugin_config.name] = instance
                 self._execution_order.append((plugin_config, instance))
 

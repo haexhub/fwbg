@@ -1,9 +1,9 @@
 """
-Tests für Regime-Detection Features und Regime-Filter.
+Tests für Regime-Detection Features und Bitmask-Regime-Filter.
 
 Testet:
-- Regime-Filter (compute_regime_filter mit generischen Bedingungen)
-- RegimeFilterGridConfig (Kombinationen, Parsing)
+- Regime-Filter (compute_regime_bitmask mit Bitmask-Encoding)
+- RegimeFilterGridConfig (Kombinationen, Parsing, directions/else_directions)
 - RegimeFilterConfig (conditions-based)
 - Regime-Plugin Feature-Berechnung
 """
@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.pipeline.features import compute_regime_filter
+from fwbg.pipeline.features import compute_regime_bitmask
 from fwbg.core.config import (
     RegimeFilterGridConfig,
     RegimeFilterConfig,
@@ -54,74 +54,87 @@ def df_with_indicators(sample_ohlc):
     return df
 
 
-# === TESTS FÜR compute_regime_filter ===
+# === TESTS FÜR compute_regime_bitmask ===
 
-class TestComputeRegimeFilter:
-    """Tests für compute_regime_filter() mit generischen Bedingungen."""
+class TestComputeRegimeBitmask:
+    """Tests für compute_regime_bitmask() mit Bitmask-Encoding."""
 
-    def test_no_params_allows_all_trades(self, sample_ohlc):
-        result = compute_regime_filter(sample_ohlc, regime_params=None)
-        assert result.dtype == bool
+    def test_no_params_returns_all_allowed(self, sample_ohlc):
+        result = compute_regime_bitmask(sample_ohlc, regime_params=None)
+        assert result.dtype == np.int8
         assert len(result) == len(sample_ohlc)
-        assert result.all()
+        assert (result == 7).all()
 
-    def test_empty_conditions_allows_all(self, df_with_indicators):
+    def test_empty_conditions_returns_all_allowed(self, df_with_indicators):
         params = RegimeFilterConfig(conditions=[])
-        result = compute_regime_filter(df_with_indicators, regime_params=params)
-        assert result.all()
+        result = compute_regime_bitmask(df_with_indicators, regime_params=params)
+        assert (result == 7).all()
 
-    def test_gte_condition_blocks_some(self, df_with_indicators):
-        """ADX >= 25 condition blocks bars with low ADX."""
+    def test_gte_condition_produces_bitmask(self, df_with_indicators):
+        """ADX >= 25 → directions (6), else → 0."""
         params = RegimeFilterConfig(conditions=[
-            RegimeCondition("trend_adx_14", ">=", 25.0)
+            RegimeCondition("trend_adx_14", ">=", 25.0, directions=6, else_directions=0)
         ])
-        result = compute_regime_filter(df_with_indicators, regime_params=params)
-        assert result.dtype == bool
-        assert not result.all()
-        assert result.any()
+        result = compute_regime_bitmask(df_with_indicators, regime_params=params)
+        assert result.dtype == np.int8
+        assert (result == 0).any()
+        assert (result == 6).any()
 
     def test_lte_condition(self, df_with_indicators):
-        """VIX <= 25 condition blocks bars with high VIX."""
+        """VIX <= 25 → directions (6), else → 0."""
         params = RegimeFilterConfig(conditions=[
-            RegimeCondition("macro_vix", "<=", 25.0)
+            RegimeCondition("macro_vix", "<=", 25.0, directions=6, else_directions=0)
         ])
-        result = compute_regime_filter(df_with_indicators, regime_params=params)
-        assert not result.all()
-        assert result.any()
+        result = compute_regime_bitmask(df_with_indicators, regime_params=params)
+        assert (result == 0).any()
+        assert (result == 6).any()
 
-    def test_missing_column_does_not_filter(self, df_with_indicators):
+    def test_missing_column_keeps_all_allowed(self, df_with_indicators):
         """Condition on missing column has no effect."""
         params = RegimeFilterConfig(conditions=[
             RegimeCondition("nonexistent_col", ">=", 25.0)
         ])
-        result = compute_regime_filter(df_with_indicators, regime_params=params)
-        assert result.all()
+        result = compute_regime_bitmask(df_with_indicators, regime_params=params)
+        assert (result == 7).all()
 
-    def test_combined_conditions(self, df_with_indicators):
-        """Multiple conditions are AND-combined."""
+    def test_combined_conditions_and_logic(self, df_with_indicators):
+        """Multiple conditions are AND-combined (intersection of bitmasks)."""
         params = RegimeFilterConfig(conditions=[
-            RegimeCondition("trend_adx_14", ">=", 25.0),
-            RegimeCondition("macro_vix", "<=", 25.0),
+            RegimeCondition("trend_adx_14", ">=", 25.0, directions=6, else_directions=0),
+            RegimeCondition("macro_vix", "<=", 25.0, directions=6, else_directions=0),
         ])
-        result = compute_regime_filter(df_with_indicators, regime_params=params)
-        assert result.dtype == bool
+        result = compute_regime_bitmask(df_with_indicators, regime_params=params)
+        assert result.dtype == np.int8
 
         # Combined should be more restrictive
-        single = compute_regime_filter(df_with_indicators, RegimeFilterConfig(
-            conditions=[RegimeCondition("trend_adx_14", ">=", 25.0)]
+        single = compute_regime_bitmask(df_with_indicators, RegimeFilterConfig(
+            conditions=[RegimeCondition("trend_adx_14", ">=", 25.0, directions=6, else_directions=0)]
         ))
-        assert result.sum() <= single.sum()
+        assert (result > 0).sum() <= (single > 0).sum()
 
     def test_three_conditions(self, df_with_indicators):
         """ADX + VIX + Hurst combined."""
         params = RegimeFilterConfig(conditions=[
-            RegimeCondition("trend_adx_14", ">=", 25.0),
-            RegimeCondition("macro_vix", "<=", 25.0),
-            RegimeCondition("regime_hurst_100", ">=", 0.45),
+            RegimeCondition("trend_adx_14", ">=", 25.0, directions=6, else_directions=0),
+            RegimeCondition("macro_vix", "<=", 25.0, directions=6, else_directions=0),
+            RegimeCondition("regime_hurst_100", ">=", 0.45, directions=6, else_directions=0),
         ])
-        result = compute_regime_filter(df_with_indicators, regime_params=params)
-        assert result.dtype == bool
+        result = compute_regime_bitmask(df_with_indicators, regime_params=params)
+        assert result.dtype == np.int8
         assert len(result) == len(df_with_indicators)
+
+    def test_directional_bitmask(self, df_with_indicators):
+        """directions=4 (Long), else_directions=2 (Short) based on condition."""
+        df = df_with_indicators.copy()
+        df["ema_diff"] = np.linspace(-1, 1, len(df))
+        params = RegimeFilterConfig(conditions=[
+            RegimeCondition("ema_diff", ">", 0, directions=4, else_directions=2)
+        ])
+        result = compute_regime_bitmask(df, regime_params=params)
+        # First half ema_diff <= 0 → Short only (2)
+        assert (result[:len(df) // 2] == 2).all()
+        # Last bars ema_diff > 0 → Long only (4)
+        assert (result[-10:] == 4).all()
 
 
 # === TESTS FÜR RegimeFilterGridConfig ===
@@ -170,11 +183,13 @@ class TestRegimeFilterGridConfig:
         assert len(no_filter) == 1
 
     def test_all_filter_combo_has_all_conditions(self):
-        """Non-null values in all grids → all conditions present."""
+        """Non-null values in all grids → all conditions present with directions."""
         config = RegimeFilterGridConfig.from_dict({
             "condition_grids": [
-                {"column": "trend_adx_14", "operator": ">=", "values": [None, 25]},
-                {"column": "macro_vix", "operator": "<=", "values": [None, 30]},
+                {"column": "trend_adx_14", "operator": ">=", "values": [None, 25],
+                 "directions": 6, "else_directions": 0},
+                {"column": "macro_vix", "operator": "<=", "values": [None, 30],
+                 "directions": 6, "else_directions": 0},
             ]
         })
         combos = config.get_combinations()
@@ -182,6 +197,7 @@ class TestRegimeFilterGridConfig:
         assert len(all_conds) == 1
         assert all_conds[0]["conditions"][0]["column"] == "trend_adx_14"
         assert all_conds[0]["conditions"][0]["value"] == 25
+        assert all_conds[0]["conditions"][0]["directions"] == 6
         assert all_conds[0]["conditions"][1]["column"] == "macro_vix"
         assert all_conds[0]["conditions"][1]["value"] == 30
 
@@ -261,23 +277,23 @@ class TestStrategyRegimeConfig:
     def test_exploration_json_has_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/exploration.json")
         grid = config.get_grid_for_class("FOREX")
-        assert grid.regime_filter_grid.total_combinations() == 8
+        assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_atr_has_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/exploration_atr.json")
         grid = config.get_grid_for_class("FOREX")
-        assert grid.regime_filter_grid.total_combinations() == 8
+        assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_fast_has_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/exploration_fast.json")
         grid = config.get_grid_for_class("FOREX")
-        assert grid.regime_filter_grid.total_combinations() == 8
+        assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_all_asset_classes_have_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/exploration.json")
         for asset_class in ["FOREX", "INDEX", "COMMODITY", "CRYPTO"]:
             grid = config.get_grid_for_class(asset_class)
-            assert grid.regime_filter_grid.total_combinations() == 8, (
+            assert grid.regime_filter_grid.total_combinations() == 24, (
                 f"{asset_class} sollte 8 Regime-Kombinationen haben"
             )
 
