@@ -225,6 +225,7 @@ class ValidationConfig:
     early_pruning: EarlyPruningConfig = field(default_factory=EarlyPruningConfig)
     probability_calibration: bool = False
     calibration_method: str = "isotonic"  # "isotonic" or "sigmoid" (Platt Scaling)
+    meta_labeling: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ValidationConfig":
@@ -240,6 +241,7 @@ class ValidationConfig:
             early_pruning=EarlyPruningConfig.from_dict(data.get("early_pruning")),
             probability_calibration=data.get("probability_calibration", False),
             calibration_method=data.get("calibration_method", "isotonic"),
+            meta_labeling=data.get("meta_labeling", False),
         )
 
 
