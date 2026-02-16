@@ -22,6 +22,32 @@ def _has_header(path):
         return not is_date  # Hat Header wenn NICHT Datum
 
 
+def _validate_ohlc(df, path):
+    """Validate OHLC data after loading."""
+    sym = os.path.basename(path).split("_")[0]
+    ohlc = ["O", "H", "L", "C"]
+    present = [c for c in ohlc if c in df.columns]
+
+    # Check OHLC columns are numeric
+    for col in present:
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            raise ValueError(f"{sym}: Column '{col}' is not numeric (dtype={df[col].dtype})")
+
+    if present:
+        # Check for inf values
+        numeric_df = df[present]
+        inf_counts = np.isinf(numeric_df).sum()
+        has_inf = inf_counts[inf_counts > 0]
+        if len(has_inf) > 0:
+            raise ValueError(f"{sym}: OHLC contains inf values: {has_inf.to_dict()}")
+
+        # Check for non-positive prices
+        min_vals = numeric_df.min()
+        non_positive = min_vals[min_vals <= 0]
+        if len(non_positive) > 0:
+            raise ValueError(f"{sym}: OHLC contains non-positive values: {non_positive.to_dict()}")
+
+
 def load_data_aligned(path, is_sentiment=False):
     """Lädt OHLC-Daten aus CSV mit Zeitzone-Alignment."""
     try:
@@ -68,7 +94,12 @@ def load_data_aligned(path, is_sentiment=False):
         # Stelle sicher dass der Index keine TZ hat
         if df["T"].dt.tz is not None:
             df["T"] = df["T"].dt.tz_localize(None)
-        return df.set_index("T")
+        df = df.set_index("T")
+
+        # Validate OHLC data
+        _validate_ohlc(df, path)
+
+        return df
     except Exception as e:
         print(f"Fehler beim Laden von {path}: {e}")
         return None

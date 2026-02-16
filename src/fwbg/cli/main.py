@@ -232,6 +232,9 @@ def run_optimizer(
             "grid_results": result.get("grid_results", []),
         }
 
+        if result.get("error"):
+            grid_data["error"] = result["error"]
+
         # Walk-Forward und Bias-Check für ALLE Assets speichern (nicht nur ok)
         if result.get("walk_forward"):
             grid_data["walk_forward"] = result["walk_forward"]
