@@ -13,14 +13,17 @@ from fwbg.plugins import import_plugin_module
 
 # Import from boruta plugin
 _boruta = import_plugin_module("fwbg-premium", "feature_selection", "boruta")
+_plateau = import_plugin_module("fwbg-premium", "feature_selection", "plateau")
+
+if _boruta is None or _plateau is None:
+    pytest.skip("fwbg-premium feature_selection plugins not available", allow_module_level=True)
+
 create_shadow_features = _boruta.create_shadow_features
 boruta_iteration = _boruta.boruta_iteration
 boruta_select = _boruta.boruta_select
 boruta_select_fast = _boruta.boruta_select_fast
 select_features_boruta = _boruta.select_features_boruta
 
-# Import from plateau plugin
-_plateau = import_plugin_module("fwbg-premium", "feature_selection", "plateau")
 find_feature_neighbors = _plateau.find_feature_neighbors
 calculate_feature_plateau_score = _plateau.calculate_feature_plateau_score
 calculate_param_plateau_score = _plateau.calculate_param_plateau_score
