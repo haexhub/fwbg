@@ -601,3 +601,241 @@ class TestGridResultsInProcessSymbolOutput:
             "Erwartet: \"grid_results\": <variable>\n"
             "Dies ist notwendig, damit grid_details Dateien gespeichert werden können."
         )
+
+
+class TestProbabilityCalibration:
+    """Tests for probability calibration replacing CT grid search.
+
+    Uses real objects (SimulationContext, XGBoost, CalibratedClassifierCV) instead
+    of mocks to verify actual behavior end-to-end.
+    """
+
+    @staticmethod
+    def _make_ctx(probability_calibration=False, calibration_method="isotonic",
+                  separate_long_short=False):
+        """Create a real SimulationContext for calibration tests."""
+        from fwbg.core.context import SimulationContext
+        return SimulationContext(
+            symbol="TESTUSD",
+            asset_class="FOREX",
+            spread=0.0002,
+            point=0.0001,
+            min_trades=10,
+            grid_ct=[0.50, 0.55, 0.60],
+            grid_tp=[10, 20],
+            grid_sl=[20, 30],
+            long_enabled=True,
+            short_enabled=True,
+            separate_long_short=separate_long_short,
+            model_hyperparameters={"n_estimators": 10, "max_depth": 2, "random_state": 42},
+            probability_calibration=probability_calibration,
+            calibration_method=calibration_method,
+        )
+
+    @staticmethod
+    def _make_ohlc_df(n=500, seed=42):
+        """Create a realistic OHLC DataFrame with _atr and _regime columns."""
+        rng = np.random.default_rng(seed)
+        # Random walk price
+        price = 1.1000 + np.cumsum(rng.normal(0, 0.0005, n))
+        atr = np.abs(rng.normal(0.001, 0.0003, n))
+        df = pd.DataFrame({
+            "O": price,
+            "H": price + np.abs(rng.normal(0.0005, 0.0002, n)),
+            "L": price - np.abs(rng.normal(0.0005, 0.0002, n)),
+            "C": price + rng.normal(0, 0.0003, n),
+            "_atr": atr,
+            "_regime": np.full(n, 7, dtype=np.int8),
+            "feat1": rng.standard_normal(n),
+            "feat2": rng.standard_normal(n),
+            "feat3": rng.standard_normal(n),
+        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        return df
+
+    def test_config_roundtrip(self):
+        """ValidationConfig parses probability_calibration from dict and defaults correctly."""
+        from fwbg.core.config import ValidationConfig
+
+        # Explicit values
+        cfg = ValidationConfig.from_dict({
+            "probability_calibration": True,
+            "calibration_method": "sigmoid",
+        })
+        assert cfg.probability_calibration is True
+        assert cfg.calibration_method == "sigmoid"
+
+        # Defaults
+        cfg_default = ValidationConfig.from_dict({})
+        assert cfg_default.probability_calibration is False
+        assert cfg_default.calibration_method == "isotonic"
+
+    def test_context_wiring_from_strategy(self):
+        """SimulationContext.create() wires probability_calibration from StrategyConfig."""
+        from fwbg.core.config import StrategyConfig
+
+        strategy = StrategyConfig.from_dict({
+            "validation": {
+                "probability_calibration": True,
+                "calibration_method": "sigmoid",
+            },
+            "grids": {"FOREX": {"tp": [10], "sl": [20], "ct": [0.5]}},
+        })
+
+        from fwbg.data.assets import AssetConfig
+        asset = AssetConfig(
+            symbol="TESTUSD", asset_class="FOREX",
+            spread=0.0002, point=0.0001, currencies=["USD"],
+        )
+
+        from fwbg.core.context import SimulationContext
+        ctx = SimulationContext.create(asset, strategy)
+        assert ctx.probability_calibration is True
+        assert ctx.calibration_method == "sigmoid"
+
+    def test_train_model_calibrated_returns_calibrated_classifier(self):
+        """train_model with calibration wraps XGBoost in CalibratedClassifierCV."""
+        from fwbg.optimization.nested_cv import train_model
+        from sklearn.calibration import CalibratedClassifierCV
+
+        ctx = self._make_ctx(probability_calibration=True)
+        df = self._make_ohlc_df(300)
+        targets = np.random.default_rng(42).integers(0, 2, len(df)).astype(float)
+
+        model = train_model(df, targets, ["feat1", "feat2"], min_trades=10, ctx=ctx)
+
+        assert isinstance(model, CalibratedClassifierCV)
+        probs = model.predict_proba(df[["feat1", "feat2"]])
+        assert probs.shape == (len(df), 2)
+        # Calibrated probs should sum to 1 per row
+        assert np.allclose(probs.sum(axis=1), 1.0)
+
+    def test_train_model_uncalibrated_returns_xgboost(self):
+        """train_model without calibration returns plain XGBClassifier."""
+        from fwbg.optimization.nested_cv import train_model
+        from xgboost import XGBClassifier
+
+        ctx = self._make_ctx(probability_calibration=False)
+        df = self._make_ohlc_df(300)
+        targets = np.random.default_rng(42).integers(0, 2, len(df)).astype(float)
+
+        model = train_model(df, targets, ["feat1", "feat2"], min_trades=10, ctx=ctx)
+
+        assert isinstance(model, XGBClassifier)
+
+    def test_evaluate_on_validation_calibrated_uses_ev_threshold(self):
+        """With calibration, evaluate_on_validation uses EV-optimal CT instead of grid."""
+        from fwbg.optimization.nested_cv import train_model
+        from fwbg.optimization.targets import evaluate_on_validation
+
+        ctx = self._make_ctx(probability_calibration=True)
+        df = self._make_ohlc_df(500)
+        rng = np.random.default_rng(42)
+        targets_long = (rng.random(len(df)) > 0.6).astype(float)
+        targets_short = (rng.random(len(df)) > 0.6).astype(float)
+
+        train_df = df.iloc[:350]
+        val_df = df.iloc[350:]
+        features = ["feat1", "feat2", "feat3"]
+
+        mod_long = train_model(train_df, targets_long[:350], features, 10, ctx)
+        mod_short = train_model(train_df, targets_short[:350], features, 10, ctx)
+
+        tp, sl = 20, 30
+        expected_ct = sl / (tp + sl)  # 0.60
+
+        best_ct, best_pnl, trades_by_ct = evaluate_on_validation(
+            val_df, mod_long, mod_short, features, features, tp, sl, ctx,
+        )
+
+        # CT must be the EV-optimal threshold, not from grid
+        assert best_ct == pytest.approx(expected_ct)
+        # Only one CT evaluated (no grid search)
+        assert len(trades_by_ct) == 1
+        assert expected_ct in trades_by_ct
+
+    def test_evaluate_on_validation_uncalibrated_uses_grid(self):
+        """Without calibration, evaluate_on_validation searches the CT grid."""
+        from fwbg.optimization.nested_cv import train_model
+        from fwbg.optimization.targets import evaluate_on_validation
+
+        ctx = self._make_ctx(probability_calibration=False)
+        df = self._make_ohlc_df(500)
+        rng = np.random.default_rng(42)
+        targets_long = (rng.random(len(df)) > 0.6).astype(float)
+        targets_short = (rng.random(len(df)) > 0.6).astype(float)
+
+        train_df = df.iloc[:350]
+        val_df = df.iloc[350:]
+        features = ["feat1", "feat2", "feat3"]
+
+        mod_long = train_model(train_df, targets_long[:350], features, 10, ctx)
+        mod_short = train_model(train_df, targets_short[:350], features, 10, ctx)
+
+        tp, sl = 20, 30
+
+        best_ct, best_pnl, trades_by_ct = evaluate_on_validation(
+            val_df, mod_long, mod_short, features, features, tp, sl, ctx,
+        )
+
+        # Grid has 3 CT values [0.50, 0.55, 0.60], all should be evaluated
+        assert len(trades_by_ct) == 3
+        # best_ct must be from the grid
+        if best_ct is not None:
+            assert best_ct in ctx.grid_ct
+
+    def test_calibrated_separate_long_short_returns_ct_tuple(self):
+        """With calibration + separate_long_short, CT should be (ct_ev, ct_ev) tuple."""
+        from fwbg.optimization.nested_cv import train_model
+        from fwbg.optimization.targets import evaluate_on_validation
+
+        ctx = self._make_ctx(probability_calibration=True, separate_long_short=True)
+        df = self._make_ohlc_df(500)
+        rng = np.random.default_rng(42)
+        targets_long = (rng.random(len(df)) > 0.6).astype(float)
+        targets_short = (rng.random(len(df)) > 0.6).astype(float)
+
+        train_df = df.iloc[:350]
+        val_df = df.iloc[350:]
+        features = ["feat1", "feat2", "feat3"]
+
+        mod_long = train_model(train_df, targets_long[:350], features, 10, ctx)
+        mod_short = train_model(train_df, targets_short[:350], features, 10, ctx)
+
+        tp, sl = 15, 30
+        expected_ct = sl / (tp + sl)  # 30/45 ≈ 0.667
+
+        best_ct, _, _ = evaluate_on_validation(
+            val_df, mod_long, mod_short, features, features, tp, sl, ctx,
+        )
+
+        assert isinstance(best_ct, tuple)
+        assert best_ct[0] == pytest.approx(expected_ct)
+        assert best_ct[1] == pytest.approx(expected_ct)
+
+    def test_ev_threshold_varies_with_tp_sl(self):
+        """Different TP/SL ratios should produce different EV thresholds."""
+        from fwbg.optimization.nested_cv import train_model
+        from fwbg.optimization.targets import evaluate_on_validation
+
+        ctx = self._make_ctx(probability_calibration=True)
+        df = self._make_ohlc_df(500)
+        rng = np.random.default_rng(42)
+        targets = (rng.random(len(df)) > 0.6).astype(float)
+
+        train_df = df.iloc[:350]
+        val_df = df.iloc[350:]
+        features = ["feat1", "feat2", "feat3"]
+
+        mod = train_model(train_df, targets[:350], features, 10, ctx)
+
+        # TP=10, SL=40 → ct = 40/50 = 0.80
+        ct1, _, _ = evaluate_on_validation(val_df, mod, mod, features, features, 10, 40, ctx)
+        assert ct1 == pytest.approx(0.80)
+
+        # TP=30, SL=20 → ct = 20/50 = 0.40
+        ct2, _, _ = evaluate_on_validation(val_df, mod, mod, features, features, 30, 20, ctx)
+        assert ct2 == pytest.approx(0.40)
+
+        # TP=20, SL=20 → ct = 0.50
+        ct3, _, _ = evaluate_on_validation(val_df, mod, mod, features, features, 20, 20, ctx)
+        assert ct3 == pytest.approx(0.50)

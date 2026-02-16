@@ -96,6 +96,8 @@ class SimulationContext:
     early_pruning_enabled: bool = False
     early_pruning_keep_ratio: float = 0.5
     early_pruning_min_survivors: int = 10
+    probability_calibration: bool = False
+    calibration_method: str = "isotonic"
 
     # Exit-Strategy (Plugin)
     exit_strategy: str = "fixed"
@@ -174,6 +176,8 @@ class SimulationContext:
             early_pruning_enabled=strategy.validation.early_pruning.enabled,
             early_pruning_keep_ratio=strategy.validation.early_pruning.keep_ratio,
             early_pruning_min_survivors=strategy.validation.early_pruning.min_survivors,
+            probability_calibration=strategy.validation.probability_calibration,
+            calibration_method=strategy.validation.calibration_method,
         )
 
     def get_long_grid(self) -> tuple:

@@ -223,6 +223,8 @@ class ValidationConfig:
     embargo_bars: int = 0
     sample_weights: bool = False
     early_pruning: EarlyPruningConfig = field(default_factory=EarlyPruningConfig)
+    probability_calibration: bool = False
+    calibration_method: str = "isotonic"  # "isotonic" or "sigmoid" (Platt Scaling)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ValidationConfig":
@@ -236,6 +238,8 @@ class ValidationConfig:
             embargo_bars=data.get("embargo_bars", 0),
             sample_weights=data.get("sample_weights", False),
             early_pruning=EarlyPruningConfig.from_dict(data.get("early_pruning")),
+            probability_calibration=data.get("probability_calibration", False),
+            calibration_method=data.get("calibration_method", "isotonic"),
         )
 
 

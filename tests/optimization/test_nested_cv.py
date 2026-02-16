@@ -94,6 +94,7 @@ def create_mock_context(
     ctx.preprocessing_plugins = []  # No preprocessing by default
     ctx.exit_strategy = "fixed"
     ctx.exit_params = {}
+    ctx.probability_calibration = False
     return ctx
 
 
