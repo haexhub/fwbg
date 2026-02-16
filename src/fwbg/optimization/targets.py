@@ -378,7 +378,11 @@ def _get_probs(
     """Berechnet Wahrscheinlichkeiten für ein Modell."""
     if not features or model is None:
         return None, None
-    probs = model.predict_proba(df[features])
+    X = df[features].values.copy()
+    inf_mask = np.isinf(X)
+    if inf_mask.any():
+        X[inf_mask] = np.nan
+    probs = model.predict_proba(X)
     if 1 in model.classes_:
         win_idx = np.where(model.classes_ == 1)[0][0]
         return probs, win_idx

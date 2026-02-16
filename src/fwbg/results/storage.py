@@ -451,13 +451,15 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
     # Menschenlesbare Zusammenfassung
     summary_path = os.path.join(run_path, "summary.txt")
     _write_summary(summary_path, run_path, description, strategy_metadata,
-                   raw_results, filtered_results, elite_results, final_assets, table_data)
+                   raw_results, filtered_results, elite_results, final_assets, table_data,
+                   all_results=all_results)
 
     return results_path, assets_path, summary_path
 
 
 def _write_summary(summary_path, run_path, description, strategy_metadata,
-                   raw_results, filtered_results, elite_results, final_assets, table_data):
+                   raw_results, filtered_results, elite_results, final_assets, table_data,
+                   all_results=None):
     """Schreibt die menschenlesbare Zusammenfassung."""
     with open(summary_path, "w") as f:
         f.write(f"{'='*70}\n")
