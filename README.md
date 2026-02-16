@@ -1,24 +1,24 @@
 # FWBG — ML Trading Strategy Optimizer
 
-FWBG ist ein Machine-Learning-basiertes Framework zur Walk-Forward-Optimierung von Trading-Strategien. Es findet optimale Parameter (Take-Profit, Stop-Loss, Confidence-Threshold) via Nested Cross-Validation und prüft die statistische Robustheit der Ergebnisse durch multiple Overfitting-Tests.
+FWBG is a machine-learning-based framework for walk-forward optimization of trading strategies. It finds optimal parameters (take-profit, stop-loss, confidence threshold) via nested cross-validation and verifies the statistical robustness of results through multiple overfitting tests.
 
-Das System basiert auf einer **modularen Plugin-Architektur**: Jede Phase der Pipeline — von Indikatoren über Exit-Strategien bis zum Risk Management — ist als austauschbares Plugin implementiert. Eigene Plugins können ohne Änderung am Framework-Code hinzugefügt werden.
+The system is built on a **modular plugin architecture**: every pipeline phase — from indicators to exit strategies to risk management — is implemented as a swappable plugin. Custom plugins can be added without modifying the framework code.
 
 ---
 
-## Warum FWBG?
+## Why FWBG?
 
-- **Plugin-Architektur** — Indikatoren, Preprocessors, Feature Selectors, Exit Strategies und Risk Manager sind Plugins. Jede Phase kann durch eigene Implementierungen erweitert oder komplett ersetzt werden.
+- **Plugin Architecture** — Indicators, preprocessors, feature selectors, exit strategies, and risk managers are all plugins. Every phase can be extended or completely replaced with custom implementations.
 
-- **Walk-Forward Validation** — Nested Cross-Validation mit expandierenden Fenstern, Time-Series Purging (Embargo) und Sample Weights. Kein Lookahead-Bias by Construction.
+- **Walk-Forward Validation** — Nested cross-validation with expanding windows, time-series purging (embargo), and sample weights. No lookahead bias by construction.
 
-- **Overfitting-Schutz** — Drei statistische Tests prüfen jede gefundene Strategie: Deflated Sharpe Ratio (Multiple-Testing-Korrektur), Probability of Backtest Overfitting (CSCV), Monte Carlo Permutation Tests.
+- **Overfitting Protection** — Three statistical tests verify every discovered strategy: Deflated Sharpe Ratio (multiple-testing correction), Probability of Backtest Overfitting (CSCV), Monte Carlo permutation tests.
 
-- **Numba-beschleunigte Simulation** — JIT-kompilierte Trade-Simulation mit paralleler Verarbeitung für schnelle Grid-Search-Durchläufe.
+- **Numba-Accelerated Simulation** — JIT-compiled trade simulation with parallel processing for fast grid-search runs.
 
-- **Core + Premium Pakete** — Open-Source Core-Indikatoren (Trend, Momentum, Volatility). Premium-Paket mit Regime Detection, Makro-Daten, COT-Positioning, ATR-basierte Exits, Feature Selection.
+- **Core + Premium Packages** — Open-source core indicators (trend, momentum, volatility). Premium package with regime detection, macro data, COT positioning, ATR-based exits, feature selection.
 
-- **Live-Trading Ready** — Broker-Adapter-System für Live-Ausführung (IG Markets etc.).
+- **Live-Trading Ready** — Broker adapter system for live execution (IG Markets etc.).
 
 ---
 
@@ -50,64 +50,64 @@ OPTIMIZER_LOG=2 fwbg --assets EURUSD
 ### Trading Bot
 
 ```bash
-python -m bots.ig                  # Streaming-Modus
-python -m bots.ig --no-streaming   # Polling-Modus
+python -m bots.ig                  # Streaming mode
+python -m bots.ig --no-streaming   # Polling mode
 ```
 
 ---
 
-## Architektur
+## Architecture
 
-FWBG verarbeitet Daten in einer Plugin-Pipeline mit definierten Phasen:
+FWBG processes data through a plugin pipeline with defined phases:
 
 ```
 DATA_LOADING → PREPROCESSING → INDICATORS → FEATURE_SELECTION
     → EXIT_STRATEGIES → RISK_MANAGEMENT → MODEL → VALIDATION
 ```
 
-Jede Phase kann beliebig viele Plugins enthalten. Der `PipelineRunner` orchestriert die Ausführung in der korrekten Reihenfolge, löst Abhängigkeiten auf und mergt Parameter.
+Each phase can contain any number of plugins. The `PipelineRunner` orchestrates execution in the correct order, resolves dependencies, and merges parameters.
 
-**Detaillierte Architektur-Dokumentation:** [docs/architecture.md](docs/architecture.md)
-
----
-
-## Pipeline-Phasen
-
-| # | Phase | Zweck | Dokumentation |
-|---|-------|-------|---------------|
-| 1 | Data Loading | Externe Daten laden (Makro, COT) | [docs/phases/1-data-loading.md](docs/phases/1-data-loading.md) |
-| 2 | Preprocessing | Stationaritätstransformationen | [docs/phases/2-preprocessing.md](docs/phases/2-preprocessing.md) |
-| 3 | Indicators | Technische Features berechnen | [docs/phases/3-indicators.md](docs/phases/3-indicators.md) |
-| 4 | Feature Selection | Relevante Features auswählen | [docs/phases/4-feature-selection.md](docs/phases/4-feature-selection.md) |
-| 5 | Exit Strategies | TP/SL-Berechnung (fixed, ATR) | [docs/phases/5-exit-strategies.md](docs/phases/5-exit-strategies.md) |
-| 6 | Risk Management | Positionsgröße (Kelly, Vol-Targeted) | [docs/phases/6-risk-management.md](docs/phases/6-risk-management.md) |
-| 7 | Validation | Walk-Forward CV, Overfitting-Tests | [docs/phases/7-validation.md](docs/phases/7-validation.md) |
+**Detailed architecture documentation:** [docs/architecture.md](docs/architecture.md)
 
 ---
 
-## CLI-Referenz
+## Pipeline Phases
 
-| Option | Beschreibung | Beispiel |
-|--------|--------------|----------|
-| `--assets` | Komma-separierte Asset-Liste | `--assets EURUSD,GBPUSD` |
-| `--strategy-file` | Pfad zur Strategy-JSON | `--strategy-file strategies/exploration.json` |
-| `--asset-classes` | Nur bestimmte Klassen | `--asset-classes FOREX` |
-| `--timeframe` | Timeframe überschreiben | `--timeframe H4` |
-| `--tags` | Runs nach Tags filtern | `--tags baseline` |
-| `--list` | Alle vorhandenen Runs anzeigen | `--list` |
-| `--compare` | Runs vergleichen | `--compare RUN1 RUN2` |
-| `--load` | Details eines Runs anzeigen | `--load RUN_ID` |
-| `--reverse-worst` | Schlechteste Strategien umkehren | `--reverse-worst RUN_ID` |
-| `--no-save` | Ergebnisse nicht speichern | `--no-save` |
-| `--cpu` | Max CPU-Auslastung (0.0-1.0) | `--cpu 0.8` |
-| `--ram-reserve` | Min freier RAM-Anteil | `--ram-reserve 0.25` |
-| `--ram-per-worker` | RAM pro Worker in GB | `--ram-per-worker 4.0` |
+| # | Phase | Purpose | Documentation |
+|---|-------|---------|---------------|
+| 1 | Data Loading | Load external data (macro, COT) | [docs/phases/1-data-loading.md](docs/phases/1-data-loading.md) |
+| 2 | Preprocessing | Stationarity transformations | [docs/phases/2-preprocessing.md](docs/phases/2-preprocessing.md) |
+| 3 | Indicators | Compute technical features | [docs/phases/3-indicators.md](docs/phases/3-indicators.md) |
+| 4 | Feature Selection | Select relevant features | [docs/phases/4-feature-selection.md](docs/phases/4-feature-selection.md) |
+| 5 | Exit Strategies | TP/SL computation (fixed, ATR) | [docs/phases/5-exit-strategies.md](docs/phases/5-exit-strategies.md) |
+| 6 | Risk Management | Position sizing (Kelly, vol-targeted) | [docs/phases/6-risk-management.md](docs/phases/6-risk-management.md) |
+| 7 | Validation | Walk-forward CV, overfitting tests | [docs/phases/7-validation.md](docs/phases/7-validation.md) |
+
+---
+
+## CLI Reference
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--assets` | Comma-separated asset list | `--assets EURUSD,GBPUSD` |
+| `--strategy-file` | Path to strategy JSON | `--strategy-file strategies/exploration.json` |
+| `--asset-classes` | Filter by asset class | `--asset-classes FOREX` |
+| `--timeframe` | Override timeframe | `--timeframe H4` |
+| `--tags` | Filter runs by tags | `--tags baseline` |
+| `--list` | Show all existing runs | `--list` |
+| `--compare` | Compare runs | `--compare RUN1 RUN2` |
+| `--load` | Show run details | `--load RUN_ID` |
+| `--reverse-worst` | Reverse worst strategies | `--reverse-worst RUN_ID` |
+| `--no-save` | Don't save results | `--no-save` |
+| `--cpu` | Max CPU utilization (0.0-1.0) | `--cpu 0.8` |
+| `--ram-reserve` | Min free RAM fraction | `--ram-reserve 0.25` |
+| `--ram-per-worker` | RAM per worker in GB | `--ram-per-worker 4.0` |
 
 ---
 
 ## Strategy Configuration
 
-Strategies werden in JSON-Dateien unter `strategies/` konfiguriert:
+Strategies are configured in JSON files under `strategies/`:
 
 ```json
 {
@@ -129,98 +129,98 @@ Strategies werden in JSON-Dateien unter `strategies/` konfiguriert:
 }
 ```
 
-**Vollständige Parameter-Referenz:** [strategies/README.md](strategies/README.md)
+**Full parameter reference:** [strategies/README.md](strategies/README.md)
 
 ---
 
-## Ergebnisse
+## Results
 
-Optimierungsergebnisse werden in `test_results/<timestamp>/` gespeichert:
+Optimization results are stored in `test_results/<timestamp>/`:
 
 ```
 test_results/20260201_103045_abc123/
-├── results.json           # Alle Ergebnisse
-├── summary.txt            # Zusammenfassung
+├── results.json           # All results
+├── summary.txt            # Summary
 └── EURUSD/
     └── best_candidate.json
 ```
 
-| Status | Bedeutung |
-|--------|-----------|
-| `significant` | Statistisch signifikanter Edge gefunden |
-| `not_significant` | Kein Edge (p-value >= 0.05) |
-| `no_candidates` | Keine validen Kandidaten |
+| Status | Meaning |
+|--------|---------|
+| `significant` | Statistically significant edge found |
+| `not_significant` | No edge (p-value >= 0.05) |
+| `no_candidates` | No valid candidates |
 
-Details zu den statistischen Tests: [docs/phases/7-validation.md](docs/phases/7-validation.md)
+Details on statistical tests: [docs/phases/7-validation.md](docs/phases/7-validation.md)
 
 ---
 
-## Projektstruktur
+## Project Structure
 
 ```
 fwbg/
 ├── src/fwbg/
-│   ├── plugins/                  # Plugin-System
-│   │   ├── fwbg-core/            # Core Plugins (kostenlos)
+│   ├── plugins/                  # Plugin system
+│   │   ├── fwbg-core/            # Core plugins (free)
 │   │   │   ├── indicators/       # trend, momentum, volatility, price_action, time_season
 │   │   │   ├── exit_strategies/  # fixed
 │   │   │   └── risk_management/  # kelly, vol_targeted_kelly
-│   │   └── *.py                  # Plugin-Basisklassen
-│   ├── core/                     # Config, Registry, Context, DataSources
-│   ├── pipeline/                 # Plugin Runner & Pipeline System
-│   ├── optimization/             # Walk-Forward CV, Grid Search, Targets
-│   ├── simulation/               # Numba-basierte Trade-Simulation
-│   ├── data/                     # Datenquellen, Loader, Asset-Definitionen
-│   ├── results/                  # Ergebnis-Speicherung & Plotting
-│   ├── cli/                      # Command-Line Interface
-│   └── adapters/                 # Broker & Datenquellen-Adapter
+│   │   └── *.py                  # Plugin base classes
+│   ├── core/                     # Config, registry, context, data sources
+│   ├── pipeline/                 # Plugin runner & pipeline system
+│   ├── optimization/             # Walk-forward CV, grid search, targets
+│   ├── simulation/               # Numba-based trade simulation
+│   ├── data/                     # Data sources, loader, asset definitions
+│   ├── results/                  # Result storage & plotting
+│   ├── cli/                      # Command-line interface
+│   └── adapters/                 # Broker & data source adapters
 │
 ├── packages/
-│   └── fwbg-premium/             # Premium Plugins (separates pip Package)
+│   └── fwbg-premium/             # Premium plugins (separate pip package)
 │       ├── indicators/           # regime, structure, risk, distribution, dynamics, ...
 │       ├── preprocessing/        # fractional_diff
 │       ├── feature_selection/    # boruta, plateau, stability
 │       ├── exit_strategies/      # atr_based
 │       └── data_loading/         # macro_data, cot_positioning
 │
-├── strategies/                   # Strategy Configurations (JSON)
-├── data/                         # Historical Data (CSV)
-└── test_results/                 # Optimization Results
+├── strategies/                   # Strategy configurations (JSON)
+├── data/                         # Historical data (CSV)
+└── test_results/                 # Optimization results
 ```
 
 ---
 
-## Dokumentation
+## Documentation
 
-### Architektur & Plugin-System
-- [Architektur & Plugin-System](docs/architecture.md) — Plugin-Lifecycle, Discovery, Naming, PipelineRunner
-- [Plugin Development Guide](docs/plugin-development.md) — Eigene Plugins erstellen
+### Architecture & Plugin System
+- [Architecture & Plugin System](docs/architecture.md) — Plugin lifecycle, discovery, naming, PipelineRunner
+- [Plugin Development Guide](docs/plugin-development.md) — Creating custom plugins
 
-### Pipeline-Phasen
-- [Phase 1: Data Loading](docs/phases/1-data-loading.md) — Externe Daten, DataSources
-- [Phase 2: Preprocessing](docs/phases/2-preprocessing.md) — Stationaritätstransformationen
-- [Phase 3: Indicators](docs/phases/3-indicators.md) — Technische Features, shift_features, safe_divide
-- [Phase 4: Feature Selection](docs/phases/4-feature-selection.md) — Boruta, Stability Selection
+### Pipeline Phases
+- [Phase 1: Data Loading](docs/phases/1-data-loading.md) — External data, data sources
+- [Phase 2: Preprocessing](docs/phases/2-preprocessing.md) — Stationarity transformations
+- [Phase 3: Indicators](docs/phases/3-indicators.md) — Technical features, shift_features, safe_divide
+- [Phase 4: Feature Selection](docs/phases/4-feature-selection.md) — Boruta, stability selection
 - [Phase 5: Exit Strategies](docs/phases/5-exit-strategies.md) — Fixed, ATR-based
-- [Phase 6: Risk Management](docs/phases/6-risk-management.md) — Kelly, Vol-Targeted Kelly
-- [Phase 7: Validation](docs/phases/7-validation.md) — Walk-Forward CV, DSR, PBO, Monte Carlo
+- [Phase 6: Risk Management](docs/phases/6-risk-management.md) — Kelly, vol-targeted Kelly
+- [Phase 7: Validation](docs/phases/7-validation.md) — Walk-forward CV, DSR, PBO, Monte Carlo
 
-### Referenzen
-- [Strategy Configuration](strategies/README.md) — Vollständige JSON-Referenz
-- [Feature Catalog](docs/FEATURES.md) — Alle verfügbaren Indikatoren & Features
-- [Adapter System](docs/ADAPTERS.md) — Broker & Datenquellen-Adapter
-- [Robust Validation Guide](docs/ROBUST_VALIDATION_GUIDE.md) — Sample-Bias Detection
-- [Live Bias Detection](docs/LIVE_BIAS_DETECTION.md) — Echtzeit-Bias-Checks
+### References
+- [Strategy Configuration](strategies/README.md) — Full JSON reference
+- [Feature Catalog](docs/FEATURES.md) — All available indicators & features
+- [Adapter System](docs/ADAPTERS.md) — Broker & data source adapters
+- [Robust Validation Guide](docs/ROBUST_VALIDATION_GUIDE.md) — Sample bias detection
+- [Live Bias Detection](docs/LIVE_BIAS_DETECTION.md) — Real-time bias checks
 
 ---
 
-## Anforderungen
+## Requirements
 
 - Python 3.10+
-- 16GB+ RAM (für Optimizer)
+- 16GB+ RAM (for optimizer)
 
 ---
 
-## Lizenz
+## License
 
-Proprietär - Nur für internen Gebrauch.
+Proprietary - Internal use only.

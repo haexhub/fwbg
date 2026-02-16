@@ -1,40 +1,40 @@
 # Phase 3: Indicators
 
-## Zweck
+## Purpose
 
-Die Indicator-Phase berechnet technische Features aus OHLCV-Daten. Jeder Indikator erzeugt neue Spalten im DataFrame, die anschließend vom ML-Modell als Input verwendet werden.
+The indicator phase computes technical features from OHLCV data. Each indicator produces new columns in the DataFrame, which are subsequently used as input for the ML model.
 
 ---
 
 ## BaseIndicator
 
-Basisklasse: `src/fwbg/plugins/indicator.py`
+Base class: `src/fwbg/plugins/indicator.py`
 
 ```python
 class BaseIndicator(BasePlugin, ABC):
     phase = PluginPhase.INDICATORS
     stateful = False
     cacheable = True
-    group: str = "custom"                    # Feature-Gruppe
-    benefits_from_stationary: bool = False    # Nach Preprocessing berechnen?
+    group: str = "custom"                    # Feature group
+    benefits_from_stationary: bool = False    # Compute after preprocessing?
 
     @abstractmethod
     def compute(self, df: pd.DataFrame, **params) -> pd.DataFrame:
-        """Berechnet Indicator-Spalten. Muss shift_features() verwenden!"""
+        """Computes indicator columns. Must use shift_features()!"""
 
     def get_feature_columns(self) -> List[str]:
-        """Gibt Feature-Spaltennamen zurück."""
+        """Returns feature column names."""
 ```
 
-- Registrierung: `@register_indicator("name")`
-- `group`: Kategorisierung (z.B. "trend", "momentum", "custom")
-- `benefits_from_stationary`: Siehe [Architektur](../architecture.md#benefits_from_stationary-bool-nur-indikatoren-default-false)
+- Registration: `@register_indicator("name")`
+- `group`: Categorization (e.g., "trend", "momentum", "custom")
+- `benefits_from_stationary`: See [Architecture](../architecture.md#benefits_from_stationary-bool-indicators-only-default-false)
 
 ---
 
-## Pflicht-Helfer
+## Required Helpers
 
-Jede `compute()`-Methode **muss** zwei Helfer-Funktionen verwenden. Das ist keine Empfehlung, sondern Pflicht.
+Every `compute()` method **must** use two helper functions. This is not a recommendation — it is mandatory.
 
 ### shift_features(features, index)
 
@@ -45,21 +45,21 @@ features = {"my_rsi": rsi_series, "my_macd": macd_series}
 features_df = shift_features(features, df.index)
 ```
 
-**Was es tut:** Erstellt einen DataFrame aus dem Feature-Dict und shiftet **alle Spalten um 1 Bar** (`shift(1)`). Die erste Zeile wird dadurch `NaN`.
+**What it does:** Creates a DataFrame from the feature dict and shifts **all columns by 1 bar** (`shift(1)`). The first row becomes `NaN`.
 
-**Warum es Pflicht ist:** Ohne den Shift sieht das ML-Modell bei Bar `i` die Indikator-Werte von Bar `i` — also Informationen, die zum Zeitpunkt der Handelsentscheidung **noch nicht verfügbar wären** (die aktuelle Bar ist noch nicht abgeschlossen). Das ist **Lookahead-Bias** und macht jedes Backtesting-Ergebnis wertlos.
+**Why it is mandatory:** Without the shift, the ML model sees indicator values for bar `i` at bar `i` — meaning information that **would not yet be available** at the time of the trading decision (the current bar has not yet closed). This is **lookahead bias** and renders any backtesting result worthless.
 
-Mit dem 1-Bar-Shift sieht das Modell nur Features von Bar `i-1` (die letzte abgeschlossene Bar).
+With the 1-bar shift, the model only sees features from bar `i-1` (the last completed bar).
 
-**Beispiel:**
+**Example:**
 
 ```
 Bar:     | 0  | 1  | 2  | 3  | 4  |
-RSI(14): | 45 | 52 | 61 | 48 | 55 |  ← Originalwerte
-Shifted: | NaN| 45 | 52 | 61 | 48 |  ← Was das Modell sieht
+RSI(14): | 45 | 52 | 61 | 48 | 55 |  ← Original values
+Shifted: | NaN| 45 | 52 | 61 | 48 |  ← What the model sees
 ```
 
-Bei Bar 3 sieht das Modell RSI=61 (von Bar 2), nicht RSI=48 (von Bar 3 selbst).
+At bar 3, the model sees RSI=61 (from bar 2), not RSI=48 (from bar 3 itself).
 
 ### safe_divide(numerator, denominator)
 
@@ -69,15 +69,15 @@ from fwbg.plugins.indicator import safe_divide
 ratio = safe_divide(df["C"] - ema, df["C"])
 ```
 
-**Was es tut:** Division mit `NaN` statt Division-by-Zero. Verwendet einen Epsilon-Threshold von `1e-10` — Werte kleiner als Epsilon werden als Null behandelt.
+**What it does:** Division with `NaN` instead of division-by-zero. Uses an epsilon threshold of `1e-10` — values smaller than epsilon are treated as zero.
 
-**Warum es Pflicht ist:** Viele Indikatoren berechnen Ratios (RSI, Efficiency Ratio, Bollinger %B, etc.). Ohne safe_divide können bei kleinen Nennern `inf`-Werte entstehen, die das ML-Modell korrumpieren. `NaN` wird dagegen vom Modell sauber als fehlender Wert behandelt.
+**Why it is mandatory:** Many indicators compute ratios (RSI, Efficiency Ratio, Bollinger %B, etc.). Without safe_divide, small denominators can produce `inf` values that corrupt the ML model. `NaN`, on the other hand, is cleanly handled by the model as a missing value.
 
-**Funktioniert mit:** `pd.Series` und `np.ndarray`.
+**Works with:** `pd.Series` and `np.ndarray`.
 
 ---
 
-## Vollständiges Beispiel
+## Complete Example
 
 ```python
 import pandas as pd
@@ -92,7 +92,7 @@ class MyMomentumIndicator(BaseIndicator):
     name = "my_momentum"
     version = "1.0.0"
     group = "momentum"
-    benefits_from_stationary = False  # Auf Raw-Daten berechnen
+    benefits_from_stationary = False  # Compute on raw data
 
     def compute(self, df: pd.DataFrame, **params) -> pd.DataFrame:
         lookback = params.get("lookback", 14)
@@ -100,19 +100,19 @@ class MyMomentumIndicator(BaseIndicator):
         features = {}
         returns = df["C"].pct_change()
 
-        # Feature 1: Durchschnittliche Returns
+        # Feature 1: Average returns
         features["my_avg_return"] = returns.rolling(lookback).mean()
 
-        # Feature 2: Return-Volatilität
+        # Feature 2: Return volatility
         features["my_return_vol"] = returns.rolling(lookback).std()
 
-        # Feature 3: Sharpe-artiges Ratio (MUSS safe_divide verwenden!)
+        # Feature 3: Sharpe-like ratio (MUST use safe_divide!)
         features["my_sharpe"] = safe_divide(
             features["my_avg_return"],
             features["my_return_vol"]
         )
 
-        # PFLICHT: shift_features() am Ende!
+        # MANDATORY: shift_features() at the end!
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
@@ -128,52 +128,52 @@ class MyMomentumIndicator(BaseIndicator):
 
 ## benefits_from_stationary
 
-| Wert | Berechnung | Caching | Beispiele |
-|------|------------|---------|-----------|
-| `False` (Default) | Einmalig auf Raw-OHLC | Gecacht über alle Folds | `momentum`, `volatility`, `price_action` |
-| `True` | Pro Fold auf preprocessed Data | Nicht gecacht | `trend` (ADX auf differenzierten Daten) |
+| Value | Computation | Caching | Examples |
+|-------|-------------|---------|----------|
+| `False` (default) | Once on raw OHLC | Cached across all folds | `momentum`, `volatility`, `price_action` |
+| `True` | Per fold on preprocessed data | Not cached | `trend` (ADX on differentiated data) |
 
-Die Entscheidung liegt beim Plugin-Entwickler. Faustregel:
-- **Trendfolge-Indikatoren** (ADX, Moving Averages): Profitieren von stationären Daten → `True`
-- **Ratio-basierte Indikatoren** (RSI, Stochastic): Bereits normalisiert → `False`
-- **Volatilitäts-Indikatoren** (ATR, Bollinger): Skalenunabhängig → `False`
+The decision is up to the plugin developer. Rule of thumb:
+- **Trend-following indicators** (ADX, Moving Averages): Benefit from stationary data → `True`
+- **Ratio-based indicators** (RSI, Stochastic): Already normalized → `False`
+- **Volatility indicators** (ATR, Bollinger): Scale-independent → `False`
 
 ---
 
-## Verfügbare Indikatoren
+## Available Indicators
 
-### Core-Paket (fwbg-core)
+### Core Package (fwbg-core)
 
-| Plugin | Beschreibung | Feature-Prefix |
-|--------|--------------|----------------|
+| Plugin | Description | Feature Prefix |
+|--------|-------------|----------------|
 | `trend` | ADX, EMA, SMA, MACD, CCI, Aroon, Supertrend, Efficiency Ratio | `trend_` |
 | `momentum` | RSI, Stochastic, Williams %R, ROC | `mom_` |
-| `volatility` | Bollinger Bands, ATR, Volatilitätsschätzer, Vol Compression, RV vs IV | `vol_` |
+| `volatility` | Bollinger Bands, ATR, Volatility Estimators, Vol Compression, RV vs IV | `vol_` |
 | `price_action` | Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
-| `time_season` | Stunde, Wochentag, Monat, Quartal, Saisonalität | `time_`, `season_` |
+| `time_season` | Hour, Day of Week, Month, Quarter, Seasonality | `time_`, `season_` |
 
-### Premium-Paket (fwbg-premium)
+### Premium Package (fwbg-premium)
 
-| Plugin | Beschreibung | Feature-Prefix |
-|--------|--------------|----------------|
+| Plugin | Description | Feature Prefix |
+|--------|-------------|----------------|
 | `regime` | Hurst Exponent, Entropy, Variance Ratio | `regime_` |
 | `structure` | FFT, Path Statistics, Convexity, Event Flow, VWAP | `struct_` |
 | `risk` | Drawdown, CVaR, Volatility of Volatility, Correlations | `risk_` |
 | `distribution` | Skewness, Kurtosis, Z-Score | `dist_` |
-| `dynamics` | Indikator-Änderungen, Lags, Beschleunigung | `dyn_`, `lag_`, `accel_` |
+| `dynamics` | Indicator Changes, Lags, Acceleration | `dyn_`, `lag_`, `accel_` |
 | `multi_timeframe` | H4/D1/W1/Y1 Multi-Timeframe Features, Trend Alignment | `mtf_` |
-| `cross_features` | Kombinierte Signale, COT × Vol Interaction | `cross_` |
-| `ichimoku` | Ichimoku Cloud Komponenten | `ichi_` |
-| `macro_surprise` | Makro-Überraschungen, Gap-Analyse | `macro_surprise_` |
-| `microstructure` | Bar-Microstructure, Tick-Proxies | `micro_` |
-| `market_regime` | Risk-On/Off Composite aus VIX, Credit, Equity, Treasury | `regime_risk_`, `regime_vix_` |
+| `cross_features` | Combined Signals, COT × Vol Interaction | `cross_` |
+| `ichimoku` | Ichimoku Cloud Components | `ichi_` |
+| `macro_surprise` | Macro Surprises, Gap Analysis | `macro_surprise_` |
+| `microstructure` | Bar Microstructure, Tick Proxies | `micro_` |
+| `market_regime` | Risk-On/Off Composite from VIX, Credit, Equity, Treasury | `regime_risk_`, `regime_vix_` |
 | `regime_cluster` | Composite Regime Score → K-Means Clustering | `regime_cluster_` |
 
-**Vollständige Feature-Dokumentation:** [docs/FEATURES.md](../FEATURES.md)
+**Complete feature documentation:** [docs/FEATURES.md](../FEATURES.md)
 
 ---
 
-## Strategy-JSON Konfiguration
+## Strategy JSON Configuration
 
 ```json
 "pipeline": {
@@ -187,10 +187,10 @@ Die Entscheidung liegt beim Plugin-Entwickler. Faustregel:
 }
 ```
 
-Parameter überschreiben die Defaults des Plugins. Nicht angegebene Parameter verwenden den Default aus `get_default_params()`.
+Parameters override the plugin defaults. Unspecified parameters use the default from `get_default_params()`.
 
 ---
 
-## Eigene Indikatoren erstellen
+## Creating Custom Indicators
 
-Siehe [Plugin Development Guide](../plugin-development.md) für die vollständige Anleitung.
+See [Plugin Development Guide](../plugin-development.md) for the complete guide.

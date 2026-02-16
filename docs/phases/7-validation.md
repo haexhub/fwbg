@@ -1,19 +1,19 @@
-# Phase 7: Validation & Statistische Tests
+# Phase 7: Validation & Statistical Tests
 
-## Zweck
+## Purpose
 
-Die Validation-Phase prüft die Robustheit gefundener Strategien durch Walk-Forward Cross-Validation und multiple statistische Tests. Ziel: Sicherstellen, dass ein gefundener Edge kein Zufallsprodukt oder Overfitting ist.
+The validation phase verifies the robustness of discovered strategies through walk-forward cross-validation and multiple statistical tests. Goal: Ensure that a discovered edge is not a random artifact or the result of overfitting.
 
 ---
 
 ## Walk-Forward Validation
 
-FWBG verwendet **Nested Cross-Validation** mit expandierenden Fenstern — das Standardverfahren für Zeitreihen-basierte ML-Strategien.
+FWBG uses **nested cross-validation** with expanding windows — the standard approach for time-series-based ML strategies.
 
-### Fold-Struktur
+### Fold Structure
 
 ```
-Daten:  |──────────────────────────────────────────|
+Data:   |──────────────────────────────────────────|
         t=0                                      t=T
 
 Fold 1: |====TRAIN====|==TEST==|
@@ -23,7 +23,7 @@ Fold 3: |============TRAIN============|==TEST==|
 Fold N: |==================TRAIN==================|==TEST==|
 ```
 
-Jeder Fold hat mehr Trainingsdaten als der vorherige (expandierendes Fenster). Das Test-Set ist immer in der Zukunft relativ zum Training.
+Each fold has more training data than the previous one (expanding window). The test set is always in the future relative to training.
 
 ### Nested CV (Inner + Outer)
 
@@ -34,30 +34,30 @@ Outer Fold (Walk-Forward):
   │       ├── Inner Fold 1: Train | Val
   │       ├── Inner Fold 2: Train | Val
   │       └── Inner Fold 3: Train | Val
-  │       → Beste TP/SL/CT-Kombination
+  │       → Best TP/SL/CT combination
   └── Test Split
-      → Evaluation mit bester Kombination
+      → Evaluation with best combination
 ```
 
-- **Outer Folds:** Walk-Forward Evaluation (expandierend)
-- **Inner Folds:** Grid Search innerhalb jedes Outer Folds
-- Der beste Grid-Kandidat aus dem Inner CV wird auf dem Outer Test-Split evaluiert
+- **Outer Folds:** Walk-forward evaluation (expanding)
+- **Inner Folds:** Grid search within each outer fold
+- The best grid candidate from the inner CV is evaluated on the outer test split
 
-### Konfiguration
+### Configuration
 
-| Parameter | Default | Beschreibung |
-|-----------|---------|--------------|
-| `folds` | `8` | Anzahl Outer Folds |
-| `oos_size` | `4000` | Out-of-Sample Bars pro Fold |
-| `n_inner_folds` | `3` | Anzahl Inner Folds für Grid Search |
-| `embargo_bars` | `100` | Embargo-Bars zwischen Train und Test (Purging) |
-| `sample_weights` | `false` | Trade-Duration-basierte Sample Weights |
-| `probability_calibration` | `false` | Wahrscheinlichkeitskalibrierung der Predictions |
-| `calibration_method` | `"isotonic"` | Kalibrierungsmethode ("isotonic" oder "sigmoid") |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `folds` | `8` | Number of outer folds |
+| `oos_size` | `4000` | Out-of-sample bars per fold |
+| `n_inner_folds` | `3` | Number of inner folds for grid search |
+| `embargo_bars` | `100` | Embargo bars between train and test (purging) |
+| `sample_weights` | `false` | Trade-duration-based sample weights |
+| `probability_calibration` | `false` | Probability calibration of predictions |
+| `calibration_method` | `"isotonic"` | Calibration method ("isotonic" or "sigmoid") |
 
 ### Time-Series Purging (Embargo)
 
-Zwischen Train und Test wird eine Lücke von `embargo_bars` Bars eingefügt. Das verhindert Information Leakage durch Trades die über die Train/Test-Grenze hinausgehen.
+A gap of `embargo_bars` bars is inserted between train and test. This prevents information leakage from trades that span the train/test boundary.
 
 ```
 |====TRAIN====|###EMBARGO###|==TEST==|
@@ -65,24 +65,24 @@ Zwischen Train und Test wird eine Lücke von `embargo_bars` Bars eingefügt. Das
 
 ### Sample Weights
 
-Bei `sample_weights: true` werden Trades nach ihrer Dauer gewichtet. Längere Trades erhalten höheres Gewicht, da sie mehr Information enthalten. Die Trade-Durations werden von der Exit Strategy via `return_durations=True` berechnet.
+With `sample_weights: true`, trades are weighted by their duration. Longer trades receive higher weight since they contain more information. Trade durations are computed by the exit strategy via `return_durations=True`.
 
 ---
 
 ## Early Pruning
 
-Zweiphasiger Grid Search — reduziert die Rechenzeit bei großen Grids.
+Two-phase grid search — reduces computation time for large grids.
 
-| Parameter | Default | Beschreibung |
-|-----------|---------|--------------|
-| `early_pruning.enabled` | `false` | Aktivieren |
-| `early_pruning.keep_ratio` | `0.5` | Top-Anteil der überlebenden Combos |
-| `early_pruning.min_survivors` | `10` | Mindestens N Combos überleben |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `early_pruning.enabled` | `false` | Enable |
+| `early_pruning.keep_ratio` | `0.5` | Top fraction of surviving combos |
+| `early_pruning.min_survivors` | `10` | At least N combos survive |
 
-**Ablauf:**
-1. **Phase 1 (Screening):** Alle Combos auf Inner Fold 0 evaluieren
-2. **Pruning:** Untere Hälfte nach PnL entfernen
-3. **Phase 2 (Full Eval):** Nur Survivors auf allen Inner Folds evaluieren
+**Process:**
+1. **Phase 1 (Screening):** Evaluate all combos on inner fold 0
+2. **Pruning:** Remove bottom half by PnL
+3. **Phase 2 (Full Eval):** Evaluate only survivors on all inner folds
 
 ```json
 "validation": {
@@ -96,60 +96,60 @@ Zweiphasiger Grid Search — reduziert die Rechenzeit bei großen Grids.
 
 ---
 
-## Statistische Tests
+## Statistical Tests
 
 ### 1. Monte Carlo Permutation Test
 
-Testet ob die beobachtete Win-Rate signifikant besser als Zufall ist:
+Tests whether the observed win rate is significantly better than chance:
 
-- **1000 Permutationen** der Trade-Ergebnisse → Null-Verteilung
-- **p-value < 0.05** → Edge ist statistisch signifikant
-- Zusätzlich: **500 Equity-Simulationspfade** für Bankruptcy-Rate
+- **1000 permutations** of trade results → null distribution
+- **p-value < 0.05** → edge is statistically significant
+- Additionally: **500 equity simulation paths** for bankruptcy rate
 
 ### 2. Deflated Sharpe Ratio (DSR)
 
 *Bailey & López de Prado (2014)*
 
-Korrigiert den beobachteten Sharpe Ratio für **Multiple Testing** — je mehr Grid-Kombinationen getestet werden, desto wahrscheinlicher findet man zufällig einen hohen Sharpe.
+Corrects the observed Sharpe ratio for **multiple testing** — the more grid combinations tested, the more likely a high Sharpe is found by chance.
 
 ```
 DSR = Φ((SR_obs - E[max(SR)]) / σ(SR))
 ```
 
-- **E[max(SR)]** — Erwarteter maximaler Sharpe unter Null-Hypothese
-- **σ(SR)** — Standardabweichung des Sharpe-Schätzers (berücksichtigt Skewness/Kurtosis)
-- **DSR > 0.95** → Sharpe ist auch nach Multiple-Testing-Korrektur signifikant
+- **E[max(SR)]** — Expected maximum Sharpe under the null hypothesis
+- **σ(SR)** — Standard deviation of the Sharpe estimator (accounts for skewness/kurtosis)
+- **DSR > 0.95** → Sharpe is significant even after multiple-testing correction
 
 ### 3. Probability of Backtest Overfitting (PBO)
 
 *Bailey, Borwein, López de Prado, Zhu (2017)*
 
-Misst die Wahrscheinlichkeit, dass die beste In-Sample-Strategie Out-of-Sample schlecht abschneidet.
+Measures the probability that the best in-sample strategy performs poorly out-of-sample.
 
-**Methode: Combinatorial Symmetric Cross-Validation (CSCV)**
-- Bei 8 Walk-Forward Folds: **C(8,4) = 70** mögliche IS/OOS-Splits
-- Für jeden Split: Prüft ob der beste IS-Combo auch OOS gut rankt
-- **PBO > 0.50** → Wahrscheinlich Overfitting
+**Method: Combinatorial Symmetric Cross-Validation (CSCV)**
+- With 8 walk-forward folds: **C(8,4) = 70** possible IS/OOS splits
+- For each split: Checks whether the best IS combo also ranks well OOS
+- **PBO > 0.50** → Likely overfitting
 
 ### 4. Feature Stability
 
-Analysiert die Konsistenz der Feature-Selektion über alle Walk-Forward Folds (siehe [Phase 4: Feature Selection](4-feature-selection.md)).
+Analyzes the consistency of feature selection across all walk-forward folds (see [Phase 4: Feature Selection](4-feature-selection.md)).
 
 ---
 
-## Signifikanz-Schwellenwerte
+## Significance Thresholds
 
-| Metrik | Gut | Schlecht | Bedeutung |
-|--------|-----|---------|-----------|
-| p-value | < 0.05 | >= 0.05 | Edge ist (nicht) zufällig |
-| DSR | > 0.95 | < 0.50 | Sharpe übersteht (nicht) Multiple-Testing |
-| PBO | < 0.20 | > 0.50 | Strategie ist (wahrscheinlich) nicht overfittet |
+| Metric | Good | Bad | Meaning |
+|--------|------|-----|---------|
+| p-value | < 0.05 | >= 0.05 | Edge is (not) due to chance |
+| DSR | > 0.95 | < 0.50 | Sharpe does (not) survive multiple testing |
+| PBO | < 0.20 | > 0.50 | Strategy is (likely) not overfitted |
 
 ---
 
-## Ergebnis-Interpretation
+## Result Interpretation
 
-### Ergebnis-Struktur
+### Result Structure
 
 ```json
 {
@@ -173,31 +173,31 @@ Analysiert die Konsistenz der Feature-Selektion über alle Walk-Forward Folds (s
 }
 ```
 
-### Status-Werte
+### Status Values
 
-| Status | Bedeutung |
-|--------|-----------|
-| `significant` | Statistisch signifikanter Edge gefunden |
-| `not_significant` | Kein Edge (p-value >= 0.05) |
-| `no_candidates` | Keine validen Kandidaten nach Filtern |
+| Status | Meaning |
+|--------|---------|
+| `significant` | Statistically significant edge found |
+| `not_significant` | No edge (p-value >= 0.05) |
+| `no_candidates` | No valid candidates after filtering |
 
 ---
 
 ## Live Bias Detection
 
-Während der Optimierung werden in Echtzeit Bias-Checks durchgeführt:
+During optimization, real-time bias checks are performed:
 
-- **Mean Bias Ratio:** Misst Abweichung der Fold-Performance vom Mittelwert
-- **Extreme Folds:** Folds mit ungewöhnlich hoher/niedriger Performance
-- **Win-Rate Konsistenz:** Standardabweichung der Win-Rate über Folds
-- **System-weiter Check:** Am Ende des gesamten Runs über alle Assets
+- **Mean Bias Ratio:** Measures deviation of fold performance from the mean
+- **Extreme Folds:** Folds with unusually high/low performance
+- **Win-Rate Consistency:** Standard deviation of win rate across folds
+- **System-Wide Check:** At the end of the entire run across all assets
 
-Detaillierte Dokumentation: [Live Bias Detection](../LIVE_BIAS_DETECTION.md)
+Detailed documentation: [Live Bias Detection](../LIVE_BIAS_DETECTION.md)
 
 ---
 
-## Weiterführende Dokumentation
+## Further Documentation
 
-- [Robust Validation Guide](../ROBUST_VALIDATION_GUIDE.md) — Sample-Bias Detection im Detail
-- [Live Bias Detection](../LIVE_BIAS_DETECTION.md) — Echtzeit-Bias-Checks
-- [Strategy Configuration](../../strategies/README.md) — Validation-Parameter
+- [Robust Validation Guide](../ROBUST_VALIDATION_GUIDE.md) — Sample bias detection in detail
+- [Live Bias Detection](../LIVE_BIAS_DETECTION.md) — Real-time bias checks
+- [Strategy Configuration](../../strategies/README.md) — Validation parameters

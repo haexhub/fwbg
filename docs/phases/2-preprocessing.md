@@ -1,109 +1,109 @@
 # Phase 2: Preprocessing
 
-## Zweck
+## Purpose
 
-Die Preprocessing-Phase transformiert OHLC-Daten vor der Feature-Berechnung. Der Hauptanwendungsfall ist die **Stationaritätstransformation** — Finanzzeitreihen sind typischerweise nicht-stationär, viele ML-Modelle funktionieren aber besser mit stationären Eingangsdaten.
+The preprocessing phase transforms OHLC data before feature computation. The primary use case is **stationarity transformation** — financial time series are typically non-stationary, but many ML models perform better with stationary input data.
 
 ---
 
 ## BasePreprocessor
 
-Basisklasse: `src/fwbg/plugins/preprocessor.py`
+Base class: `src/fwbg/plugins/preprocessor.py`
 
 ```python
 class BasePreprocessor(BasePlugin, ABC):
     phase = PluginPhase.PREPROCESSING
     name: str = "base"
-    order: int = 100       # Ausführungsreihenfolge (niedriger = früher)
-    fitted_: bool = False  # Ob fit() bereits aufgerufen wurde
+    order: int = 100       # Execution order (lower = earlier)
+    fitted_: bool = False  # Whether fit() has been called
 
     def fit(self, df: pd.DataFrame, **params) -> "BasePreprocessor":
-        """Lernt Parameter von Train-Daten. NIEMALS auf Test/OOS-Daten!"""
+        """Learn parameters from training data. NEVER on test/OOS data!"""
 
     @abstractmethod
     def transform(self, df: pd.DataFrame, **params) -> pd.DataFrame:
-        """Transformiert DataFrame mit gelernten Parametern."""
+        """Transform DataFrame using learned parameters."""
 
     def fit_transform(self, df: pd.DataFrame, **params) -> pd.DataFrame:
-        """Kombiniert fit() und transform() für Train-Daten."""
+        """Combines fit() and transform() for training data."""
 
     def inverse_transform(self, df: pd.DataFrame, **params) -> pd.DataFrame:
-        """Optional: Rücktransformation."""
+        """Optional: reverse transformation."""
 ```
 
-- Registrierung: `@register_preprocessor("name")`
-- `order` bestimmt die Reihenfolge bei mehreren Preprocessors (niedriger = früher)
-- Folgt dem **sklearn fit/transform-Pattern**
+- Registration: `@register_preprocessor("name")`
+- `order` determines execution order when multiple preprocessors are configured (lower = earlier)
+- Follows the **sklearn fit/transform pattern**
 
 ---
 
-## Lifecycle: fit/transform pro CV-Fold
+## Lifecycle: fit/transform per CV Fold
 
-Preprocessors sind **stateful** — sie lernen Parameter aus Trainingsdaten und wenden diese auf beliebige Daten an. Der Lifecycle pro Walk-Forward Fold:
+Preprocessors are **stateful** — they learn parameters from training data and apply them to any data. The lifecycle per walk-forward fold:
 
 ```
 ┌─ Fold N ──────────────────────────────────────────────┐
 │                                                        │
-│  1. reset()                     Zustand zurücksetzen   │
-│  2. fit(train_df)               Parameter lernen       │
-│  3. transform(train_df)         Train transformieren   │
-│  4. transform(test_df)          Test transformieren    │
-│     (mit den in Schritt 2 gelernten Parametern!)       │
+│  1. reset()                     Reset state            │
+│  2. fit(train_df)               Learn parameters       │
+│  3. transform(train_df)         Transform training data │
+│  4. transform(test_df)          Transform test data    │
+│     (using the parameters learned in step 2!)          │
 │                                                        │
 └────────────────────────────────────────────────────────┘
 ```
 
-### Warum fit() nur auf Train-Daten?
+### Why fit() Only on Training Data?
 
-Das ist essentiell für **Lookahead-Bias-Prevention**:
+This is essential for **lookahead bias prevention**:
 
-- `fit()` lernt statistische Parameter (z.B. den optimalen Differenzierungsgrad d)
-- Wenn `fit()` auf **allen** Daten aufgerufen wird, fließen zukünftige Informationen in die Transformation ein → das Modell "sieht" die Zukunft
-- Deshalb: `fit()` **ausschließlich** auf dem Training-Split aufrufen
-- `transform()` darf auf beliebige Daten angewendet werden — es nutzt nur die in `fit()` gelernten Parameter
+- `fit()` learns statistical parameters (e.g., the optimal differentiation degree d)
+- If `fit()` is called on **all** data, future information flows into the transformation → the model "sees" the future
+- Therefore: call `fit()` **exclusively** on the training split
+- `transform()` can be applied to any data — it only uses the parameters learned in `fit()`
 
 ---
 
-## Interaktion mit Indikatoren
+## Interaction with Indicators
 
-Preprocessing beeinflusst welche Indikatoren wann berechnet werden:
+Preprocessing affects when indicators are computed:
 
-| `benefits_from_stationary` | Berechnung | Caching |
-|----------------------------|------------|---------|
-| `False` (Default) | **Einmalig auf Raw-OHLC** vor Preprocessing | Über alle Folds gecacht |
-| `True` | **Pro Fold auf preprocessed OHLC** nach Preprocessing | Nicht gecacht |
+| `benefits_from_stationary` | Computation | Caching |
+|----------------------------|-------------|---------|
+| `False` (default) | **Once on raw OHLC** before preprocessing | Cached across all folds |
+| `True` | **Per fold on preprocessed OHLC** after preprocessing | Not cached |
 
-Die Aufteilung erfolgt automatisch über `split_indicators_by_stationarity()` in `src/fwbg/pipeline/features.py`:
+The split happens automatically via `split_indicators_by_stationarity()` in `src/fwbg/pipeline/features.py`:
 
 ```
 Raw Indicators (benefits_from_stationary=False):
-  → Einmal auf Originaldaten berechnen
-  → Gecacht, schnell
+  → Computed once on original data
+  → Cached, fast
 
 Stationary Indicators (benefits_from_stationary=True):
-  → Pro Fold auf preprocessed Daten berechnen
-  → Langsamer, aber korrekt für stationaritätsabhängige Features
+  → Computed per fold on preprocessed data
+  → Slower, but correct for stationarity-dependent features
 ```
 
 ---
 
-## Verfügbare Plugins
+## Available Plugins
 
 ### fractional_diff (fwbg-premium)
 
-Fractional Differentiation nach López de Prado — macht Zeitreihen stationär **ohne den gesamten Memory zu verlieren** (im Gegensatz zu normaler Differenzierung).
+Fractional differentiation following López de Prado — makes time series stationary **without losing all memory** (unlike regular differencing).
 
-| Parameter | Default | Beschreibung |
-|-----------|---------|--------------|
-| `auto_d` | `false` | Automatisch optimalen d-Wert finden (ADF-Test) |
-| `default_d` | `0.4` | Fester d-Wert (0=original, 1=volle Differenzierung) |
-| `columns` | `["O", "H", "L", "C"]` | Welche Spalten transformiert werden |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `auto_d` | `false` | Automatically find optimal d-value (ADF test) |
+| `default_d` | `0.4` | Fixed d-value (0=original, 1=full differencing) |
+| `columns` | `["O", "H", "L", "C"]` | Which columns to transform |
 
-**Warnung:** `auto_d: true` kann Lookahead-Bias verursachen, wenn der ADF-Test auf dem gesamten Datensatz statt nur auf Train-Daten ausgeführt wird. Empfehlung: `auto_d: false` mit festem `default_d`.
+**Warning:** `auto_d: true` can cause lookahead bias if the ADF test runs on the entire dataset instead of just training data. Recommendation: `auto_d: false` with a fixed `default_d`.
 
 ---
 
-## Strategy-JSON Konfiguration
+## Strategy JSON Configuration
 
 ```json
 "pipeline": {
@@ -122,11 +122,11 @@ Fractional Differentiation nach López de Prado — macht Zeitreihen stationär 
 
 ---
 
-## Eigenes Preprocessing-Plugin erstellen
+## Creating a Custom Preprocessing Plugin
 
-Siehe [Plugin Development Guide](../plugin-development.md) für die vollständige Anleitung.
+See [Plugin Development Guide](../plugin-development.md) for the full guide.
 
-### Kurzbeispiel
+### Quick Example
 
 ```python
 from fwbg.plugins.preprocessor import BasePreprocessor
@@ -135,7 +135,7 @@ from fwbg.core.registry import register_preprocessor
 @register_preprocessor("my_normalizer")
 class MyNormalizer(BasePreprocessor):
     name = "my_normalizer"
-    order = 50  # Vor fractional_diff (order=100)
+    order = 50  # Before fractional_diff (order=100)
 
     def fit(self, df, **params):
         self.mean_ = df["C"].mean()
@@ -143,7 +143,7 @@ class MyNormalizer(BasePreprocessor):
         return super().fit(df, **params)
 
     def transform(self, df, **params):
-        super().transform(df, **params)  # Prüft ob fit() aufgerufen wurde
+        super().transform(df, **params)  # Checks that fit() was called
         result = df.copy()
         result["C"] = (result["C"] - self.mean_) / self.std_
         return result

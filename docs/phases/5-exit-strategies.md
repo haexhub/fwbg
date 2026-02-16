@@ -1,24 +1,24 @@
 # Phase 5: Exit Strategies
 
-## Zweck
+## Purpose
 
-Exit Strategies definieren, wie Take-Profit (TP) und Stop-Loss (SL) Distanzen berechnet werden. Jede Strategie bestimmt die Interpretation der Grid-Werte und wie Win/Loss-Targets für die Simulation erzeugt werden.
+Exit strategies define how take-profit (TP) and stop-loss (SL) distances are calculated. Each strategy determines the interpretation of grid values and how win/loss targets are generated for the simulation.
 
 ---
 
-## Wichtig: Nicht vom PipelineRunner ausgeführt
+## Important: Not Executed by PipelineRunner
 
-Exit Strategies werden **nicht** vom PipelineRunner orchestriert. Stattdessen werden sie **direkt vom Optimization-Code** (Grid Search) aufgerufen:
+Exit strategies are **not** orchestrated by the PipelineRunner. Instead, they are called **directly by the optimization code** (grid search):
 
-1. `iterate_grid()` generiert alle Parameter-Kombinationen
-2. `compute_targets()` berechnet Win/Loss-Arrays pro Kombination
-3. `get_cache_key()` ermöglicht Caching der Ergebnisse
+1. `iterate_grid()` generates all parameter combinations
+2. `compute_targets()` computes win/loss arrays per combination
+3. `get_cache_key()` enables caching of results
 
 ---
 
 ## BaseExitStrategy
 
-Basisklasse: `src/fwbg/plugins/exit_strategy.py`
+Base class: `src/fwbg/plugins/exit_strategy.py`
 
 ```python
 class BaseExitStrategy(BasePlugin, ABC):
@@ -28,33 +28,33 @@ class BaseExitStrategy(BasePlugin, ABC):
     def compute_targets(self, df: pd.DataFrame, ctx: SimulationContext,
                        **params) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Berechnet Win/Loss Targets für Long und Short.
+        Computes win/loss targets for long and short.
 
         Returns:
-            (targets_long, targets_short) — Arrays mit 1.0=Win, 0.0=Loss
+            (targets_long, targets_short) — Arrays with 1.0=Win, 0.0=Loss
         """
 
     @abstractmethod
     def iterate_grid(self, grid_config: dict, ctx: SimulationContext) -> Iterator[dict]:
-        """Iteriert über alle Parameter-Kombinationen aus Grid-Config."""
+        """Iterates over all parameter combinations from the grid config."""
 
     @abstractmethod
     def get_cache_key(self, params: dict) -> str:
-        """Eindeutiger Cache-Key für Target-Caching."""
+        """Unique cache key for target caching."""
 ```
 
-- Registrierung: `@register_exit_strategy("name")`
+- Registration: `@register_exit_strategy("name")`
 
 ---
 
-## Verfügbare Plugins
+## Available Plugins
 
 ### fixed (fwbg-core)
 
-Konstante TP/SL-Distanzen als **Spread-Multiplikatoren**:
+Constant TP/SL distances as **spread multipliers**:
 
-- Grid-Wert `tp: 40` bedeutet: TP-Distanz = 40 × Spread des Assets
-- Grid-Wert `sl: 20` bedeutet: SL-Distanz = 20 × Spread des Assets
+- Grid value `tp: 40` means: TP distance = 40 × asset spread
+- Grid value `sl: 20` means: SL distance = 20 × asset spread
 
 ```json
 "exit_strategy": "fixed",
@@ -67,16 +67,16 @@ Konstante TP/SL-Distanzen als **Spread-Multiplikatoren**:
 }
 ```
 
-| Parameter | Default | Beschreibung |
-|-----------|---------|--------------|
-| `timeout_bars` | `None` | Maximale Trade-Dauer in Bars (None = unbegrenzt) |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `timeout_bars` | `None` | Maximum trade duration in bars (None = unlimited) |
 
 ### atr_based (fwbg-premium)
 
-Dynamische TP/SL-Distanzen basierend auf **Average True Range (ATR)** — die Distanzen passen sich der aktuellen Volatilität an:
+Dynamic TP/SL distances based on **Average True Range (ATR)** — distances adapt to the current volatility:
 
-- Grid-Wert `tp: 1.5` bedeutet: TP-Distanz = 1.5 × ATR
-- Grid-Wert `sl: 1.0` bedeutet: SL-Distanz = 1.0 × ATR
+- Grid value `tp: 1.5` means: TP distance = 1.5 × ATR
+- Grid value `sl: 1.0` means: SL distance = 1.0 × ATR
 
 ```json
 "exit_strategy": "atr_based",
@@ -89,18 +89,18 @@ Dynamische TP/SL-Distanzen basierend auf **Average True Range (ATR)** — die Di
 }
 ```
 
-| Parameter | Default | Beschreibung |
-|-----------|---------|--------------|
-| `atr_period` | `14` | ATR-Berechnungsperiode |
-| `min_tp_pips` | `10` | Mindest-TP in Pips (Minimum-Floor) |
-| `min_sl_pips` | `15` | Mindest-SL in Pips (Minimum-Floor) |
-| `timeout_bars` | `None` | Maximale Trade-Dauer in Bars |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `atr_period` | `14` | ATR calculation period |
+| `min_tp_pips` | `10` | Minimum TP in pips (floor) |
+| `min_sl_pips` | `15` | Minimum SL in pips (floor) |
+| `timeout_bars` | `None` | Maximum trade duration in bars |
 
 ---
 
-## Grid-Search Integration
+## Grid Search Integration
 
-Der Grid Search iteriert über alle TP/SL/CT-Kombinationen:
+The grid search iterates over all TP/SL/CT combinations:
 
 ```
 iterate_grid(grid_config) → {"tp": 1.5, "sl": 1.0, "timeout_bars": None}
@@ -109,37 +109,37 @@ iterate_grid(grid_config) → {"tp": 1.5, "sl": 1.0, "timeout_bars": None}
                            → ...
 ```
 
-Für jede Kombination wird `compute_targets()` aufgerufen, was Win/Loss-Arrays zurückgibt:
-- `targets_long[i] = 1.0` → Bar `i` wäre ein gewinnender Long-Trade gewesen
-- `targets_long[i] = 0.0` → Bar `i` wäre ein verlierender Long-Trade gewesen
+For each combination, `compute_targets()` is called, returning win/loss arrays:
+- `targets_long[i] = 1.0` → Bar `i` would have been a winning long trade
+- `targets_long[i] = 0.0` → Bar `i` would have been a losing long trade
 
 ---
 
-## Target-Caching
+## Target Caching
 
-Targets werden pro Exit-Strategy-Parameterkombination gecacht. Der Cache-Key wird über `get_cache_key()` generiert:
+Targets are cached per exit strategy parameter combination. The cache key is generated via `get_cache_key()`:
 
 ```python
 # fixed: "fixed_tp30_sl20_tonone"
 # atr_based: "atr_tp1.5_sl1.0_atr14_tonone"
 ```
 
-### Standard-Caching (2-Tuple)
+### Standard Caching (2-Tuple)
 ```python
 (targets_long, targets_short)
 ```
 
-### Sample-Weights-Caching (4-Tuple)
-Wenn `sample_weights: true` in der Validation-Config:
+### Sample Weights Caching (4-Tuple)
+When `sample_weights: true` in the validation config:
 ```python
 (targets_long, targets_short, durations_long, durations_short)
 ```
 
-Die Durations werden für trade-duration-basierte Sample-Weights im CV benötigt.
+The durations are needed for trade-duration-based sample weights in the CV.
 
 ---
 
-## Strategy-JSON Konfiguration
+## Strategy JSON Configuration
 
 ### Fixed Exit Strategy
 
@@ -179,6 +179,6 @@ Die Durations werden für trade-duration-basierte Sample-Weights im CV benötigt
 
 ---
 
-## Eigene Exit-Strategy erstellen
+## Creating a Custom Exit Strategy
 
-Siehe [Plugin Development Guide](../plugin-development.md) für die vollständige Anleitung.
+See [Plugin Development Guide](../plugin-development.md) for the complete guide.
