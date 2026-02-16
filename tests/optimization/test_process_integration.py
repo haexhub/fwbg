@@ -33,7 +33,7 @@ def create_test_df(n_rows: int = 1000, seed: int = 42) -> pd.DataFrame:
         "L": low,
         "C": close,
         "_atr": np.abs(np.random.randn(n_rows) * 0.1) + 0.05,
-        "_regime_ok": np.ones(n_rows, dtype=bool),
+        "_regime": np.full(n_rows, 7, dtype=np.int8),
     }, index=pd.DatetimeIndex(dates))
 
     # Feature-Spalten hinzufügen (für verschiedene Gruppen)
@@ -421,3 +421,106 @@ class TestStrategyFilePluginResolution:
             "Unresolvable plugin names in strategy files:\n"
             + "\n".join(errors)
         )
+
+
+class TestAllNanColumnProtection:
+    """All-NaN feature columns must not destroy entire fold via dropna.
+
+    Regression test: mtf_y1_ema200d_dist was ALL NaN on 4000-row test
+    subsets (warmup > test size). The old code did dropna() before
+    removing bad columns, which killed ALL rows.
+    """
+
+    def test_all_nan_column_removed_before_dropna(self):
+        """An all-NaN feature column must not cause dropna to kill all rows."""
+        from fwbg.pipeline.features import get_feature_columns
+
+        n = 500
+        df = pd.DataFrame({
+            "O": np.random.randn(n) + 100,
+            "H": np.random.randn(n) + 101,
+            "L": np.random.randn(n) + 99,
+            "C": np.random.randn(n) + 100,
+            "trend_rsi_14": np.random.rand(n) * 100,
+            "trend_adx_14": np.random.rand(n) * 50,
+            "vol_atr_14": np.abs(np.random.randn(n)) + 0.02,
+            # This column is ALL NaN (simulates indicator with warmup > data size)
+            "mtf_y1_ema200d_dist": np.full(n, np.nan),
+        }, index=pd.date_range("2024-01-01", periods=n, freq="h"))
+
+        # Reproduce the fixed logic from process_fold.py
+        full_pool = get_feature_columns(df)
+        assert "mtf_y1_ema200d_dist" in full_pool
+
+        clean_pool = []
+        drop_cols = []
+        for col in full_pool:
+            nan_ratio = df[col].isna().sum() / len(df)
+            if nan_ratio >= 0.1:
+                drop_cols.append(col)
+            else:
+                clean_pool.append(col)
+
+        df_clean = df.drop(columns=drop_cols, errors="ignore")
+        df_clean = df_clean.dropna()
+
+        # The all-NaN column must be excluded
+        assert "mtf_y1_ema200d_dist" in drop_cols
+        assert "mtf_y1_ema200d_dist" not in clean_pool
+
+        # Rows must survive
+        assert len(df_clean) == n, (
+            f"dropna killed {n - len(df_clean)} rows — all-NaN column was not removed first"
+        )
+
+    def test_test_set_all_nan_column_also_caught(self):
+        """A column valid in train but all-NaN in test must be excluded."""
+        from fwbg.pipeline.features import get_feature_columns
+
+        n = 500
+        base = {
+            "O": np.random.randn(n) + 100,
+            "H": np.random.randn(n) + 101,
+            "L": np.random.randn(n) + 99,
+            "C": np.random.randn(n) + 100,
+            "trend_rsi_14": np.random.rand(n) * 100,
+        }
+        idx = pd.date_range("2024-01-01", periods=n, freq="h")
+
+        # Train has valid data for the column
+        train_df = pd.DataFrame({
+            **base,
+            "slow_indicator": np.random.rand(n),
+        }, index=idx)
+
+        # Test has all NaN (warmup > test size)
+        test_df = pd.DataFrame({
+            **base,
+            "slow_indicator": np.full(n, np.nan),
+        }, index=idx)
+
+        # Reproduce fixed process_fold logic
+        full_pool = get_feature_columns(train_df)
+        clean_pool = []
+        drop_cols = []
+        for col in full_pool:
+            nan_ratio = train_df[col].isna().sum() / len(train_df)
+            if nan_ratio >= 0.1:
+                drop_cols.append(col)
+            else:
+                clean_pool.append(col)
+
+        # Check test set for all-NaN columns
+        for col in list(clean_pool):
+            if col in test_df.columns and test_df[col].isna().all():
+                clean_pool.remove(col)
+                drop_cols.append(col)
+
+        train_df = train_df.drop(columns=drop_cols, errors="ignore")
+        test_df = test_df.drop(columns=drop_cols, errors="ignore")
+        train_df = train_df.dropna()
+        test_df = test_df.dropna()
+
+        assert "slow_indicator" in drop_cols
+        assert len(train_df) == n
+        assert len(test_df) == n

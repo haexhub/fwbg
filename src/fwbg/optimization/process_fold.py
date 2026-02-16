@@ -7,7 +7,7 @@ import pandas as pd
 from fwbg.data.config import MIN_TRADES
 from fwbg.core.config import RegimeFilterConfig
 from fwbg.pipeline import (
-    compute_indicator_pool, get_feature_columns, compute_regime_filter,
+    compute_indicator_pool, get_feature_columns, compute_regime_bitmask,
     calculate_param_plateau_score, select_best_plateau_candidate,
 )
 from fwbg.pipeline.features import split_indicators_by_stationarity
@@ -146,8 +146,45 @@ def process_single_fold(
         test_df = pd.concat([test_df, raw_test], axis=1)
 
     train_df = train_df.copy()
-    train_df = train_df.dropna()
     test_df = test_df.copy()
+
+    # === FEATURE POOL CLEANING (before dropna to prevent all-NaN columns from destroying rows) ===
+    full_pool = get_feature_columns(train_df)
+
+    # Entferne Features mit inf/nan (XGBoost verträgt keine inf)
+    clean_pool = []
+    excluded_inf = 0
+    excluded_nan = 0
+    drop_cols = []
+    for col in full_pool:
+        if col in train_df.columns:
+            has_inf = np.isinf(train_df[col]).any()
+            nan_ratio = train_df[col].isna().sum() / len(train_df)
+            if has_inf:
+                excluded_inf += 1
+                drop_cols.append(col)
+            elif nan_ratio >= 0.1:
+                excluded_nan += 1
+                drop_cols.append(col)
+            else:
+                clean_pool.append(col)
+    full_pool = clean_pool
+
+    # Also check test set for all-NaN columns (e.g. indicators with warmup > test size)
+    for col in list(full_pool):
+        if col in test_df.columns and test_df[col].isna().all():
+            full_pool.remove(col)
+            drop_cols.append(col)
+            excluded_nan += 1
+
+    if drop_cols:
+        train_df = train_df.drop(columns=drop_cols, errors="ignore")
+        test_df = test_df.drop(columns=drop_cols, errors="ignore")
+
+    log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features (excl: {excluded_inf} inf, {excluded_nan} nan)", sym)
+
+    # dropna AFTER removing bad columns
+    train_df = train_df.dropna()
     test_df = test_df.dropna()
 
     # Original-OHLC wiederherstellen (für Targets und Trade-Simulation)
@@ -165,27 +202,6 @@ def process_single_fold(
     if len(test_df) < MIN_TRADES:
         log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Test-Daten ({len(test_df)})", sym)
         return None, []
-
-    # === FEATURE POOL CLEANING ===
-    # Feature-Pool aus Train-Daten
-    full_pool = get_feature_columns(train_df)
-
-    # Entferne Features mit inf/nan (XGBoost verträgt keine inf)
-    clean_pool = []
-    excluded_inf = 0
-    excluded_nan = 0
-    for col in full_pool:
-        if col in train_df.columns:
-            has_inf = np.isinf(train_df[col]).any()
-            nan_ratio = train_df[col].isna().sum() / len(train_df)
-            if has_inf:
-                excluded_inf += 1
-            elif nan_ratio >= 0.1:
-                excluded_nan += 1
-            else:
-                clean_pool.append(col)
-    full_pool = clean_pool
-    log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features (excl: {excluded_inf} inf, {excluded_nan} nan)", sym)
 
     # Update meta with actual feature count (first fold only)
     if fold_idx == 0:
@@ -224,14 +240,14 @@ def process_single_fold(
         # Erstelle RegimeFilterConfig aus Kombination
         regime_params = RegimeFilterConfig.from_dict(regime_config)
 
-        # Berechne _regime_ok SEPARAT für Train und Test (kein Lookahead!)
-        train_df["_regime_ok"] = compute_regime_filter(train_df, regime_params)
-        test_df["_regime_ok"] = compute_regime_filter(test_df, regime_params)
+        # Berechne _regime bitmask SEPARAT für Train und Test (kein Lookahead!)
+        train_df["_regime"] = compute_regime_bitmask(train_df, regime_params)
+        test_df["_regime"] = compute_regime_bitmask(test_df, regime_params)
 
-        # Update inner_folds mit neuem regime_ok
+        # Update inner_folds mit neuem regime bitmask
         for train_df_fold, val_df_fold in inner_folds:
-            train_df_fold["_regime_ok"] = train_df.loc[train_df_fold.index, "_regime_ok"]
-            val_df_fold["_regime_ok"] = train_df.loc[val_df_fold.index, "_regime_ok"]
+            train_df_fold["_regime"] = train_df.loc[train_df_fold.index, "_regime"]
+            val_df_fold["_regime"] = train_df.loc[val_df_fold.index, "_regime"]
 
         # Log Regime-Filter Info
         regime_desc = [
