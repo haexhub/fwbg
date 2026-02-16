@@ -10,7 +10,6 @@
   ],
   "hypothesis": "ML soll selbst lernen, welche Features und Marktbedingungen relevant sind - keine harten Filter, maximale Feature-Vielfalt",
   "expected_outcome": "Identifikation der wichtigsten Features und profitablen Parameter-Bereiche durch Boruta Feature-Selektion",
-
   "pipeline": {
     "preprocessing": [
       {
@@ -18,7 +17,12 @@
         "params": {
           "auto_d": false,
           "default_d": 0.4,
-          "columns": ["O", "H", "L", "C"]
+          "columns": [
+            "O",
+            "H",
+            "L",
+            "C"
+          ]
         }
       }
     ],
@@ -26,12 +30,33 @@
       {
         "name": "trend",
         "params": {
-          "adx_periods": [7, 14, 21],
-          "ema_periods": [8, 21, 50, 100, 200],
-          "sma_periods": [20, 50, 200],
-          "cci_periods": [14, 20],
+          "adx_periods": [
+            7,
+            14,
+            21
+          ],
+          "ema_periods": [
+            8,
+            21,
+            50,
+            100,
+            200
+          ],
+          "sma_periods": [
+            20,
+            50,
+            200
+          ],
+          "cci_periods": [
+            14,
+            20
+          ],
           "aroon_period": 25,
-          "er_periods": [10, 20, 50],
+          "er_periods": [
+            10,
+            20,
+            50
+          ],
           "supertrend_period": 14,
           "supertrend_multiplier": 3.0
         }
@@ -39,61 +64,216 @@
       {
         "name": "momentum",
         "params": {
-          "rsi_periods": [7, 14, 21],
-          "stoch_periods": [14, 21],
-          "williams_periods": [14, 21],
-          "roc_periods": [5, 10, 20]
+          "rsi_periods": [
+            7,
+            14,
+            21
+          ],
+          "stoch_periods": [
+            14,
+            21
+          ],
+          "williams_periods": [
+            14,
+            21
+          ],
+          "roc_periods": [
+            5,
+            10,
+            20
+          ]
         }
       },
       {
         "name": "volatility",
         "params": {
-          "bb_periods": [20],
-          "atr_periods": [7, 14, 21],
-          "vol_est_windows": [20, 50]
+          "bb_periods": [
+            20
+          ],
+          "atr_periods": [
+            7,
+            14,
+            21
+          ],
+          "vol_est_windows": [
+            20,
+            50
+          ]
         }
       },
       {
         "name": "regime",
         "params": {
-          "hurst_windows": [100, 200, 500],
+          "hurst_windows": [
+            100,
+            200,
+            500
+          ],
           "step": 10,
-          "entropy_windows": [50, 100],
-          "vr_windows": [100, 200],
-          "vr_lags": [5, 10]
+          "entropy_windows": [
+            50,
+            100
+          ],
+          "vr_windows": [
+            100,
+            200
+          ],
+          "vr_lags": [
+            5,
+            10
+          ]
         }
       },
       {
         "name": "structure",
         "params": {
-          "fft_windows": [64, 128, 256],
-          "path_windows": [10, 20, 50, 100],
-          "convexity_periods": [21, 50],
-          "event_periods": [20, 50],
-          "vwap_windows": [20, 50, 100]
+          "fft_windows": [
+            64,
+            128,
+            256
+          ],
+          "path_windows": [
+            10,
+            20,
+            50,
+            100
+          ],
+          "convexity_periods": [
+            21,
+            50
+          ],
+          "event_periods": [
+            20,
+            50
+          ],
+          "vwap_windows": [
+            20,
+            50,
+            100
+          ]
         }
       },
       {
         "name": "risk",
         "params": {
-          "dd_windows": [50, 100, 200],
-          "cvar_windows": [50, 100],
-          "cvar_percentiles": [5, 1],
-          "vov_windows": [20, 50, 100],
+          "dd_windows": [
+            50,
+            100,
+            200
+          ],
+          "cvar_windows": [
+            50,
+            100
+          ],
+          "cvar_percentiles": [
+            5,
+            1
+          ],
+          "vov_windows": [
+            20,
+            50,
+            100
+          ],
           "compute_correlations": true
         }
       },
-      {"name": "price_action", "params": {"hh_ll_period": 5, "compute_volume": true}},
-      {"name": "time_season", "params": {"include_raw": true, "include_encoded": true}},
-      {"name": "distribution", "params": {"windows": [20, 50, 100], "z_score_lookback": 200, "compute_changes": true}},
-      {"name": "dynamics", "params": {"lookbacks": [4, 8, 24], "lag_periods": [4, 8, 24, 48]}},
-      {"name": "multi_timeframe", "params": {"h4_bars": 4, "d1_bars": 24, "ema_periods": [20, 50]}},
-      {"name": "cross_features", "params": {"rsi_overbought": 70, "rsi_oversold": 30}},
-      {"name": "ichimoku", "params": {"tenkan_period": 9, "kijun_period": 26, "senkou_b_period": 52}},
-      {"name": "microstructure", "params": {"atr_period": 14, "rolling_window": 5}},
-      {"name": "macro_surprise", "params": {"vol_lookback": 20, "surprise_threshold": 2.0, "gap_ma_period": 10}},
-      {"name": "market_regime", "params": {"window": 50}},
-      {"name": "regime_cluster", "params": {"zscore_window": 200, "quantile_window": 500, "n_regimes": 3}}
+      {
+        "name": "price_action",
+        "params": {
+          "hh_ll_period": 5,
+          "compute_volume": true
+        }
+      },
+      {
+        "name": "time_season",
+        "params": {
+          "include_raw": true,
+          "include_encoded": true
+        }
+      },
+      {
+        "name": "distribution",
+        "params": {
+          "windows": [
+            20,
+            50,
+            100
+          ],
+          "z_score_lookback": 200,
+          "compute_changes": true
+        }
+      },
+      {
+        "name": "dynamics",
+        "params": {
+          "lookbacks": [
+            4,
+            8,
+            24
+          ],
+          "lag_periods": [
+            4,
+            8,
+            24,
+            48
+          ]
+        }
+      },
+      {
+        "name": "multi_timeframe",
+        "params": {
+          "h4_bars": 4,
+          "d1_bars": 24,
+          "ema_periods": [
+            20,
+            50
+          ]
+        }
+      },
+      {
+        "name": "cross_features",
+        "params": {
+          "rsi_overbought": 70,
+          "rsi_oversold": 30
+        }
+      },
+      {
+        "name": "ichimoku",
+        "params": {
+          "tenkan_period": 9,
+          "kijun_period": 26,
+          "senkou_b_period": 52
+        }
+      },
+      {
+        "name": "microstructure",
+        "params": {
+          "atr_period": 14,
+          "rolling_window": 5
+        }
+      },
+      {
+        "name": "macro_surprise",
+        "params": {
+          "vol_lookback": 20,
+          "surprise_threshold": 2.0,
+          "gap_ma_period": 10
+        }
+      },
+      {
+        "name": "market_regime",
+        "params": {
+          "window": 50
+        }
+      },
+      {
+        "name": "regime_cluster",
+        "params": {
+          "zscore_window": 200,
+          "quantile_window": 500,
+          "n_regimes": 3
+        }
+      }
     ],
     "feature_selection": [
       {
@@ -108,19 +288,25 @@
       }
     ],
     "data_loading": [
-      {"name": "macro_data", "source": "forexsb"},
-      {"name": "cot_positioning", "source": "forexsb"}
+      {
+        "name": "macro_data",
+        "source": "forexsb"
+      },
+      {
+        "name": "cot_positioning",
+        "source": "forexsb"
+      }
     ]
   },
-
   "exit_strategy": "fixed",
-
   "exit_params": {},
-
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 100,
       "max_depth": 4,
@@ -130,62 +316,276 @@
       "random_state": 42
     }
   },
-
   "grids": {
     "FOREX": {
-      "tp": [5, 10, 15, 20, 30],
-      "sl": [20, 30, 40, 50, 60],
-      "ct": [0.5, 0.55, 0.6, 0.65],
+      "tp": [
+        5,
+        10,
+        15,
+        20,
+        30
+      ],
+      "sl": [
+        20,
+        30,
+        40,
+        50,
+        60
+      ],
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [
+              null,
+              25
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [
+              null,
+              30
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [
+              null,
+              0.45
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [
+              null,
+              1,
+              2
+            ],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
     "INDEX": {
-      "tp": [5, 15, 20, 30, 40],
-      "sl": [30, 40, 60, 80, 100],
-      "ct": [0.5, 0.55, 0.6, 0.65],
+      "tp": [
+        5,
+        15,
+        20,
+        30,
+        40
+      ],
+      "sl": [
+        30,
+        40,
+        60,
+        80,
+        100
+      ],
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [
+              null,
+              25
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [
+              null,
+              30
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [
+              null,
+              0.45
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [
+              null,
+              1,
+              2
+            ],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
     "COMMODITY": {
-      "tp": [5, 15, 20, 30, 40],
-      "sl": [30, 40, 60, 80, 100],
-      "ct": [0.5, 0.55, 0.6, 0.65],
+      "tp": [
+        5,
+        15,
+        20,
+        30,
+        40
+      ],
+      "sl": [
+        30,
+        40,
+        60,
+        80,
+        100
+      ],
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [
+              null,
+              25
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [
+              null,
+              30
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [
+              null,
+              0.45
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [
+              null,
+              1,
+              2
+            ],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
     "CRYPTO": {
-      "tp": [10, 20, 30, 50, 70],
-      "sl": [50, 70, 100, 120, 150],
-      "ct": [0.5, 0.55, 0.6, 0.65],
+      "tp": [
+        10,
+        20,
+        30,
+        50,
+        70
+      ],
+      "sl": [
+        50,
+        70,
+        100,
+        120,
+        150
+      ],
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [
+              null,
+              25
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [
+              null,
+              30
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [
+              null,
+              0.45
+            ],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [
+              null,
+              1,
+              2
+            ],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     }
   },
-
   "validation": {
     "method": "walk_forward",
     "folds": 8,
@@ -193,9 +593,13 @@
     "min_trades": 50,
     "n_inner_folds": 3,
     "embargo_bars": 100,
-    "sample_weights": true
+    "sample_weights": true,
+    "early_pruning": {
+      "enabled": true,
+      "keep_ratio": 0.5,
+      "min_survivors": 10
+    }
   },
-
   "filters": {
     "min_rrr": 0,
     "min_trades": 30,
@@ -203,7 +607,6 @@
     "min_sharpe": 0,
     "max_drawdown": 1.0
   },
-
   "resources": {
     "ram_per_worker_gb": 8.0,
     "min_free_ram_percent": 0.15,

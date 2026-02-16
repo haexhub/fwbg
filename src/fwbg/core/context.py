@@ -93,6 +93,9 @@ class SimulationContext:
     n_inner_folds: int = 5  # Anzahl Inner-Folds für Nested CV
     embargo_bars: int = 0  # Embargo-Gap zwischen Train/Test Folds (AFML Ch. 7)
     sample_weights: bool = False  # Uniqueness-basierte Sample Weights (AFML Ch. 4)
+    early_pruning_enabled: bool = False
+    early_pruning_keep_ratio: float = 0.5
+    early_pruning_min_survivors: int = 10
 
     # Exit-Strategy (Plugin)
     exit_strategy: str = "fixed"
@@ -168,6 +171,9 @@ class SimulationContext:
             n_inner_folds=strategy.validation.n_inner_folds,
             embargo_bars=strategy.validation.embargo_bars,
             sample_weights=strategy.validation.sample_weights,
+            early_pruning_enabled=strategy.validation.early_pruning.enabled,
+            early_pruning_keep_ratio=strategy.validation.early_pruning.keep_ratio,
+            early_pruning_min_survivors=strategy.validation.early_pruning.min_survivors,
         )
 
     def get_long_grid(self) -> tuple:

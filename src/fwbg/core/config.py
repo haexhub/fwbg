@@ -194,6 +194,24 @@ class ModelConfig:
 
 
 @dataclass
+class EarlyPruningConfig:
+    """Early Pruning: Zweiphasiger Grid-Search zur Laufzeitreduktion."""
+    enabled: bool = False
+    keep_ratio: float = 0.5
+    min_survivors: int = 10
+
+    @classmethod
+    def from_dict(cls, data) -> "EarlyPruningConfig":
+        if not data:
+            return cls()
+        return cls(
+            enabled=data.get("enabled", False),
+            keep_ratio=data.get("keep_ratio", 0.5),
+            min_survivors=data.get("min_survivors", 10),
+        )
+
+
+@dataclass
 class ValidationConfig:
     """Parameter für Cross-Validation."""
     method: str = "walk_forward"
@@ -204,6 +222,7 @@ class ValidationConfig:
     n_inner_folds: int = 5
     embargo_bars: int = 0
     sample_weights: bool = False
+    early_pruning: EarlyPruningConfig = field(default_factory=EarlyPruningConfig)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ValidationConfig":
@@ -216,6 +235,7 @@ class ValidationConfig:
             n_inner_folds=data.get("n_inner_folds", 5),
             embargo_bars=data.get("embargo_bars", 0),
             sample_weights=data.get("sample_weights", False),
+            early_pruning=EarlyPruningConfig.from_dict(data.get("early_pruning")),
         )
 
 
