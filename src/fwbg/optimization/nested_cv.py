@@ -185,6 +185,148 @@ def train_model(
     return model
 
 
+def _evaluate_single_fold(
+    fold_idx: int,
+    train_df: pd.DataFrame,
+    val_df: pd.DataFrame,
+    group_features: List[str],
+    tp: int,
+    sl: int,
+    ctx: SimulationContext,
+    timeout_bars: int = None,
+    cached_targets: Optional[Dict] = None,
+    selected_features_long: Optional[List[str]] = None,
+    selected_features_short: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Evaluate a single combo on a single inner fold.
+
+    Used by run_inner_cv (standard path) and successive halving (pruning path).
+    Returns fold result with pnl, best_ct, and updated feature selections.
+    """
+    weights = None
+    if cached_targets is not None and fold_idx in cached_targets:
+        entry = cached_targets[fold_idx]
+        if len(entry) == 4:
+            targets_long, targets_short, dur_long, dur_short = entry
+            if ctx.sample_weights:
+                from .purging import compute_sample_weights
+                weights = compute_sample_weights(dur_long, dur_short, len(train_df))
+        else:
+            targets_long, targets_short = entry
+        has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
+    else:
+        targets_long, targets_short, has_long, has_short = compute_targets(
+            train_df, tp, sl, ctx, timeout_bars
+        )
+
+    if not has_long and not has_short:
+        return {"success": False}
+
+    feat_long = selected_features_long
+    feat_short = selected_features_short
+    if feat_long is None and feat_short is None:
+        if has_long:
+            feat_long, _ = select_features_from_fold(
+                train_df, targets_long, group_features, ctx.min_trades,
+                feature_selection_plugins=ctx.feature_selection_plugins,
+            )
+        if has_short:
+            feat_short, _ = select_features_from_fold(
+                train_df, targets_short, group_features, ctx.min_trades,
+                feature_selection_plugins=ctx.feature_selection_plugins,
+            )
+
+    if not feat_long and not feat_short:
+        return {"success": False}
+
+    mod_long = train_model(
+        train_df, targets_long, feat_long, ctx.min_trades, ctx,
+        use_reduced_params=True, sample_weight=weights,
+    ) if has_long else None
+    mod_short = train_model(
+        train_df, targets_short, feat_short, ctx.min_trades, ctx,
+        use_reduced_params=True, sample_weight=weights,
+    ) if has_short else None
+
+    best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
+        val_df, mod_long, mod_short,
+        feat_long, feat_short,
+        tp, sl, ctx, timeout_bars,
+    )
+
+    if not best_fold_ct:
+        return {"success": False}
+
+    return {
+        "success": True,
+        "pnl": best_fold_pnl,
+        "best_ct": best_fold_ct,
+        "trades_by_ct": trades_by_ct,
+        "selected_features_long": feat_long,
+        "selected_features_short": feat_short,
+    }
+
+
+def _aggregate_cv_folds(
+    fold_results: List[Dict[str, Any]],
+    total_folds: int,
+    ctx: SimulationContext,
+    selected_features_long: Optional[List[str]] = None,
+    selected_features_short: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Aggregate per-fold results into final inner CV result.
+
+    Computes average PnL, majority CT vote, fold stability, and merged feature list.
+    """
+    inner_val_pnls = []
+    best_ct_votes = {}
+
+    for fr in fold_results:
+        if not fr.get("success"):
+            continue
+        inner_val_pnls.append(fr["pnl"])
+        ct = fr["best_ct"]
+        best_ct_votes[ct] = best_ct_votes.get(ct, 0) + 1
+
+    if not inner_val_pnls or not best_ct_votes:
+        return {"success": False}
+
+    selected_features = []
+    if selected_features_long:
+        selected_features.extend(selected_features_long)
+    if selected_features_short:
+        selected_features.extend(
+            [f for f in selected_features_short if f not in selected_features]
+        )
+
+    if not selected_features:
+        return {"success": False}
+
+    profitable_folds = sum(1 for pnl in inner_val_pnls if pnl > 0)
+    fold_stability = profitable_folds / total_folds if total_folds > 0 else 0
+
+    best_ct = max(best_ct_votes.keys(), key=lambda x: best_ct_votes[x])
+
+    result = {
+        "success": True,
+        "avg_val_pnl": np.mean(inner_val_pnls),
+        "best_ct": best_ct,
+        "selected_features_long": selected_features_long,
+        "selected_features_short": selected_features_short,
+        "selected_features": selected_features,
+        "fold_stability": fold_stability,
+        "fold_pnls": inner_val_pnls,
+    }
+
+    if ctx.separate_long_short and isinstance(best_ct, tuple):
+        result["ct_long"] = best_ct[0]
+        result["ct_short"] = best_ct[1]
+
+    return result
+
+
 def run_inner_cv(
     inner_folds: List[Tuple[pd.DataFrame, pd.DataFrame]],
     group_features: List[str],
@@ -212,24 +354,19 @@ def run_inner_cv(
         Wenn early_termination aktiviert ist und der Kandidat mathematisch
         nicht mehr min_fold_stability erreichen kann, wird vorzeitig abgebrochen.
     """
-    inner_val_pnls = []
-    best_ct_votes = {}
-
-    # Early Termination Setup
     total_folds = len(inner_folds)
     min_fold_stability = getattr(ctx, 'min_fold_stability', 0.5)
     early_termination_enabled = getattr(ctx, 'early_termination', True)
     min_profitable = int(np.ceil(total_folds * min_fold_stability))
     profitable_count = 0
     failed_count = 0
-    early_terminated = False
-    first_fold_failed = False
 
-    # First-Fold Sanity Check Setup
     first_fold_sanity_check = getattr(ctx, 'first_fold_sanity_check', True)
     first_fold_min_win_rate = getattr(ctx, 'first_fold_min_win_rate', 0.25)
     first_fold_min_pnl = getattr(ctx, 'first_fold_min_pnl', -10.0)
     first_fold_min_trades = getattr(ctx, 'first_fold_min_trades', 5)
+
+    fold_results = []
 
     for fold_idx, (train_df, val_df) in enumerate(inner_folds):
         # Early Termination Check
@@ -237,130 +374,53 @@ def run_inner_cv(
             remaining_folds = total_folds - fold_idx
             max_possible_profitable = profitable_count + remaining_folds
             if max_possible_profitable < min_profitable:
-                early_terminated = True
-                break
+                return {"success": False, "early_terminated": True, "failed_folds": failed_count}
 
-        # Use cached targets if available
-        weights = None
-        if cached_targets is not None and fold_idx in cached_targets:
-            entry = cached_targets[fold_idx]
-            if len(entry) == 4:
-                targets_long, targets_short, dur_long, dur_short = entry
-                if ctx.sample_weights:
-                    from .purging import compute_sample_weights
-                    weights = compute_sample_weights(dur_long, dur_short, len(train_df))
-            else:
-                targets_long, targets_short = entry
-            has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
-        else:
-            targets_long, targets_short, has_long, has_short = compute_targets(
-                train_df, tp, sl, ctx, timeout_bars
-            )
-
-        if not has_long and not has_short:
-            failed_count += 1
-            continue
-
-        # Feature-Auswahl auf erstem Fold (mit Fallback auf spätere Folds)
-        if selected_features_long is None and selected_features_short is None:
-            if has_long:
-                selected_features_long, _ = select_features_from_fold(
-                    train_df, targets_long, group_features, ctx.min_trades,
-                    feature_selection_plugins=ctx.feature_selection_plugins,
-                )
-            if has_short:
-                selected_features_short, _ = select_features_from_fold(
-                    train_df, targets_short, group_features, ctx.min_trades,
-                    feature_selection_plugins=ctx.feature_selection_plugins,
-                )
-
-        if not selected_features_long and not selected_features_short:
-            failed_count += 1
-            continue
-
-        mod_long = train_model(train_df, targets_long, selected_features_long, ctx.min_trades, ctx, use_reduced_params=True, sample_weight=weights) if has_long else None
-        mod_short = train_model(train_df, targets_short, selected_features_short, ctx.min_trades, ctx, use_reduced_params=True, sample_weight=weights) if has_short else None
-
-        best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
-            val_df, mod_long, mod_short,
-            selected_features_long, selected_features_short,
-            tp, sl, ctx, timeout_bars
+        fold_result = _evaluate_single_fold(
+            fold_idx, train_df, val_df,
+            group_features, tp, sl, ctx, timeout_bars,
+            cached_targets=cached_targets,
+            selected_features_long=selected_features_long,
+            selected_features_short=selected_features_short,
         )
+        fold_results.append(fold_result)
 
-        if best_fold_ct:
-            inner_val_pnls.append(best_fold_pnl)
-            best_ct_votes[best_fold_ct] = best_ct_votes.get(best_fold_ct, 0) + 1
+        if fold_result["success"]:
+            if selected_features_long is None:
+                selected_features_long = fold_result.get("selected_features_long")
+            if selected_features_short is None:
+                selected_features_short = fold_result.get("selected_features_short")
 
-            if best_fold_pnl > 0:
+            if fold_result["pnl"] > 0:
                 profitable_count += 1
             else:
                 failed_count += 1
 
             # First-Fold Sanity Check
             if fold_idx == 0 and first_fold_sanity_check:
-                fold_trades = trades_by_ct.get(best_fold_ct, [])
+                trades_by_ct = fold_result["trades_by_ct"]
+                best_ct = fold_result["best_ct"]
+                fold_trades = trades_by_ct.get(best_ct, [])
                 n_fold_trades = len(fold_trades)
 
                 if n_fold_trades > 0:
                     fold_win_rate = sum(1 for t in fold_trades if t["result"] == 1.0) / n_fold_trades
-
                     is_catastrophic = (
                         fold_win_rate < first_fold_min_win_rate and
-                        best_fold_pnl < first_fold_min_pnl and
+                        fold_result["pnl"] < first_fold_min_pnl and
                         n_fold_trades >= first_fold_min_trades
                     )
-
                     if is_catastrophic:
-                        first_fold_failed = True
-                        break
+                        return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
                 elif n_fold_trades < first_fold_min_trades:
-                    first_fold_failed = True
-                    break
+                    return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
         else:
             failed_count += 1
 
-    if early_terminated:
-        return {"success": False, "early_terminated": True, "failed_folds": failed_count}
-
-    if first_fold_failed:
-        return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
-
-    if not inner_val_pnls or not best_ct_votes:
-        return {"success": False}
-
-    selected_features = []
-    if selected_features_long:
-        selected_features.extend(selected_features_long)
-    if selected_features_short:
-        selected_features.extend([f for f in selected_features_short if f not in selected_features])
-
-    if not selected_features:
-        return {"success": False}
-
-    profitable_folds = sum(1 for pnl in inner_val_pnls if pnl > 0)
-    fold_stability = profitable_folds / total_folds if total_folds > 0 else 0
-
-    if best_ct_votes:
-        best_ct = max(best_ct_votes.keys(), key=lambda x: best_ct_votes[x])
-    else:
-        best_ct = ctx.grid_ct[len(ctx.grid_ct) // 2] if ctx.grid_ct else 0.5
-
-    result = {
-        "success": True,
-        "avg_val_pnl": np.mean(inner_val_pnls),
-        "best_ct": best_ct,
-        "selected_features_long": selected_features_long,
-        "selected_features_short": selected_features_short,
-        "selected_features": selected_features,
-        "fold_stability": fold_stability,
-        "fold_pnls": inner_val_pnls,
-    }
-
-    if ctx.separate_long_short and isinstance(best_ct, tuple):
-        result["ct_long"] = best_ct[0]
-        result["ct_short"] = best_ct[1]
-
-    return result
+    return _aggregate_cv_folds(
+        fold_results, total_folds, ctx,
+        selected_features_long, selected_features_short,
+    )
 
 
 def evaluate_on_holdout(

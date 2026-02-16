@@ -11,7 +11,10 @@ from typing import Tuple, Optional, List
 import numpy as np
 
 from fwbg.utils.logging import log
-from .nested_cv import run_inner_cv, select_features_from_fold
+from .nested_cv import (
+    run_inner_cv, select_features_from_fold,
+    _evaluate_single_fold, _aggregate_cv_folds,
+)
 
 
 def select_features(
@@ -74,44 +77,48 @@ def select_features(
     return selected_long, selected_short
 
 
-def _process_single_grid_combo(
-    tp: int,
-    sl: int,
-    timeout_bars,
-    features: list,
-    inner_folds: list,
-    ctx,
-    regime_config: dict,
-    global_grid_pos: int,
-    total_grid_combos: int,
-    cached_targets: dict,
-    selected_features_long: list = None,
-    selected_features_short: list = None,
-) -> tuple:
-    """
-    Verarbeitet eine einzelne Grid-Kombination (TP/SL/Timeout).
+def _compute_cached_targets(tp, sl, timeout_bars, inner_folds, inner_df, ctx):
+    """Pre-compute and slice targets for all folds of a TP/SL combo."""
+    from .targets import compute_targets_cached, slice_targets_for_fold
 
-    Thread-safe und kann parallel für verschiedene Kombinationen aufgerufen werden.
+    if inner_df is None:
+        return None
 
-    Returns:
-        Tuple von (candidate_or_none, grid_result_or_none)
-    """
-    rrr = tp / sl
+    use_durations = ctx.sample_weights
+    if use_durations:
+        full_tgt_l, full_tgt_s, full_dur_l, full_dur_s = compute_targets_cached(
+            inner_df, tp, sl, ctx, timeout_bars,
+            exit_strategy_mode=ctx.exit_strategy,
+            return_durations=True,
+        )
+    else:
+        full_tgt_l, full_tgt_s = compute_targets_cached(
+            inner_df, tp, sl, ctx, timeout_bars,
+            exit_strategy_mode=ctx.exit_strategy,
+        )
 
-    # === INNER CV: Grid-Search auf Inner Folds ===
-    inner_result = run_inner_cv(
-        inner_folds, features, tp, sl, ctx,
-        global_grid_pos, total_grid_combos,
-        timeout_bars=timeout_bars,
-        cached_targets=cached_targets,
-        selected_features_long=selected_features_long,
-        selected_features_short=selected_features_short,
-    )
+    cached_targets = {}
+    for fold_idx, (train_df, _) in enumerate(inner_folds):
+        fold_tgt_l, fold_tgt_s, _, _ = slice_targets_for_fold(
+            full_tgt_l, full_tgt_s, inner_df, train_df, ctx
+        )
+        if use_durations:
+            fold_dur_l, fold_dur_s, _, _ = slice_targets_for_fold(
+                full_dur_l, full_dur_s, inner_df, train_df, ctx
+            )
+            cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s, fold_dur_l, fold_dur_s)
+        else:
+            cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s)
 
+    return cached_targets
+
+
+def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_config, ctx):
+    """Build candidate and grid_result dicts from inner CV result."""
     if not inner_result["success"]:
         return None, None
 
-    # Kandidat speichern (noch OHNE Holdout-Evaluation!)
+    rrr = tp / sl
     candidate = {
         "inner_val_pnl": inner_result["avg_val_pnl"],
         "params": (tp, sl, inner_result["best_ct"]),
@@ -124,12 +131,10 @@ def _process_single_grid_combo(
         "regime_filter": regime_config,
     }
 
-    # Bei separater L/S Optimierung: CT-Tuple aufschlüsseln
     if ctx.separate_long_short and "ct_long" in inner_result:
         candidate["ct_long"] = inner_result["ct_long"]
         candidate["ct_short"] = inner_result["ct_short"]
 
-    # Grid-Result mit CT (kann Tuple sein)
     conf_thresh = inner_result["best_ct"]
     grid_result = {
         "tp_mult": tp,
@@ -149,12 +154,40 @@ def _process_single_grid_combo(
     return candidate, grid_result
 
 
+def _process_single_grid_combo(
+    tp: int,
+    sl: int,
+    timeout_bars,
+    features: list,
+    inner_folds: list,
+    ctx,
+    regime_config: dict,
+    global_grid_pos: int,
+    total_grid_combos: int,
+    cached_targets: dict,
+    selected_features_long: list = None,
+    selected_features_short: list = None,
+) -> tuple:
+    """
+    Verarbeitet eine einzelne Grid-Kombination (TP/SL/Timeout).
+
+    Returns:
+        Tuple von (candidate_or_none, grid_result_or_none)
+    """
+    inner_result = run_inner_cv(
+        inner_folds, features, tp, sl, ctx,
+        global_grid_pos, total_grid_combos,
+        timeout_bars=timeout_bars,
+        cached_targets=cached_targets,
+        selected_features_long=selected_features_long,
+        selected_features_short=selected_features_short,
+    )
+    return _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_config, ctx)
+
+
 def _process_tp_sl_combo_wrapper(args):
     """
-    Wrapper-Funktion für parallele Verarbeitung einer TP/SL+timeout Kombination.
-
-    Args:
-        args: Tuple mit allen benötigten Parametern
+    Wrapper für sequentielle Verarbeitung einer TP/SL+timeout Kombination.
 
     Returns:
         Tuple von (candidate_or_none, grid_result_or_none, combo_idx)
@@ -163,45 +196,9 @@ def _process_tp_sl_combo_wrapper(args):
      grid_offset, total_grid_combos, inner_df,
      selected_features_long, selected_features_short) = args
 
-    from .targets import compute_targets_cached, slice_targets_for_fold
-
     global_grid_pos = grid_offset + combo_idx + 1
+    cached_targets = _compute_cached_targets(tp, sl, timeout_bars, inner_folds, inner_df, ctx)
 
-    # Berechne Targets für diese Kombination auf dem ORIGINALEN inner_df.
-    # Preprocessing ist bereits in process.py erledigt, und
-    # OHLC-Spalten sind in den preprocessed folds wiederhergestellt.
-    # Targets können daher immer gecacht werden.
-    cached_targets = None
-
-    if inner_df is not None:
-        use_durations = ctx.sample_weights
-
-        if use_durations:
-            full_tgt_l, full_tgt_s, full_dur_l, full_dur_s = compute_targets_cached(
-                inner_df, tp, sl, ctx, timeout_bars,
-                exit_strategy_mode=ctx.exit_strategy,
-                return_durations=True,
-            )
-        else:
-            full_tgt_l, full_tgt_s = compute_targets_cached(
-                inner_df, tp, sl, ctx, timeout_bars,
-                exit_strategy_mode=ctx.exit_strategy,
-            )
-
-        cached_targets = {}
-        for fold_idx, (train_df, _) in enumerate(inner_folds):
-            fold_tgt_l, fold_tgt_s, _, _ = slice_targets_for_fold(
-                full_tgt_l, full_tgt_s, inner_df, train_df, ctx
-            )
-            if use_durations:
-                fold_dur_l, fold_dur_s, _, _ = slice_targets_for_fold(
-                    full_dur_l, full_dur_s, inner_df, train_df, ctx
-                )
-                cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s, fold_dur_l, fold_dur_s)
-            else:
-                cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s)
-
-    # Inner CV ausführen
     candidate, grid_result = _process_single_grid_combo(
         tp, sl, timeout_bars,
         features, inner_folds, ctx, regime_config,
@@ -212,6 +209,138 @@ def _process_tp_sl_combo_wrapper(args):
     )
 
     return candidate, grid_result, combo_idx
+
+
+def _build_combo_tuples(
+    grid, ctx, timeout_values, features, inner_folds, regime_config,
+    total_grid_combos, inner_df,
+    selected_features_long, selected_features_short, sym,
+):
+    """Build combo tuples for grid search. Returns (combos, skipped_count)."""
+    combos = []
+    combo_idx = 0
+    skipped_count = 0
+
+    for tp in grid.tp:
+        for sl in grid.sl:
+            rrr = tp / sl
+            if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
+                skipped_count += len(timeout_values)
+                log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                continue
+
+            for timeout_bars in timeout_values:
+                combos.append((
+                    tp, sl, timeout_bars, combo_idx,
+                    features, inner_folds, ctx, regime_config,
+                    0, total_grid_combos, inner_df,
+                    selected_features_long, selected_features_short
+                ))
+                combo_idx += 1
+
+    return combos, skipped_count
+
+
+def _run_with_successive_halving(
+    combos, inner_folds, ctx,
+    features, regime_config, inner_df,
+    selected_features_long, selected_features_short,
+    sym, progress_callback, progress_reported, grid_total,
+):
+    """Fold-by-fold grid search with successive halving between folds."""
+    n_folds = len(inner_folds)
+    n_combos = len(combos)
+
+    # Pre-compute cached targets for all combos
+    combo_targets = {}
+    for combo_idx, combo in enumerate(combos):
+        tp, sl, timeout_bars = combo[0], combo[1], combo[2]
+        combo_targets[combo_idx] = _compute_cached_targets(
+            tp, sl, timeout_bars, inner_folds, inner_df, ctx
+        )
+
+    # State per combo: list of fold results
+    combo_fold_results = {i: [] for i in range(n_combos)}
+    active_indices = set(range(n_combos))
+
+    log(2, f"  Successive Halving: {n_combos} combos × {n_folds} folds", sym)
+
+    for fold_idx in range(n_folds):
+        train_df, val_df = inner_folds[fold_idx]
+
+        for combo_idx in list(active_indices):
+            combo = combos[combo_idx]
+            tp, sl, timeout_bars = combo[0], combo[1], combo[2]
+
+            fold_result = _evaluate_single_fold(
+                fold_idx, train_df, val_df,
+                features, tp, sl, ctx, timeout_bars,
+                cached_targets=combo_targets[combo_idx],
+                selected_features_long=selected_features_long,
+                selected_features_short=selected_features_short,
+            )
+            combo_fold_results[combo_idx].append(fold_result)
+
+        # Prune after each fold except the last
+        if fold_idx < n_folds - 1:
+            scores = []
+            for idx in active_indices:
+                pnls = [r["pnl"] for r in combo_fold_results[idx] if r.get("success")]
+                avg_pnl = np.mean(pnls) if pnls else float("-inf")
+                scores.append((idx, avg_pnl))
+
+            scores.sort(key=lambda x: x[1], reverse=True)
+            n_keep = min(
+                len(scores),
+                max(ctx.early_pruning_min_survivors,
+                    int(len(scores) * ctx.early_pruning_keep_ratio)),
+            )
+
+            new_active = {idx for idx, _ in scores[:n_keep]}
+            pruned = active_indices - new_active
+
+            if pruned:
+                threshold_pnl = scores[n_keep - 1][1] if n_keep <= len(scores) else float("-inf")
+                log(2, f"  Fold {fold_idx}: {len(new_active)} survivors, "
+                       f"{len(pruned)} pruned (threshold PnL={threshold_pnl:.1f})", sym)
+
+                # Report pruned combos as done
+                for _ in pruned:
+                    progress_reported += 1
+                    if progress_callback:
+                        progress_callback(progress_reported, grid_total)
+
+            active_indices = new_active
+
+    # Aggregate survivors and report progress
+    candidates = []
+    grid_results = []
+
+    for combo_idx in range(n_combos):
+        if combo_idx not in active_indices:
+            continue
+
+        combo = combos[combo_idx]
+        tp, sl, timeout_bars = combo[0], combo[1], combo[2]
+
+        result = _aggregate_cv_folds(
+            combo_fold_results[combo_idx], n_folds, ctx,
+            selected_features_long, selected_features_short,
+        )
+
+        candidate, grid_result = _build_candidate_and_grid_result(
+            result, tp, sl, timeout_bars, regime_config, ctx,
+        )
+        if candidate:
+            candidates.append(candidate)
+        if grid_result:
+            grid_results.append(grid_result)
+
+        progress_reported += 1
+        if progress_callback:
+            progress_callback(progress_reported, grid_total)
+
+    return candidates, grid_results, progress_reported
 
 
 def run_grid_search(
@@ -307,26 +436,11 @@ def run_grid_search(
         timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
 
     # Erstelle alle Kombinationen
-    combos = []
-    combo_idx = 0
-    skipped_count = 0
-
-    for tp in grid.tp:
-        for sl in grid.sl:
-            rrr = tp / sl
-            if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                skipped_count += len(timeout_values)
-                log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
-                continue
-
-            for timeout_bars in timeout_values:
-                combos.append((
-                    tp, sl, timeout_bars, combo_idx,
-                    features, inner_folds, ctx, regime_config,
-                    0, total_grid_combos, inner_df,
-                    selected_features_long, selected_features_short
-                ))
-                combo_idx += 1
+    combos, skipped_count = _build_combo_tuples(
+        grid, ctx, timeout_values, features, inner_folds, regime_config,
+        total_grid_combos, inner_df,
+        selected_features_long, selected_features_short, sym,
+    )
 
     candidates = []
     grid_results = []
@@ -342,26 +456,41 @@ def run_grid_search(
         for i in range(1, skipped_count + 1):
             progress_callback(i, grid_total)
 
+    # Early Pruning: Successive Halving (fold-by-fold with pruning)
+    pruning_active = (
+        ctx.early_pruning_enabled
+        and len(inner_folds) >= 2
+        and len(combos) > ctx.early_pruning_min_survivors
+    )
+
     try:
-        for i, combo in enumerate(combos):
-            try:
-                candidate, grid_result, _ = _process_tp_sl_combo_wrapper(combo)
-                progress_reported += 1
+        if pruning_active:
+            candidates, grid_results, progress_reported = _run_with_successive_halving(
+                combos, inner_folds, ctx,
+                features, regime_config, inner_df,
+                selected_features_long, selected_features_short,
+                sym, progress_callback, progress_reported, grid_total,
+            )
+        else:
+            for i, combo in enumerate(combos):
+                try:
+                    candidate, grid_result, _ = _process_tp_sl_combo_wrapper(combo)
+                    progress_reported += 1
 
-                if progress_callback:
-                    progress_callback(progress_reported, grid_total)
+                    if progress_callback:
+                        progress_callback(progress_reported, grid_total)
 
-                if candidate:
-                    candidates.append(candidate)
-                if grid_result:
-                    grid_results.append(grid_result)
-            except Exception as e:
-                log(1, f"  ERROR in combo {i}: {type(e).__name__}: {e}", sym)
-                import traceback
-                log(2, f"  Traceback: {traceback.format_exc()}", sym)
-                progress_reported += 1
-                if progress_callback:
-                    progress_callback(progress_reported, grid_total)
+                    if candidate:
+                        candidates.append(candidate)
+                    if grid_result:
+                        grid_results.append(grid_result)
+                except Exception as e:
+                    log(1, f"  ERROR in combo {i}: {type(e).__name__}: {e}", sym)
+                    import traceback
+                    log(2, f"  Traceback: {traceback.format_exc()}", sym)
+                    progress_reported += 1
+                    if progress_callback:
+                        progress_callback(progress_reported, grid_total)
     except Exception as outer_e:
         log(1, f"  OUTER ERROR: {type(outer_e).__name__}: {outer_e}", sym)
 

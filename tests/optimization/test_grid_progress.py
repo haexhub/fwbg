@@ -37,7 +37,8 @@ class TestGridProgressCallback:
         ctx = MagicMock()
         ctx.grid_combinations_per_run.return_value = 4
         ctx.total_grid_combinations.return_value = 4
-        ctx.min_rrr = 0  # Kein RRR-Filter
+        ctx.min_rrr = 0
+        ctx.early_pruning_enabled = False  # Kein RRR-Filter
         ctx.exit_strategy = "fixed"
         ctx.exit_params = {}
         ctx.model_type = "xgboost"
@@ -118,6 +119,7 @@ class TestGridProgressCallback:
         ctx.grid_combinations_per_run.return_value = 4
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0
+        ctx.early_pruning_enabled = False
 
         grid = MagicMock()
         grid.tp = [10, 20]
@@ -162,6 +164,7 @@ class TestGridProgressCallback:
         ctx.grid_combinations_per_run.return_value = 4
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0
+        ctx.early_pruning_enabled = False
 
         grid = MagicMock()
         grid.tp = [10, 20]
@@ -216,7 +219,8 @@ class TestProgressCallbackSequence:
         ctx = MagicMock()
         ctx.grid_combinations_per_run.return_value = 4
         ctx.total_grid_combinations.return_value = 4
-        ctx.min_rrr = 0  # Kein RRR-Filter - alle Combos werden verarbeitet
+        ctx.min_rrr = 0
+        ctx.early_pruning_enabled = False  # Kein RRR-Filter - alle Combos werden verarbeitet
         ctx.exit_strategy = "fixed"
         ctx.exit_params = {}
         ctx.model_type = "xgboost"
@@ -282,6 +286,7 @@ class TestProgressCallbackSequence:
         ctx.grid_combinations_per_run.return_value = 4  # 2 TP x 2 SL = 4
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0.5  # RRR-Filter: TP/SL muss >= 0.5 sein
+        ctx.early_pruning_enabled = False
         ctx.exit_strategy = "fixed"
         ctx.exit_params = {}
         ctx.model_type = "xgboost"
@@ -342,6 +347,236 @@ class TestProgressCallbackSequence:
             f"progress_callback sollte sequentiell 1-4 aufgerufen werden (auch bei RRR-Skips), "
             f"wurde aber mit {grid_positions} aufgerufen"
         )
+
+
+class TestSuccessiveHalving:
+    """Tests for successive halving grid search pruning."""
+
+    def _make_ctx(self, keep_ratio=0.5, min_survivors=2):
+        ctx = MagicMock()
+        ctx.early_pruning_enabled = True
+        ctx.early_pruning_keep_ratio = keep_ratio
+        ctx.early_pruning_min_survivors = min_survivors
+        ctx.sample_weights = False
+        ctx.separate_long_short = False
+        return ctx
+
+    def _make_combos(self, n):
+        """Create n dummy combo tuples with tp=10+i, sl=20."""
+        combos = []
+        for i in range(n):
+            combos.append((
+                10 + i, 20, None, i,
+                ["feat1"], [], MagicMock(), {},
+                0, n, None,
+                ["feat1"], ["feat1"],
+            ))
+        return combos
+
+    def _mock_eval(self, fold_idx, train_df, val_df, features, tp, sl, ctx,
+                   timeout_bars=None, **kwargs):
+        """Mock fold evaluation returning PnL proportional to tp."""
+        return {
+            "success": True,
+            "pnl": float(tp),
+            "best_ct": 0.5,
+            "trades_by_ct": {},
+            "selected_features_long": ["feat1"],
+            "selected_features_short": ["feat1"],
+        }
+
+    def test_pruning_reduces_evaluations(self):
+        """Later folds should evaluate fewer combos due to pruning."""
+        from fwbg.optimization.grid_search import _run_with_successive_halving
+
+        n_combos = 10
+        combos = self._make_combos(n_combos)
+        inner_folds = [(MagicMock(), MagicMock()) for _ in range(3)]
+        ctx = self._make_ctx(keep_ratio=0.5, min_survivors=2)
+
+        eval_calls = []
+
+        def tracking_eval(fold_idx, train_df, val_df, features, tp, sl, ctx,
+                          timeout_bars=None, **kwargs):
+            eval_calls.append(fold_idx)
+            return self._mock_eval(fold_idx, train_df, val_df, features, tp, sl,
+                                   ctx, timeout_bars, **kwargs)
+
+        with patch("fwbg.optimization.grid_search._evaluate_single_fold", side_effect=tracking_eval), \
+             patch("fwbg.optimization.grid_search._compute_cached_targets", return_value={}):
+            candidates, grid_results, _ = _run_with_successive_halving(
+                combos, inner_folds, ctx,
+                ["feat1"], {}, None,
+                ["feat1"], ["feat1"],
+                "TEST", None, 0, n_combos,
+            )
+
+        fold_counts = {}
+        for f in eval_calls:
+            fold_counts[f] = fold_counts.get(f, 0) + 1
+
+        # Fold 0: all 10
+        assert fold_counts[0] == 10
+        # Fold 1: 5 survivors (50% of 10)
+        assert fold_counts[1] == 5
+        # Fold 2: 2 survivors (max(2, int(5*0.5))=2)
+        assert fold_counts[2] == 2
+        # Only final survivors produce candidates
+        assert len(candidates) == 2
+
+    def test_min_survivors_prevents_aggressive_pruning(self):
+        """min_survivors should prevent pruning below the threshold."""
+        from fwbg.optimization.grid_search import _run_with_successive_halving
+
+        n_combos = 4
+        combos = self._make_combos(n_combos)
+        inner_folds = [(MagicMock(), MagicMock()) for _ in range(3)]
+        # keep_ratio=0.1 would want 0 combos, but min_survivors=3 overrides
+        ctx = self._make_ctx(keep_ratio=0.1, min_survivors=3)
+
+        eval_calls = []
+
+        def tracking_eval(fold_idx, *args, **kwargs):
+            eval_calls.append(fold_idx)
+            return self._mock_eval(fold_idx, *args, **kwargs)
+
+        with patch("fwbg.optimization.grid_search._evaluate_single_fold", side_effect=tracking_eval), \
+             patch("fwbg.optimization.grid_search._compute_cached_targets", return_value={}):
+            _run_with_successive_halving(
+                combos, inner_folds, ctx,
+                ["feat1"], {}, None,
+                ["feat1"], ["feat1"],
+                "TEST", None, 0, n_combos,
+            )
+
+        fold_counts = {}
+        for f in eval_calls:
+            fold_counts[f] = fold_counts.get(f, 0) + 1
+
+        assert fold_counts[0] == 4
+        assert fold_counts[1] == 3  # min_survivors=3 overrides keep_ratio
+        assert fold_counts[2] == 3  # min_survivors still respected
+
+    def test_pruning_skipped_single_fold(self):
+        """With 1 inner fold, pruning should not activate."""
+        from fwbg.optimization.grid_search import run_grid_search
+
+        ctx = MagicMock()
+        ctx.grid_combinations_per_run.return_value = 4
+        ctx.total_grid_combinations.return_value = 4
+        ctx.min_rrr = 0
+        ctx.early_pruning_enabled = False
+        ctx.exit_strategy = "fixed"
+        ctx.exit_params = {}
+        ctx.early_pruning_enabled = True
+        ctx.early_pruning_keep_ratio = 0.5
+        ctx.early_pruning_min_survivors = 2
+
+        grid = MagicMock()
+        grid.tp = [10, 20]
+        grid.sl = [20, 30]
+        grid.timeout_bars = None
+
+        inner_df = pd.DataFrame({"feat1": np.random.randn(100)})
+        inner_folds = [(MagicMock(), MagicMock())]  # Single fold!
+
+        with patch("fwbg.optimization.grid_search.select_features", return_value=(["feat1"], ["feat1"])), \
+             patch("fwbg.optimization.grid_search._run_with_successive_halving") as mock_sh, \
+             patch("fwbg.optimization.grid_search._process_tp_sl_combo_wrapper",
+                   return_value=({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {}, 0)):
+            run_grid_search(["feat1"], inner_folds, grid, ctx, {}, "TEST", inner_df=inner_df)
+            mock_sh.assert_not_called()
+
+    def test_pruning_skipped_few_combos(self):
+        """With fewer combos than min_survivors, pruning should not activate."""
+        from fwbg.optimization.grid_search import run_grid_search
+
+        ctx = MagicMock()
+        ctx.grid_combinations_per_run.return_value = 2
+        ctx.total_grid_combinations.return_value = 2
+        ctx.min_rrr = 0
+        ctx.early_pruning_enabled = False
+        ctx.exit_strategy = "fixed"
+        ctx.exit_params = {}
+        ctx.early_pruning_enabled = True
+        ctx.early_pruning_keep_ratio = 0.5
+        ctx.early_pruning_min_survivors = 10  # More than available combos
+
+        grid = MagicMock()
+        grid.tp = [10]
+        grid.sl = [20, 30]
+        grid.timeout_bars = None
+
+        inner_df = pd.DataFrame({"feat1": np.random.randn(100)})
+        inner_folds = [(MagicMock(), MagicMock()), (MagicMock(), MagicMock())]
+
+        with patch("fwbg.optimization.grid_search.select_features", return_value=(["feat1"], ["feat1"])), \
+             patch("fwbg.optimization.grid_search._run_with_successive_halving") as mock_sh, \
+             patch("fwbg.optimization.grid_search._process_tp_sl_combo_wrapper",
+                   return_value=({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {}, 0)):
+            run_grid_search(["feat1"], inner_folds, grid, ctx, {}, "TEST", inner_df=inner_df)
+            mock_sh.assert_not_called()
+
+    def test_progress_reports_all_combos(self):
+        """Progress should be reported for all combos (pruned + survivors)."""
+        from fwbg.optimization.grid_search import _run_with_successive_halving
+
+        n_combos = 10
+        combos = self._make_combos(n_combos)
+        inner_folds = [(MagicMock(), MagicMock()) for _ in range(3)]
+        ctx = self._make_ctx(keep_ratio=0.5, min_survivors=2)
+        progress_cb = MagicMock()
+
+        with patch("fwbg.optimization.grid_search._evaluate_single_fold", side_effect=self._mock_eval), \
+             patch("fwbg.optimization.grid_search._compute_cached_targets", return_value={}):
+            _, _, progress_reported = _run_with_successive_halving(
+                combos, inner_folds, ctx,
+                ["feat1"], {}, None,
+                ["feat1"], ["feat1"],
+                "TEST", progress_cb, 0, n_combos,
+            )
+
+        # All combos accounted for: pruned after fold 0 (5) + after fold 1 (3) + survivors (2)
+        assert progress_reported == n_combos
+        assert progress_cb.call_count == n_combos
+
+    def test_failed_folds_get_low_ranking(self):
+        """Combos with failed folds should rank below successful ones."""
+        from fwbg.optimization.grid_search import _run_with_successive_halving
+
+        n_combos = 6
+        combos = self._make_combos(n_combos)
+        inner_folds = [(MagicMock(), MagicMock()) for _ in range(2)]
+        ctx = self._make_ctx(keep_ratio=0.5, min_survivors=1)
+
+        def mixed_eval(fold_idx, train_df, val_df, features, tp, sl, ctx,
+                       timeout_bars=None, **kwargs):
+            # Combos 0-2 (tp=10,11,12) fail, combos 3-5 (tp=13,14,15) succeed
+            if tp < 13:
+                return {"success": False}
+            return {
+                "success": True, "pnl": float(tp), "best_ct": 0.5,
+                "trades_by_ct": {},
+                "selected_features_long": ["feat1"],
+                "selected_features_short": ["feat1"],
+            }
+
+        with patch("fwbg.optimization.grid_search._evaluate_single_fold", side_effect=mixed_eval), \
+             patch("fwbg.optimization.grid_search._compute_cached_targets", return_value={}):
+            candidates, _, _ = _run_with_successive_halving(
+                combos, inner_folds, ctx,
+                ["feat1"], {}, None,
+                ["feat1"], ["feat1"],
+                "TEST", None, 0, n_combos,
+            )
+
+        # Only successful combos should produce candidates
+        # After fold 0: 6 combos, top 3 kept. Failed combos have -inf PnL → pruned.
+        # After fold 1: last fold, 3 survivors aggregated.
+        assert len(candidates) == 3
+        # All candidates should have tp >= 13
+        for c in candidates:
+            assert c["params"][0] >= 13
 
 
 class TestGridResultsInProcessSymbolOutput:
