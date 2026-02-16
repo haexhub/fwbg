@@ -35,9 +35,10 @@ def _parse_ct_value(ct_value):
 
 
 def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
-                                 sample_bias_detected, bias_ratios, mean_bias_ratio):
+                                 sample_bias_detected, bias_ratios, mean_bias_ratio,
+                                 config_inconsistent=False, best_fold_id=None):
     """Build walk_forward summary dict shared by all result types."""
-    return {
+    summary = {
         "n_folds": len(all_fold_results),
         "successful_folds": len(all_fold_results),
         "mean_win_rate": np.mean(win_rates),
@@ -54,6 +55,13 @@ def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
         "mean_bias_ratio": mean_bias_ratio,
         "fold_details": all_fold_results,
     }
+
+    if config_inconsistent:
+        summary["config_inconsistent"] = True
+        summary["using_best_fold_only"] = True
+        summary["best_fold_id"] = best_fold_id
+
+    return summary
 
 
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
@@ -183,14 +191,52 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if sample_bias_detected:
             log(1, f"  WARNING: Sample bias detected in some folds (>2x ratio)", sym)
 
-        # Use first fold's best config as representative (they should be similar)
-        representative_fold = all_fold_results[0]
+        # Check if fold configs are consistent
+        configs = [r["best_config"] for r in all_fold_results]
+        tp_values = [c["tp"] for c in configs]
+        sl_values = [c["sl"] for c in configs]
+        rrr_values = [c.get("rrr", 1.0) for c in configs]
+
+        tp_std = np.std(tp_values) if len(tp_values) > 1 else 0
+        sl_std = np.std(sl_values) if len(sl_values) > 1 else 0
+        rrr_std = np.std(rrr_values) if len(rrr_values) > 1 else 0
+
+        # Configs are inconsistent if TP/SL/RRR vary significantly
+        is_consistent = tp_std <= 5 and sl_std <= 5 and rrr_std <= 0.15
+
+        if not is_consistent and len(all_fold_results) > 1:
+            log(1, f"  WARNING: Fold configs are INCONSISTENT!", sym)
+            log(1, f"    TP: {tp_values} (std={tp_std:.1f})", sym)
+            log(1, f"    SL: {sl_values} (std={sl_std:.1f})", sym)
+            log(1, f"    RRR: {[f'{r:.2f}' for r in rrr_values]} (std={rrr_std:.3f})", sym)
+
+            # Select BEST fold instead of first fold
+            representative_fold = max(all_fold_results, key=lambda f: f["test_pnl"])
+            log(1, f"  → Using BEST fold (Fold {representative_fold['fold_id']}) instead of aggregating", sym)
+
+            # Use metrics from best fold, not average
+            mean_wr = representative_fold["test_win_rate"]
+            mean_pnl = representative_fold["test_pnl"]
+            std_wr = 0  # No spread for single fold
+            std_pnl = 0
+            total_trades = representative_fold["test_trades"]
+
+            log(1, f"  Best Fold Metrics: WR={mean_wr*100:.1f}%, PnL={mean_pnl:.1f}, Trades={total_trades}", sym)
+        else:
+            # Use first fold's config as representative (they are similar)
+            representative_fold = all_fold_results[0]
+
         b_config = representative_fold["best_config"]
 
-        # Combine all trades from all folds (needed for all branches)
-        all_trades = []
-        for fold_result in all_fold_results:
-            all_trades.extend(fold_result["test_trades_trace"])
+        # Combine trades: If configs are inconsistent, use only best fold's trades
+        if not is_consistent and len(all_fold_results) > 1:
+            all_trades = representative_fold["test_trades_trace"]
+            log(2, f"  Using only trades from best fold ({len(all_trades)} trades)", sym)
+        else:
+            # Combine all trades from all folds (needed for all branches)
+            all_trades = []
+            for fold_result in all_fold_results:
+                all_trades.extend(fold_result["test_trades_trace"])
 
         # Extract binary results for Monte Carlo / Sharpe / Calmar (sign-based)
         all_trades_binary = [t["result"] for t in all_trades]
@@ -266,9 +312,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         }
 
         # Shared data for result building
+        best_fold_id = representative_fold.get("fold_id") if not is_consistent and len(all_fold_results) > 1 else None
         wf_summary = _build_walk_forward_summary(
             all_fold_results, win_rates, pnls, total_trades,
             sample_bias_detected, bias_ratios, mean_bias_ratio,
+            config_inconsistent=(not is_consistent and len(all_fold_results) > 1),
+            best_fold_id=best_fold_id,
         )
         features_list = representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", [])
 
