@@ -474,16 +474,19 @@ class ProgressTracker:
                 if show_grid:
                     bar_width = 12
 
-                    # Feature-Info aus Meta-Daten
+                    # Feature/Regime-Info aus Meta-Daten
                     sym_meta = meta.get(sym, {}) if meta else {}
                     feat_count = sym_meta.get("feature_count", 0)
                     ind_count = sym_meta.get("indicator_count", 0)
+                    regime_combos = sym_meta.get("regime_combos", 0)
+                    meta_parts = []
                     if feat_count:
-                        ind_suffix = f" {feat_count} Feat"
+                        meta_parts.append(f"{feat_count}F")
                     elif ind_count:
-                        ind_suffix = f" {ind_count} Plugins"
-                    else:
-                        ind_suffix = ""
+                        meta_parts.append(f"{ind_count}P")
+                    if regime_combos > 1:
+                        meta_parts.append(f"{regime_combos}R")
+                    ind_suffix = f" {'/'.join(meta_parts)}" if meta_parts else ""
 
                     if fold > 0 and total_folds > 0:
                         # Gesamt-Asset-Fortschritt über alle Folds (monoton steigend)

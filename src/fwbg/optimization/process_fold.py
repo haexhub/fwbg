@@ -14,7 +14,7 @@ from fwbg.pipeline.features import split_indicators_by_stationarity
 from fwbg.utils.progress import report_phase, report_meta, report_progress
 from fwbg.utils.logging import log
 from .nested_cv import nested_cv_split, evaluate_on_holdout
-from .grid_search import run_grid_search
+from .grid_search import run_grid_search, select_features
 
 
 def precompute_indicators(df, strategy, sym):
@@ -205,7 +205,8 @@ def process_single_fold(
 
     # Update meta with actual feature count (first fold only)
     if fold_idx == 0:
-        report_meta(sym, indicator_count=total_indicators, feature_count=len(full_pool))
+        report_meta(sym, indicator_count=total_indicators, feature_count=len(full_pool),
+                    regime_combos=n_regime_combos)
 
     if len(full_pool) < 5:
         log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Features ({len(full_pool)})", sym)
@@ -235,7 +236,23 @@ def process_single_fold(
 
     log(2, f"  Fold {fold.fold_id + 1}: Nested CV with {len(inner_folds)} inner folds", sym)
 
+    # === FEATURE SELECTION (einmal pro Fold, regime-unabhängig) ===
+    fold_idx_1based = fold.fold_id + 1
+    fs_names = [p["name"] for p in (ctx.feature_selection_plugins or [])] or ["none"]
+    report_phase(sym, f"Fold {fold_idx_1based}/{n_folds}: Feature Selection [{' > '.join(fs_names)}]...")
+    selected_long, selected_short = select_features(
+        inner_folds, full_pool, ctx, sym
+    )
+
+    if not selected_long and not selected_short:
+        log(2, f"  Fold {fold_idx_1based}: No features selected, skipping", sym)
+        return None, []
+
     # === REGIME-FILTER KOMBINATIONEN ===
+    # Total inkl. aller Regime-Combos für monoton steigende Progress-Anzeige
+    total_grid_combos = base_combos * n_regime_combos
+    grid_progress_offset = 0
+
     for rf_idx, regime_config in enumerate(regime_filter_combinations):
         # Erstelle RegimeFilterConfig aus Kombination
         regime_params = RegimeFilterConfig.from_dict(regime_config)
@@ -258,26 +275,31 @@ def process_single_fold(
         if n_regime_combos > 1 and fold.fold_id == 0:  # Only log once
             log(2, f"  Regime {rf_idx+1}/{n_regime_combos}: {regime_str}", sym)
 
-        # Grid-Search mit Progress-Reporting
-        total_grid_combos = ctx.total_grid_combinations()
-        fold_idx_1based = fold.fold_id + 1
+        # Grid-Search mit Progress-Reporting (Offset akkumuliert über Regime-Combos)
+        current_offset = grid_progress_offset  # capture for closure
 
-        def grid_progress_callback(grid_count, grid_total):
+        def grid_progress_callback(grid_count, grid_total, _offset=current_offset):
             report_progress(sym, fold_idx_1based, n_folds, "grid_search",
-                           grid_count, total_grid_combos)
+                           _offset + grid_count, total_grid_combos)
 
-        fs_names = [p["name"] for p in (ctx.feature_selection_plugins or [])] or ["none"]
-        report_phase(sym, f"Fold {fold_idx_1based}/{n_folds}: Feature Selection [{' > '.join(fs_names)}]...")
+        if n_regime_combos > 1:
+            report_phase(sym, f"Fold {fold_idx_1based}/{n_folds}: R{rf_idx+1}/{n_regime_combos} Grid-Search...")
+        else:
+            report_phase(sym, f"Fold {fold_idx_1based}/{n_folds}: Grid-Search...")
         gs_candidates, gs_grid_results = run_grid_search(
             full_pool, inner_folds,
             grid, ctx, regime_config, sym,
             inner_df=train_df,
-            progress_callback=grid_progress_callback
+            progress_callback=grid_progress_callback,
+            preselected_features_long=selected_long,
+            preselected_features_short=selected_short,
         )
         candidates.extend(gs_candidates)
         for gr in gs_grid_results:
             gr["fold_id"] = fold.fold_id
         all_grid_results.extend(gs_grid_results)
+
+        grid_progress_offset += base_combos
 
     log(2, f"  Fold {fold.fold_id + 1}: Grid search done, {len(candidates)} candidates", sym)
 

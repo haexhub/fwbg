@@ -429,7 +429,7 @@ class TestReportMeta:
             output = "".join(
                 call.args[0] for call in mock_stdout.write.call_args_list
             )
-            assert "352 Feat" in output
+            assert "352F" in output
             assert "F2/8" in output
             assert "(12/16)" in output
 
@@ -460,7 +460,7 @@ class TestReportMeta:
             output = "".join(
                 call.args[0] for call in mock_stdout.write.call_args_list
             )
-            assert "11 Plugins" in output
+            assert "11P" in output
 
     def test_done_clears_meta(self):
         """Done-Message sollte Meta-Daten für Symbol entfernen."""

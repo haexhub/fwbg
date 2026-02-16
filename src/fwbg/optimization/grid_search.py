@@ -352,13 +352,15 @@ def run_grid_search(
     sym: str,
     progress_callback=None,
     inner_df=None,
+    preselected_features_long=None,
+    preselected_features_short=None,
 ) -> tuple:
     """
     Führt Grid-Search über TP/SL/Timeout Kombinationen durch.
 
     Beinhaltet:
     1. Feature-Bereinigung (inf/nan Filter)
-    2. Feature Selection (Boruta)
+    2. Feature Selection (falls nicht pre-selected)
     3. Sequentielle Verarbeitung aller TP/SL-Kombinationen
 
     Args:
@@ -370,6 +372,8 @@ def run_grid_search(
         sym: Symbol für Logging
         progress_callback: Optional callback(grid_count, grid_total)
         inner_df: DataFrame für Target-Caching
+        preselected_features_long: Pre-computed feature selection (skip internal)
+        preselected_features_short: Pre-computed feature selection (skip internal)
 
     Returns:
         Tuple von (candidates_list, grid_results_list)
@@ -412,10 +416,14 @@ def run_grid_search(
     total_grid_combos = ctx.total_grid_combinations()
 
     # === FEATURE SELECTION ===
-    # Boruta läuft hier EINMAL statt für jede TP/SL-Kombination
-    selected_features_long, selected_features_short = select_features(
-        inner_folds, features, ctx, sym
-    )
+    # Use pre-selected features if provided (hoisted out of regime loop)
+    if preselected_features_long is not None or preselected_features_short is not None:
+        selected_features_long = preselected_features_long
+        selected_features_short = preselected_features_short
+    else:
+        selected_features_long, selected_features_short = select_features(
+            inner_folds, features, ctx, sym
+        )
 
     if not selected_features_long and not selected_features_short:
         log(2, f"  Keine Features selektiert - übersprungen", sym)
