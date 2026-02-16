@@ -390,6 +390,48 @@ def _get_probs(
     return None, None
 
 
+def _apply_meta_filter(
+    df: Optional[pd.DataFrame],
+    probs: np.ndarray,
+    win_idx: int,
+    features: List[str],
+    meta_model: Optional[Any],
+) -> np.ndarray:
+    """
+    Apply meta-model filter to zero out low-confidence predictions (AFML Ch. 3).
+
+    The meta-model predicts whether the primary signal will be profitable.
+    Bars where meta-model says 'skip' (P(trade) < 0.5) get zeroed probs.
+
+    Args:
+        df: DataFrame with feature columns (None when no meta_model)
+        probs: Primary model's probability array (n_samples, n_classes)
+        win_idx: Index of the win class in probs
+        features: Feature column names used by primary model
+        meta_model: Trained meta-model (or None to pass through)
+
+    Returns:
+        Filtered probability array (same shape as probs)
+    """
+    if meta_model is None:
+        return probs
+
+    primary_probs = probs[:, win_idx]
+    X_meta = np.column_stack([df[features].values, primary_probs])
+
+    meta_probs = meta_model.predict_proba(X_meta)
+    if 1 in meta_model.classes_:
+        meta_win_idx = np.where(meta_model.classes_ == 1)[0][0]
+    else:
+        return probs
+
+    # Zero out bars where meta-model predicts "skip trade"
+    mask = meta_probs[:, meta_win_idx] < 0.5
+    filtered = probs.copy()
+    filtered[mask] = 0.0
+    return filtered
+
+
 def evaluate_on_validation(
     val_df: pd.DataFrame,
     mod_long: Optional[XGBClassifier],
@@ -400,14 +442,19 @@ def evaluate_on_validation(
     sl: int,
     ctx: SimulationContext,
     timeout_bars: int = None,
+    meta_mod_long: Optional[Any] = None,
+    meta_mod_short: Optional[Any] = None,
 ) -> Tuple[Optional[float], float, Dict[float, List[float]]]:
     """
     Evaluiert Modelle auf Validation-Set und findet besten CT.
 
     Bei separate_long_short=True werden separate CTs für Long und Short optimiert.
+    Bei meta_mod_long/short: Meta-Labeling Filter wird angewandt (AFML Ch. 3).
 
     Args:
         timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
+        meta_mod_long: Optional meta-model for filtering long predictions
+        meta_mod_short: Optional meta-model for filtering short predictions
 
     Returns:
         (best_ct, best_pnl, trades_by_ct)
@@ -415,6 +462,12 @@ def evaluate_on_validation(
     """
     probs_long, long_win_idx = _get_probs(mod_long, val_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, val_df, features_short)
+
+    # Meta-Labeling: filter predictions via meta-model
+    if meta_mod_long is not None and probs_long is not None:
+        probs_long = _apply_meta_filter(val_df, probs_long, long_win_idx, features_long, meta_mod_long)
+    if meta_mod_short is not None and probs_short is not None:
+        probs_short = _apply_meta_filter(val_df, probs_short, short_win_idx, features_short, meta_mod_short)
 
     # Probability Calibration: EV-optimal threshold replaces CT grid
     if ctx.probability_calibration:

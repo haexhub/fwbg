@@ -194,6 +194,81 @@ def train_model(
     return model
 
 
+def _generate_oof_predictions(
+    df: pd.DataFrame,
+    targets: np.ndarray,
+    features: List[str],
+    ctx: SimulationContext,
+    n_splits: int = 3,
+) -> np.ndarray:
+    """
+    Generate out-of-fold probability predictions (AFML Ch. 3).
+
+    Uses time-series KFold (no shuffle) to avoid data leakage.
+    Each fold trains a reduced-param XGBoost and predicts on held-out bars.
+
+    Returns:
+        Array of shape (n,) with OOF win-probabilities for each bar.
+    """
+    from sklearn.model_selection import KFold
+
+    oof_probs = np.zeros(len(df))
+    X = df[features].values
+    kf = KFold(n_splits=n_splits, shuffle=False)
+
+    for train_idx, val_idx in kf.split(X):
+        if len(np.unique(targets[train_idx])) < 2:
+            continue
+
+        params = ctx.model_hyperparameters.copy()
+        params["n_estimators"] = max(10, params.get("n_estimators", 100) // 2)
+        params.setdefault("random_state", 42)
+        params.setdefault("verbosity", 0)
+        params["n_jobs"] = get_xgboost_n_jobs()
+        params.update(get_xgboost_params())
+
+        model = XGBClassifier(**params)
+        model.fit(X[train_idx], targets[train_idx])
+
+        if 1 in model.classes_:
+            win_idx = np.where(model.classes_ == 1)[0][0]
+            oof_probs[val_idx] = model.predict_proba(X[val_idx])[:, win_idx]
+
+    return oof_probs
+
+
+def _train_meta_model(
+    df: pd.DataFrame,
+    targets: np.ndarray,
+    features: List[str],
+    oof_probs: np.ndarray,
+    ctx: SimulationContext,
+) -> Optional[XGBClassifier]:
+    """
+    Train a meta-model that predicts whether the primary signal is profitable (AFML Ch. 3).
+
+    Meta-features = original features + primary model's OOF probability.
+    Returns None when insufficient positive targets for training.
+    """
+    if np.count_nonzero(targets) < ctx.min_trades // 2:
+        return None
+    if len(np.unique(targets)) < 2:
+        return None
+
+    X_meta = np.column_stack([df[features].values, oof_probs])
+
+    params = ctx.model_hyperparameters.copy()
+    params["n_estimators"] = max(10, params.get("n_estimators", 100) // 2)
+    params.setdefault("random_state", 42)
+    params.setdefault("verbosity", 0)
+    params["n_jobs"] = get_xgboost_n_jobs()
+    params.update(get_xgboost_params())
+
+    meta_model = XGBClassifier(**params)
+    meta_model.fit(X_meta, targets)
+    return meta_model
+
+
 def _evaluate_single_fold(
     fold_idx: int,
     train_df: pd.DataFrame,
@@ -258,10 +333,23 @@ def _evaluate_single_fold(
         use_reduced_params=True, sample_weight=weights,
     ) if has_short else None
 
+    # Meta-Labeling: train meta-models to filter primary predictions
+    meta_mod_long = None
+    meta_mod_short = None
+    if ctx.meta_labeling:
+        if mod_long is not None and feat_long:
+            oof_long = _generate_oof_predictions(train_df, targets_long, feat_long, ctx)
+            meta_mod_long = _train_meta_model(train_df, targets_long, feat_long, oof_long, ctx)
+        if mod_short is not None and feat_short:
+            oof_short = _generate_oof_predictions(train_df, targets_short, feat_short, ctx)
+            meta_mod_short = _train_meta_model(train_df, targets_short, feat_short, oof_short, ctx)
+
     best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
         val_df, mod_long, mod_short,
         feat_long, feat_short,
         tp, sl, ctx, timeout_bars,
+        meta_mod_long=meta_mod_long,
+        meta_mod_short=meta_mod_short,
     )
 
     if not best_fold_ct:

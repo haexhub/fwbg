@@ -98,6 +98,7 @@ class SimulationContext:
     early_pruning_min_survivors: int = 10
     probability_calibration: bool = False
     calibration_method: str = "isotonic"
+    meta_labeling: bool = False
 
     # Exit-Strategy (Plugin)
     exit_strategy: str = "fixed"
@@ -178,6 +179,7 @@ class SimulationContext:
             early_pruning_min_survivors=strategy.validation.early_pruning.min_survivors,
             probability_calibration=strategy.validation.probability_calibration,
             calibration_method=strategy.validation.calibration_method,
+            meta_labeling=strategy.validation.meta_labeling,
         )
 
     def get_long_grid(self) -> tuple:
