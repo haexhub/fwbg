@@ -202,21 +202,18 @@ def run_optimizer(
         sl = cfg.get("sl_mult", "?")
         n_trades = result.get("walk_forward", {}).get("total_trades", len(result.get("tr_trace", [])))
 
+        wf = result.get("walk_forward", {})
+        fold_tag = f" [Fold {wf.get('best_fold_id', '?')}]" if wf.get("config_inconsistent") else ""
+
         if status == "ok":
             sharpe = result.get("sharpe", 0)
-            summary = f"WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T)"
+            summary = f"WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T){fold_tag}"
         elif status == "no_edge":
-            # Check if config was inconsistent (best fold used)
-            wf = result.get("walk_forward", {})
-            if wf.get("config_inconsistent"):
-                fold_id = wf.get("best_fold_id", "?")
-                summary = f"No edge [Fold {fold_id}] WR={wr:.1%} PnL={pnl:.1f} RRR={rrr_val:.2f} TP={tp} SL={sl} ({n_trades}T)"
-            else:
-                summary = f"No edge WR={wr:.1%} PnL={pnl:.1f} RRR={rrr_val:.2f} TP={tp} SL={sl} ({n_trades}T)"
+            summary = f"No edge{fold_tag} WR={wr:.1%} PnL={pnl:.1f} RRR={rrr_val:.2f} TP={tp} SL={sl} ({n_trades}T)"
         elif status == "not_significant":
             p_val = result.get("monte_carlo", {}).get("p_value", 0)
             sharpe = result.get("sharpe", 0)
-            summary = f"p={p_val:.3f} WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T)"
+            summary = f"p={p_val:.3f} WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T){fold_tag}"
         elif status == "no_successful_folds":
             summary = "Keine profitablen Konfigurationen"
         else:
@@ -356,12 +353,12 @@ def run_optimizer(
                 output_lines.append(f"  Risk/Trade={risk_per_trade:.4f}, p={p_value:.3f}")
             elif status == "no_edge":
                 output_lines.append(f"  Reason: No profitable edge")
-                # Warnung bei inkonsistenten Fold-Configs
-                if wf.get("config_inconsistent"):
-                    fold_id = wf.get("best_fold_id", "?")
-                    output_lines.append(f"  ⚠ Fold configs were INCONSISTENT - using best fold {fold_id} only")
             elif status == "not_significant":
                 output_lines.append(f"  Reason: p-value={p_value:.3f} (not significant)")
+
+            if wf.get("config_inconsistent"):
+                fold_id = wf.get("best_fold_id", "?")
+                output_lines.append(f"  ⚠ Fold configs INCONSISTENT - using best fold {fold_id} only")
 
             # Plot für ALLE Assets mit Trades erstellen
             if result.get("tr_trace") and plots_path:
