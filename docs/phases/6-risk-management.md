@@ -1,20 +1,20 @@
 # Phase 6: Risk Management
 
-## Zweck
+## Purpose
 
-Die Risk-Management-Phase berechnet Positionsgrößen und Risk-Controls basierend auf Trade-Historie und Performance-Metriken. Ziel: Optimale Kapitalallokation pro Trade unter Berücksichtigung der Gewinnwahrscheinlichkeit und des Risk-Reward-Verhältnisses.
+The risk management phase computes position sizes and risk controls based on trade history and performance metrics. Goal: Optimal capital allocation per trade, considering win probability and risk-reward ratio.
 
 ---
 
-## Wichtig: Nicht vom PipelineRunner ausgeführt
+## Important: Not Executed by PipelineRunner
 
-Risk Manager werden **nicht** vom PipelineRunner orchestriert. Sie werden **direkt vom Optimization-Code** aufgerufen, nachdem die Trade-Simulation abgeschlossen ist.
+Risk managers are **not** orchestrated by the PipelineRunner. They are called **directly by the optimization code** after the trade simulation is complete.
 
 ---
 
 ## BaseRiskManager
 
-Basisklasse: `src/fwbg/plugins/risk_manager.py`
+Base class: `src/fwbg/plugins/risk_manager.py`
 
 ```python
 class BaseRiskManager(BasePlugin, ABC):
@@ -24,79 +24,79 @@ class BaseRiskManager(BasePlugin, ABC):
     def compute_risk_params(self, trades: List[float], win_rate: float,
                            rrr: float, **params) -> Dict[str, Any]:
         """
-        Berechnet Risk-Parameter.
+        Computes risk parameters.
 
         Args:
-            trades: Liste der Trade-Returns
-            win_rate: Gewinnrate (0.0-1.0)
-            rrr: Risk-Reward-Ratio (TP/SL)
+            trades: List of trade returns
+            win_rate: Win rate (0.0-1.0)
+            rrr: Risk-reward ratio (TP/SL)
 
         Returns:
-            Dict mit mindestens:
-            - risk_per_trade: float (Positionsgröße als Kapitalanteil)
-            - trade_returns: List[float] (Per-Trade Returns für Metriken)
+            Dict containing at least:
+            - risk_per_trade: float (position size as fraction of capital)
+            - trade_returns: List[float] (per-trade returns for metrics)
             - circuit_breaker: dict
             - risk_adjustment: dict
         """
 ```
 
-- Registrierung: `@register_risk_manager("name")`
+- Registration: `@register_risk_manager("name")`
 
 ---
 
-## Return-Value Struktur
+## Return Value Structure
 
 ```python
 {
-    "risk_per_trade": 0.02,        # 2% des Kapitals pro Trade
-    "trade_returns": [...],         # Alle Trade-Returns mit angepasster Größe
+    "risk_per_trade": 0.02,        # 2% of capital per trade
+    "trade_returns": [...],         # All trade returns with adjusted sizing
 
     "circuit_breaker": {
-        "pause_after_losses": 3,    # Nach 3 Verlusten in Folge pausieren
-        "pause_bars": 10,           # Für 10 Bars pausieren
+        "pause_after_losses": 3,    # Pause after 3 consecutive losses
+        "pause_bars": 10,           # Pause for 10 bars
         "enabled": True
     },
 
     "risk_adjustment": {
-        "original_risk": 0.03,      # Unbereinigtes Kelly-Ergebnis
-        "scale_factor": 0.5,        # Herunterskaliert (Half-Kelly)
-        "target_dd": 0.15           # Ziel-Drawdown von 15%
+        "original_risk": 0.03,      # Raw Kelly result
+        "scale_factor": 0.5,        # Scaled down (half-Kelly)
+        "target_dd": 0.15           # Target drawdown of 15%
     }
 }
 ```
 
 ---
 
-## Verfügbare Plugins
+## Available Plugins
 
 ### kelly (fwbg-core)
 
-Kelly Criterion — berechnet die mathematisch optimale Positionsgröße basierend auf Gewinnwahrscheinlichkeit und Risk-Reward-Ratio:
+Kelly Criterion — computes the mathematically optimal position size based on win probability and risk-reward ratio:
 
 ```
 Kelly% = WinRate - (1 - WinRate) / RRR
 ```
 
-In der Praxis wird typischerweise "Half-Kelly" (50% des theoretischen Optimums) verwendet, da Full-Kelly sehr aggressive Positionsgrößen ergibt.
+In practice, "half-Kelly" (50% of the theoretical optimum) is typically used, as full Kelly produces very aggressive position sizes.
 
 ### vol_targeted_kelly (fwbg-core)
 
-Kelly Criterion mit **Volatility Targeting** — skaliert die Positionsgröße dynamisch mit dem Verhältnis von Zielvolatilität zu realisierter Volatilität:
+Kelly Criterion with **volatility targeting** — dynamically scales position size by the ratio of target volatility to realized volatility:
 
 ```
 Adjusted_Size = Kelly_Size × (target_vol / realized_vol)
 ```
 
-Bei hoher Volatilität wird die Position verkleinert, bei niedriger Volatilität vergrößert.
+In high-volatility environments, position size is reduced; in low-volatility environments, it is increased.
 
 ---
 
-## Strategy-JSON Konfiguration
+## Strategy JSON Configuration
 
-Risk Manager werden nicht direkt in der Strategy-JSON konfiguriert. Sie werden über den `risk_manager`-Parameter in der Strategy ausgewählt und automatisch mit den Trade-Ergebnissen aufgerufen.
+Risk managers are not directly configured in the strategy JSON. They are selected via the `risk_manager` parameter in the strategy and automatically called with the trade results.
 
 ---
 
-## Eigenes Risk-Management-Plugin erstellen
+## Creating a Custom Risk Management Plugin
 
-Siehe [Plugin Development Guide](../plugin-development.md) für die vollständige Anleitung.
+See [Plugin Development Guide](../plugin-development.md) for the complete guide.

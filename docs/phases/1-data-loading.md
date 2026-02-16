@@ -1,32 +1,32 @@
 # Phase 1: Data Loading
 
-## Zweck
+## Purpose
 
-Die Data-Loading-Phase lädt externe Datenquellen (Makro-Indikatoren, COT-Positioning, etc.) und berechnet daraus abgeleitete Features. Diese Phase wird ausgeführt **bevor** Preprocessing und Indikatoren laufen.
+The data loading phase loads external data sources (macro indicators, COT positioning, etc.) and computes derived features from them. This phase executes **before** preprocessing and indicators.
 
-**Wichtig:** DataLoader-Plugins machen **kein I/O**. Die Rohdaten werden vorab vom Orchestrator über konfigurierte DataSources geladen und im DataFrame bereitgestellt. DataLoader-Plugins berechnen nur abgeleitete Features aus diesen bereits vorhandenen Daten.
+**Important:** DataLoader plugins do **no I/O**. Raw data is loaded beforehand by the orchestrator via configured DataSources and placed in the DataFrame. DataLoader plugins only compute derived features from this already available data.
 
 ---
 
-## Dreischichtige Architektur
+## Three-Layer Architecture
 
 ```
-DataSource.load()        → I/O: CSV lesen, API fetchen, DB query
+DataSource.load()        → I/O: read CSV, fetch API, DB query
     ↓
-Orchestrator             → Index-Alignment: Daily→Intraday Mapping, Forward-Fill
+Orchestrator             → Index alignment: Daily→Intraday mapping, forward-fill
     ↓
-DataLoader.execute()     → Computation: Lookbacks, Derived Features, Ratios
+DataLoader.execute()     → Computation: lookbacks, derived features, ratios
 ```
 
-1. **DataSource** (I/O-Schicht): Weiß woher Daten kommen und wie sie gelesen werden
-2. **Orchestrator**: Aligned verschiedene Frequenzen (z.B. Daily-Daten auf H1-Index)
-3. **DataLoader** (Plugin): Berechnet abgeleitete Features aus den aligned Daten
+1. **DataSource** (I/O layer): Knows where data comes from and how to read it
+2. **Orchestrator**: Aligns different frequencies (e.g., daily data to H1 index)
+3. **DataLoader** (plugin): Computes derived features from the aligned data
 
 ---
 
 ## BaseDataLoader
 
-Basisklasse: `src/fwbg/plugins/data_loader.py`
+Base class: `src/fwbg/plugins/data_loader.py`
 
 ```python
 class BaseDataLoader(BasePlugin, ABC):
@@ -35,82 +35,82 @@ class BaseDataLoader(BasePlugin, ABC):
 
     @abstractmethod
     def execute(self, ctx: PipelineContext, **params):
-        """Berechnet abgeleitete Features aus Rohdaten in ctx.df."""
+        """Compute derived features from raw data in ctx.df."""
 ```
 
-- `stateful = False` — Kein fit/transform-Pattern, kein Zustand
-- `cacheable = True` — Ergebnis gleich bei gleichen Eingabedaten
-- Registrierung: `@register_data_loader("name")`
+- `stateful = False` — No fit/transform pattern, no state
+- `cacheable = True` — Same result for same input data
+- Registration: `@register_data_loader("name")`
 
 ---
 
-## Verfügbare Plugins
+## Available Plugins
 
 ### macro_data (fwbg-premium)
 
-Berechnet Makro-Features aus vorgeladenen Zeitreihen:
+Computes macro features from preloaded time series:
 
-| Feature-Gruppe | Beschreibung | Prefix |
-|----------------|--------------|--------|
-| VIX | CBOE Volatilitätsindex | `macro_vix_` |
+| Feature Group | Description | Prefix |
+|---------------|-------------|--------|
+| VIX | CBOE Volatility Index | `macro_vix_` |
 | DXY | US Dollar Index | `macro_dxy_` |
-| Yields | US2Y, US5Y, US10Y, US30Y, int. Yields | `macro_yield_` |
-| Yield Curves | Slope (10Y-2Y), Steepness (30Y-5Y), Term Spread | `macro_yield_curve_` |
-| Yield Spreads | International Zinsdifferenzen (US-DE, US-JP, etc.) | `macro_yield_spread_` |
+| Yields | US2Y, US5Y, US10Y, US30Y, international yields | `macro_yield_` |
+| Yield Curves | Slope (10Y-2Y), steepness (30Y-5Y), term spread | `macro_yield_curve_` |
+| Yield Spreads | International rate differentials (US-DE, US-JP, etc.) | `macro_yield_spread_` |
 
-Jedes Feature wird in mehreren Lookback-Varianten berechnet: `_chg_2d`, `_chg_5d`, `_chg_10d`, `_chg_20d`, `_chg_60d`.
+Each feature is computed in multiple lookback variants: `_chg_2d`, `_chg_5d`, `_chg_10d`, `_chg_20d`, `_chg_60d`.
 
 **Derived Features:**
-- `vol_rv_iv_ratio` / `vol_rv_iv_spread` — Realized Vol vs VIX
-- `cross_cot_{pair}_vol_interaction` — COT × Vol Interaction
-- `cross_cot_{pair}_price_divergence` — Preis vs Positioning Divergenz
+- `vol_rv_iv_ratio` / `vol_rv_iv_spread` — Realized vol vs VIX
+- `cross_cot_{pair}_vol_interaction` — COT × Vol interaction
+- `cross_cot_{pair}_price_divergence` — Price vs positioning divergence
 
 ### cot_positioning (fwbg-premium)
 
-Berechnet CFTC COT Positioning-Features:
+Computes CFTC COT positioning features:
 
-| Feature | Beschreibung |
-|---------|--------------|
-| `cot_{pair}_z_score` | Z-Score der Netto-Positionierung |
-| `cot_{pair}_extreme_long/short` | Extreme Positioning Flags |
-| `cot_{pair}_crowded_trade` | Crowded Trade Indikator |
-| `cot_{pair}_weekly_momentum` | Wöchentliche Positionsänderung |
+| Feature | Description |
+|---------|-------------|
+| `cot_{pair}_z_score` | Z-score of net positioning |
+| `cot_{pair}_extreme_long/short` | Extreme positioning flags |
+| `cot_{pair}_crowded_trade` | Crowded trade indicator |
+| `cot_{pair}_weekly_momentum` | Weekly position change |
 
-Alle Features werden um 1 Bar geshiftet (Lookahead-Prevention).
+All features are shifted by 1 bar (lookahead prevention).
 
 ---
 
-## DataSources (I/O-Schicht)
+## DataSources (I/O Layer)
 
-DataSources sind die I/O-Schicht. Jede Source hat eine `load()`-Methode die ein `LoadResult` zurückgibt:
+DataSources are the I/O layer. Each source has a `load()` method that returns a `LoadResult`:
 
 ```python
 @dataclass
 class LoadResult:
     data: Dict[str, pd.DataFrame]  # Name → DataFrame
-    metadata: Dict[str, Any]       # Zusätzliche Metadaten
-    source_name: str               # Quellname
+    metadata: Dict[str, Any]       # Additional metadata
+    source_name: str               # Source name
 ```
 
-### Verfügbare Source-Typen
+### Available Source Types
 
-| Typ | Klasse | Beschreibung |
-|-----|--------|--------------|
-| `csv` | `CSVSourceConfig` | Lokale CSV-Dateien |
+| Type | Class | Description |
+|------|-------|-------------|
+| `csv` | `CSVSourceConfig` | Local CSV files |
 | `rest` | `RESTSourceConfig` | REST APIs (Alpha Vantage, Polygon.io) |
-| `websocket` | `WebSocketSourceConfig` | WebSocket Streams |
-| `database` | `DBSourceConfig` | SQL-Datenbanken via SQLAlchemy |
+| `websocket` | `WebSocketSourceConfig` | WebSocket streams |
+| `database` | `DBSourceConfig` | SQL databases via SQLAlchemy |
 
-### Vorkonfigurierte Quellen
+### Preconfigured Sources
 
-| Name | Typ | Beschreibung |
-|------|-----|--------------|
-| `forexsb` | csv | Forex Strategy Builder Exports |
-| `stooq` | csv | Stooq.com historische Daten |
-| `yahoo` | csv | Yahoo Finance Daten |
-| `downloads` | csv | Manuell heruntergeladene Daten |
+| Name | Type | Description |
+|------|------|-------------|
+| `forexsb` | csv | Forex Strategy Builder exports |
+| `stooq` | csv | Stooq.com historical data |
+| `yahoo` | csv | Yahoo Finance data |
+| `downloads` | csv | Manually downloaded data |
 
-### Eigene Quelle registrieren
+### Registering a Custom Source
 
 ```python
 from fwbg.core.data_sources import register_csv_source
@@ -124,34 +124,34 @@ register_csv_source(
 
 ---
 
-## Daten-Updates
+## Data Updates
 
-Externe Daten müssen vor dem Optimizer-Lauf aktualisiert werden:
+External data must be updated before running the optimizer:
 
 ```bash
-# Makro-Daten: DXY, VIX (yfinance) + internationale Bond Yields (FRED)
+# Macro data: DXY, VIX (yfinance) + international bond yields (FRED)
 python scripts/fetch_macro_data.py
 
-# CFTC COT Positioning: Asset Manager Net Positions für 7 FX-Paare
+# CFTC COT Positioning: Asset Manager Net Positions for 7 FX pairs
 python scripts/fetch_cot_data.py
 
-# Alle Quellen (Forex Strategy Builder Exports)
+# All sources (Forex Strategy Builder exports)
 python scripts/fetch_all_sources.py
 ```
 
-### Datenquellen-Übersicht
+### Data Source Overview
 
-| Daten | Quelle | Frequenz | Historie |
-|-------|--------|----------|----------|
-| DXY, VIX (hourly) | yfinance | H1 | ~2 Jahre |
-| US2Y, US5Y, US30Y | FRED (daily, ffill) | D1 | 25+ Jahre |
-| DE10Y, JP10Y, GB10Y, AU10Y | FRED (monatlich, daily ffill) | D1 | 25+ Jahre |
-| COT EURUSD, USDJPY, GBPUSD, ... | CFTC TFF Reports | Wöchentlich (daily ffill) | 2006+ |
-| VIX, SPX, TNX, DXY, ... (daily) | Forex Strategy Builder | D1 | variiert |
+| Data | Source | Frequency | History |
+|------|--------|-----------|---------|
+| DXY, VIX (hourly) | yfinance | H1 | ~2 years |
+| US2Y, US5Y, US30Y | FRED (daily, ffill) | D1 | 25+ years |
+| DE10Y, JP10Y, GB10Y, AU10Y | FRED (monthly, daily ffill) | D1 | 25+ years |
+| COT EURUSD, USDJPY, GBPUSD, ... | CFTC TFF Reports | Weekly (daily ffill) | 2006+ |
+| VIX, SPX, TNX, DXY, ... (daily) | Forex Strategy Builder | D1 | varies |
 
 ---
 
-## Strategy-JSON Konfiguration
+## Strategy JSON Configuration
 
 ```json
 "pipeline": {
@@ -162,10 +162,10 @@ python scripts/fetch_all_sources.py
 }
 ```
 
-Der `source`-Parameter bestimmt, aus welcher registrierten DataSource die Rohdaten geladen werden.
+The `source` parameter determines which registered DataSource provides the raw data.
 
 ---
 
-## Eigenes Data-Loader-Plugin erstellen
+## Creating a Custom Data Loader Plugin
 
-Siehe [Plugin Development Guide](../plugin-development.md) für die vollständige Anleitung.
+See [Plugin Development Guide](../plugin-development.md) for the full guide.

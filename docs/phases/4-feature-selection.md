@@ -1,16 +1,16 @@
 # Phase 4: Feature Selection
 
-## Zweck
+## Purpose
 
-Die Feature-Selection-Phase wählt die relevantesten Features für das ML-Modell aus. Das reduziert Overfitting (weniger irrelevante Features = weniger Rauschen) und beschleunigt das Training.
+The feature selection phase selects the most relevant features for the ML model. This reduces overfitting (fewer irrelevant features = less noise) and speeds up training.
 
-Feature Selection wird **pro CV-Fold** auf den **Trainingsdaten** ausgeführt — dadurch werden unterschiedliche Features pro Fold selektiert, was eine realistische Evaluation ermöglicht.
+Feature selection is executed **per CV fold** on the **training data** — this means different features may be selected per fold, enabling a realistic evaluation.
 
 ---
 
 ## BaseFeatureSelector
 
-Basisklasse: `src/fwbg/plugins/feature_selector.py`
+Base class: `src/fwbg/plugins/feature_selector.py`
 
 ```python
 class BaseFeatureSelector(BasePlugin, ABC):
@@ -20,63 +20,63 @@ class BaseFeatureSelector(BasePlugin, ABC):
     def select_features(self, X: pd.DataFrame, y: np.ndarray,
                        max_features: int = None, **params) -> Tuple[List[str], dict]:
         """
-        Wählt die wichtigsten Features aus.
+        Selects the most important features.
 
         Args:
-            X: Feature-DataFrame (alle berechneten Features)
-            y: Target-Array (0/1 für Loss/Win)
-            max_features: Maximale Anzahl Features (None = unbegrenzt)
+            X: Feature DataFrame (all computed features)
+            y: Target array (0/1 for Loss/Win)
+            max_features: Maximum number of features (None = unlimited)
 
         Returns:
             (selected_features, metadata)
-            - selected_features: Liste der selektierten Feature-Namen
-            - metadata: Dict mit Zusatzinfos (z.B. Feature Importances)
+            - selected_features: List of selected feature names
+            - metadata: Dict with additional info (e.g., feature importances)
         """
 ```
 
-- Registrierung: `@register_feature_selector("name")`
-- Wird im Inner CV Loop aufgerufen — nur auf Train-Daten
+- Registration: `@register_feature_selector("name")`
+- Called in the inner CV loop — only on training data
 
 ---
 
-## Verfügbare Plugins
+## Available Plugins
 
 ### boruta (fwbg-premium)
 
-Shadow-Feature-Vergleich nach dem Boruta-Algorithmus: Erstellt für jedes Feature eine randomisierte "Shadow"-Version und prüft ob das Original signifikant besser ist als sein Shadow.
+Shadow feature comparison using the Boruta algorithm: Creates a randomized "shadow" version for each feature and checks whether the original is significantly better than its shadow.
 
-| Parameter | Default | Beschreibung |
-|-----------|---------|--------------|
-| `max_features` | `None` | Maximale Anzahl Features |
-| `n_iter` | `5` | Boruta-Iterationen |
-| `n_estimators` | `30` | Bäume pro Iteration |
-| `max_depth` | `4` | Maximale Baumtiefe |
-| `min_z_score` | `0.5` | Mindest-Z-Score vs Shadow |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_features` | `None` | Maximum number of features |
+| `n_iter` | `5` | Boruta iterations |
+| `n_estimators` | `30` | Trees per iteration |
+| `max_depth` | `4` | Maximum tree depth |
+| `min_z_score` | `0.5` | Minimum z-score vs shadow |
 
-### stability (fwbg-premium) — Empfohlen
+### stability (fwbg-premium) — Recommended
 
-Bootstrap-basierte Stability Selection. Wrapped einen Inner Selector (z.B. Boruta) und führt ihn auf mehreren Bootstrap-Samples aus. Nur Features die in mehr als `threshold` der Bootstraps selektiert werden, überleben.
+Bootstrap-based stability selection. Wraps an inner selector (e.g., Boruta) and runs it on multiple bootstrap samples. Only features selected in more than `threshold` of the bootstraps survive.
 
-**Vorteil:** Deutlich robustere Feature-Selektion als ein einzelner Boruta-Durchlauf. Reduziert Overfitting signifikant.
+**Advantage:** Significantly more robust feature selection than a single Boruta run. Reduces overfitting substantially.
 
-| Parameter | Default | Beschreibung |
-|-----------|---------|--------------|
-| `inner_selector` | `"boruta"` | Welcher Selector geWrapped wird |
-| `inner_params` | `{}` | Parameter für den Inner Selector |
-| `n_bootstrap` | `7` | Anzahl Bootstrap-Samples |
-| `threshold` | `0.6` | Mindest-Selektionsrate (60% der Bootstraps) |
-| `bootstrap_ratio` | `0.8` | Anteil der Daten pro Bootstrap |
-| `max_features` | `20` | Maximale Anzahl Features |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `inner_selector` | `"boruta"` | Which selector to wrap |
+| `inner_params` | `{}` | Parameters for the inner selector |
+| `n_bootstrap` | `7` | Number of bootstrap samples |
+| `threshold` | `0.6` | Minimum selection rate (60% of bootstraps) |
+| `bootstrap_ratio` | `0.8` | Fraction of data per bootstrap |
+| `max_features` | `20` | Maximum number of features |
 
 ### plateau (fwbg-premium)
 
-Plateau-basierte Selektion — bewertet die Stabilität der Feature Importances über verschiedene Parameterkombinationen.
+Plateau-based selection — evaluates the stability of feature importances across different parameter combinations.
 
 ---
 
-## Feature-Stabilität über Folds
+## Feature Stability Across Folds
 
-Da Feature Selection pro Fold läuft, können unterschiedliche Features pro Fold selektiert werden. Die **Feature-Stabilität** misst, wie konsistent ein Feature über alle Walk-Forward Folds hinweg ausgewählt wird:
+Since feature selection runs per fold, different features may be selected per fold. **Feature stability** measures how consistently a feature is selected across all walk-forward folds:
 
 ```json
 "feature_stability": {
@@ -90,16 +90,16 @@ Da Feature Selection pro Fold läuft, können unterschiedliche Features pro Fold
 }
 ```
 
-| stability | Bedeutung |
-|-----------|-----------|
-| `>= 0.50` | Stabil — Feature in mindestens 50% der Folds selektiert |
-| `< 0.50` | Instabil — deutet auf Noise-Fitting hin |
+| stability | Meaning |
+|-----------|---------|
+| `>= 0.50` | Stable — feature selected in at least 50% of folds |
+| `< 0.50` | Unstable — suggests noise fitting |
 
-Hohe Stabilität ist ein gutes Zeichen: Das Modell nutzt konsistent die gleichen Features, unabhängig vom Zeitfenster.
+High stability is a good sign: the model consistently uses the same features regardless of the time window.
 
 ---
 
-## Strategy-JSON Konfiguration
+## Strategy JSON Configuration
 
 ```json
 "pipeline": {
@@ -126,6 +126,6 @@ Hohe Stabilität ist ein gutes Zeichen: Das Modell nutzt konsistent die gleichen
 
 ---
 
-## Eigenes Feature-Selection-Plugin erstellen
+## Creating a Custom Feature Selection Plugin
 
-Siehe [Plugin Development Guide](../plugin-development.md) für die vollständige Anleitung.
+See [Plugin Development Guide](../plugin-development.md) for the complete guide.

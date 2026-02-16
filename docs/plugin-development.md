@@ -1,22 +1,22 @@
 # Plugin Development Guide
 
-Anleitung zum Erstellen eigener FWBG-Plugins. Plugins können Indikatoren, Preprocessors, Feature Selectors, Exit Strategies, Risk Manager oder Data Loader sein.
+Guide for creating custom FWBG plugins. Plugins can be indicators, preprocessors, feature selectors, exit strategies, risk managers, or data loaders.
 
 ---
 
 ## Quick Start: Custom Indicator
 
-### 1. Verzeichnisstruktur
+### 1. Directory Structure
 
 ```
 ~/.fwbg/plugins/
 └── my-package/
-    ├── manifest.json                    # Package Manifest
+    ├── manifest.json                    # Package manifest
     └── indicators/
         └── my_indicator/
-            ├── manifest.json            # Plugin Manifest
-            ├── __init__.py              # Implementierung
-            └── tests.py                 # Optional: Plugin-Tests
+            ├── manifest.json            # Plugin manifest
+            ├── __init__.py              # Implementation
+            └── tests.py                 # Optional: plugin tests
 ```
 
 ### 2. Package Manifest (`my-package/manifest.json`)
@@ -25,7 +25,7 @@ Anleitung zum Erstellen eigener FWBG-Plugins. Plugins können Indikatoren, Prepr
 {
   "name": "my-package",
   "version": "1.0.0",
-  "description": "Meine Trading-Indikatoren",
+  "description": "My trading indicators",
   "plugins": {
     "indicators": ["my_indicator"]
   }
@@ -38,13 +38,13 @@ Anleitung zum Erstellen eigener FWBG-Plugins. Plugins können Indikatoren, Prepr
 {
   "name": "my_indicator",
   "version": "1.0.0",
-  "description": "Custom Momentum-Indikator",
+  "description": "Custom momentum indicator",
   "phase": "indicators",
   "benefits_from_stationary": false
 }
 ```
 
-### 4. Implementierung (`indicators/my_indicator/__init__.py`)
+### 4. Implementation (`indicators/my_indicator/__init__.py`)
 
 ```python
 import pandas as pd
@@ -73,7 +73,7 @@ class MyIndicator(BaseIndicator):
             features["my_momentum"], features["my_volatility"]
         )
 
-        # PFLICHT: shift_features() verhindert Lookahead Bias
+        # REQUIRED: shift_features() prevents lookahead bias
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
@@ -88,7 +88,7 @@ class MyIndicator(BaseIndicator):
         return True
 ```
 
-### 5. In Strategy-JSON verwenden
+### 5. Use in Strategy JSON
 
 ```json
 {
@@ -101,26 +101,26 @@ class MyIndicator(BaseIndicator):
 }
 ```
 
-Das Plugin wird beim Start automatisch aus `~/.fwbg/plugins/` entdeckt und registriert. Falls der Name eindeutig ist, reicht auch der Kurzname: `"name": "my_indicator"`.
+The plugin is automatically discovered and registered from `~/.fwbg/plugins/` on startup. If the name is unambiguous, the short name also works: `"name": "my_indicator"`.
 
 ---
 
-## Plugin-Typen Referenz
+## Plugin Type Reference
 
-| Typ | Basisklasse | Decorator | Phase | Vom PipelineRunner ausgeführt? | Verzeichnis |
-|-----|-------------|-----------|-------|-------------------------------|-------------|
-| Indikator | `BaseIndicator` | `@register_indicator` | INDICATORS | Ja | `indicators/` |
-| Preprocessor | `BasePreprocessor` | `@register_preprocessor` | PREPROCESSING | Ja | `preprocessing/` |
-| Feature Selector | `BaseFeatureSelector` | `@register_feature_selector` | FEATURE_SELECTION | Ja (im Inner CV) | `feature_selection/` |
-| Exit Strategy | `BaseExitStrategy` | `@register_exit_strategy` | EXIT_STRATEGIES | Nein (Optimization-Code) | `exit_strategies/` |
-| Risk Manager | `BaseRiskManager` | `@register_risk_manager` | RISK_MANAGEMENT | Nein (Optimization-Code) | `risk_management/` |
-| Data Loader | `BaseDataLoader` | `@register_data_loader` | DATA_LOADING | Ja | `data_loading/` |
+| Type | Base Class | Decorator | Phase | Executed by PipelineRunner? | Directory |
+|------|-----------|-----------|-------|-----------------------------|-----------|
+| Indicator | `BaseIndicator` | `@register_indicator` | INDICATORS | Yes | `indicators/` |
+| Preprocessor | `BasePreprocessor` | `@register_preprocessor` | PREPROCESSING | Yes | `preprocessing/` |
+| Feature Selector | `BaseFeatureSelector` | `@register_feature_selector` | FEATURE_SELECTION | Yes (in inner CV) | `feature_selection/` |
+| Exit Strategy | `BaseExitStrategy` | `@register_exit_strategy` | EXIT_STRATEGIES | No (optimization code) | `exit_strategies/` |
+| Risk Manager | `BaseRiskManager` | `@register_risk_manager` | RISK_MANAGEMENT | No (optimization code) | `risk_management/` |
+| Data Loader | `BaseDataLoader` | `@register_data_loader` | DATA_LOADING | Yes | `data_loading/` |
 
 ---
 
-## Plugin-Typ: Indicator
+## Plugin Type: Indicator
 
-**Datei:** `src/fwbg/plugins/indicator.py`
+**File:** `src/fwbg/plugins/indicator.py`
 
 ```python
 class BaseIndicator(BasePlugin, ABC):
@@ -135,21 +135,21 @@ class BaseIndicator(BasePlugin, ABC):
     def get_feature_columns(self) -> List[str]: ...
 ```
 
-**Pflicht:**
-- `shift_features()` am Ende von `compute()` — 1-Bar Shift gegen Lookahead-Bias
-- `safe_divide()` für alle Divisionen — NaN statt inf bei Division durch ~0
+**Required:**
+- `shift_features()` at the end of `compute()` — 1-bar shift to prevent lookahead bias
+- `safe_divide()` for all divisions — NaN instead of inf on division by ~0
 
-**Wichtige Attribute:**
-- `benefits_from_stationary = False` → Einmal auf Raw-OHLC berechnen, gecacht
-- `benefits_from_stationary = True` → Pro Fold auf preprocessed Data berechnen
+**Key attributes:**
+- `benefits_from_stationary = False` → compute once on raw OHLC, cached
+- `benefits_from_stationary = True` → compute per fold on preprocessed data
 
-Detaillierte Dokumentation: [Phase 3: Indicators](phases/3-indicators.md)
+Detailed documentation: [Phase 3: Indicators](phases/3-indicators.md)
 
 ---
 
-## Plugin-Typ: Preprocessor
+## Plugin Type: Preprocessor
 
-**Datei:** `src/fwbg/plugins/preprocessor.py`
+**File:** `src/fwbg/plugins/preprocessor.py`
 
 ```python
 class BasePreprocessor(BasePlugin, ABC):
@@ -165,13 +165,13 @@ class BasePreprocessor(BasePlugin, ABC):
     def inverse_transform(self, df: pd.DataFrame, **params) -> pd.DataFrame: ...
 ```
 
-**Lifecycle pro Fold:** `reset()` → `fit(train)` → `transform(train)` → `transform(test)`
+**Lifecycle per fold:** `reset()` → `fit(train)` → `transform(train)` → `transform(test)`
 
-**Pflicht:**
-- `fit()` nur auf Train-Daten aufrufen — Lookahead-Bias-Prevention
-- `order` setzen für Reihenfolge bei mehreren Preprocessors
+**Required:**
+- Call `fit()` only on training data — lookahead bias prevention
+- Set `order` for execution priority when using multiple preprocessors
 
-**Beispiel:**
+**Example:**
 
 ```python
 @register_preprocessor("my_normalizer")
@@ -191,13 +191,13 @@ class MyNormalizer(BasePreprocessor):
         return result
 ```
 
-Detaillierte Dokumentation: [Phase 2: Preprocessing](phases/2-preprocessing.md)
+Detailed documentation: [Phase 2: Preprocessing](phases/2-preprocessing.md)
 
 ---
 
-## Plugin-Typ: Feature Selector
+## Plugin Type: Feature Selector
 
-**Datei:** `src/fwbg/plugins/feature_selector.py`
+**File:** `src/fwbg/plugins/feature_selector.py`
 
 ```python
 class BaseFeatureSelector(BasePlugin, ABC):
@@ -210,7 +210,7 @@ class BaseFeatureSelector(BasePlugin, ABC):
 
 **Return:** `(selected_feature_names, metadata_dict)`
 
-**Beispiel:**
+**Example:**
 
 ```python
 @register_feature_selector("my_selector")
@@ -225,13 +225,13 @@ class MySelector(BaseFeatureSelector):
         return top_features, {"importances": importances}
 ```
 
-Detaillierte Dokumentation: [Phase 4: Feature Selection](phases/4-feature-selection.md)
+Detailed documentation: [Phase 4: Feature Selection](phases/4-feature-selection.md)
 
 ---
 
-## Plugin-Typ: Exit Strategy
+## Plugin Type: Exit Strategy
 
-**Datei:** `src/fwbg/plugins/exit_strategy.py`
+**File:** `src/fwbg/plugins/exit_strategy.py`
 
 ```python
 class BaseExitStrategy(BasePlugin, ABC):
@@ -247,12 +247,12 @@ class BaseExitStrategy(BasePlugin, ABC):
     def get_cache_key(self, params) -> str: ...
 ```
 
-**Drei abstrakte Methoden:**
-1. `compute_targets()` — Berechnet Win/Loss-Arrays (1.0/0.0) für Long und Short
-2. `iterate_grid()` — Generiert Parameter-Kombinationen aus Grid-Config
-3. `get_cache_key()` — Eindeutiger Cache-Key pro Parameterkombination
+**Three abstract methods:**
+1. `compute_targets()` — computes win/loss arrays (1.0/0.0) for long and short
+2. `iterate_grid()` — generates parameter combinations from grid config
+3. `get_cache_key()` — unique cache key per parameter combination
 
-**Beispiel:**
+**Example:**
 
 ```python
 @register_exit_strategy("my_exit")
@@ -274,13 +274,13 @@ class MyExitStrategy(BaseExitStrategy):
         return f"my_tp{params['tp']}_sl{params['sl']}"
 ```
 
-Detaillierte Dokumentation: [Phase 5: Exit Strategies](phases/5-exit-strategies.md)
+Detailed documentation: [Phase 5: Exit Strategies](phases/5-exit-strategies.md)
 
 ---
 
-## Plugin-Typ: Risk Manager
+## Plugin Type: Risk Manager
 
-**Datei:** `src/fwbg/plugins/risk_manager.py`
+**File:** `src/fwbg/plugins/risk_manager.py`
 
 ```python
 class BaseRiskManager(BasePlugin, ABC):
@@ -290,19 +290,19 @@ class BaseRiskManager(BasePlugin, ABC):
     def compute_risk_params(self, trades, win_rate, rrr, **params) -> Dict[str, Any]: ...
 ```
 
-**Return-Dict muss enthalten:**
-- `risk_per_trade`: float — Positionsgröße als Kapitalanteil
-- `trade_returns`: List[float] — Per-Trade Returns
-- `circuit_breaker`: dict — Pause-Logik bei Verlusten
-- `risk_adjustment`: dict — Skalierungsfaktoren
+**Return dict must contain:**
+- `risk_per_trade`: float — position size as fraction of capital
+- `trade_returns`: List[float] — per-trade returns
+- `circuit_breaker`: dict — pause logic after consecutive losses
+- `risk_adjustment`: dict — scaling factors
 
-Detaillierte Dokumentation: [Phase 6: Risk Management](phases/6-risk-management.md)
+Detailed documentation: [Phase 6: Risk Management](phases/6-risk-management.md)
 
 ---
 
-## Plugin-Typ: Data Loader
+## Plugin Type: Data Loader
 
-**Datei:** `src/fwbg/plugins/data_loader.py`
+**File:** `src/fwbg/plugins/data_loader.py`
 
 ```python
 class BaseDataLoader(BasePlugin, ABC):
@@ -313,15 +313,15 @@ class BaseDataLoader(BasePlugin, ABC):
     def execute(self, ctx, **params): ...
 ```
 
-**Wichtig:** DataLoader machen kein I/O. Die Rohdaten sind bereits im DataFrame (geladen vom Orchestrator). DataLoader berechnen nur abgeleitete Features.
+**Important:** Data loaders do no I/O. Raw data is already in the DataFrame (loaded by the orchestrator). Data loaders only compute derived features.
 
-Detaillierte Dokumentation: [Phase 1: Data Loading](phases/1-data-loading.md)
+Detailed documentation: [Phase 1: Data Loading](phases/1-data-loading.md)
 
 ---
 
 ## Plugin Testing
 
-Jedes Plugin kann eine `tests.py` im Plugin-Verzeichnis haben:
+Every plugin can have a `tests.py` in the plugin directory:
 
 ```python
 # my_indicator/tests.py
@@ -337,10 +337,10 @@ def test_shift_applied():
     indicator = MyIndicator()
     df = pd.DataFrame({"O": [...], "H": [...], "L": [...], "C": [...], "V": [...]})
     result = indicator.compute(df)
-    assert pd.isna(result["my_momentum"].iloc[0])  # Erste Zeile NaN durch shift
+    assert pd.isna(result["my_momentum"].iloc[0])  # First row NaN from shift
 ```
 
-Tests ausführen:
+Running tests:
 ```python
 plugin = MyIndicator()
 passed, failed, errors = plugin.run_tests()
@@ -349,16 +349,16 @@ print(f"{passed} passed, {failed} failed")
 
 ---
 
-## Entry-Point Registrierung (pip-installierbare Pakete)
+## Entry-Point Registration (pip-installable packages)
 
-Für Plugin-Pakete die via `pip install` installiert werden, muss ein Entry Point in `pyproject.toml` definiert werden:
+For plugin packages installed via `pip install`, an entry point must be defined in `pyproject.toml`:
 
 ```toml
 [project.entry-points."fwbg.plugin_packages"]
 my-package = "my_package:get_plugins_dir"
 ```
 
-Die Entry-Point-Funktion gibt den Pfad zum Plugin-Verzeichnis zurück:
+The entry-point function returns the path to the plugin directory:
 
 ```python
 # my_package/__init__.py
@@ -368,65 +368,65 @@ def get_plugins_dir() -> Path:
     return Path(__file__).parent / "plugins" / "my-package"
 ```
 
-Das Plugin-Verzeichnis hat die gleiche Struktur wie User-Plugins (manifest.json, Unterverzeichnisse pro Plugin-Typ).
+The plugin directory has the same structure as user plugins (manifest.json, subdirectories per plugin type).
 
 ---
 
-## Häufige Fehler
+## Common Mistakes
 
-### 1. shift_features() vergessen
+### 1. Forgetting shift_features()
 
 ```python
-# FALSCH — Lookahead Bias!
+# WRONG — Lookahead bias!
 def compute(self, df, **params):
     features = {"my_rsi": compute_rsi(df["C"])}
     return pd.concat([df, pd.DataFrame(features, index=df.index)], axis=1)
 
-# RICHTIG
+# CORRECT
 def compute(self, df, **params):
     features = {"my_rsi": compute_rsi(df["C"])}
-    features_df = shift_features(features, df.index)  # ← PFLICHT
+    features_df = shift_features(features, df.index)  # ← REQUIRED
     return pd.concat([df, features_df], axis=1)
 ```
 
-Ohne shift_features() sieht das Modell bei Bar `i` den Indikator-Wert von Bar `i` — die aktuelle, noch nicht abgeschlossene Bar. Das erzeugt unrealistische Backtesting-Ergebnisse.
+Without shift_features(), the model sees the indicator value for bar `i` at bar `i` — the current, not yet completed bar. This produces unrealistic backtesting results.
 
-### 2. Preprocessor auf allen Daten fitten
+### 2. Fitting preprocessor on all data
 
 ```python
-# FALSCH — Lookahead Bias!
+# WRONG — Lookahead bias!
 preprocessor.fit(all_data)
 preprocessor.transform(train_data)
 preprocessor.transform(test_data)
 
-# RICHTIG
-preprocessor.fit(train_data)           # Nur auf Train!
+# CORRECT
+preprocessor.fit(train_data)           # Train only!
 preprocessor.transform(train_data)
-preprocessor.transform(test_data)      # Gleiche Parameter wie fit()
+preprocessor.transform(test_data)      # Same parameters as fit()
 ```
 
-### 3. safe_divide() vergessen
+### 3. Forgetting safe_divide()
 
 ```python
-# FALSCH — kann inf erzeugen
+# WRONG — can produce inf
 ratio = momentum / volatility
 
-# RICHTIG — gibt NaN bei Nenner ~0
+# CORRECT — returns NaN when denominator ~0
 ratio = safe_divide(momentum, volatility)
 ```
 
-### 4. benefits_from_stationary falsch gesetzt
+### 4. Wrong benefits_from_stationary setting
 
-- `True` bei Indikatoren die von stationären Daten profitieren (Trend, Moving Averages)
-- `False` bei Indikatoren die bereits normalisiert sind (RSI, Stochastic) oder skalenunabhängig (ATR)
+- `True` for indicators that benefit from stationary data (trend, moving averages)
+- `False` for indicators that are already normalized (RSI, stochastic) or scale-independent (ATR)
 
-Falsch gesetzt: Entweder unnötig langsam (False→True) oder falsche Ergebnisse (True→False, wenn der Indikator tatsächlich stationäre Eingangsdaten braucht).
+Wrong setting: either unnecessarily slow (False→True) or incorrect results (True→False, when the indicator actually needs stationary input data).
 
 ---
 
-## Weiterführende Dokumentation
+## Further Documentation
 
-- [Architektur & Plugin-System](architecture.md) — Lifecycle, Discovery, Naming
+- [Architecture & Plugin System](architecture.md) — Lifecycle, discovery, naming
 - [Phase 1: Data Loading](phases/1-data-loading.md)
 - [Phase 2: Preprocessing](phases/2-preprocessing.md)
 - [Phase 3: Indicators](phases/3-indicators.md)
