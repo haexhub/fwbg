@@ -1,0 +1,6 @@
+{
+  "name": "stability",
+  "version": "1.0.0",
+  "description": "Stability selection via bootstrap resampling of inner selector",
+  "phase": "feature_selection"
+}
