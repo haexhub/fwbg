@@ -203,6 +203,12 @@ def process_single_fold(
         log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Test-Daten ({len(test_df)})", sym)
         return None, []
 
+    # Regime-Filter Kombinationen aus Grid (falls definiert)
+    regime_filter_combinations = grid.regime_filter_grid.get_combinations()
+    n_regime_combos = len(regime_filter_combinations)
+    base_combos = ctx.total_grid_combinations()
+    total_combos = base_combos * n_regime_combos
+
     # Update meta with actual feature count (first fold only)
     if fold_idx == 0:
         report_meta(sym, indicator_count=total_indicators, feature_count=len(full_pool),
@@ -215,14 +221,6 @@ def process_single_fold(
     # === GRID SEARCH OVER REGIME COMBOS ===
     candidates = []
     all_grid_results = []
-
-    # Regime-Filter Kombinationen aus Grid (falls definiert)
-    regime_filter_combinations = grid.regime_filter_grid.get_combinations()
-    n_regime_combos = len(regime_filter_combinations)
-
-    # Berechne Gesamtzahl der Kombinationen inkl. Regime-Filter
-    base_combos = ctx.total_grid_combinations()
-    total_combos = base_combos * n_regime_combos
 
     if fold.fold_id == 0:  # Only log once
         log(1, f"Grid-Search: {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} x {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
