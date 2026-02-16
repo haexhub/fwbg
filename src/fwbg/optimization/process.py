@@ -434,6 +434,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     except Exception as e:
         log(1, f"FEHLER: {e}", sym)
         import traceback
-        traceback.print_exc()
+        tb = traceback.format_exc()
+        print(tb)
         report_done(sym, "error")
-        return {"symbol": sym, "status": "error", "error": str(e)}
+        return {"symbol": sym, "status": "error", "error": f"{e}\n{tb}"}
