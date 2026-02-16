@@ -17,6 +17,8 @@ import pytest
 from fwbg.plugins import import_plugin_module
 
 _mod = import_plugin_module("fwbg-premium", "indicators", "regime_cluster")
+if _mod is None:
+    pytest.skip("fwbg-premium regime_cluster plugin not available", allow_module_level=True)
 Columns = _mod.Columns
 
 
