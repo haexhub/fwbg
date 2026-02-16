@@ -269,6 +269,7 @@ class TestTrainModelWithWeights:
         ctx = Mock()
         ctx.model_hyperparameters = {"n_estimators": 10, "max_depth": 3}
         ctx.min_trades = 10
+        ctx.probability_calibration = False
 
         n = 200
         rng = np.random.default_rng(42)
@@ -292,6 +293,7 @@ class TestTrainModelWithWeights:
         ctx = Mock()
         ctx.model_hyperparameters = {"n_estimators": 10, "max_depth": 3}
         ctx.min_trades = 10
+        ctx.probability_calibration = False
 
         n = 200
         rng = np.random.default_rng(42)

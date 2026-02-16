@@ -416,6 +416,28 @@ def evaluate_on_validation(
     probs_long, long_win_idx = _get_probs(mod_long, val_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, val_df, features_short)
 
+    # Probability Calibration: EV-optimal threshold replaces CT grid
+    if ctx.probability_calibration:
+        ct_ev = sl / (tp + sl)
+        if ctx.separate_long_short:
+            result = simulate_trades_sequential_separate_ct(
+                val_df, probs_long, probs_short, long_win_idx, short_win_idx,
+                ct_ev, ct_ev, tp, sl, ctx, return_detailed=False,
+                timeout_bars=timeout_bars,
+            )
+            trades = result["trades"]
+            pnl = sum(t["pnl_raw"] for t in trades) if len(trades) >= 10 else float("-inf")
+            best_ct = (ct_ev, ct_ev)
+        else:
+            result = simulate_trades_sequential(
+                val_df, probs_long, probs_short, long_win_idx, short_win_idx,
+                ct_ev, tp, sl, ctx, return_detailed=False, timeout_bars=timeout_bars,
+            )
+            trades = result["trades"]
+            pnl = sum(t["pnl_raw"] for t in trades) if len(trades) >= 10 else float("-inf")
+            best_ct = ct_ev
+        return best_ct, pnl, {ct_ev: trades}
+
     # Separate CT-Optimierung wenn aktiviert
     if ctx.separate_long_short:
         return _evaluate_separate_ct(

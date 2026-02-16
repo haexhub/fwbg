@@ -162,6 +162,11 @@ def train_model(
     params.update(get_xgboost_params())
 
     model = XGBClassifier(**params)
+
+    if ctx.probability_calibration:
+        from sklearn.calibration import CalibratedClassifierCV
+        model = CalibratedClassifierCV(model, method=ctx.calibration_method, cv=3)
+
     fit_kwargs = {}
     if sample_weight is not None:
         fit_kwargs["sample_weight"] = sample_weight
@@ -177,8 +182,12 @@ def train_model(
                          if k not in ("device", "tree_method")}
             cpu_params["tree_method"] = "hist"
             cpu_params["device"] = "cpu"
-            model = XGBClassifier(**cpu_params)
-            model.fit(train_df[features], targets, **fit_kwargs)
+            cpu_model = XGBClassifier(**cpu_params)
+            if ctx.probability_calibration:
+                from sklearn.calibration import CalibratedClassifierCV
+                cpu_model = CalibratedClassifierCV(cpu_model, method=ctx.calibration_method, cv=3)
+            cpu_model.fit(train_df[features], targets, **fit_kwargs)
+            return cpu_model
         else:
             raise
 
