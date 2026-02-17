@@ -27,7 +27,8 @@ def test_stationary_indicators_correct():
 
     expected_true = {"trend", "structure", "price_action", "ichimoku", "multi_timeframe"}
     expected_false = {"momentum", "volatility", "regime", "risk", "time_season",
-                      "distribution", "dynamics", "cross_features", "microstructure", "macro_surprise"}
+                      "distribution", "dynamics", "cross_features", "microstructure", "macro_surprise",
+                      "support_resistance"}
 
     for fqn in indicators:
         plugin_cls = registry.get(fqn)

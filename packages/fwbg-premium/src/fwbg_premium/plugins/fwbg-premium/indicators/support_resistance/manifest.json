@@ -1,0 +1,7 @@
+{
+  "name": "support_resistance",
+  "version": "1.0.0",
+  "description": "Support/Resistance zones with trend context (Rayner-style)",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
