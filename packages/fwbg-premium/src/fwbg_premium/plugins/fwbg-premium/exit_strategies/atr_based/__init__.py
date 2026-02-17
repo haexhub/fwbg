@@ -571,5 +571,96 @@ class AtrExitStrategy(BaseExitStrategy):
             "atr_ma_period": 200,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "tp_mult": {
+                "type": "float",
+                "default": 2.0,
+                "description": "ATR multiplier for take-profit distance (tp_distance = ATR * tp_mult)",
+                "min": 0.1,
+                "max": 20.0,
+                "step": 0.1,
+            },
+            "sl_mult": {
+                "type": "float",
+                "default": 1.5,
+                "description": "ATR multiplier for stop-loss distance (sl_distance = ATR * sl_mult)",
+                "min": 0.1,
+                "max": 20.0,
+                "step": 0.1,
+            },
+            "atr_period": {
+                "type": "int",
+                "default": 14,
+                "description": "ATR lookback period in bars (used only as fallback if no precomputed ATR column exists)",
+                "min": 1,
+                "max": 1000,
+                "step": 1,
+            },
+            "min_tp_pips": {
+                "type": "int",
+                "default": 10,
+                "description": "Minimum TP distance in pips (spread multiples) to prevent too-tight targets in low-vol environments",
+                "min": 1,
+                "max": 500,
+                "step": 1,
+            },
+            "min_sl_pips": {
+                "type": "int",
+                "default": 15,
+                "description": "Minimum SL distance in pips (spread multiples) to prevent too-tight stops in low-vol environments",
+                "min": 1,
+                "max": 500,
+                "step": 1,
+            },
+            "timeout_bars": {
+                "type": "int",
+                "default": None,
+                "description": "Fixed timeout: close trade after N bars if neither TP nor SL is hit (ignored when adaptive_timeout is enabled)",
+                "min": 1,
+                "max": 500,
+                "step": 1,
+                "required": False,
+            },
+            "adaptive_timeout": {
+                "type": "bool",
+                "default": False,
+                "description": "Enable per-trade adaptive timeout based on current vs average volatility",
+            },
+            "base_timeout": {
+                "type": "int",
+                "default": 48,
+                "description": "Base timeout bars at average volatility (adaptive mode); scales up/down with vol ratio",
+                "min": 1,
+                "max": 500,
+                "step": 1,
+            },
+            "min_timeout": {
+                "type": "int",
+                "default": 12,
+                "description": "Minimum adaptive timeout bars (floor for high-volatility periods)",
+                "min": 1,
+                "max": 200,
+                "step": 1,
+            },
+            "max_timeout": {
+                "type": "int",
+                "default": 96,
+                "description": "Maximum adaptive timeout bars (cap for low-volatility periods)",
+                "min": 10,
+                "max": 1000,
+                "step": 1,
+            },
+            "atr_ma_period": {
+                "type": "int",
+                "default": 200,
+                "description": "Moving average period over ATR for computing the vol ratio in adaptive timeout mode",
+                "min": 10,
+                "max": 1000,
+                "step": 10,
+            },
+        }
+
 
 __all__ = ["AtrExitStrategy"]

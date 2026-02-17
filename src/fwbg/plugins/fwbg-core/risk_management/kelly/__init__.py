@@ -87,5 +87,44 @@ class KellyRiskManager(BaseRiskManager):
             "circuit_breaker_pause_range": [5, 30],
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "kelly_fraction": {
+                "type": "float",
+                "default": 0.25,
+                "description": "Fraction of full Kelly to use (0.25 = quarter-Kelly for conservative sizing)",
+                "min": 0.01,
+                "max": 1.0,
+                "step": 0.05,
+            },
+            "max_risk": {
+                "type": "float",
+                "default": 0.05,
+                "description": "Maximum risk per trade as fraction of account (hard cap regardless of Kelly)",
+                "min": 0.001,
+                "max": 1.0,
+                "step": 0.005,
+            },
+            "target_max_dd": {
+                "type": "float",
+                "default": 0.30,
+                "description": "Target maximum drawdown; risk is scaled down if simulated DD exceeds this",
+                "min": 0.01,
+                "max": 1.0,
+                "step": 0.05,
+            },
+            "circuit_breaker_loss_range": {
+                "type": "list[int]",
+                "default": [3, 8],
+                "description": "Range [min, max] of consecutive losses to search for optimal circuit breaker trigger",
+            },
+            "circuit_breaker_pause_range": {
+                "type": "list[int]",
+                "default": [5, 30],
+                "description": "Range [min, max] of pause bars to search for optimal circuit breaker pause duration",
+            },
+        }
+
 
 __all__ = ["KellyRiskManager"]

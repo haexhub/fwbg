@@ -277,5 +277,28 @@ class FractionalDiffPreprocessor(BasePlugin):
             "columns": ["O", "H", "L", "C"],
         }
 
+    @classmethod
+    def get_param_schema(cls) -> Dict[str, Any]:
+        return {
+            "auto_d": {
+                "type": "bool",
+                "default": True,
+                "description": "Automatically find optimal d via ADF test on train data (recommended)",
+            },
+            "default_d": {
+                "type": "float",
+                "default": 0.4,
+                "description": "Fixed differentiation exponent when auto_d is disabled (0 = no transform, 1 = full diff, 0.3-0.5 typical for trading)",
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.05,
+            },
+            "columns": {
+                "type": "list[string]",
+                "default": ["O", "H", "L", "C"],
+                "description": "DataFrame columns to apply fractional differentiation to",
+            },
+        }
+
 
 __all__ = ["FractionalDiffPreprocessor"]

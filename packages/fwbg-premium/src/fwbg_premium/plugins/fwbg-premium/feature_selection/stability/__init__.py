@@ -88,3 +88,42 @@ class StabilitySelector(BaseFeatureSelector):
             "threshold": 0.6,
             "bootstrap_ratio": 0.8,
         }
+
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "inner_selector": {
+                "type": "string",
+                "default": "boruta",
+                "description": "Name of the inner feature selector to run on each bootstrap sample",
+            },
+            "inner_params": {
+                "type": "string",
+                "default": {"n_iter": 5, "n_estimators": 30, "min_z_score": 0.5},
+                "description": "Parameter dict passed to the inner selector on each bootstrap run",
+            },
+            "n_bootstrap": {
+                "type": "int",
+                "default": 10,
+                "description": "Number of bootstrap resampling iterations",
+                "min": 1,
+                "max": 1000,
+                "step": 1,
+            },
+            "threshold": {
+                "type": "float",
+                "default": 0.6,
+                "description": "Minimum fraction of bootstrap runs a feature must be selected in to be kept",
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.05,
+            },
+            "bootstrap_ratio": {
+                "type": "float",
+                "default": 0.8,
+                "description": "Fraction of samples drawn (with replacement) per bootstrap iteration",
+                "min": 0.1,
+                "max": 1.0,
+                "step": 0.05,
+            },
+        }

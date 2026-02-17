@@ -197,5 +197,47 @@ class TrendIndicators(BaseIndicator):
             "supertrend_multiplier": 3.0,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "adx_periods": {
+                "type": "list[int]",
+                "default": [7, 14, 21],
+                "description": "Periods for ADX (Average Directional Index) calculation. ADX measures trend strength on a 0-100 scale regardless of direction. Shorter periods react faster to trend changes, longer periods smooth out noise.",
+                "min": 2,
+                "max": 500,
+            },
+            "ema_periods": {
+                "type": "list[int]",
+                "default": [8, 21, 50, 100, 200],
+                "description": "Periods for EMA (Exponential Moving Average) distance features. Measures how far the current price deviates from each EMA as a percentage. Short EMAs (8, 21) capture immediate momentum, long EMAs (100, 200) capture macro trend positioning.",
+                "min": 2,
+                "max": 1000,
+            },
+            "sma_periods": {
+                "type": "list[int]",
+                "default": [20, 50, 200],
+                "description": "Periods for SMA (Simple Moving Average) distance features. Similar to EMA distances but with equal weighting of all bars in the window. Classic levels like 50 and 200 are widely watched by institutional traders.",
+                "min": 2,
+                "max": 1000,
+            },
+            "supertrend_period": {
+                "type": "int",
+                "default": 14,
+                "description": "ATR lookback period for the Supertrend indicator. Controls sensitivity of the ATR-based trend-following bands. Lower values make Supertrend more responsive but noisier.",
+                "min": 2,
+                "max": 500,
+                "step": 1,
+            },
+            "supertrend_multiplier": {
+                "type": "float",
+                "default": 3.0,
+                "description": "ATR multiplier for Supertrend band width. Higher values create wider bands requiring larger moves to trigger trend flips, reducing whipsaws but increasing lag.",
+                "min": 0.5,
+                "max": 20.0,
+                "step": 0.5,
+            },
+        }
+
 
 __all__ = ["TrendIndicators"]

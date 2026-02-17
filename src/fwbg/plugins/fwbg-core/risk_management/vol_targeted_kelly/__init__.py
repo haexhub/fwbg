@@ -119,5 +119,68 @@ class VolTargetedKellyRiskManager(BaseRiskManager):
             "max_scale": 2.0,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "kelly_fraction": {
+                "type": "float",
+                "default": 0.25,
+                "description": "Fraction of full Kelly to use (0.25 = quarter-Kelly for conservative sizing)",
+                "min": 0.01,
+                "max": 1.0,
+                "step": 0.05,
+            },
+            "max_risk": {
+                "type": "float",
+                "default": 0.05,
+                "description": "Maximum risk per trade as fraction of account (hard cap regardless of Kelly)",
+                "min": 0.001,
+                "max": 1.0,
+                "step": 0.005,
+            },
+            "target_max_dd": {
+                "type": "float",
+                "default": 0.30,
+                "description": "Target maximum drawdown; risk is scaled down if simulated DD exceeds this",
+                "min": 0.01,
+                "max": 1.0,
+                "step": 0.05,
+            },
+            "circuit_breaker_loss_range": {
+                "type": "list[int]",
+                "default": [3, 8],
+                "description": "Range [min, max] of consecutive losses to search for optimal circuit breaker trigger",
+            },
+            "circuit_breaker_pause_range": {
+                "type": "list[int]",
+                "default": [5, 30],
+                "description": "Range [min, max] of pause bars to search for optimal circuit breaker pause duration",
+            },
+            "target_vol": {
+                "type": "float",
+                "default": 15.0,
+                "description": "Target annualized volatility (%) for position scaling; positions scale as target_vol / realized_vol",
+                "min": 1.0,
+                "max": 100.0,
+                "step": 1.0,
+            },
+            "min_scale": {
+                "type": "float",
+                "default": 0.25,
+                "description": "Minimum position scale factor (floor for vol-targeting adjustment)",
+                "min": 0.01,
+                "max": 1.0,
+                "step": 0.05,
+            },
+            "max_scale": {
+                "type": "float",
+                "default": 2.0,
+                "description": "Maximum position scale factor (cap for vol-targeting adjustment)",
+                "min": 1.0,
+                "max": 10.0,
+                "step": 0.25,
+            },
+        }
+
 
 __all__ = ["VolTargetedKellyRiskManager"]

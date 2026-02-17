@@ -116,5 +116,38 @@ class MomentumIndicators(BaseIndicator):
             "roc_periods": [5, 10, 20],
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "rsi_periods": {
+                "type": "list[int]",
+                "default": [7, 14, 21],
+                "description": "Periods for RSI (Relative Strength Index) calculation. RSI oscillates 0-100 measuring the speed and magnitude of price changes. 14 is the classic Wilder period; shorter periods (7) are more sensitive to recent moves, longer periods (21) smoother.",
+                "min": 2,
+                "max": 500,
+            },
+            "stoch_periods": {
+                "type": "list[int]",
+                "default": [14, 21],
+                "description": "Lookback periods for Stochastic Oscillator (%K and %D). Measures where price closed relative to its high-low range over N bars. Shorter periods react faster to price swings, longer periods filter out noise.",
+                "min": 2,
+                "max": 500,
+            },
+            "williams_periods": {
+                "type": "list[int]",
+                "default": [14, 21],
+                "description": "Lookback periods for Williams %R. Similar to Stochastic but inverted (0 to -100 scale). Identifies overbought (near 0) and oversold (near -100) conditions within the given lookback window.",
+                "min": 2,
+                "max": 500,
+            },
+            "roc_periods": {
+                "type": "list[int]",
+                "default": [5, 10, 20],
+                "description": "Periods for Rate of Change (ROC) calculation. Measures the percentage change in price over N bars. Short periods (5) capture immediate momentum, longer periods (20) capture swing momentum.",
+                "min": 1,
+                "max": 500,
+            },
+        }
+
 
 __all__ = ["MomentumIndicators"]

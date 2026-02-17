@@ -89,3 +89,16 @@ class CorrelationFilter(BaseFeatureSelector):
         return {
             "max_correlation": 0.7,
         }
+
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "max_correlation": {
+                "type": "float",
+                "default": 0.7,
+                "description": "Maximum absolute pairwise correlation allowed between kept features; higher-correlated features are dropped",
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.05,
+            },
+        }

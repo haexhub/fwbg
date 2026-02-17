@@ -235,5 +235,32 @@ class VolatilityIndicators(BaseIndicator):
             "vol_est_windows": [20, 50],
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "atr_periods": {
+                "type": "list[int]",
+                "default": [7, 14, 21],
+                "description": "Periods for ATR (Average True Range) calculation, expressed as percentage of price. ATR measures market volatility by decomposing the entire range of a bar. Shorter periods capture recent volatility spikes, longer periods give a smoother baseline.",
+                "min": 2,
+                "max": 500,
+            },
+            "bb_period": {
+                "type": "int",
+                "default": 20,
+                "description": "Lookback period for Bollinger Bands. Defines the SMA center and standard deviation envelope width. The classic 20-period setting corresponds roughly to one trading month. Also used for Bollinger %B (price position) and bandwidth (volatility squeeze) features.",
+                "min": 5,
+                "max": 500,
+                "step": 1,
+            },
+            "vol_est_windows": {
+                "type": "list[int]",
+                "default": [20, 50],
+                "description": "Rolling window sizes for OHLC-based volatility estimators (Garman-Klass, Parkinson, Yang-Zhang). These estimators are more statistically efficient than close-only volatility. Shorter windows react faster to regime changes, longer windows provide more stable estimates.",
+                "min": 5,
+                "max": 500,
+            },
+        }
+
 
 __all__ = ["VolatilityIndicators"]

@@ -127,6 +127,41 @@ class MacroDataLoader(BaseDataLoader):
             "interest_rate_diffs": DEFAULT_INTEREST_RATE_DIFFS,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "indicators": {
+                "type": "string",
+                "default": DEFAULT_INDICATORS,
+                "description": "Mapping of macro data file stems to column prefixes (e.g. VIX_DAY -> vix)",
+            },
+            "lookbacks_hours": {
+                "type": "list[int]",
+                "default": DEFAULT_LOOKBACKS_HOURS,
+                "description": "Hourly lookback periods for pct_change features on each macro indicator",
+            },
+            "lookbacks_days": {
+                "type": "list[int]",
+                "default": DEFAULT_LOOKBACKS_DAYS,
+                "description": "Daily lookback periods for pct_change features (converted to bars via 24h/day)",
+            },
+            "derived_features": {
+                "type": "string",
+                "default": DEFAULT_DERIVED_FEATURES,
+                "description": "List of derived feature specs (subtract/ratio between two base columns, e.g. yield curves)",
+            },
+            "interest_rates": {
+                "type": "string",
+                "default": DEFAULT_INTEREST_RATES,
+                "description": "Interest rate data sources with file names and lookback periods for rate change features",
+            },
+            "interest_rate_diffs": {
+                "type": "string",
+                "default": DEFAULT_INTEREST_RATE_DIFFS,
+                "description": "Interest rate differential specs (e.g. USD-EUR rate spread for FX carry signal)",
+            },
+        }
+
     def get_feature_columns(self, **params):
         """Dynamically compute feature column names from params."""
         indicators = params.get("indicators", DEFAULT_INDICATORS)

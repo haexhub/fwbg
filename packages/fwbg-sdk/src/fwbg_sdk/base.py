@@ -22,6 +22,32 @@ class PluginPhase(Enum):
     VALIDATION = "validation"
 
 
+def _infer_param_type(value: Any) -> str:
+    """Infer parameter type string from a default value."""
+    if value is None:
+        return "string"
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return "list[int]"
+        first = value[0]
+        if isinstance(first, float):
+            return "list[float]"
+        if isinstance(first, int):
+            return "list[int]"
+        if isinstance(first, str):
+            return "list[string]"
+        return "list[int]"
+    return "string"
+
+
 class BasePlugin(ABC):
     """
     Abstract base class for all pipeline plugins.
@@ -112,6 +138,36 @@ class BasePlugin(ABC):
             Dictionary of parameter names to default values
         """
         return {}
+
+    @classmethod
+    def get_param_schema(cls) -> Dict[str, Dict[str, Any]]:
+        """
+        Get rich parameter schema for UI rendering.
+
+        Override this method to provide descriptions, min/max bounds,
+        step sizes, and other metadata for each parameter.
+
+        Returns:
+            Dictionary mapping parameter names to schema dicts with keys:
+                - type: "int" | "float" | "bool" | "string" | "list[int]" |
+                        "list[float]" | "list[string]" | "choice"
+                - default: default value
+                - description: human-readable description
+                - min: (optional) minimum value for int/float
+                - max: (optional) maximum value for int/float
+                - step: (optional) step size for int/float
+                - choices: (optional) list of valid choices for "choice" type
+                - required: (optional) whether the parameter is required (default True)
+        """
+        defaults = cls.get_default_params()
+        schema: Dict[str, Dict[str, Any]] = {}
+        for key, value in defaults.items():
+            schema[key] = {
+                "type": _infer_param_type(value),
+                "default": value,
+                "description": "",
+            }
+        return schema
 
     def get_feature_columns(self) -> List[str]:
         """

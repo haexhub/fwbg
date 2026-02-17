@@ -164,5 +164,25 @@ class FractalDimensionIndicator(BaseIndicator):
             "k_max": 10,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "windows": {
+                "type": "list[int]",
+                "default": [50, 100, 200],
+                "description": "Rolling window sizes for Higuchi Fractal Dimension computation. The fractal dimension (1.0 = smooth/trending, 2.0 = random/complex) is calculated over each window. Shorter windows capture local regime transitions, longer windows provide a more stable complexity measure.",
+                "min": 20,
+                "max": 1000,
+            },
+            "k_max": {
+                "type": "int",
+                "default": 10,
+                "description": "Maximum interval parameter for the Higuchi algorithm. Controls the number of sub-series scales used to estimate the fractal dimension. Higher values improve accuracy but increase computation time. Must be less than the smallest window size.",
+                "min": 2,
+                "max": 50,
+                "step": 1,
+            },
+        }
+
 
 __all__ = ["FractalDimensionIndicator"]

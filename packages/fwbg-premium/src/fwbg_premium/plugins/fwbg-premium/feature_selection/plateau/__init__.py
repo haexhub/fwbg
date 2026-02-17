@@ -274,6 +274,56 @@ class PlateauSelector(BaseFeatureSelector):
             "n_jobs": 1,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "n_estimators": {
+                "type": "int",
+                "default": 100,
+                "description": "Number of XGBoost trees for computing feature importances",
+                "min": 1,
+                "max": 10000,
+                "step": 10,
+            },
+            "max_depth": {
+                "type": "int",
+                "default": 5,
+                "description": "Maximum tree depth for the XGBoost importance model",
+                "min": 1,
+                "max": 50,
+                "step": 1,
+            },
+            "min_importance": {
+                "type": "float",
+                "default": 0.01,
+                "description": "Minimum feature importance threshold; features below this are excluded before plateau scoring",
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.005,
+            },
+            "min_neighbors": {
+                "type": "int",
+                "default": 1,
+                "description": "Minimum number of parameter-neighbor features required for plateau bonus (otherwise penalized)",
+                "min": 0,
+                "max": 100,
+                "step": 1,
+            },
+            "prefer_plateau": {
+                "type": "bool",
+                "default": True,
+                "description": "Sort by plateau score instead of raw importance (recommended for robustness)",
+            },
+            "n_jobs": {
+                "type": "int",
+                "default": 1,
+                "description": "Number of parallel threads for XGBoost training",
+                "min": 1,
+                "max": 128,
+                "step": 1,
+            },
+        }
+
 
 # Utility-Funktionen für Parameter-Plateau (Grid-Search)
 def calculate_param_plateau_score(

@@ -151,6 +151,51 @@ class BorutaSelector(BaseFeatureSelector):
             "n_jobs": 1,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "n_iter": {
+                "type": "int",
+                "default": 10,
+                "description": "Number of Boruta iterations (shadow feature comparisons); more iterations = more stable results",
+                "min": 1,
+                "max": 1000,
+                "step": 1,
+            },
+            "n_estimators": {
+                "type": "int",
+                "default": 50,
+                "description": "Number of XGBoost trees per iteration for importance estimation",
+                "min": 1,
+                "max": 10000,
+                "step": 10,
+            },
+            "max_depth": {
+                "type": "int",
+                "default": 4,
+                "description": "Maximum tree depth per XGBoost iteration",
+                "min": 1,
+                "max": 50,
+                "step": 1,
+            },
+            "min_z_score": {
+                "type": "float",
+                "default": 0.5,
+                "description": "Minimum average z-score vs shadow features for a feature to be accepted as relevant",
+                "min": -10.0,
+                "max": 100.0,
+                "step": 0.1,
+            },
+            "n_jobs": {
+                "type": "int",
+                "default": 1,
+                "description": "Number of parallel threads for XGBoost training",
+                "min": 1,
+                "max": 128,
+                "step": 1,
+            },
+        }
+
 
 __all__ = [
     "BorutaSelector",

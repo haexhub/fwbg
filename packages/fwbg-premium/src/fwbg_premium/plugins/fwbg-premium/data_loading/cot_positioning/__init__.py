@@ -79,6 +79,29 @@ class COTPositioningLoader(BaseDataLoader):
             "zscore_window_weeks": ZSCORE_WINDOW_WEEKS,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "indicators": {
+                "type": "string",
+                "default": DEFAULT_COT_INDICATORS,
+                "description": "Mapping of COT data file stems to column prefixes (e.g. COT_EURUSD_DAY -> cot_eurusd)",
+            },
+            "lookbacks_weeks": {
+                "type": "list[int]",
+                "default": DEFAULT_LOOKBACKS_WEEKS,
+                "description": "Week-based lookback periods for computing net positioning momentum",
+            },
+            "zscore_window_weeks": {
+                "type": "int",
+                "default": ZSCORE_WINDOW_WEEKS,
+                "description": "Rolling window in weeks for z-score normalization of net positions",
+                "min": 1,
+                "max": 520,
+                "step": 1,
+            },
+        }
+
     def get_feature_columns(self, **params):
         """Dynamically compute feature column names."""
         indicators = params.get("indicators", DEFAULT_COT_INDICATORS)
