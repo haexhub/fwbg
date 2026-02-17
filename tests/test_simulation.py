@@ -13,10 +13,10 @@ class TestSimulateTrade:
         self.closes = np.array([1.0] * 100)
         self.highs = np.array([1.0] * 100)
         self.lows = np.array([1.0] * 100)
-        self.atrs = np.array([0.01] * 100)
         self.spread = 0.01
-        self.tp_mult = 1.0
-        self.sl_mult = 1.0
+        # Pre-computed distances (formerly spread * tp_mult)
+        self.tp_distance = 0.01  # spread * 1.0
+        self.sl_distance = 0.01  # spread * 1.0
 
     def test_both_tp_sl_hit_returns_loss(self):
         """Wenn TP und SL im selben Bar erreicht werden, sollte Loss zurückgegeben werden."""
@@ -25,8 +25,8 @@ class TestSimulateTrade:
         self.lows[1] = 0.98   # TP hit
 
         trade_result = simulate_pro_trade(
-            self.closes, self.highs, self.lows, self.atrs,
-            0, -1, self.tp_mult, self.sl_mult, self.spread
+            self.closes, self.highs, self.lows,
+            0, -1, self.tp_distance, self.sl_distance, self.spread
         )
         assert trade_result["result"] == -1.0, "Both TP/SL hit should return loss (conservative)"
         # bars_held = 0 bedeutet Exit im selben Bar wie Entry (sofortiger Ausgang)
@@ -38,8 +38,8 @@ class TestSimulateTrade:
         self.highs[1] = 0.99  # No SL hit
 
         trade_result = simulate_pro_trade(
-            self.closes, self.highs, self.lows, self.atrs,
-            0, -1, self.tp_mult, self.sl_mult, self.spread
+            self.closes, self.highs, self.lows,
+            0, -1, self.tp_distance, self.sl_distance, self.spread
         )
         assert trade_result["result"] == 1.0, "Clear TP hit should return win"
 
@@ -49,8 +49,8 @@ class TestSimulateTrade:
         self.lows[1] = 0.99   # No TP hit
 
         trade_result = simulate_pro_trade(
-            self.closes, self.highs, self.lows, self.atrs,
-            0, -1, self.tp_mult, self.sl_mult, self.spread
+            self.closes, self.highs, self.lows,
+            0, -1, self.tp_distance, self.sl_distance, self.spread
         )
         assert trade_result["result"] == -1.0, "Clear SL hit should return loss"
 
@@ -60,8 +60,8 @@ class TestSimulateTrade:
         self.lows[1] = 1.01   # No SL hit
 
         trade_result = simulate_pro_trade(
-            self.closes, self.highs, self.lows, self.atrs,
-            0, 1, self.tp_mult, self.sl_mult, self.spread
+            self.closes, self.highs, self.lows,
+            0, 1, self.tp_distance, self.sl_distance, self.spread
         )
         assert trade_result["result"] == 1.0, "Clear TP hit should return win"
 
@@ -71,8 +71,8 @@ class TestSimulateTrade:
         self.highs[1] = 1.01  # No TP hit
 
         trade_result = simulate_pro_trade(
-            self.closes, self.highs, self.lows, self.atrs,
-            0, 1, self.tp_mult, self.sl_mult, self.spread
+            self.closes, self.highs, self.lows,
+            0, 1, self.tp_distance, self.sl_distance, self.spread
         )
         assert trade_result["result"] == -1.0, "Clear SL hit should return loss"
 
@@ -85,11 +85,10 @@ class TestSimulateTrade:
         test_closes = np.array([1.0] * 20)
         test_highs = np.array([1.020] * 20)   # Unter TP (1.025)
         test_lows = np.array([1.010] * 20)    # Über SL (1.005)
-        test_atrs = np.array([0.01] * 20)
 
         trade_result = simulate_pro_trade(
-            test_closes, test_highs, test_lows, test_atrs,
-            0, 1, self.tp_mult, self.sl_mult, self.spread, max_bars=10
+            test_closes, test_highs, test_lows,
+            0, 1, self.tp_distance, self.sl_distance, self.spread, max_bars=10
         )
         # No exit means None is returned
         assert trade_result is None, "No exit should return None"
@@ -99,11 +98,10 @@ class TestSimulateTrade:
         short_closes = np.array([1.0, 1.0, 1.0])
         short_highs = np.array([1.0, 1.0, 1.0])
         short_lows = np.array([1.0, 1.0, 1.0])
-        short_atrs = np.array([0.01, 0.01, 0.01])
 
         trade_result = simulate_pro_trade(
-            short_closes, short_highs, short_lows, short_atrs,
-            2, 1, self.tp_mult, self.sl_mult, self.spread, max_bars=10
+            short_closes, short_highs, short_lows,
+            2, 1, self.tp_distance, self.sl_distance, self.spread, max_bars=10
         )
         assert trade_result is None, "Insufficient bars should return None"
 
@@ -158,7 +156,6 @@ class TestM15Lookup:
         closes = np.array([1.0] * 100)
         highs = np.array([1.0] * 100)
         lows = np.array([1.0] * 100)
-        atrs = np.array([0.01] * 100)
 
         # Klarer TP hit
         highs[1] = 1.05
@@ -168,7 +165,7 @@ class TestM15Lookup:
         timestamps = pd.date_range("2024-01-01", periods=100, freq="h").values
 
         trade_result = simulate_pro_trade(
-            closes, highs, lows, atrs, 0, 1, 1.0, 1.0, 0.01,
+            closes, highs, lows, 0, 1, 0.01, 0.01, 0.01,
             timestamps=timestamps, symbol="TEST"
         )
         assert trade_result["result"] == 1.0  # Sollte trotzdem funktionieren

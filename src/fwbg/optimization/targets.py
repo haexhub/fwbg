@@ -9,8 +9,16 @@ from typing import List, Dict, Any, Tuple, Optional
 from xgboost import XGBClassifier
 
 from fwbg.core.context import SimulationContext
-from fwbg.core import get_exit_strategy as get_strategy, GridParams
+from fwbg.core import get_exit_strategy, GridParams
+from fwbg.pipeline.features import REGIME_LONG, REGIME_SHORT
 from fwbg.simulation.trade import simulate_pro_trade
+
+
+def _resolve_distances(df: pd.DataFrame, tp: float, sl: float, ctx: SimulationContext):
+    """Delegiert Distance-Berechnung an das Exit-Strategy-Plugin."""
+    exit_strategy_class = get_exit_strategy(ctx.exit_strategy)
+    exit_strategy = exit_strategy_class()
+    return exit_strategy.resolve_distances(df, tp, sl, ctx)
 
 
 def _validate_targets(
@@ -35,10 +43,6 @@ def _validate_targets(
     has_long = ctx.long_enabled and n_long >= min_per_direction
     has_short = ctx.short_enabled and n_short >= min_per_direction
     return has_long, has_short
-
-
-REGIME_LONG = 4
-REGIME_SHORT = 2
 
 
 def _simulate_trades_core(
@@ -81,12 +85,13 @@ def _simulate_trades_core(
     cls = df["C"].values
     hgh = df["H"].values
     low = df["L"].values
-    # ATR ist optional - wenn nicht vorhanden (volatility indicator nicht konfiguriert), Dummy-Array
-    atr = df["_atr"].values if "_atr" in df.columns else np.zeros(len(df))
     regime = df["_regime"].values if "_regime" in df.columns else np.full(len(df), 7, dtype=np.int8)
     timestamps = df.index.values
     has_rv = "vol_rv_20" in df.columns
     rv_values = df["vol_rv_20"].values if has_rv else None
+
+    # TP/SL-Distanzen vom Exit-Strategy-Plugin berechnen lassen
+    tp_dists, sl_dists = _resolve_distances(df, tp, sl, ctx)
 
     trades = []
     trades_detailed = [] if return_detailed else None
@@ -109,10 +114,11 @@ def _simulate_trades_core(
 
         if direction:
             trade = simulate_pro_trade(
-                cls, hgh, low, atr, i, direction, tp, sl, ctx.spread,
+                cls, hgh, low, i, direction,
+                tp_dists[i], sl_dists[i], ctx.spread,
                 timestamps=timestamps, symbol=ctx.symbol, opens=opn,
                 max_bars=ctx.max_trade_bars,
-                timeout_bars=timeout_bars
+                timeout_bars=timeout_bars,
             )
             if trade:
                 t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"]}
@@ -209,48 +215,24 @@ def compute_targets(
     """
     Berechnet Long/Short Targets für einen DataFrame.
 
+    Delegiert an compute_targets_cached (Plugin-Dispatch).
+
     Args:
         df: DataFrame mit OHLC-Daten
-        tp: Take-Profit Multiplikator
-        sl: Stop-Loss Multiplikator
+        tp: Take-Profit Wert
+        sl: Stop-Loss Wert
         ctx: SimulationContext
         timeout_bars: Optional - nach X Bars ohne TP/SL zum Close schließen
 
     Returns:
         (targets_long, targets_short, has_long, has_short)
     """
-    targets_long = np.zeros(len(df))
-    targets_short = np.zeros(len(df))
-
-    opn_v = df["O"].values
-    cls_v = df["C"].values
-    hgh_v = df["H"].values
-    low_v = df["L"].values
-    # ATR ist optional - wenn nicht vorhanden (volatility indicator nicht konfiguriert), Dummy-Array
-    atr_v = df["_atr"].values if "_atr" in df.columns else np.zeros(len(df))
-    timestamps = df.index.values
-
-    # Simuliere bis zum vorletzten Bar (letzter Bar kann kein Entry sein)
-    for i in range(len(df) - 1):
-        trade_long = simulate_pro_trade(
-            cls_v, hgh_v, low_v, atr_v, i, 1, tp, sl, ctx.spread,
-            timestamps=timestamps, symbol=ctx.symbol, opens=opn_v,
-            max_bars=ctx.max_trade_bars,  # None = kein Limit
-            timeout_bars=timeout_bars  # Time-based Exit
-        )
-        trade_short = simulate_pro_trade(
-            cls_v, hgh_v, low_v, atr_v, i, -1, tp, sl, ctx.spread,
-            timestamps=timestamps, symbol=ctx.symbol, opens=opn_v,
-            max_bars=ctx.max_trade_bars,  # None = kein Limit
-            timeout_bars=timeout_bars  # Time-based Exit
-        )
-        if trade_long and trade_long["result"] == 1.0:
-            targets_long[i] = 1
-        if trade_short and trade_short["result"] == 1.0:
-            targets_short[i] = 1
-
+    result = compute_targets_cached(
+        df, tp, sl, ctx, timeout_bars,
+        exit_strategy_mode=ctx.exit_strategy,
+    )
+    targets_long, targets_short = result[0], result[1]
     has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
-
     return targets_long, targets_short, has_long, has_short
 
 
@@ -284,8 +266,8 @@ def compute_targets_cached(
         (targets_long, targets_short, durations_long, durations_short) wenn return_durations=True
     """
     # Dispatch to exit strategy plugin
-    strategy_cls = get_strategy(exit_strategy_mode)
-    strategy = strategy_cls()
+    exit_strategy_class = get_exit_strategy(exit_strategy_mode)
+    exit_strategy = exit_strategy_class()
 
     extra = {}
     if hasattr(ctx, 'exit_params') and ctx.exit_params:
@@ -299,7 +281,7 @@ def compute_targets_cached(
             extra=extra,
         )
 
-    return strategy.compute_targets(
+    return exit_strategy.compute_targets(
         full_df, ctx, params=grid_params, return_durations=return_durations
     )
 

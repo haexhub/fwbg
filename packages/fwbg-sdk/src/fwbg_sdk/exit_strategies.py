@@ -42,6 +42,33 @@ class BaseExitStrategy(BasePlugin, ABC):
         pass
 
     @abstractmethod
+    def resolve_distances(
+        self,
+        df: pd.DataFrame,
+        tp: float,
+        sl: float,
+        ctx: "AssetInfo",
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Berechnet TP/SL-Distanzen in Preiseinheiten pro Bar.
+
+        Wird vom Optimizer für die Trade-Evaluation aufgerufen.
+        Jedes Plugin berechnet die Distanzen nach eigener Logik:
+        - FixedExitStrategy: konstant (spread * tp) für alle Bars
+        - AtrExitStrategy: dynamisch (atr[i] * tp) pro Bar
+
+        Args:
+            df: DataFrame mit OHLC-Daten (und ggf. ATR-Spalten)
+            tp: TP-Wert (Spread-Multiplikator bei fixed, ATR-Multiplikator bei ATR)
+            sl: SL-Wert
+            ctx: AssetInfo mit spread, exit_params, etc.
+
+        Returns:
+            (tp_distances, sl_distances) — Arrays der Länge len(df) in Preiseinheiten
+        """
+        pass
+
+    @abstractmethod
     def iterate_grid(
         self,
         grid_config: dict,

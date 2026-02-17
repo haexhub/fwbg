@@ -48,6 +48,8 @@ from fwbg.pipeline.config import (
 )
 from fwbg.pipeline.runner import PipelineRunner
 from fwbg.pipeline.features import (
+    REGIME_LONG,
+    REGIME_SHORT,
     get_feature_columns,
     compute_regime_bitmask,
     compute_indicator_pool,
@@ -77,6 +79,9 @@ __all__ = [
     "parse_pipeline_config",
     # Runner
     "PipelineRunner",
+    # Regime bitmask constants
+    "REGIME_LONG",
+    "REGIME_SHORT",
     # Features
     "get_feature_columns",
     "compute_regime_bitmask",

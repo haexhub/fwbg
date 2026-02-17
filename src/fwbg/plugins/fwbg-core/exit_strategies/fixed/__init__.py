@@ -78,6 +78,17 @@ class FixedExitStrategy(BaseExitStrategy):
             max_bars, timeout_val
         )
 
+    def resolve_distances(
+        self,
+        df: pd.DataFrame,
+        tp: float,
+        sl: float,
+        ctx: "SimulationContext",
+    ):
+        """Fixe Distanzen: spread * Multiplikator, konstant für alle Bars."""
+        n = len(df)
+        return np.full(n, ctx.spread * tp), np.full(n, ctx.spread * sl)
+
     def iterate_grid(
         self,
         grid_config: Dict[str, Any],

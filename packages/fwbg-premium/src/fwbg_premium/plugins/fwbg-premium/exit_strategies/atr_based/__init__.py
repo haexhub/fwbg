@@ -436,6 +436,40 @@ class AtrExitStrategy(BaseExitStrategy):
             max_bars, timeout_val
         )
 
+    def resolve_distances(
+        self,
+        df: pd.DataFrame,
+        tp: float,
+        sl: float,
+        ctx: "SimulationContext",
+    ):
+        """ATR-basierte Distanzen: atr[i] * Multiplikator pro Bar."""
+        exit_params = ctx.exit_params if ctx.exit_params else {}
+        atr_period = exit_params.get("atr_period", 14)
+        min_tp_pips = exit_params.get("min_tp_pips", 10)
+        min_sl_pips = exit_params.get("min_sl_pips", 15)
+
+        min_tp_distance = ctx.spread * min_tp_pips
+        min_sl_distance = ctx.spread * min_sl_pips
+
+        # ATR-Array — vorberechnete Spalte oder Fallback
+        if "_atr" in df.columns:
+            atr_v = df["_atr"].values.astype(np.float64)
+        elif "vol_atr" in df.columns:
+            atr_v = df["vol_atr"].values.astype(np.float64)
+        else:
+            import ta
+            atr_series = ta.volatility.average_true_range(
+                df["H"], df["L"], df["C"], window=atr_period
+            )
+            atr_v = atr_series.values.astype(np.float64)
+
+        atr_v = np.nan_to_num(atr_v, nan=0.0)
+
+        tp_dists = np.maximum(atr_v * tp, min_tp_distance)
+        sl_dists = np.maximum(atr_v * sl, min_sl_distance)
+        return tp_dists, sl_dists
+
     def iterate_grid(
         self,
         grid_config: Dict[str, Any],

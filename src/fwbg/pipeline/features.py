@@ -77,6 +77,10 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
     return [c for c in df.columns if c not in exclude and not c.startswith("_")]
 
 
+# Regime bitmask constants (like Linux file permissions)
+REGIME_LONG = 4   # Bit 2: Long allowed
+REGIME_SHORT = 2  # Bit 1: Short allowed
+
 
 def compute_regime_bitmask(
     df: pd.DataFrame,
@@ -227,6 +231,8 @@ def select_best_plateau_candidate(*args, **kwargs):
 
 
 __all__ = [
+    "REGIME_LONG",
+    "REGIME_SHORT",
     "get_feature_columns",
     "compute_regime_bitmask",
     "compute_indicator_pool",
