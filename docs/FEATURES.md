@@ -1033,13 +1033,44 @@ Das alte Verhalten mit festem top_n=5 Limit pro Feature-Gruppe:
 }
 ```
 
+### Correlation Filter ⭐ NEU
+
+Greedy Korrelationsfilter: Entfernt redundante Features die hoch miteinander korrelieren. Designed als Nachbearbeitung nach importance-basierter Selektion (z.B. Stability Boruta).
+
+**Problem:** Boruta/Stability selektiert oft viele Makro-Indikatoren die dasselbe messen (VIX, VVIX, SKEW, VXN, ...) — hoch korreliert, aber als separate Features gezählt.
+
+**Algorithmus:**
+1. Iteriert Features in Input-Reihenfolge (wichtigste zuerst)
+2. Behält Feature nur wenn |corr| < `max_correlation` mit allen bereits behaltenen Features
+3. Optional: Hard Cap via `max_features`
+
+**Plugin-Name:** `correlation_filter`
+
+```json
+{
+  "pipeline": {
+    "feature_selection": [
+      {"name": "stability", "params": {
+        "inner_selector": "boruta",
+        "inner_params": {"n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5},
+        "n_bootstrap": 7, "threshold": 0.6, "bootstrap_ratio": 0.8
+      }},
+      {"name": "correlation_filter", "params": {"max_correlation": 0.7, "max_features": 20}}
+    ]
+  }
+}
+```
+
+**Empfohlene Pipeline:** Stability Boruta (ohne `max_features`) selektiert alle robusten Features, dann entfernt correlation_filter redundante und setzt den Hard Cap.
+
 ### Vergleich der Methoden
 
-| Methode | Feature-Limit | Stabilität | Anwendungsfall |
-|---------|---------------|------------|----------------|
-| `boruta` | Kein Limit | Mittel | Standard, maximale Information |
-| `boruta_plateau` | Kein Limit | Hoch | Wenn Overfitting ein Problem ist |
-| `importance_based` | Top-5 | Hoch | Legacy, schneller |
+| Methode | Feature-Limit | Redundanz-Filter | Stabilität | Anwendungsfall |
+|---------|---------------|-----------------|------------|----------------|
+| `stability` + `correlation_filter` | Via correlation_filter | Ja | Sehr hoch | **Empfohlen** — robuste, orthogonale Features |
+| `boruta` | Kein Limit | Nein | Mittel | Standard, maximale Information |
+| `boruta_plateau` | Kein Limit | Nein | Hoch | Wenn Overfitting ein Problem ist |
+| `importance_based` | Top-5 | Nein | Hoch | Legacy, schneller |
 
 **Referenz:** Kursa & Rudnicki (2010) "Feature Selection with the Boruta Package"
 
