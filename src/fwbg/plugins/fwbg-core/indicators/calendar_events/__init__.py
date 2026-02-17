@@ -138,5 +138,20 @@ class CalendarEventsIndicator(BaseIndicator):
             "include_binary": True,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "include_proximity": {
+                "type": "bool",
+                "default": True,
+                "description": "Include continuous proximity features: normalized days to month end, FOMC cycle proximity (sinusoidal approximation of ~46-day cycle), and normalized week of month. These provide smooth, gradient-friendly signals for models to learn calendar-based positioning.",
+            },
+            "include_binary": {
+                "type": "bool",
+                "default": True,
+                "description": "Include binary event flags: turn-of-month (institutional rebalancing window), quarter-end, triple witching (quarterly options/futures expiry), monthly OpEx (options expiration), NFP week (first week of month), and year boundary. Each captures a known calendar anomaly in equity and derivatives markets.",
+            },
+        }
+
 
 __all__ = ["CalendarEventsIndicator"]

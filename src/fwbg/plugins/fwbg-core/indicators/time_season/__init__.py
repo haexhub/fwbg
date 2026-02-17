@@ -167,5 +167,20 @@ class TimeSeasonIndicators(BaseIndicator):
             "include_encoded": True,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "include_raw": {
+                "type": "bool",
+                "default": True,
+                "description": "Include raw (integer) time features: hour of day (0-23), day of week (0-6), month (1-12), quarter (1-4), ISO week (1-52), day of month (1-31). Useful for tree-based models that can split on ordinal values directly.",
+            },
+            "include_encoded": {
+                "type": "bool",
+                "default": True,
+                "description": "Include sin/cos cyclical encoding of time features. Maps periodic values (hour, day, month, etc.) onto a unit circle so that e.g. hour 23 and hour 0 are close together. Essential for neural networks and linear models that cannot learn cyclical patterns from raw integers.",
+            },
+        }
+
 
 __all__ = ["TimeSeasonIndicators"]

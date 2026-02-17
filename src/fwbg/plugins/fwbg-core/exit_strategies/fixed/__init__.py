@@ -146,5 +146,35 @@ class FixedExitStrategy(BaseExitStrategy):
             "timeout_bars": None,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "tp": {
+                "type": "int",
+                "default": 30,
+                "description": "Take-profit distance as spread multiplier (e.g. 30 = 30 pips at spread 0.0001)",
+                "min": 1,
+                "max": 1000,
+                "step": 1,
+            },
+            "sl": {
+                "type": "int",
+                "default": 20,
+                "description": "Stop-loss distance as spread multiplier (e.g. 20 = 20 pips at spread 0.0001)",
+                "min": 1,
+                "max": 1000,
+                "step": 1,
+            },
+            "timeout_bars": {
+                "type": "int",
+                "default": None,
+                "description": "Close trade after N bars if neither TP nor SL is hit (None = no timeout)",
+                "min": 1,
+                "max": 500,
+                "step": 1,
+                "required": False,
+            },
+        }
+
 
 __all__ = ["FixedExitStrategy"]

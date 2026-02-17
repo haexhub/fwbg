@@ -151,5 +151,26 @@ class CusumEventsIndicator(BaseIndicator):
             "lookback": 100,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "threshold": {
+                "type": "float",
+                "default": 1.5,
+                "description": "Multiplier applied to the rolling standard deviation to determine the CUSUM event threshold (h = threshold * rolling_std). Higher values require larger cumulative deviations before firing a structural break event, reducing false positives but increasing detection lag. Based on de Prado's AFML Ch. 2.",
+                "min": 0.5,
+                "max": 10.0,
+                "step": 0.25,
+            },
+            "lookback": {
+                "type": "int",
+                "default": 100,
+                "description": "Rolling window for computing the expected return (mean) and volatility (std) of log returns. These statistics form the baseline against which cumulative deviations are measured. Longer lookbacks produce more stable baselines but adapt slower to regime changes.",
+                "min": 20,
+                "max": 1000,
+                "step": 10,
+            },
+        }
+
 
 __all__ = ["CusumEventsIndicator"]

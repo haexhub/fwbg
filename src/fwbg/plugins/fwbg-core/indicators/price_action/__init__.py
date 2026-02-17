@@ -193,5 +193,23 @@ class PriceActionIndicators(BaseIndicator):
             "compute_volume": True,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "hh_ll_period": {
+                "type": "int",
+                "default": 5,
+                "description": "Rolling window for Higher Highs / Lower Lows / Higher Lows / Lower Highs counters and trend structure score. Counts how many consecutive bars made new highs or lows within this window. Shorter values capture micro-structure, longer values capture swing structure.",
+                "min": 2,
+                "max": 100,
+                "step": 1,
+            },
+            "compute_volume": {
+                "type": "bool",
+                "default": True,
+                "description": "Whether to compute volume-based features (OBV change, MFI, relative volume, volume-price trend). Requires a volume column (V or Volume) in the DataFrame. Set to False when volume data is unavailable or unreliable (e.g. crypto spot with fragmented liquidity).",
+            },
+        }
+
 
 __all__ = ["PriceActionIndicators"]

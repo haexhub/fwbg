@@ -191,5 +191,26 @@ class FairValueGapIndicator(BaseIndicator):
             "lookback": 100,
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "atr_period": {
+                "type": "int",
+                "default": 14,
+                "description": "ATR lookback period used to normalize FVG distances and sizes. FVG distances and gap sizes are expressed in ATR units for scale-independence across different price levels and instruments.",
+                "min": 2,
+                "max": 500,
+                "step": 1,
+            },
+            "lookback": {
+                "type": "int",
+                "default": 100,
+                "description": "Maximum number of bars an unfilled FVG remains active. After this many bars, stale gaps are discarded. Longer lookbacks track more historical gaps but may include zones that have lost their significance as support/resistance.",
+                "min": 10,
+                "max": 1000,
+                "step": 10,
+            },
+        }
+
 
 __all__ = ["FairValueGapIndicator"]

@@ -179,5 +179,35 @@ class WaveletsIndicator(BaseIndicator):
             "windows": [10, 20, 50],
         }
 
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "wavelet": {
+                "type": "choice",
+                "default": "db4",
+                "description": "Wavelet family for the Discrete Wavelet Transform. Daubechies wavelets (db1-db20) are most common for financial data. db4 provides a good balance between time and frequency localization. Haar (db1) is simplest, higher-order wavelets are smoother.",
+                "choices": [
+                    "db1", "db2", "db3", "db4", "db5", "db6", "db8", "db10",
+                    "sym2", "sym3", "sym4", "sym5",
+                    "coif1", "coif2", "coif3",
+                ],
+            },
+            "levels": {
+                "type": "int",
+                "default": 3,
+                "description": "Number of DWT decomposition levels. Each level halves the frequency band: level 1 captures highest frequencies (noise/microstructure), level N captures lowest detail frequencies. The approximation captures the remaining trend component. More levels separate more frequency bands but require longer input series.",
+                "min": 1,
+                "max": 12,
+                "step": 1,
+            },
+            "windows": {
+                "type": "list[int]",
+                "default": [10, 20, 50],
+                "description": "Rolling window sizes for computing energy (mean squared amplitude) and mean statistics of each wavelet decomposition level. Shorter windows capture recent energy shifts, longer windows provide more stable regime characterization.",
+                "min": 2,
+                "max": 5000,
+            },
+        }
+
 
 __all__ = ["WaveletsIndicator"]
