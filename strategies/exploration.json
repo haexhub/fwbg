@@ -283,7 +283,13 @@
           "inner_params": {"n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5},
           "n_bootstrap": 7,
           "threshold": 0.6,
-          "bootstrap_ratio": 0.8,
+          "bootstrap_ratio": 0.8
+        }
+      },
+      {
+        "name": "correlation_filter",
+        "params": {
+          "max_correlation": 0.7,
           "max_features": 20
         }
       }
