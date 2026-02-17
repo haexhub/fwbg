@@ -5,7 +5,7 @@ TODO: Füge Mappings für alle unterstützten Instrumente hinzu.
 """
 from typing import Dict
 
-from fwbg.core.enums import Symbol, Timeframe
+from fwbg_sdk import Symbol, Timeframe
 
 
 # Symbol -> Broker-spezifischer Identifier

@@ -1,135 +1,47 @@
-"""
-Plugin Registry mit Entry-Point Auto-Discovery.
+"""Plugin registry with entry-point auto-discovery.
 
-Lädt Plugins automatisch via Python Entry Points (pip install).
+Registries and decorators are owned by fwbg_sdk.
+This module adds discovery logic and getter functions with auto-loading.
 """
 from importlib.metadata import entry_points
 from typing import Dict, Type, TYPE_CHECKING
 import logging
 
+# Import registries and decorators from SDK (single source of truth)
+from fwbg_sdk.registry import (
+    INDICATOR_REGISTRY,
+    EXIT_STRATEGY_REGISTRY,
+    FEATURE_SELECTOR_REGISTRY,
+    PREPROCESSOR_REGISTRY,
+    RISK_MANAGER_REGISTRY,
+    DATA_LOADER_REGISTRY,
+    register_indicator,
+    register_exit_strategy,
+    register_feature_selector,
+    register_preprocessor,
+    register_risk_manager,
+    register_data_loader,
+)
+
 if TYPE_CHECKING:
-    from ..plugins.indicator import BaseIndicator
-    from ..plugins.exit_strategy import BaseExitStrategy
-    from ..plugins.feature_selector import BaseFeatureSelector
-    from ..plugins.preprocessor import BasePreprocessor
-    from ..plugins.risk_manager import BaseRiskManager
-    from ..plugins.data_loader import BaseDataLoader
+    from fwbg_sdk import (
+        BaseIndicator,
+        BaseExitStrategy,
+        BaseFeatureSelector,
+        BasePreprocessor,
+        BaseRiskManager,
+        BaseDataLoader,
+    )
     from ..adapters.broker import BrokerAdapter
 
 log = logging.getLogger(__name__)
 
-# Globale Registries
-INDICATOR_REGISTRY: Dict[str, Type["BaseIndicator"]] = {}
-EXIT_STRATEGY_REGISTRY: Dict[str, Type["BaseExitStrategy"]] = {}
-FEATURE_SELECTOR_REGISTRY: Dict[str, Type["BaseFeatureSelector"]] = {}
-PREPROCESSOR_REGISTRY: Dict[str, Type["BasePreprocessor"]] = {}
+# Broker adapter registry (fwbg-internal, not in SDK)
 BROKER_ADAPTER_REGISTRY: Dict[str, Type["BrokerAdapter"]] = {}
-RISK_MANAGER_REGISTRY: Dict[str, Type["BaseRiskManager"]] = {}
-DATA_LOADER_REGISTRY: Dict[str, Type["BaseDataLoader"]] = {}
-
-
-def register_indicator(name: str):
-    """
-    Decorator zum Registrieren eines Indicators.
-
-    Beispiel:
-        ```python
-        from fwbg.core import register_indicator
-        from fwbg.plugins import BaseIndicator
-
-        @register_indicator("rsi")
-        class RSIIndicator(BaseIndicator):
-            ...
-        ```
-    """
-    def decorator(cls):
-        INDICATOR_REGISTRY[name] = cls
-        cls.name = name
-        log.debug(f"Registered indicator: {name}")
-        return cls
-    return decorator
-
-
-def register_exit_strategy(name: str):
-    """
-    Decorator zum Registrieren einer Exit-Strategie.
-
-    Beispiel:
-        ```python
-        from fwbg.core import register_exit_strategy
-        from fwbg.plugins import BaseExitStrategy
-
-        @register_exit_strategy("atr_based")
-        class ATRExitStrategy(BaseExitStrategy):
-            ...
-        ```
-    """
-    def decorator(cls):
-        EXIT_STRATEGY_REGISTRY[name] = cls
-        cls.name = name
-        log.debug(f"Registered exit strategy: {name}")
-        return cls
-    return decorator
-
-
-def register_feature_selector(name: str):
-    """
-    Decorator zum Registrieren eines Feature-Selectors.
-
-    Beispiel:
-        ```python
-        from fwbg.core import register_feature_selector
-        from fwbg.plugins import BaseFeatureSelector
-
-        @register_feature_selector("boruta")
-        class BorutaSelector(BaseFeatureSelector):
-            ...
-        ```
-    """
-    def decorator(cls):
-        FEATURE_SELECTOR_REGISTRY[name] = cls
-        cls.name = name
-        log.debug(f"Registered feature selector: {name}")
-        return cls
-    return decorator
-
-
-def register_preprocessor(name: str):
-    """
-    Decorator zum Registrieren eines Preprocessors.
-
-    Beispiel:
-        ```python
-        from fwbg.core import register_preprocessor
-        from fwbg.plugins import BasePreprocessor
-
-        @register_preprocessor("fractional_diff")
-        class FracDiffPreprocessor(BasePreprocessor):
-            ...
-        ```
-    """
-    def decorator(cls):
-        PREPROCESSOR_REGISTRY[name] = cls
-        cls.name = name
-        log.debug(f"Registered preprocessor: {name}")
-        return cls
-    return decorator
 
 
 def register_broker_adapter(name: str):
-    """
-    Decorator zum Registrieren eines BrokerAdapters.
-
-    Beispiel:
-        ```python
-        from fwbg.core import register_broker_adapter
-        from fwbg.adapters import BrokerAdapter
-
-        @register_broker_adapter("ig")
-        class IGBrokerAdapter(BrokerAdapter):
-            ...
-        ```
-    """
+    """Decorator to register a broker adapter."""
     def decorator(cls):
         BROKER_ADAPTER_REGISTRY[name] = cls
         cls.adapter_type = name
@@ -138,35 +50,8 @@ def register_broker_adapter(name: str):
     return decorator
 
 
-def register_risk_manager(name: str):
-    """
-    Decorator zum Registrieren eines Risk Managers.
-
-    Beispiel:
-        ```python
-        from fwbg.core import register_risk_manager
-        from fwbg.plugins import BaseRiskManager
-
-        @register_risk_manager("kelly")
-        class KellyRiskManager(BaseRiskManager):
-            ...
-        ```
-    """
-    def decorator(cls):
-        RISK_MANAGER_REGISTRY[name] = cls
-        cls.name = name
-        log.debug(f"Registered risk manager: {name}")
-        return cls
-    return decorator
-
-
 def discover_plugins():
-    """
-    Entdeckt und lädt pip-installierte Broker-Adapter Plugins via Entry Points.
-
-    Entry Point Groups:
-    - fwbg.broker_adapters
-    """
+    """Discover and load pip-installed broker adapter plugins via entry points."""
     groups = [
         ("fwbg.broker_adapters", BROKER_ADAPTER_REGISTRY),
     ]
@@ -181,7 +66,6 @@ def discover_plugins():
                     cls.name = ep.name
                     log.debug(f"Loaded {group_name}: {ep.name}")
                 except Exception as e:
-                    # Debug statt warning - fehlende Module sind OK
                     log.debug(f"Could not load plugin {ep.name}: {e}")
         except Exception as e:
             log.debug(f"No plugins found for {group_name}: {e}")
@@ -221,187 +105,103 @@ def _ensure_plugins_loaded():
 
 
 def get_indicator(name: str) -> Type["BaseIndicator"]:
-    """
-    Gibt Indicator-Klasse anhand des Namens zurück.
-
-    Args:
-        name: Registrierter Name des Indicators
-
-    Returns:
-        Indicator-Klasse
-
-    Raises:
-        ValueError: Wenn Indicator nicht gefunden
-    """
+    """Get indicator class by name, auto-discovering if needed."""
     if name not in INDICATOR_REGISTRY:
         _ensure_plugins_loaded()
     if name not in INDICATOR_REGISTRY:
         available = list(INDICATOR_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown indicator: '{name}'. "
-            f"Available: {available}"
-        )
+        raise ValueError(f"Unknown indicator: '{name}'. Available: {available}")
     return INDICATOR_REGISTRY[name]
 
 
 def get_exit_strategy(name: str) -> Type["BaseExitStrategy"]:
-    """
-    Gibt Exit-Strategy-Klasse anhand des Namens zurück.
-
-    Args:
-        name: Registrierter Name der Exit-Strategy
-
-    Returns:
-        Exit-Strategy-Klasse
-
-    Raises:
-        ValueError: Wenn Exit-Strategy nicht gefunden
-    """
+    """Get exit strategy class by name, auto-discovering if needed."""
     if not EXIT_STRATEGY_REGISTRY:
         _ensure_plugins_loaded()
     if name not in EXIT_STRATEGY_REGISTRY:
         available = list(EXIT_STRATEGY_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown exit strategy: '{name}'. "
-            f"Available: {available}"
-        )
+        raise ValueError(f"Unknown exit strategy: '{name}'. Available: {available}")
     return EXIT_STRATEGY_REGISTRY[name]
 
 
 def get_feature_selector(name: str) -> Type["BaseFeatureSelector"]:
-    """
-    Gibt Feature-Selector-Klasse anhand des Namens zurück.
-
-    Args:
-        name: Registrierter Name des Feature-Selectors
-
-    Returns:
-        Feature-Selector-Klasse
-
-    Raises:
-        ValueError: Wenn Feature-Selector nicht gefunden
-    """
+    """Get feature selector class by name, auto-discovering if needed."""
     if not FEATURE_SELECTOR_REGISTRY:
         _ensure_plugins_loaded()
     if name not in FEATURE_SELECTOR_REGISTRY:
         available = list(FEATURE_SELECTOR_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown feature selector: '{name}'. "
-            f"Available: {available}"
-        )
+        raise ValueError(f"Unknown feature selector: '{name}'. Available: {available}")
     return FEATURE_SELECTOR_REGISTRY[name]
 
 
 def get_preprocessor(name: str) -> Type["BasePreprocessor"]:
-    """
-    Gibt Preprocessor-Klasse anhand des Namens zurück.
-
-    Args:
-        name: Registrierter Name des Preprocessors
-
-    Returns:
-        Preprocessor-Klasse
-
-    Raises:
-        ValueError: Wenn Preprocessor nicht gefunden
-    """
+    """Get preprocessor class by name, auto-discovering if needed."""
     if not PREPROCESSOR_REGISTRY:
         _ensure_plugins_loaded()
     if name not in PREPROCESSOR_REGISTRY:
         available = list(PREPROCESSOR_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown preprocessor: '{name}'. "
-            f"Available: {available}"
-        )
+        raise ValueError(f"Unknown preprocessor: '{name}'. Available: {available}")
     return PREPROCESSOR_REGISTRY[name]
 
 
 def list_indicators() -> list:
-    """Listet alle registrierten Indicators."""
+    """List all registered indicators."""
     return list(INDICATOR_REGISTRY.keys())
 
 
 def list_exit_strategies() -> list:
-    """Listet alle registrierten Exit-Strategies."""
+    """List all registered exit strategies."""
     return list(EXIT_STRATEGY_REGISTRY.keys())
 
 
 def list_feature_selectors() -> list:
-    """Listet alle registrierten Feature-Selectors."""
+    """List all registered feature selectors."""
     return list(FEATURE_SELECTOR_REGISTRY.keys())
 
 
 def list_preprocessors() -> list:
-    """Listet alle registrierten Preprocessors."""
+    """List all registered preprocessors."""
     return list(PREPROCESSOR_REGISTRY.keys())
 
 
 def get_broker_adapter(name: str) -> Type["BrokerAdapter"]:
-    """
-    Gibt BrokerAdapter-Klasse anhand des Namens zurück.
-
-    Args:
-        name: Registrierter Name des BrokerAdapters
-
-    Returns:
-        BrokerAdapter-Klasse
-
-    Raises:
-        ValueError: Wenn BrokerAdapter nicht gefunden
-    """
+    """Get broker adapter class by name."""
     if name not in BROKER_ADAPTER_REGISTRY:
         available = list(BROKER_ADAPTER_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown broker adapter: '{name}'. "
-            f"Available: {available}"
-        )
+        raise ValueError(f"Unknown broker adapter: '{name}'. Available: {available}")
     return BROKER_ADAPTER_REGISTRY[name]
 
 
 def list_broker_adapters() -> list:
-    """Listet alle registrierten BrokerAdapters."""
+    """List all registered broker adapters."""
     return list(BROKER_ADAPTER_REGISTRY.keys())
 
 
 def get_risk_manager(name: str) -> Type["BaseRiskManager"]:
-    """Gibt Risk-Manager-Klasse anhand des Namens zurück."""
+    """Get risk manager class by name, auto-discovering if needed."""
     if not RISK_MANAGER_REGISTRY:
         _ensure_plugins_loaded()
     if name not in RISK_MANAGER_REGISTRY:
         available = list(RISK_MANAGER_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown risk manager: '{name}'. Available: {available}"
-        )
+        raise ValueError(f"Unknown risk manager: '{name}'. Available: {available}")
     return RISK_MANAGER_REGISTRY[name]
 
 
 def list_risk_managers() -> list:
-    """Listet alle registrierten Risk-Manager."""
+    """List all registered risk managers."""
     return list(RISK_MANAGER_REGISTRY.keys())
 
 
-def register_data_loader(name: str):
-    """Decorator zum Registrieren eines DataLoaders."""
-    def decorator(cls):
-        DATA_LOADER_REGISTRY[name] = cls
-        cls.name = name
-        log.debug(f"Registered data loader: {name}")
-        return cls
-    return decorator
-
-
 def get_data_loader(name: str) -> Type["BaseDataLoader"]:
-    """Gibt DataLoader-Klasse anhand des Namens zurück."""
+    """Get data loader class by name, auto-discovering if needed."""
     if not DATA_LOADER_REGISTRY:
         _ensure_plugins_loaded()
     if name not in DATA_LOADER_REGISTRY:
         available = list(DATA_LOADER_REGISTRY.keys())
-        raise ValueError(
-            f"Unknown data loader: '{name}'. Available: {available}"
-        )
+        raise ValueError(f"Unknown data loader: '{name}'. Available: {available}")
     return DATA_LOADER_REGISTRY[name]
 
 
 def list_data_loaders() -> list:
-    """Listet alle registrierten DataLoader."""
+    """List all registered data loaders."""
     return list(DATA_LOADER_REGISTRY.keys())

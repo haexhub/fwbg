@@ -87,8 +87,7 @@ class TestCustomUserPlugin:
 
         # Plugin code
         plugin_code = '''
-from fwbg.pipeline.base import BasePlugin, PluginPhase
-from fwbg.pipeline.context import PipelineContext
+from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
 
 
 class MyCustomIndicator(BasePlugin):
@@ -122,4 +121,4 @@ class MyCustomIndicator(BasePlugin):
 
 
 # Import PluginPhase for test
-from fwbg.pipeline.base import PluginPhase
+from fwbg_sdk import PluginPhase

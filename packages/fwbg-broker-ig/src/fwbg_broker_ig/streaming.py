@@ -7,7 +7,7 @@ from typing import Callable, TYPE_CHECKING
 from datetime import datetime
 import logging
 
-from fwbg.core.enums import Symbol, Timeframe
+from fwbg_sdk import Symbol, Timeframe
 from fwbg.adapters.broker import BarData
 
 try:

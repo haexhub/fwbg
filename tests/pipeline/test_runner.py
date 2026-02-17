@@ -2,9 +2,8 @@
 import pandas as pd
 import pytest
 
-from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
 from fwbg.pipeline.config import PipelineConfig, PluginConfig
-from fwbg.pipeline.context import PipelineContext
 from fwbg.pipeline.registry import PluginNotFoundError, PluginRegistry
 from fwbg.pipeline.runner import PipelineRunner
 

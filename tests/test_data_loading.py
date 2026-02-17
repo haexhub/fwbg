@@ -162,18 +162,18 @@ class TestBaseDataLoader:
     """BaseDataLoader is the base class for data loading plugins."""
 
     def test_phase_is_data_loading(self):
-        from fwbg.plugins.data_loader import BaseDataLoader
-        from fwbg.pipeline.base import PluginPhase
+        from fwbg_sdk import BaseDataLoader
+        from fwbg_sdk import PluginPhase
         assert BaseDataLoader.phase == PluginPhase.DATA_LOADING
 
     def test_is_abstract(self):
-        from fwbg.plugins.data_loader import BaseDataLoader
+        from fwbg_sdk import BaseDataLoader
         with pytest.raises(TypeError):
             BaseDataLoader()
 
     def test_concrete_subclass_works(self):
-        from fwbg.plugins.data_loader import BaseDataLoader
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import BaseDataLoader
+        from fwbg_sdk import PipelineContext
 
         class TestLoader(BaseDataLoader):
             name = "test_loader"
@@ -203,8 +203,8 @@ class TestDataLoaderRegistry:
 
     def test_register_and_get(self):
         from fwbg.core.registry import register_data_loader, get_data_loader, DATA_LOADER_REGISTRY
-        from fwbg.plugins.data_loader import BaseDataLoader
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import BaseDataLoader
+        from fwbg_sdk import PipelineContext
 
         @register_data_loader("test_dl_reg")
         class TestDL(BaseDataLoader):
@@ -389,7 +389,7 @@ class TestMacroDataLoader:
         from fwbg.plugins import import_plugin_module
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         ctx = PipelineContext(df=macro_df.copy(), symbol="TEST", asset_class="FOREX")
         loader = get_data_loader("macro_data")()
@@ -402,7 +402,7 @@ class TestMacroDataLoader:
         from fwbg.plugins import import_plugin_module
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         ctx = PipelineContext(df=macro_df.copy(), symbol="TEST", asset_class="FOREX")
         loader = get_data_loader("macro_data")()
@@ -414,7 +414,7 @@ class TestMacroDataLoader:
         from fwbg.plugins import import_plugin_module
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         ctx = PipelineContext(df=macro_df.copy(), symbol="TEST", asset_class="FOREX")
         loader = get_data_loader("macro_data")()
@@ -433,7 +433,7 @@ class TestMacroDataLoader:
         from fwbg.plugins import import_plugin_module
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         df = pd.DataFrame({"O": [1.0], "C": [2.0]})
         ctx = PipelineContext(df=df, symbol="TEST", asset_class="FOREX")
@@ -457,7 +457,7 @@ class TestMacroDataLoader:
         from fwbg.plugins import import_plugin_module
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         ctx = PipelineContext(df=macro_df.copy(), symbol="TEST", asset_class="FOREX")
         loader = get_data_loader("macro_data")()

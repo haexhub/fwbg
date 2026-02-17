@@ -89,7 +89,7 @@ def process_single_fold(
 
     if preprocessing_configs:
         from fwbg.core import get_preprocessor
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         orig_train_ohlc = {col: fold.train_df[col].copy() for col in ohlc_cols}
         orig_test_ohlc = {col: fold.test_df[col].copy() for col in ohlc_cols}

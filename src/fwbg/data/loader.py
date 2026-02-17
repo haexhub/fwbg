@@ -151,7 +151,7 @@ def run_data_loading(df, data_loading_configs):
     import logging
     from fwbg.core.data_sources import get_data_source
     from fwbg.core.registry import get_data_loader
-    from fwbg.pipeline.context import PipelineContext
+    from fwbg_sdk import PipelineContext
 
     log = logging.getLogger(__name__)
 

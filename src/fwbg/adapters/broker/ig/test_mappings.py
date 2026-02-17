@@ -4,7 +4,7 @@ Unit-Tests für IG Broker Mappings.
 Testet alle Symbol- und Timeframe-Mappings für die IG Markets Integration.
 """
 
-from fwbg.core.enums import Symbol, Timeframe
+from fwbg_sdk import Symbol, Timeframe
 from .mappings import (
     SYMBOL_TO_EPIC,
     SYMBOL_TO_YFINANCE,

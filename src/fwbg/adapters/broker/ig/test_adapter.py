@@ -8,7 +8,7 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 import pandas as pd
 
-from fwbg.core.enums import Symbol, Timeframe
+from fwbg_sdk import Symbol, Timeframe
 from fwbg.adapters.broker import (
     OrderSide, OrderStatus, Position, AccountInfo,
 )

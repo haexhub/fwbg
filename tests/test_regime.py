@@ -313,7 +313,7 @@ class TestRegimePlugin:
     """Tests für das RegimeIndicators Plugin."""
 
     def test_plugin_importable(self):
-        from fwbg.plugins.indicator import BaseIndicator
+        from fwbg_sdk import BaseIndicator
         from fwbg.pipeline import get_registry
         registry = get_registry()
         registry.auto_discover()

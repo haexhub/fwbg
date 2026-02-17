@@ -52,7 +52,7 @@ class TestYieldCurveShape:
         loader = cls()
         df = _make_ohlc_with_macro()
 
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
         ctx = PipelineContext(df=df, symbol="EURUSD", asset_class="forex")
         ctx = loader.execute(ctx)
 
@@ -69,7 +69,7 @@ class TestYieldCurveShape:
         loader = cls()
         df = _make_ohlc_with_macro()
 
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
         ctx = PipelineContext(df=df, symbol="EURUSD", asset_class="forex")
         ctx = loader.execute(ctx)
 
@@ -85,7 +85,7 @@ class TestYieldCurveShape:
         loader = cls()
         df = _make_ohlc_with_macro()
 
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
         ctx = PipelineContext(df=df, symbol="EURUSD", asset_class="forex")
         ctx = loader.execute(ctx)
 

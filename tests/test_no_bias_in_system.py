@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from fwbg.plugins.indicator import shift_features
+from fwbg_sdk import shift_features
 from fwbg.optimization.targets import compute_targets
 from fwbg.optimization.nested_cv import train_model
 from fwbg.core.context import SimulationContext

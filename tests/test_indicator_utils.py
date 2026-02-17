@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.plugins.indicator import (
+from fwbg_sdk import (
     safe_divide,
     shift_features,
     EPSILON,

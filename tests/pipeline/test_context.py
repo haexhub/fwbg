@@ -1,7 +1,7 @@
 # tests/pipeline/test_context.py
 import pytest
 import pandas as pd
-from fwbg.pipeline.context import PipelineContext
+from fwbg_sdk import PipelineContext
 
 
 def test_pipeline_context_creation():

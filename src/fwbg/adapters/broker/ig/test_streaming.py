@@ -7,7 +7,7 @@ import pytest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-from fwbg.core.enums import Symbol, Timeframe
+from fwbg_sdk import Symbol, Timeframe
 from fwbg.adapters.broker import BarData
 
 

@@ -149,7 +149,7 @@ def compute_indicator_pool(
     from fwbg.pipeline import (
         PipelineRunner, PipelineContext, PipelineConfig, PluginConfig, get_registry
     )
-    from fwbg.pipeline.base import PluginPhase
+    from fwbg_sdk import PluginPhase
 
     registry = get_registry()
     registry.auto_discover()

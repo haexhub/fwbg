@@ -33,7 +33,7 @@ from enum import Enum
 import pandas as pd
 
 from ..base import BaseAdapter
-from fwbg.core.enums import Timeframe, Symbol
+from fwbg_sdk import Timeframe, Symbol
 
 
 class OrderSide(str, Enum):
