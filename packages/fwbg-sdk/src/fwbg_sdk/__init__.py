@@ -22,6 +22,14 @@ from fwbg_sdk.exit_strategies import BaseExitStrategy
 from fwbg_sdk.risk_managers import BaseRiskManager
 from fwbg_sdk.data_loaders import BaseDataLoader
 
+# Testing utilities
+from fwbg_sdk.testing import (
+    create_sample_ohlcv,
+    assert_features_shifted,
+    assert_no_inf,
+    create_sample_asset,
+)
+
 # Registration decorators
 from fwbg_sdk.registry import (
     register_indicator,
@@ -70,6 +78,11 @@ __all__ = [
     "register_preprocessor",
     "register_risk_manager",
     "register_data_loader",
+    # Testing utilities
+    "create_sample_ohlcv",
+    "assert_features_shifted",
+    "assert_no_inf",
+    "create_sample_asset",
     # Registries
     "INDICATOR_REGISTRY",
     "EXIT_STRATEGY_REGISTRY",
