@@ -388,290 +388,200 @@
   },
   "grids": {
     "FOREX": {
-      "tp": [
-        0.5,
-        1.0,
-        1.5,
-        2.0,
-        2.5
-      ],
-      "sl": [
-        0.5,
-        1.0,
-        1.5,
-        2.0,
-        2.5
-      ],
-      "ct": [
-        0.5,
-        0.55,
-        0.6,
-        0.65
-      ],
-      "timeout_bars": [
-        null,
-        24,
-        48
-      ],
+      "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [
-              null,
-              25
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "macro_vix",
-            "operator": "<=",
-            "values": [
-              null,
-              30
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "regime_hurst_100",
-            "operator": ">=",
-            "values": [
-              null,
-              0.45
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "regime_cluster_label",
-            "operator": ">=",
-            "values": [
-              null,
-              1,
-              2
-            ],
-            "directions": 6,
-            "else_directions": 0
-          }
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
         ]
       }
     },
     "INDEX": {
-      "tp": [
-        0.5,
-        1.0,
-        1.5,
-        2.0,
-        3.0
-      ],
-      "sl": [
-        0.5,
-        1.0,
-        1.5,
-        2.0,
-        3.0
-      ],
-      "ct": [
-        0.5,
-        0.55,
-        0.6,
-        0.65
-      ],
-      "timeout_bars": [
-        null,
-        24,
-        48
-      ],
+      "tp": [2.0, 2.5, 3.0, 3.5, 4.0],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [
-              null,
-              25
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "macro_vix",
-            "operator": "<=",
-            "values": [
-              null,
-              30
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "regime_hurst_100",
-            "operator": ">=",
-            "values": [
-              null,
-              0.45
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "regime_cluster_label",
-            "operator": ">=",
-            "values": [
-              null,
-              1,
-              2
-            ],
-            "directions": 6,
-            "else_directions": 0
-          }
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
         ]
       }
     },
     "COMMODITY": {
-      "tp": [
-        0.5,
-        1.0,
-        1.5,
-        2.0,
-        2.5
-      ],
-      "sl": [
-        0.5,
-        1.0,
-        1.5,
-        2.0,
-        2.5
-      ],
-      "ct": [
-        0.5,
-        0.55,
-        0.6,
-        0.65
-      ],
-      "timeout_bars": [
-        null,
-        24,
-        48
-      ],
+      "tp": [2.0, 2.5, 3.0, 3.5, 4.0],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [
-              null,
-              25
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "macro_vix",
-            "operator": "<=",
-            "values": [
-              null,
-              30
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "regime_hurst_100",
-            "operator": ">=",
-            "values": [
-              null,
-              0.45
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "regime_cluster_label",
-            "operator": ">=",
-            "values": [
-              null,
-              1,
-              2
-            ],
-            "directions": 6,
-            "else_directions": 0
-          }
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
         ]
       }
     },
     "CRYPTO": {
-      "tp": [
-        0.5,
-        1.0,
-        1.5,
-        2.0,
-        3.0
-      ],
-      "sl": [
-        0.5,
-        1.0,
-        1.5,
-        2.0,
-        3.0
-      ],
-      "ct": [
-        0.5,
-        0.55,
-        0.6,
-        0.65
-      ],
-      "timeout_bars": [
-        null,
-        24,
-        48
-      ],
+      "tp": [2.0, 3.0, 4.0, 5.0, 6.0],
+      "sl": [3.0, 4.0, 5.0, 7.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [
-              null,
-              25
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "macro_vix",
-            "operator": "<=",
-            "values": [
-              null,
-              30
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "regime_hurst_100",
-            "operator": ">=",
-            "values": [
-              null,
-              0.45
-            ],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "regime_cluster_label",
-            "operator": ">=",
-            "values": [
-              null,
-              1,
-              2
-            ],
-            "directions": 6,
-            "else_directions": 0
-          }
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+
+    "BRENT": {
+      "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+    "GOLD": {
+      "tp": [2.5, 3.0, 3.5, 4.0, 4.5],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+    "XAUUSD": {
+      "tp": [2.5, 3.0, 3.5, 4.0, 4.5],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+    "SILVER": {
+      "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+    "XAGUSD": {
+      "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+
+    "DAX": {
+      "tp": [2.0, 2.5, 3.0, 3.5, 4.0],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+    "DOW30": {
+      "tp": [2.0, 2.5, 3.0, 3.5, 4.0],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+    "FTSE100": {
+      "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+    "NAS100": {
+      "tp": [2.5, 3.0, 3.5, 4.0, 4.5],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+        ]
+      }
+    },
+    "SPX500": {
+      "tp": [2.0, 2.5, 3.0, 3.5, 4.0],
+      "sl": [3.0, 4.0, 5.0, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65],
+      "timeout_bars": [null, 24, 48],
+      "regime_filter_grid": {
+        "condition_grids": [
+          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
+          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
+          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
+          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
         ]
       }
     }
