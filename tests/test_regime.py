@@ -275,23 +275,23 @@ class TestStrategyRegimeConfig:
 
     def test_exploration_json_has_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/exploration.json")
-        grid = config.get_grid_for_class("FOREX")
+        grid = config.get_grid("EURUSD", "FOREX")
         assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_atr_has_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/exploration_atr.json")
-        grid = config.get_grid_for_class("FOREX")
+        grid = config.get_grid("EURUSD", "FOREX")
         assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_fast_has_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/exploration_fast.json")
-        grid = config.get_grid_for_class("FOREX")
+        grid = config.get_grid("EURUSD", "FOREX")
         assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_all_asset_classes_have_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/exploration.json")
         for asset_class in ["FOREX", "INDEX", "COMMODITY", "CRYPTO"]:
-            grid = config.get_grid_for_class(asset_class)
+            grid = config.get_grid("TEST", asset_class)
             assert grid.regime_filter_grid.total_combinations() == 24, (
                 f"{asset_class} sollte 8 Regime-Kombinationen haben"
             )
@@ -299,7 +299,7 @@ class TestStrategyRegimeConfig:
     def test_regime_combos_include_no_filter_baseline(self):
         """Jede Strategie hat eine 'kein Filter' Baseline."""
         config = StrategyConfig.from_json_file("strategies/exploration.json")
-        grid = config.get_grid_for_class("FOREX")
+        grid = config.get_grid("EURUSD", "FOREX")
         combos = grid.regime_filter_grid.get_combinations()
 
         no_filter = [c for c in combos if len(c["conditions"]) == 0]

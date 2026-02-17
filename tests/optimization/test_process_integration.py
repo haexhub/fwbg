@@ -266,7 +266,7 @@ class TestStrategyConfigIntegration:
         }
 
         strategy = StrategyConfig.from_dict(data)
-        grid = strategy.get_grid_for_class("FOREX")
+        grid = strategy.get_grid("EURUSD", "FOREX")
 
         assert grid.tp == [1.0, 1.5, 2.0]
         assert grid.sl == [1.0, 1.5]
