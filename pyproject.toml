@@ -59,6 +59,7 @@ dev = [
     "black>=26.0",
     "isort>=7.0",
     "mypy>=1.15",
+    "httpx>=0.27",
 ]
 # Advanced analytics & visualization
 analytics = [
