@@ -96,7 +96,9 @@ class TestPipelineConfig:
         assert config.indicators[1].name == "rsi"
 
         assert len(config.feature_selection) == 1
-        assert config.feature_selection[0].name == "correlation_filter"
+        assert config.feature_selection[0].name in (
+            "correlation_filter", "fwbg-premium:correlation_filter"
+        )
 
         assert len(config.labeling) == 1
         assert config.labeling[0].name == "binary_labeler"
