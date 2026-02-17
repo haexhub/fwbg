@@ -629,6 +629,24 @@ def run_optimizer(
 
 def main():
     """CLI-Einstiegspunkt mit Argument-Parsing."""
+    import sys
+
+    # Handle 'api' subcommand
+    if len(sys.argv) > 1 and sys.argv[1] == "api":
+        api_parser = argparse.ArgumentParser(description="FWBG API Server")
+        api_parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+        api_parser.add_argument("--port", type=int, default=8420, help="Port (default: 8420)")
+        api_args = api_parser.parse_args(sys.argv[2:])
+        from fwbg.api import run_server
+        run_server(host=api_args.host, port=api_args.port)
+        return
+
+    # Handle 'analyze' subcommand
+    if len(sys.argv) > 1 and sys.argv[1] == "analyze":
+        from fwbg.cli._analyze import run_analyze
+        run_analyze(sys.argv[2:])
+        return
+
     parser = argparse.ArgumentParser(
         description="FWBG Strategy Backtester - Walk-Forward Validation für Trading-Strategien",
         formatter_class=argparse.RawDescriptionHelpFormatter,
