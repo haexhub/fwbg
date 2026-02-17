@@ -150,6 +150,7 @@ The decision is up to the plugin developer. Rule of thumb:
 | `momentum` | RSI, Stochastic, Williams %R, ROC | `mom_` |
 | `volatility` | Bollinger Bands, ATR, Volatility Estimators, Vol Compression, RV vs IV | `vol_` |
 | `price_action` | Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
+| `fair_value_gap` | Fair Value Gaps (Bull/Bear), Distance, Size, Count | `fvg_` |
 | `time_season` | Hour, Day of Week, Month, Quarter, Seasonality | `time_`, `season_` |
 
 ### Premium Package (fwbg-premium)
@@ -168,6 +169,7 @@ The decision is up to the plugin developer. Rule of thumb:
 | `microstructure` | Bar Microstructure, Tick Proxies | `micro_` |
 | `market_regime` | Risk-On/Off Composite from VIX, Credit, Equity, Treasury | `regime_risk_`, `regime_vix_` |
 | `regime_cluster` | Composite Regime Score → K-Means Clustering | `regime_cluster_` |
+| `support_resistance` | S/R Zones, Trend Classification, Pullbacks, Breakouts | `sr_` |
 
 **Complete feature documentation:** [docs/FEATURES.md](../FEATURES.md)
 
