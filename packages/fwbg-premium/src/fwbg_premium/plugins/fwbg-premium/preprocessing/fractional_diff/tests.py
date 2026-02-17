@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.pipeline.context import PipelineContext
+from fwbg_sdk import PipelineContext
 
 
 @pytest.fixture

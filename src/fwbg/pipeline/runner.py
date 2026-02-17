@@ -2,9 +2,8 @@
 from collections import defaultdict, deque
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
-from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
 from fwbg.pipeline.config import PipelineConfig, PluginConfig
-from fwbg.pipeline.context import PipelineContext
 from fwbg.pipeline.registry import PluginRegistry
 
 

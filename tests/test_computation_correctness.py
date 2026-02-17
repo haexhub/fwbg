@@ -157,7 +157,7 @@ class TestFractionalDiffCorrectness:
     def test_frac_diff_d0_preserves_values(self, constant_price_df):
         """d=0 sollte Werte unverändert lassen."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         mod = import_plugin_module('fwbg-premium', 'preprocessing', 'fractional_diff')
         preprocessor = mod.FractionalDiffPreprocessor()
@@ -171,7 +171,7 @@ class TestFractionalDiffCorrectness:
     def test_frac_diff_d1_approximates_diff(self, linear_uptrend_df):
         """d=1 sollte ähnlich wie erste Differenz sein."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         mod = import_plugin_module('fwbg-premium', 'preprocessing', 'fractional_diff')
         preprocessor = mod.FractionalDiffPreprocessor()
@@ -195,7 +195,7 @@ class TestFractionalDiffCorrectness:
     def test_frac_diff_reduces_rows(self, linear_uptrend_df):
         """Frac diff sollte Warmup-Zeilen entfernen."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         mod = import_plugin_module('fwbg-premium', 'preprocessing', 'fractional_diff')
         preprocessor = mod.FractionalDiffPreprocessor()
@@ -293,7 +293,7 @@ class TestRSICorrectness:
     def test_rsi_uptrend_is_high(self, linear_uptrend_df):
         """RSI bei starkem Aufwärtstrend sollte hoch sein (>70)."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         mod = import_plugin_module('fwbg-core', 'indicators', 'momentum')
         indicator = mod.MomentumIndicators()
@@ -312,7 +312,7 @@ class TestRSICorrectness:
     def test_rsi_downtrend_is_low(self, linear_downtrend_df):
         """RSI bei starkem Abwärtstrend sollte niedrig sein (<30)."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         mod = import_plugin_module('fwbg-core', 'indicators', 'momentum')
         indicator = mod.MomentumIndicators()
@@ -338,7 +338,7 @@ class TestATRCorrectness:
     def test_atr_constant_price_is_zero(self, constant_price_df):
         """ATR bei konstanten Preisen sollte 0 sein."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         mod = import_plugin_module('fwbg-core', 'indicators', 'volatility')
         indicator = mod.VolatilityIndicators()
@@ -370,7 +370,7 @@ class TestATRCorrectness:
         }, index=dates)
 
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         mod = import_plugin_module('fwbg-core', 'indicators', 'volatility')
         indicator = mod.VolatilityIndicators()
@@ -398,7 +398,7 @@ class TestADXCorrectness:
     def test_adx_strong_uptrend_is_high(self, linear_uptrend_df):
         """ADX bei starkem Trend sollte hoch sein (>25)."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         mod = import_plugin_module('fwbg-core', 'indicators', 'trend')
         indicator = mod.TrendIndicators()
@@ -416,7 +416,7 @@ class TestADXCorrectness:
     def test_adx_no_trend_is_low(self, oscillating_df):
         """ADX bei oszillierenden Preisen sollte niedrig sein (<25)."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         mod = import_plugin_module('fwbg-core', 'indicators', 'trend')
         indicator = mod.TrendIndicators()
@@ -716,7 +716,7 @@ class TestComputationsAreActuallyPerformed:
     def test_indicators_modify_dataframe(self):
         """Indikatoren müssen neue Spalten zum DataFrame hinzufügen."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         n = 200
         dates = pd.date_range('2023-01-01', periods=n, freq='h')
@@ -746,7 +746,7 @@ class TestComputationsAreActuallyPerformed:
     def test_feature_values_are_not_constant(self):
         """Feature-Werte dürfen nicht alle gleich sein (außer bei konstanten Inputs)."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         # Variierende Preise
         n = 200
@@ -843,7 +843,7 @@ class TestComputationsAreActuallyPerformed:
     def test_different_inputs_produce_different_outputs(self):
         """Verschiedene Inputs müssen verschiedene Outputs produzieren."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         # Dataset 1: Aufwärtstrend
         n = 200
@@ -886,7 +886,7 @@ class TestComputationsAreActuallyPerformed:
     def test_stateful_preprocessor_remembers_fit_params(self):
         """Stateful Preprocessor muss fit-Parameter für execute merken."""
         from fwbg.plugins import import_plugin_module
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
 
         n = 500
         dates = pd.date_range('2023-01-01', periods=n, freq='h')

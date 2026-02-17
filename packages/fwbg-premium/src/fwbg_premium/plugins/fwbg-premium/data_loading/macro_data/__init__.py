@@ -10,8 +10,7 @@ Features computed:
 - Derived features (subtract/ratio): yield curves, risk ratios
 - Interest rate changes and diffs
 """
-from fwbg.core.registry import register_data_loader
-from fwbg.plugins.data_loader import BaseDataLoader
+from fwbg_sdk import BaseDataLoader, register_data_loader
 
 
 # Default configuration (moved from data/config.py)

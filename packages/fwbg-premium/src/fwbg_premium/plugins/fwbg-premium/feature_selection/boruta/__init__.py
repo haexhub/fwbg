@@ -14,8 +14,7 @@ import numpy as np
 import pandas as pd
 from xgboost import XGBClassifier
 
-from fwbg.plugins import BaseFeatureSelector
-from fwbg.core import register_feature_selector
+from fwbg_sdk import BaseFeatureSelector, register_feature_selector
 from .selector import (
     select_features_boruta,
     create_shadow_features,

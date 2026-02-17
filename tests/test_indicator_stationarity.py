@@ -1,7 +1,7 @@
 """Tests for benefits_from_stationary indicator attribute."""
 import pytest
 from fwbg.pipeline import get_registry
-from fwbg.pipeline.base import PluginPhase
+from fwbg_sdk import PluginPhase
 
 
 def test_all_indicators_have_benefits_from_stationary():

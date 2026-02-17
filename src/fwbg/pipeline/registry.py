@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type
 
-from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg_sdk import BasePlugin, PluginPhase
 
 logger = logging.getLogger(__name__)
 

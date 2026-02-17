@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from fwbg.pipeline.base import BasePlugin, PluginPhase
-from fwbg.pipeline.context import PipelineContext
+from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
 from fwbg.pipeline.registry import (
     PluginNotFoundError,
     PluginRegistry,
@@ -187,8 +186,7 @@ class TestPluginRegistry:
         init_file = plugin_dir / "__init__.py"
         init_file.write_text('''
 """Test plugin module."""
-from fwbg.pipeline.base import BasePlugin, PluginPhase
-from fwbg.pipeline.context import PipelineContext
+from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
 
 
 class MyPlugin(BasePlugin):

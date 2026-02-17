@@ -7,9 +7,7 @@ from typing import List
 import pandas as pd
 import ta
 
-from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import shift_features
-from fwbg.core import register_indicator
+from fwbg_sdk import BaseIndicator, register_indicator, shift_features
 
 
 @register_indicator("momentum")

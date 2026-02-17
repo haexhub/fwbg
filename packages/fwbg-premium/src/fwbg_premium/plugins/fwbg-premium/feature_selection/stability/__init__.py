@@ -11,8 +11,8 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 
-from fwbg.plugins import BaseFeatureSelector
-from fwbg.core import register_feature_selector, get_feature_selector
+from fwbg_sdk import BaseFeatureSelector, register_feature_selector
+from fwbg.core import get_feature_selector
 
 
 @register_feature_selector("stability")

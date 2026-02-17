@@ -3,7 +3,7 @@ IG Markets Broker Adapter.
 
 Beispiel:
     from fwbg.adapters.broker.ig import IGBrokerAdapter
-    from fwbg.core.enums import Symbol
+    from fwbg_sdk import Symbol
 
     adapter = IGBrokerAdapter(
         username="...",

@@ -14,8 +14,7 @@ import numpy as np
 import pandas as pd
 from numba import njit
 
-from fwbg.plugins import BaseExitStrategy
-from fwbg.core import register_exit_strategy
+from fwbg_sdk import BaseExitStrategy, register_exit_strategy
 from fwbg.simulation import _simulate_trade_numba
 from fwbg.core import GridParams
 

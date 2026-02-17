@@ -10,12 +10,14 @@ from pathlib import Path
 from types import ModuleType
 from typing import Optional
 
-from .indicator import BaseIndicator
-from .exit_strategy import BaseExitStrategy
-from .feature_selector import BaseFeatureSelector
-from .preprocessor import BasePreprocessor
-from .risk_manager import BaseRiskManager
-from .data_loader import BaseDataLoader
+from fwbg_sdk import (
+    BaseIndicator,
+    BaseExitStrategy,
+    BaseFeatureSelector,
+    BasePreprocessor,
+    BaseRiskManager,
+    BaseDataLoader,
+)
 
 
 def get_plugins_dir() -> Path:

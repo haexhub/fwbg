@@ -4,7 +4,7 @@ Core Module - Kern-Infrastruktur für FWBG.
 
 from .grid_params import ExitConfig, GridParams
 
-from .enums import (
+from fwbg_sdk.enums import (
     Timeframe,
     AssetClass,
     Symbol,

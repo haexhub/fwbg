@@ -1,12 +1,7 @@
 {
   "name": "Exploration Scalping",
   "description": "Scalping bis Medium-Range Exploration: Breiter TP/SL-Bereich mit niedrigeren CT-Schwellen für mehr Trades und stabilere Signifikanz",
-  "tags": [
-    "exploration",
-    "scalping",
-    "medium_range",
-    "broad_search"
-  ],
+  "tags": ["exploration", "scalping", "medium_range", "broad_search"],
   "hypothesis": "Breiterer Parameterraum und niedrigere CT-Schwellen liefern mehr Trades pro Fold, was Monte Carlo stabilere Signifikanztests ermöglicht.",
   "expected_outcome": "Identifikation profitabler Parameter im Bereich Scalping bis Medium-Range mit statistisch signifikantem Edge",
   "pipeline": {
@@ -16,12 +11,7 @@
         "params": {
           "auto_d": false,
           "default_d": 0.4,
-          "columns": [
-            "O",
-            "H",
-            "L",
-            "C"
-          ]
+          "columns": ["O", "H", "L", "C"]
         }
       }
     ],
@@ -29,33 +19,12 @@
       {
         "name": "trend",
         "params": {
-          "adx_periods": [
-            5,
-            7,
-            14
-          ],
-          "ema_periods": [
-            5,
-            8,
-            13,
-            21,
-            50
-          ],
-          "sma_periods": [
-            10,
-            20,
-            50
-          ],
-          "cci_periods": [
-            7,
-            14
-          ],
+          "adx_periods": [5, 7, 14],
+          "ema_periods": [5, 8, 13, 21, 50],
+          "sma_periods": [10, 20, 50],
+          "cci_periods": [7, 14],
           "aroon_period": 14,
-          "er_periods": [
-            5,
-            10,
-            20
-          ],
+          "er_periods": [5, 10, 20],
           "supertrend_period": 10,
           "supertrend_multiplier": 2.0
         }
@@ -63,65 +32,28 @@
       {
         "name": "momentum",
         "params": {
-          "rsi_periods": [
-            5,
-            7,
-            14
-          ],
-          "stoch_periods": [
-            5,
-            9,
-            14
-          ],
-          "williams_periods": [
-            7,
-            14
-          ],
-          "roc_periods": [
-            3,
-            5,
-            10
-          ]
+          "rsi_periods": [5, 7, 14],
+          "stoch_periods": [5, 9, 14],
+          "williams_periods": [7, 14],
+          "roc_periods": [3, 5, 10]
         }
       },
       {
         "name": "volatility",
         "params": {
-          "bb_periods": [
-            10,
-            20
-          ],
-          "atr_periods": [
-            5,
-            7,
-            14
-          ],
-          "vol_est_windows": [
-            10,
-            20
-          ]
+          "bb_periods": [10, 20],
+          "atr_periods": [5, 7, 14],
+          "vol_est_windows": [10, 20]
         }
       },
       {
         "name": "regime",
         "params": {
-          "hurst_windows": [
-            100,
-            200
-          ],
+          "hurst_windows": [100, 200],
           "step": 10,
-          "entropy_windows": [
-            50,
-            100
-          ],
-          "vr_windows": [
-            100,
-            200
-          ],
-          "vr_lags": [
-            5,
-            10
-          ]
+          "entropy_windows": [50, 100],
+          "vr_windows": [100, 200],
+          "vr_lags": [5, 10]
         }
       },
       {
@@ -141,27 +73,14 @@
       {
         "name": "dynamics",
         "params": {
-          "lookbacks": [
-            2,
-            4,
-            8
-          ],
-          "lag_periods": [
-            2,
-            4,
-            8,
-            12
-          ]
+          "lookbacks": [2, 4, 8],
+          "lag_periods": [2, 4, 8, 12]
         }
       },
       {
         "name": "distribution",
         "params": {
-          "windows": [
-            10,
-            20,
-            50
-          ],
+          "windows": [10, 20, 50],
           "z_score_lookback": 100
         }
       },
@@ -190,50 +109,20 @@
       {
         "name": "structure",
         "params": {
-          "fft_windows": [
-            32,
-            64
-          ],
-          "path_windows": [
-            5,
-            10,
-            20
-          ],
-          "convexity_periods": [
-            10,
-            20
-          ],
-          "event_periods": [
-            10,
-            20
-          ],
-          "vwap_windows": [
-            10,
-            20,
-            50
-          ]
+          "fft_windows": [32, 64],
+          "path_windows": [5, 10, 20],
+          "convexity_periods": [10, 20],
+          "event_periods": [10, 20],
+          "vwap_windows": [10, 20, 50]
         }
       },
       {
         "name": "risk",
         "params": {
-          "dd_windows": [
-            20,
-            50,
-            100
-          ],
-          "cvar_windows": [
-            20,
-            50
-          ],
-          "cvar_percentiles": [
-            5,
-            1
-          ],
-          "vov_windows": [
-            10,
-            20
-          ],
+          "dd_windows": [20, 50, 100],
+          "cvar_windows": [20, 50],
+          "cvar_percentiles": [5, 1],
+          "vov_windows": [10, 20],
           "compute_correlations": true
         }
       },
@@ -242,10 +131,7 @@
         "params": {
           "h4_bars": 4,
           "d1_bars": 24,
-          "ema_periods": [
-            10,
-            20
-          ]
+          "ema_periods": [10, 20]
         }
       },
       {
@@ -276,7 +162,12 @@
         "name": "stability",
         "params": {
           "inner_selector": "boruta",
-          "inner_params": {"n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5},
+          "inner_params": {
+            "n_iter": 5,
+            "n_estimators": 30,
+            "max_depth": 4,
+            "min_z_score": 0.5
+          },
           "n_bootstrap": 7,
           "threshold": 0.6,
           "bootstrap_ratio": 0.8,
@@ -300,10 +191,7 @@
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": [
-      "long",
-      "short"
-    ],
+    "trade_directions": ["long", "short"],
     "hyperparameters": {
       "n_estimators": 100,
       "max_depth": 4,
@@ -315,68 +203,36 @@
   },
   "grids": {
     "FOREX": {
-      "tp": [
-        5,
-        8,
-        10,
-        15,
-        20,
-        30
-      ],
-      "sl": [
-        8,
-        10,
-        15,
-        20,
-        30,
-        40
-      ],
-      "ct": [
-        0.52,
-        0.55,
-        0.6,
-        0.65
-      ],
+      "tp": [5, 8, 10, 15, 20, 30],
+      "sl": [8, 10, 15, 20, 30, 40],
+      "ct": [0.52, 0.55, 0.6, 0.65],
       "regime_filter_grid": {
         "condition_grids": [
           {
             "column": "trend_adx_14",
             "operator": ">=",
-            "values": [
-              null,
-              25
-            ],
+            "values": [null, 25],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "macro_vix",
             "operator": "<=",
-            "values": [
-              null,
-              30
-            ],
+            "values": [null, 30],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "regime_hurst_100",
             "operator": ">=",
-            "values": [
-              null,
-              0.45
-            ],
+            "values": [null, 0.45],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "regime_cluster_label",
             "operator": ">=",
-            "values": [
-              null,
-              1,
-              2
-            ],
+            "values": [null, 1, 2],
             "directions": 6,
             "else_directions": 0
           }
@@ -384,68 +240,36 @@
       }
     },
     "INDEX": {
-      "tp": [
-        5,
-        10,
-        15,
-        20,
-        30,
-        50
-      ],
-      "sl": [
-        10,
-        15,
-        20,
-        30,
-        50,
-        70
-      ],
-      "ct": [
-        0.52,
-        0.55,
-        0.6,
-        0.65
-      ],
+      "tp": [5, 10, 15, 20, 30, 50],
+      "sl": [10, 15, 20, 30, 50, 70],
+      "ct": [0.52, 0.55, 0.6, 0.65],
       "regime_filter_grid": {
         "condition_grids": [
           {
             "column": "trend_adx_14",
             "operator": ">=",
-            "values": [
-              null,
-              25
-            ],
+            "values": [null, 25],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "macro_vix",
             "operator": "<=",
-            "values": [
-              null,
-              30
-            ],
+            "values": [null, 30],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "regime_hurst_100",
             "operator": ">=",
-            "values": [
-              null,
-              0.45
-            ],
+            "values": [null, 0.45],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "regime_cluster_label",
             "operator": ">=",
-            "values": [
-              null,
-              1,
-              2
-            ],
+            "values": [null, 1, 2],
             "directions": 6,
             "else_directions": 0
           }
@@ -453,68 +277,36 @@
       }
     },
     "COMMODITY": {
-      "tp": [
-        10,
-        15,
-        20,
-        30,
-        40
-      ],
-      "sl": [
-        10,
-        15,
-        20,
-        30,
-        40,
-        60,
-        80,
-        100
-      ],
-      "ct": [
-        0.52,
-        0.55,
-        0.6
-      ],
+      "tp": [10, 15, 20, 30, 40],
+      "sl": [10, 15, 20, 30, 40, 60, 80, 100],
+      "ct": [0.52, 0.55, 0.6],
       "regime_filter_grid": {
         "condition_grids": [
           {
             "column": "trend_adx_14",
             "operator": ">=",
-            "values": [
-              null,
-              25
-            ],
+            "values": [null, 25],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "macro_vix",
             "operator": "<=",
-            "values": [
-              null,
-              30
-            ],
+            "values": [null, 30],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "regime_hurst_100",
             "operator": ">=",
-            "values": [
-              null,
-              0.45
-            ],
+            "values": [null, 0.45],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "regime_cluster_label",
             "operator": ">=",
-            "values": [
-              null,
-              1,
-              2
-            ],
+            "values": [null, 1, 2],
             "directions": 6,
             "else_directions": 0
           }
@@ -522,68 +314,36 @@
       }
     },
     "CRYPTO": {
-      "tp": [
-        10,
-        20,
-        30,
-        50,
-        70,
-        100
-      ],
-      "sl": [
-        20,
-        30,
-        50,
-        70,
-        100,
-        150
-      ],
-      "ct": [
-        0.52,
-        0.55,
-        0.6,
-        0.65
-      ],
+      "tp": [10, 20, 30, 50, 70, 100],
+      "sl": [20, 30, 50, 70, 100, 150],
+      "ct": [0.52, 0.55, 0.6, 0.65],
       "regime_filter_grid": {
         "condition_grids": [
           {
             "column": "trend_adx_14",
             "operator": ">=",
-            "values": [
-              null,
-              25
-            ],
+            "values": [null, 25],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "macro_vix",
             "operator": "<=",
-            "values": [
-              null,
-              30
-            ],
+            "values": [null, 30],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "regime_hurst_100",
             "operator": ">=",
-            "values": [
-              null,
-              0.45
-            ],
+            "values": [null, 0.45],
             "directions": 6,
             "else_directions": 0
           },
           {
             "column": "regime_cluster_label",
             "operator": ">=",
-            "values": [
-              null,
-              1,
-              2
-            ],
+            "values": [null, 1, 2],
             "directions": 6,
             "else_directions": 0
           }
@@ -618,7 +378,7 @@
     "ram_per_worker_gb": 4.0,
     "min_free_ram_percent": 0.15,
     "max_cpu_percent": 0.95,
-    "max_concurrent_assets": 2,
+    "max_concurrent_assets": 1,
     "xgboost_n_jobs": 0
   }
 }

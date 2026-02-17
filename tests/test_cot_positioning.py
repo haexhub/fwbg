@@ -37,7 +37,7 @@ class TestCOTPositioningLoader:
         loader = cls()
         df = _make_df_with_cot()
 
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
         ctx = PipelineContext(df=df, symbol="EURUSD", asset_class="forex")
         ctx = loader.execute(ctx)
 
@@ -50,7 +50,7 @@ class TestCOTPositioningLoader:
         loader = cls()
         df = _make_df_with_cot()
 
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
         ctx = PipelineContext(df=df, symbol="EURUSD", asset_class="forex")
         ctx = loader.execute(ctx)
 
@@ -65,7 +65,7 @@ class TestCOTPositioningLoader:
         loader = cls()
         df = _make_df_with_cot()
 
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
         ctx = PipelineContext(df=df, symbol="EURUSD", asset_class="forex")
         ctx = loader.execute(ctx)
 
@@ -78,7 +78,7 @@ class TestCOTPositioningLoader:
         loader = cls()
         df = _make_df_with_cot()
 
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
         ctx = PipelineContext(df=df, symbol="EURUSD", asset_class="forex")
         ctx = loader.execute(ctx)
 
@@ -97,7 +97,7 @@ class TestCOTPositioningLoader:
             "O": close, "H": close * 1.01, "L": close * 0.99, "C": close,
         }, index=pd.date_range("2024-01-01", periods=n, freq="h"))
 
-        from fwbg.pipeline.context import PipelineContext
+        from fwbg_sdk import PipelineContext
         ctx = PipelineContext(df=df, symbol="EURUSD", asset_class="forex")
         ctx = loader.execute(ctx)
 

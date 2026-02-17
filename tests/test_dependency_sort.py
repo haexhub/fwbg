@@ -10,7 +10,7 @@ Tests:
 """
 import pytest
 
-from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg_sdk import BasePlugin, PluginPhase
 from fwbg.pipeline.config import PluginConfig
 from fwbg.pipeline.registry import PluginRegistry
 from fwbg.pipeline.runner import PipelineRunner, _topological_sort, _short_name

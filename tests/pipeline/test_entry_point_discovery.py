@@ -5,8 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fwbg.pipeline.base import BasePlugin, PluginPhase
-from fwbg.pipeline.context import PipelineContext
+from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
 from fwbg.pipeline.registry import PluginRegistry, reset_registry
 
 
@@ -40,8 +39,7 @@ def _create_plugin_package(base_dir: Path, pkg_name: str, plugin_name: str) -> P
     }))
 
     (ind_dir / "__init__.py").write_text(f'''
-from fwbg.pipeline.base import BasePlugin, PluginPhase
-from fwbg.pipeline.context import PipelineContext
+from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
 
 class TestEntryPointPlugin(BasePlugin):
     name = "{plugin_name}"

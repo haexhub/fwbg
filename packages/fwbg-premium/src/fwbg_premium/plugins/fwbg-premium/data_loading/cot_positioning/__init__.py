@@ -7,8 +7,7 @@ Computes: z-scores, extremes, momentum, crowded trade flags.
 import numpy as np
 import pandas as pd
 
-from fwbg.core.registry import register_data_loader
-from fwbg.plugins.data_loader import BaseDataLoader
+from fwbg_sdk import BaseDataLoader, register_data_loader
 
 
 # COT indicator mapping: file stem → column prefix

@@ -174,5 +174,5 @@ class TestPluginAttributes:
 
     def test_phase_attribute(self, indicator):
         """Plugin should have phase attribute."""
-        from fwbg.pipeline.base import PluginPhase
+        from fwbg_sdk import PluginPhase
         assert indicator.phase == PluginPhase.INDICATORS

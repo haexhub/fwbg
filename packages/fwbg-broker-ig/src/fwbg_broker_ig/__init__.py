@@ -9,7 +9,7 @@ Oder als Teil von fwbg:
 
 Verwendung:
     from fwbg_broker_ig import IGBrokerAdapter
-    from fwbg.core.enums import Symbol, Timeframe
+    from fwbg_sdk import Symbol, Timeframe
 
     adapter = IGBrokerAdapter(
         username="...",

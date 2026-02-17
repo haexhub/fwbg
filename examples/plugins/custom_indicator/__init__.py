@@ -20,8 +20,7 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 
-from fwbg.pipeline.base import BasePlugin, PluginPhase
-from fwbg.pipeline.context import PipelineContext
+from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
 
 
 class CustomZScoreIndicator(BasePlugin):

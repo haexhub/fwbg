@@ -4,8 +4,7 @@ import pytest
 import pandas as pd
 from typing import Dict, Any
 
-from fwbg.pipeline.context import PipelineContext
-from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg_sdk import PipelineContext, BasePlugin, PluginPhase
 
 
 def test_plugin_phase_enum():

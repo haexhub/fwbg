@@ -19,9 +19,7 @@ import numpy as np
 import pandas as pd
 import ta
 
-from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import shift_features, safe_divide
-from fwbg.core import register_indicator
+from fwbg_sdk import BaseIndicator, shift_features, safe_divide, register_indicator
 
 
 @register_indicator("cross_features")

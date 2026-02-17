@@ -10,7 +10,7 @@ Enthält alle broker-spezifischen Mappings für IG Markets:
 """
 from typing import Dict
 
-from fwbg.core.enums import Symbol, Timeframe
+from fwbg_sdk import Symbol, Timeframe
 
 
 # Symbol -> Epic Mapping für deutsche IG Accounts

@@ -31,8 +31,7 @@ Usage:
     result = runner.run(test_ctx)
 """
 
-from fwbg.pipeline.context import PipelineContext
-from fwbg.pipeline.base import BasePlugin, PluginPhase
+from fwbg_sdk import PipelineContext, BasePlugin, PluginPhase
 from fwbg.pipeline.registry import (
     PluginRegistry,
     PluginNotFoundError,

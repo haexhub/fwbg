@@ -19,9 +19,7 @@ from typing import Dict, List, Union
 import numpy as np
 import pandas as pd
 
-from fwbg.core import register_indicator
-from fwbg.plugins import BaseIndicator
-from fwbg.plugins.indicator import shift_features
+from fwbg_sdk import BaseIndicator, shift_features, register_indicator
 
 
 class Columns:
