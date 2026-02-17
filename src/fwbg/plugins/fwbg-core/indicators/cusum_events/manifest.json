@@ -1,0 +1,7 @@
+{
+  "name": "cusum_events",
+  "version": "1.0.0",
+  "description": "CUSUM structural break detection (de Prado AFML Ch. 2): event-based features for ML",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
