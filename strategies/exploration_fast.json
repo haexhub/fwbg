@@ -172,6 +172,22 @@
       {
         "name": "cusum_events",
         "params": {}
+      },
+      {
+        "name": "calendar_events",
+        "params": {}
+      },
+      {
+        "name": "fractal_dimension",
+        "params": {}
+      },
+      {
+        "name": "wavelets",
+        "params": {}
+      },
+      {
+        "name": "autoencoder_features",
+        "params": {}
       }
     ],
     "feature_selection": [

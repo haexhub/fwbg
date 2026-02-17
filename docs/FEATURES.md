@@ -32,7 +32,11 @@ Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur 
 22. [Fair Value Gap Features](#22-fair-value-gap-features-fvg_)
 23. [Support/Resistance Features](#23-supportresistance-features-sr_)
 24. [CUSUM Event Features](#24-cusum-event-features-cusum_)
-25. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
+25. [Calendar Event Features](#25-calendar-event-features-cal_)
+26. [Fractal Dimension Features](#26-fractal-dimension-features-fd_)
+27. [Wavelet Features](#27-wavelet-features-wt_)
+28. [Autoencoder / PCA Features](#28-autoencoder--pca-features-ae_)
+29. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
 26. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
 
 ---
@@ -976,6 +980,128 @@ Event wenn S_pos > h·σ oder S_neg < -h·σ (dann Reset)
 
 ---
 
+## 25. Calendar Event Features (`cal_`)
+
+Kalender-Anomalien die auf gut dokumentierten systematischen Markteffekten basieren. Alle Features werden deterministisch aus dem DatetimeIndex berechnet — keine Preisdaten nötig.
+
+### Binäre Event-Features
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `cal_turn_of_month` | Erste 3 / letzte 2 Tage des Monats | Turn-of-Month Effekt (~65% der monatlichen Returns) |
+| `cal_quarter_end` | Letzte 5 Tage von Mar/Jun/Sep/Dec | Portfolio-Rebalancing, Window Dressing |
+| `cal_triple_witching` | ±2 Tage um 3. Freitag von Mar/Jun/Sep/Dec | Triple Witching (Futures + Options Verfall) |
+| `cal_monthly_opex` | ±2 Tage um 3. Freitag jeden Monats | Monatlicher Options-Verfall |
+| `cal_nfp_week` | Erste 5 Tage jeden Monats | Non-Farm Payrolls Woche |
+| `cal_year_boundary` | Letzte 5 Tage Dec / Erste 5 Tage Jan | January Effect, Year-End Rebalancing |
+
+### Proximity-Features
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `cal_days_to_month_end` | Tage bis Monatsende (normalisiert 0..1) | Nähe zum Monatsende |
+| `cal_fomc_proximity` | Zyklische Sinus-Approximation (~46-Tage FOMC Zyklus) | Nähe zum nächsten FOMC Meeting |
+| `cal_week_of_month` | Woche im Monat (normalisiert 0..1) | Position innerhalb des Monats |
+
+**Parameter:**
+- `include_binary` (default: true) — Binäre Event-Features einschließen
+- `include_proximity` (default: true) — Kontinuierliche Proximity-Features einschließen
+
+**Plugin:** `fwbg-core:calendar_events` | **Prefix:** `cal_` | **9 Features**
+
+---
+
+## 26. Fractal Dimension Features (`fd_`)
+
+Higuchi Fractal Dimension (HFD) — misst Komplexität und Rauheit der Preisreihe. Ergänzt den Hurst-Exponenten: Hurst misst Persistenz, FD misst Komplexität.
+
+**Algorithmus:** Für ein Fenster der Länge N mit k_max Intervallen:
+1. Konstruiere k Sub-Serien für jedes k in 1..k_max
+2. Berechne normalisierte Länge L(k) jeder Sub-Serie
+3. D = Steigung von log(L(k)) vs log(1/k)
+
+### Features pro Window
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `fd_higuchi_{w}` | Rohe Fraktaldimension | 1.0 = glatt/trendend, 1.5 = Random Walk, 2.0 = komplex/rauschend |
+| `fd_higuchi_change_{w}` | Änderung der FD über Fenster | Regime-Transition Erkennung |
+| `fd_complexity_ratio_{w}` | Abstand von 1.5: `abs(fd-1.5)*2` | 0 = zufällig, 1 = strukturiert (Trend oder Mean-Reversion) |
+| `fd_regime_{w}` | Diskretisiert: -1/0/1 | -1 = trendend (FD<1.4), 0 = zufällig, 1 = mean-reverting (FD>1.6) |
+
+**Werte:** FD ∈ [1.0, 2.0]. Interpretation spiegelt Hurst: FD ≈ 2 - H (approximativ).
+
+**Parameter:**
+- `windows` (default: [50, 100, 200]) — Rolling-Fenster für FD-Berechnung
+- `k_max` (default: 10) — Max. Intervall im Higuchi-Algorithmus
+
+**Plugin:** `fwbg-core:fractal_dimension` | **Prefix:** `fd_` | **4 Features × N Windows = 12 Features (default)**
+
+---
+
+## 27. Wavelet Features (`wt_`)
+
+Discrete Wavelet Transform (DWT) Dekomposition von Log-Returns. Im Gegensatz zu FFT liefern Wavelets **Zeit-und-Frequenz-Lokalisierung** — entscheidend für nicht-stationäre Finanzsignale.
+
+**Algorithmus:** Mehrstufige DWT-Zerlegung via `pywt.wavedec()` (Default: Daubechies-4). Jede Stufe halbiert die Frequenz:
+- **Detail 1** = höchste Frequenz (Noise, kurzfristige Schwankungen)
+- **Detail 2** = mittlere Frequenz
+- **Detail 3** = niedrige Frequenz (mittelfristige Zyklen)
+- **Approximation** = Trend-Komponente
+
+### Energy Features (pro Level × Window)
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `wt_detail_{lvl}_energy_{w}` | Rolling-Energie (Mittel der Quadrate) | Aktivität auf dieser Frequenz |
+| `wt_detail_{lvl}_mean_{w}` | Rolling-Mittelwert der Koeffizienten | Richtungsbias auf dieser Frequenz |
+| `wt_approx_energy_{w}` | Energie der Approximation (Trend) | Trend-Stärke |
+
+### Ratio Features
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `wt_detail_ratio_{lvl}` | Anteil der Detail-Energie an Gesamt-Energie | Welche Frequenz dominiert? |
+| `wt_high_freq_ratio_{w}` | Detail_1 / Detail_N Energie-Verhältnis | Hoch = choppy/noisy, Niedrig = trendend |
+
+**Parameter:**
+- `wavelet` (default: "db4") — Wavelet-Familie (db4, haar, sym5, etc.)
+- `levels` (default: 3) — Dekompositions-Stufen
+- `windows` (default: [10, 20, 50]) — Rolling-Fenster für Energie-Berechnung
+
+**Plugin:** `fwbg-core:wavelets` | **Prefix:** `wt_` | **27 Features (default: 3 Levels × 3 Windows)**
+
+---
+
+## 28. Autoencoder / PCA Features (`ae_`)
+
+Latent Feature Extraction via PCA (Principal Component Analysis) — komprimiert alle vorhandenen Indicator-Features in niedrig-dimensionale Repräsentationen, die nicht-lineare Zusammenhänge zwischen Indikatoren erfassen.
+
+**Funktionsweise:**
+1. Sammelt alle numerischen Feature-Spalten aus dem DataFrame (exkl. OHLCV und `ae_`-Prefix)
+2. NaN-Imputation via Spalten-Median (robust gegen Ausreißer)
+3. Standardisierung (Zero Mean, Unit Variance)
+4. PCA-Transformation in `n_components` latente Dimensionen
+5. Reconstruction Error als Anomalie-Signal
+
+### Features
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `ae_latent_0..N` | PCA-Komponenten | Hauptvariationsmodi über alle Indikatoren |
+| `ae_reconstruction_error` | L2 Rekonstruktionsfehler pro Zeile | Hoch = ungewöhnlicher Marktzustand (Anomalie-Detektion) |
+| `ae_explained_variance` | Kumulative erklärte Varianz | Wie viel Information die Latent-Features erfassen |
+
+**Besonderheit:** `ae_reconstruction_error` ist ein kraftvolles Anomalie-Signal — wenn der aktuelle Marktzustand schlecht durch die Hauptkomponenten erklärt wird, ist er "ungewöhnlich" relativ zur jüngsten Geschichte.
+
+**Parameter:**
+- `n_components` (default: 8) — Anzahl latenter Dimensionen
+- `exclude_prefixes` (default: ["ae_"]) — Feature-Prefixes die ausgeschlossen werden
+
+**Plugin:** `fwbg-core:autoencoder_features` | **Prefix:** `ae_` | **10 Features (default: 8 Latent + Error + Variance)**
+
+---
+
 ## Feature-Gruppen / Indicator Plugins
 
 Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indikator ist ein separates Plugin mit eigenen konfigurierbaren Parametern.
@@ -1002,6 +1128,10 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
 | `fair_value_gap` | fair_value_gap | 8 | Bull/Bear FVG, Distance, Size, Count |
 | `support_resistance` | support_resistance | 31 | S/R Zones, Trend, Pullbacks, Breakouts |
 | `cusum_events` | cusum | 6 | CUSUM Structural Breaks (AFML Ch. 2) |
+| `calendar_events` | calendar | 9 | Kalender-Anomalien (Turn-of-Month, OpEx, FOMC, NFP) |
+| `fractal_dimension` | fractal | 12 | Higuchi Fraktaldimension, Komplexität, Regime |
+| `wavelets` | wavelets | 27 | DWT Zeit-Frequenz Energie, Ratios |
+| `autoencoder_features` | autoencoder | 10 | PCA Latent Features, Reconstruction Error |
 
 ### Plugin-Konfiguration in Strategy JSON
 

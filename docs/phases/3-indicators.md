@@ -152,6 +152,10 @@ The decision is up to the plugin developer. Rule of thumb:
 | `price_action` | Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
 | `fair_value_gap` | Fair Value Gaps (Bull/Bear), Distance, Size, Count | `fvg_` |
 | `cusum_events` | CUSUM Structural Break Detection (de Prado AFML Ch. 2) | `cusum_` |
+| `calendar_events` | Calendar Anomalies (Turn-of-Month, OpEx, FOMC, NFP) | `cal_` |
+| `fractal_dimension` | Higuchi Fractal Dimension (Complexity, Regime) | `fd_` |
+| `wavelets` | Wavelet Decomposition (Time-Frequency Energy, Ratios) | `wt_` |
+| `autoencoder_features` | PCA Latent Features, Reconstruction Error (Anomaly) | `ae_` |
 | `time_season` | Hour, Day of Week, Month, Quarter, Seasonality | `time_`, `season_` |
 
 ### Premium Package (fwbg-premium)
