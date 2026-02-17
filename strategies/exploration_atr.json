@@ -274,6 +274,24 @@
           "quantile_window": 500,
           "n_regimes": 3
         }
+      },
+      {
+        "name": "fair_value_gap",
+        "params": {
+          "atr_period": 14,
+          "lookback": 100
+        }
+      },
+      {
+        "name": "support_resistance",
+        "params": {}
+      },
+      {
+        "name": "cusum_events",
+        "params": {
+          "threshold": 1.5,
+          "lookback": 100
+        }
       }
     ],
     "feature_selection": [
