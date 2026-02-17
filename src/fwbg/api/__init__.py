@@ -6,6 +6,7 @@ from fwbg.api.analyze import router as analyze_router
 from fwbg.api.plugins import router as plugins_router
 from fwbg.api.strategies import router as strategies_router
 from fwbg.api.runs import router as runs_router
+from fwbg.api.chart import router as chart_router
 
 
 def create_app() -> FastAPI:
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(plugins_router, prefix="/api")
     app.include_router(strategies_router, prefix="/api")
     app.include_router(runs_router, prefix="/api")
+    app.include_router(chart_router, prefix="/api")
 
     return app
 

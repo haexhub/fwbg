@@ -1,0 +1,30 @@
+{
+  "name": "test",
+  "pipeline": {
+    "indicators": [],
+    "preprocessing": [],
+    "feature_selection": [],
+    "data_loading": []
+  },
+  "exit_strategy": "fixed",
+  "exit_params": {
+    "tp": 50,
+    "sl": 50
+  },
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "trade_directions": [
+      "long",
+      "short"
+    ],
+    "hyperparameters": {}
+  },
+  "grids": {},
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8
+  },
+  "filters": {},
+  "resources": {}
+}
