@@ -161,8 +161,9 @@ Bootstrap-basierte Stability Selection. Wrapped einen Inner Selector (z.B. Borut
   {"name": "stability", "params": {
     "inner_selector": "boruta",
     "inner_params": {"n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5},
-    "n_bootstrap": 7, "threshold": 0.6, "bootstrap_ratio": 0.8, "max_features": 20
-  }}
+    "n_bootstrap": 7, "threshold": 0.6, "bootstrap_ratio": 0.8
+  }},
+  {"name": "correlation_filter", "params": {"max_correlation": 0.7, "max_features": 20}}
 ]
 ```
 
@@ -183,6 +184,30 @@ Findet alle statistisch relevanten Features via Shadow-Feature-Vergleich. Empfoh
   {"name": "boruta", "params": {"max_features": 20, "n_iter": 5, "min_z_score": 0.5}}
 ]
 ```
+
+#### correlation_filter (empfohlen nach stability)
+
+Greedy Korrelationsfilter: Entfernt redundante Features die hoch mit bereits selektierten Features korrelieren. Iteriert Features in Input-Reihenfolge (wichtigste zuerst) und behält ein Feature nur, wenn |corr| < `max_correlation` mit allen bereits behaltenen Features.
+
+**Problem:** Boruta/Stability selektiert oft 20+ Makro-Indikatoren die alle dasselbe messen (VIX, VVIX, SKEW, VXN, ...) — hoch korreliert, aber als separate Features gezählt. Das führt zu redundanter Information und Overfitting.
+
+| Parameter | Typ | Default | Beschreibung |
+|-----------|-----|---------|--------------|
+| `max_correlation` | float | `0.7` | Max erlaubte absolute Korrelation zwischen behaltenen Features |
+| `max_features` | int | `None` | Hard Cap auf Anzahl Output-Features |
+
+```json
+"feature_selection": [
+  {"name": "stability", "params": {
+    "inner_selector": "boruta",
+    "inner_params": {"n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5},
+    "n_bootstrap": 7, "threshold": 0.6, "bootstrap_ratio": 0.8
+  }},
+  {"name": "correlation_filter", "params": {"max_correlation": 0.7, "max_features": 20}}
+]
+```
+
+**Empfohlene Pipeline:** Stability Boruta (ohne `max_features`) selektiert alle robusten Features, dann entfernt correlation_filter redundante und setzt den Hard Cap. So bleiben orthogonale Informationen im finalen Feature-Set.
 
 ---
 
@@ -547,8 +572,9 @@ Optionale Sektion um nur bestimmte Assets zu testen oder auszuschließen. Kann a
       {"name": "stability", "params": {
         "inner_selector": "boruta",
         "inner_params": {"n_iter": 5, "n_estimators": 30, "max_depth": 4, "min_z_score": 0.5},
-        "n_bootstrap": 7, "threshold": 0.6, "max_features": 20
-      }}
+        "n_bootstrap": 7, "threshold": 0.6, "bootstrap_ratio": 0.8
+      }},
+      {"name": "correlation_filter", "params": {"max_correlation": 0.7, "max_features": 20}}
     ],
     "data_loading": [
       {"name": "macro_data", "source": "forexsb"},

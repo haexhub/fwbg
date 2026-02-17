@@ -118,7 +118,8 @@ Strategies are configured in JSON files under `strategies/`:
       {"name": "momentum", "params": {}}
     ],
     "feature_selection": [
-      {"name": "stability", "params": {"max_features": 20}}
+      {"name": "stability", "params": {"n_bootstrap": 7, "threshold": 0.6}},
+      {"name": "correlation_filter", "params": {"max_correlation": 0.7, "max_features": 20}}
     ]
   },
   "exit_strategy": "fixed",
@@ -179,7 +180,7 @@ fwbg/
 │   └── fwbg-premium/             # Premium plugins (separate pip package)
 │       ├── indicators/           # regime, structure, risk, distribution, dynamics, ...
 │       ├── preprocessing/        # fractional_diff
-│       ├── feature_selection/    # boruta, plateau, stability
+│       ├── feature_selection/    # boruta, plateau, stability, correlation_filter
 │       ├── exit_strategies/      # atr_based
 │       └── data_loading/         # macro_data, cot_positioning
 │
@@ -200,7 +201,7 @@ fwbg/
 - [Phase 1: Data Loading](docs/phases/1-data-loading.md) — External data, data sources
 - [Phase 2: Preprocessing](docs/phases/2-preprocessing.md) — Stationarity transformations
 - [Phase 3: Indicators](docs/phases/3-indicators.md) — Technical features, shift_features, safe_divide
-- [Phase 4: Feature Selection](docs/phases/4-feature-selection.md) — Boruta, stability selection
+- [Phase 4: Feature Selection](docs/phases/4-feature-selection.md) — Boruta, stability selection, correlation filter
 - [Phase 5: Exit Strategies](docs/phases/5-exit-strategies.md) — Fixed, ATR-based
 - [Phase 6: Risk Management](docs/phases/6-risk-management.md) — Kelly, vol-targeted Kelly
 - [Phase 7: Validation](docs/phases/7-validation.md) — Walk-forward CV, DSR, PBO, Monte Carlo

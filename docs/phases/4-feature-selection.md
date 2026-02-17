@@ -66,7 +66,20 @@ Bootstrap-based stability selection. Wraps an inner selector (e.g., Boruta) and 
 | `n_bootstrap` | `7` | Number of bootstrap samples |
 | `threshold` | `0.6` | Minimum selection rate (60% of bootstraps) |
 | `bootstrap_ratio` | `0.8` | Fraction of data per bootstrap |
-| `max_features` | `20` | Maximum number of features |
+| `max_features` | `None` | Maximum number of features (optional, prefer correlation_filter instead) |
+
+### correlation_filter (fwbg-premium) — Recommended after stability
+
+Greedy correlation-based redundancy filter. Removes features that are highly correlated with already-selected features. Designed to run **after** an importance-based selector (e.g., Stability Boruta) to ensure orthogonal information in the final feature set.
+
+**Problem it solves:** Boruta/Stability may select 20+ macro indicators that all measure "market fear" (VIX, VVIX, SKEW, VXN, ...) — highly correlated but counted as separate features. This leads to redundant information and overfitting.
+
+**Algorithm:** Iterates features in input order (most important first). Keeps a feature only if its absolute correlation with all already-kept features is below `max_correlation`.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_correlation` | `0.7` | Maximum absolute correlation allowed between kept features |
+| `max_features` | `None` | Hard cap on number of output features |
 
 ### plateau (fwbg-premium)
 
@@ -116,13 +129,21 @@ High stability is a good sign: the model consistently uses the same features reg
         },
         "n_bootstrap": 7,
         "threshold": 0.6,
-        "bootstrap_ratio": 0.8,
+        "bootstrap_ratio": 0.8
+      }
+    },
+    {
+      "name": "correlation_filter",
+      "params": {
+        "max_correlation": 0.7,
         "max_features": 20
       }
     }
   ]
 }
 ```
+
+**Recommended pipeline:** Stability Boruta (without `max_features`) selects all robust features, then correlation_filter removes redundant ones and applies the hard cap. This ensures orthogonal information in the final feature set.
 
 ---
 
