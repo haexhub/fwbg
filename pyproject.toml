@@ -70,9 +70,14 @@ ig = [
     "yfinance>=1.0",
     "munch>=4.0",  # Optional but recommended for trading-ig
 ]
+# REST API server
+api = [
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+]
 # All optional dependencies
 full = [
-    "fwbg[analytics,ig]",
+    "fwbg[analytics,ig,api]",
 ]
 
 [project.scripts]

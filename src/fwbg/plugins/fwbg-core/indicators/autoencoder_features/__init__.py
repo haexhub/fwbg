@@ -126,7 +126,7 @@ class AutoencoderFeaturesIndicator(BaseIndicator):
                 "step": 1,
             },
             "exclude_prefixes": {
-                "type": "list[str]",
+                "type": "list[string]",
                 "default": ["ae_"],
                 "description": "Column name prefixes to exclude from PCA input. By default excludes the autoencoder's own output columns (ae_*) to prevent circular dependencies. Add other prefixes to exclude specific indicator groups from the latent representation.",
             },

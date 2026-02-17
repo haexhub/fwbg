@@ -18,11 +18,14 @@ WORKDIR /app
 COPY pyproject.toml .
 COPY src/ src/
 
-# Package mit IG-Dependencies installieren
-RUN pip install --no-cache-dir -e ".[ig]"
+# Package mit IG + API Dependencies installieren
+RUN pip install --no-cache-dir -e ".[ig,api]"
 
 # Verzeichnisse für Volumes erstellen (damit Berechtigungen stimmen)
-RUN mkdir -p accounts data logs stats_export
+RUN mkdir -p accounts data logs stats_export strategies
+
+# API Port
+EXPOSE 8420
 
 # Startbefehl
 CMD ["python", "-m", "fwbg"]
