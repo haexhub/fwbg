@@ -323,9 +323,12 @@ def process_single_fold(
     # === TEST EVALUATION (on this fold's test set) ===
     test_result = evaluate_on_holdout(test_df, train_df, b, ctx)
 
-    if test_result["n_trades"] < ctx.min_trades:
+    if test_result["n_trades"] < 5:
         log(2, f"  Fold {fold.fold_id + 1}: Too few test trades ({test_result['n_trades']})", sym)
         return None, all_grid_results
+
+    if test_result["n_trades"] < ctx.min_trades:
+        log(1, f"  Fold {fold.fold_id + 1}: Low trade count ({test_result['n_trades']}/{ctx.min_trades})", sym)
 
     # Store fold results
     fold_result = {

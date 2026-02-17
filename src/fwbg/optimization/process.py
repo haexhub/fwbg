@@ -161,7 +161,17 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if len(all_fold_results) == 0:
             log(1, "SKIP - No successful folds", sym)
             report_done(sym, "no_successful_folds")
-            return {"symbol": sym, "status": "no_successful_folds", "grid_results": accumulated_grid_results}
+            result = {"symbol": sym, "status": "no_successful_folds", "grid_results": accumulated_grid_results}
+            # Include best grid result for diagnostics
+            valid = [g for g in accumulated_grid_results
+                     if g.get("inner_val_pnl") is not None
+                     and g["inner_val_pnl"] != float("-inf")]
+            if valid:
+                best_grid = max(valid, key=lambda g: g["inner_val_pnl"])
+                result["best_grid_result"] = best_grid
+                log(1, f"  Best grid result: TP={best_grid['tp_mult']}, SL={best_grid['sl_mult']}, "
+                       f"CT={best_grid.get('conf_thresh', '?')}, PnL={best_grid['inner_val_pnl']:.1f}", sym)
+            return result
 
         log(1, f"=== Walk-Forward Complete: {len(all_fold_results)}/{len(wf_folds)} successful folds ===", sym)
 

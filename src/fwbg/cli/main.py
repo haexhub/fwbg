@@ -5,6 +5,7 @@ Hauptprogramm für den Walk-Forward Optimizer
 import os
 import glob
 import json
+import math
 import warnings
 import argparse
 from functools import partial
@@ -12,6 +13,27 @@ from functools import partial
 import matplotlib
 matplotlib.use("Agg")
 from tabulate import tabulate
+
+class _SafeJsonEncoder(json.JSONEncoder):
+    """JSON encoder that handles inf/nan as null."""
+
+    def default(self, obj):
+        if isinstance(obj, float) and (math.isinf(obj) or math.isnan(obj)):
+            return None
+        return str(obj)
+
+    def encode(self, obj):
+        return super().encode(self._sanitize(obj))
+
+    def _sanitize(self, obj):
+        if isinstance(obj, float) and (math.isinf(obj) or math.isnan(obj)):
+            return None
+        if isinstance(obj, dict):
+            return {k: self._sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._sanitize(v) for v in obj]
+        return obj
+
 
 from fwbg.data import config as data_config
 from fwbg.data.config import (
@@ -302,7 +324,7 @@ def run_optimizer(
             grid_data["best_candidate"] = result["best_candidate"]
 
         with open(grid_file, "w") as f:
-            json.dump(grid_data, f, indent=2, default=str)
+            json.dump(grid_data, f, indent=2, cls=_SafeJsonEncoder)
 
         # Zusammenfassung für später sammeln (wird nach Progress-UI ausgegeben)
         output_lines = []
@@ -367,6 +389,21 @@ def run_optimizer(
                     output_lines.append(f"  Plot: {plots_path}/{sym}.png")
                 except Exception as e:
                     output_lines.append(f"  Plot-Fehler: {e}")
+
+        elif status == "no_successful_folds":
+            grid_count = len(result.get("grid_results", []))
+            output_lines.append(f"\n{'='*60}")
+            output_lines.append(f"✗ {sym} - NO_SUCCESSFUL_FOLDS")
+            output_lines.append(f"{'='*60}")
+            output_lines.append(f"  {grid_count} Kombinationen getestet, kein Fold mit genug Test-Trades")
+
+            best_grid = result.get("best_grid_result")
+            if best_grid:
+                output_lines.append(f"  Best Grid: TP={best_grid.get('tp_mult', '?')}, "
+                                    f"SL={best_grid.get('sl_mult', '?')}, "
+                                    f"CT={best_grid.get('conf_thresh', '?')}, "
+                                    f"Inner PnL={best_grid.get('inner_val_pnl', 0):.1f}, "
+                                    f"Stability={best_grid.get('fold_stability', 0):.0%}")
 
         else:
             # Andere Status (insufficient_data, etc.)
@@ -642,7 +679,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     elif args.load:
         run_data = load_run(args.load)
         if run_data:
-            print(json.dumps(run_data, indent=2, default=str))
+            print(json.dumps(run_data, indent=2, cls=_SafeJsonEncoder))
         else:
             print(f"Run {args.load} nicht gefunden.")
 
