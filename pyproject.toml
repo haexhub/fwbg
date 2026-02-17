@@ -23,6 +23,8 @@ classifiers = [
 ]
 
 dependencies = [
+    # SDK (plugin base classes, types, enums)
+    "fwbg-sdk>=1.0.0",
     # Core Data Processing
     "numpy>=2.2",
     "pandas>=3.0",

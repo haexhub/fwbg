@@ -11,7 +11,7 @@ license = {text = "Commercial"}
 authors = [
     {name = "FWBG Team"}
 ]
-dependencies = ["fwbg>=2.2.1"]
+dependencies = ["fwbg-sdk>=1.0.0", "fwbg>=2.2.1"]
 
 [project.entry-points."fwbg.plugin_packages"]
 fwbg-premium = "fwbg_premium:get_plugins_dir"

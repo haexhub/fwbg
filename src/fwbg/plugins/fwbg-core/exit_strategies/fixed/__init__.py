@@ -7,8 +7,7 @@ from typing import Dict, Any, Iterator, Tuple, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from fwbg.plugins import BaseExitStrategy
-from fwbg.core import register_exit_strategy
+from fwbg_sdk import BaseExitStrategy, register_exit_strategy
 from fwbg.simulation import compute_targets_numba
 
 if TYPE_CHECKING:
