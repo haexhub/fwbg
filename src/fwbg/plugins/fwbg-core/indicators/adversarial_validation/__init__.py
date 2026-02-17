@@ -37,7 +37,8 @@ def _compute_adversarial_auc(old_data: np.ndarray, new_data: np.ndarray):
     X = np.vstack([old_data, new_data])
     y = np.concatenate([np.zeros(len(old_data)), np.ones(len(new_data))])
 
-    # Remove rows with NaN
+    # Replace Inf/-Inf with NaN, then remove rows with NaN
+    X[~np.isfinite(X)] = np.nan
     valid = ~np.isnan(X).any(axis=1)
     X, y = X[valid], y[valid]
 
@@ -48,7 +49,7 @@ def _compute_adversarial_auc(old_data: np.ndarray, new_data: np.ndarray):
     medians = np.nanmedian(X, axis=0)
     for j in range(X.shape[1]):
         mask = np.isnan(X[:, j])
-        X[mask, j] = medians[j]
+        X[mask, j] = medians[j] if np.isfinite(medians[j]) else 0.0
 
     scaler = StandardScaler()
     X = scaler.fit_transform(X)

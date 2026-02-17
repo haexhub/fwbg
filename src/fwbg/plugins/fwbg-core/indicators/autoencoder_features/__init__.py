@@ -61,15 +61,14 @@ class AutoencoderFeaturesIndicator(BaseIndicator):
 
         X = df[feature_cols].values.astype(np.float64)
 
+        # Replace Inf/-Inf with NaN first, then impute all NaN
+        X[~np.isfinite(X)] = np.nan
+
         # Fill NaN with column median (robust to outliers)
         medians = np.nanmedian(X, axis=0)
-        nan_mask = np.isnan(X)
         for j in range(X.shape[1]):
-            X[nan_mask[:, j], j] = medians[j]
-
-        # Handle columns that are entirely NaN (median is NaN)
-        still_nan = np.isnan(X)
-        X[still_nan] = 0.0
+            mask = np.isnan(X[:, j])
+            X[mask, j] = medians[j] if np.isfinite(medians[j]) else 0.0
 
         # Standardize
         scaler = StandardScaler()
@@ -113,6 +112,24 @@ class AutoencoderFeaturesIndicator(BaseIndicator):
         return {
             "n_components": 8,
             "exclude_prefixes": ["ae_"],
+        }
+
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "n_components": {
+                "type": "int",
+                "default": 8,
+                "description": "Number of PCA components (latent dimensions) to extract from all numeric indicator features. Each component captures an orthogonal mode of variation. More components preserve more information but increase dimensionality. The reconstruction error feature acts as an anomaly detector regardless of this setting.",
+                "min": 1,
+                "max": 500,
+                "step": 1,
+            },
+            "exclude_prefixes": {
+                "type": "list[str]",
+                "default": ["ae_"],
+                "description": "Column name prefixes to exclude from PCA input. By default excludes the autoencoder's own output columns (ae_*) to prevent circular dependencies. Add other prefixes to exclude specific indicator groups from the latent representation.",
+            },
         }
 
 
