@@ -18,12 +18,7 @@
         "params": {
           "auto_d": false,
           "default_d": 0.4,
-          "columns": [
-            "O",
-            "H",
-            "L",
-            "C"
-          ]
+          "columns": ["O", "H", "L", "C"]
         }
       }
     ],
@@ -31,33 +26,12 @@
       {
         "name": "trend",
         "params": {
-          "adx_periods": [
-            7,
-            14,
-            21
-          ],
-          "ema_periods": [
-            8,
-            21,
-            50,
-            100,
-            200
-          ],
-          "sma_periods": [
-            20,
-            50,
-            200
-          ],
-          "cci_periods": [
-            14,
-            20
-          ],
+          "adx_periods": [7, 14, 21],
+          "ema_periods": [8, 21, 50, 100, 200],
+          "sma_periods": [20, 50, 200],
+          "cci_periods": [14, 20],
           "aroon_period": 25,
-          "er_periods": [
-            10,
-            20,
-            50
-          ],
+          "er_periods": [10, 20, 50],
           "supertrend_period": 14,
           "supertrend_multiplier": 3.0
         }
@@ -65,116 +39,47 @@
       {
         "name": "momentum",
         "params": {
-          "rsi_periods": [
-            7,
-            14,
-            21
-          ],
-          "stoch_periods": [
-            14,
-            21
-          ],
-          "williams_periods": [
-            14,
-            21
-          ],
-          "roc_periods": [
-            5,
-            10,
-            20
-          ]
+          "rsi_periods": [7, 14, 21],
+          "stoch_periods": [14, 21],
+          "williams_periods": [14, 21],
+          "roc_periods": [5, 10, 20]
         }
       },
       {
         "name": "volatility",
         "params": {
-          "bb_periods": [
-            20
-          ],
-          "atr_periods": [
-            7,
-            14,
-            21
-          ],
-          "vol_est_windows": [
-            20,
-            50
-          ]
+          "bb_periods": [20],
+          "atr_periods": [7, 14, 21],
+          "vol_est_windows": [20, 50]
         }
       },
       {
         "name": "regime",
         "params": {
-          "hurst_windows": [
-            100,
-            200,
-            500
-          ],
+          "hurst_windows": [100, 200, 500],
           "step": 10,
-          "entropy_windows": [
-            50,
-            100
-          ],
-          "vr_windows": [
-            100,
-            200
-          ],
-          "vr_lags": [
-            5,
-            10
-          ]
+          "entropy_windows": [50, 100],
+          "vr_windows": [100, 200],
+          "vr_lags": [5, 10]
         }
       },
       {
         "name": "structure",
         "params": {
-          "fft_windows": [
-            64,
-            128,
-            256
-          ],
-          "path_windows": [
-            10,
-            20,
-            50,
-            100
-          ],
-          "convexity_periods": [
-            21,
-            50
-          ],
-          "event_periods": [
-            20,
-            50
-          ],
-          "vwap_windows": [
-            20,
-            50,
-            100
-          ]
+          "fft_windows": [64, 128, 256],
+          "path_windows": [10, 20, 50, 100],
+          "convexity_periods": [21, 50],
+          "event_periods": [20, 50],
+          "vwap_windows": [20, 50, 100]
         }
       },
       {
         "name": "risk",
         "params": {
-          "dd_windows": [
-            50,
-            100,
-            200
-          ],
-          "cvar_windows": [
-            50,
-            100
-          ],
-          "cvar_percentiles": [
-            5,
-            1
-          ],
-          "vov_windows": [
-            20,
-            50,
-            100
-          ],
+          "dd_windows": [50, 100, 200],
+          "cvar_windows": [50, 100],
+          "cvar_percentiles": [5, 1],
+          "vov_windows": [20, 50, 100],
           "compute_correlations": true
         }
       },
@@ -195,11 +100,7 @@
       {
         "name": "distribution",
         "params": {
-          "windows": [
-            20,
-            50,
-            100
-          ],
+          "windows": [20, 50, 100],
           "z_score_lookback": 200,
           "compute_changes": true
         }
@@ -207,17 +108,8 @@
       {
         "name": "dynamics",
         "params": {
-          "lookbacks": [
-            4,
-            8,
-            24
-          ],
-          "lag_periods": [
-            4,
-            8,
-            24,
-            48
-          ]
+          "lookbacks": [4, 8, 24],
+          "lag_periods": [4, 8, 24, 48]
         }
       },
       {
@@ -225,10 +117,7 @@
         "params": {
           "h4_bars": 4,
           "d1_bars": 24,
-          "ema_periods": [
-            20,
-            50
-          ]
+          "ema_periods": [20, 50]
         }
       },
       {
@@ -338,7 +227,12 @@
         "name": "stability",
         "params": {
           "inner_selector": "boruta",
-          "inner_params": {"n_iter": 8, "n_estimators": 50, "max_depth": 5, "min_z_score": 0.5},
+          "inner_params": {
+            "n_iter": 8,
+            "n_estimators": 50,
+            "max_depth": 5,
+            "min_z_score": 0.5
+          },
           "n_bootstrap": 7,
           "threshold": 0.6,
           "bootstrap_ratio": 0.8
@@ -373,10 +267,7 @@
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": [
-      "long",
-      "short"
-    ],
+    "trade_directions": ["long", "short"],
     "hyperparameters": {
       "n_estimators": 100,
       "max_depth": 6,
@@ -394,10 +285,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -408,10 +323,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -422,10 +361,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -436,10 +399,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -451,10 +438,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -465,10 +476,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -479,10 +514,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -493,10 +552,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -507,10 +590,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -522,10 +629,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -536,10 +667,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -550,10 +705,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -564,10 +743,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     },
@@ -578,10 +781,34 @@
       "timeout_bars": [null, 24, 48],
       "regime_filter_grid": {
         "condition_grids": [
-          {"column": "trend_adx_14", "operator": ">=", "values": [null, 25], "directions": 6, "else_directions": 0},
-          {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0},
-          {"column": "regime_hurst_100", "operator": ">=", "values": [null, 0.45], "directions": 6, "else_directions": 0},
-          {"column": "regime_cluster_label", "operator": ">=", "values": [null, 1, 2], "directions": 6, "else_directions": 0}
+          {
+            "column": "trend_adx_14",
+            "operator": ">=",
+            "values": [null, 25],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "macro_vix",
+            "operator": "<=",
+            "values": [null, 30],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_hurst_100",
+            "operator": ">=",
+            "values": [null, 0.45],
+            "directions": 6,
+            "else_directions": 0
+          },
+          {
+            "column": "regime_cluster_label",
+            "operator": ">=",
+            "values": [null, 1, 2],
+            "directions": 6,
+            "else_directions": 0
+          }
         ]
       }
     }
@@ -613,7 +840,7 @@
     "ram_per_worker_gb": 4.0,
     "min_free_ram_percent": 0.15,
     "max_cpu_percent": 0.8,
-    "max_concurrent_assets": 2,
+    "max_concurrent_assets": 1,
     "xgboost_n_jobs": 0
   }
 }
