@@ -26,11 +26,13 @@ Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur 
 16. [Struktur Features](#16-struktur-features-path_-fractal_-convex_-structure_)
 17. [Korrelations Features](#17-korrelations-features-corr_-lead_lag_)
 18. [Risk/Tail-Risk Features](#18-risktail-risk-features-risk_)
-19. [Microstructure Features](#19-microstructure-features-micro_) ⭐ NEU
-20. [Macro Surprise Features](#20-macro-surprise-features-macsurp_) ⭐ NEU
+19. [Microstructure Features](#19-microstructure-features-micro_)
+20. [Macro Surprise Features](#20-macro-surprise-features-macsurp_)
 21. [Makro Features](#21-makro-features-macro_)
-22. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
-23. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
+22. [Fair Value Gap Features](#22-fair-value-gap-features-fvg_)
+23. [Support/Resistance Features](#23-supportresistance-features-sr_)
+24. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
+25. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
 
 ---
 
@@ -613,8 +615,7 @@ Kombiniert mehrere Warnsignale zu einem Score.
 
 ---
 
-## 19. Microstructure Features (`micro_`) ⭐ NEU
-
+## 19. Microstructure Features (`micro_`)
 Analysieren die Intrabar-Dynamik und Orderflow-Muster.
 
 **Plugin:** `microstructure`
@@ -711,8 +712,7 @@ Kombinierter Orderflow-Score.
 
 ---
 
-## 20. Macro Surprise Features (`macsurp_`) ⭐ NEU
-
+## 20. Macro Surprise Features (`macsurp_`)
 Analysieren Gap-Verhalten und Informationsflüsse zwischen Sessions.
 
 **Plugin:** `macro_surprise`
@@ -867,6 +867,86 @@ Für jeden Makro-Indikator werden Change-Features mit folgenden Lookbacks generi
 
 ---
 
+## 22. Fair Value Gap Features (`fvg_`)
+
+Fair Value Gaps (FVG) sind Preislücken zwischen drei aufeinanderfolgenden Bars, die auf aggressives Kaufen/Verkaufen hindeuten.
+
+| Feature | Beschreibung |
+|---------|-------------|
+| `fvg_bull_active` | Bullish FVG aktiv (aktuelle Bar liegt über dem Gap) |
+| `fvg_bear_active` | Bearish FVG aktiv (aktuelle Bar liegt unter dem Gap) |
+| `fvg_bull_dist` | Normalisierte Distanz zum nächsten Bull-FVG |
+| `fvg_bear_dist` | Normalisierte Distanz zum nächsten Bear-FVG |
+| `fvg_bull_size` | Größe des nächsten Bull-FVG (normalisiert) |
+| `fvg_bear_size` | Größe des nächsten Bear-FVG (normalisiert) |
+| `fvg_in_gap` | Preis befindet sich aktuell in einem FVG |
+| `fvg_count` | Anzahl aktiver FVGs |
+
+**Plugin:** `fwbg-core:fair_value_gap` | **Prefix:** `fvg_` | **8 Features**
+
+---
+
+## 23. Support/Resistance Features (`sr_`)
+
+Support/Resistance-Zonen basierend auf Swing-Highs/Lows mit Clustering und Trend-Klassifikation.
+
+### Basis S/R (Hourly)
+
+| Feature | Beschreibung |
+|---------|-------------|
+| `sr_dist_nearest_support` | Normalisierte Distanz zur nächsten Support-Zone |
+| `sr_dist_nearest_resistance` | Normalisierte Distanz zur nächsten Resistance-Zone |
+| `sr_support_strength` | Stärke der Support-Zone (Touch-Count) |
+| `sr_resistance_strength` | Stärke der Resistance-Zone (Touch-Count) |
+| `sr_in_support_zone` | Preis in Support-Zone (0/1) |
+| `sr_in_resistance_zone` | Preis in Resistance-Zone (0/1) |
+| `sr_nearest_is_flip_zone` | Nächste Zone ist eine Flip-Zone (S→R oder R→S) |
+
+### Daily S/R (`sr_d1_*`)
+
+Gleiche 7 Features, berechnet auf Daily-Timeframe für stärkere Zonen.
+
+### Trend-Klassifikation
+
+| Feature | Beschreibung |
+|---------|-------------|
+| `sr_trend_class` | Trend: 1=Uptrend, -1=Downtrend, 0=Range |
+| `sr_pullback_depth` | Tiefe des Pullbacks relativ zum Trend (0-1) |
+| `sr_ma_alignment` | MA-Alignment Score (MA20/50/200 Stacking) |
+| `sr_price_vs_ma20` | Preis relativ zu MA20 (normalisiert) |
+| `sr_price_vs_ma50` | Preis relativ zu MA50 (normalisiert) |
+| `sr_price_vs_ma200` | Preis relativ zu MA200 (normalisiert) |
+| `sr_trend_break` | Trendlinie gebrochen (0/1) |
+
+### Confluence (Trend + S/R)
+
+| Feature | Beschreibung |
+|---------|-------------|
+| `sr_at_support_in_uptrend` | Am Support im Uptrend (Long-Setup) |
+| `sr_at_resistance_in_downtrend` | An Resistance im Downtrend (Short-Setup) |
+| `sr_at_support_in_range` | Am Support in Range |
+| `sr_at_resistance_in_range` | An Resistance in Range |
+
+### Range & Breakout
+
+| Feature | Beschreibung |
+|---------|-------------|
+| `sr_range_width` | Breite der aktuellen Range (normalisiert) |
+| `sr_range_position` | Position in der Range (0=Bottom, 1=Top) |
+| `sr_breakout_up` | Ausbruch über Resistance (0/1) |
+| `sr_breakout_down` | Ausbruch unter Support (0/1) |
+
+### Flip Zones
+
+| Feature | Beschreibung |
+|---------|-------------|
+| `sr_at_flipped_support` | An Zone die von Resistance zu Support gewechselt hat |
+| `sr_at_flipped_resistance` | An Zone die von Support zu Resistance gewechselt hat |
+
+**Plugin:** `fwbg-premium:support_resistance` | **Prefix:** `sr_` | **31 Features**
+
+---
+
 ## Feature-Gruppen / Indicator Plugins
 
 Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indikator ist ein separates Plugin mit eigenen konfigurierbaren Parametern.
@@ -888,8 +968,10 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
 | `structure` | structure | ~20 | FFT, Path Efficiency, VWAP |
 | `regime` | regime | ~6 | Hurst-Exponent |
 | `risk` | risk | ~25 | Drawdown, CVaR, Vol-of-Vol |
-| `microstructure` | microstructure | ~15 | Intrabar-Analyse, Orderflow ⭐ NEU |
-| `macro_surprise` | macro_surprise | ~12 | Gap-Analyse, Surprises ⭐ NEU |
+| `microstructure` | microstructure | ~15 | Intrabar-Analyse, Orderflow |
+| `macro_surprise` | macro_surprise | ~12 | Gap-Analyse, Surprises |
+| `fair_value_gap` | fair_value_gap | 8 | Bull/Bear FVG, Distance, Size, Count |
+| `support_resistance` | support_resistance | 31 | S/R Zones, Trend, Pullbacks, Breakouts |
 
 ### Plugin-Konfiguration in Strategy JSON
 
@@ -972,8 +1054,7 @@ Macht Zeitreihen stationär unter Beibehaltung von Memory (nach López de Prado)
 
 Das System unterstützt verschiedene Methoden zur automatischen Feature-Auswahl.
 
-### Boruta (Default) ⭐ NEU
-
+### Boruta (Default)
 Boruta ist ein "All-Relevant" Feature Selection Algorithmus:
 
 1. Erstellt **Shadow-Features** (permutierte Kopien aller Features)
@@ -1033,8 +1114,7 @@ Das alte Verhalten mit festem top_n=5 Limit pro Feature-Gruppe:
 }
 ```
 
-### Correlation Filter ⭐ NEU
-
+### Correlation Filter
 Greedy Korrelationsfilter: Entfernt redundante Features die hoch miteinander korrelieren. Designed als Nachbearbeitung nach importance-basierter Selektion (z.B. Stability Boruta).
 
 **Problem:** Boruta/Stability selektiert oft viele Makro-Indikatoren die dasselbe messen (VIX, VVIX, SKEW, VXN, ...) — hoch korreliert, aber als separate Features gezählt.
@@ -1102,8 +1182,7 @@ Bricht die Evaluation eines Kandidaten ab, wenn mathematisch nicht mehr genug pr
 | `min_fold_stability` | 0.5 | Mindestanteil profitabler Folds (50%) |
 | `early_termination` | true | Early Termination aktivieren |
 
-### First-Fold Sanity Check ⭐ NEU
-
+### First-Fold Sanity Check
 Ein zusätzlicher Sicherheitsmechanismus, der nach dem ersten Fold prüft, ob das Ergebnis **katastrophal** ist.
 
 **Wichtig:** Dieser Check ist bewusst sehr konservativ - nur extreme Fälle werden abgebrochen. Normal schlechte Folds werden durchgelassen, da sich spätere Folds erholen können.

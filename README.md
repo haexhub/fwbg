@@ -163,7 +163,7 @@ fwbg/
 ├── src/fwbg/
 │   ├── plugins/                  # Plugin system
 │   │   ├── fwbg-core/            # Core plugins (free)
-│   │   │   ├── indicators/       # trend, momentum, volatility, price_action, time_season
+│   │   │   ├── indicators/       # trend, momentum, volatility, price_action, time_season, fair_value_gap
 │   │   │   ├── exit_strategies/  # fixed
 │   │   │   └── risk_management/  # kelly, vol_targeted_kelly
 │   │   └── *.py                  # Plugin base classes
@@ -178,7 +178,7 @@ fwbg/
 │
 ├── packages/
 │   └── fwbg-premium/             # Premium plugins (separate pip package)
-│       ├── indicators/           # regime, structure, risk, distribution, dynamics, ...
+│       ├── indicators/           # regime, structure, risk, distribution, dynamics, support_resistance, ...
 │       ├── preprocessing/        # fractional_diff
 │       ├── feature_selection/    # boruta, plateau, stability, correlation_filter
 │       ├── exit_strategies/      # atr_based
