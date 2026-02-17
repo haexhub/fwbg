@@ -163,7 +163,7 @@ fwbg/
 ├── src/fwbg/
 │   ├── plugins/                  # Plugin system
 │   │   ├── fwbg-core/            # Core plugins (free)
-│   │   │   ├── indicators/       # trend, momentum, volatility, price_action, time_season, fair_value_gap
+│   │   │   ├── indicators/       # trend, momentum, volatility, price_action, time_season, fair_value_gap, cusum_events
 │   │   │   ├── exit_strategies/  # fixed
 │   │   │   └── risk_management/  # kelly, vol_targeted_kelly
 │   │   └── *.py                  # Plugin base classes

@@ -31,8 +31,9 @@ Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur 
 21. [Makro Features](#21-makro-features-macro_)
 22. [Fair Value Gap Features](#22-fair-value-gap-features-fvg_)
 23. [Support/Resistance Features](#23-supportresistance-features-sr_)
-24. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
-25. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
+24. [CUSUM Event Features](#24-cusum-event-features-cusum_)
+25. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
+26. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
 
 ---
 
@@ -947,6 +948,34 @@ Gleiche 7 Features, berechnet auf Daily-Timeframe für stärkere Zonen.
 
 ---
 
+## 24. CUSUM Event Features (`cusum_`)
+
+CUSUM (Cumulative Sum) Structural Break Detection nach de Prado (AFML Ch. 2). Erkennt strukturelle Brüche im Preisprozess — Momente, in denen die kumulative Abweichung der Returns von ihrem Erwartungswert einen Schwellenwert überschreitet.
+
+| Feature | Beschreibung |
+|---------|-------------|
+| `cusum_pos_event` | Positiver struktureller Bruch erkannt (0/1) |
+| `cusum_neg_event` | Negativer struktureller Bruch erkannt (0/1) |
+| `cusum_pos_value` | Aktuelle positive kumulative Summe (normalisiert, 0-1) |
+| `cusum_neg_value` | Aktuelle negative kumulative Summe (normalisiert, 0-1) |
+| `cusum_intensity` | Stärke des Events (Overshoot über Threshold, >= 1.0 bei Event) |
+| `cusum_bars_since` | Bars seit letztem Event (normalisiert durch Lookback) |
+
+**Algorithmus:**
+```
+S_pos[t] = max(0, S_pos[t-1] + (r[t] - E[r]))
+S_neg[t] = min(0, S_neg[t-1] + (r[t] - E[r]))
+Event wenn S_pos > h·σ oder S_neg < -h·σ (dann Reset)
+```
+
+**Parameter:**
+- `threshold` (default: 1.5) — Multiplikator für Rolling-Standardabweichung
+- `lookback` (default: 100) — Fenster für E[r] und σ Berechnung
+
+**Plugin:** `fwbg-core:cusum_events` | **Prefix:** `cusum_` | **6 Features**
+
+---
+
 ## Feature-Gruppen / Indicator Plugins
 
 Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indikator ist ein separates Plugin mit eigenen konfigurierbaren Parametern.
@@ -972,6 +1001,7 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
 | `macro_surprise` | macro_surprise | ~12 | Gap-Analyse, Surprises |
 | `fair_value_gap` | fair_value_gap | 8 | Bull/Bear FVG, Distance, Size, Count |
 | `support_resistance` | support_resistance | 31 | S/R Zones, Trend, Pullbacks, Breakouts |
+| `cusum_events` | cusum | 6 | CUSUM Structural Breaks (AFML Ch. 2) |
 
 ### Plugin-Konfiguration in Strategy JSON
 

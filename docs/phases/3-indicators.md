@@ -151,6 +151,7 @@ The decision is up to the plugin developer. Rule of thumb:
 | `volatility` | Bollinger Bands, ATR, Volatility Estimators, Vol Compression, RV vs IV | `vol_` |
 | `price_action` | Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
 | `fair_value_gap` | Fair Value Gaps (Bull/Bear), Distance, Size, Count | `fvg_` |
+| `cusum_events` | CUSUM Structural Break Detection (de Prado AFML Ch. 2) | `cusum_` |
 | `time_season` | Hour, Day of Week, Month, Quarter, Seasonality | `time_`, `season_` |
 
 ### Premium Package (fwbg-premium)
