@@ -78,7 +78,7 @@ class TestStrategyLoading:
         assert len(indicators) == 2
         assert indicators[0]["name"] == "trend"
         assert indicators[1]["name"] == "momentum"
-        forex_grid = config.get_grid_for_class("FOREX")
+        forex_grid = config.get_grid("EURUSD", "FOREX")
         assert 1.5 in forex_grid.tp
         assert 2.0 in forex_grid.tp
 

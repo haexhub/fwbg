@@ -123,7 +123,7 @@ class SimulationContext:
             asset: AssetConfig für das zu optimierende Asset
             strategy: StrategyConfig mit allen Strategie-Parametern
         """
-        grid = strategy.get_grid_for_class(asset.asset_class)
+        grid = strategy.get_grid(asset.symbol, asset.asset_class)
 
         # Separate L/S Grids wenn aktiviert
         long_tp, long_sl, long_ct = None, None, None

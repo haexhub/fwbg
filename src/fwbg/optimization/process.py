@@ -113,7 +113,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         ctx = SimulationContext.create(asset, strategy)
 
         # Kurzreferenzen für lokale Verwendung
-        grid = strategy.get_grid_for_class(asset.asset_class)
+        grid = strategy.get_grid(sym, asset.asset_class)
 
         # === WALK-FORWARD FOLDS ERSTELLEN ===
         report_phase(sym, f"Creating {WALK_FORWARD_FOLDS} walk-forward folds...")

@@ -411,9 +411,14 @@ class StrategyConfig:
             data = json.load(f)
         return cls.from_dict(data)
 
-    def get_grid_for_class(self, asset_class: str) -> GridConfig:
-        """Gibt das Grid für eine Asset-Klasse zurück."""
+    def get_grid(self, symbol: str, asset_class: str) -> GridConfig:
+        """Gibt das Grid für ein Symbol oder eine Asset-Klasse zurück.
+
+        Resolution order: symbol → asset_class → FOREX → default.
+        """
         if self.grids:
+            if symbol in self.grids:
+                return self.grids[symbol]
             return self.grids.get(
                 asset_class, self.grids.get("FOREX", GridConfig())
             )
