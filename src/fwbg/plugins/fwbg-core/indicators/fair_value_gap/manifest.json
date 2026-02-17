@@ -1,0 +1,7 @@
+{
+  "name": "fair_value_gap",
+  "version": "1.0.0",
+  "description": "Fair Value Gap (FVG) detection: 3-candle imbalance zones from Smart Money Concepts",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
