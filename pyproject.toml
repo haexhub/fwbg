@@ -37,6 +37,8 @@ dependencies = [
     "numba>=0.63",
     # Signal Processing
     "PyWavelets>=1.6",
+    # Topological Data Analysis
+    "ripser>=0.6",
     # Statistics (needed for preprocessing/stationarity tests)
     "statsmodels>=0.14",
     # Visualization (needed for CLI)

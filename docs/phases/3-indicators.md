@@ -156,6 +156,8 @@ The decision is up to the plugin developer. Rule of thumb:
 | `fractal_dimension` | Higuchi Fractal Dimension (Complexity, Regime) | `fd_` |
 | `wavelets` | Wavelet Decomposition (Time-Frequency Energy, Ratios) | `wt_` |
 | `autoencoder_features` | PCA Latent Features, Reconstruction Error (Anomaly) | `ae_` |
+| `topological_features` | Persistent Homology (Takens Embedding, H0/H1, Persistence Entropy) | `tda_` |
+| `adversarial_validation` | Distribution Shift Detection (AUC, Drift Score, Stability) | `adv_` |
 | `time_season` | Hour, Day of Week, Month, Quarter, Seasonality | `time_`, `season_` |
 
 ### Premium Package (fwbg-premium)

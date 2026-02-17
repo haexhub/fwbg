@@ -1,0 +1,7 @@
+{
+  "name": "topological_features",
+  "version": "1.0.0",
+  "description": "Topological Data Analysis features via Persistent Homology (Takens Embedding + Ripser)",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

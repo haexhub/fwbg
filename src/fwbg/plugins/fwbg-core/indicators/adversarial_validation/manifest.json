@@ -1,0 +1,7 @@
+{
+  "name": "adversarial_validation",
+  "version": "1.0.0",
+  "description": "Adversarial Validation features \u2014 detects distribution shift between recent and older market data",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
