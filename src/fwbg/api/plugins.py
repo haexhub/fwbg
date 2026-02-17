@@ -98,7 +98,7 @@ def run_plugin_tests(fqn: str) -> dict:
     from fwbg.pipeline.registry import get_core_plugins_dir
 
     plugin_test_dir = get_core_plugins_dir() / namespace / phase_dir / plugin_name
-    test_file = plugin_test_dir / "test_plugin.py"
+    test_file = plugin_test_dir / "tests.py"
 
     # Also check installed packages
     if not test_file.exists():
@@ -109,7 +109,7 @@ def run_plugin_tests(fqn: str) -> dict:
             for ep in eps:
                 get_dir = ep.load()
                 pkg_dir = get_dir()
-                candidate = pkg_dir / namespace / phase_dir / plugin_name / "test_plugin.py"
+                candidate = pkg_dir / namespace / phase_dir / plugin_name / "tests.py"
                 if candidate.exists():
                     test_file = candidate
                     break
