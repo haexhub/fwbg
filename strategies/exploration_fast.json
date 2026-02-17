@@ -160,6 +160,18 @@
           "quantile_window": 500,
           "n_regimes": 3
         }
+      },
+      {
+        "name": "fair_value_gap",
+        "params": {}
+      },
+      {
+        "name": "support_resistance",
+        "params": {}
+      },
+      {
+        "name": "cusum_events",
+        "params": {}
       }
     ],
     "feature_selection": [
