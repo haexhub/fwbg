@@ -1,0 +1,6 @@
+{
+  "name": "correlation_filter",
+  "version": "1.0.0",
+  "description": "Removes redundant features by filtering highly correlated pairs",
+  "phase": "feature_selection"
+}
