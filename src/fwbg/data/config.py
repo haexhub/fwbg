@@ -29,11 +29,18 @@ WALK_FORWARD_FOLDS = 8
 
 
 def convert_numpy(obj):
-    """Konvertiert numpy-Typen zu Python-nativen Typen für JSON-Serialisierung."""
+    """Konvertiert numpy-Typen zu Python-nativen Typen für JSON-Serialisierung.
+
+    Ersetzt inf/nan durch None (nicht JSON-serialisierbar).
+    """
+    import math
     if isinstance(obj, (np.integer, np.int64, np.int32)):
         return int(obj)
     elif isinstance(obj, (np.floating, np.float64, np.float32)):
-        return float(obj)
+        val = float(obj)
+        return None if math.isinf(val) or math.isnan(val) else val
+    elif isinstance(obj, float):
+        return None if math.isinf(obj) or math.isnan(obj) else obj
     elif isinstance(obj, (np.bool_, bool)):
         return bool(obj)
     elif isinstance(obj, dict):
