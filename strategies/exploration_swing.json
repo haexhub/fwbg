@@ -317,6 +317,20 @@
         "params": {
           "n_components": 10
         }
+      },
+      {
+        "name": "topological_features",
+        "params": {
+          "windows": [100, 200],
+          "embedding_dim": 3
+        }
+      },
+      {
+        "name": "adversarial_validation",
+        "params": {
+          "windows": [200, 500],
+          "step": 20
+        }
       }
     ],
     "feature_selection": [

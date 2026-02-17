@@ -36,8 +36,10 @@ Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur 
 26. [Fractal Dimension Features](#26-fractal-dimension-features-fd_)
 27. [Wavelet Features](#27-wavelet-features-wt_)
 28. [Autoencoder / PCA Features](#28-autoencoder--pca-features-ae_)
-29. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
-26. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
+29. [Topological Data Analysis Features](#29-topological-data-analysis-features-tda_)
+30. [Adversarial Validation Features](#30-adversarial-validation-features-adv_)
+31. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
+32. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
 
 ---
 
@@ -1102,6 +1104,71 @@ Latent Feature Extraction via PCA (Principal Component Analysis) — komprimiert
 
 ---
 
+## 29. Topological Data Analysis Features (`tda_`)
+
+Erkennt topologische Strukturen in der Preisdynamik mittels Persistent Homology. Konvertiert Preisreturns über Takens Time-Delay Embedding in eine Punktwolke und berechnet daraus topologische Invarianten.
+
+**Algorithmus:**
+1. Log-Returns berechnen
+2. Takens Embedding: 1D-Zeitreihe → Punktwolke im höherdimensionalen Raum
+3. Persistent Homology (ripser): H0 (Connected Components), H1 (Loops/Zyklen)
+4. Feature-Extraktion aus Persistence Diagrams
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `tda_h0_count_{w}` | Anzahl H0 Features (Connected Components) | Fragmentierung der Preisstruktur |
+| `tda_h1_count_{w}` | Anzahl H1 Features (Loops/Zyklen) | Zyklische Muster, Mean-Reversion |
+| `tda_h0_max_pers_{w}` | Max Persistence in H0 | Stärke der dominanten Struktur |
+| `tda_h1_max_pers_{w}` | Max Persistence in H1 | Stärke des dominanten Zyklus |
+| `tda_h0_mean_pers_{w}` | Mittlere Persistence H0 | Durchschnittliche Strukturstärke |
+| `tda_h1_mean_pers_{w}` | Mittlere Persistence H1 | Durchschnittliche Zyklusstärke |
+| `tda_persistence_entropy_{w}` | Shannon-Entropie des Persistence Diagrams | Komplexität der Topologie |
+| `tda_wasserstein_amp_{w}` | L2-Norm des Persistence Diagrams | Gesamtamplitude topologischer Features |
+| `tda_h1_ratio_{w}` | H1 / H0 Count (safe_divide) | Relative Zyklizität |
+| `tda_max_loop_persistence_{w}` | Max H1 / Max H0 Persistence | Relative Loop-Stärke |
+
+**Intuition:** Trending-Märkte haben wenige H1-Features (Loops), Mean-Reverting-Märkte viele. Die Persistence Entropy ist niedrig bei einfacher Topologie (Trend) und hoch bei komplexer Struktur (Chop).
+
+**Parameter:**
+- `windows` (default: [50, 100]) — Rolling-Window-Größen
+- `embedding_dim` (default: 3) — Dimension des Takens Embedding
+- `time_delay` (default: 1) — Zeitverzögerung im Embedding
+- `maxdim` (default: 1) — Maximale Homologie-Dimension (0=H0, 1=H0+H1)
+
+**Plugin:** `fwbg-core:topological_features` | **Prefix:** `tda_` | **20 Features (10 pro Window × 2 Windows)**
+
+---
+
+## 30. Adversarial Validation Features (`adv_`)
+
+Erkennt Distribution Shift zwischen älteren und neueren Marktdaten innerhalb eines Sliding Window. Ein Classifier (LogisticRegression) versucht, "alt" von "neu" zu unterscheiden — hohe AUC = Regime-Wechsel.
+
+**Algorithmus:**
+1. Numeric Feature-Spalten selektieren (exkl. OHLCV + adv_)
+2. Pro Position: Window in "alt" und "neu" Hälfte teilen
+3. LogisticRegression fitten, AUC berechnen
+4. AUC ~0.5 = stabile Distribution, AUC ~1.0 = starker Shift
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `adv_auc_{w}` | AUC des Alt-vs-Neu Classifiers | 0.5 = identisch, 1.0 = komplett verschieden |
+| `adv_drift_score_{w}` | Normalisierter Drift: 2×(AUC−0.5) | 0 = kein Drift, 1 = maximaler Drift |
+| `adv_stability_{w}` | 1 − drift_score | Regime-Stabilität |
+| `adv_max_feature_importance_{w}` | Max. abs. Koeffizient der LogReg | Welches Feature driftet am stärksten |
+| `adv_drift_acceleration_{w}` | Änderung des drift_score | Beschleunigung/Verlangsamung des Shifts |
+
+**Besonderheit:** Meta-Feature über die Stationarität aller anderen Features. Besonders wertvoll in Kombination mit Walk-Forward — signalisiert dem Modell, wenn es sich auf eine veränderte Marktumgebung einstellen muss.
+
+**Parameter:**
+- `windows` (default: [100, 200]) — Window-Größen für Alt/Neu-Vergleich
+- `step` (default: 10) — Berechnungsschrittweite (Forward-Fill dazwischen)
+- `max_features` (default: 30) — Max. Feature-Anzahl pro Berechnung (Subsampling)
+- `exclude_prefixes` (default: ["adv_"]) — Auszuschließende Feature-Prefixes
+
+**Plugin:** `fwbg-core:adversarial_validation` | **Prefix:** `adv_` | **10 Features (5 pro Window × 2 Windows)**
+
+---
+
 ## Feature-Gruppen / Indicator Plugins
 
 Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indikator ist ein separates Plugin mit eigenen konfigurierbaren Parametern.
@@ -1132,6 +1199,8 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
 | `fractal_dimension` | fractal | 12 | Higuchi Fraktaldimension, Komplexität, Regime |
 | `wavelets` | wavelets | 27 | DWT Zeit-Frequenz Energie, Ratios |
 | `autoencoder_features` | autoencoder | 10 | PCA Latent Features, Reconstruction Error |
+| `topological_features` | topology | 20 | Persistent Homology, Takens Embedding, H0/H1 |
+| `adversarial_validation` | meta | 10 | Distribution Shift Detection, Drift Score |
 
 ### Plugin-Konfiguration in Strategy JSON
 

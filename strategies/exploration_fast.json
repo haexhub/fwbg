@@ -188,6 +188,14 @@
       {
         "name": "autoencoder_features",
         "params": {}
+      },
+      {
+        "name": "topological_features",
+        "params": {}
+      },
+      {
+        "name": "adversarial_validation",
+        "params": {}
       }
     ],
     "feature_selection": [
