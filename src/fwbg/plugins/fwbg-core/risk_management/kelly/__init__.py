@@ -1,8 +1,7 @@
 """Kelly Criterion Risk Manager Plugin."""
 from typing import Dict, Any, List
 
-from fwbg.plugins import BaseRiskManager
-from fwbg.core import register_risk_manager
+from fwbg_sdk import BaseRiskManager, register_risk_manager
 from fwbg.simulation.trade import (
     adjust_risk_for_target_dd,
     find_optimal_circuit_breaker,
