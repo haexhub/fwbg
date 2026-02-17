@@ -135,12 +135,12 @@ class TestExitStrategyDispatch:
 
     def test_atr_based_strategy_dispatch(self):
         """Test: ATR-basierte Strategie wird korrekt aufgerufen."""
-        from fwbg.core import get_exit_strategy as get_strategy
+        from fwbg.core import get_exit_strategy
         from fwbg.core.context import SimulationContext
 
         # Strategie laden
-        strategy_cls = get_strategy("atr_based")
-        strategy = strategy_cls()
+        exit_strategy_class = get_exit_strategy("atr_based")
+        exit_strategy = exit_strategy_class()
 
         # Mock-Context
         ctx = SimulationContext(
@@ -155,7 +155,7 @@ class TestExitStrategyDispatch:
         df = create_test_df(500)
 
         # compute_targets sollte nicht crashen
-        targets_long, targets_short = strategy.compute_targets(
+        targets_long, targets_short = exit_strategy.compute_targets(
             df, ctx,
             tp_mult=2.0,
             sl_mult=1.5,

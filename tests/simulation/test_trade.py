@@ -303,12 +303,11 @@ class TestSimulateProTrade:
         closes = np.array([100.0, 100.5, 101.0, 101.5, 102.0])
         highs = closes + 0.2
         lows = closes - 0.2
-        atrs = np.ones(5) * 0.5
         timestamps = pd.date_range("2024-01-01", periods=5, freq="h")
 
         trade = simulate_pro_trade(
-            closes=closes, highs=highs, lows=lows, atrs=atrs,
-            idx=0, direction=1, tp_m=2, sl_m=1,
+            closes=closes, highs=highs, lows=lows,
+            idx=0, direction=1, tp_distance=2.0, sl_distance=1.0,
             spread=0.0, timestamps=timestamps.values,
             symbol="TEST", opens=closes
         )
@@ -319,18 +318,16 @@ class TestSimulateProTrade:
             assert "entry_time" in trade
             assert "exit_time" in trade
             assert trade["direction"] == "LONG" or trade["direction"] == 1
-            # symbol wird nicht in das Trade-Dict geschrieben
 
     def test_no_trade_at_boundary(self):
         """Test: Kein Trade am Daten-Ende."""
         closes = np.array([100.0])
         highs = closes + 0.1
         lows = closes - 0.1
-        atrs = np.ones(1) * 0.5
 
         trade = simulate_pro_trade(
-            closes=closes, highs=highs, lows=lows, atrs=atrs,
-            idx=0, direction=1, tp_m=2, sl_m=1,
+            closes=closes, highs=highs, lows=lows,
+            idx=0, direction=1, tp_distance=2.0, sl_distance=1.0,
             spread=0.0, opens=closes
         )
 
@@ -554,20 +551,19 @@ class TestEdgeCases:
         except Exception:
             pass  # NaN-Handling ist nicht garantiert
 
-    def test_zero_atr(self):
-        """Test: ATR von 0."""
+    def test_zero_distances(self):
+        """Test: TP/SL-Distanz von 0."""
         closes = np.array([100.0, 100.0, 100.0, 100.0, 100.0])
         highs = closes
         lows = closes
-        atrs = np.zeros(5)
 
         trade = simulate_pro_trade(
-            closes=closes, highs=highs, lows=lows, atrs=atrs,
-            idx=0, direction=1, tp_m=2, sl_m=1,
+            closes=closes, highs=highs, lows=lows,
+            idx=0, direction=1, tp_distance=0.0, sl_distance=0.0,
             spread=0.0, opens=closes
         )
 
-        # Mit ATR=0 werden TP/SL-Levels bei Entry sein
+        # Mit Distanz=0 werden TP/SL-Levels bei Entry sein
         # Trade könnte sofort beendet werden
         assert trade is None or "result" in trade
 

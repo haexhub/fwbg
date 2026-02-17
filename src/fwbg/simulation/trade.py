@@ -334,11 +334,14 @@ def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
     return resolve_tp_sl_collision(symbol, hour_timestamp, direction, tp, sl)
 
 
-def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, spread,
-                       max_bars=None, trailing_start=0.5, timestamps=None, symbol=None,
+def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_distance, spread,
+                       max_bars=None, timestamps=None, symbol=None,
                        opens=None, timeout_bars=None):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
+
+    Exit-Strategy-agnostisch: nimmt fertig berechnete TP/SL-Distanzen.
+    Die Distanz-Berechnung (fixed, ATR-basiert, etc.) obliegt dem Exit-Strategy-Plugin.
 
     - Signal bei Bar idx, Entry bei Open von Bar idx+1 (kein Look-Ahead!)
     - Trade läuft bis TP oder SL erreicht wird
@@ -349,12 +352,11 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
         closes: Close-Preise Array
         highs: High-Preise Array
         lows: Low-Preise Array
-        atrs: ATR-Werte Array
         idx: Index des Signal-Bars
         direction: 1 für Long, -1 für Short
-        tp_m: Take-Profit Multiplikator (in Spreads)
-        sl_m: Stop-Loss Multiplikator (in Spreads)
-        spread: Spread des Assets
+        tp_distance: Take-Profit Distanz in Preiseinheiten
+        sl_distance: Stop-Loss Distanz in Preiseinheiten
+        spread: Spread des Assets (für Slippage-Berechnung)
         opens: Optional - Open-Preise Array für realistischen Entry
         timestamps: Optional - Array von Timestamps für M15-Lookup
         symbol: Optional - Symbol-Name für M15-Lookup
@@ -384,8 +386,6 @@ def simulate_pro_trade(closes, highs, lows, atrs, idx, direction, tp_m, sl_m, sp
     if max_bars is None or max_bars > len(closes) - entry_idx:
         max_bars = len(closes) - entry_idx
 
-    tp_distance = spread * tp_m
-    sl_distance = spread * sl_m
     slippage = spread * 0.5
 
     # Entry: Open des nächsten Bars (realistisch, kein Look-Ahead)

@@ -15,7 +15,6 @@ import pytest
 
 from fwbg.optimization.targets import simulate_trades_sequential
 from fwbg.core.context import SimulationContext
-from fwbg.simulation.trade import simulate_pro_trade
 
 
 # =============================================================================

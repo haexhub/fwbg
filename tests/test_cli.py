@@ -246,22 +246,22 @@ class TestComputeIndicatorPool:
 class TestExitStrategies:
     """Tests für Exit-Strategies."""
 
-    def test_get_strategy(self):
-        """Test: get_strategy gibt korrekte Klasse zurück."""
-        from fwbg.core import get_exit_strategy as get_strategy
+    def test_get_exit_strategy(self):
+        """Test: get_exit_strategy gibt korrekte Klasse zurück."""
+        from fwbg.core import get_exit_strategy
 
-        atr_strategy = get_strategy("atr_based")
+        atr_strategy = get_exit_strategy("atr_based")
         assert atr_strategy is not None
 
-        fixed_strategy = get_strategy("fixed")
+        fixed_strategy = get_exit_strategy("fixed")
         assert fixed_strategy is not None
 
-    def test_get_nonexistent_strategy(self):
-        """Test: get_strategy mit unbekanntem Namen wirft ValueError."""
-        from fwbg.core import get_exit_strategy as get_strategy
+    def test_get_nonexistent_exit_strategy(self):
+        """Test: get_exit_strategy mit unbekanntem Namen wirft ValueError."""
+        from fwbg.core import get_exit_strategy
 
         with pytest.raises(ValueError):
-            get_strategy("nonexistent_strategy")
+            get_exit_strategy("nonexistent_strategy")
 
     def test_grid_params(self):
         """Test: GridParams Klasse."""

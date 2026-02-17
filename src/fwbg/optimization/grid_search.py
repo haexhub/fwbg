@@ -38,7 +38,7 @@ def select_features(
     Returns:
         Tuple von (selected_features_long, selected_features_short)
     """
-    from .targets import compute_targets
+    from .targets import compute_targets_cached, _validate_targets
 
     if not inner_folds or len(features) < 3:
         return None, None
@@ -51,9 +51,15 @@ def select_features(
     default_tp = ctx.grid_tp[len(ctx.grid_tp) // 2] if ctx.grid_tp else 20
     default_sl = ctx.grid_sl[len(ctx.grid_sl) // 2] if ctx.grid_sl else 30
 
-    targets_long, targets_short, has_long, has_short = compute_targets(
-        train_df, default_tp, default_sl, ctx, timeout_bars=None
+    # Use compute_targets_cached which dispatches to the exit strategy plugin.
+    # This ensures ATR-based exits compute targets with ATR distances,
+    # not spread-based distances.
+    result = compute_targets_cached(
+        train_df, default_tp, default_sl, ctx, timeout_bars=None,
+        exit_strategy_mode=ctx.exit_strategy,
     )
+    targets_long, targets_short = result[0], result[1]
+    has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
 
     selected_long = None
     selected_short = None
