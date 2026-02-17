@@ -291,13 +291,22 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         non_ann_sr = float(np.mean(returns_arr) / np.std(returns_arr)) if len(returns_arr) > 1 and np.std(returns_arr) > 0 else 0.0
 
         from .overfitting import compute_overfitting_metrics
-        overfitting = compute_overfitting_metrics(
-            trade_returns=trade_returns,
-            observed_sr=non_ann_sr,
-            n_strategies=len(accumulated_grid_results),
-            grid_results_by_fold=grid_results_by_fold,
-            n_trades=total_trades,
-        )
+        try:
+            overfitting = compute_overfitting_metrics(
+                trade_returns=trade_returns,
+                observed_sr=non_ann_sr,
+                n_strategies=len(accumulated_grid_results),
+                grid_results_by_fold=grid_results_by_fold,
+                n_trades=total_trades,
+            )
+        except Exception as e:
+            log(1, f"  Overfitting metrics failed: {e}", sym)
+            overfitting = {
+                "dsr": {"dsr": 0.0, "observed_sr": non_ann_sr, "expected_max_sr": 0.0,
+                         "n_strategies": len(accumulated_grid_results), "is_significant": False},
+                "pbo": {"pbo": None, "n_cscv_splits": 0, "is_overfit": None,
+                         "degradation": None, "logit_mean": None},
+            }
         pbo_val = overfitting["pbo"]["pbo"]
         log(1, f"  DSR={overfitting['dsr']['dsr']:.3f}"
                f" PBO={pbo_val:.2f}" if pbo_val is not None else

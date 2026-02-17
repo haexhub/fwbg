@@ -120,8 +120,14 @@ def build_performance_matrix(
     for fid in fold_ids:
         combo_map = {}
         for gr in grid_results_by_fold[fid]:
-            key = (gr["tp_mult"], gr["sl_mult"], gr.get("timeout_bars", 0))
-            combo_map[key] = gr["inner_val_pnl"]
+            try:
+                key = (gr["tp_mult"], gr["sl_mult"], gr.get("timeout_bars", 0))
+                val = gr["inner_val_pnl"]
+            except KeyError:
+                continue
+            if val is None or not np.isfinite(val):
+                continue
+            combo_map[key] = val
         fold_combo_maps.append(combo_map)
 
     # Find combos present in ALL folds
