@@ -1,0 +1,7 @@
+{
+  "name": "calendar_events",
+  "version": "1.0.0",
+  "description": "Calendar anomaly features — systematic market effects tied to known calendar events",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

@@ -1,0 +1,7 @@
+{
+  "name": "fractal_dimension",
+  "version": "1.0.0",
+  "description": "Higuchi Fractal Dimension — measures complexity and roughness of price series",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

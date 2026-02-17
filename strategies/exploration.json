@@ -291,6 +291,31 @@
           "threshold": 1.5,
           "lookback": 100
         }
+      },
+      {
+        "name": "calendar_events",
+        "params": {}
+      },
+      {
+        "name": "fractal_dimension",
+        "params": {
+          "windows": [50, 100, 200],
+          "k_max": 10
+        }
+      },
+      {
+        "name": "wavelets",
+        "params": {
+          "wavelet": "db4",
+          "levels": 3,
+          "windows": [20, 50, 100]
+        }
+      },
+      {
+        "name": "autoencoder_features",
+        "params": {
+          "n_components": 8
+        }
       }
     ],
     "feature_selection": [

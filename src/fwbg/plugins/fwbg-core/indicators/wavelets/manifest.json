@@ -1,0 +1,7 @@
+{
+  "name": "wavelets",
+  "version": "1.0.0",
+  "description": "Wavelet decomposition features — time-frequency analysis for non-stationary price signals",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
