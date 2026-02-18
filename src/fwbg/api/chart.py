@@ -10,6 +10,89 @@ router = APIRouter(prefix="/chart", tags=["chart"])
 
 
 # ---------------------------------------------------------------------------
+# Timeframe hierarchy & resampling
+# ---------------------------------------------------------------------------
+
+# Ordered from lowest to highest resolution
+_TIMEFRAME_ORDER = ["MINUTE_1", "MINUTE_5", "MINUTE_15", "MINUTE_30", "HOUR", "HOUR_4", "DAY"]
+
+# Pandas resample rule for each timeframe
+_RESAMPLE_RULE: dict[str, str] = {
+    "MINUTE_1": "1min",
+    "MINUTE_5": "5min",
+    "MINUTE_15": "15min",
+    "MINUTE_30": "30min",
+    "HOUR": "1h",
+    "HOUR_4": "4h",
+    "DAY": "1D",
+}
+
+
+def _derivable_timeframes(native_tfs: list[str]) -> list[str]:
+    """Given a list of native (on-disk) timeframes, return all timeframes that
+    can be produced — native ones plus any higher timeframes derivable via
+    resampling from the lowest available native timeframe."""
+    if not native_tfs:
+        return []
+
+    # Find lowest native timeframe index
+    indices = [_TIMEFRAME_ORDER.index(tf) for tf in native_tfs if tf in _TIMEFRAME_ORDER]
+    if not indices:
+        return native_tfs  # unknown timeframes, return as-is
+
+    lowest_idx = min(indices)
+    # All timeframes at or above the lowest native timeframe are producible
+    result = []
+    for i, tf in enumerate(_TIMEFRAME_ORDER):
+        if i >= lowest_idx:
+            result.append(tf)
+    return result
+
+
+def _resample_ohlcv(df, target_tf: str):
+    """Resample an OHLCV DataFrame to a higher timeframe."""
+    import pandas as pd
+
+    rule = _RESAMPLE_RULE.get(target_tf)
+    if not rule:
+        return df
+
+    agg = {"O": "first", "H": "max", "L": "min", "C": "last"}
+    if "V" in df.columns:
+        agg["V"] = "sum"
+
+    resampled = df.resample(rule).agg(agg).dropna(subset=["O"])
+    return resampled
+
+
+def _best_native_file(ds, symbol: str, target_tf: str):
+    """Find the best native file to load for a given target timeframe.
+    Prefers exact match, then the lowest available timeframe that can be
+    resampled up to the target."""
+    # Try exact match first
+    path = ds.get_file_path(symbol, target_tf)
+    if path.exists():
+        return path, target_tf
+
+    target_idx = _TIMEFRAME_ORDER.index(target_tf) if target_tf in _TIMEFRAME_ORDER else -1
+    if target_idx < 0:
+        return None, None
+
+    # Find lowest available native timeframe below the target
+    best_path, best_tf = None, None
+    for tf in _TIMEFRAME_ORDER:
+        tf_idx = _TIMEFRAME_ORDER.index(tf)
+        if tf_idx >= target_idx:
+            break
+        candidate = ds.get_file_path(symbol, tf)
+        if candidate.exists():
+            if best_path is None:
+                best_path, best_tf = candidate, tf
+
+    return best_path, best_tf
+
+
+# ---------------------------------------------------------------------------
 # GET /api/chart/sources — list available CSV data sources with symbols
 # ---------------------------------------------------------------------------
 
@@ -41,9 +124,11 @@ def list_sources() -> list[dict]:
         symbols_list = []
         for symbol in sorted(symbols_map):
             asset = registry.get(symbol)
+            native_tfs = symbols_map[symbol]
+            all_tfs = _derivable_timeframes(native_tfs)
             symbols_list.append({
                 "symbol": symbol,
-                "timeframes": sorted(symbols_map[symbol]),
+                "timeframes": all_tfs,
                 "asset_class": asset.asset_class,
                 "point": asset.point,
                 "spread": asset.spread,
@@ -93,13 +178,21 @@ def get_ohlcv(
     if not isinstance(ds, CSVSourceConfig):
         raise HTTPException(400, f"Source '{source}' is not a CSV source. Use POST for broker data.")
 
+    # Try exact file first, then find a lower timeframe to resample from
     path = ds.get_file_path(symbol, timeframe)
+    native_tf = timeframe
     if not path.exists():
-        raise HTTPException(404, f"Data file not found: {symbol}_{timeframe} in {source}")
+        path, native_tf = _best_native_file(ds, symbol, timeframe)
+        if not path:
+            raise HTTPException(404, f"Data file not found: {symbol}_{timeframe} in {source}")
 
     df = load_data_aligned(str(path))
     if df is None or df.empty:
         raise HTTPException(500, f"Failed to load data: {symbol}_{timeframe}")
+
+    # Resample if we loaded a lower timeframe
+    if native_tf != timeframe:
+        df = _resample_ohlcv(df, timeframe)
 
     total = len(df)
     end_idx = total - offset
@@ -277,9 +370,14 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         if not isinstance(ds, CSVSourceConfig):
             raise HTTPException(400, f"Source '{body.source}' is not CSV. Provide credentials for broker.")
         path = ds.get_file_path(body.symbol, body.timeframe)
+        native_tf = body.timeframe
         if not path.exists():
-            raise HTTPException(404, f"Data not found: {body.symbol}_{body.timeframe}")
+            path, native_tf = _best_native_file(ds, body.symbol, body.timeframe)
+            if not path:
+                raise HTTPException(404, f"Data not found: {body.symbol}_{body.timeframe}")
         df = load_data_aligned(str(path))
+        if native_tf != body.timeframe and df is not None and not df.empty:
+            df = _resample_ohlcv(df, body.timeframe)
 
     if df is None or df.empty:
         raise HTTPException(500, "Failed to load data")
@@ -313,18 +411,26 @@ def compute_indicator(body: IndicatorRequest) -> dict:
 
     # --- Build response ---
     columns_data = {}
+    plot_columns = []
     for col in available_cols:
         values = result_slice[col].tolist()
-        columns_data[col] = [
+        clean = [
             None if (v != v or v == float("inf") or v == float("-inf")) else float(v)
             for v in values
         ]
+        columns_data[col] = clean
+
+        # Classify: continuous columns are plottable; binary/tri-state signals are not
+        unique_vals = {v for v in clean if v is not None}
+        if not unique_vals <= {-1.0, 0.0, 1.0}:
+            plot_columns.append(col)
 
     timestamps = [int(ts.timestamp() * 1000) for ts in result_slice.index]
 
     return {
         "fqn": body.fqn,
         "columns": available_cols,
+        "plot_columns": plot_columns,
         "timestamps": timestamps,
         "data": columns_data,
     }
