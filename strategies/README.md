@@ -49,6 +49,14 @@ Jeder Indikator ist ein Plugin mit eigenem Namen und Parametern. Kurze Namen (`"
 | `volatility` | Bollinger Bands, ATR, Volatilitätsschätzer, Vol Compression, RV vs IV Spread | `vol_` |
 | `price_action` | Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
 | `time_season` | Stunde, Wochentag, Monat, Quartal, Saisonalität | `time_`, `season_` |
+| `fair_value_gap` | Fair Value Gaps (Bull/Bear), Distance, Size, Count | `fvg_` |
+| `cusum_events` | CUSUM Structural Break Detection (de Prado AFML Ch. 2) | `cusum_` |
+| `calendar_events` | Kalender-Anomalien (Turn-of-Month, OpEx, FOMC, NFP) | `cal_` |
+| `fractal_dimension` | Higuchi Fraktal-Dimension (Komplexität, Regime) | `fd_` |
+| `wavelets` | Wavelet-Zerlegung (Zeit-Frequenz-Energie, Ratios) | `wt_` |
+| `autoencoder_features` | PCA Latent Features, Reconstruction Error (Anomalie) | `ae_` |
+| `topological_features` | Persistent Homology (Takens Embedding, H0/H1, Persistence Entropy) | `tda_` |
+| `adversarial_validation` | Distribution Shift Detection (AUC, Drift Score, Stability) | `adv_` |
 
 **Premium Plugins (fwbg-premium):**
 
@@ -66,6 +74,7 @@ Jeder Indikator ist ein Plugin mit eigenem Namen und Parametern. Kurze Namen (`"
 | `microstructure` | Bar-Microstructure, Tick-Proxies | `micro_` |
 | `market_regime` | Risk-On/Off Composite aus VIX, Credit, Equity, Treasury | `regime_vix_`, `regime_credit_`, `regime_risk_` |
 | `regime_cluster` | Composite Regime Score → K-Means Clustering (trending/mean-reverting/choppy) | `regime_cluster_` |
+| `support_resistance` | S/R Zonen, Trend-Klassifikation, Pullbacks, Breakouts | `sr_` |
 
 **Beispiel:**
 
@@ -335,7 +344,25 @@ Grid-Werte: `tp: 1.5` = 1.5 × ATR, `sl: 1.0` = 1.0 × ATR
 
 ## grids - TP/SL/CT Grid-Search
 
-Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte pro Asset-Klasse.
+Definiert die zu testenden Take-Profit, Stop-Loss und Confidence-Threshold Werte. Grids können pro **Asset-Klasse** und/oder pro **einzelnem Symbol** definiert werden.
+
+### Grid-Auflösung
+
+Grids werden in folgender Priorität aufgelöst:
+
+```
+Symbol (z.B. "EURUSD") → Asset-Klasse (z.B. "FOREX") → "FOREX" (Fallback) → Default
+```
+
+Damit können per-Symbol-Overrides definiert werden, z.B. für Assets mit untypischer Volatilität:
+
+```json
+"grids": {
+  "FOREX": {"tp": [1.5, 2.0, 2.5], "sl": [3.0, 4.0, 5.0], "ct": [0.5, 0.55, 0.6]},
+  "GOLD": {"tp": [2.5, 3.5, 4.5], "sl": [3.0, 4.5, 6.0], "ct": [0.5, 0.55, 0.6]},
+  "DAX": {"tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.5, 6.0], "ct": [0.5, 0.55, 0.6]}
+}
+```
 
 **Asset-Klassen:** `FOREX`, `INDEX`, `COMMODITY`, `CRYPTO`
 
@@ -540,7 +567,7 @@ Optionale Sektion um nur bestimmte Assets zu testen oder auszuschließen. Kann a
 
 ## Vollständige Beispiele
 
-### Exploration (alle Features)
+### Exploration (alle Features, ATR-Based)
 
 ```json
 {
@@ -566,7 +593,16 @@ Optionale Sektion um nur bestimmte Assets zu testen oder auszuschließen. Kann a
       {"name": "microstructure", "params": {}},
       {"name": "macro_surprise", "params": {}},
       {"name": "market_regime", "params": {"window": 50}},
-      {"name": "regime_cluster", "params": {"zscore_window": 200, "quantile_window": 500, "n_regimes": 3}}
+      {"name": "regime_cluster", "params": {"zscore_window": 200, "quantile_window": 500, "n_regimes": 3}},
+      {"name": "fair_value_gap", "params": {}},
+      {"name": "support_resistance", "params": {}},
+      {"name": "cusum_events", "params": {}},
+      {"name": "calendar_events", "params": {}},
+      {"name": "fractal_dimension", "params": {}},
+      {"name": "wavelets", "params": {}},
+      {"name": "autoencoder_features", "params": {}},
+      {"name": "topological_features", "params": {}},
+      {"name": "adversarial_validation", "params": {}}
     ],
     "feature_selection": [
       {"name": "stability", "params": {
@@ -581,12 +617,13 @@ Optionale Sektion um nur bestimmte Assets zu testen oder auszuschließen. Kann a
       {"name": "cot_positioning", "source": "forexsb"}
     ]
   },
-  "exit_strategy": "fixed",
+  "exit_strategy": "atr_based",
+  "exit_params": {"atr_period": 14, "min_tp_pips": 10, "min_sl_pips": 15},
   "model": {"architecture": "long_short_separate"},
   "grids": {
     "FOREX": {
-      "tp": [5, 10, 15, 20, 30],
-      "sl": [20, 30, 40, 50, 60],
+      "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
+      "sl": [3.0, 4.0, 5.0, 6.0],
       "ct": [0.5, 0.55, 0.6, 0.65],
       "regime_filter_grid": {
         "condition_grids": [
@@ -594,6 +631,21 @@ Optionale Sektion um nur bestimmte Assets zu testen oder auszuschließen. Kann a
           {"column": "macro_vix", "operator": "<=", "values": [null, 30], "directions": 6, "else_directions": 0}
         ]
       }
+    },
+    "INDEX": {
+      "tp": [2.0, 3.0, 4.0, 5.0],
+      "sl": [3.0, 4.5, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65]
+    },
+    "COMMODITY": {
+      "tp": [2.0, 3.0, 4.0, 5.0],
+      "sl": [3.0, 4.5, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65]
+    },
+    "GOLD": {
+      "tp": [2.5, 3.5, 4.5],
+      "sl": [3.0, 4.5, 6.0],
+      "ct": [0.5, 0.55, 0.6, 0.65]
     }
   },
   "validation": {
@@ -601,74 +653,6 @@ Optionale Sektion um nur bestimmte Assets zu testen oder auszuschließen. Kann a
     "sample_weights": true, "probability_calibration": true,
     "early_pruning": {"enabled": true, "keep_ratio": 0.5, "min_survivors": 10}
   }
-}
-```
-
-### Scalping (kurze Perioden, hohe Confidence)
-
-```json
-{
-  "name": "Scalping",
-  "pipeline": {
-    "indicators": [
-      {"name": "trend", "params": {"adx_periods": [5, 7, 14], "ema_periods": [5, 8, 13, 21, 50]}},
-      {"name": "momentum", "params": {"rsi_periods": [5, 7, 14], "stoch_periods": [5, 9, 14]}},
-      {"name": "volatility", "params": {"atr_periods": [5, 7, 14]}},
-      {"name": "dynamics", "params": {"lookbacks": [2, 4, 8]}},
-      {"name": "microstructure", "params": {"atr_period": 7, "rolling_window": 3}},
-      {"name": "market_regime", "params": {"window": 50}}
-    ],
-    "feature_selection": [
-      {"name": "boruta", "params": {"max_features": 25}}
-    ],
-    "data_loading": [
-      {"name": "macro_data", "source": "forexsb"},
-      {"name": "cot_positioning", "source": "forexsb"}
-    ]
-  },
-  "exit_strategy": "fixed",
-  "grids": {
-    "FOREX": {
-      "tp": [5, 8, 10, 15],
-      "sl": [8, 10, 15, 20],
-      "ct": [0.6, 0.65, 0.7]
-    }
-  },
-  "filters": {"min_rrr": 0.3, "min_trades": 50}
-}
-```
-
-### Swing Trading (lange Perioden, Trend-Fokus)
-
-```json
-{
-  "name": "Swing Trading",
-  "pipeline": {
-    "indicators": [
-      {"name": "trend", "params": {"adx_periods": [14, 21, 30], "ema_periods": [21, 50, 100, 200]}},
-      {"name": "regime", "params": {"hurst_windows": [100, 200, 500]}},
-      {"name": "multi_timeframe", "params": {"h4_bars": 4, "d1_bars": 24, "ema_periods": [20, 50, 100]}},
-      {"name": "structure", "params": {}},
-      {"name": "risk", "params": {"dd_windows": [100, 200, 500]}},
-      {"name": "market_regime", "params": {"window": 50}}
-    ],
-    "feature_selection": [
-      {"name": "boruta", "params": {"max_features": 30}}
-    ],
-    "data_loading": [
-      {"name": "macro_data", "source": "forexsb"},
-      {"name": "cot_positioning", "source": "forexsb"}
-    ]
-  },
-  "exit_strategy": "fixed",
-  "grids": {
-    "FOREX": {
-      "tp": [20, 30, 50, 80],
-      "sl": [20, 30, 40, 60],
-      "ct": [0.5, 0.55, 0.6]
-    }
-  },
-  "filters": {"min_rrr": 0.5, "min_trades": 30}
 }
 ```
 

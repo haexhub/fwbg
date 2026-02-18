@@ -28,9 +28,11 @@ Detailed per-phase documentation: [docs/phases/](phases/)
 
 ## BasePlugin — The Plugin Interface
 
-All plugins inherit from `BasePlugin` (`src/fwbg/pipeline/base.py`):
+All plugins inherit from `BasePlugin` (`fwbg_sdk.base`):
 
 ```python
+from fwbg_sdk import BasePlugin, PluginPhase
+
 class BasePlugin(ABC):
     # Required attributes (must be defined by subclasses)
     name: str                    # Unique name (e.g., "trend")
@@ -51,6 +53,9 @@ class BasePlugin(ABC):
     @classmethod
     def get_default_params(cls) -> dict: ...
 
+    @classmethod
+    def get_param_schema(cls) -> dict: ...
+
     def get_feature_columns(self) -> List[str]: ...
 ```
 
@@ -63,6 +68,7 @@ class BasePlugin(ABC):
 | `reset()` | Resets learned state (called between CV folds) |
 | `validate()` | Checks whether the plugin is correctly configured |
 | `get_default_params()` | Returns default parameters (classmethod) |
+| `get_param_schema()` | Returns rich parameter schema for UI rendering (type, min/max, description) |
 | `get_feature_columns()` | Returns the generated feature column names |
 
 ---
@@ -148,7 +154,7 @@ Determines whether an indicator is computed on preprocessed (stationary) or raw 
 
 ## PipelineContext
 
-The context is passed through all phases (`src/fwbg/pipeline/context.py`):
+The context is passed through all phases (`fwbg_sdk.contexts`):
 
 ```python
 @dataclass
@@ -336,7 +342,7 @@ Use fully qualified name: 'fwbg-core:trend' or 'my-package:trend'
 
 ## Registration Decorators
 
-Plugins are automatically registered during discovery. Additionally, there are decorators for explicit registration (`src/fwbg/core/registry.py`):
+Plugins are automatically registered during discovery. Additionally, there are decorators for explicit registration (`fwbg_sdk.registry`):
 
 | Decorator | Plugin Type |
 |-----------|------------|

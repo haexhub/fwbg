@@ -49,9 +49,7 @@ Guide for creating custom FWBG plugins. Plugins can be indicators, preprocessors
 ```python
 import pandas as pd
 import numpy as np
-from fwbg.plugins.indicator import BaseIndicator, shift_features, safe_divide
-from fwbg.pipeline.base import PluginPhase
-from fwbg.core.registry import register_indicator
+from fwbg_sdk import BaseIndicator, PluginPhase, shift_features, safe_divide, register_indicator
 
 
 @register_indicator("my_indicator")
@@ -120,7 +118,7 @@ The plugin is automatically discovered and registered from `~/.fwbg/plugins/` on
 
 ## Plugin Type: Indicator
 
-**File:** `src/fwbg/plugins/indicator.py`
+**Module:** `fwbg_sdk.indicators`
 
 ```python
 class BaseIndicator(BasePlugin, ABC):
@@ -149,7 +147,7 @@ Detailed documentation: [Phase 3: Indicators](phases/3-indicators.md)
 
 ## Plugin Type: Preprocessor
 
-**File:** `src/fwbg/plugins/preprocessor.py`
+**Module:** `fwbg_sdk.preprocessors`
 
 ```python
 class BasePreprocessor(BasePlugin, ABC):
@@ -174,6 +172,8 @@ class BasePreprocessor(BasePlugin, ABC):
 **Example:**
 
 ```python
+from fwbg_sdk import BasePreprocessor, register_preprocessor
+
 @register_preprocessor("my_normalizer")
 class MyNormalizer(BasePreprocessor):
     name = "my_normalizer"
@@ -197,7 +197,7 @@ Detailed documentation: [Phase 2: Preprocessing](phases/2-preprocessing.md)
 
 ## Plugin Type: Feature Selector
 
-**File:** `src/fwbg/plugins/feature_selector.py`
+**Module:** `fwbg_sdk.feature_selectors`
 
 ```python
 class BaseFeatureSelector(BasePlugin, ABC):
@@ -231,7 +231,7 @@ Detailed documentation: [Phase 4: Feature Selection](phases/4-feature-selection.
 
 ## Plugin Type: Exit Strategy
 
-**File:** `src/fwbg/plugins/exit_strategy.py`
+**Module:** `fwbg_sdk.exit_strategies`
 
 ```python
 class BaseExitStrategy(BasePlugin, ABC):
@@ -280,7 +280,7 @@ Detailed documentation: [Phase 5: Exit Strategies](phases/5-exit-strategies.md)
 
 ## Plugin Type: Risk Manager
 
-**File:** `src/fwbg/plugins/risk_manager.py`
+**Module:** `fwbg_sdk.risk_managers`
 
 ```python
 class BaseRiskManager(BasePlugin, ABC):
@@ -302,7 +302,7 @@ Detailed documentation: [Phase 6: Risk Management](phases/6-risk-management.md)
 
 ## Plugin Type: Data Loader
 
-**File:** `src/fwbg/plugins/data_loader.py`
+**Module:** `fwbg_sdk.data_loaders`
 
 ```python
 class BaseDataLoader(BasePlugin, ABC):
@@ -377,6 +377,8 @@ The plugin directory has the same structure as user plugins (manifest.json, subd
 ### 1. Forgetting shift_features()
 
 ```python
+from fwbg_sdk import shift_features
+
 # WRONG — Lookahead bias!
 def compute(self, df, **params):
     features = {"my_rsi": compute_rsi(df["C"])}

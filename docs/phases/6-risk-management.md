@@ -14,7 +14,7 @@ Risk managers are **not** orchestrated by the PipelineRunner. They are called **
 
 ## BaseRiskManager
 
-Base class: `src/fwbg/plugins/risk_manager.py`
+Module: `fwbg_sdk.risk_managers`
 
 ```python
 class BaseRiskManager(BasePlugin, ABC):
@@ -40,6 +40,7 @@ class BaseRiskManager(BasePlugin, ABC):
         """
 ```
 
+- Import: `from fwbg_sdk import BaseRiskManager, register_risk_manager`
 - Registration: `@register_risk_manager("name")`
 
 ---

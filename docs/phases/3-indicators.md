@@ -8,7 +8,7 @@ The indicator phase computes technical features from OHLCV data. Each indicator 
 
 ## BaseIndicator
 
-Base class: `src/fwbg/plugins/indicator.py`
+Module: `fwbg_sdk.indicators`
 
 ```python
 class BaseIndicator(BasePlugin, ABC):
@@ -26,6 +26,7 @@ class BaseIndicator(BasePlugin, ABC):
         """Returns feature column names."""
 ```
 
+- Import: `from fwbg_sdk import BaseIndicator, shift_features, safe_divide, register_indicator`
 - Registration: `@register_indicator("name")`
 - `group`: Categorization (e.g., "trend", "momentum", "custom")
 - `benefits_from_stationary`: See [Architecture](../architecture.md#benefits_from_stationary-bool-indicators-only-default-false)
@@ -39,7 +40,7 @@ Every `compute()` method **must** use two helper functions. This is not a recomm
 ### shift_features(features, index)
 
 ```python
-from fwbg.plugins.indicator import shift_features
+from fwbg_sdk import shift_features
 
 features = {"my_rsi": rsi_series, "my_macd": macd_series}
 features_df = shift_features(features, df.index)
@@ -64,7 +65,7 @@ At bar 3, the model sees RSI=61 (from bar 2), not RSI=48 (from bar 3 itself).
 ### safe_divide(numerator, denominator)
 
 ```python
-from fwbg.plugins.indicator import safe_divide
+from fwbg_sdk import safe_divide
 
 ratio = safe_divide(df["C"] - ema, df["C"])
 ```
@@ -82,9 +83,7 @@ ratio = safe_divide(df["C"] - ema, df["C"])
 ```python
 import pandas as pd
 import numpy as np
-from fwbg.plugins.indicator import BaseIndicator, shift_features, safe_divide
-from fwbg.pipeline.base import PluginPhase
-from fwbg.core.registry import register_indicator
+from fwbg_sdk import BaseIndicator, shift_features, safe_divide, register_indicator
 
 
 @register_indicator("my_momentum")
