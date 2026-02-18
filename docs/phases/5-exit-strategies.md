@@ -18,7 +18,7 @@ Exit strategies are **not** orchestrated by the PipelineRunner. Instead, they ar
 
 ## BaseExitStrategy
 
-Base class: `src/fwbg/plugins/exit_strategy.py`
+Module: `fwbg_sdk.exit_strategies`
 
 ```python
 class BaseExitStrategy(BasePlugin, ABC):
@@ -43,6 +43,7 @@ class BaseExitStrategy(BasePlugin, ABC):
         """Unique cache key for target caching."""
 ```
 
+- Import: `from fwbg_sdk import BaseExitStrategy, register_exit_strategy`
 - Registration: `@register_exit_strategy("name")`
 
 ---

@@ -26,7 +26,7 @@ DataLoader.execute()     → Computation: lookbacks, derived features, ratios
 
 ## BaseDataLoader
 
-Base class: `src/fwbg/plugins/data_loader.py`
+Module: `fwbg_sdk.data_loaders`
 
 ```python
 class BaseDataLoader(BasePlugin, ABC):
@@ -40,6 +40,7 @@ class BaseDataLoader(BasePlugin, ABC):
 
 - `stateful = False` — No fit/transform pattern, no state
 - `cacheable = True` — Same result for same input data
+- Import: `from fwbg_sdk import BaseDataLoader, register_data_loader`
 - Registration: `@register_data_loader("name")`
 
 ---

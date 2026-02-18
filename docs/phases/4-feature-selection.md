@@ -10,7 +10,7 @@ Feature selection is executed **per CV fold** on the **training data** — this 
 
 ## BaseFeatureSelector
 
-Base class: `src/fwbg/plugins/feature_selector.py`
+Module: `fwbg_sdk.feature_selectors`
 
 ```python
 class BaseFeatureSelector(BasePlugin, ABC):
@@ -34,6 +34,7 @@ class BaseFeatureSelector(BasePlugin, ABC):
         """
 ```
 
+- Import: `from fwbg_sdk import BaseFeatureSelector, register_feature_selector`
 - Registration: `@register_feature_selector("name")`
 - Called in the inner CV loop — only on training data
 

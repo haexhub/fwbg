@@ -8,7 +8,7 @@ The preprocessing phase transforms OHLC data before feature computation. The pri
 
 ## BasePreprocessor
 
-Base class: `src/fwbg/plugins/preprocessor.py`
+Module: `fwbg_sdk.preprocessors`
 
 ```python
 class BasePreprocessor(BasePlugin, ABC):
@@ -31,6 +31,7 @@ class BasePreprocessor(BasePlugin, ABC):
         """Optional: reverse transformation."""
 ```
 
+- Import: `from fwbg_sdk import BasePreprocessor, register_preprocessor`
 - Registration: `@register_preprocessor("name")`
 - `order` determines execution order when multiple preprocessors are configured (lower = earlier)
 - Follows the **sklearn fit/transform pattern**
@@ -129,8 +130,7 @@ See [Plugin Development Guide](../plugin-development.md) for the full guide.
 ### Quick Example
 
 ```python
-from fwbg.plugins.preprocessor import BasePreprocessor
-from fwbg.core.registry import register_preprocessor
+from fwbg_sdk import BasePreprocessor, register_preprocessor
 
 @register_preprocessor("my_normalizer")
 class MyNormalizer(BasePreprocessor):
