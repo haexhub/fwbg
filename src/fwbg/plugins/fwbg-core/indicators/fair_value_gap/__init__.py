@@ -184,6 +184,9 @@ class FairValueGapIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
+    def get_signal_columns(self) -> List[str]:
+        return ["fvg_bull_active", "fvg_bear_active", "fvg_in_gap"]
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

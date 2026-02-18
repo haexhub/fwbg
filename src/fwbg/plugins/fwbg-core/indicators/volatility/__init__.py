@@ -227,6 +227,9 @@ class VolatilityIndicators(BaseIndicator):
             "vol_rv_iv_ratio",
         ]
 
+    def get_signal_columns(self) -> List[str]:
+        return ["vol_compression"]
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

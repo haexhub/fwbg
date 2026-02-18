@@ -144,6 +144,9 @@ class CusumEventsIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
+    def get_signal_columns(self) -> List[str]:
+        return ["cusum_pos_event", "cusum_neg_event"]
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {
