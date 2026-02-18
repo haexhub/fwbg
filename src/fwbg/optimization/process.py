@@ -9,7 +9,7 @@ import os
 import time
 import numpy as np
 
-from fwbg.data.config import tf_cfg, MIN_TRADES, WALK_FORWARD_FOLDS
+from fwbg.data import config as data_config
 from fwbg.core.config import StrategyConfig
 from fwbg.data.assets import get_asset
 from fwbg.core.context import SimulationContext
@@ -102,8 +102,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # KRITISCH: Walk-Forward Splits VOR Indikator-Berechnung!
         # Rolling Windows in Indikatoren würden sonst Zukunftsdaten sehen.
 
-        if len(df) < MIN_TRADES * 8:
-            log(1, f"SKIP - Zu wenig Daten für Walk-Forward ({len(df)} < {MIN_TRADES * 8})", sym)
+        if len(df) < data_config.MIN_TRADES * 8:
+            log(1, f"SKIP - Zu wenig Daten für Walk-Forward ({len(df)} < {data_config.MIN_TRADES * 8})", sym)
             return {"symbol": sym, "status": "insufficient_data", "rows": len(df)}
 
         # Asset-Konfiguration laden
@@ -116,11 +116,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         grid = strategy.get_grid(sym, asset.asset_class)
 
         # === WALK-FORWARD FOLDS ERSTELLEN ===
-        report_phase(sym, f"Creating {WALK_FORWARD_FOLDS} walk-forward folds...")
+        report_phase(sym, f"Creating {data_config.WALK_FORWARD_FOLDS} walk-forward folds...")
         try:
             wf_folds = create_walk_forward_folds(
                 df,
-                n_folds=WALK_FORWARD_FOLDS,
+                n_folds=data_config.WALK_FORWARD_FOLDS,
                 test_size=4000,
                 min_train_size=20000,
                 anchored=True,
@@ -407,7 +407,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         }
 
         # Sharpe/Calmar (needed for both not_significant and ok paths)
-        bars_per_year = tf_cfg["bars_per_hour"] * 24 * 250
+        bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
         total_test_bars = sum(r["test_size"] for r in all_fold_results)
         actual_trades_per_year = total_trades * bars_per_year / total_test_bars if total_test_bars > 0 else total_trades
         sharpe = calculate_sharpe_ratio(risk_result["trade_returns"], trades_per_year=actual_trades_per_year)

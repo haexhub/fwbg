@@ -371,6 +371,9 @@ class StrategyConfig:
     resources: ResourceConfig = field(default_factory=ResourceConfig)
     regime_filter: RegimeFilterConfig = field(default_factory=RegimeFilterConfig)
 
+    # Timeframe override (None = use TIMEFRAME env var)
+    timeframe: Optional[str] = None
+
     # Metadata
     hypothesis: str = ""
     expected_outcome: str = ""
@@ -400,6 +403,7 @@ class StrategyConfig:
             filters=FilterConfig.from_dict(data.get("filters", {})),
             resources=ResourceConfig.from_dict(data.get("resources")),
             regime_filter=RegimeFilterConfig.from_dict(data.get("regime_filter")),
+            timeframe=data.get("timeframe"),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
         )
