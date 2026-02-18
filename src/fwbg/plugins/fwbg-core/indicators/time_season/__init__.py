@@ -160,6 +160,19 @@ class TimeSeasonIndicators(BaseIndicator):
             "time_year_progress",
         ]
 
+    def get_signal_columns(self) -> List[str]:
+        return [
+            "time_session_asia",
+            "time_session_london",
+            "time_session_ny",
+            "time_session_overlap",
+            "time_month_start",
+            "time_month_end",
+            "time_quarter_end",
+            "time_week_start",
+            "time_week_end",
+        ]
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

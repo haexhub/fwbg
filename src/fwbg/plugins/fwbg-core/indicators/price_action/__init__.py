@@ -186,6 +186,15 @@ class PriceActionIndicators(BaseIndicator):
             "vol_obv_change", "vol_mfi", "vol_relative", "vol_price_trend",
         ]
 
+    def get_signal_columns(self) -> List[str]:
+        return [
+            "pa_body_dir",
+            "pa_gap_dir",
+            "pa_gap_filled",
+            "pa_inside_bar",
+            "pa_outside_bar",
+        ]
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

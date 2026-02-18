@@ -29,6 +29,35 @@ def _plugin_to_dict(fqn: str) -> dict:
     except TypeError:
         param_schema = plugin_cls().get_param_schema()
 
+    # Get feature columns for indicator plugins
+    feature_columns: list[str] = []
+    signal_columns: list[str] = []
+    plot_columns: list[str] = []
+    if hasattr(plugin_cls, "get_feature_columns"):
+        try:
+            feature_columns = plugin_cls.get_feature_columns()
+        except TypeError:
+            try:
+                feature_columns = plugin_cls().get_feature_columns()
+            except Exception:
+                pass
+    if hasattr(plugin_cls, "get_signal_columns"):
+        try:
+            signal_columns = plugin_cls.get_signal_columns()
+        except TypeError:
+            try:
+                signal_columns = plugin_cls().get_signal_columns()
+            except Exception:
+                pass
+    if hasattr(plugin_cls, "get_plot_columns"):
+        try:
+            plot_columns = plugin_cls.get_plot_columns()
+        except TypeError:
+            try:
+                plot_columns = plugin_cls().get_plot_columns()
+            except Exception:
+                plot_columns = [c for c in feature_columns if c not in signal_columns]
+
     return {
         "fqn": fqn,
         "name": plugin_cls.name,
@@ -40,6 +69,9 @@ def _plugin_to_dict(fqn: str) -> dict:
         "cacheable": plugin_cls.cacheable,
         "param_schema": param_schema,
         "defaults": defaults,
+        "feature_columns": feature_columns,
+        "signal_columns": signal_columns,
+        "plot_columns": plot_columns,
     }
 
 

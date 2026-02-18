@@ -409,9 +409,14 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     start_idx = max(0, end_idx - body.limit)
     result_slice = result_df.iloc[start_idx:end_idx]
 
+    # --- Classify columns via plugin methods ---
+    plugin_signal_cols = set(plugin.get_signal_columns()) if hasattr(plugin, "get_signal_columns") else set()
+    plugin_plot_cols = set(plugin.get_plot_columns()) if hasattr(plugin, "get_plot_columns") else set()
+
     # --- Build response ---
     columns_data = {}
     plot_columns = []
+    signal_columns = []
     for col in available_cols:
         values = result_slice[col].tolist()
         clean = [
@@ -420,10 +425,19 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         ]
         columns_data[col] = clean
 
-        # Classify: continuous columns are plottable; binary/tri-state signals are not
-        unique_vals = {v for v in clean if v is not None}
-        if not unique_vals <= {-1.0, 0.0, 1.0}:
-            plot_columns.append(col)
+        # Use plugin classification if available, fall back to heuristic
+        if plugin_signal_cols or plugin_plot_cols:
+            if col in plugin_signal_cols:
+                signal_columns.append(col)
+            else:
+                plot_columns.append(col)
+        else:
+            # Fallback heuristic for plugins without get_signal_columns()
+            unique_vals = {v for v in clean if v is not None}
+            if not unique_vals <= {-1.0, 0.0, 1.0}:
+                plot_columns.append(col)
+            elif unique_vals:
+                signal_columns.append(col)
 
     timestamps = [int(ts.timestamp() * 1000) for ts in result_slice.index]
 
@@ -431,6 +445,7 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         "fqn": body.fqn,
         "columns": available_cols,
         "plot_columns": plot_columns,
+        "signal_columns": signal_columns,
         "timestamps": timestamps,
         "data": columns_data,
     }

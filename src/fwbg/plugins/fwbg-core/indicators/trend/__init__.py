@@ -187,6 +187,9 @@ class TrendIndicators(BaseIndicator):
             "trend_supertrend", "trend_supertrend_flip",
         ]
 
+    def get_signal_columns(self) -> List[str]:
+        return ["trend_supertrend", "trend_supertrend_flip"]
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

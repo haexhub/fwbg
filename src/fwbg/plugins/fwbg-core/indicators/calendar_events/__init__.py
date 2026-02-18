@@ -131,6 +131,16 @@ class CalendarEventsIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
+    def get_signal_columns(self) -> List[str]:
+        return [
+            "cal_turn_of_month",
+            "cal_quarter_end",
+            "cal_triple_witching",
+            "cal_monthly_opex",
+            "cal_nfp_week",
+            "cal_year_boundary",
+        ]
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

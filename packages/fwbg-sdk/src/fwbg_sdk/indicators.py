@@ -176,3 +176,28 @@ class BaseIndicator(BasePlugin, ABC):
             Liste der Spaltennamen die vom Indicator erzeugt werden
         """
         return self._feature_columns
+
+    def get_signal_columns(self) -> List[str]:
+        """
+        Gibt Liste der Signal-Spalten zurück (diskrete Werte: -1, 0, 1).
+
+        Signal-Spalten repräsentieren diskrete Zustände/Events,
+        keine kontinuierlichen Werte. Sie werden im Chart als
+        Histogramm dargestellt statt als Linie.
+
+        Returns:
+            Liste der Signal-Spaltennamen, oder leere Liste
+        """
+        return []
+
+    def get_plot_columns(self) -> List[str]:
+        """
+        Gibt Liste der Plot-Spalten zurück (kontinuierliche Werte).
+
+        Standardmäßig: alle Feature-Spalten minus Signal-Spalten.
+
+        Returns:
+            Liste der plottbaren Spaltennamen
+        """
+        signal_cols = set(self.get_signal_columns())
+        return [c for c in self.get_feature_columns() if c not in signal_cols]
