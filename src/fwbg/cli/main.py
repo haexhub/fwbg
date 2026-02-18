@@ -36,13 +36,6 @@ class _SafeJsonEncoder(json.JSONEncoder):
 
 
 from fwbg.data import config as data_config
-from fwbg.data.config import (
-    DATA_PATH,
-    TIMEFRAME,
-    WALK_FORWARD_FOLDS,
-    OOS_SIZE,
-    CORR_THRESHOLD,
-)
 from fwbg.core.config import StrategyConfig
 from fwbg.optimization.process import process_symbol
 from fwbg.utils.progress import ProgressTracker, init_progress_queue, report_result
@@ -81,8 +74,23 @@ def run_optimizer(
         strategy_metadata: Strukturierte Strategie-Metadaten (dict oder via create_strategy_metadata())
         asset_filter: Liste von Assets die getestet werden sollen (None = alle)
     """
+    # Strategy-Config für Worker erstellen
+    if strategy_metadata:
+        strategy = StrategyConfig.from_dict(strategy_metadata)
+    else:
+        strategy = StrategyConfig()
+
+    # Timeframe aus Strategy übernehmen (überschreibt Modul-Globals)
+    if strategy.timeframe:
+        tf = strategy.timeframe
+        data_config.TIMEFRAME = tf
+        tf_cfg = data_config.TIMEFRAME_CONFIG.get(tf, data_config.TIMEFRAME_CONFIG["HOUR"])
+        data_config.tf_cfg = tf_cfg
+        data_config.OOS_SIZE = tf_cfg["oos_size"]
+        data_config.WINDOW_SIZE = tf_cfg["window_size"]
+
     # Lade nur Dateien für das gewählte Timeframe
-    files = sorted(glob.glob(f"{DATA_PATH}/*_{TIMEFRAME}.csv"))
+    files = sorted(glob.glob(f"{data_config.DATA_PATH}/*_{data_config.TIMEFRAME}.csv"))
 
     # Strategy-Metadaten auswerten für Filter
     if strategy_metadata:
@@ -115,12 +123,6 @@ def run_optimizer(
                     )
                 ]
 
-    # Strategy-Config für Worker erstellen
-    if strategy_metadata:
-        strategy = StrategyConfig.from_dict(strategy_metadata)
-    else:
-        strategy = StrategyConfig()
-
     # Ressourcen-Einstellungen aus Strategy-Objekt (bereits geparst)
     resource_settings = {
         "max_cpu_percent": strategy.resources.max_cpu_percent,
@@ -134,8 +136,8 @@ def run_optimizer(
     if asset_filter:
         files = [f for f in files if any(a in f for a in asset_filter)]
     if not files:
-        print(f"Keine Dateien für Timeframe {TIMEFRAME} gefunden!")
-        print(f"Verfügbare Dateien: {glob.glob(f'{DATA_PATH}/*.csv')[:5]}...")
+        print(f"Keine Dateien für Timeframe {data_config.TIMEFRAME} gefunden!")
+        print(f"Verfügbare Dateien: {glob.glob(f'{data_config.DATA_PATH}/*.csv')[:5]}...")
         return None
 
     # Run-ID und Verzeichnis erstellen
@@ -150,12 +152,11 @@ def run_optimizer(
         run_path = None
         plots_path = None  # Keine Plots ohne save
 
-    from fwbg.data.config import TIMEFRAME as _TF
-    print(f"\nFWBG Strategy Backtester 2.0 | Timeframe: {_TF}")
+    print(f"\nFWBG Strategy Backtester 2.0 | Timeframe: {data_config.TIMEFRAME}")
     if description:
         print(f"Description: {description}")
-    print(f"Walk-Forward Folds: {WALK_FORWARD_FOLDS}, OOS Size: {OOS_SIZE}")
-    print(f"Korrelations-Threshold: {CORR_THRESHOLD}")
+    print(f"Walk-Forward Folds: {data_config.WALK_FORWARD_FOLDS}, OOS Size: {data_config.OOS_SIZE}")
+    print(f"Korrelations-Threshold: {data_config.CORR_THRESHOLD}")
     print("-" * 60)
 
     # Ressourcen-Info anzeigen
@@ -276,8 +277,8 @@ def run_optimizer(
             _rrr = result.get("rrr", 1.0)
             _wf = result.get("walk_forward", {})
             _fold_details = _wf.get("fold_details", [])
-            _total_test_bars = sum(f.get("test_size", OOS_SIZE) for f in _fold_details) if _fold_details else WALK_FORWARD_FOLDS * OOS_SIZE
-            _bars_per_year = 24 * 250 if TIMEFRAME == "HOUR" else 96 * 250
+            _total_test_bars = sum(f.get("test_size", data_config.OOS_SIZE) for f in _fold_details) if _fold_details else data_config.WALK_FORWARD_FOLDS * data_config.OOS_SIZE
+            _bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
             _years = _total_test_bars / _bars_per_year if _bars_per_year > 0 else 1
 
             # Equity simulieren für annual_return
@@ -459,7 +460,7 @@ def run_optimizer(
             print(f"  - {none_results}x Fehler (None zurückgegeben)")
 
     # Korrelationsfilter anwenden (nur auf erfolgreiche)
-    filtered = filter_correlated_assets(successful_results, CORR_THRESHOLD)
+    filtered = filter_correlated_assets(successful_results, data_config.CORR_THRESHOLD)
     print(f"{len(filtered)} Assets nach Korrelationsfilter.")
 
     # Top 10 auswählen
@@ -508,8 +509,8 @@ def run_optimizer(
         wr = e["win_rate"]
 
         # Jahresrendite berechnen
-        bars_per_year = 24 * 250 if TIMEFRAME == "HOUR" else 96 * 250
-        total_oos_bars = WALK_FORWARD_FOLDS * OOS_SIZE
+        bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
+        total_oos_bars = data_config.WALK_FORWARD_FOLDS * data_config.OOS_SIZE
         years = total_oos_bars / bars_per_year if bars_per_year > 0 else 1
 
         if final_equity > 0 and years > 0:
@@ -721,16 +722,9 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         # Account wird im Optimizer nicht mehr benötigt
         # Die gefundenen Parameter werden in test_results/<run_id>/assets.json gespeichert
 
-        # Timeframe aus CLI oder Strategy übernehmen
+        # CLI --timeframe überschreibt Strategy-Timeframe
         if args.timeframe:
-            data_config.TIMEFRAME = args.timeframe
-            tf_cfg = data_config.TIMEFRAME_CONFIG.get(args.timeframe, data_config.TIMEFRAME_CONFIG["HOUR"])
-            data_config.OOS_SIZE = tf_cfg["oos_size"]
-        elif strategy_metadata.get("timeframe"):
-            tf = strategy_metadata["timeframe"]
-            data_config.TIMEFRAME = tf
-            tf_cfg = data_config.TIMEFRAME_CONFIG.get(tf, data_config.TIMEFRAME_CONFIG["HOUR"])
-            data_config.OOS_SIZE = tf_cfg["oos_size"]
+            strategy_metadata["timeframe"] = args.timeframe
         if args.cpu is not None:
             strategy_metadata["resources"]["max_cpu_percent"] = args.cpu
         if args.ram_reserve is not None:
