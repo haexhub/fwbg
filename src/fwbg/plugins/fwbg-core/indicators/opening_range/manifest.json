@@ -1,0 +1,7 @@
+{
+  "name": "opening_range",
+  "version": "1.0.0",
+  "description": "Opening Range Breakout features: rolling hourly range, session-specific ranges, breakout statistics",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

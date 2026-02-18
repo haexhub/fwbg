@@ -5,7 +5,7 @@
   "author": "fwbg-team",
   "license": "MIT",
   "plugins": {
-    "indicators": ["trend", "momentum", "volatility", "time_season", "price_action"],
+    "indicators": ["trend", "momentum", "volatility", "time_season", "price_action", "opening_range"],
     "exit_strategies": ["fixed"],
     "risk_management": ["kelly", "vol_targeted_kelly"]
   }
