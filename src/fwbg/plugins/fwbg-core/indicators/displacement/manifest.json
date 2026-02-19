@@ -1,0 +1,7 @@
+{
+  "name": "displacement",
+  "version": "1.0.0",
+  "description": "Displacement features: breakout quality, candle conviction, impulse detection",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
