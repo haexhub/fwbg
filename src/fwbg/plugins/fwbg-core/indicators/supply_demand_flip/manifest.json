@@ -1,0 +1,7 @@
+{
+  "name": "supply_demand_flip",
+  "version": "1.0.0",
+  "description": "Supply/Demand Flip Zones: detects S/R polarity changes with distance and strength features",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
