@@ -1,6 +1,5 @@
 """Strategy file endpoints."""
 import json
-import os
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel

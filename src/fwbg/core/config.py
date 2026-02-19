@@ -310,9 +310,12 @@ class ResourceConfig:
 def _load_json_preset(name: str, presets_dir: str) -> dict:
     """Load a JSON preset file from the given directory."""
     path = os.path.join(presets_dir, f"{name}.json")
-    if not os.path.isfile(path):
+    resolved = os.path.realpath(path)
+    if not resolved.startswith(os.path.realpath(presets_dir)):
+        raise ValueError(f"Preset name '{name}' resolves outside allowed directory")
+    if not os.path.isfile(resolved):
         raise FileNotFoundError(f"Preset '{name}' not found at {path}")
-    with open(path, "r") as f:
+    with open(resolved, "r") as f:
         return json.load(f)
 
 
