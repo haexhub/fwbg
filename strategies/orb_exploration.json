@@ -10,251 +10,37 @@
   "timeframe": "MINUTE_15",
   "hypothesis": "Opening Range Breakout Features (rolling + session-spezifisch) liefern pr\u00e4diktiven Edge, besonders f\u00fcr Indices und FX Majors bei Session-Opens. ML lernt welche Stunden und welche Breakout-Typen profitabel sind.",
   "expected_outcome": "Feature Selection w\u00e4hlt ORB-Features in stabilem Subset. Session-spezifische Features (s08, s13, s14) st\u00e4rker als Rolling f\u00fcr Forex/Indices.",
-  "pipeline": {
-    "preprocessing": [
-      {
-        "name": "fractional_diff",
-        "params": {
-          "auto_d": false,
-          "default_d": 0.4,
-          "columns": [
-            "O",
-            "H",
-            "L",
-            "C"
-          ]
-        }
-      }
-    ],
-    "indicators": [
-      {
-        "name": "opening_range",
-        "params": {
-          "range_bars": 1,
-          "atr_period": 14,
-          "sessions": [
-            0,
-            8,
-            13,
-            14
-          ],
-          "stat_window": 20,
-          "enable_rolling": true,
-          "enable_session": true,
-          "enable_stats": true
-        }
-      },
-      {
-        "name": "trend",
-        "params": {
-          "adx_periods": [
-            7,
-            14,
-            21
-          ],
-          "ema_periods": [
-            8,
-            21,
-            50,
-            100,
-            200
-          ],
-          "sma_periods": [
-            20,
-            50,
-            200
-          ],
-          "cci_periods": [
-            14,
-            20
-          ],
-          "aroon_period": 25,
-          "er_periods": [
-            10,
-            20,
-            50
-          ],
-          "supertrend_period": 14,
-          "supertrend_multiplier": 3.0
-        }
-      },
-      {
-        "name": "momentum",
-        "params": {
-          "rsi_periods": [
-            7,
-            14,
-            21
-          ],
-          "stoch_periods": [
-            14,
-            21
-          ],
-          "williams_periods": [
-            14,
-            21
-          ],
-          "roc_periods": [
-            5,
-            10,
-            20
-          ]
-        }
-      },
-      {
-        "name": "volatility",
-        "params": {
-          "atr_periods": [
-            7,
-            14,
-            21
-          ],
-          "vol_est_windows": [
-            20,
-            50
-          ]
-        }
-      },
-      {
-        "name": "time_season",
-        "params": {
-          "include_raw": true,
-          "include_encoded": true
-        }
-      }
-    ],
-    "feature_selection": [
-      {
-        "name": "stability",
-        "params": {
-          "inner_selector": "boruta",
-          "inner_params": {
-            "n_iter": 8,
-            "n_estimators": 50,
-            "max_depth": 5,
-            "min_z_score": 0.5
-          },
-          "n_bootstrap": 7,
-          "threshold": 0.6,
-          "bootstrap_ratio": 0.8
-        }
-      },
-      {
-        "name": "correlation_filter",
-        "params": {
-          "max_correlation": 0.7,
-          "max_features": 50
-        }
-      }
-    ],
-    "data_loading": [
-      {
-        "name": "macro_data",
-        "source": "forexsb"
-      }
-    ]
-  },
+  "pipeline": "orb_simple",
   "exit_strategy": "atr_based",
-  "exit_params": {
-    "atr_period": 14,
-    "min_tp_pips": 10,
-    "min_sl_pips": 15,
-    "adaptive_timeout": false
-  },
-  "model": {
-    "type": "xgboost",
-    "architecture": "long_short_separate",
-    "trade_directions": [
-      "long",
-      "short"
-    ],
-    "hyperparameters": {
-      "n_estimators": 100,
-      "max_depth": 6,
-      "learning_rate": 0.1,
-      "subsample": 0.8,
-      "colsample_bytree": 0.8,
-      "random_state": 42
-    }
-  },
+  "exit_params": "atr_standard_at",
+  "model": "xgboost_depth6",
+  "validation": "walk_forward_intraday",
+  "filters": "permissive",
+  "resources": "standard",
   "grids": {
     "presets_dir": "../grids",
     "regime_filters_dir": "../regime_filters",
     "assignments": {
       "FOREX": {
         "preset": "orb_exploration_base",
-        "tp": [
-          1.5,
-          2.0,
-          2.5,
-          3.0,
-          3.5
-        ],
+        "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
         "regime_filter_grid": "adx_only"
       },
       "INDEX": {
         "preset": "orb_exploration_base",
-        "tp": [
-          2.0,
-          2.5,
-          3.0,
-          3.5,
-          4.0
-        ],
+        "tp": [2.0, 2.5, 3.0, 3.5, 4.0],
         "regime_filter_grid": "adx_vix"
       },
       "COMMODITY": {
         "preset": "orb_exploration_base",
-        "tp": [
-          2.0,
-          2.5,
-          3.0,
-          3.5,
-          4.0
-        ],
+        "tp": [2.0, 2.5, 3.0, 3.5, 4.0],
         "regime_filter_grid": "adx_only"
       },
       "CRYPTO": {
         "preset": "orb_exploration_crypto",
-        "tp": [
-          2.0,
-          3.0,
-          4.0,
-          5.0,
-          6.0
-        ],
+        "tp": [2.0, 3.0, 4.0, 5.0, 6.0],
         "regime_filter_grid": "adx_only"
       }
     }
-  },
-  "validation": {
-    "method": "walk_forward",
-    "folds": 8,
-    "oos_size": 8000,
-    "min_trades": 50,
-    "n_inner_folds": 5,
-    "embargo_bars": 400,
-    "sample_weights": true,
-    "early_pruning": {
-      "enabled": true,
-      "keep_ratio": 0.5,
-      "min_survivors": 10
-    },
-    "probability_calibration": false,
-    "calibration_method": "isotonic"
-  },
-  "filters": {
-    "min_rrr": 0,
-    "min_trades": 30,
-    "min_annual_return": 0,
-    "min_sharpe": 0,
-    "max_drawdown": 1.0
-  },
-  "resources": {
-    "ram_per_worker_gb": 4.0,
-    "min_free_ram_percent": 0.15,
-    "max_cpu_percent": 0.8,
-    "max_concurrent_assets": 1,
-    "xgboost_n_jobs": 0
   }
 }

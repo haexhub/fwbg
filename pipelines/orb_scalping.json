@@ -1,0 +1,140 @@
+{
+  "preprocessing": [
+    {
+      "name": "fractional_diff",
+      "params": {
+        "auto_d": false,
+        "default_d": 0.4,
+        "columns": ["O", "H", "L", "C"]
+      }
+    }
+  ],
+  "indicators": [
+    {
+      "name": "opening_range",
+      "params": {
+        "range_bars": 1,
+        "atr_period": 14,
+        "sessions": [0, 8, 13, 14],
+        "stat_window": 20,
+        "enable_rolling": true,
+        "enable_session": true,
+        "enable_stats": true
+      }
+    },
+    {
+      "name": "previous_day_levels",
+      "params": {
+        "atr_period": 14,
+        "ma_period": 20
+      }
+    },
+    {
+      "name": "displacement",
+      "params": {
+        "atr_period": 14,
+        "range_avg_period": 20
+      }
+    },
+    {
+      "name": "supply_demand_flip",
+      "params": {
+        "swing_lookback": 10,
+        "zone_atr_width": 0.3,
+        "atr_period": 14,
+        "max_active_zones": 20,
+        "zone_expiry": 200
+      }
+    },
+    {
+      "name": "liquidity_levels",
+      "params": {
+        "swing_lookback": 10,
+        "tolerance_atr_mult": 0.2,
+        "atr_period": 14,
+        "min_touches": 2,
+        "lookback_window": 200
+      }
+    },
+    {
+      "name": "trend",
+      "params": {
+        "adx_periods": [7, 14],
+        "ema_periods": [8, 21, 50],
+        "sma_periods": [20, 50],
+        "cci_periods": [14],
+        "aroon_period": 25,
+        "er_periods": [10, 20],
+        "supertrend_period": 14,
+        "supertrend_multiplier": 3.0
+      }
+    },
+    {
+      "name": "momentum",
+      "params": {
+        "rsi_periods": [7, 14],
+        "stoch_periods": [14],
+        "williams_periods": [14],
+        "roc_periods": [5, 10]
+      }
+    },
+    {
+      "name": "volatility",
+      "params": {
+        "atr_periods": [7, 14],
+        "vol_est_windows": [20]
+      }
+    },
+    {
+      "name": "price_action",
+      "params": {
+        "hh_ll_period": 14,
+        "compute_volume": false
+      }
+    },
+    {
+      "name": "time_season",
+      "params": {
+        "include_raw": true,
+        "include_encoded": true
+      }
+    },
+    {
+      "name": "fair_value_gap",
+      "params": {
+        "atr_period": 14,
+        "lookback": 100
+      }
+    }
+  ],
+  "feature_selection": [
+    {
+      "name": "stability",
+      "params": {
+        "inner_selector": "boruta",
+        "inner_params": {
+          "n_iter": 8,
+          "n_estimators": 50,
+          "max_depth": 5,
+          "min_z_score": 0.5
+        },
+        "n_bootstrap": 7,
+        "threshold": 0.6,
+        "bootstrap_ratio": 0.8
+      }
+    },
+    {
+      "name": "correlation_filter",
+      "params": {
+        "max_correlation": 0.7,
+        "max_features": 50
+      }
+    }
+  ],
+  "data_loading": [
+    {
+      "name": "macro_data",
+      "source": "forexsb"
+    }
+  ]
+}

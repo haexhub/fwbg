@@ -1,0 +1,246 @@
+{
+  "preprocessing": [
+    {
+      "name": "fractional_diff",
+      "params": {
+        "auto_d": false,
+        "default_d": 0.4,
+        "columns": ["O", "H", "L", "C"]
+      }
+    }
+  ],
+  "indicators": [
+    {
+      "name": "trend",
+      "params": {
+        "adx_periods": [7, 14, 21],
+        "ema_periods": [8, 21, 50, 100, 200],
+        "sma_periods": [20, 50, 200],
+        "cci_periods": [14, 20],
+        "aroon_period": 25,
+        "er_periods": [10, 20, 50],
+        "supertrend_period": 14,
+        "supertrend_multiplier": 3.0
+      }
+    },
+    {
+      "name": "momentum",
+      "params": {
+        "rsi_periods": [7, 14, 21],
+        "stoch_periods": [14, 21],
+        "williams_periods": [14, 21],
+        "roc_periods": [5, 10, 20]
+      }
+    },
+    {
+      "name": "volatility",
+      "params": {
+        "bb_periods": [20],
+        "atr_periods": [7, 14, 21],
+        "vol_est_windows": [20, 50]
+      }
+    },
+    {
+      "name": "regime",
+      "params": {
+        "hurst_windows": [100, 200, 500],
+        "step": 10,
+        "entropy_windows": [50, 100],
+        "vr_windows": [100, 200],
+        "vr_lags": [5, 10]
+      }
+    },
+    {
+      "name": "structure",
+      "params": {
+        "fft_windows": [64, 128, 256],
+        "path_windows": [10, 20, 50, 100],
+        "convexity_periods": [21, 50],
+        "event_periods": [20, 50],
+        "vwap_windows": [20, 50, 100]
+      }
+    },
+    {
+      "name": "risk",
+      "params": {
+        "dd_windows": [50, 100, 200],
+        "cvar_windows": [50, 100],
+        "cvar_percentiles": [5, 1],
+        "vov_windows": [20, 50, 100],
+        "compute_correlations": true
+      }
+    },
+    {
+      "name": "price_action",
+      "params": {
+        "hh_ll_period": 5,
+        "compute_volume": true
+      }
+    },
+    {
+      "name": "time_season",
+      "params": {
+        "include_raw": true,
+        "include_encoded": true
+      }
+    },
+    {
+      "name": "distribution",
+      "params": {
+        "windows": [20, 50, 100],
+        "z_score_lookback": 200,
+        "compute_changes": true
+      }
+    },
+    {
+      "name": "dynamics",
+      "params": {
+        "lookbacks": [4, 8, 24],
+        "lag_periods": [4, 8, 24, 48]
+      }
+    },
+    {
+      "name": "multi_timeframe",
+      "params": {
+        "h4_bars": 4,
+        "d1_bars": 24,
+        "ema_periods": [20, 50]
+      }
+    },
+    {
+      "name": "cross_features",
+      "params": {
+        "rsi_overbought": 70,
+        "rsi_oversold": 30
+      }
+    },
+    {
+      "name": "ichimoku",
+      "params": {
+        "tenkan_period": 9,
+        "kijun_period": 26,
+        "senkou_b_period": 52
+      }
+    },
+    {
+      "name": "microstructure",
+      "params": {
+        "atr_period": 14,
+        "rolling_window": 5
+      }
+    },
+    {
+      "name": "macro_surprise",
+      "params": {
+        "vol_lookback": 20,
+        "surprise_threshold": 2.0,
+        "gap_ma_period": 10
+      }
+    },
+    {
+      "name": "market_regime",
+      "params": {
+        "window": 50
+      }
+    },
+    {
+      "name": "regime_cluster",
+      "params": {
+        "zscore_window": 200,
+        "quantile_window": 500,
+        "n_regimes": 3
+      }
+    },
+    {
+      "name": "fair_value_gap",
+      "params": {
+        "atr_period": 14,
+        "lookback": 100
+      }
+    },
+    {
+      "name": "support_resistance",
+      "params": {}
+    },
+    {
+      "name": "cusum_events",
+      "params": {
+        "threshold": 1.5,
+        "lookback": 100
+      }
+    },
+    {
+      "name": "calendar_events",
+      "params": {}
+    },
+    {
+      "name": "fractal_dimension",
+      "params": {
+        "windows": [50, 100, 200],
+        "k_max": 10
+      }
+    },
+    {
+      "name": "wavelets",
+      "params": {
+        "wavelet": "db4",
+        "levels": 3,
+        "windows": [20, 50, 100]
+      }
+    },
+    {
+      "name": "autoencoder_features",
+      "params": {
+        "n_components": 8
+      }
+    },
+    {
+      "name": "topological_features",
+      "params": {
+        "windows": [50, 100],
+        "embedding_dim": 3
+      }
+    },
+    {
+      "name": "adversarial_validation",
+      "params": {
+        "windows": [100, 200],
+        "step": 10
+      }
+    }
+  ],
+  "feature_selection": [
+    {
+      "name": "stability",
+      "params": {
+        "inner_selector": "boruta",
+        "inner_params": {
+          "n_iter": 8,
+          "n_estimators": 50,
+          "max_depth": 5,
+          "min_z_score": 0.5
+        },
+        "n_bootstrap": 7,
+        "threshold": 0.6,
+        "bootstrap_ratio": 0.8
+      }
+    },
+    {
+      "name": "correlation_filter",
+      "params": {
+        "max_correlation": 0.7,
+        "max_features": 50
+      }
+    }
+  ],
+  "data_loading": [
+    {
+      "name": "macro_data",
+      "source": "forexsb"
+    },
+    {
+      "name": "cot_positioning",
+      "source": "forexsb"
+    }
+  ]
+}
