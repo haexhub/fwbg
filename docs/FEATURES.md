@@ -2,48 +2,79 @@
 
 Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur Verfügung stehen.
 
-**Gesamt: ~220-300+ Features** (abhängig von verfügbaren Makro-Daten)
+**Gesamt: ~400+ Features** aus 28 Indicator Plugins (abhängig von Konfiguration und verfügbaren Makro-Daten)
 
 ---
 
 ## Inhaltsverzeichnis
 
-1. [Trend Indikatoren](#1-trend-indikatoren-trend_-ichi_)
-2. [Momentum Indikatoren](#2-momentum-indikatoren-mom_)
-3. [Volatilität Indikatoren](#3-volatilität-indikatoren-vol_)
-4. [Distribution Features](#4-distribution-features-dist_)
-5. [FFT Features](#5-fft-features-fft_)
-6. [Price Action Features](#6-price-action-features-pa_)
-7. [Zeit Features](#7-zeit-features-time_)
-8. [Saisonalität Features](#8-saisonalität-features-season_)
-9. [Dynamik Features](#9-dynamik-features-dyn_)
-10. [Lag Features](#10-lag-features-lag_)
-11. [Beschleunigung Features](#11-beschleunigung-features-accel_)
-12. [Cross-Indikator Features](#12-cross-indikator-features-cross_)
-13. [Multi-Timeframe Features](#13-multi-timeframe-features-mtf_)
-14. [Regime Features](#14-regime-features-regime_)
-15. [Event Features](#15-event-features-event_)
-16. [Struktur Features](#16-struktur-features-path_-fractal_-convex_-structure_)
-17. [Korrelations Features](#17-korrelations-features-corr_-lead_lag_)
-18. [Risk/Tail-Risk Features](#18-risktail-risk-features-risk_)
-19. [Microstructure Features](#19-microstructure-features-micro_)
-20. [Macro Surprise Features](#20-macro-surprise-features-macsurp_)
-21. [Makro Features](#21-makro-features-macro_)
-22. [Fair Value Gap Features](#22-fair-value-gap-features-fvg_)
-23. [Support/Resistance Features](#23-supportresistance-features-sr_)
-24. [CUSUM Event Features](#24-cusum-event-features-cusum_)
-25. [Calendar Event Features](#25-calendar-event-features-cal_)
-26. [Fractal Dimension Features](#26-fractal-dimension-features-fd_)
-27. [Wavelet Features](#27-wavelet-features-wt_)
-28. [Autoencoder / PCA Features](#28-autoencoder--pca-features-ae_)
-29. [Topological Data Analysis Features](#29-topological-data-analysis-features-tda_)
-30. [Adversarial Validation Features](#30-adversarial-validation-features-adv_)
-31. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins)
-32. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
+### Klassische Technische Analyse
+1. [Trend Indikatoren](#1-trend-indikatoren-trend_) — ADX, EMA, MACD, Supertrend
+2. [Momentum Indikatoren](#2-momentum-indikatoren-mom_) — RSI, Stochastic, ROC
+3. [Volatilität Indikatoren](#3-volatilität-indikatoren-vol_) — ATR, Bollinger, GK/PK/YZ Vol
+4. [Price Action Features](#6-price-action-features-pa_) — Kerzenstruktur, Gaps, Volume
+
+### Statistische & Frequenz-Analyse
+5. [Distribution Features](#4-distribution-features-dist_) — Skewness, Kurtosis
+6. [FFT Features](#5-fft-features-fft_) — Fourier-Zyklen
+7. [Struktur Features](#16-struktur-features-path_-fractal_-convex_-structure_) — Path Efficiency, Convexity, VWAP
+
+### Zeit & Saisonalität
+8. [Zeit Features](#7-zeit-features-time_) — Intraday-Sessions
+9. [Saisonalität Features](#8-saisonalität-features-season_) — Kalender-Effekte
+10. [Calendar Event Features](#25-calendar-event-features-cal_) — Turn-of-Month, OpEx, FOMC
+
+### Dynamik & Meta-Features
+11. [Dynamik Features](#9-dynamik-features-dyn_) — Indikator-Änderungen
+12. [Lag Features](#10-lag-features-lag_) — Historische Zustände
+13. [Beschleunigung Features](#11-beschleunigung-features-accel_) — Zweite Ableitung
+14. [Cross-Indikator Features](#12-cross-indikator-features-cross_) — Confluence
+
+### Multi-Timeframe & Session
+15. [Multi-Timeframe Features](#13-multi-timeframe-features-mtf_) — H4/D1 Aggregation
+16. [Opening Range Features](#31-opening-range-features-orb_) — ORB, Session-Breakouts
+
+### Regime & Marktstruktur
+17. [Regime Features](#14-regime-features-regime_) — Hurst-Exponent
+18. [Market Regime Features](#33-market-regime-features-regime_risk_) — Risk-On/Off Composite
+19. [Regime Cluster Features](#34-regime-cluster-features-regime_cluster_) — 3-State Clustering
+
+### Event & Level Detection
+20. [Event Features](#15-event-features-event_) — Bars-Since-Event
+21. [CUSUM Event Features](#24-cusum-event-features-cusum_) — Structural Breaks
+22. [Fair Value Gap Features](#22-fair-value-gap-features-fvg_) — Institutionelle Gaps
+23. [Support/Resistance Features](#23-supportresistance-features-sr_) — S/R Zones, Flip-Zones
+
+### Risk & Korrelation
+24. [Risk/Tail-Risk Features](#18-risktail-risk-features-risk_) — CVaR, Crash-Prob
+25. [Korrelations Features](#17-korrelations-features-corr_-lead_lag_) — SPX/VIX Korrelation
+26. [Microstructure Features](#19-microstructure-features-micro_) — Orderflow, Pressure
+
+### Makro & Externe Daten
+27. [Macro Surprise Features](#20-macro-surprise-features-macsurp_) — Gap-Analyse, Surprises
+28. [Makro Features](#21-makro-features-macro_) — VIX, Zinsen, Indices, Rohstoffe
+
+### Fortgeschrittene Methoden
+29. [Ichimoku Cloud Features](#32-ichimoku-cloud-features-ichi_) — Vollständiges Trading-System
+30. [Fractal Dimension Features](#26-fractal-dimension-features-fd_) — Higuchi FD
+31. [Wavelet Features](#27-wavelet-features-wt_) — DWT Dekomposition
+32. [Autoencoder / PCA Features](#28-autoencoder--pca-features-ae_) — Latent Features
+33. [Topological Data Analysis](#29-topological-data-analysis-features-tda_) — Persistent Homology
+34. [Adversarial Validation](#30-adversarial-validation-features-adv_) — Distribution Shift
+
+### Referenz
+35. [Feature-Gruppen / Indicator Plugins](#feature-gruppen--indicator-plugins) — Plugin-Übersicht
+36. [Early Termination & Grid-Optimierung](#early-termination--grid-optimierung)
 
 ---
 
-## 1. Trend Indikatoren (`trend_`, `ichi_`)
+## 1. Trend Indikatoren (`trend_`)
+
+**Plugin:** `fwbg-core:trend` | **~34 Features**
+
+Trend-Indikatoren beantworten drei Kernfragen: *Gibt es einen Trend?* (ADX), *Wie stark ist er?* (EMA/SMA-Distanz, Efficiency Ratio), und *Wohin geht er?* (MACD, Aroon, Supertrend). Die Kombination mehrerer Methoden reduziert Fehlsignale: ADX misst Trendstärke richtungsunabhängig, MACD erfasst Momentum-Divergenzen, und der Supertrend liefert klare Ein-/Ausstiegssignale über ATR-basierte Bänder.
+
+**Trading-Relevanz:** Trend-Following ist die profitabelste Strategie-Klasse — aber nur in trendenden Märkten. ADX > 25 signalisiert, dass Breakout-Strategien funktionieren; ADX < 20 warnt vor Mean-Reversion-Phasen. EMA-Distanzen zeigen Überdehnung (Mean-Reversion-Setup) oder Unterstützung (Trend-Continuation). Die Efficiency Ratio unterscheidet saubere Trends (ER → 1) von choppy Seitwärtsbewegungen (ER → 0).
 
 ### ADX (Average Directional Index)
 Misst die Stärke eines Trends, unabhängig von der Richtung.
@@ -116,22 +147,27 @@ Misst die Effizienz einer Preisbewegung (Signal vs. Noise).
 
 **Werte:** 0-1. Nahe 1 = starker, effizienter Trend. Nahe 0 = Seitwärtsbewegung/Noise
 
-### Ichimoku Cloud
+### Supertrend
+ATR-basierter Trend-Filter mit dynamischen Bändern. Flipped nur in Trendrichtung — reduziert Whipsaws in Seitwärtsmärkten.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
-| `ichi_tenkan` | Conversion Line (9-Perioden) | Schnelle Linie |
-| `ichi_kijun` | Base Line (26-Perioden) | Langsame Linie |
-| `ichi_senkou_a` | Leading Span A | Cloud-Grenze |
-| `ichi_senkou_b` | Leading Span B | Cloud-Grenze |
-| `ichi_cloud_pos` | Position relativ zur Cloud | 0-1, über/unter Cloud |
-| `ichi_cloud_thick` | Cloud-Dicke (normalisiert) | Stärke Support/Resistance |
-| `ichi_tk_cross` | Tenkan-Kijun Differenz | Cross-Signal |
-| `ichi_price_kijun` | Preis-Kijun Abstand | Trend-Stärke |
+| `trend_supertrend` | Supertrend-Band (normalisiert) | Dynamischer Support/Resistance |
+| `trend_supertrend_dir` | Trend-Richtung | 1 = bullish, -1 = bearish |
+| `trend_supertrend_dist` | Abstand zum Band (%) | Trend-Stärke |
+| `trend_supertrend_flip` | Band-Flip erkannt | 1 = Trendwechsel |
+
+**Parameter:** `supertrend_period` (default: 14), `supertrend_multiplier` (default: 3.0)
 
 ---
 
 ## 2. Momentum Indikatoren (`mom_`)
+
+**Plugin:** `fwbg-core:momentum` | **~16 Features**
+
+Momentum-Indikatoren messen die *Geschwindigkeit* von Preisbewegungen und identifizieren überkaufte/überverkaufte Zustände. RSI und Stochastic normalisieren Momentum auf feste Skalen (0-100), was ML-Modellen erlaubt, Extremwerte konsistent über verschiedene Assets und Zeiträume zu erkennen. Rate of Change (ROC) misst dagegen die reine prozentuale Veränderung ohne Normalisierung.
+
+**Trading-Relevanz:** Momentum-Divergenzen (RSI fällt, Preis steigt) sind klassische Warnsignale für Trenderschöpfung. In Range-Märkten funktionieren Overbought/Oversold-Signale gut; in starken Trends kann RSI wochen­lang >70 bleiben — daher immer in Kombination mit Trend-Indikatoren nutzen. Der Ultimate Oscillator kombiniert drei Zeitebenen und reduziert so False Signals einzelner Perioden.
 
 ### RSI (Relative Strength Index)
 
@@ -185,6 +221,12 @@ Misst die Effizienz einer Preisbewegung (Signal vs. Noise).
 
 ## 3. Volatilität Indikatoren (`vol_`)
 
+**Plugin:** `fwbg-core:volatility` | **~14 Features**
+
+Volatilitäts-Indikatoren quantifizieren die Schwankungsbreite des Marktes und identifizieren Phasen der Kompression (Setup für große Bewegungen) und Expansion. Neben dem klassischen ATR verwendet das Plugin fortgeschrittene Volatilitätsschätzer: **Garman-Klass** nutzt alle vier OHLC-Preise für effizientere Schätzung, **Parkinson** fokussiert auf die High-Low-Range, und **Yang-Zhang** ist der robusteste Schätzer, der Overnight-Gaps, Close-to-Close-Moves und Rogers-Satchell-Varianz kombiniert.
+
+**Trading-Relevanz:** ATR bestimmt direkt die Positionsgröße und Stop-Loss-Distanz. Volatilitätskompression (ATR + BB-Breite gleichzeitig unter 20. Perzentil) signalisiert bevorstehende Breakouts — klassisches Squeeze-Setup. Verschiedene Vol-Schätzer reagieren unterschiedlich auf Marktphasen: Garman-Klass ist effizient bei Normal­bedingungen, Yang-Zhang robust bei Overnight-Gaps. Realized Vol vs. Implied Vol (VIX) Spread zeigt Fehlbepreisung im Options­markt.
+
 ### Bollinger Bands
 
 | Feature | Beschreibung | Interpretation |
@@ -215,6 +257,26 @@ Misst die Effizienz einer Preisbewegung (Signal vs. Noise).
 | `vol_atr_pct_21` | ATR/Preis (21-Perioden) | Geglättete Volatilität |
 | `vol_atr` | Absoluter ATR | Für interne Berechnungen |
 
+### Volatilitäts-Schätzer
+
+Fortgeschrittene OHLC-basierte Volatilitätsschätzer, die effizienter als Close-to-Close-Varianz sind.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `vol_gk_20/50` | Garman-Klass Volatilität | σ² = 0.5·ln(H/L)² − (2ln2−1)·ln(C/O)² |
+| `vol_pk_20/50` | Parkinson Volatilität | σ² = ln(H/L)² / (4·ln2) |
+| `vol_yz_20/50` | Yang-Zhang Volatilität | Kombiniert Overnight + Rogers-Satchell + Close-to-Close |
+| `vol_gk_20_rank` | Garman-Klass Perzentil-Rang | 0-1, Position in der Verteilung |
+
+### Volatilitäts-Kompression & Regime
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `vol_compression` | ATR14 + BB-Breite unter 20. Perzentil | 1 = Squeeze-Setup, Breakout erwartet |
+| `vol_realized_20` | Annualisierte Realized Vol (20 Bars) | Log-Return basierte Volatilität |
+| `vol_rv_iv_spread` | Realized Vol minus VIX (falls verfügbar) | Positiv = IV zu niedrig, Negativ = IV zu hoch |
+| `vol_rv_iv_ratio` | Realized Vol / VIX | <1 = IV-Prämie, >1 = RV dominiert |
+
 ### Volume-basiert (falls verfügbar)
 
 | Feature | Beschreibung | Interpretation |
@@ -226,7 +288,11 @@ Misst die Effizienz einer Preisbewegung (Signal vs. Noise).
 
 ## 4. Distribution Features (`dist_`)
 
-Analysieren die statistische Verteilung der Returns.
+**Plugin:** `fwbg-core:distribution` | **~10 Features**
+
+Distribution-Features analysieren die statistische Verteilung der Returns jenseits von Mittelwert und Varianz. Finanzmärkte sind nicht normalverteilt — sie zeigen Fat Tails (Kurtosis > 3) und asymmetrische Schiefen, die für Risikomodellierung entscheidend sind.
+
+**Trading-Relevanz:** Negative Schiefe warnt vor asymmetrischem Downside-Risiko (häufige kleine Gewinne, seltene große Verluste). Hohe Kurtosis signalisiert Fat-Tail-Regime — hier sind größere Stops nötig, da Extrembewegungen wahrscheinlicher sind. Z-Score-normalisierte Versionen zeigen, ob die aktuelle Verteilung *relativ zur jüngsten Geschichte* extrem ist, nicht absolut.
 
 ### Skewness (Schiefe)
 
@@ -256,7 +322,11 @@ Analysieren die statistische Verteilung der Returns.
 
 ## 5. FFT Features (`fft_`)
 
-Fourier-Transformation zur Zykluserkennung.
+**Enthalten in Plugin:** `fwbg-core:structure`
+
+Fourier-Transformation zur Zykluserkennung. Die FFT zerlegt Preisbewegungen in Frequenzkomponenten und zeigt, welche Zykluslängen aktuell dominieren. Im Gegensatz zu Wavelets (→ Sektion 27) liefert FFT *globale* Frequenzinformation ohne Zeitlokalisierung.
+
+**Trading-Relevanz:** Märkte durchlaufen zyklische Phasen — nicht perfekt periodisch, aber mit dominanten Frequenzen, die über Rolling-Fenster stabil sein können. Niedrige spektrale Entropie zeigt klare, dominante Zyklen (gut für zyklische Strategien); hohe Entropie bedeutet Rauschen (kein zyklischer Edge). Die Low-Frequency Ratio identifiziert trendende Phasen, in denen langfristige Zyklen dominieren.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
@@ -277,6 +347,12 @@ Fourier-Transformation zur Zykluserkennung.
 
 ## 6. Price Action Features (`pa_`)
 
+**Plugin:** `fwbg-core:price_action` | **~17 Features**
+
+Price Action Features kodieren die Kerzenstruktur und Bar-zu-Bar-Beziehungen ohne gleitende Durchschnitte oder Lookback-Perioden. Sie messen *wer die Bar gewonnen hat* (Range Position, Body Ratio), *wie die Struktur aussieht* (Higher Highs/Lows, Trend Structure Score), und *ob Volume die Bewegung bestätigt* (OBV, MFI, Relative Volume).
+
+**Trading-Relevanz:** Price Action ist die direkteste Form von Markt-Feedback — keine Lag durch Averaging. Body Ratio nahe 1 zeigt Überzeugung (starker Kerzenkörper, keine Dochte); nahe 0 zeigt Unentschlossenheit (Doji). Konsekutive Higher Highs + Higher Lows bestätigen Trendqualität. Gaps zeigen Overnight-Informationsschocks. Volume-Features (falls verfügbar) unterscheiden echte Breakouts von Fehlausbrüchen.
+
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
 | `pa_range_pos` | Position in High-Low Range | 0 = Low, 1 = High |
@@ -284,10 +360,27 @@ Fourier-Transformation zur Zykluserkennung.
 | `pa_ll` | Lower Lows (letzte 5 Bars) | Abwärtsdruck |
 | `pa_body_ratio` | Body/Range Ratio | Kerzen-Stärke |
 | `pa_gap` | Gap vom Vortag (%) | Overnight-Bewegung |
+| `pa_body_dir` | Body-Richtung | +1 bullish, -1 bearish, 0 Doji |
+| `pa_upper_shadow` | Oberer Docht / Range | Verkaufsdruck oben |
+| `pa_lower_shadow` | Unterer Docht / Range | Kaufdruck unten |
+| `pa_hl` | Higher Lows (letzte 5 Bars) | Aufwärtsstruktur-Qualität |
+| `pa_lh` | Lower Highs (letzte 5 Bars) | Abwärtsstruktur-Qualität |
+| `pa_trend_structure` | (HH+HL) - (LL+LH) | Positiv = bullish, Negativ = bearish |
+| `pa_gap_dir` | Gap-Richtung | 1 = up, -1 = down, 0 = kein Gap |
+| `pa_consec_bull` | Konsekutive bullishe Bars | Bullisher Streak |
+| `pa_consec_bear` | Konsekutive bearishe Bars | Bearisher Streak |
+| `pa_range_expansion` | Aktuelle Range / 20-Bar Avg | >1 = Expansion, <1 = Kontraktion |
+| `pa_inside_bar` | Inside Bar erkannt | Volatilitätskontraktion |
 
 ---
 
 ## 7. Zeit Features (`time_`)
+
+**Plugin:** `fwbg-core:time_season` | **~14 Features (zusammen mit Saisonalität)**
+
+Zeit-Features kodieren Intraday-Muster und Trading-Sessions. Finanzmärkte zeigen ausgeprägte Tageszeit-Effekte: US-Open (14:30 UTC) bringt die höchste Volatilität, der Asien-Europa-Overlap (8-12 UTC) erhöhte Liquidität. Sin/Cos-Encoding ist kritisch für ML-Modelle — ohne zyklische Kodierung sehen Baummodelle Stunde 23 und 0 als maximal verschieden, obwohl sie benachbart sind.
+
+**Trading-Relevanz:** Session-Timing bestimmt Spread, Liquidität und Volatilität. Breakout-Strategien funktionieren besser am Session-Open, Mean-Reversion besser in ruhigen Phasen. Wochentags-Effekte (Montag-Reversals, Freitag-Profit-Taking) sind empirisch gut dokumentiert.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
@@ -299,6 +392,12 @@ Fourier-Transformation zur Zykluserkennung.
 ---
 
 ## 8. Saisonalität Features (`season_`)
+
+**Plugin:** `fwbg-core:time_season` (gleicher Plugin wie Zeit-Features)
+
+Saisonale Features erfassen kalendrische Muster über Tage, Wochen, Monate und Quartale hinweg. Der **January Effect** (Small Caps outperformen im Januar), **Turn-of-Month** (~65% der monatlichen Returns fallen auf erste/letzte Tage), und **Quarter-End Rebalancing** (institutionelle Portfolio-Umschichtungen) sind akademisch gut dokumentierte Anomalien.
+
+**Trading-Relevanz:** Institutionelle Flows folgen festen Kalendern — Month-End Window Dressing, Quarter-End Rebalancing, Year-End Tax-Loss Selling. ML-Modelle lernen diese Muster nur mit passenden Features. Sin/Cos-Kodierung ermöglicht, dass Dezember und Januar als benachbart erkannt werden.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
@@ -315,7 +414,11 @@ Fourier-Transformation zur Zykluserkennung.
 
 ## 9. Dynamik Features (`dyn_`)
 
-Messen Änderungen von Indikatoren über Zeit.
+**Plugin:** `fwbg-core:dynamics` | **~27 Features**
+
+Dynamik-Features messen die *Veränderung* von Indikatoren über verschiedene Zeithorizonte. Während ein RSI von 65 allein wenig aussagt, zeigt ein RSI-Anstieg von 45→65 in 4 Stunden (dyn_rsi14_chg_4h) klares Momentum. Die Features umfassen Deltas (absolute Änderung), Lags (historische Werte) und Beschleunigungen (zweite Ableitung).
+
+**Trading-Relevanz:** Die Änderungsrate eines Indikators ist oft prädiktiver als sein Absolutwert. Ein steigender ADX zeigt *entstehenden* Trend (frühes Signal), ein hoher aber fallender ADX zeigt *endenden* Trend. Beschleunigung (zweite Ableitung) erkennt Wendepunkte: wenn das Momentum des Momentums kippt, steht eine Trendumkehr bevor.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
@@ -331,7 +434,9 @@ Messen Änderungen von Indikatoren über Zeit.
 
 ## 10. Lag Features (`lag_`)
 
-Verzögerte Indikator-Werte.
+**Enthalten in Plugin:** `fwbg-core:dynamics`
+
+Verzögerte Indikator-Werte. Lags geben dem ML-Modell Zugang zu historischen Zuständen — z.B. ob RSI vor 24 Stunden bereits überkauft war und der Markt seitdem korrigiert hat.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
@@ -344,7 +449,9 @@ Verzögerte Indikator-Werte.
 
 ## 11. Beschleunigung Features (`accel_`)
 
-Zweite Ableitung - Änderung der Änderung.
+**Enthalten in Plugin:** `fwbg-core:dynamics`
+
+Zweite Ableitung — Änderung der Änderung. Erkennt Wendepunkte bevor sie in den Primär-Indikatoren sichtbar werden.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
@@ -355,7 +462,11 @@ Zweite Ableitung - Änderung der Änderung.
 
 ## 12. Cross-Indikator Features (`cross_`)
 
-Kombinierte Signale aus mehreren Indikatoren.
+**Plugin:** `fwbg-core:cross_features` | **~3 Features**
+
+Cross-Features kombinieren Signale aus verschiedenen Indikator-Kategorien zu Confluence-Signalen. Anstatt isolierte Extremwerte zu betrachten, erkennen sie *gleichzeitige* Muster: RSI überkauft UND steigend, oder Volatilitätsanstieg IM Trend.
+
+**Trading-Relevanz:** Einzelne Signale haben hohe False-Positive-Raten. Confluence (mehrere unabhängige Bestätigungen) reduziert diese drastisch. `cross_rsi_high_rising` filtert z.B. Situationen wo RSI >70 UND weiter steigt — ein stärkeres Signal als RSI >70 allein.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
@@ -367,7 +478,11 @@ Kombinierte Signale aus mehreren Indikatoren.
 
 ## 13. Multi-Timeframe Features (`mtf_`)
 
-Aggregierte Features über höhere Zeitrahmen.
+**Plugin:** `fwbg-premium:multi_timeframe` | **~25 Features**
+
+Multi-Timeframe Features aggregieren H1-Daten zu höheren Zeitrahmen (H4, D1, W1) und messen die Übereinstimmung der Trends über Zeitebenen. Der **Trend-Consensus** Score (0-3) zählt wie viele Timeframes in die gleiche Richtung zeigen — volle Übereinstimmung ist das stärkste Confluence-Signal.
+
+**Trading-Relevanz:** "Trade with the higher timeframe" ist eine Grundregel technischer Analyse. Ein H1-Long-Signal hat deutlich höhere Trefferquote, wenn D1 und H4 ebenfalls bullish sind. Volatilitäts-Ratios (H1/H4) zeigen, ob Intraday-Moves relativ zur übergeordneten Dynamik überdurchschnittlich sind (potentielle Übertreibung) oder unterdurchschnittlich (Range-Markt).
 
 ### H4 (4-Stunden)
 
@@ -395,7 +510,11 @@ Aggregierte Features über höhere Zeitrahmen.
 
 ## 14. Regime Features (`regime_`)
 
-Markt-Charakter Indikatoren basierend auf dem Hurst-Exponenten.
+**Plugin:** `fwbg-core:regime` | **~6 Features**
+
+Regime-Features klassifizieren den Marktcharakter über den Hurst-Exponenten — einen nicht-parametrischen Indikator der *Persistenz* von Preisbewegungen. Im Gegensatz zu Trend-Indikatoren, die die Richtung messen, misst Hurst ob der Markt überhaupt *trending-fähig* ist.
+
+**Trading-Relevanz:** Die Wahl der Trading-Strategie hängt fundamental vom Regime ab. H > 0.5 (persistent) bevorzugt Trend-Following; H < 0.5 (anti-persistent) bevorzugt Mean-Reversion; H ≈ 0.5 (Random Walk) erschwert jede systematische Strategie. Die Hurst-Divergenz (kurzfristiger vs. langfristiger Hurst) erkennt Regime-Wechsel: wenn der kurzfristige Hurst plötzlich abweicht, steht eine strukturelle Veränderung bevor.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
@@ -415,9 +534,11 @@ Markt-Charakter Indikatoren basierend auf dem Hurst-Exponenten.
 
 ## 15. Event Features (`event_`)
 
-Time-Since-Event Features messen, wie viele Bars seit wichtigen Ereignissen vergangen sind.
+**Plugin:** `fwbg-premium:events` | **~12 Features**
 
-**Kernidee:** Ein Ausbruch nach 100 Bars Konsolidierung ist oft stärker als einer nach 5 Bars.
+Time-Since-Event Features messen, wie viele Bars seit wichtigen Ereignissen vergangen sind. Die Kernidee: *Kontext ist alles*. Ein Ausbruch nach 100 Bars Konsolidierung hat mehr aufgestaute Energie als einer nach 5 Bars.
+
+**Trading-Relevanz:** Märkte "vergessen" Events nicht sofort — die Zeit seit dem letzten Extremereignis beeinflusst die Wahrscheinlichkeit des nächsten. Lange Konsolidierung (hohes `bars_since_high`) vor Breakout korreliert mit stärkeren, nachhaltigeren Bewegungen. Log-transformierte Versionen verbessern die ML-Performance, da die Verteilung rechtsschief ist.
 
 ### Bars seit High/Low
 
@@ -443,7 +564,11 @@ Time-Since-Event Features messen, wie viele Bars seit wichtigen Ereignissen verg
 
 ## 16. Struktur Features (`path_`, `fractal_`, `convex_`, `structure_`)
 
-Analysieren die mathematische Struktur der Preisbewegung.
+**Plugin:** `fwbg-core:structure` | **~20 Features**
+
+Struktur-Features analysieren die *mathematische Form* der Preisbewegung — nicht Richtung oder Stärke, sondern Effizienz, Komplexität und Krümmung. Path Efficiency misst ob sich der Preis "gerade" bewegt (Trend) oder "zickzackt" (Range). Convexity erkennt parabolische Beschleunigung. VWAP-Proxy liefert institutionelle Referenzpunkte.
+
+**Trading-Relevanz:** Path Efficiency nahe 1 = sauberer Trend (Trend-Following profitabel). PE nahe 0 = choppy Markt (Mean-Reversion oder Abstinenz). Convexity-Divergenz (EMA21 vs EMA50 Convexity) warnt vor parabolischen Tops: wenn die kurzfristige Beschleunigung die langfristige deutlich übersteigt, ist Vorsicht geboten.
 
 ### Path Efficiency (Fractal Dimension Proxy)
 
@@ -512,7 +637,11 @@ VWAP-ähnliche Referenzpunkte (ohne echtes Volume, Typical Price als Proxy).
 
 ## 17. Korrelations Features (`corr_`, `lead_lag_`)
 
-Analysieren Beziehungen zu Benchmark-Assets (SPX, VIX).
+**Enthalten in Plugin:** `fwbg-premium:risk` (berechnet wenn Makro-Daten verfügbar)
+
+Korrelations-Features analysieren die dynamische Beziehung eines Assets zu Benchmark-Märkten (SPX, VIX). Stabile Korrelationen zeigen "normales" Marktverhalten; plötzliche Entkopplung (Decoupling) ist ein Frühwarnsignal für fundamentale Veränderungen.
+
+**Trading-Relevanz:** Correlations "break" in Krisen — genau wenn Diversifikation am wichtigsten wäre. Ein hohes `corr_spx_decoupling` warnt vor erhöhter Volatilität und möglichen Regime-Wechseln. Lead-Lag-Features erkennen, ob VIX oder SPX dem Asset vorauslaufen — nützlich für Early Positioning.
 
 ### Correlation Stability
 
@@ -553,7 +682,11 @@ VIX und Benchmarks führen oft vor dem Asset.
 
 ## 18. Risk/Tail-Risk Features (`risk_`)
 
-Features zur Messung von Tail-Risk und Crash-Wahrscheinlichkeit.
+**Plugin:** `fwbg-premium:risk` | **~25 Features**
+
+Risk-Features quantifizieren Tail-Risiko, Drawdown-Zustand und Marktstress-Level. Sie gehen weit über einfache Volatilität hinaus: **CVaR** (Conditional Value at Risk) misst den *erwarteten* Verlust im extremen Tail, **Vol-of-Vol** zeigt Regime-Unsicherheit, und der **Crash Probability Score** aggregiert multiple Stress-Signale zu einem einzigen Warnsignal.
+
+**Trading-Relevanz:** Risiko-Management ist kein Overlay, sondern sollte *ins Modell integriert* sein. Ein ML-Modell mit Zugang zu CVaR-Features lernt automatisch, in Hochrisiko-Phasen konservativere Trades zu nehmen. Die Crash-Probability kombiniert Kurtosis, Vol-of-Vol, Correlation Decoupling und extreme CVaR — eine Art "Fear Gauge" die dem VIX ähnelt, aber asset-spezifisch ist.
 
 ### Drawdown State Features
 
@@ -623,9 +756,12 @@ Kombiniert mehrere Warnsignale zu einem Score.
 ---
 
 ## 19. Microstructure Features (`micro_`)
-Analysieren die Intrabar-Dynamik und Orderflow-Muster.
 
-**Plugin:** `microstructure`
+**Plugin:** `fwbg-premium:microstructure` | **~17 Features**
+
+Microstructure-Features extrahieren Orderflow-Signale aus OHLC-Bars, die in traditionellen Indikatoren verloren gehen. Durch Analyse von Dochten, Body-Ratio und deren Zusammenspiel mit Volume rekonstruieren sie das Kräfteverhältnis zwischen Käufern und Verkäufern *innerhalb* jeder Bar.
+
+**Trading-Relevanz:** Institutionelle Trader hinterlassen Spuren in der Bar-Struktur: aggressive Sells erzeugen lange obere Dochte (Rejection), Accumulation zeigt sich in langen unteren Dochten mit Close nahe High. Der Pressure Score (wick_imbalance × body_ratio) kombiniert Richtung und Überzeugung zu einem einzigen Orderflow-Signal. CLV-basierte Accumulation/Distribution und Chaikin Money Flow (falls Volume verfügbar) bestätigen institutionelle Positionierung.
 
 ### Wick Imbalance
 
@@ -720,9 +856,12 @@ Kombinierter Orderflow-Score.
 ---
 
 ## 20. Macro Surprise Features (`macsurp_`)
-Analysieren Gap-Verhalten und Informationsflüsse zwischen Sessions.
 
-**Plugin:** `macro_surprise`
+**Plugin:** `fwbg-premium:macro_surprise` | **~21 Features**
+
+Macro Surprise Features detektieren Informationsschocks durch Analyse von Overnight-Gaps, Session-Dekomposition (Overnight vs. Intraday Returns) und unerwarteten Volatilitäts-Ausbrüchen. Sie messen nicht *was* passiert ist, sondern *ob es überraschend* war — relativ zur jüngsten Erwartung.
+
+**Trading-Relevanz:** Märkte bewegen sich auf Überraschungen, nicht auf erwartete News. Ein großer Gap der *persistiert* zeigt starke Überzeugung (Follow-Through wahrscheinlich); ein schnell gefüllter Gap zeigt Fading-Momentum. Die Gap-Ratio (Gap / Total Return) zeigt ob der Tag von Overnight-News oder Intraday-Trading dominiert wird — wichtig für die Wahl zwischen Gap-Strategien und Session-Strategien.
 
 ### Gap Analysis
 
@@ -800,7 +939,11 @@ Erkennt ungewöhnliche Intraday-Volatilität.
 
 ## 21. Makro Features (`macro_`)
 
-Fundamentale Marktdaten von externen Quellen. Jeder Indikator generiert mehrere Features mit verschiedenen Lookback-Perioden.
+**Plugin:** `fwbg-premium:macro_data` (Data Loader) | **~200+ Features**
+
+Makro-Features sind fundamentale Marktdaten (VIX, Zinsen, Rohstoffe, Aktienindizes, Sektor-ETFs), die als externe Kontextvariablen geladen werden. Jeder Makro-Indikator wird in Change-Features über 11 Lookback-Perioden (1h bis 60d) transformiert, sodass das ML-Modell sowohl den aktuellen Stand als auch die Dynamik sieht.
+
+**Trading-Relevanz:** Finanzmärkte sind vernetzt — EURUSD reagiert auf Treasury Yields, Gold auf Real Yields, Tech-Aktien auf VIX. Makro-Features geben dem Modell Zugang zu diesen Cross-Asset-Dynamiken. Besonders wertvoll: VIX-Änderungen als Leading Indicator (Fear precedes Price), Yield-Curve-Spreads für Rezessionswarnung, und Sektor-Rotation (XLU/XLP-Stärke = Risk-Off).
 
 ### Volatilitäts-Indizes
 
@@ -876,7 +1019,11 @@ Für jeden Makro-Indikator werden Change-Features mit folgenden Lookbacks generi
 
 ## 22. Fair Value Gap Features (`fvg_`)
 
-Fair Value Gaps (FVG) sind Preislücken zwischen drei aufeinanderfolgenden Bars, die auf aggressives Kaufen/Verkaufen hindeuten.
+**Plugin:** `fwbg-core:fair_value_gap` | **8 Features**
+
+Fair Value Gaps (FVG) sind Preislücken zwischen drei aufeinanderfolgenden Bars, die auf aggressives institutionelles Kaufen/Verkaufen hindeuten. Ein Bullish FVG entsteht, wenn das Low von Bar 3 über dem High von Bar 1 liegt — der Markt hat so schnell gekauft, dass die mittlere Bar keine Überlappung hat.
+
+**Trading-Relevanz:** Institutionelle Algorithmen füllen FVGs oft nachträglich, da diese Zonen unvollständige Orderausführung repräsentieren. Der Preis kehrt häufig zum FVG zurück, bevor er in Trendrichtung weiterläuft — ein klassisches Pullback-Setup. Aktive FVG-Counts zeigen Marktdynamik: viele offene Gaps = schneller, impulsiver Markt.
 
 | Feature | Beschreibung |
 |---------|-------------|
@@ -895,7 +1042,11 @@ Fair Value Gaps (FVG) sind Preislücken zwischen drei aufeinanderfolgenden Bars,
 
 ## 23. Support/Resistance Features (`sr_`)
 
-Support/Resistance-Zonen basierend auf Swing-Highs/Lows mit Clustering und Trend-Klassifikation.
+**Plugin:** `fwbg-premium:support_resistance` | **31 Features**
+
+Support/Resistance-Zonen basierend auf Swing-Highs/Lows mit DBSCAN-Clustering und Trend-Klassifikation. Erkennt automatisch S/R-Zonen, Flip-Zones (ehemaliger Support wird Resistance), Trendbrüche und Confluence-Setups.
+
+**Trading-Relevanz:** S/R-Zonen sind die universellste Form technischer Analyse — sie funktionieren weil genug Trader danach handeln (Self-Fulfilling Prophecy). Flip-Zones sind besonders stark: wenn ehemaliger Support zu Resistance wird, zeigt das ein "Sentiment Flip". Die Confluence-Features (`sr_at_support_in_uptrend`) kombinieren Trend und S/R für High-Probability Setups.
 
 ### Basis S/R (Hourly)
 
@@ -1169,38 +1320,181 @@ Erkennt Distribution Shift zwischen älteren und neueren Marktdaten innerhalb ei
 
 ---
 
+## 31. Opening Range Features (`orb_`)
+
+**Plugin:** `fwbg-core:opening_range` | **~23 Features**
+
+Opening Range Breakout (ORB) Features erfassen die Intraday-Eröffnungsdynamik — sowohl als Rolling-ORB (stündliche Berechnung) als auch als Session-spezifische ORB für konfigurierbare Handelsstunden (Asia Open, London Open, NY Open). Zusätzlich werden Rolling-Statistiken (Breakout-Rate, Continuation-Rate) berechnet, die zeigen ob ORB-Breakouts aktuell *funktionieren*.
+
+**Trading-Relevanz:** Die Opening Range ist eines der ältesten und robustesten Intraday-Konzepte. Die erste Bar einer Session etabliert Support/Resistance — ein Breakout darüber signalisiert Richtung für den Rest der Session. Session-spezifische ORBs sind besonders wertvoll: der NY Open (14:00 UTC) bringt institutionelles Volumen, London Open (08:00 UTC) definiert die europäische Richtung. Die Range-Breite relativ zum ATR unterscheidet Tight Ranges (Breakout-Setup) von Wide Ranges (Mean-Reversion-Setup).
+
+### Rolling ORB
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `orb_range_atr` | ORB-Range normalisiert durch ATR | <1 = enge Range (Breakout), >1 = weite Range |
+| `orb_position` | Preis-Position innerhalb der ORB | 0 = Low, 1 = High |
+| `orb_breakout_up` | Breakout über ORB-High | 1 = bullisher Breakout |
+| `orb_breakout_down` | Breakout unter ORB-Low | 1 = bearisher Breakout |
+| `orb_time_since_open` | Bars seit ORB-Etablierung | Alter des Setups |
+
+### Session-spezifische ORB (`orb_sXX_*`)
+
+Pro konfigurierter Session (z.B. s00, s08, s13, s14) werden 5 Features berechnet:
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `orb_sXX_range_atr` | Session-ORB Range / ATR | Range-Qualität für diese Session |
+| `orb_sXX_position` | Position in Session-ORB | Bullish/Bearish Bias |
+| `orb_sXX_breakout_up` | Session-Breakout nach oben | Session-Richtungssignal |
+| `orb_sXX_breakout_down` | Session-Breakout nach unten | Session-Richtungssignal |
+| `orb_sXX_active` | Session-ORB aktiv (selbe Stunde) | Nur während Session-Open |
+
+### Rolling Statistiken
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `orb_breakout_rate` | Anteil der Stunden mit Breakout | Markt-Volatilität |
+| `orb_continuation_rate` | Anteil der Breakouts mit Follow-Through | ORB-Qualität aktuell |
+| `orb_avg_range_atr` | Durchschnittliche ORB-Range / ATR | Typische Range-Breite |
+
+**Parameter:**
+- `range_bars` (default: 1) — Bars für die Opening Range (1 = erste Bar der Stunde)
+- `atr_period` (default: 14) — ATR-Normalisierungsperiode
+- `sessions` (default: [0, 8, 13, 14]) — UTC-Stunden für Session-ORB
+- `stat_window` (default: 20) — Rolling-Fenster für Statistiken
+- `enable_rolling/session/stats` (default: true) — Feature-Gruppen aktivieren/deaktivieren
+
+**Hinweis:** Überspringe Berechnung für Daily-Daten (Intraday-Feature).
+
+---
+
+## 32. Ichimoku Cloud Features (`ichi_`)
+
+**Plugin:** `fwbg-premium:ichimoku` | **~20 Features**
+
+Ichimoku Kinko Hyo ("Gleichgewicht auf einen Blick") ist ein vollständiges Trading-System aus fünf Komponenten, das Trend, Momentum, Support/Resistance und Signale in einem einzigen Framework vereint. Im Gegensatz zu typischen Indikatoren, die jeweils einen Aspekt messen, liefert Ichimoku ein *ganzheitliches* Marktbild.
+
+**Trading-Relevanz:** Ichimoku ist besonders wertvoll als Regime-Filter: Preis über der Cloud = starker Bullish Bias (nur Longs), unter der Cloud = Bearish Bias, in der Cloud = Range/Unsicherheit. Die Cloud-Dicke zeigt die Stärke des Support/Resistance — dicke Clouds absorbieren Breakout-Versuche, dünne Clouds brechen leicht. TK-Crosses (Tenkan über Kijun) sind klassische Entry-Signale; Kumo-Twists (Cloud-Farbwechsel) signalisieren Regime-Changes.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `ichi_tenkan` | Conversion Line (9-Perioden Midpoint) | Schnelle Gleichgewichtslinie |
+| `ichi_kijun` | Base Line (26-Perioden Midpoint) | Langsame Gleichgewichtslinie |
+| `ichi_senkou_a` | Leading Span A (Tenkan+Kijun)/2 | Obere/untere Cloud-Grenze |
+| `ichi_senkou_b` | Leading Span B (52-Perioden Midpoint) | Gegenüberliegende Cloud-Grenze |
+| `ichi_cloud_pos` | Position relativ zur Cloud | 0-1, über/unter Cloud |
+| `ichi_cloud_thick` | Cloud-Dicke (normalisiert) | Stärke Support/Resistance |
+| `ichi_cloud_color` | Cloud-Farbe | 1 = bullish (A>B), -1 = bearish |
+| `ichi_tk_cross` | Tenkan-Kijun Differenz | Cross-Signal |
+| `ichi_price_kijun` | Preis-Kijun Abstand | Trend-Stärke |
+| `ichi_kumo_twist` | Cloud-Farbwechsel erkannt | Regime-Change Signal |
+| `ichi_distance_cloud` | Abstand zur Cloud | Überdehnung vom Equilibrium |
+| `ichi_composite_bull` | Bullishes Kompositum | Preis > Cloud, TK-Cross bullish, Cloud bullish |
+| `ichi_composite_bear` | Bearishes Kompositum | Preis < Cloud, TK-Cross bearish, Cloud bearish |
+| `ichi_composite_neutral` | Neutrales Kompositum | Gemischte Signale |
+
+**Parameter:** `tenkan_period` (default: 9), `kijun_period` (default: 26), `senkou_b_period` (default: 52)
+
+---
+
+## 33. Market Regime Features (`regime_risk_`)
+
+**Plugin:** `fwbg-premium:market_regime` | **~7 Features**
+
+Market Regime Features synthetisieren einen Composite Risk-Score aus vier makroökonomischen Dimensionen: Volatilität (VIX), Kreditstress (HYG/LQD Spread), Equity-Momentum (SPX) und Treasury-Flucht (TLT). Das Ergebnis ist eine binäre Risk-On/Risk-Off Klassifikation.
+
+**Trading-Relevanz:** Das Marktregime bestimmt welche Strategien funktionieren. In Risk-On Phasen (niedriger VIX, enge Credit Spreads, steigende Aktien) funktioniert Trend-Following auf Risk-Assets. In Risk-Off (hoher VIX, weite Spreads, fallende Aktien, steigende Treasuries) dominieren Safe-Haven-Flows und Korrelationen brechen zusammen. Ein Composite-Score ist robuster als einzelne Indikatoren, da er mehrere unabhängige Signalquellen kombiniert.
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `regime_risk_composite` | Composite Risk-Score | Z-Score basiert, positiv = Risk-On |
+| `regime_risk_on` | Risk-On Flag | 1 wenn Composite > Threshold |
+| `regime_risk_off` | Risk-Off Flag | 1 wenn Composite < -Threshold |
+| `regime_risk_vix_z` | VIX Z-Score (invertiert) | Niedriger VIX = Risk-On |
+| `regime_risk_credit_z` | Credit Spread Z-Score | Enge Spreads = Risk-On |
+| `regime_risk_equity_z` | SPX Momentum Z-Score | Steigende Aktien = Risk-On |
+| `regime_risk_treasury_z` | TLT Flight Z-Score | Fallende Treasuries = Risk-On |
+
+**Parameter:** `window` (default: 50 Tage, konvertiert zu Bars)
+
+**Voraussetzung:** Erfordert Makro-Daten (macro_vix, macro_hyg, macro_lqd, macro_spx, macro_tlt). Gibt leeren DataFrame zurück wenn Daten fehlen.
+
+---
+
+## 34. Regime Cluster Features (`regime_cluster_`)
+
+**Plugin:** `fwbg-premium:regime_cluster` | **~4 Features**
+
+Regime Cluster Features produzieren eine quantil-basierte 3-Klassen-Klassifikation (0/1/2) des Marktregimes durch Kombination orthogonaler Strukturindikatoren: Hurst-Exponent (Persistenz), Entropie (Ordnung), Variance Ratio (Effizienz), Volatilitäts-Rang und Hurst-Divergenz. Optional wird der Makro-Risk-Composite einbezogen.
+
+**Trading-Relevanz:** Regime-Cluster vereinfachen die Strategieauswahl: Cluster 0 = choppy/mean-reverting (Mean-Reversion Strategien), Cluster 1 = neutral (Vorsicht), Cluster 2 = trending/persistent (Trend-Following). Im Gegensatz zu kontinuierlichen Regime-Scores sind diskrete Cluster stabil und interpretierbar — ideal für regelbasierte Filter in der Grid-Optimierung (z.B. "nur traden in Regime 2").
+
+| Feature | Beschreibung | Interpretation |
+|---------|--------------|----------------|
+| `regime_cluster_label` | Regime-Cluster (0, 1, 2) | 0 = choppy, 1 = neutral, 2 = trending |
+| `regime_cluster_score` | Composite Z-Score | Kontinuierlicher Regime-Score |
+| `regime_cluster_score_chg` | Score-Änderung | Regime-Transition Erkennung |
+| `regime_cluster_stable` | Stabilität des Clusters | 1 wenn Cluster über Fenster konstant |
+
+**Kern-Inputs (immer verwendet):**
+- `regime_hurst_200` — Persistenz (positiv gewichtet)
+- `regime_entropy_100` — Entropie (invertiert, niedrig = günstig)
+- `regime_vr_200_5` — Variance Ratio (um 0 zentriert)
+- `vol_atr_pct_14_rank` — Volatilitätslevel
+- `regime_hurst_divergence` — Regime-Shift Signal
+
+**Optionaler Input:** `regime_risk_composite` (Makro-Risk, gewichtet +1.0)
+
+**Parameter:** `zscore_window` (default: 200), `quantile_window` (default: 500), `n_regimes` (default: 3)
+
+**Voraussetzung:** Erfordert upstream Regime- und Volatilitäts-Indikatoren.
+
+---
+
 ## Feature-Gruppen / Indicator Plugins
 
 Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indikator ist ein separates Plugin mit eigenen konfigurierbaren Parametern.
 
 ### Verfügbare Indicator Plugins
 
-| Plugin Name | Gruppe | Anzahl Features | Beschreibung |
-|-------------|--------|-----------------|--------------|
-| `trend` | trend | ~34 | ADX, EMA, SMA, MACD, CCI, Aroon, ER |
+#### Core Plugins (`fwbg-core`)
+
+| Plugin Name | Gruppe | Features | Beschreibung |
+|-------------|--------|----------|--------------|
+| `trend` | trend | ~34 | ADX, EMA, SMA, MACD, CCI, Aroon, ER, Supertrend |
 | `momentum` | momentum | ~16 | RSI, Stochastic, Williams %R, ROC, UO |
-| `volatility` | volatility | ~14 | Bollinger, Keltner, Donchian, ATR |
-| `ichimoku` | trend | ~8 | Ichimoku Cloud System |
-| `price_action` | price_action | ~5 | Range, Higher Highs/Lows, Gaps |
-| `time_season` | time | ~14 | Zeit und Saisonalität |
+| `volatility` | volatility | ~14 | Bollinger, Keltner, Donchian, ATR, GK/PK/YZ Vol |
+| `price_action` | price_action | ~17 | Range, Body, Gaps, Streaks, Inside Bars, Volume |
+| `time_season` | time | ~14 | Zeit, Sessions, Saisonalität (sin/cos) |
 | `dynamics` | dynamics | ~27 | Änderungen, Lags, Beschleunigung |
-| `multi_timeframe` | mtf | ~12 | H4/D1 Aggregation |
-| `cross_features` | cross | ~3 | Kombinierte Signale |
+| `cross_features` | cross | ~3 | Confluence-Signale |
 | `distribution` | distribution | ~10 | Skewness, Kurtosis |
-| `structure` | structure | ~20 | FFT, Path Efficiency, VWAP |
-| `regime` | regime | ~6 | Hurst-Exponent |
-| `risk` | risk | ~25 | Drawdown, CVaR, Vol-of-Vol |
-| `microstructure` | microstructure | ~15 | Intrabar-Analyse, Orderflow |
-| `macro_surprise` | macro_surprise | ~12 | Gap-Analyse, Surprises |
-| `fair_value_gap` | fair_value_gap | 8 | Bull/Bear FVG, Distance, Size, Count |
-| `support_resistance` | support_resistance | 31 | S/R Zones, Trend, Pullbacks, Breakouts |
+| `structure` | structure | ~20 | FFT, Path Efficiency, Convexity, VWAP |
+| `regime` | regime | ~6 | Hurst-Exponent, Persistenz |
+| `opening_range` | orb | ~23 | Opening Range Breakout, Session-ORB |
+| `fair_value_gap` | fvg | 8 | Bull/Bear FVG, Distance, Size |
 | `cusum_events` | cusum | 6 | CUSUM Structural Breaks (AFML Ch. 2) |
-| `calendar_events` | calendar | 9 | Kalender-Anomalien (Turn-of-Month, OpEx, FOMC, NFP) |
-| `fractal_dimension` | fractal | 12 | Higuchi Fraktaldimension, Komplexität, Regime |
-| `wavelets` | wavelets | 27 | DWT Zeit-Frequenz Energie, Ratios |
+| `calendar_events` | calendar | 9 | Turn-of-Month, OpEx, FOMC, NFP |
+| `fractal_dimension` | fractal | 12 | Higuchi FD, Komplexität, Regime |
+| `wavelets` | wavelets | 27 | DWT Energie, Frequenz-Ratios |
 | `autoencoder_features` | autoencoder | 10 | PCA Latent Features, Reconstruction Error |
-| `topological_features` | topology | 20 | Persistent Homology, Takens Embedding, H0/H1 |
-| `adversarial_validation` | meta | 10 | Distribution Shift Detection, Drift Score |
+| `topological_features` | topology | 20 | Persistent Homology, H0/H1 |
+| `adversarial_validation` | meta | 10 | Distribution Shift, Drift Score |
+
+#### Premium Plugins (`fwbg-premium`)
+
+| Plugin Name | Gruppe | Features | Beschreibung |
+|-------------|--------|----------|--------------|
+| `ichimoku` | trend | ~20 | Ichimoku Cloud, TK-Cross, Kumo-Twist |
+| `multi_timeframe` | mtf | ~25 | H4/D1/W1 Aggregation, Consensus |
+| `risk` | risk | ~25 | Drawdown, CVaR, Vol-of-Vol, Crash-Prob |
+| `microstructure` | microstructure | ~17 | Wick Imbalance, Pressure, A/D, CMF |
+| `macro_surprise` | macro_surprise | ~21 | Gap-Analyse, Surprises, Vol-Breaks |
+| `events` | events | ~12 | Bars-Since-Event, Konsolidierung |
+| `support_resistance` | s/r | 31 | S/R Zones, Trend, Flip-Zones, Breakouts |
+| `market_regime` | regime | ~7 | Risk-On/Off Composite (VIX, Credit, SPX) |
+| `regime_cluster` | regime | ~4 | Quantil-basierte 3-State Regime-Cluster |
 
 ### Plugin-Konfiguration in Strategy JSON
 
@@ -1230,14 +1524,6 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
   }
 }
 ```
-
-### Legacy Feature-Gruppen (Backward Compatibility)
-
-| Gruppe | Prefixes | Beschreibung |
-|--------|----------|--------------|
-| `trend_momentum` | `trend_`, `ichi_`, `mom_` | Klassische technische Analyse |
-| `macro_vol` | `macro_`, `vol_` | Fundamentale + Volatilitäts-Signale |
-| `full_technical` | `trend_`, `ichi_`, `mom_`, `vol_`, `pa_` | Alle technischen Indikatoren |
 
 ---
 
