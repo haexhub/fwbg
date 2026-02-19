@@ -198,6 +198,38 @@ class BasePlugin(ABC):
             callback(current=current, total=total, message=message)
 
     @classmethod
+    def get_docs_dir(cls) -> Optional[Path]:
+        """Get path to plugin's docs/ directory if it exists."""
+        import inspect as _inspect
+
+        module = _inspect.getmodule(cls)
+        if module is None or module.__file__ is None:
+            return None
+        docs_dir = Path(module.__file__).parent / "docs"
+        return docs_dir if docs_dir.is_dir() else None
+
+    @classmethod
+    def get_docs_readme(cls) -> Optional[str]:
+        """Get the plugin's README.md content, or None."""
+        docs_dir = cls.get_docs_dir()
+        if docs_dir is None:
+            return None
+        readme = docs_dir / "README.md"
+        if not readme.exists():
+            return None
+        return readme.read_text(encoding="utf-8")
+
+    @classmethod
+    def validate_docs(cls) -> "DocsValidationResult":
+        """Validate plugin documentation for path safety."""
+        from fwbg_sdk.docs import DocsValidationResult, validate_plugin_docs
+
+        docs_dir = cls.get_docs_dir()
+        if docs_dir is None:
+            return DocsValidationResult(valid=True)
+        return validate_plugin_docs(docs_dir)
+
+    @classmethod
     def get_test_module_path(cls) -> Optional[Path]:
         """
         Get the path to this plugin's test module.

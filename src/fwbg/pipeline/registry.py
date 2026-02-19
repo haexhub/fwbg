@@ -320,6 +320,22 @@ class PluginRegistry:
                 logger.warning(f"Failed to load plugin from {plugin_dir}: {e}")
                 continue
 
+            # Validate docs if present
+            docs_dir = plugin_dir / "docs"
+            if docs_dir.is_dir():
+                try:
+                    from fwbg_sdk.docs import validate_plugin_docs
+
+                    result = validate_plugin_docs(docs_dir)
+                    if not result.valid:
+                        for v in result.violations:
+                            logger.warning(
+                                f"Plugin {fqn} docs: {v.reason} "
+                                f"in {v.file}:{v.line} -> {v.link}"
+                            )
+                except Exception as e:
+                    logger.warning(f"Plugin {fqn} docs validation error: {e}")
+
         return discovered
 
     def get_package_manifest(self, namespace: str) -> dict:
