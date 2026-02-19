@@ -227,23 +227,82 @@ def _summarize_walk_forward(wf: dict) -> dict:
 
 @router.get("/{run_id}/progress")
 def get_run_progress(run_id: str) -> dict:
-    """Get progress for an active run."""
-    if run_id not in _active_jobs:
-        raise HTTPException(404, f"No active job: {run_id}")
+    """Get progress for an active or completed run.
 
-    job = _active_jobs[run_id]
-    proc = job.get("process")
+    Reads the progress.json file written by RunProgressWriter.
+    Falls back to basic job info if no progress file exists.
+    """
+    results_dir = get_test_results_dir()
 
-    if proc and proc.poll() is not None:
-        job["status"] = "completed" if proc.returncode == 0 else "failed"
+    # Try reading progress.json from run directory
+    progress_file = results_dir / run_id / "progress.json"
+    if progress_file.exists():
+        try:
+            return json.loads(progress_file.read_text())
+        except (json.JSONDecodeError, IOError):
+            pass
 
-    return {
-        "job_id": run_id,
-        "status": job["status"],
-        "strategy_name": job.get("strategy_name"),
-        "started_at": job.get("started_at"),
-        "pid": job.get("pid"),
-    }
+    # Fallback: check active jobs
+    if run_id in _active_jobs:
+        job = _active_jobs[run_id]
+        proc = job.get("process")
+        if proc and proc.poll() is not None:
+            job["status"] = "completed" if proc.returncode == 0 else "failed"
+        return {
+            "job_id": run_id,
+            "status": job["status"],
+            "strategy_name": job.get("strategy_name"),
+            "started_at": job.get("started_at"),
+            "pid": job.get("pid"),
+        }
+
+    raise HTTPException(404, f"No progress data for run: {run_id}")
+
+
+@router.get("/{run_id}/logs")
+def get_run_logs(
+    run_id: str,
+    symbol: Optional[str] = Query(None),
+    level: Optional[str] = Query(None),
+    stage: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+) -> list[dict]:
+    """Get structured logs for a run.
+
+    Reads logs.jsonl and applies optional filters.
+    """
+    results_dir = get_test_results_dir()
+    logs_file = results_dir / run_id / "logs.jsonl"
+
+    if not logs_file.exists():
+        raise HTTPException(404, f"No logs for run: {run_id}")
+
+    entries = []
+    try:
+        with open(logs_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if symbol and entry.get("symbol") != symbol:
+                    continue
+                if level and entry.get("level") != level:
+                    continue
+                if stage and entry.get("stage") != stage:
+                    continue
+
+                entries.append(entry)
+                if len(entries) >= limit:
+                    break
+    except IOError:
+        raise HTTPException(500, f"Failed to read logs for run: {run_id}")
+
+    return entries
 
 
 @router.post("/{run_id}/cancel")
