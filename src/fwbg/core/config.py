@@ -327,6 +327,20 @@ def _resolve_regime_filter(
     return value
 
 
+def _resolve_section(
+    value: "Optional[Union[str, Dict[str, Any]]]",
+    section_dir: str,
+    strategy_dir: Optional[str],
+) -> "Optional[Dict[str, Any]]":
+    """Resolve a config section: string loads preset file, dict/None passes through."""
+    if value is None or isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        base = os.path.dirname(strategy_dir) if strategy_dir else os.getcwd()
+        return _load_json_preset(value, os.path.join(base, section_dir))
+    return value
+
+
 def _parse_grids(grids_data: dict, strategy_dir: Optional[str] = None) -> Dict[str, GridConfig]:
     """Parse grids from strategy data, supporting both legacy inline and preset formats."""
     if not grids_data:
@@ -449,9 +463,17 @@ class StrategyConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StrategyConfig":
         """Erstellt StrategyConfig aus Dictionary (z.B. aus JSON-Datei)."""
-        grids = _parse_grids(data.get("grids", {}), data.get("_strategy_dir"))
+        strategy_dir = data.get("_strategy_dir")
+        grids = _parse_grids(data.get("grids", {}), strategy_dir)
 
-        pipeline = data.get("pipeline", {})
+        # Resolve sections: string loads preset file, dict/None passes through
+        pipeline = _resolve_section(data.get("pipeline", {}), "pipelines", strategy_dir)
+        exit_params = _resolve_section(data.get("exit_params", {}), "exit_params", strategy_dir)
+        model_data = _resolve_section(data.get("model", {}), "models", strategy_dir)
+        validation_data = _resolve_section(data.get("validation", {}), "validations", strategy_dir)
+        filters_data = _resolve_section(data.get("filters", {}), "filters", strategy_dir)
+        resources_data = _resolve_section(data.get("resources"), "resources", strategy_dir)
+        risk_params = _resolve_section(data.get("risk_params", {}), "risk_params", strategy_dir)
 
         return cls(
             name=data.get("name", "Default Strategy"),
@@ -459,15 +481,15 @@ class StrategyConfig:
             tags=data.get("tags", []),
             pipeline=pipeline,
             exit_strategy=data.get("exit_strategy", "fixed"),
-            exit_params=data.get("exit_params", {}),
+            exit_params=exit_params,
             risk_management=data.get("risk_management", "kelly"),
-            risk_params=data.get("risk_params", {}),
+            risk_params=risk_params,
             grids=grids,
             assets=data.get("assets", {}),
-            model=ModelConfig.from_dict(data.get("model", {})),
-            validation=ValidationConfig.from_dict(data.get("validation", {})),
-            filters=FilterConfig.from_dict(data.get("filters", {})),
-            resources=ResourceConfig.from_dict(data.get("resources")),
+            model=ModelConfig.from_dict(model_data),
+            validation=ValidationConfig.from_dict(validation_data),
+            filters=FilterConfig.from_dict(filters_data),
+            resources=ResourceConfig.from_dict(resources_data),
             regime_filter=RegimeFilterConfig.from_dict(data.get("regime_filter")),
             timeframe=data.get("timeframe"),
             hypothesis=data.get("hypothesis", ""),
