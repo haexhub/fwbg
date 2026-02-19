@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from tabulate import tabulate
 
-from fwbg.analysis.mfe_mae import compute_capture_rates, compute_mfe_mae
+from fwbg.exploration.mfe_mae import compute_capture_rates, compute_mfe_mae
 
 _PERCENTILES = [10, 25, 50, 60, 75, 85, 90, 95]
 _SCAN_RANGE = np.round(np.arange(0.2, 4.1, 0.1), 1)
