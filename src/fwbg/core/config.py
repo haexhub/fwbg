@@ -290,44 +290,19 @@ class RegimeFilterConfig:
 
 @dataclass
 class ResourceConfig:
-    """
-    Ressourcen-Limits für Optimizer.
+    """Resource limits for optimization runs.
 
-    Globale Limits - System optimiert dynamisch während des Runs:
-    - ram_per_worker_gb: Geschätzter RAM pro Asset-Worker
-    - min_free_ram_percent: Mindest-freier RAM (System pausiert wenn unterschritten)
-    - max_cpu_percent: Maximale CPU-Auslastung (System pausiert wenn überschritten)
-    - xgboost_n_jobs: XGBoost-Threading (0=auto, 1=single, -1=alle Kerne)
-    - threads_per_asset: CPU-Threads pro Asset (0=auto basierend auf GPU-Verfügbarkeit)
+    KISS: max_concurrent_assets is the primary and only reliable control.
+    Each model plugin manages its own thread count internally.
     """
-    ram_per_worker_gb: float = 4.0
-    min_free_ram_percent: float = 0.15
-    max_cpu_percent: float = 0.80
-    xgboost_n_jobs: int = 0
-    threads_per_asset: int = 0
-    max_concurrent_assets: int = 0  # 0 = auto (CPU/RAM-basiert)
+    max_concurrent_assets: int = 1
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ResourceConfig":
         if data is None:
             return cls()
-
-        # Normalisiere Prozent-Werte
-        min_free_ram = data.get("min_free_ram_percent", 0.15)
-        if min_free_ram > 1:
-            min_free_ram = min_free_ram / 100
-
-        max_cpu = data.get("max_cpu_percent", 0.80)
-        if max_cpu > 1:
-            max_cpu = max_cpu / 100
-
         return cls(
-            ram_per_worker_gb=data.get("ram_per_worker_gb", 4.0),
-            min_free_ram_percent=min_free_ram,
-            max_cpu_percent=max_cpu,
-            xgboost_n_jobs=data.get("xgboost_n_jobs", 0),
-            threads_per_asset=data.get("threads_per_asset", 0),
-            max_concurrent_assets=data.get("max_concurrent_assets", 0),
+            max_concurrent_assets=data.get("max_concurrent_assets", 1),
         )
 
 

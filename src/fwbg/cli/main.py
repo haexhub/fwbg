@@ -45,7 +45,7 @@ from fwbg.results.storage import (
     save_run_results,
     load_run,
 )
-from fwbg.optimization.resource_manager import AdaptivePoolManager, get_resource_info
+from fwbg.optimization.resource_manager import SimplePoolManager, get_resource_info
 from fwbg.simulation.equity import simulate_equity, filter_correlated_assets
 from fwbg.results.plotting import create_asset_plot
 from .commands import (
@@ -123,14 +123,7 @@ def run_optimizer(
                     )
                 ]
 
-    # Ressourcen-Einstellungen aus Strategy-Objekt (bereits geparst)
-    resource_settings = {
-        "max_cpu_percent": strategy.resources.max_cpu_percent,
-        "min_free_ram_percent": strategy.resources.min_free_ram_percent,
-        "ram_per_worker_gb": strategy.resources.ram_per_worker_gb,
-        "threads_per_asset": strategy.resources.threads_per_asset,
-        "max_concurrent_assets": strategy.resources.max_concurrent_assets,
-    }
+    max_concurrent_assets = strategy.resources.max_concurrent_assets
 
     # Filter nach bestimmten Assets wenn angegeben
     if asset_filter:
@@ -184,19 +177,20 @@ def run_optimizer(
     # Progress-Queue für Worker-Kommunikation (deadlock-frei)
     progress_queue = init_progress_queue()
 
-    # Adaptive Pool mit Einstellungen aus Strategy oder Defaults
-    pool_manager = AdaptivePoolManager(
-        max_cpu_percent=resource_settings["max_cpu_percent"],
-        min_free_ram_percent=resource_settings["min_free_ram_percent"],
-        ram_per_worker_gb=resource_settings["ram_per_worker_gb"],
-        threads_per_asset=resource_settings["threads_per_asset"],
-        max_concurrent_assets=resource_settings["max_concurrent_assets"],
-        verbose=True,
+    # Simple pool with fixed worker count
+    pool_manager = SimplePoolManager(
+        max_concurrent_assets=max_concurrent_assets,
         progress_queue=progress_queue,
     )
 
     # Progress-Tracker im Hauptprozess mit Queue für Worker-Updates
-    progress_tracker = ProgressTracker(len(files), asset_names, queue=progress_queue)
+    from pathlib import Path
+    run_dir_path = Path(run_path) if run_path else None
+    progress_tracker = ProgressTracker(
+        len(files), asset_names, queue=progress_queue,
+        run_directory=run_dir_path, run_id=run_id,
+        strategy_name=strategy.name,
+    )
 
     def update_progress(completed, total):
         progress_tracker.update_completed(completed)
@@ -680,9 +674,6 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     parser.add_argument("--asset-classes", type=str, help="Nur bestimmte Asset-Klassen testen (komma-getrennt)")
     parser.add_argument("--reverse-worst", type=str, metavar="RUN_ID", help="Analysiere schlechteste Strategien umgekehrt")
     parser.add_argument("--reverse-n", type=int, default=10, help="Anzahl der schlechtesten Strategien (default: 10)")
-    parser.add_argument("--cpu", type=float, help="Max CPU-Auslastung (0.0-1.0)")
-    parser.add_argument("--ram-reserve", type=float, help="Min freier RAM-Anteil (0.0-1.0)")
-    parser.add_argument("--ram-per-worker", type=float, help="RAM pro Worker in GB")
     parser.add_argument("--timeframe", type=str, help="Timeframe (überschreibt TIMEFRAME env)")
 
     args = parser.parse_args()
@@ -713,24 +704,11 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         elif args.strategy:
             strategy_metadata = prompt_strategy_metadata()
 
-        # CLI-Ressourcen-Einstellungen in Strategy überschreiben
+        # CLI --timeframe überschreibt Strategy-Timeframe
         if strategy_metadata is None:
             strategy_metadata = {}
-        if "resources" not in strategy_metadata:
-            strategy_metadata["resources"] = {}
-
-        # Account wird im Optimizer nicht mehr benötigt
-        # Die gefundenen Parameter werden in test_results/<run_id>/assets.json gespeichert
-
-        # CLI --timeframe überschreibt Strategy-Timeframe
         if args.timeframe:
             strategy_metadata["timeframe"] = args.timeframe
-        if args.cpu is not None:
-            strategy_metadata["resources"]["max_cpu_percent"] = args.cpu
-        if args.ram_reserve is not None:
-            strategy_metadata["resources"]["min_free_ram_percent"] = args.ram_reserve
-        if args.ram_per_worker is not None:
-            strategy_metadata["resources"]["ram_per_worker_gb"] = args.ram_per_worker
 
         # Parse asset filter
         asset_filter = None
