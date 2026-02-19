@@ -229,8 +229,8 @@ class TestXGBoostHyperparameters:
         model_reduced = train_model(train_df, y, features, 30, ctx, use_reduced_params=True)
 
         # Predictions
-        pred_full = model_full.as_sklearn_estimator().predict(test_df[features])
-        pred_reduced = model_reduced.as_sklearn_estimator().predict(test_df[features])
+        pred_full = model_full.predict(test_df[features])
+        pred_reduced = model_reduced.predict(test_df[features])
 
         # Accuracy berechnen
         acc_full = (pred_full == y).mean()
