@@ -8,9 +8,10 @@ The meta-model uses the primary model's probability as an additional feature.
 import numpy as np
 import pandas as pd
 import pytest
-from xgboost import XGBClassifier
+from fwbg_sdk.models import BaseModel, TrainingContext
 
 from fwbg.core.context import SimulationContext
+from fwbg.core import get_model
 
 
 def _make_ctx(meta_labeling=False, probability_calibration=False):
@@ -124,7 +125,7 @@ class TestMetaModelTraining:
     """Tests for meta-model training."""
 
     def test_trains_meta_model(self):
-        """Meta-model should be a fitted XGBClassifier."""
+        """Meta-model should be a fitted BaseModel."""
         from fwbg.optimization.nested_cv import _train_meta_model
 
         ctx = _make_ctx()
@@ -135,10 +136,13 @@ class TestMetaModelTraining:
         meta_model = _train_meta_model(df, targets, features, oof_probs, ctx)
 
         assert meta_model is not None
-        assert hasattr(meta_model, "predict_proba")
+        assert hasattr(meta_model, "predict_probability")
         # Meta-model should take features + 1 (the OOF prob column)
-        X_test = np.column_stack([df[features].values[:5], oof_probs[:5]])
-        probs = meta_model.predict_proba(X_test)
+        X_test = pd.DataFrame(
+            np.column_stack([df[features].values[:5], oof_probs[:5]]),
+            columns=features + ["oof_prob"],
+        )
+        probs = meta_model.predict_probability(X_test)
         assert probs.shape == (5, 2)
 
     def test_returns_none_when_insufficient_targets(self):
@@ -169,13 +173,19 @@ class TestMetaFilter:
         probs = np.column_stack([1 - np.full(n, 0.7), np.full(n, 0.7)])
         win_idx = 1
 
-        # Train a meta-model that will reject some bars
-        X_train = rng.standard_normal((200, 3))
+        # Train a meta-model via plugin system
+        X_train = pd.DataFrame(
+            np.column_stack([rng.standard_normal((200, 3)), rng.random(200)]),
+            columns=["f1", "f2", "f3", "primary_prob"],
+        )
         y_train = (rng.random(200) > 0.5).astype(float)
-        meta_model = XGBClassifier(n_estimators=10, max_depth=2, random_state=42)
-        # Meta-model input: features + primary_prob
-        X_meta_train = np.column_stack([X_train, rng.random(200)])
-        meta_model.fit(X_meta_train, y_train)
+
+        model_class = get_model("xgboost")
+        meta_model = model_class()
+        meta_model.train(
+            X_train, y_train, TrainingContext(),
+            n_estimators=10, max_depth=2, random_state=42,
+        )
 
         df = pd.DataFrame({
             "f1": rng.standard_normal(n),
