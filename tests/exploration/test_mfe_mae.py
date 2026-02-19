@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.analysis.mfe_mae import compute_capture_rates, compute_mfe_mae
+from fwbg.exploration.mfe_mae import compute_capture_rates, compute_mfe_mae
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@ class TestComputeCaptureRates:
 
 class TestAnalyzeAsset:
     def test_returns_valid_structure(self, tmp_path):
-        from fwbg.analysis.exit_analyzer import analyze_asset
+        from fwbg.exploration.exit_analyzer import analyze_asset
 
         csv_path = tmp_path / "TEST_HOUR.csv"
         _write_test_csv(csv_path, n=500)
@@ -233,7 +233,7 @@ class TestAnalyzeAsset:
         assert "short" in result["mfe_mae"]
 
     def test_suggested_grid_has_tp_sl(self, tmp_path):
-        from fwbg.analysis.exit_analyzer import analyze_asset
+        from fwbg.exploration.exit_analyzer import analyze_asset
 
         csv_path = tmp_path / "TEST_HOUR.csv"
         _write_test_csv(csv_path, n=1000)
@@ -250,7 +250,7 @@ class TestAnalyzeAsset:
         assert len(grid["sl"]) >= 2
 
     def test_capture_matrix_sorted_by_edge(self, tmp_path):
-        from fwbg.analysis.exit_analyzer import analyze_asset
+        from fwbg.exploration.exit_analyzer import analyze_asset
 
         csv_path = tmp_path / "TEST_HOUR.csv"
         _write_test_csv(csv_path, n=1000)
@@ -266,7 +266,7 @@ class TestAnalyzeAsset:
 
     def test_json_roundtrip(self, tmp_path):
         """Result should be JSON-serializable."""
-        from fwbg.analysis.exit_analyzer import analyze_asset
+        from fwbg.exploration.exit_analyzer import analyze_asset
 
         csv_path = tmp_path / "TEST_HOUR.csv"
         _write_test_csv(csv_path, n=500)
