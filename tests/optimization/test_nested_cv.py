@@ -95,6 +95,8 @@ def create_mock_context(
     ctx.exit_strategy = "fixed"
     ctx.exit_params = {}
     ctx.probability_calibration = False
+    ctx.calibration_method = "isotonic"
+    ctx.model_type = "xgboost"
     return ctx
 
 
@@ -364,7 +366,7 @@ class TestTrainModel:
 
         if np.count_nonzero(targets) >= 5:
             assert model is not None
-            assert hasattr(model, "predict_proba")
+            assert hasattr(model, "predict_probability")
 
     def test_no_features(self):
         """Test: Training ohne Features."""

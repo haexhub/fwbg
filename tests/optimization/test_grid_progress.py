@@ -677,10 +677,10 @@ class TestProbabilityCalibration:
         assert ctx.probability_calibration is True
         assert ctx.calibration_method == "sigmoid"
 
-    def test_train_model_calibrated_returns_calibrated_classifier(self):
-        """train_model with calibration wraps XGBoost in CalibratedClassifierCV."""
+    def test_train_model_calibrated_returns_model_with_calibration(self):
+        """train_model with calibration returns a BaseModel with calibrated predictions."""
         from fwbg.optimization.nested_cv import train_model
-        from sklearn.calibration import CalibratedClassifierCV
+        from fwbg_sdk.models import BaseModel
 
         ctx = self._make_ctx(probability_calibration=True)
         df = self._make_ohlc_df(300)
@@ -688,16 +688,17 @@ class TestProbabilityCalibration:
 
         model = train_model(df, targets, ["feat1", "feat2"], min_trades=10, ctx=ctx)
 
-        assert isinstance(model, CalibratedClassifierCV)
-        probs = model.predict_proba(df[["feat1", "feat2"]])
+        assert isinstance(model, BaseModel)
+        assert model._calibrated_model is not None
+        probs = model.predict_probability_calibrated(df[["feat1", "feat2"]])
         assert probs.shape == (len(df), 2)
         # Calibrated probs should sum to 1 per row
         assert np.allclose(probs.sum(axis=1), 1.0)
 
-    def test_train_model_uncalibrated_returns_xgboost(self):
-        """train_model without calibration returns plain XGBClassifier."""
+    def test_train_model_uncalibrated_returns_model(self):
+        """train_model without calibration returns a BaseModel without calibration."""
         from fwbg.optimization.nested_cv import train_model
-        from xgboost import XGBClassifier
+        from fwbg_sdk.models import BaseModel
 
         ctx = self._make_ctx(probability_calibration=False)
         df = self._make_ohlc_df(300)
@@ -705,7 +706,8 @@ class TestProbabilityCalibration:
 
         model = train_model(df, targets, ["feat1", "feat2"], min_trades=10, ctx=ctx)
 
-        assert isinstance(model, XGBClassifier)
+        assert isinstance(model, BaseModel)
+        assert model._calibrated_model is None
 
     def test_evaluate_on_validation_calibrated_uses_ev_threshold(self):
         """With calibration, evaluate_on_validation uses EV-optimal CT instead of grid."""

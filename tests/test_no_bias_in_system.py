@@ -143,7 +143,7 @@ class TestNoLookaheadBias:
 
         # Test on holdout
         X_test = test_df[random_features]
-        y_pred_proba = model.predict_proba(X_test)[:, 1]
+        y_pred_proba = model.predict_probability(X_test)[:, 1]
         y_pred = (y_pred_proba > 0.6).astype(int)
 
         test_targets, _, _, _ = compute_targets(
