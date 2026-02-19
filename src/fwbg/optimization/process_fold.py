@@ -335,6 +335,8 @@ def process_single_fold(
         "fold_id": fold.fold_id,
         "train_size": len(train_df),
         "test_size": len(test_df),
+        "test_start": str(fold.test_df.index[0]),
+        "test_end": str(fold.test_df.index[-1]),
         "inner_val_pnl": b.get("inner_val_pnl", 0),
         "test_pnl": test_result["pnl"],
         "test_win_rate": test_result["win_rate"],
