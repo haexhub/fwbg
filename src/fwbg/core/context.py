@@ -83,11 +83,8 @@ class SimulationContext:
     first_fold_min_pnl: float = -10.0
     first_fold_min_trades: int = 5
 
-    # Ressourcen-Limits (Globale Limits - Dynamische Optimierung)
-    ram_per_worker_gb: float = 4.0  # Geschätzter RAM pro Asset-Worker
-    min_free_ram_percent: float = 0.15  # Mindestens 15% RAM frei halten
-    max_cpu_percent: float = 0.90  # Maximal 90% CPU nutzen
-    xgboost_n_jobs: int = 0  # 0 = Auto, 1 = Single-threaded, -1 = Alle Kerne
+    # Model
+    model_type: str = "xgboost"
 
     # Validation
     n_inner_folds: int = 5  # Anzahl Inner-Folds für Nested CV
@@ -158,11 +155,8 @@ class SimulationContext:
             indicator_plugins=strategy.get_indicators(),
             # Pipeline: Feature Selection (list of plugins, chained)
             feature_selection_plugins=strategy.get_feature_selection() or None,
-            # Ressourcen-Limits aus Strategy-Config (Globale Limits)
-            ram_per_worker_gb=strategy.resources.ram_per_worker_gb,
-            min_free_ram_percent=strategy.resources.min_free_ram_percent,
-            max_cpu_percent=strategy.resources.max_cpu_percent,
-            xgboost_n_jobs=strategy.resources.xgboost_n_jobs,
+            # Model type
+            model_type=strategy.model.type,
             # Exit-Strategy Plugin
             exit_strategy=strategy.exit_strategy,
             exit_params=strategy.exit_params,

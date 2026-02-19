@@ -78,9 +78,7 @@ STRATEGY_SCHEMA = {
 
     # Ressourcen-Einstellungen
     "resources": {
-        "max_cpu_percent": float,     # z.B. 0.80 = 80% der CPU-Kerne
-        "min_free_ram_percent": float, # z.B. 0.25 = 25% RAM freihalten
-        "ram_per_worker_gb": float,   # z.B. 4.0 = 4GB pro Worker
+        "max_concurrent_assets": int,  # z.B. 2 = 2 Assets parallel
     },
 
     # Notizen
@@ -159,9 +157,7 @@ def create_strategy_metadata(
     assets_exclude=None,
     assets_classes=None,
     # Ressourcen-Einstellungen
-    max_cpu_percent=None,
-    min_free_ram_percent=None,
-    ram_per_worker_gb=None,
+    max_concurrent_assets=None,
 ):
     """
     Erstellt strukturierte Strategie-Metadaten.
@@ -223,9 +219,7 @@ def create_strategy_metadata(
             "classes": assets_classes,    # z.B. ["FOREX", "INDEX"]
         },
         "resources": {
-            "max_cpu_percent": max_cpu_percent,        # z.B. 0.80
-            "min_free_ram_percent": min_free_ram_percent,  # z.B. 0.25
-            "ram_per_worker_gb": ram_per_worker_gb,    # z.B. 4.0
+            "max_concurrent_assets": max_concurrent_assets,  # z.B. 2
         },
         "notes": notes or "",
     }

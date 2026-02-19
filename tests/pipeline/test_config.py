@@ -104,7 +104,7 @@ class TestPipelineConfig:
         assert config.labeling[0].name == "binary_labeler"
 
         assert len(config.model) == 1
-        assert config.model[0].name == "xgboost"
+        assert config.model[0].name in ("xgboost", "fwbg-core:xgboost")
         assert config.model[0].stateful is True
 
         assert len(config.validation) == 1

@@ -46,6 +46,7 @@ from .registry import (
     register_broker_adapter,
     register_risk_manager,
     register_data_loader,
+    register_model,
     # Plugin Getters
     get_indicator,
     get_exit_strategy,
@@ -54,6 +55,7 @@ from .registry import (
     get_broker_adapter,
     get_risk_manager,
     get_data_loader,
+    get_model,
     # Plugin Listers
     list_indicators,
     list_exit_strategies,
@@ -62,6 +64,7 @@ from .registry import (
     list_broker_adapters,
     list_risk_managers,
     list_data_loaders,
+    list_models,
     # Registries
     INDICATOR_REGISTRY,
     EXIT_STRATEGY_REGISTRY,
@@ -70,6 +73,7 @@ from .registry import (
     BROKER_ADAPTER_REGISTRY,
     RISK_MANAGER_REGISTRY,
     DATA_LOADER_REGISTRY,
+    MODEL_REGISTRY,
 )
 
 __all__ = [
@@ -112,6 +116,7 @@ __all__ = [
     "register_broker_adapter",
     "register_risk_manager",
     "register_data_loader",
+    "register_model",
     # Plugin Getters
     "get_indicator",
     "get_exit_strategy",
@@ -120,6 +125,7 @@ __all__ = [
     "get_broker_adapter",
     "get_risk_manager",
     "get_data_loader",
+    "get_model",
     # Plugin Listers
     "list_indicators",
     "list_exit_strategies",
@@ -128,6 +134,7 @@ __all__ = [
     "list_broker_adapters",
     "list_risk_managers",
     "list_data_loaders",
+    "list_models",
     # Registries
     "INDICATOR_REGISTRY",
     "EXIT_STRATEGY_REGISTRY",
@@ -136,4 +143,5 @@ __all__ = [
     "BROKER_ADAPTER_REGISTRY",
     "RISK_MANAGER_REGISTRY",
     "DATA_LOADER_REGISTRY",
+    "MODEL_REGISTRY",
 ]

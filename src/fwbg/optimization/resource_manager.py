@@ -1,54 +1,24 @@
-"""
-Adaptive Resource Manager für den Optimizer.
-Steuert die Anzahl paralleler Prozesse basierend auf RAM-Verfügbarkeit.
-"""
+"""Simple process pool with signal handling for the optimizer."""
 import os
 import sys
-import time
 import signal
-import multiprocessing as mp
+import time
 from concurrent.futures import ProcessPoolExecutor
 from typing import Callable, List, Any, Optional
 
 import psutil
 
-# GPU-Verfügbarkeit - lazy import um zirkuläre Imports zu vermeiden
-_GPU_AVAILABLE_CACHED = None
 
-def _check_gpu_available() -> bool:
-    """Prüft GPU-Verfügbarkeit mit Caching (lazy evaluation)."""
-    global _GPU_AVAILABLE_CACHED
-    if _GPU_AVAILABLE_CACHED is not None:
-        return _GPU_AVAILABLE_CACHED
-
-    try:
-        from fwbg.utils.xgb_config import is_gpu_available
-        _GPU_AVAILABLE_CACHED = is_gpu_available()
-    except Exception:
-        _GPU_AVAILABLE_CACHED = False
-    return _GPU_AVAILABLE_CACHED
-
-# Globale Referenz auf aktiven Executor für Cleanup
+# Global references for cleanup
 _active_executor = None
 _active_futures = []
-
-# Shared Progress-Queue für Worker-Initialisierung
-_shared_progress_queue = None
-
-# Original signal handlers to restore after cleanup
 _original_sigint = None
 _original_sigterm = None
 
 
 def _init_worker(progress_queue):
-    """Initializer für Worker-Prozesse - setzt die Progress-Queue und ignoriert SIGINT."""
-    global _shared_progress_queue
-    _shared_progress_queue = progress_queue
-
-    # Worker sollen SIGINT ignorieren - nur der Hauptprozess soll es behandeln
+    """Initializer for worker processes — sets progress queue, ignores SIGINT."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-
-    # Importiere und setze in progress.py
     try:
         from fwbg.utils.progress import set_progress_queue
         set_progress_queue(progress_queue)
@@ -57,11 +27,10 @@ def _init_worker(progress_queue):
 
 
 def _cleanup_on_interrupt():
-    """Beendet alle aktiven Worker-Prozesse bei Interrupt."""
+    """Terminate all active worker processes on interrupt."""
     global _active_executor, _active_futures
 
     if _active_futures:
-        print("\n[ResourceManager] Beende laufende Worker...", file=sys.stderr)
         for future in _active_futures:
             try:
                 future.cancel()
@@ -76,31 +45,22 @@ def _cleanup_on_interrupt():
             pass
         _active_executor = None
 
-    # Alle Kindprozesse des aktuellen Prozesses beenden
     _kill_child_processes()
 
 
 def _kill_child_processes():
-    """Beendet alle Kindprozesse des aktuellen Prozesses."""
-    current_pid = os.getpid()
+    """Terminate all child processes."""
     try:
-        current_process = psutil.Process(current_pid)
-        children = current_process.children(recursive=True)
-
+        current = psutil.Process(os.getpid())
+        children = current.children(recursive=True)
         if not children:
             return
-
-        # Erst SIGTERM
         for child in children:
             try:
                 child.terminate()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-
-        # Warte max 2 Sekunden auf sauberes Beenden
         gone, alive = psutil.wait_procs(children, timeout=2)
-
-        # SIGKILL für hartnäckige Prozesse
         for p in alive:
             try:
                 p.kill()
@@ -111,10 +71,9 @@ def _kill_child_processes():
 
 
 def _signal_handler(signum, frame):
-    """Handler für SIGINT/SIGTERM."""
-    print("\n[ResourceManager] Abbruch-Signal empfangen, räume auf...", file=sys.stderr)
+    """Handler for SIGINT/SIGTERM."""
+    print("\n[Pool] Interrupt received, cleaning up...", file=sys.stderr)
     _cleanup_on_interrupt()
-    # Original handler wiederherstellen und Signal erneut senden
     if signum == signal.SIGINT and _original_sigint:
         signal.signal(signal.SIGINT, _original_sigint)
     elif signum == signal.SIGTERM and _original_sigterm:
@@ -122,207 +81,25 @@ def _signal_handler(signum, frame):
     sys.exit(1)
 
 
-class AdaptivePoolManager:
-    """
-    Verwaltet einen Pool von Worker-Prozessen mit dynamischer Skalierung
-    basierend auf verfügbarem RAM.
+class SimplePoolManager:
+    """Process pool with a fixed number of workers and signal handling.
 
-    Regeln:
-    - Maximal 80% der CPU-Kerne nutzen
-    - Mindestens 20% RAM müssen frei bleiben
-    - Neue Prozesse nur starten, wenn genug RAM verfügbar ist
+    KISS: max_concurrent_assets is the only control knob.
     """
 
-    def __init__(
-        self,
-        max_cpu_percent: float = 0.80,
-        min_free_ram_percent: float = 0.25,
-        ram_per_worker_gb: float = 4.0,
-        threads_per_asset: int = 0,
-        max_concurrent_assets: int = 0,
-        check_interval: float = 2.0,
-        verbose: bool = True,
-        progress_queue = None
-    ):
-        """
-        Args:
-            max_cpu_percent: Maximaler Anteil der CPU-Kerne (0.0-1.0)
-            min_free_ram_percent: Minimaler freier RAM-Anteil (0.0-1.0)
-            ram_per_worker_gb: Geschätzter Peak-RAM pro Worker in GB
-            threads_per_asset: Geschätzte CPU-Threads pro Asset (0=auto)
-            check_interval: Sekunden zwischen RAM-Checks
-            verbose: Detaillierte Ausgaben
-            progress_queue: multiprocessing.Queue für Progress-Updates
-        """
-        # Normalisiere Prozent-Werte: 80 -> 0.80, 0.80 -> 0.80
-        self.max_cpu_percent = max_cpu_percent / 100 if max_cpu_percent > 1 else max_cpu_percent
-        self.min_free_ram_percent = min_free_ram_percent / 100 if min_free_ram_percent > 1 else min_free_ram_percent
-        self.ram_per_worker_gb = ram_per_worker_gb
-        self.check_interval = check_interval
-        self.verbose = verbose
+    def __init__(self, max_concurrent_assets: int = 1, progress_queue=None):
+        self.max_workers = max(1, max_concurrent_assets)
         self.progress_queue = progress_queue
-
-        # Systeminfo
-        self.total_cores = psutil.cpu_count()
-        self.total_ram_gb = psutil.virtual_memory().total / (1024**3)
-
-        # Berechne max Workers basierend auf CPU UND RAM
-        # WICHTIG: Nicht einfach CPU-Kerne zählen! Jedes Asset startet intern
-        # mehrere Feature-Group-Threads mit XGBoost, die jeweils n_jobs nutzen.
-        #
-        # Geschätzte Threads pro Asset (wenn nicht angegeben):
-        # - Feature-Groups laufen parallel (aber nicht alle CPU-intensiv gleichzeitig)
-        # - XGBoost nutzt GPU wenn verfügbar (reduziert CPU-Last erheblich)
-        # - Effektiv: ~5-6 Threads pro Asset bei GPU, ~7-8 bei CPU-only
-        if threads_per_asset > 0:
-            estimated_threads = threads_per_asset
-        else:
-            # Auto: Schätze basierend auf Systemgröße und GPU-Verfügbarkeit
-            # GPU reduziert CPU-Last da XGBoost auf GPU läuft
-            has_gpu = _check_gpu_available()
-
-            if has_gpu:
-                # Mit GPU: XGBoost CPU-Last ist minimal
-                # Kleine Systeme (≤8 Cores): 4 Threads/Asset
-                # Mittlere/Große Systeme (>8 Cores): 5 Threads/Asset
-                estimated_threads = 4 if self.total_cores <= 8 else 5
-            else:
-                # Ohne GPU: XGBoost nutzt CPU intensiv
-                # Kleine Systeme (≤8 Cores): 6 Threads/Asset
-                # Mittlere/Große Systeme (>8 Cores): 7 Threads/Asset
-                estimated_threads = 6 if self.total_cores <= 8 else 7
-
-        # CPU-basiertes Limit: Wie viele Assets können parallel laufen ohne Überlastung?
-        # Erlaube leichte Überbuchung (runden statt abschneiden) da nicht alle
-        # Threads gleichzeitig aktiv sind (I/O-Wartezeit, GIL, etc.)
-        usable_cores = self.total_cores * self.max_cpu_percent
-        cpu_limit = max(1, round(usable_cores / estimated_threads))
-
-        # RAM-Limit: (Gesamt-RAM - Reserve) / RAM pro Worker
-        reserved_ram = self.total_ram_gb * self.min_free_ram_percent
-        available_for_workers = self.total_ram_gb - reserved_ram
-        ram_limit = max(1, int(available_for_workers / self.ram_per_worker_gb))
-
-        self.max_workers = min(cpu_limit, ram_limit)
-
-        # Hard-Cap: User kann max parallele Assets direkt begrenzen
-        if max_concurrent_assets > 0:
-            self.max_workers = min(self.max_workers, max_concurrent_assets)
-
-        # Für Logging speichern
-        self._cpu_limit = cpu_limit
-        self._ram_limit = ram_limit
-        self._max_concurrent_assets = max_concurrent_assets
-        self._estimated_threads = estimated_threads
-
-        # Stats
         self.peak_workers = 0
-        self.ram_throttle_count = 0
-
-    def get_free_ram_percent(self) -> float:
-        """Gibt den Anteil des freien RAMs zurück (0.0-1.0)."""
-        mem = psutil.virtual_memory()
-        return mem.available / mem.total
-
-    def get_free_ram_gb(self) -> float:
-        """Gibt den freien RAM in GB zurück."""
-        return psutil.virtual_memory().available / (1024**3)
-
-    def get_cpu_percent(self, samples: int = 3) -> float:
-        """
-        Gibt die aktuelle CPU-Auslastung zurück (0.0-100.0).
-
-        Nimmt mehrere Samples und gibt den Durchschnitt zurück,
-        um kurzfristige Schwankungen auszugleichen.
-        """
-        if samples <= 1:
-            return psutil.cpu_percent(interval=0.2)
-
-        readings = []
-        for _ in range(samples):
-            readings.append(psutil.cpu_percent(interval=0.15))
-        return sum(readings) / len(readings)
-
-    def can_spawn_worker(self, current_workers: int) -> bool:
-        """
-        Prüft, ob ein neuer Worker gestartet werden kann.
-
-        WICHTIG: Bei ProcessPoolExecutor sind die Worker-Prozesse bereits gestartet!
-        Diese Methode entscheidet nur, ob ein neuer TASK an einen wartenden Worker
-        gegeben werden kann.
-
-        Die Worker-Prozesse belegen ihren RAM bereits, egal ob sie Tasks verarbeiten
-        oder warten. Deshalb müssen wir NICHT prüfen, ob "neuer Worker" RAM braucht.
-        Wir müssen nur prüfen:
-        1. Ob wir unter max_workers sind (CPU-Limit)
-        2. Ob genug RAM-Reserve für Spitzen bleibt
-
-        Returns:
-            True wenn ein weiterer Task gestartet werden kann
-        """
-        # Hartes Limit prüfen (bereits CPU-basiert berechnet)
-        if current_workers >= self.max_workers:
-            return False
-
-        # VEREINFACHT: Da ProcessPoolExecutor die Prozesse bereits hält,
-        # müssen wir nur prüfen ob die RAM-Reserve eingehalten wird.
-        # Die Worker sind bereits da - sie brauchen keinen "neuen" RAM.
-        reserved_ram = self.total_ram_gb * self.min_free_ram_percent
-        current_free = self.get_free_ram_gb()
-
-        # Nur Reserve prüfen, nicht "neuer Worker RAM"
-        # Der Worker-Prozess existiert bereits!
-        if current_free < reserved_ram:
-            self.ram_throttle_count += 1
-            self.log(f"RAM-Reserve unterschritten: frei={current_free:.1f}GB < reserve={reserved_ram:.1f}GB")
-            return False
-
-        return True
-
-    def log(self, msg: str, force: bool = False):
-        """Optionale Ausgabe auf stderr."""
-        if not self.verbose:
-            return
-        # Unterdrücke Logs wenn Progress-UI aktiv (außer force=True)
-        if os.environ.get("_OPTIMIZER_PROGRESS_UI") and not force:
-            return
-        print(f"[ResourceManager] {msg}", file=sys.stderr, flush=True)
-
-    def get_status(self) -> dict:
-        """Gibt aktuellen Ressourcen-Status zurück."""
-        mem = psutil.virtual_memory()
-        return {
-            "total_cores": self.total_cores,
-            "max_workers": self.max_workers,
-            "total_ram_gb": round(self.total_ram_gb, 1),
-            "free_ram_gb": round(mem.available / (1024**3), 1),
-            "free_ram_percent": round(mem.available / mem.total * 100, 1),
-            "ram_throttle_count": self.ram_throttle_count,
-            "peak_workers": self.peak_workers,
-        }
 
     def map_adaptive(
         self,
         func: Callable,
         items: List[Any],
         progress_callback: Optional[Callable[[int, int], None]] = None,
-        result_callback: Optional[Callable[[Any], None]] = None
+        result_callback: Optional[Callable[[Any], None]] = None,
     ) -> List[Any]:
-        """
-        Verarbeitet Items mit adaptiver Worker-Anzahl.
-
-        Startet mit wenigen Workern und skaliert hoch, solange RAM verfügbar ist.
-        Reduziert Worker-Anzahl wenn RAM knapp wird.
-
-        Args:
-            func: Funktion die auf jedes Item angewendet wird
-            items: Liste der zu verarbeitenden Items
-            progress_callback: Optional callback(completed, total)
-            result_callback: Optional callback(result) - wird für jedes fertige Ergebnis aufgerufen
-
-        Returns:
-            Liste der Ergebnisse (None-Werte werden gefiltert)
-        """
+        """Process items with a fixed-size pool."""
         if not items:
             return []
 
@@ -330,30 +107,11 @@ class AdaptivePoolManager:
         results = []
         completed = 0
 
-        # CPU-Warm-up: Erster Aufruf von cpu_percent() gibt immer 0 zurück
-        # Wir machen einen kurzen Warm-up um realistische Werte zu bekommen
-        psutil.cpu_percent(interval=None)  # Initialisierung
-        time.sleep(0.2)
-        initial_cpu = psutil.cpu_percent(interval=0.1)
-
-        # Status ausgeben
-        status = self.get_status()
-        self.log(f"System: {status['total_cores']} Cores, {status['total_ram_gb']:.1f} GB RAM")
-        limit_info = f"CPU-Limit: {self._cpu_limit}, RAM-Limit: {self._ram_limit}"
-        if self._max_concurrent_assets > 0:
-            limit_info += f", User-Limit: {self._max_concurrent_assets}"
-        self.log(f"Parallele Assets: max {self.max_workers} ({limit_info})")
-        self.log(f"  CPU: {self._estimated_threads} Threads/Asset × {self.max_workers} = {self._estimated_threads * self.max_workers} von {int(self.total_cores * self.max_cpu_percent)} nutzbaren Kernen")
-        self.log(f"  RAM: {self.ram_per_worker_gb}GB/Asset, Reserve {self.min_free_ram_percent*100:.0f}%")
-        self.log(f"Aktuell: {status['free_ram_gb']:.1f} GB RAM frei, CPU bei {initial_cpu:.0f}%")
-
         global _active_executor, _active_futures, _original_sigint, _original_sigterm
 
-        # Signal-Handler für Ctrl+C registrieren (nur während Pool aktiv)
         _original_sigint = signal.signal(signal.SIGINT, _signal_handler)
         _original_sigterm = signal.signal(signal.SIGTERM, _signal_handler)
 
-        # Erstelle Executor mit Initializer für Progress-Tracking
         executor_kwargs = {"max_workers": self.max_workers}
         if self.progress_queue is not None:
             executor_kwargs["initializer"] = _init_worker
@@ -362,142 +120,63 @@ class AdaptivePoolManager:
         with ProcessPoolExecutor(**executor_kwargs) as executor:
             _active_executor = executor
 
-            # Starte alle Worker bis zum max_workers Limit
-            # CPU-basierte Throttling wurde entfernt - das max_workers Limit
-            # berücksichtigt bereits die CPU-Kapazität bei der Berechnung
             futures = {}
-            pending_items = list(enumerate(items))  # (idx, item) Paare
-            active_count = 0
-
-            # Starte initial so viele Worker wie erlaubt (bis max_workers)
-            initial_workers = min(self.max_workers, total)
-            for _ in range(initial_workers):
-                if not pending_items:
-                    break
-                # RAM-Check vor jedem Worker
-                if not self.can_spawn_worker(active_count):
-                    self.log(f"RAM-Limit erreicht bei {active_count} Workern", force=True)
-                    break
-                idx, item = pending_items.pop(0)
+            for idx, item in enumerate(items):
                 future = executor.submit(func, item)
                 futures[future] = idx
                 _active_futures.append(future)
-                active_count += 1
 
-            self.peak_workers = active_count
-            self.log(f"Gestartet: {active_count} von {total} Workers (max: {self.max_workers})", force=True)
+            self.peak_workers = min(self.max_workers, total)
 
-            while futures or pending_items:
-                # Fertige Tasks einsammeln
+            while futures:
                 done_futures = [f for f in futures if f.done()]
 
-                # Ergebnisse sammeln
                 for future in done_futures:
                     idx = futures.pop(future)
-                    active_count -= 1
                     completed += 1
 
                     try:
                         result = future.result()
                         if result is not None:
                             results.append(result)
-                            # Logging nur für Dict-Ergebnisse (Optimizer-Results)
-                            if isinstance(result, dict):
-                                self.log(f"Worker #{idx} fertig: {result.get('symbol', '?')} -> {result.get('status', '?')}", force=True)
                             if result_callback:
                                 try:
                                     result_callback(result)
-                                except Exception as cb_err:
-                                    self.log(f"Result-Callback Fehler: {cb_err}", force=True)
+                                except Exception:
+                                    pass
                     except Exception as e:
-                        self.log(f"Worker-Fehler bei #{idx}: {e}", force=True)
+                        print(f"[Pool] Worker error #{idx}: {e}", file=sys.stderr)
 
                     if progress_callback:
                         progress_callback(completed, total)
 
-                # Log wenn Worker fertig sind aber noch Items warten
-                if done_futures and pending_items:
-                    self.log(f"Worker fertig: {len(done_futures)}, aktiv={active_count}, wartend={len(pending_items)}, max={self.max_workers}", force=True)
-
-                # Versuche neue Worker zu starten wenn Kapazität frei und Items warten
-                while pending_items and active_count < self.max_workers:
-                    # RAM-Check vor jedem neuen Worker
-                    can_spawn = self.can_spawn_worker(active_count)
-                    if not can_spawn:
-                        # RAM zu hoch - logge warum und versuche später
-                        mem = psutil.virtual_memory()
-                        self.log(f"Kann keinen Worker starten: {active_count} aktiv, "
-                                f"max={self.max_workers}, free_ram={mem.available/(1024**3):.1f}GB, "
-                                f"ram_throttle={self.ram_throttle_count}")
-                        break
-
-                    idx, item = pending_items.pop(0)
-                    future = executor.submit(func, item)
-                    futures[future] = idx
-                    _active_futures.append(future)
-                    active_count += 1
-                    if active_count > self.peak_workers:
-                        self.peak_workers = active_count
-                    self.log(f"Neuer Worker gestartet ({active_count} aktiv, {len(pending_items)} wartend)", force=True)
-
-                # Kurz warten bevor nächster Check
-                if futures or pending_items:
+                if futures:
                     time.sleep(0.5)
 
-            # Cleanup nach erfolgreicher Beendigung
             _active_futures.clear()
 
         _active_executor = None
 
-        # Signal-Handler wiederherstellen
         signal.signal(signal.SIGINT, _original_sigint if _original_sigint else signal.SIG_DFL)
         signal.signal(signal.SIGTERM, _original_sigterm if _original_sigterm else signal.SIG_DFL)
 
-        # Finale Stats
-        self.log(f"Fertig: {completed} Items, Peak {self.peak_workers} Workers")
-        if self.ram_throttle_count > 0:
-            self.log(f"RAM-Throttling wurde {self.ram_throttle_count}x aktiviert")
-
         return results
+
+    def get_status(self) -> dict:
+        return {
+            "max_workers": self.max_workers,
+            "peak_workers": self.peak_workers,
+        }
 
 
 def get_resource_info() -> dict:
-    """Gibt aktuelle Systemressourcen zurück."""
+    """Return current system resource info."""
+    import multiprocessing as mp
     mem = psutil.virtual_memory()
-    cpu_count = mp.cpu_count()
-
     return {
-        "cpu_cores": cpu_count,
+        "cpu_cores": mp.cpu_count(),
         "ram_total_gb": round(mem.total / (1024**3), 1),
         "ram_available_gb": round(mem.available / (1024**3), 1),
         "ram_used_percent": round(mem.percent, 1),
         "ram_free_percent": round(100 - mem.percent, 1),
     }
-
-
-def calculate_safe_workers(
-    max_cpu_percent: float = 0.80,
-    min_free_ram_percent: float = 0.25,
-    estimated_ram_per_worker_gb: float = 2.5
-) -> int:
-    """
-    Berechnet eine sichere Anzahl paralleler Worker.
-
-    Args:
-        max_cpu_percent: Max. Anteil der CPU-Kerne
-        min_free_ram_percent: Min. freier RAM-Anteil
-        estimated_ram_per_worker_gb: Geschätzter RAM pro Worker
-
-    Returns:
-        Anzahl sicherer Worker
-    """
-    info = get_resource_info()
-
-    # CPU-Limit
-    cpu_limit = max(1, int(info["cpu_cores"] * max_cpu_percent))
-
-    # RAM-Limit
-    available_for_workers = info["ram_available_gb"] - (info["ram_total_gb"] * min_free_ram_percent)
-    ram_limit = max(1, int(available_for_workers / estimated_ram_per_worker_gb))
-
-    return min(cpu_limit, ram_limit)
