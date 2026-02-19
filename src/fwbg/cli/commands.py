@@ -166,7 +166,9 @@ def load_strategy_from_file(filepath):
     """Lädt Strategie-Metadaten aus einer JSON-Datei."""
     try:
         with open(filepath) as f:
-            return json.load(f)
+            data = json.load(f)
+        data["_strategy_dir"] = os.path.dirname(os.path.abspath(filepath))
+        return data
     except Exception as e:
         print(f"Fehler beim Laden von {filepath}: {e}")
         return None

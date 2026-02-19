@@ -5,8 +5,9 @@ Plugin-basierte Struktur mit Pipeline-Format.
 Alle Config-Klassen sind hier definiert - keine Duplikate in anderen Modulen.
 """
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import json
+import os
 
 
 @dataclass
@@ -306,6 +307,98 @@ class ResourceConfig:
         )
 
 
+def _load_json_preset(name: str, presets_dir: str) -> dict:
+    """Load a JSON preset file from the given directory."""
+    path = os.path.join(presets_dir, f"{name}.json")
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Preset '{name}' not found at {path}")
+    with open(path, "r") as f:
+        return json.load(f)
+
+
+def _resolve_regime_filter(
+    value: "Optional[Union[str, Dict[str, Any]]]", regime_filters_dir: str
+):
+    """Resolve a regime filter reference: string loads file, dict passes through, None stays None."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return _load_json_preset(value, regime_filters_dir)
+    return value
+
+
+def _parse_grids(grids_data: dict, strategy_dir: Optional[str] = None) -> Dict[str, GridConfig]:
+    """Parse grids from strategy data, supporting both legacy inline and preset formats."""
+    if not grids_data:
+        return {}
+
+    # Legacy format: no "assignments" key → all values are inline grid dicts
+    if "assignments" not in grids_data:
+        return {
+            asset_class: GridConfig.from_dict(grid_data)
+            for asset_class, grid_data in grids_data.items()
+        }
+
+    # New preset format
+    base_dir = strategy_dir if strategy_dir else os.getcwd()
+    presets_dir = os.path.join(base_dir, grids_data.get("presets_dir", "grids"))
+    regime_filters_dir = os.path.join(
+        base_dir, grids_data.get("regime_filters_dir", "regime_filters")
+    )
+
+    # Shared regime_filter_grid (strategy-level)
+    shared_regime = _resolve_regime_filter(
+        grids_data.get("regime_filter_grid"), regime_filters_dir
+    )
+
+    # Cache for loaded preset files
+    preset_cache: Dict[str, dict] = {}
+    assignments = grids_data["assignments"]
+    result: Dict[str, GridConfig] = {}
+
+    # Override fields allowed from assignment level
+    _override_keys = {
+        "tp", "sl", "ct", "timeout_bars",
+        "long_tp", "long_sl", "long_ct",
+        "short_tp", "short_sl", "short_ct",
+    }
+
+    for asset_class, assignment in assignments.items():
+        if isinstance(assignment, str):
+            # String → load preset by name
+            preset_name = assignment
+            if preset_name not in preset_cache:
+                preset_cache[preset_name] = _load_json_preset(preset_name, presets_dir)
+            resolved_data = dict(preset_cache[preset_name])
+        elif isinstance(assignment, dict) and "preset" in assignment:
+            # Dict with "preset" → load + override
+            preset_name = assignment["preset"]
+            if preset_name not in preset_cache:
+                preset_cache[preset_name] = _load_json_preset(preset_name, presets_dir)
+            resolved_data = dict(preset_cache[preset_name])
+            for key in _override_keys:
+                if key in assignment:
+                    resolved_data[key] = assignment[key]
+        elif isinstance(assignment, dict):
+            # Inline legacy dict (no "preset" key)
+            resolved_data = assignment
+        else:
+            raise ValueError(f"Invalid assignment for '{asset_class}': {assignment}")
+
+        # Resolve regime_filter_grid: assignment-level > shared > none
+        asset_regime = assignment.get("regime_filter_grid") if isinstance(assignment, dict) else None
+        if asset_regime is not None:
+            resolved_data["regime_filter_grid"] = _resolve_regime_filter(
+                asset_regime, regime_filters_dir
+            )
+        elif shared_regime is not None and "regime_filter_grid" not in resolved_data:
+            resolved_data["regime_filter_grid"] = shared_regime
+
+        result[asset_class] = GridConfig.from_dict(resolved_data)
+
+    return result
+
+
 @dataclass
 class StrategyConfig:
     """
@@ -356,9 +449,7 @@ class StrategyConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StrategyConfig":
         """Erstellt StrategyConfig aus Dictionary (z.B. aus JSON-Datei)."""
-        grids = {}
-        for asset_class, grid_data in data.get("grids", {}).items():
-            grids[asset_class] = GridConfig.from_dict(grid_data)
+        grids = _parse_grids(data.get("grids", {}), data.get("_strategy_dir"))
 
         pipeline = data.get("pipeline", {})
 
@@ -388,6 +479,7 @@ class StrategyConfig:
         """Lädt StrategyConfig aus JSON-Datei."""
         with open(path, "r") as f:
             data = json.load(f)
+        data["_strategy_dir"] = os.path.dirname(os.path.abspath(path))
         return cls.from_dict(data)
 
     def get_grid(self, symbol: str, asset_class: str) -> GridConfig:
