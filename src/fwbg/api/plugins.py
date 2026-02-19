@@ -1,9 +1,12 @@
 """Plugin endpoints."""
+import mimetypes
 import subprocess
 import sys
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 
 from fwbg.api.deps import get_plugin_registry
 from fwbg_sdk import PluginPhase
@@ -67,12 +70,35 @@ def _plugin_to_dict(fqn: str) -> dict:
         "description": manifest.get("description", ""),
         "stateful": plugin_cls.stateful,
         "cacheable": plugin_cls.cacheable,
+        "has_docs": plugin_cls.get_docs_dir() is not None,
         "param_schema": param_schema,
         "defaults": defaults,
         "feature_columns": feature_columns,
         "signal_columns": signal_columns,
         "plot_columns": plot_columns,
     }
+
+
+def _get_validated_docs_dir(fqn: str) -> Path:
+    """Get a plugin's docs dir, raising 403 if validation fails."""
+    registry = get_plugin_registry()
+    try:
+        plugin_cls = registry.get(fqn)
+    except Exception:
+        raise HTTPException(404, f"Plugin not found: {fqn}")
+
+    docs_dir = plugin_cls.get_docs_dir()
+    if docs_dir is None:
+        raise HTTPException(404, f"No documentation for plugin: {fqn}")
+
+    result = plugin_cls.validate_docs()
+    if not result.valid:
+        reasons = [f"{v.file}:{v.line} {v.reason}" for v in result.violations]
+        raise HTTPException(
+            403,
+            f"Documentation blocked due to validation errors: {'; '.join(reasons)}",
+        )
+    return docs_dir
 
 
 @router.get("")
@@ -91,14 +117,65 @@ def list_plugins(phase: Optional[str] = Query(None, description="Filter by phase
     return [_plugin_to_dict(fqn) for fqn in sorted(fqns)]
 
 
-@router.get("/{fqn:path}")
-def get_plugin(fqn: str) -> dict:
-    """Get plugin details by fully qualified name."""
+# --- Docs endpoints (must be before the catch-all GET /{fqn:path}) ---
+
+
+@router.get("/{fqn:path}/docs")
+def get_plugin_docs(fqn: str) -> dict:
+    """Get plugin documentation overview."""
     registry = get_plugin_registry()
     try:
-        return _plugin_to_dict(fqn)
+        plugin_cls = registry.get(fqn)
     except Exception:
         raise HTTPException(404, f"Plugin not found: {fqn}")
+
+    docs_dir = plugin_cls.get_docs_dir()
+    if docs_dir is None:
+        return {"fqn": fqn, "has_docs": False, "readme": None, "files": [], "validation": {"valid": True, "violations": []}}
+
+    result = plugin_cls.validate_docs()
+    validation = {
+        "valid": result.valid,
+        "violations": [
+            {"file": v.file, "line": v.line, "link": v.link, "reason": v.reason}
+            for v in result.violations
+        ],
+    }
+
+    # Block content if validation fails
+    if not result.valid:
+        return {"fqn": fqn, "has_docs": True, "readme": None, "files": [], "validation": validation}
+
+    readme = plugin_cls.get_docs_readme()
+    return {"fqn": fqn, "has_docs": True, "readme": readme, "files": result.files, "validation": validation}
+
+
+@router.get("/{fqn:path}/docs/{doc_path:path}")
+def get_plugin_doc_file(fqn: str, doc_path: str) -> Response:
+    """Serve a specific documentation file with path validation."""
+    docs_dir = _get_validated_docs_dir(fqn)
+
+    # Validate the requested path
+    if ".." in Path(doc_path).parts or doc_path.startswith("/"):
+        raise HTTPException(403, "Path traversal not allowed")
+
+    file_path = (docs_dir / doc_path).resolve()
+
+    # Must be within docs_dir
+    try:
+        file_path.relative_to(docs_dir.resolve())
+    except ValueError:
+        raise HTTPException(403, "Path traversal not allowed")
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(404, f"File not found: {doc_path}")
+
+    content = file_path.read_bytes()
+    media_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+    return Response(content=content, media_type=media_type)
+
+
+# --- Tests endpoint ---
 
 
 @router.post("/{fqn:path}/tests/run")
@@ -172,3 +249,16 @@ def run_plugin_tests(fqn: str) -> dict:
         "stdout": result.stdout,
         "stderr": result.stderr,
     }
+
+
+# --- Catch-all plugin detail endpoint (must be LAST) ---
+
+
+@router.get("/{fqn:path}")
+def get_plugin(fqn: str) -> dict:
+    """Get plugin details by fully qualified name."""
+    registry = get_plugin_registry()
+    try:
+        return _plugin_to_dict(fqn)
+    except Exception:
+        raise HTTPException(404, f"Plugin not found: {fqn}")

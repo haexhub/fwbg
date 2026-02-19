@@ -22,6 +22,9 @@ from fwbg_sdk.exit_strategies import BaseExitStrategy
 from fwbg_sdk.risk_managers import BaseRiskManager
 from fwbg_sdk.data_loaders import BaseDataLoader
 
+# Documentation validation
+from fwbg_sdk.docs import DocsValidationResult, DocsViolation, validate_plugin_docs
+
 # Testing utilities
 from fwbg_sdk.testing import (
     create_sample_ohlcv,
@@ -78,6 +81,10 @@ __all__ = [
     "register_preprocessor",
     "register_risk_manager",
     "register_data_loader",
+    # Documentation validation
+    "DocsValidationResult",
+    "DocsViolation",
+    "validate_plugin_docs",
     # Testing utilities
     "create_sample_ohlcv",
     "assert_features_shifted",
