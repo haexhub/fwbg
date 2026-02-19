@@ -614,7 +614,8 @@ def list_runs(tags=None):
                     run_info["strategy_name"] = strategy.get("name")
                     run_info["tags"] = strategy.get("tags", [])
                     run_info["hypothesis"] = strategy.get("hypothesis")
-                    run_info["model_architecture"] = strategy.get("model", {}).get("architecture")
+                    model = strategy.get("model", {})
+                    run_info["model_architecture"] = model.get("architecture") if isinstance(model, dict) else None
 
             # Assets zählen
             assets_path = os.path.join(run_path, "assets.json")
@@ -689,7 +690,7 @@ def compare_runs(run_ids):
             "strategy_name": strategy.get("name"),
             "category": strategy.get("category"),
             "hypothesis": strategy.get("hypothesis"),
-            "model_architecture": strategy.get("model", {}).get("architecture"),
+            "model_architecture": strategy["model"].get("architecture") if isinstance(strategy.get("model"), dict) else None,
             "profitable_count": len(run.get("assets", {})),
             "profitable_symbols": list(run.get("assets", {}).keys()),
         }

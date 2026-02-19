@@ -244,7 +244,7 @@ class TestStrategyConfigIntegration:
         """Test: exploration.json kann geladen werden."""
         import os
 
-        strategy_path = "strategies/exploration.json"
+        strategy_path = "strategies/configs/exploration.json"
         if os.path.exists(strategy_path):
             strategy = StrategyConfig.from_json_file(strategy_path)
 
@@ -406,7 +406,7 @@ class TestStrategyFilePluginResolution:
         import glob
         from fwbg.pipeline.features import normalize_plugin_name
 
-        strategy_files = sorted(glob.glob("strategies/*.json"))
+        strategy_files = sorted(glob.glob("strategies/configs/*.json"))
         assert strategy_files, "No strategy files found"
 
         errors = []

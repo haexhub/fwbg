@@ -560,7 +560,7 @@ class TestStrategyJsonEndToEnd:
     def _get_strategy_files():
         import glob
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return glob.glob(os.path.join(root, "strategies", "*.json"))
+        return glob.glob(os.path.join(root, "strategies", "configs", "*.json"))
 
     def test_all_strategies_produce_targets(self):
         """Jede Strategy-JSON muss mit ihren Grid-Params Targets produzieren."""
