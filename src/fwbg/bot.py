@@ -35,9 +35,10 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 import ta
-from xgboost import XGBClassifier
 
+from fwbg_sdk.models import BaseModel, TrainingContext
 from fwbg.adapters.broker import BrokerAdapter, OrderSide, BarData
+from fwbg.core import get_model
 from fwbg.pipeline import compute_indicator_pool
 from fwbg.data.loader import run_data_loading
 
@@ -132,7 +133,7 @@ class TradingBot:
             self.assets[symbol] = AssetConfig.from_dict(symbol, cfg)
 
         # ML Models
-        self.models: Dict[str, XGBClassifier] = {}
+        self.models: Dict[str, BaseModel] = {}
 
         # OHLC und Feature Cache
         self.ohlc_cache: Dict[str, pd.DataFrame] = {}
@@ -246,14 +247,14 @@ class TradingBot:
                 return False
 
             # Model trainieren
-            model = XGBClassifier(
-                n_estimators=100,
-                max_depth=5,
-                n_jobs=-1,
-                random_state=42,
-                verbosity=0
+            model_class = get_model("xgboost")
+            model = model_class()
+            training_context = TrainingContext()
+            model.train(
+                df_train[cfg.features], df_train["Target"].values,
+                training_context,
+                n_estimators=100, max_depth=5, random_state=42,
             )
-            model.fit(df_train[cfg.features], df_train["Target"])
 
             self.models[symbol] = model
             logger.info(f"✅ {symbol}: Model trained with {len(df_train)} samples")
@@ -473,7 +474,7 @@ class TradingBot:
             if model is None:
                 return
 
-            prob = model.predict_proba(df[cfg.features].iloc[[-1]])[0, 1]
+            prob = model.predict_probability(df[cfg.features].iloc[[-1]])[0, 1]
 
             # Signal-Logik
             direction = None

@@ -5,11 +5,13 @@ Extracted from nested_cv.py for modularity (keeping files under 600 lines).
 """
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any, Tuple, Optional
-from xgboost import XGBClassifier
+from typing import List, Dict, Any, Tuple, Optional, TYPE_CHECKING
 
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_exit_strategy, GridParams
+
+if TYPE_CHECKING:
+    from fwbg_sdk.models import BaseModel
 from fwbg.pipeline.features import REGIME_LONG, REGIME_SHORT
 from fwbg.simulation.trade import simulate_pro_trade
 
@@ -354,20 +356,22 @@ def slice_targets_for_fold(
 
 
 def _get_probs(
-    model: Optional[XGBClassifier],
+    model: Optional["BaseModel"],
     df: pd.DataFrame,
     features: Optional[List[str]]
 ) -> Tuple[Optional[np.ndarray], Optional[int]]:
     """Berechnet Wahrscheinlichkeiten für ein Modell."""
     if not features or model is None:
         return None, None
-    X = df[features].values.copy()
-    inf_mask = np.isinf(X)
+    X = df[features].copy()
+    X_vals = X.values
+    inf_mask = np.isinf(X_vals)
     if inf_mask.any():
-        X[inf_mask] = np.nan
-    probs = model.predict_proba(X)
-    if 1 in model.classes_:
-        win_idx = np.where(model.classes_ == 1)[0][0]
+        X_vals[inf_mask] = np.nan
+        X = pd.DataFrame(X_vals, columns=X.columns, index=X.index)
+    probs = model.predict_probability(X)
+    if 1 in model.trained_classes:
+        win_idx = np.where(model.trained_classes == 1)[0][0]
         return probs, win_idx
     return None, None
 
@@ -401,9 +405,10 @@ def _apply_meta_filter(
     primary_probs = probs[:, win_idx]
     X_meta = np.column_stack([df[features].values, primary_probs])
 
-    meta_probs = meta_model.predict_proba(X_meta)
-    if 1 in meta_model.classes_:
-        meta_win_idx = np.where(meta_model.classes_ == 1)[0][0]
+    X_meta_df = pd.DataFrame(X_meta, columns=features + ["primary_prob"])
+    meta_probs = meta_model.predict_probability(X_meta_df)
+    if 1 in meta_model.trained_classes:
+        meta_win_idx = np.where(meta_model.trained_classes == 1)[0][0]
     else:
         return probs
 
@@ -416,8 +421,8 @@ def _apply_meta_filter(
 
 def evaluate_on_validation(
     val_df: pd.DataFrame,
-    mod_long: Optional[XGBClassifier],
-    mod_short: Optional[XGBClassifier],
+    mod_long: Optional["BaseModel"],
+    mod_short: Optional["BaseModel"],
     features_long: Optional[List[str]],
     features_short: Optional[List[str]],
     tp: int,
