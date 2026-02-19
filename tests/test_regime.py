@@ -274,22 +274,22 @@ class TestStrategyRegimeConfig:
     """Tests dass Exploration-Strategien korrekte Regime-Config haben."""
 
     def test_exploration_json_has_regime_grid(self):
-        config = StrategyConfig.from_json_file("strategies/exploration.json")
+        config = StrategyConfig.from_json_file("strategies/configs/exploration.json")
         grid = config.get_grid("EURUSD", "FOREX")
         assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_atr_has_regime_grid(self):
-        config = StrategyConfig.from_json_file("strategies/exploration_atr.json")
+        config = StrategyConfig.from_json_file("strategies/configs/exploration_atr.json")
         grid = config.get_grid("EURUSD", "FOREX")
         assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_fast_has_regime_grid(self):
-        config = StrategyConfig.from_json_file("strategies/exploration_fast.json")
+        config = StrategyConfig.from_json_file("strategies/configs/exploration_fast.json")
         grid = config.get_grid("EURUSD", "FOREX")
         assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_all_asset_classes_have_regime_grid(self):
-        config = StrategyConfig.from_json_file("strategies/exploration.json")
+        config = StrategyConfig.from_json_file("strategies/configs/exploration.json")
         for asset_class in ["FOREX", "INDEX", "COMMODITY", "CRYPTO"]:
             grid = config.get_grid("TEST", asset_class)
             assert grid.regime_filter_grid.total_combinations() == 24, (
@@ -298,7 +298,7 @@ class TestStrategyRegimeConfig:
 
     def test_regime_combos_include_no_filter_baseline(self):
         """Jede Strategie hat eine 'kein Filter' Baseline."""
-        config = StrategyConfig.from_json_file("strategies/exploration.json")
+        config = StrategyConfig.from_json_file("strategies/configs/exploration.json")
         grid = config.get_grid("EURUSD", "FOREX")
         combos = grid.regime_filter_grid.get_combinations()
 

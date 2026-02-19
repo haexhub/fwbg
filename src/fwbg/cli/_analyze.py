@@ -15,7 +15,7 @@ def run_analyze(argv):
         epilog="""
 Examples:
   fwbg analyze BRENT_HOUR.csv
-  fwbg analyze BRENT_HOUR.csv --strategy-file strategies/exploration_scalping.json
+  fwbg analyze BRENT_HOUR.csv --strategy-file strategies/configs/exploration_scalping.json
   fwbg analyze --asset-class COMMODITY --max-bars 96
         """,
     )

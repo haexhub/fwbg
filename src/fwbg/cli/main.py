@@ -650,7 +650,7 @@ Beispiele:
   python -m fwbg.cli                                    # Standard-Run
   python -m fwbg.cli -d "Test mit neuen Makros"        # Mit Beschreibung
   python -m fwbg.cli --strategy                        # Interaktive Strategie-Eingabe
-  python -m fwbg.cli --strategy-file strategies/x.json # Strategie aus Datei laden
+  python -m fwbg.cli --strategy-file strategies/configs/x.json # Strategie aus Datei laden
   python -m fwbg.cli --list                            # Alle Runs anzeigen
   python -m fwbg.cli --list --tags baseline            # Nach Tags filtern
   python -m fwbg.cli --compare RUN1 RUN2               # Runs vergleichen

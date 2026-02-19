@@ -16,7 +16,7 @@ def get_plugin_registry() -> PluginRegistry:
 
 def get_strategies_dir() -> Path:
     """Get the strategies directory path."""
-    path = Path(os.environ.get("FWBG_STRATEGIES_DIR", "strategies"))
+    path = Path(os.environ.get("FWBG_STRATEGIES_DIR", "strategies/configs"))
     path.mkdir(parents=True, exist_ok=True)
     return path
 

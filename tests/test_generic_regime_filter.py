@@ -232,25 +232,25 @@ class TestStrategyJsonNewFormat:
 
     def test_exploration_json_loads(self):
         from fwbg.core.config import StrategyConfig
-        config = StrategyConfig.from_json_file("strategies/exploration.json")
+        config = StrategyConfig.from_json_file("strategies/configs/exploration.json")
         grid = config.get_grid("EURUSD", "FOREX")
         assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_atr_loads(self):
         from fwbg.core.config import StrategyConfig
-        config = StrategyConfig.from_json_file("strategies/exploration_atr.json")
+        config = StrategyConfig.from_json_file("strategies/configs/exploration_atr.json")
         grid = config.get_grid("EURUSD", "FOREX")
         assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_fast_loads(self):
         from fwbg.core.config import StrategyConfig
-        config = StrategyConfig.from_json_file("strategies/exploration_fast.json")
+        config = StrategyConfig.from_json_file("strategies/configs/exploration_fast.json")
         grid = config.get_grid("EURUSD", "FOREX")
         assert grid.regime_filter_grid.total_combinations() == 24
 
     def test_combinations_have_directions(self):
         from fwbg.core.config import StrategyConfig
-        config = StrategyConfig.from_json_file("strategies/exploration.json")
+        config = StrategyConfig.from_json_file("strategies/configs/exploration.json")
         grid = config.get_grid("EURUSD", "FOREX")
         combos = grid.regime_filter_grid.get_combinations()
         for combo in combos:
