@@ -5,7 +5,7 @@ import json
 import os
 import glob
 
-from fwbg.analysis.exit_analyzer import analyze_asset, format_terminal_output, write_json
+from fwbg.exploration.exit_analyzer import analyze_asset, format_terminal_output, write_json
 from fwbg.data.config import DATA_PATH, TIMEFRAME
 
 
@@ -29,7 +29,7 @@ Examples:
         "--max-bars", type=int, default=48, help="Forward window in bars (default: 48)"
     )
     parser.add_argument(
-        "--output-dir", default="test_results/analyze", help="Output directory"
+        "--output-dir", default="test_results/exploration", help="Output directory"
     )
     args = parser.parse_args(argv)
 
