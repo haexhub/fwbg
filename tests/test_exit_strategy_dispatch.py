@@ -594,18 +594,17 @@ class TestStrategyJsonEndToEnd:
         failures = []
 
         for path in strategy_files:
-            import json
-            with open(path) as f:
-                config = json.load(f)
+            from fwbg.core.config import StrategyConfig
+            strategy = StrategyConfig.from_json_file(path)
 
             strategy_name = os.path.basename(path)
-            exit_strategy_name = config.get("exit_strategy", "fixed")
-            grids = config.get("grids", {})
+            exit_strategy_name = strategy.exit_strategy
+            exit_params = strategy.exit_params
 
             # Irgendein Grid-Set nehmen (alle sollten funktionieren)
-            for asset_class, grid_config in grids.items():
-                tp_values = grid_config.get("tp", [1.0])
-                sl_values = grid_config.get("sl", [1.0])
+            for asset_class, grid_config in strategy.grids.items():
+                tp_values = grid_config.tp or [1.0]
+                sl_values = grid_config.sl or [1.0]
 
                 # Ersten TP/SL aus dem Grid testen
                 tp = tp_values[0]
@@ -620,13 +619,13 @@ class TestStrategyJsonEndToEnd:
                         asset_class=asset_class,
                         spread=0.05,
                         point=0.01,
-                        exit_params=config.get("exit_params", {}),
+                        exit_params=exit_params,
                     )
 
                     grid_params = GridParams(
                         tp_value=float(tp),
                         sl_value=float(sl),
-                        extra=config.get("exit_params", {}),
+                        extra=exit_params,
                     )
 
                     result = exit_strategy.compute_targets(
