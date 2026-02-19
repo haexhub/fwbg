@@ -10,11 +10,10 @@ Struktur:
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
-from xgboost import XGBClassifier
 
+from fwbg_sdk.models import BaseModel, TrainingContext
 from fwbg.core.context import SimulationContext
-from fwbg.core import get_feature_selector
-from fwbg.utils.xgb_config import get_xgboost_n_jobs, get_xgboost_params
+from fwbg.core import get_feature_selector, get_model
 
 from .targets import (
     _validate_targets,
@@ -139,57 +138,29 @@ def train_model(
     ctx: SimulationContext,
     use_reduced_params: bool = False,
     sample_weight: Optional[np.ndarray] = None,
-) -> Optional[XGBClassifier]:
+) -> Optional[BaseModel]:
     """
-    Trainiert ein XGBoost-Modell.
+    Trainiert ein ML-Modell via Plugin-Registry.
 
     Args:
-        use_reduced_params: Wenn True, werden Hyperparameter halbiert (für Inner CV)
+        use_reduced_params: Wenn True, werden Hyperparameter reduziert (für Inner CV)
         sample_weight: Optional - Uniqueness-basierte Sample Weights (AFML Ch. 4)
     """
     if features is None or np.count_nonzero(targets) < min_trades // 2:
         return None
 
+    model_class = get_model(ctx.model_type)
     params = ctx.model_hyperparameters.copy()
 
     if use_reduced_params:
-        params["n_estimators"] = max(10, params.get("n_estimators", 100) // 2)
+        params = model_class.get_reduced_hyperparameters(params)
 
-    params.setdefault("random_state", 42)
-    params.setdefault("verbosity", 0)
-    params["n_jobs"] = get_xgboost_n_jobs()
-
-    params.update(get_xgboost_params())
-
-    model = XGBClassifier(**params)
+    model = model_class()
+    training_context = TrainingContext(sample_weights=sample_weight)
+    model.train(train_df[features], targets, training_context, **params)
 
     if ctx.probability_calibration:
-        from sklearn.calibration import CalibratedClassifierCV
-        model = CalibratedClassifierCV(model, method=ctx.calibration_method, cv=3)
-
-    fit_kwargs = {}
-    if sample_weight is not None:
-        fit_kwargs["sample_weight"] = sample_weight
-
-    try:
-        model.fit(train_df[features], targets, **fit_kwargs)
-    except Exception as e:
-        error_msg = str(e).lower()
-        if "cuda" in error_msg or "gpu" in error_msg or "device" in error_msg:
-            from fwbg.utils.xgb_config import disable_gpu
-            disable_gpu()
-            cpu_params = {k: v for k, v in params.items()
-                         if k not in ("device", "tree_method")}
-            cpu_params["tree_method"] = "hist"
-            cpu_params["device"] = "cpu"
-            cpu_model = XGBClassifier(**cpu_params)
-            if ctx.probability_calibration:
-                from sklearn.calibration import CalibratedClassifierCV
-                cpu_model = CalibratedClassifierCV(cpu_model, method=ctx.calibration_method, cv=3)
-            cpu_model.fit(train_df[features], targets, **fit_kwargs)
-            return cpu_model
-        else:
-            raise
+        model.calibrate(train_df[features], targets, method=ctx.calibration_method)
 
     return model
 
@@ -205,34 +176,29 @@ def _generate_oof_predictions(
     Generate out-of-fold probability predictions (AFML Ch. 3).
 
     Uses time-series KFold (no shuffle) to avoid data leakage.
-    Each fold trains a reduced-param XGBoost and predicts on held-out bars.
+    Each fold trains a reduced-param model and predicts on held-out bars.
 
     Returns:
         Array of shape (n,) with OOF win-probabilities for each bar.
     """
     from sklearn.model_selection import KFold
 
+    model_class = get_model(ctx.model_type)
     oof_probs = np.zeros(len(df))
-    X = df[features].values
     kf = KFold(n_splits=n_splits, shuffle=False)
 
-    for train_idx, val_idx in kf.split(X):
+    for train_idx, val_idx in kf.split(df[features].values):
         if len(np.unique(targets[train_idx])) < 2:
             continue
 
-        params = ctx.model_hyperparameters.copy()
-        params["n_estimators"] = max(10, params.get("n_estimators", 100) // 2)
-        params.setdefault("random_state", 42)
-        params.setdefault("verbosity", 0)
-        params["n_jobs"] = get_xgboost_n_jobs()
-        params.update(get_xgboost_params())
+        params = model_class.get_reduced_hyperparameters(ctx.model_hyperparameters.copy())
+        model = model_class()
+        training_context = TrainingContext()
+        model.train(df[features].iloc[train_idx], targets[train_idx], training_context, **params)
 
-        model = XGBClassifier(**params)
-        model.fit(X[train_idx], targets[train_idx])
-
-        if 1 in model.classes_:
-            win_idx = np.where(model.classes_ == 1)[0][0]
-            oof_probs[val_idx] = model.predict_proba(X[val_idx])[:, win_idx]
+        if 1 in model.trained_classes:
+            win_idx = np.where(model.trained_classes == 1)[0][0]
+            oof_probs[val_idx] = model.predict_probability(df[features].iloc[val_idx])[:, win_idx]
 
     return oof_probs
 
@@ -243,7 +209,7 @@ def _train_meta_model(
     features: List[str],
     oof_probs: np.ndarray,
     ctx: SimulationContext,
-) -> Optional[XGBClassifier]:
+) -> Optional[BaseModel]:
     """
     Train a meta-model that predicts whether the primary signal is profitable (AFML Ch. 3).
 
@@ -255,17 +221,16 @@ def _train_meta_model(
     if len(np.unique(targets)) < 2:
         return None
 
-    X_meta = np.column_stack([df[features].values, oof_probs])
+    X_meta = pd.DataFrame(
+        np.column_stack([df[features].values, oof_probs]),
+        columns=features + ["oof_prob"],
+    )
 
-    params = ctx.model_hyperparameters.copy()
-    params["n_estimators"] = max(10, params.get("n_estimators", 100) // 2)
-    params.setdefault("random_state", 42)
-    params.setdefault("verbosity", 0)
-    params["n_jobs"] = get_xgboost_n_jobs()
-    params.update(get_xgboost_params())
-
-    meta_model = XGBClassifier(**params)
-    meta_model.fit(X_meta, targets)
+    model_class = get_model(ctx.model_type)
+    params = model_class.get_reduced_hyperparameters(ctx.model_hyperparameters.copy())
+    meta_model = model_class()
+    training_context = TrainingContext()
+    meta_model.train(X_meta, targets, training_context, **params)
     return meta_model
 
 
