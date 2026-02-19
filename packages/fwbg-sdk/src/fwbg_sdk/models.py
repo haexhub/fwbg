@@ -150,20 +150,42 @@ class BaseModel(BasePlugin, ABC):
         """Train the model. Full control over the training loop."""
         ...
 
-    @abstractmethod
+    def _check_trained(self) -> None:
+        if not self._fitted:
+            raise RuntimeError(
+                f"{self.name} model is not trained. Call train() first."
+            )
+
     def predict_probability(self, features: pd.DataFrame) -> np.ndarray:
         """Return class probabilities (n_samples, n_classes)."""
+        self._check_trained()
+        return self._predict_probability_impl(features)
+
+    @abstractmethod
+    def _predict_probability_impl(self, features: pd.DataFrame) -> np.ndarray:
+        """Implement class probability prediction. Called by predict_probability()."""
         ...
 
     @property
-    @abstractmethod
     def trained_classes(self) -> np.ndarray:
         """Return class labels learned during training."""
+        self._check_trained()
+        return self._trained_classes_impl
+
+    @property
+    @abstractmethod
+    def _trained_classes_impl(self) -> np.ndarray:
+        """Implement class labels property. Called by trained_classes."""
         ...
 
-    @abstractmethod
     def as_sklearn_estimator(self) -> Any:
         """Return sklearn-compatible estimator (for calibration etc.)."""
+        self._check_trained()
+        return self._as_sklearn_estimator_impl()
+
+    @abstractmethod
+    def _as_sklearn_estimator_impl(self) -> Any:
+        """Implement sklearn estimator access. Called by as_sklearn_estimator()."""
         ...
 
     def calibrate(
@@ -182,6 +204,11 @@ class BaseModel(BasePlugin, ABC):
         calibrated.fit(features, targets)
         self._calibrated_model = calibrated
         self.progress.complete_stage("calibration")
+
+    def predict(self, features: pd.DataFrame) -> np.ndarray:
+        """Return predicted class labels (argmax of predict_probability)."""
+        probs = self.predict_probability(features)
+        return self.trained_classes[np.argmax(probs, axis=1)]
 
     def predict_probability_calibrated(self, features: pd.DataFrame) -> np.ndarray:
         """Predict with calibration if available, otherwise raw."""

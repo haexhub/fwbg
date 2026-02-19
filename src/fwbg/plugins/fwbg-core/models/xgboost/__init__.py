@@ -17,6 +17,7 @@ class XGBoostModel(BaseModel):
     def __init__(self) -> None:
         super().__init__()
         self._model = None
+        self._feature_names: Optional[List[str]] = None
 
     def train(
         self,
@@ -58,6 +59,7 @@ class XGBoostModel(BaseModel):
                 raise
 
         self._fitted = True
+        self._feature_names = list(features.columns)
         total_duration = self.progress.complete_training()
         self.logger.info(
             f"Trained: {len(targets)} samples, {len(features.columns)} features, "
@@ -87,24 +89,23 @@ class XGBoostModel(BaseModel):
         self._model.fit(features, targets, **fit_kwargs)
         self.progress.complete_stage("gpu_fallback")
 
-    def predict_probability(self, features: pd.DataFrame) -> np.ndarray:
+    def _predict_probability_impl(self, features: pd.DataFrame) -> np.ndarray:
         return self._model.predict_proba(features)
 
     @property
-    def trained_classes(self) -> np.ndarray:
+    def _trained_classes_impl(self) -> np.ndarray:
         return self._model.classes_
 
-    def as_sklearn_estimator(self) -> Any:
+    def _as_sklearn_estimator_impl(self) -> Any:
         return self._model
 
     def get_feature_importance(self) -> Optional[Dict[str, float]]:
         if self._model is None:
             return None
         importance = self._model.feature_importances_
-        feature_names = self._model.get_booster().feature_names
-        if feature_names is None:
+        if self._feature_names is None:
             return None
-        return dict(zip(feature_names, importance.tolist()))
+        return dict(zip(self._feature_names, importance.tolist()))
 
     @classmethod
     def get_default_params(cls) -> Dict[str, Any]:
