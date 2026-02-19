@@ -1,7 +1,13 @@
 {
   "name": "ORB + PDH/PDL Scalping",
   "description": "Intraday scalping strategy combining Opening Range Breakout with Previous Day High/Low levels, displacement quality, S/D flip zones, and liquidity detection on M15 data.",
-  "tags": ["orb", "pdhl", "scalping", "intraday", "smart_money"],
+  "tags": [
+    "orb",
+    "pdhl",
+    "scalping",
+    "intraday",
+    "smart_money"
+  ],
   "timeframe": "MINUTE_15",
   "hypothesis": "ORB breakouts with displacement towards PDH/PDL produce high-probability intraday setups. Supply/demand flip zones and liquidity levels add confluence. ML learns which combinations of ORB break direction, displacement quality, and proximity to daily levels are profitable.",
   "expected_outcome": "Strong edge on indices and FX majors during NY/London sessions. PDL features and displacement features selected as important by feature selection. Higher win rate when displacement is present.",
@@ -12,7 +18,12 @@
         "params": {
           "auto_d": false,
           "default_d": 0.4,
-          "columns": ["O", "H", "L", "C"]
+          "columns": [
+            "O",
+            "H",
+            "L",
+            "C"
+          ]
         }
       }
     ],
@@ -22,7 +33,12 @@
         "params": {
           "range_bars": 1,
           "atr_period": 14,
-          "sessions": [0, 8, 13, 14],
+          "sessions": [
+            0,
+            8,
+            13,
+            14
+          ],
           "stat_window": 20,
           "enable_rolling": true,
           "enable_session": true,
@@ -66,12 +82,27 @@
       {
         "name": "trend",
         "params": {
-          "adx_periods": [7, 14],
-          "ema_periods": [8, 21, 50],
-          "sma_periods": [20, 50],
-          "cci_periods": [14],
+          "adx_periods": [
+            7,
+            14
+          ],
+          "ema_periods": [
+            8,
+            21,
+            50
+          ],
+          "sma_periods": [
+            20,
+            50
+          ],
+          "cci_periods": [
+            14
+          ],
           "aroon_period": 25,
-          "er_periods": [10, 20],
+          "er_periods": [
+            10,
+            20
+          ],
           "supertrend_period": 14,
           "supertrend_multiplier": 3.0
         }
@@ -79,17 +110,32 @@
       {
         "name": "momentum",
         "params": {
-          "rsi_periods": [7, 14],
-          "stoch_periods": [14],
-          "williams_periods": [14],
-          "roc_periods": [5, 10]
+          "rsi_periods": [
+            7,
+            14
+          ],
+          "stoch_periods": [
+            14
+          ],
+          "williams_periods": [
+            14
+          ],
+          "roc_periods": [
+            5,
+            10
+          ]
         }
       },
       {
         "name": "volatility",
         "params": {
-          "atr_periods": [7, 14],
-          "vol_est_windows": [20]
+          "atr_periods": [
+            7,
+            14
+          ],
+          "vol_est_windows": [
+            20
+          ]
         }
       },
       {
@@ -155,7 +201,10 @@
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 100,
       "max_depth": 6,
@@ -166,79 +215,49 @@
     }
   },
   "grids": {
-    "FOREX": {
-      "tp": [1.5, 2.0, 2.5, 3.0],
-      "sl": [3.0, 4.0, 5.0],
-      "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 48, 96],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [null, 20, 25],
-            "directions": 6,
-            "else_directions": 0
-          }
-        ]
-      }
-    },
-    "INDEX": {
-      "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
-      "sl": [3.0, 4.0, 5.0, 6.0],
-      "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 48, 96],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [null, 20, 25],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "macro_vix",
-            "operator": "<=",
-            "values": [null, 25, 30],
-            "directions": 6,
-            "else_directions": 0
-          }
-        ]
-      }
-    },
-    "COMMODITY": {
-      "tp": [2.0, 2.5, 3.0, 3.5],
-      "sl": [3.0, 4.0, 5.0, 6.0],
-      "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 48, 96],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [null, 25],
-            "directions": 6,
-            "else_directions": 0
-          }
-        ]
-      }
-    },
-    "CRYPTO": {
-      "tp": [2.0, 3.0, 4.0, 5.0],
-      "sl": [3.0, 4.0, 5.0, 7.0],
-      "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 48, 96],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [null, 25],
-            "directions": 6,
-            "else_directions": 0
-          }
-        ]
+    "presets_dir": "../grids",
+    "regime_filters_dir": "../regime_filters",
+    "assignments": {
+      "FOREX": {
+        "preset": "orb_scalping_forex",
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ],
+        "regime_filter_grid": "adx_extended"
+      },
+      "INDEX": {
+        "preset": "orb_scalping_base",
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ],
+        "regime_filter_grid": "adx_vix_extended"
+      },
+      "COMMODITY": {
+        "preset": "orb_scalping_base",
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ],
+        "regime_filter_grid": "adx_only"
+      },
+      "CRYPTO": {
+        "preset": "orb_scalping_crypto",
+        "tp": [
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ],
+        "regime_filter_grid": "adx_only"
       }
     }
   },

@@ -1,10 +1,15 @@
 {
   "name": "ORB Exploration",
   "description": "Opening Range Breakout Feature-Test: ORB-Features + Kontext-Indikatoren auf M15-Daten.",
-  "tags": ["orb", "exploration", "session_based", "intraday"],
+  "tags": [
+    "orb",
+    "exploration",
+    "session_based",
+    "intraday"
+  ],
   "timeframe": "MINUTE_15",
-  "hypothesis": "Opening Range Breakout Features (rolling + session-spezifisch) liefern prädiktiven Edge, besonders für Indices und FX Majors bei Session-Opens. ML lernt welche Stunden und welche Breakout-Typen profitabel sind.",
-  "expected_outcome": "Feature Selection wählt ORB-Features in stabilem Subset. Session-spezifische Features (s08, s13, s14) stärker als Rolling für Forex/Indices.",
+  "hypothesis": "Opening Range Breakout Features (rolling + session-spezifisch) liefern pr\u00e4diktiven Edge, besonders f\u00fcr Indices und FX Majors bei Session-Opens. ML lernt welche Stunden und welche Breakout-Typen profitabel sind.",
+  "expected_outcome": "Feature Selection w\u00e4hlt ORB-Features in stabilem Subset. Session-spezifische Features (s08, s13, s14) st\u00e4rker als Rolling f\u00fcr Forex/Indices.",
   "pipeline": {
     "preprocessing": [
       {
@@ -12,7 +17,12 @@
         "params": {
           "auto_d": false,
           "default_d": 0.4,
-          "columns": ["O", "H", "L", "C"]
+          "columns": [
+            "O",
+            "H",
+            "L",
+            "C"
+          ]
         }
       }
     ],
@@ -22,7 +32,12 @@
         "params": {
           "range_bars": 1,
           "atr_period": 14,
-          "sessions": [0, 8, 13, 14],
+          "sessions": [
+            0,
+            8,
+            13,
+            14
+          ],
           "stat_window": 20,
           "enable_rolling": true,
           "enable_session": true,
@@ -32,12 +47,33 @@
       {
         "name": "trend",
         "params": {
-          "adx_periods": [7, 14, 21],
-          "ema_periods": [8, 21, 50, 100, 200],
-          "sma_periods": [20, 50, 200],
-          "cci_periods": [14, 20],
+          "adx_periods": [
+            7,
+            14,
+            21
+          ],
+          "ema_periods": [
+            8,
+            21,
+            50,
+            100,
+            200
+          ],
+          "sma_periods": [
+            20,
+            50,
+            200
+          ],
+          "cci_periods": [
+            14,
+            20
+          ],
           "aroon_period": 25,
-          "er_periods": [10, 20, 50],
+          "er_periods": [
+            10,
+            20,
+            50
+          ],
           "supertrend_period": 14,
           "supertrend_multiplier": 3.0
         }
@@ -45,17 +81,38 @@
       {
         "name": "momentum",
         "params": {
-          "rsi_periods": [7, 14, 21],
-          "stoch_periods": [14, 21],
-          "williams_periods": [14, 21],
-          "roc_periods": [5, 10, 20]
+          "rsi_periods": [
+            7,
+            14,
+            21
+          ],
+          "stoch_periods": [
+            14,
+            21
+          ],
+          "williams_periods": [
+            14,
+            21
+          ],
+          "roc_periods": [
+            5,
+            10,
+            20
+          ]
         }
       },
       {
         "name": "volatility",
         "params": {
-          "atr_periods": [7, 14, 21],
-          "vol_est_windows": [20, 50]
+          "atr_periods": [
+            7,
+            14,
+            21
+          ],
+          "vol_est_windows": [
+            20,
+            50
+          ]
         }
       },
       {
@@ -107,7 +164,10 @@
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 100,
       "max_depth": 6,
@@ -118,79 +178,52 @@
     }
   },
   "grids": {
-    "FOREX": {
-      "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
-      "sl": [3.0, 4.0, 5.0, 6.0],
-      "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 96, 192],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [null, 25],
-            "directions": 6,
-            "else_directions": 0
-          }
-        ]
-      }
-    },
-    "INDEX": {
-      "tp": [2.0, 2.5, 3.0, 3.5, 4.0],
-      "sl": [3.0, 4.0, 5.0, 6.0],
-      "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 96, 192],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [null, 25],
-            "directions": 6,
-            "else_directions": 0
-          },
-          {
-            "column": "macro_vix",
-            "operator": "<=",
-            "values": [null, 30],
-            "directions": 6,
-            "else_directions": 0
-          }
-        ]
-      }
-    },
-    "COMMODITY": {
-      "tp": [2.0, 2.5, 3.0, 3.5, 4.0],
-      "sl": [3.0, 4.0, 5.0, 6.0],
-      "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 96, 192],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [null, 25],
-            "directions": 6,
-            "else_directions": 0
-          }
-        ]
-      }
-    },
-    "CRYPTO": {
-      "tp": [2.0, 3.0, 4.0, 5.0, 6.0],
-      "sl": [3.0, 4.0, 5.0, 7.0],
-      "ct": [0.5, 0.55, 0.6, 0.65],
-      "timeout_bars": [null, 96, 192],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "trend_adx_14",
-            "operator": ">=",
-            "values": [null, 25],
-            "directions": 6,
-            "else_directions": 0
-          }
-        ]
+    "presets_dir": "../grids",
+    "regime_filters_dir": "../regime_filters",
+    "assignments": {
+      "FOREX": {
+        "preset": "orb_exploration_base",
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ],
+        "regime_filter_grid": "adx_only"
+      },
+      "INDEX": {
+        "preset": "orb_exploration_base",
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ],
+        "regime_filter_grid": "adx_vix"
+      },
+      "COMMODITY": {
+        "preset": "orb_exploration_base",
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ],
+        "regime_filter_grid": "adx_only"
+      },
+      "CRYPTO": {
+        "preset": "orb_exploration_crypto",
+        "tp": [
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
+        "regime_filter_grid": "adx_only"
       }
     }
   },

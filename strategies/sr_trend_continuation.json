@@ -1,19 +1,32 @@
 {
   "name": "S/R Trend Continuation",
-  "description": "Isolierter Test der Support/Resistance Features: Long an Support im Uptrend, Short an Resistance im Downtrend, Range-Trading in Seitwärtsmärkten.",
-  "tags": ["support_resistance", "trend_continuation", "price_action", "isolated_test"],
-  "hypothesis": "S/R-Zonen mit Trend-Kontext liefern allein ausreichend Edge für profitable Entries — ohne klassische technische Indikatoren.",
-  "expected_outcome": "Nachweis, dass die 31 S/R-Features prädiktiven Wert haben, bevor sie mit dem vollen Feature-Set kombiniert werden.",
+  "description": "Isolierter Test der Support/Resistance Features: Long an Support im Uptrend, Short an Resistance im Downtrend, Range-Trading in Seitw\u00e4rtsm\u00e4rkten.",
+  "tags": [
+    "support_resistance",
+    "trend_continuation",
+    "price_action",
+    "isolated_test"
+  ],
+  "hypothesis": "S/R-Zonen mit Trend-Kontext liefern allein ausreichend Edge f\u00fcr profitable Entries \u2014 ohne klassische technische Indikatoren.",
+  "expected_outcome": "Nachweis, dass die 31 S/R-Features pr\u00e4diktiven Wert haben, bevor sie mit dem vollen Feature-Set kombiniert werden.",
   "pipeline": {
     "indicators": [
       {
         "name": "support_resistance",
         "params": {
-          "swing_periods": [5, 10, 20],
+          "swing_periods": [
+            5,
+            10,
+            20
+          ],
           "lookback": 200,
           "cluster_threshold": 1.5,
           "atr_period": 14,
-          "ma_periods": [20, 50, 200],
+          "ma_periods": [
+            20,
+            50,
+            200
+          ],
           "zone_proximity_atr_mult": 0.5,
           "d1_bars": 24
         }
@@ -21,9 +34,15 @@
       {
         "name": "volatility",
         "params": {
-          "atr_periods": [14],
-          "bb_periods": [20],
-          "vol_est_windows": [20]
+          "atr_periods": [
+            14
+          ],
+          "bb_periods": [
+            20
+          ],
+          "vol_est_windows": [
+            20
+          ]
         }
       },
       {
@@ -53,7 +72,10 @@
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
-    "trade_directions": ["long", "short"],
+    "trade_directions": [
+      "long",
+      "short"
+    ],
     "hyperparameters": {
       "n_estimators": 100,
       "max_depth": 3,
@@ -64,101 +86,14 @@
     }
   },
   "grids": {
-    "FOREX": {
-      "tp": [0.5, 0.8, 1.2, 1.5],
-      "sl": [0.5, 0.8, 1.0, 1.5],
-      "ct": [0.52, 0.55, 0.6],
-      "timeout_bars": [null, 24, 48],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "sr_trend_class",
-            "operator": ">=",
-            "values": [null, 1, 2],
-            "directions": 4,
-            "else_directions": 0
-          },
-          {
-            "column": "sr_trend_class",
-            "operator": "<=",
-            "values": [null, -1, -2],
-            "directions": 2,
-            "else_directions": 0
-          }
-        ]
-      }
-    },
-    "INDEX": {
-      "tp": [0.5, 0.8, 1.2, 1.5],
-      "sl": [0.5, 0.8, 1.0, 1.5],
-      "ct": [0.52, 0.55, 0.6],
-      "timeout_bars": [null, 24, 48],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "sr_trend_class",
-            "operator": ">=",
-            "values": [null, 1, 2],
-            "directions": 4,
-            "else_directions": 0
-          },
-          {
-            "column": "sr_trend_class",
-            "operator": "<=",
-            "values": [null, -1, -2],
-            "directions": 2,
-            "else_directions": 0
-          }
-        ]
-      }
-    },
-    "COMMODITY": {
-      "tp": [0.5, 0.8, 1.2, 2.0],
-      "sl": [0.8, 1.0, 1.5, 2.0],
-      "ct": [0.52, 0.55, 0.6],
-      "timeout_bars": [null, 24, 48],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "sr_trend_class",
-            "operator": ">=",
-            "values": [null, 1, 2],
-            "directions": 4,
-            "else_directions": 0
-          },
-          {
-            "column": "sr_trend_class",
-            "operator": "<=",
-            "values": [null, -1, -2],
-            "directions": 2,
-            "else_directions": 0
-          }
-        ]
-      }
-    },
-    "CRYPTO": {
-      "tp": [0.5, 1.0, 1.5, 2.0],
-      "sl": [0.8, 1.0, 1.5, 2.5],
-      "ct": [0.52, 0.55, 0.6],
-      "timeout_bars": [null, 24, 48],
-      "regime_filter_grid": {
-        "condition_grids": [
-          {
-            "column": "sr_trend_class",
-            "operator": ">=",
-            "values": [null, 1, 2],
-            "directions": 4,
-            "else_directions": 0
-          },
-          {
-            "column": "sr_trend_class",
-            "operator": "<=",
-            "values": [null, -1, -2],
-            "directions": 2,
-            "else_directions": 0
-          }
-        ]
-      }
+    "presets_dir": "../grids",
+    "regime_filters_dir": "../regime_filters",
+    "regime_filter_grid": "sr_trend_class",
+    "assignments": {
+      "FOREX": "sr_forex_index",
+      "INDEX": "sr_forex_index",
+      "COMMODITY": "sr_commodity",
+      "CRYPTO": "sr_crypto"
     }
   },
   "validation": {
