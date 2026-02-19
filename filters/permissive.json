@@ -1,0 +1,7 @@
+{
+  "min_rrr": 0,
+  "min_trades": 30,
+  "min_annual_return": 0,
+  "min_sharpe": 0,
+  "max_drawdown": 1.0
+}

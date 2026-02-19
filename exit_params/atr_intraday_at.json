@@ -1,0 +1,6 @@
+{
+  "atr_period": 14,
+  "min_tp_pips": 8,
+  "min_sl_pips": 12,
+  "adaptive_timeout": false
+}

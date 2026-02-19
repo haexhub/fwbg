@@ -1,10 +1,12 @@
 """Strategy file endpoints."""
 import json
+import os
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from fwbg.api.deps import get_strategies_dir
+from fwbg.core.config import _resolve_section
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
 
@@ -38,7 +40,7 @@ def list_strategies() -> list[dict]:
 
 @router.get("/{name}")
 def get_strategy(name: str) -> dict:
-    """Load a strategy JSON file."""
+    """Load a strategy JSON file, resolving preset references."""
     strategies_dir = get_strategies_dir()
     filepath = strategies_dir / f"{name}.json"
 
@@ -46,9 +48,26 @@ def get_strategy(name: str) -> dict:
         raise HTTPException(404, f"Strategy not found: {name}")
 
     try:
-        return json.loads(filepath.read_text())
+        data = json.loads(filepath.read_text())
     except json.JSONDecodeError as e:
         raise HTTPException(500, f"Invalid JSON in strategy file: {e}")
+
+    # Resolve string preset references to inline dicts
+    strategy_dir = str(filepath.parent.resolve())
+    _section_dirs = {
+        "pipeline": "pipelines",
+        "exit_params": "exit_params",
+        "model": "models",
+        "validation": "validations",
+        "filters": "filters",
+        "resources": "resources",
+        "risk_params": "risk_params",
+    }
+    for key, section_dir in _section_dirs.items():
+        if key in data:
+            data[key] = _resolve_section(data[key], section_dir, strategy_dir)
+
+    return data
 
 
 @router.post("")
