@@ -1,0 +1,7 @@
+{
+  "name": "previous_day_levels",
+  "version": "1.0.0",
+  "description": "Previous Day High/Low features: distance, position, break detection for intraday S/R",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
