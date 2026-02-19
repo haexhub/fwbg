@@ -176,7 +176,7 @@ class TestMetaFilter:
         # Train a meta-model via plugin system
         X_train = pd.DataFrame(
             np.column_stack([rng.standard_normal((200, 3)), rng.random(200)]),
-            columns=["f1", "f2", "f3", "primary_prob"],
+            columns=["f1", "f2", "f3", "oof_prob"],
         )
         y_train = (rng.random(200) > 0.5).astype(float)
 

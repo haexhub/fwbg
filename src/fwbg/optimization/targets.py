@@ -405,7 +405,7 @@ def _apply_meta_filter(
     primary_probs = probs[:, win_idx]
     X_meta = np.column_stack([df[features].values, primary_probs])
 
-    X_meta_df = pd.DataFrame(X_meta, columns=features + ["primary_prob"])
+    X_meta_df = pd.DataFrame(X_meta, columns=features + ["oof_prob"])
     meta_probs = meta_model.predict_probability(X_meta_df)
     if 1 in meta_model.trained_classes:
         meta_win_idx = np.where(meta_model.trained_classes == 1)[0][0]
