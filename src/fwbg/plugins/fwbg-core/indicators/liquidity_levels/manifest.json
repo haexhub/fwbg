@@ -1,0 +1,7 @@
+{
+  "name": "liquidity_levels",
+  "version": "1.0.0",
+  "description": "Liquidity level detection: equal highs/lows, sweep detection, stop-loss cluster proximity",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
