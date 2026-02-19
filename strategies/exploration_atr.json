@@ -826,7 +826,7 @@
       "keep_ratio": 0.5,
       "min_survivors": 10
     },
-    "probability_calibration": true,
+    "probability_calibration": false,
     "calibration_method": "isotonic"
   },
   "filters": {
