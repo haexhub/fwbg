@@ -523,7 +523,12 @@ class StrategyConfig:
             "risk_management": self.risk_management,
             "risk_params": self.risk_params,
             "grids": {
-                k: {"tp": v.tp, "sl": v.sl, "ct": v.ct, "timeout_bars": v.timeout_bars}
+                k: {
+                    "tp": v.tp, "sl": v.sl, "ct": v.ct,
+                    "timeout_bars": v.timeout_bars,
+                    **({"regime_filter_grid": {"condition_grids": v.regime_filter_grid.condition_grids}}
+                       if v.regime_filter_grid.condition_grids else {}),
+                }
                 for k, v in self.grids.items()
             },
             "assets": self.assets,
