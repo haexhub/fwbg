@@ -225,6 +225,33 @@ def _summarize_walk_forward(wf: dict) -> dict:
     }
 
 
+@router.get("/{run_id}/grid_details")
+def list_grid_details(run_id: str) -> list[str]:
+    """List grid detail filenames for a completed run."""
+    results_dir = get_test_results_dir()
+    grid_dir = results_dir / run_id / "grid_details"
+
+    if not grid_dir.exists():
+        raise HTTPException(404, f"No grid details for run: {run_id}")
+
+    return sorted(f.name for f in grid_dir.glob("*.json"))
+
+
+@router.get("/{run_id}/grid_details/{filename}")
+def get_grid_detail(run_id: str, filename: str) -> dict:
+    """Get a single grid detail file for a completed run."""
+    results_dir = get_test_results_dir()
+    filepath = results_dir / run_id / "grid_details" / filename
+
+    if not filepath.exists():
+        raise HTTPException(404, f"Grid detail not found: {run_id}/{filename}")
+
+    try:
+        return json.loads(filepath.read_text())
+    except (json.JSONDecodeError, IOError) as e:
+        raise HTTPException(500, f"Failed to read grid detail: {e}")
+
+
 @router.get("/{run_id}/progress")
 def get_run_progress(run_id: str) -> dict:
     """Get progress for an active or completed run.
