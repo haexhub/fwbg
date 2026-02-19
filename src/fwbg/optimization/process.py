@@ -121,8 +121,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             wf_folds = create_walk_forward_folds(
                 df,
                 n_folds=data_config.WALK_FORWARD_FOLDS,
-                test_size=4000,
-                min_train_size=20000,
+                test_size=data_config.OOS_SIZE,
+                min_train_size=data_config.WINDOW_SIZE // 2,
                 anchored=True,
                 embargo_bars=ctx.embargo_bars,
             )
