@@ -1,0 +1,6 @@
+{
+  "name": "xgboost",
+  "version": "1.0.0",
+  "description": "XGBoost gradient boosting classifier with GPU fallback",
+  "phase": "model"
+}

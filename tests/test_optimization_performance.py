@@ -64,9 +64,8 @@ class TestXGBoostHyperparameters:
             },
             "exit_strategy": "fixed",
             "exit_params": {},
-            "resources": {                "min_free_ram_percent": 0.15,
-                "max_cpu_percent": 0.8,
-                "xgboost_n_jobs": 1
+            "resources": {
+                "max_concurrent_assets": 1
             }
         }
 
@@ -101,8 +100,9 @@ class TestXGBoostHyperparameters:
             ctx.min_trades, ctx, use_reduced_params=False
         )
 
-        assert model_full.n_estimators == 200
-        assert model_full.max_depth == 6
+        xgb_full = model_full.as_sklearn_estimator()
+        assert xgb_full.n_estimators == 200
+        assert xgb_full.max_depth == 6
 
         # Trainiere Modell mit REDUZIERTEN Parametern (Inner CV)
         model_reduced = train_model(
@@ -111,9 +111,10 @@ class TestXGBoostHyperparameters:
         )
 
         # n_estimators sollte halbiert sein
-        assert model_reduced.n_estimators == 100  # 200 // 2
+        xgb_reduced = model_reduced.as_sklearn_estimator()
+        assert xgb_reduced.n_estimators == 100  # 200 // 2
         # max_depth bleibt gleich (wichtiger für Qualität)
-        assert model_reduced.max_depth == 6
+        assert xgb_reduced.max_depth == 6
 
     def test_default_hyperparameters_when_not_specified(self):
         """Default-Werte sollten verwendet werden wenn nicht angegeben."""
@@ -129,9 +130,8 @@ class TestXGBoostHyperparameters:
             "grids": {"FOREX": {"tp": [1.0], "sl": [1.0], "ct": [0.5]}},
             "exit_strategy": "fixed",
             "exit_params": {},
-            "resources": {                "min_free_ram_percent": 0.15,
-                "max_cpu_percent": 0.8,
-                "xgboost_n_jobs": 1
+            "resources": {
+                "max_concurrent_assets": 1
             }
         }
 
@@ -163,9 +163,8 @@ class TestXGBoostHyperparameters:
             "grids": {"FOREX": {"tp": [1.0], "sl": [1.0], "ct": [0.5]}},
             "exit_strategy": "fixed",
             "exit_params": {},
-            "resources": {                "min_free_ram_percent": 0.15,
-                "max_cpu_percent": 0.8,
-                "xgboost_n_jobs": 1
+            "resources": {
+                "max_concurrent_assets": 1
             }
         }
 
@@ -182,7 +181,7 @@ class TestXGBoostHyperparameters:
         )
 
         # 15 // 2 = 7, max(10, 7) = 10
-        assert model.n_estimators == 10
+        assert model.as_sklearn_estimator().n_estimators == 10
 
     def test_model_quality_inner_vs_holdout(self):
         """
@@ -214,9 +213,8 @@ class TestXGBoostHyperparameters:
             "grids": {"FOREX": {"tp": [1.0], "sl": [1.0], "ct": [0.5]}},
             "exit_strategy": "fixed",
             "exit_params": {},
-            "resources": {                "min_free_ram_percent": 0.15,
-                "max_cpu_percent": 0.8,
-                "xgboost_n_jobs": 1
+            "resources": {
+                "max_concurrent_assets": 1
             }
         }
 

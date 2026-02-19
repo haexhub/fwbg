@@ -8,9 +8,11 @@ import os
 import sys
 import time
 import threading
+from datetime import datetime, timezone
 from multiprocessing import Queue
+from pathlib import Path
 from queue import Empty
-from typing import Optional, List, Dict
+from typing import Any, Optional, List, Dict
 
 from .logging import set_progress_ui_active
 
@@ -183,6 +185,29 @@ def report_result(symbol: str, status: str, summary: str):
             pass
 
 
+def report_log(
+    symbol: str,
+    stage: str,
+    level: str,
+    message: str,
+    **data: Any,
+) -> None:
+    """Send structured log entry through progress queue."""
+    if _progress_queue is not None:
+        try:
+            _progress_queue.put_nowait({
+                "type": "log",
+                "level": level,
+                "symbol": symbol,
+                "stage": stage,
+                "message": message,
+                "data": data,
+                "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            })
+        except Exception:
+            pass
+
+
 class ProgressTracker:
     """
     Progress-Tracker mit Queue-basierter Worker-Kommunikation.
@@ -196,7 +221,10 @@ class ProgressTracker:
     UPDATE_INTERVAL_TTY = 0.3  # Update-Intervall für TTY (schnell für flüssige Anzeige)
     UPDATE_INTERVAL_NON_TTY = 10.0  # Update-Intervall für Nicht-TTY (seltener)
 
-    def __init__(self, total_assets: int, asset_names: Optional[List[str]] = None, queue: Optional[Queue] = None):
+    def __init__(self, total_assets: int, asset_names: Optional[List[str]] = None,
+                 queue: Optional[Queue] = None,
+                 run_directory: Optional[Path] = None, run_id: str = "",
+                 strategy_name: str = ""):
         self.total_assets = total_assets
         self.completed_assets = 0
         self.asset_names = asset_names or []
@@ -215,6 +243,18 @@ class ProgressTracker:
         self._is_tty = sys.stdout.isatty()
         self._last_render_time = 0
         self._last_display_lines = 0  # Anzahl der zuletzt angezeigten Zeilen
+
+        # Persistent progress + structured logging
+        self._run_progress_writer = None
+        self._run_logger = None
+        if run_directory is not None:
+            from .run_progress import RunProgressWriter
+            from .run_logger import RunLogger
+            self._run_progress_writer = RunProgressWriter(
+                run_directory, run_id, self.asset_names,
+                strategy_name=strategy_name,
+            )
+            self._run_logger = RunLogger(run_directory)
 
     def start(self):
         """Startet das Progress-Display."""
@@ -269,6 +309,12 @@ class ProgressTracker:
         print(f"\nVerarbeitung abgeschlossen: {self.completed_assets}/{self.total_assets} in {self._format_time(elapsed)}")
         sys.stdout.flush()
 
+        # Complete persistent progress file
+        if self._run_progress_writer:
+            self._run_progress_writer.complete_run()
+        if self._run_logger:
+            self._run_logger.close()
+
         # Detail-Logs wieder erlauben
         set_progress_ui_active(False)
 
@@ -279,10 +325,14 @@ class ProgressTracker:
                 msg = self.queue.get(timeout=0.1)
                 msg_type = msg.get("type")
 
-                if msg_type == "result":
+                if msg_type == "log":
+                    # Structured log entry — write to JSONL file
+                    if self._run_logger:
+                        self._run_logger.write_raw(msg)
+                elif msg_type == "result":
                     # Ergebnis-Zusammenfassung speichern für "Fertig"-Zeile
+                    sym = msg.get("symbol")
                     with self._lock:
-                        sym = msg.get("symbol")
                         if sym:
                             status = msg.get("status", "?")
                             summary = msg.get("summary", "")
@@ -290,16 +340,45 @@ class ProgressTracker:
                             self.worker_results[sym] = f"{icon} {summary}"
                     # Sofortige Ergebnis-Anzeige (außerhalb des Locks)
                     self._show_result(msg)
+                    # Persist to progress file
+                    if self._run_progress_writer and sym:
+                        self._run_progress_writer.complete_asset(
+                            sym, msg.get("summary", ""))
                 else:
                     with self._lock:
                         if msg_type == "progress":
                             # Index by symbol, not PID (multiple threads share same PID)
                             symbol = msg.get("symbol", msg["pid"])
                             self.worker_status[symbol] = msg
+                            # Update file writer with grid_search stage progress
+                            if self._run_progress_writer and isinstance(symbol, str):
+                                grid_pos = msg.get("grid_pos", 0)
+                                grid_total = msg.get("grid_total", 0)
+                                fold = msg.get("fold", 0)
+                                total_folds = msg.get("total_folds", 0)
+                                if grid_total > 0:
+                                    frac = grid_pos / grid_total
+                                    desc = f"Fold {fold}/{total_folds} ({grid_pos}/{grid_total})" if fold else f"{grid_pos}/{grid_total}"
+                                    self._run_progress_writer.update_asset_stage(
+                                        symbol, "grid_search", "running",
+                                        description=desc, progress_fraction=frac,
+                                        details={"grid_pos": grid_pos, "grid_total": grid_total,
+                                                 "fold": fold, "total_folds": total_folds},
+                                    )
                         elif msg_type == "phase":
                             # Phase-Update: Symbol -> Phase-Text speichern
-                            self.worker_phases[msg["symbol"]] = msg["phase"]
-                            self.worker_phase_times[msg["symbol"]] = msg.get("time", time.time())
+                            sym = msg["symbol"]
+                            self.worker_phases[sym] = msg["phase"]
+                            self.worker_phase_times[sym] = msg.get("time", time.time())
+                            # Persist phase to file writer
+                            if self._run_progress_writer:
+                                phase = msg["phase"]
+                                # Map known phase text to stage names
+                                stage_name = self._phase_to_stage(phase)
+                                self._run_progress_writer.begin_asset(sym)
+                                self._run_progress_writer.update_asset_stage(
+                                    sym, stage_name, "running", description=phase,
+                                )
                         elif msg_type == "meta":
                             # Statische Metadaten (indicator_count, etc.)
                             symbol = msg.get("symbol")
@@ -324,6 +403,22 @@ class ProgressTracker:
                 continue
             except Exception:
                 break
+
+    @staticmethod
+    def _phase_to_stage(phase: str) -> str:
+        """Map phase text to a known stage name."""
+        phase_lower = phase.lower()
+        if "daten" in phase_lower or "data" in phase_lower or "lade" in phase_lower:
+            return "data_loading"
+        if "indikator" in phase_lower or "indicator" in phase_lower or "feature" in phase_lower:
+            return "indicators"
+        if "grid" in phase_lower:
+            return "grid_search"
+        if "model" in phase_lower or "train" in phase_lower:
+            return "model_training"
+        if "eval" in phase_lower or "holdout" in phase_lower or "walk" in phase_lower:
+            return "evaluation"
+        return phase_lower[:30]
 
     def _show_result(self, msg: dict):
         """Zeigt ein Ergebnis sofort an (unter der Progress-UI)."""
@@ -618,7 +713,3 @@ class ProgressTracker:
         if hours > 0:
             return f"{hours:d}:{minutes:02d}:{secs:02d}"
         return f"{minutes:02d}:{secs:02d}"
-
-
-# Alias für Rückwärtskompatibilität
-SimpleProgressTracker = ProgressTracker

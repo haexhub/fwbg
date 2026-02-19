@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from fwbg_sdk.preprocessors import BasePreprocessor
     from fwbg_sdk.risk_managers import BaseRiskManager
     from fwbg_sdk.data_loaders import BaseDataLoader
+    from fwbg_sdk.models import BaseModel
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ FEATURE_SELECTOR_REGISTRY: Dict[str, Type["BaseFeatureSelector"]] = {}
 PREPROCESSOR_REGISTRY: Dict[str, Type["BasePreprocessor"]] = {}
 RISK_MANAGER_REGISTRY: Dict[str, Type["BaseRiskManager"]] = {}
 DATA_LOADER_REGISTRY: Dict[str, Type["BaseDataLoader"]] = {}
+MODEL_REGISTRY: Dict[str, Type["BaseModel"]] = {}
 
 
 def register_indicator(name: str):
@@ -117,5 +119,21 @@ def register_data_loader(name: str):
         DATA_LOADER_REGISTRY[name] = cls
         cls.name = name
         log.debug(f"Registered data loader: {name}")
+        return cls
+    return decorator
+
+
+def register_model(name: str):
+    """Decorator to register a model plugin.
+
+    Example:
+        @register_model("xgboost")
+        class XGBoostModel(BaseModel):
+            ...
+    """
+    def decorator(cls):
+        MODEL_REGISTRY[name] = cls
+        cls.name = name
+        log.debug(f"Registered model: {name}")
         return cls
     return decorator

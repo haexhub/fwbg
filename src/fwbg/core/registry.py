@@ -15,12 +15,14 @@ from fwbg_sdk.registry import (
     PREPROCESSOR_REGISTRY,
     RISK_MANAGER_REGISTRY,
     DATA_LOADER_REGISTRY,
+    MODEL_REGISTRY,
     register_indicator,
     register_exit_strategy,
     register_feature_selector,
     register_preprocessor,
     register_risk_manager,
     register_data_loader,
+    register_model,
 )
 
 if TYPE_CHECKING:
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
         BasePreprocessor,
         BaseRiskManager,
         BaseDataLoader,
+        BaseModel,
     )
     from ..adapters.broker import BrokerAdapter
 
@@ -78,6 +81,7 @@ def discover_plugins():
         + len(BROKER_ADAPTER_REGISTRY)
         + len(RISK_MANAGER_REGISTRY)
         + len(DATA_LOADER_REGISTRY)
+        + len(MODEL_REGISTRY)
     )
 
     if total > 0:
@@ -88,7 +92,8 @@ def discover_plugins():
             f"{len(FEATURE_SELECTOR_REGISTRY)} feature selectors, "
             f"{len(PREPROCESSOR_REGISTRY)} preprocessors, "
             f"{len(BROKER_ADAPTER_REGISTRY)} broker adapters, "
-            f"{len(RISK_MANAGER_REGISTRY)} risk managers"
+            f"{len(RISK_MANAGER_REGISTRY)} risk managers, "
+            f"{len(MODEL_REGISTRY)} models"
         )
 
 
@@ -205,3 +210,18 @@ def get_data_loader(name: str) -> Type["BaseDataLoader"]:
 def list_data_loaders() -> list:
     """List all registered data loaders."""
     return list(DATA_LOADER_REGISTRY.keys())
+
+
+def get_model(name: str) -> Type["BaseModel"]:
+    """Get model class by name, auto-discovering if needed."""
+    if not MODEL_REGISTRY:
+        _ensure_plugins_loaded()
+    if name not in MODEL_REGISTRY:
+        available = list(MODEL_REGISTRY.keys())
+        raise ValueError(f"Unknown model: '{name}'. Available: {available}")
+    return MODEL_REGISTRY[name]
+
+
+def list_models() -> list:
+    """List all registered models."""
+    return list(MODEL_REGISTRY.keys())

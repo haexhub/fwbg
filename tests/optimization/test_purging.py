@@ -267,9 +267,11 @@ class TestTrainModelWithWeights:
         from unittest.mock import Mock
 
         ctx = Mock()
+        ctx.model_type = "xgboost"
         ctx.model_hyperparameters = {"n_estimators": 10, "max_depth": 3}
         ctx.min_trades = 10
         ctx.probability_calibration = False
+        ctx.calibration_method = "isotonic"
 
         n = 200
         rng = np.random.default_rng(42)
@@ -291,9 +293,11 @@ class TestTrainModelWithWeights:
         from unittest.mock import Mock
 
         ctx = Mock()
+        ctx.model_type = "xgboost"
         ctx.model_hyperparameters = {"n_estimators": 10, "max_depth": 3}
         ctx.min_trades = 10
         ctx.probability_calibration = False
+        ctx.calibration_method = "isotonic"
 
         n = 200
         rng = np.random.default_rng(42)

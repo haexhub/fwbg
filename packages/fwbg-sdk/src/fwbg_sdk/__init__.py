@@ -22,6 +22,9 @@ from fwbg_sdk.exit_strategies import BaseExitStrategy
 from fwbg_sdk.risk_managers import BaseRiskManager
 from fwbg_sdk.data_loaders import BaseDataLoader
 
+# Model plugin
+from fwbg_sdk.models import BaseModel, TrainingContext, ModelProgressReporter
+
 # Documentation validation
 from fwbg_sdk.docs import DocsValidationResult, DocsViolation, validate_plugin_docs
 
@@ -41,6 +44,7 @@ from fwbg_sdk.registry import (
     register_preprocessor,
     register_risk_manager,
     register_data_loader,
+    register_model,
     # Registries (for advanced use / fwbg internals)
     INDICATOR_REGISTRY,
     EXIT_STRATEGY_REGISTRY,
@@ -48,6 +52,7 @@ from fwbg_sdk.registry import (
     PREPROCESSOR_REGISTRY,
     RISK_MANAGER_REGISTRY,
     DATA_LOADER_REGISTRY,
+    MODEL_REGISTRY,
 )
 
 __all__ = [
@@ -70,6 +75,9 @@ __all__ = [
     "BaseExitStrategy",
     "BaseRiskManager",
     "BaseDataLoader",
+    "BaseModel",
+    "TrainingContext",
+    "ModelProgressReporter",
     # Indicator helpers
     "shift_features",
     "safe_divide",
@@ -81,6 +89,7 @@ __all__ = [
     "register_preprocessor",
     "register_risk_manager",
     "register_data_loader",
+    "register_model",
     # Documentation validation
     "DocsValidationResult",
     "DocsViolation",
@@ -97,4 +106,5 @@ __all__ = [
     "PREPROCESSOR_REGISTRY",
     "RISK_MANAGER_REGISTRY",
     "DATA_LOADER_REGISTRY",
+    "MODEL_REGISTRY",
 ]
