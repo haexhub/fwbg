@@ -1,0 +1,89 @@
+{
+  "name": "Screen: Volatility Regime",
+  "description": "Konzept-Screening: Volatilitäts-Regime (ATR, Hurst, Variance Ratio, Entropy) als Signalquelle auf HOUR-Daten. Testet ob Regime-Zustand Richtung vorhersagt.",
+  "tags": ["screening", "step1", "volatility", "regime"],
+  "hypothesis": "Der aktuelle Volatilitäts-Regime (trending vs ranging, hohe vs niedrige Vol) ist prädiktiv für zukünftige Preisbewegungen - unabhängig von konkreten technischen Signalen.",
+  "expected_outcome": "Hurst-Exponent, Variance Ratio und ATR-Niveau werden selektiert. Regime-Zustand bestimmt ob Long oder Short Edge hat.",
+  "pipeline": {
+    "indicators": [
+      {
+        "name": "volatility",
+        "params": {
+          "bb_period": 20,
+          "atr_periods": [7, 14, 21],
+          "vol_est_windows": [20, 50]
+        }
+      },
+      {
+        "name": "regime",
+        "params": {
+          "hurst_windows": [100, 200, 500],
+          "step": 10,
+          "entropy_windows": [50, 100],
+          "vr_windows": [100, 200],
+          "vr_lags": [5, 10]
+        }
+      },
+      {
+        "name": "market_regime",
+        "params": {
+          "window": 50
+        }
+      },
+      {
+        "name": "regime_cluster",
+        "params": {
+          "zscore_window": 200,
+          "quantile_window": 500,
+          "n_regimes": 3
+        }
+      },
+      {
+        "name": "time_season",
+        "params": {
+          "include_raw": false,
+          "include_encoded": true
+        }
+      }
+    ],
+    "feature_selection": [
+      {
+        "name": "stability",
+        "params": {
+          "inner_selector": "boruta",
+          "inner_params": {
+            "n_iter": 5,
+            "n_estimators": 30,
+            "max_depth": 4,
+            "min_z_score": 0.5
+          },
+          "n_bootstrap": 3,
+          "threshold": 0.6,
+          "bootstrap_ratio": 0.8
+        }
+      },
+      {
+        "name": "correlation_filter",
+        "params": {
+          "max_correlation": 0.7,
+          "max_features": 15
+        }
+      }
+    ]
+  },
+  "exit_strategy": "atr_based",
+  "exit_params": "atr_standard_at",
+  "model": "xgboost_screen",
+  "validation": "walk_forward_screening",
+  "filters": "screening",
+  "resources": "exploration_heavy",
+  "grids": {
+    "presets_dir": "../grids",
+    "assignments": {
+      "FOREX":     {"preset": "screening_base", "tp": [1.5, 2.5, 3.5], "sl": [2.0, 3.0, 4.0]},
+      "INDEX":     {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
+      "COMMODITY": {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
+      "CRYPTO":    {"preset": "screening_base", "tp": [2.0, 3.0, 5.0], "sl": [3.0, 5.0, 7.0]}
+    }
+  }
+}

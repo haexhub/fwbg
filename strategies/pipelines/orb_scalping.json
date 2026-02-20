@@ -1,14 +1,4 @@
 {
-  "preprocessing": [
-    {
-      "name": "fractional_diff",
-      "params": {
-        "auto_d": false,
-        "default_d": 0.4,
-        "columns": ["O", "H", "L", "C"]
-      }
-    }
-  ],
   "indicators": [
     {
       "name": "opening_range",

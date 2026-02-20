@@ -20,27 +20,22 @@
   "resources": "standard",
   "grids": {
     "presets_dir": "../grids",
-    "regime_filters_dir": "../regime_filters",
     "assignments": {
       "FOREX": {
         "preset": "orb_scalping_forex",
-        "tp": [1.5, 2.0, 2.5, 3.0],
-        "regime_filter_grid": "adx_extended"
+        "tp": [1.5, 2.0, 2.5, 3.0]
       },
       "INDEX": {
         "preset": "orb_scalping_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5],
-        "regime_filter_grid": "adx_vix_extended"
+        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
       },
       "COMMODITY": {
         "preset": "orb_scalping_base",
-        "tp": [2.0, 2.5, 3.0, 3.5],
-        "regime_filter_grid": "adx_only"
+        "tp": [2.0, 2.5, 3.0, 3.5]
       },
       "CRYPTO": {
         "preset": "orb_scalping_crypto",
-        "tp": [2.0, 3.0, 4.0, 5.0],
-        "regime_filter_grid": "adx_only"
+        "tp": [2.0, 3.0, 4.0, 5.0]
       }
     }
   }

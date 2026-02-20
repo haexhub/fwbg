@@ -522,12 +522,13 @@ def run_optimizer(
         MIN_ANNUAL_RETURN = strat_filters.get("min_annual_return", 10.0)
         MIN_SHARPE = strat_filters.get("min_sharpe", 0.0)
         MAX_DRAWDOWN = strat_filters.get("max_drawdown", 1.0)
+        MIN_FOLD_STABILITY = strat_filters.get("min_fold_stability", 0.5)
         is_profitable = (
             sharpe >= MIN_SHARPE
             and annual_return >= MIN_ANNUAL_RETURN
             and max_dd < MAX_DRAWDOWN
             and mc_stats.get("is_significant", False)
-            and fold_stability >= 0.5
+            and fold_stability >= MIN_FOLD_STABILITY
         )
 
         if is_profitable:

@@ -1,0 +1,69 @@
+{
+  "name": "Screen: Session & Time Effects",
+  "description": "Konzept-Screening: Reine Zeit- und Sessionseffekte (Tageszeit, Wochentag, Kalender) auf M15-Daten. Kein technisches Signal - nur Zeit als Prädiktor.",
+  "tags": ["screening", "step1", "session", "time", "intraday"],
+  "timeframe": "MINUTE_15",
+  "hypothesis": "Systematische Zeit-Asymmetrien (bestimmte Stunden/Wochentage bevorzugen Long oder Short) existieren unabhängig von technischen Signalen. Kalendereffekte und Session-Transitions haben prädiktiven Wert.",
+  "expected_outcome": "Stunden-Encoding und Wochentag werden selektiert. Unterschiedliche Win-Rates für Long/Short je nach Tageszeit.",
+  "pipeline": {
+    "indicators": [
+      {
+        "name": "time_season",
+        "params": {
+          "include_raw": true,
+          "include_encoded": true
+        }
+      },
+      {
+        "name": "calendar_events",
+        "params": {}
+      },
+      {
+        "name": "price_action",
+        "params": {
+          "hh_ll_period": 5,
+          "compute_volume": true
+        }
+      }
+    ],
+    "feature_selection": [
+      {
+        "name": "stability",
+        "params": {
+          "inner_selector": "boruta",
+          "inner_params": {
+            "n_iter": 5,
+            "n_estimators": 30,
+            "max_depth": 4,
+            "min_z_score": 0.5
+          },
+          "n_bootstrap": 3,
+          "threshold": 0.6,
+          "bootstrap_ratio": 0.8
+        }
+      },
+      {
+        "name": "correlation_filter",
+        "params": {
+          "max_correlation": 0.7,
+          "max_features": 15
+        }
+      }
+    ]
+  },
+  "exit_strategy": "atr_based",
+  "exit_params": "atr_standard_at",
+  "model": "xgboost_screen",
+  "validation": "walk_forward_screening_intraday",
+  "filters": "screening",
+  "resources": "exploration_heavy",
+  "grids": {
+    "presets_dir": "../grids",
+    "assignments": {
+      "FOREX":     {"preset": "screening_base", "tp": [1.5, 2.5, 3.5], "sl": [2.0, 3.0, 4.0]},
+      "INDEX":     {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
+      "COMMODITY": {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
+      "CRYPTO":    {"preset": "screening_base", "tp": [2.0, 3.0, 5.0], "sl": [3.0, 5.0, 7.0]}
+    }
+  }
+}

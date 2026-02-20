@@ -1,0 +1,27 @@
+{
+  "name": "Deep ORB: INDEX",
+  "description": "Step-2-Vertiefung der ORB-Strategie für INDEX-Assets. Erweiterte TP/CT-Grids über bisheriges Ceiling (tp=4.0, ct=0.65). Ohne Regime-Filter-Grid da diese Trade-Volumen zu stark reduzieren.",
+  "tags": ["orb", "deep", "index", "step2", "intraday"],
+  "timeframe": "MINUTE_15",
+  "hypothesis": "Das ORB-Edge in DAX ist stärker als die initiale Exploration zeigte. TP=4.0 und CT=0.65 lagen am Grid-Ceiling – das Optimum liegt höher.",
+  "expected_outcome": "TP wandert auf 4.5-5.5, CT auf 0.70+. Mehr Trades und bessere Fold-Stabilität ohne restriktive Regime-Filter.",
+  "pipeline": "orb_simple",
+  "exit_strategy": "atr_based",
+  "exit_params": "atr_standard_at",
+  "model": "xgboost_depth6",
+  "validation": "walk_forward_intraday",
+  "filters": "permissive",
+  "resources": "standard",
+  "grids": {
+    "presets_dir": "../grids",
+    "assignments": {
+      "INDEX": {
+        "preset": "orb_exploration_base",
+        "tp": [3.5, 4.0, 4.5, 5.0, 5.5],
+        "sl": [4.0, 5.0, 6.0, 7.0],
+        "ct": [0.60, 0.65, 0.70, 0.75],
+        "timeout_bars": [null, 96]
+      }
+    }
+  }
+}
