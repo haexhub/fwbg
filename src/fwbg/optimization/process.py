@@ -460,10 +460,14 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if mc_equity["bankruptcy_rate"] > 0.1:
             log(1, f"WARNING: {mc_equity['bankruptcy_rate']:.1%} Bankruptcy-Rate", sym)
 
+        # OOS fold stability: fraction of walk-forward folds with positive OOS PnL
+        oos_fold_stability = sum(1 for p in pnls if p > 0) / len(pnls) if pnls else 0
+
         result = {
             "symbol": sym,
             "status": "ok",
             "pnl": mean_pnl,
+            "fold_stability": oos_fold_stability,
             "config": {
                 "risk_per_trade": fk,
                 "point_value": asset.point,

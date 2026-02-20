@@ -1,0 +1,16 @@
+{
+  "method": "walk_forward",
+  "folds": 4,
+  "oos_size": 4000,
+  "min_trades": 20,
+  "n_inner_folds": 3,
+  "embargo_bars": 50,
+  "sample_weights": false,
+  "early_pruning": {
+    "enabled": false,
+    "keep_ratio": 0.5,
+    "min_survivors": 5
+  },
+  "probability_calibration": false,
+  "calibration_method": "isotonic"
+}
