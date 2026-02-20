@@ -47,6 +47,39 @@ fwbg --strategy-file strategies/exploration.json --asset-classes FOREX
 OPTIMIZER_LOG=2 fwbg --assets EURUSD
 ```
 
+### API Server
+
+```bash
+uvicorn fwbg.api:app --host 0.0.0.0 --port 8420 --reload
+```
+
+Interactive docs available at `http://localhost:8420/docs` after startup.
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FWBG_STRATEGIES_DIR` | `strategies/configs` | Strategy JSON directory |
+| `FWBG_TEST_RESULTS_DIR` | `test_results` | Results directory |
+
+**Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/strategies` | List all strategies |
+| `GET/POST/PUT/DELETE` | `/api/strategies/{name}` | Strategy CRUD |
+| `POST` | `/api/runs/start` | Start an optimization run |
+| `GET` | `/api/runs` | List all runs |
+| `GET` | `/api/runs/{run_id}` | Run details & results |
+| `GET` | `/api/runs/{run_id}/progress` | Live progress |
+| `GET` | `/api/runs/{run_id}/logs` | Run logs |
+| `POST` | `/api/runs/{run_id}/cancel` | Cancel a run |
+| `GET` | `/api/plugins` | List all plugins |
+| `GET` | `/api/plugins/{fqn}` | Plugin details |
+| `GET` | `/api/chart/ohlcv` | OHLCV chart data |
+| `POST` | `/api/chart/indicator` | Compute indicator on data |
+| `GET/POST/DELETE` | `/api/datasources` | Data source management |
+
 ### Trading Bot
 
 ```bash
