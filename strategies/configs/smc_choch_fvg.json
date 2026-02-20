@@ -1,0 +1,94 @@
+{
+  "name": "SMC CHOCH + FVG Entry",
+  "description": "ICT/SMC top-down entry strategy: price comes to a Point-of-Interest (FVG or liquidity sweep zone), a Change of Character (CHOCH) confirms the reversal, and a fresh FVG provides the entry zone. EMA 50/200 and ms_trend establish the higher-timeframe bias; displacement confirms impulse quality. Targets external liquidity (swing H/L, PDH/PDL).",
+  "tags": [
+    "smc",
+    "ict",
+    "choch",
+    "fair_value_gap",
+    "market_structure",
+    "intraday",
+    "smart_money"
+  ],
+  "timeframe": "MINUTE_15",
+  "hypothesis": "Price only expands after reaching a higher-timeframe POI (FVG or sweep zone). A CHOCH at that POI signals the delivery direction. The FVG created by the CHOCH impulse is the highest-probability entry zone. ML learns which combinations of ms_choch_bull/bear, fvg_bull/bear_confirmed, ms_trend, displacement, and proximity to PDH/PDL produce the strongest edges.",
+  "expected_outcome": "ms_choch_bull/bear and fvg_bull/bear_dist selected as top features. Higher win rate when ms_trend aligns with CHOCH direction and displacement is present. Edge primarily during London and New York kill zones.",
+  "pipeline": "smc_choch_fvg",
+  "exit_strategy": "atr_trailing",
+  "exit_params": "atr_intraday_at",
+  "model": "xgboost_depth6",
+  "validation": "walk_forward_intraday",
+  "filters": "orb_scalping",
+  "resources": "standard",
+  "grids": {
+    "presets_dir": "../grids",
+    "assignments": {
+      "FOREX": {
+        "preset": "orb_scalping_forex",
+        "tp": [2.0, 3.0, 4.0, 5.0]
+      },
+      "INDEX": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0, 8.0]
+      },
+      "COMMODITY": {
+        "preset": "orb_scalping_base",
+        "tp": [2.0, 3.0, 4.0, 5.0]
+      },
+      "CRYPTO": {
+        "preset": "orb_scalping_crypto",
+        "tp": [3.0, 4.0, 5.0, 6.0]
+      },
+      "DAX": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [1.5, 2.0, 2.5, 3.0]
+      },
+      "FTSE100": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "DOW30": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [2.0, 2.5, 3.0]
+      },
+      "NAS100": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [2.0, 2.5, 3.0]
+      },
+      "SPX500": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "EU50": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "CAC40": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "JP225": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [2.0, 2.5, 3.0]
+      },
+      "ASX200": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "HK50": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [2.0, 2.5, 3.0]
+      }
+    }
+  }
+}
