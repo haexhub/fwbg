@@ -20,7 +20,7 @@ from fwbg.simulation.trade import (
 )
 from fwbg.core import get_risk_manager
 from fwbg.utils.progress import report_done, report_phase
-from fwbg.utils.logging import log
+from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds
 from .bias_checks import check_asset_bias
 from .process_fold import precompute_indicators, process_single_fold
@@ -74,20 +74,23 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     """
     sym = os.path.basename(csv_path).split("_")[0]
     t_start = time.time()
-
-    if sym in ["VIX", "DXY"]:
-        log(2, "Übersprungen (Makro-Asset)", sym)
-        return {"symbol": sym, "status": "macro_asset"}
-
-    log(1, "START", sym)
-    report_phase(sym, "Lade Daten...")
-
+    start_log_capture()
+    result = {}
     try:
+        if sym in ["VIX", "DXY"]:
+            log(2, "Übersprungen (Makro-Asset)", sym)
+            result = {"symbol": sym, "status": "macro_asset"}
+            return result
+
+        log(1, "START", sym)
+        report_phase(sym, "Lade Daten...")
+
         t0 = time.time()
         df = load_data_aligned(csv_path)
         if df is None:
             log(1, "SKIP - Keine Daten", sym)
-            return {"symbol": sym, "status": "no_data"}
+            result = {"symbol": sym, "status": "no_data"}
+            return result
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
 
         # === DATA LOADING (generic orchestrator) ===
@@ -104,7 +107,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         if len(df) < data_config.MIN_TRADES * 8:
             log(1, f"SKIP - Zu wenig Daten für Walk-Forward ({len(df)} < {data_config.MIN_TRADES * 8})", sym)
-            return {"symbol": sym, "status": "insufficient_data", "rows": len(df)}
+            result = {"symbol": sym, "status": "insufficient_data", "rows": len(df)}
+            return result
 
         # Asset-Konfiguration laden
         asset = get_asset(sym)
@@ -128,7 +132,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             )
         except ValueError as e:
             log(1, f"SKIP - {str(e)}", sym)
-            return {"symbol": sym, "status": "insufficient_data_for_folds", "error": str(e)}
+            result = {"symbol": sym, "status": "insufficient_data_for_folds", "error": str(e)}
+            return result
 
         log(1, f"Walk-Forward: {len(wf_folds)} folds created (prevents sample bias)", sym)
         for fold in wf_folds:
@@ -512,9 +517,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         return result
 
     except Exception as e:
-        log(1, f"FEHLER: {e}", sym)
         import traceback
+        import sys
         tb = traceback.format_exc()
-        print(tb)
+        print(f"[{sym}] FEHLER: {e}\n{tb}", file=sys.stderr, flush=True)
         report_done(sym, "error")
-        return {"symbol": sym, "status": "error", "error": f"{e}\n{tb}"}
+        result = {"symbol": sym, "status": "error", "error": f"{e}\n{tb}"}
+        return result
+    finally:
+        result["logs"] = stop_log_capture()
