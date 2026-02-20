@@ -107,7 +107,8 @@ class TestComputeFeatures:
         df = _make_fvg_df()
         result = indicator.compute(df)
 
-        for col in ["fvg_bull_active", "fvg_bear_active", "fvg_in_gap"]:
+        for col in ["fvg_bull_active", "fvg_bear_active", "fvg_in_gap",
+                    "fvg_bull_confirmed", "fvg_bear_confirmed"]:
             vals = result[col].dropna().unique()
             assert set(vals).issubset({0.0, 1.0}), f"{col} not binary: {vals}"
 
@@ -169,7 +170,7 @@ class TestPluginIntegration:
 
     def test_feature_count(self):
         indicator = _fvg.FairValueGapIndicator()
-        assert len(indicator.get_feature_columns()) == 8
+        assert len(indicator.get_feature_columns()) == 10
 
     def test_no_inf_values(self):
         indicator = _fvg.FairValueGapIndicator()
@@ -189,3 +190,121 @@ class TestPluginIntegration:
         for col in indicator.get_feature_columns():
             vals = late[col].dropna()
             assert len(vals) > 0, f"{col} is all NaN after warmup"
+
+
+class TestFVGConfirmation:
+    """Tests for fvg_bull_confirmed and fvg_bear_confirmed features.
+
+    Rule (from SMC): after price tests the gap, an engulfing candle must form
+    at the gap to confirm it will hold.
+    - Bullish confirmation: bullish engulfing candle while price is in the bull FVG zone.
+    - Bearish confirmation: bearish engulfing candle while price is in the bear FVG zone.
+    """
+
+    def test_confirmed_columns_present(self):
+        indicator = _fvg.FairValueGapIndicator()
+        result = indicator.compute(_make_fvg_df())
+        assert "fvg_bull_confirmed" in result.columns
+        assert "fvg_bear_confirmed" in result.columns
+
+    def test_confirmed_binary(self):
+        indicator = _fvg.FairValueGapIndicator()
+        result = indicator.compute(_make_fvg_df())
+        for col in ["fvg_bull_confirmed", "fvg_bear_confirmed"]:
+            vals = result[col].dropna().unique()
+            assert set(vals).issubset({0.0, 1.0}), f"{col} not binary: {vals}"
+
+    def test_no_confirmation_without_engulfing(self):
+        """Price tests gap with a non-engulfing candle → confirmed stays 0."""
+        # Bars 0-2: bullish FVG [100, 103]  (H[0]=100 < L[2]=103)
+        # Bar 3: red candle tests gap (L=101 in zone), NOT a bullish engulfing
+        data = {
+            "O": [97,  99, 103, 106],
+            "H": [100, 101, 110, 106],
+            "L": [96,  99, 103, 101],
+            "C": [99, 101, 109, 102],
+            "V": [100] * 4,
+        }
+        df = pd.DataFrame(data, index=pd.date_range("2024-01-01", periods=4, freq="h"))
+        result = _fvg.FairValueGapIndicator().compute(df)
+        assert result["fvg_bull_confirmed"].fillna(0).sum() == 0.0
+
+    def test_bull_confirmed_fires_on_engulfing(self):
+        """Bullish engulfing candle at gap sets fvg_bull_confirmed=1.
+
+        Setup:
+          Bar 0-2: create bullish FVG [100, 103]  (H[0]=100 < L[2]=103)
+          Bar 3:   red candle, price in gap (L=101), NOT engulfing
+          Bar 4:   bullish engulfing at gap:
+                     C[4]=107 > O[4]=101  (green)
+                     C[4]=107 > O[3]=106  (close above prev open)
+                     O[4]=101 < C[3]=102  (open below prev close)
+                     L[4]=101 <= fvg_top=103  (at gap)
+                     L[4]=101 > fvg_bottom=100  (not filled)
+          Bars 5-7: price rallies, FVG stays active and confirmed
+        """
+        data = {
+            "O": [97,  99, 103, 106, 101, 108, 109, 110],
+            "H": [100, 101, 110, 106, 108, 110, 111, 112],
+            "L": [96,  99, 103, 101, 101, 107, 108, 109],
+            "C": [99, 101, 109, 102, 107, 109, 110, 111],
+            "V": [100] * 8,
+        }
+        df = pd.DataFrame(data, index=pd.date_range("2024-01-01", periods=8, freq="h"))
+        result = _fvg.FairValueGapIndicator().compute(df)
+
+        # After shift: confirmation at bar 4 → result.iloc[5]; persists at iloc[6], [7]
+        assert result["fvg_bull_confirmed"].iloc[5] == 1.0, (
+            f"Expected confirmed=1 at iloc[5], got {result['fvg_bull_confirmed'].iloc[5]}"
+        )
+        assert result["fvg_bull_confirmed"].iloc[6] == 1.0, "Confirmation should persist"
+        # Bear confirmed should stay 0 throughout
+        assert result["fvg_bear_confirmed"].fillna(0).sum() == 0.0
+
+    def test_bear_confirmed_fires_on_engulfing(self):
+        """Bearish engulfing candle at gap sets fvg_bear_confirmed=1.
+
+        Setup:
+          Bar 0-2: create bearish FVG [103, 108]  (L[0]=108 > H[2]=103)
+          Bar 3:   green candle tests gap (H=106), NOT bearish engulfing
+          Bar 4:   bearish engulfing at gap:
+                     C[4]=100 < O[4]=107  (red)
+                     O[4]=107 > C[3]=106  (open above prev close)
+                     C[4]=100 < O[3]=101  (close below prev open)
+                     H[4]=107 >= fvg_bottom=103  (at gap)
+                     H[4]=107 < fvg_top=108  (not filled)
+          Bars 5-7: price falls, FVG stays active and confirmed
+        """
+        data = {
+            "O": [109, 108, 103, 101, 107, 102, 101, 100],
+            "H": [110, 108, 103, 106, 107, 103, 102, 101],
+            "L": [108, 104, 101, 101,  99,  98,  97,  96],
+            "C": [108, 105, 102, 106, 100, 100,  99,  98],
+            "V": [100] * 8,
+        }
+        df = pd.DataFrame(data, index=pd.date_range("2024-01-01", periods=8, freq="h"))
+        result = _fvg.FairValueGapIndicator().compute(df)
+
+        assert result["fvg_bear_confirmed"].iloc[5] == 1.0, (
+            f"Expected confirmed=1 at iloc[5], got {result['fvg_bear_confirmed'].iloc[5]}"
+        )
+        assert result["fvg_bear_confirmed"].iloc[6] == 1.0, "Confirmation should persist"
+        assert result["fvg_bull_confirmed"].fillna(0).sum() == 0.0
+
+    def test_confirmation_resets_when_fvg_filled(self):
+        """Once the FVG is filled, confirmed feature drops back to 0."""
+        # Bullish FVG [100, 103], confirmed at bar 4, filled at bar 5 (L <= 100)
+        data = {
+            "O": [97,  99, 103, 106, 101, 100, 100],
+            "H": [100, 101, 110, 106, 108, 104, 104],
+            "L": [96,  99, 103, 101, 101, 98,  98],  # bar 5: L=98 <= bottom=100 → fills FVG
+            "C": [99, 101, 109, 102, 107, 100, 100],
+            "V": [100] * 7,
+        }
+        df = pd.DataFrame(data, index=pd.date_range("2024-01-01", periods=7, freq="h"))
+        result = _fvg.FairValueGapIndicator().compute(df)
+
+        # Confirmation fires at bar 4 → result.iloc[5] = 1
+        assert result["fvg_bull_confirmed"].iloc[5] == 1.0
+        # FVG filled at bar 5 (L=98 <= bottom=100) → result.iloc[6] = 0
+        assert result["fvg_bull_confirmed"].iloc[6] == 0.0
