@@ -254,6 +254,7 @@ class FilterConfig:
     min_annual_return: float = 10.0
     max_drawdown: float = 1.0
     min_sharpe: float = 0.0
+    min_fold_stability: float = 0.0
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FilterConfig":
@@ -263,6 +264,7 @@ class FilterConfig:
             min_annual_return=data.get("min_annual_return", 10.0),
             max_drawdown=data.get("max_drawdown", 1.0),
             min_sharpe=data.get("min_sharpe", 0.0),
+            min_fold_stability=data.get("min_fold_stability", 0.0),
         )
 
 
