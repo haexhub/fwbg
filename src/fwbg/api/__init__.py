@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fwbg.api.exploration import exit_optimization_router
 from fwbg.api.plugins import router as plugins_router
+from fwbg.api.presets import router as presets_router
 from fwbg.api.strategies import router as strategies_router
 from fwbg.api.runs import router as runs_router
 from fwbg.api.chart import router as chart_router
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
 
     app.include_router(exit_optimization_router, prefix="/api/exploration/exit-optimization")
     app.include_router(plugins_router, prefix="/api")
+    app.include_router(presets_router, prefix="/api")
     app.include_router(strategies_router, prefix="/api")
     app.include_router(runs_router, prefix="/api")
     app.include_router(chart_router, prefix="/api")
