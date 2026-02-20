@@ -21,7 +21,7 @@ def _detect_fvgs(highs: np.ndarray, lows: np.ndarray):
 
     Returns:
         List of dicts: [{"type": "bullish"|"bearish", "top": float,
-                         "bottom": float, "bar": int}, ...]
+                         "bottom": float, "bar": int, "confirmed": bool}, ...]
     """
     fvgs = []
     for i in range(2, len(highs)):
@@ -32,6 +32,7 @@ def _detect_fvgs(highs: np.ndarray, lows: np.ndarray):
                 "bottom": float(highs[i - 2]),
                 "top": float(lows[i]),
                 "bar": i,
+                "confirmed": False,
             })
         # Bearish FVG: candle 1's low > candle 3's high
         if lows[i - 2] > highs[i]:
@@ -40,6 +41,7 @@ def _detect_fvgs(highs: np.ndarray, lows: np.ndarray):
                 "bottom": float(highs[i]),
                 "top": float(lows[i - 2]),
                 "bar": i,
+                "confirmed": False,
             })
     return fvgs
 
@@ -60,6 +62,8 @@ class FairValueGapIndicator(BaseIndicator):
         "fvg_bear_size",
         "fvg_in_gap",
         "fvg_count",
+        "fvg_bull_confirmed",
+        "fvg_bear_confirmed",
     ]
 
     def compute(
@@ -72,6 +76,7 @@ class FairValueGapIndicator(BaseIndicator):
         n = len(df)
         highs = df["H"].values
         lows = df["L"].values
+        opens = df["O"].values
         close = df["C"].values
 
         # ATR for normalization
@@ -97,6 +102,8 @@ class FairValueGapIndicator(BaseIndicator):
         bear_size = np.full(n, np.nan)
         in_gap = np.zeros(n)
         count = np.zeros(n)
+        bull_confirmed = np.zeros(n)
+        bear_confirmed = np.zeros(n)
 
         # Index FVGs by creation bar for efficient lookup
         fvg_by_bar = {}
@@ -128,6 +135,30 @@ class FairValueGapIndicator(BaseIndicator):
                 surviving.append(fvg)
             active_fvgs = surviving
 
+            # Check for engulfing confirmation at active FVGs
+            # Bullish engulfing: green candle whose body engulfs the previous candle's body
+            # while price is in the bull FVG zone (confirms gap as support).
+            # Bearish engulfing: same for bear FVGs.
+            if i > 0:
+                is_bull_engulf = (
+                    close[i] > opens[i]           # green candle
+                    and close[i] > opens[i - 1]   # close above prev open
+                    and opens[i] < close[i - 1]   # open below prev close
+                )
+                is_bear_engulf = (
+                    close[i] < opens[i]           # red candle
+                    and close[i] < opens[i - 1]   # close below prev open
+                    and opens[i] > close[i - 1]   # open above prev close
+                )
+                for fvg in active_fvgs:
+                    if not fvg["confirmed"]:
+                        if fvg["type"] == "bullish" and is_bull_engulf:
+                            if lows[i] <= fvg["top"]:   # candle reaches into the gap
+                                fvg["confirmed"] = True
+                        elif fvg["type"] == "bearish" and is_bear_engulf:
+                            if highs[i] >= fvg["bottom"]:   # candle reaches into the gap
+                                fvg["confirmed"] = True
+
             # Compute features from active FVGs
             count[i] = len(active_fvgs)
 
@@ -157,6 +188,12 @@ class FairValueGapIndicator(BaseIndicator):
                     if fvg["bottom"] <= c <= fvg["top"]:
                         in_gap[i] = 1.0
 
+                if fvg["confirmed"]:
+                    if fvg["type"] == "bullish":
+                        bull_confirmed[i] = 1.0
+                    else:
+                        bear_confirmed[i] = 1.0
+
             if nearest_bull_dist < np.inf:
                 bull_active[i] = 1.0
                 bull_dist[i] = nearest_bull_dist
@@ -176,6 +213,8 @@ class FairValueGapIndicator(BaseIndicator):
             "fvg_bear_size": bear_size,
             "fvg_in_gap": in_gap,
             "fvg_count": count,
+            "fvg_bull_confirmed": bull_confirmed,
+            "fvg_bear_confirmed": bear_confirmed,
         }
 
         features_df = shift_features(features, df.index)
@@ -185,7 +224,8 @@ class FairValueGapIndicator(BaseIndicator):
         return self._FEATURES
 
     def get_signal_columns(self) -> List[str]:
-        return ["fvg_bull_active", "fvg_bear_active", "fvg_in_gap"]
+        return ["fvg_bull_active", "fvg_bear_active", "fvg_in_gap",
+                "fvg_bull_confirmed", "fvg_bear_confirmed"]
 
     @classmethod
     def get_default_params(cls) -> dict:
