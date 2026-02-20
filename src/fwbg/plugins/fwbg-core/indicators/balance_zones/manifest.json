@@ -1,0 +1,7 @@
+{
+  "name": "balance_zones",
+  "version": "1.0.0",
+  "description": "PBD (Price/Balance/Direction) balance zone detection: rolling candle-body overlap defines a fair-value zone. Detects in-zone, breakout, fake breakout (counter-signal), and zone-width compression features.",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
