@@ -36,11 +36,14 @@ def _parse_ct_value(ct_value):
 
 def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
                                  sample_bias_detected, bias_ratios, mean_bias_ratio,
-                                 config_inconsistent=False, best_fold_id=None):
+                                 config_inconsistent=False):
     """Build walk_forward summary dict shared by all result types."""
+    profitable_folds = sum(1 for p in pnls if p > 0)
     summary = {
         "n_folds": len(all_fold_results),
         "successful_folds": len(all_fold_results),
+        "profitable_folds": profitable_folds,
+        "fold_stability": profitable_folds / len(all_fold_results) if all_fold_results else 0.0,
         "mean_win_rate": np.mean(win_rates),
         "std_win_rate": np.std(win_rates),
         "min_win_rate": min(win_rates),
@@ -58,8 +61,6 @@ def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
 
     if config_inconsistent:
         summary["config_inconsistent"] = True
-        summary["using_best_fold_only"] = True
-        summary["best_fold_id"] = best_fold_id
 
     return summary
 
@@ -218,47 +219,30 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         sl_cv = np.std(sl_values) / sl_mean if sl_mean > 0 else 0
         rrr_std = np.std(rrr_values) if len(rrr_values) > 1 else 0
 
-        # CV > 0.3 means TP/SL vary by more than 30% relative to their mean
-        is_consistent = tp_cv <= 0.3 and sl_cv <= 0.3 and rrr_std <= 0.15
+        # CV > 0.5 means TP/SL vary substantially across folds (informational warning only)
+        is_consistent = tp_cv <= 0.5 and sl_cv <= 0.5 and rrr_std <= 0.5
         config_inconsistent = not is_consistent and len(all_fold_results) > 1
 
         if config_inconsistent:
-            log(1, f"  WARNING: Fold configs are INCONSISTENT!", sym)
+            log(1, f"  WARNING: Fold configs vary across folds (aggregating all trades)", sym)
             log(1, f"    TP: {tp_values} (CV={tp_cv:.2f})", sym)
             log(1, f"    SL: {sl_values} (CV={sl_cv:.2f})", sym)
             log(1, f"    RRR: {[f'{r:.2f}' for r in rrr_values]} (std={rrr_std:.3f})", sym)
 
-            # Select fold with best risk-adjusted performance (PnL per trade)
-            representative_fold = max(
-                all_fold_results,
-                key=lambda f: f["test_pnl"] / f["test_trades"] if f["test_trades"] > 0 else 0,
-            )
-            log(1, f"  → Using BEST fold (Fold {representative_fold['fold_id']}) instead of aggregating", sym)
-
-            # Use metrics from best fold, not average
-            mean_wr = representative_fold["test_win_rate"]
-            mean_pnl = representative_fold["test_pnl"]
-            std_wr = 0
-            std_pnl = 0
-            total_trades = representative_fold["test_trades"]
-
-            log(1, f"  Best Fold Metrics: WR={mean_wr*100:.1f}%, PnL={mean_pnl:.1f}, Trades={total_trades}", sym)
-        else:
-            # Use first fold's config as representative (they are similar)
-            representative_fold = all_fold_results[0]
+        # Representative fold for output config: median fold by OOS PnL (avoids cherry-picking)
+        sorted_folds = sorted(all_fold_results, key=lambda f: f.get("test_pnl", 0))
+        representative_fold = sorted_folds[len(sorted_folds) // 2]
 
         b_config = representative_fold["best_config"]
 
-        # Combine trades: If configs are inconsistent, use only best fold's trades
-        if config_inconsistent:
-            all_trades = representative_fold["test_trades_trace"]
-            log(2, f"  Using only trades from best fold ({len(all_trades)} trades)", sym)
-        else:
-            all_trades = []
-            for fold_result in all_fold_results:
-                all_trades.extend(fold_result["test_trades_trace"])
+        # Always aggregate all fold trades — never cherry-pick a single fold
+        all_trades = []
+        for fold_result in all_fold_results:
+            all_trades.extend(fold_result["test_trades_trace"])
 
-        # Extract binary results for Monte Carlo / Sharpe / Calmar (sign-based)
+        # Actual PnL values for Monte Carlo test and result trace
+        all_trades_pnl = [t["pnl_raw"] for t in all_trades]
+        # Binary results (1/-1/0) kept for risk manager (Kelly fraction needs WR/RRR)
         all_trades_binary = [t["result"] for t in all_trades]
         # Extract RV values for vol-targeted risk management
         rv_values = [t["rv_at_entry"] for t in all_trades if "rv_at_entry" in t]
@@ -341,15 +325,13 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         }
 
         # Shared data for result building
-        best_fold_id = representative_fold.get("fold_id") if config_inconsistent else None
         wf_summary = _build_walk_forward_summary(
             all_fold_results,
-            [mean_wr] if config_inconsistent else win_rates,
-            [mean_pnl] if config_inconsistent else pnls,
+            win_rates,
+            pnls,
             total_trades,
             sample_bias_detected, bias_ratios, mean_bias_ratio,
             config_inconsistent=config_inconsistent,
-            best_fold_id=best_fold_id,
         )
         features_list = representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", [])
 
@@ -365,7 +347,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "rrr": rrr,
                 "sharpe": 0,
                 "calmar": 0,
-                "tr_trace": all_trades_binary,
+                "tr_trace": all_trades_pnl,
                 "best_config": {
                     "tp_mult": b_config["tp"],
                     "sl_mult": b_config["sl"],
@@ -394,7 +376,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         report_phase(sym, "Monte Carlo Validierung...")
 
         t_mc = time.time()
-        mc_perm = monte_carlo_permutation_test(all_trades_binary, n_permutations=1000, rrr=rrr)
+        mc_perm = monte_carlo_permutation_test(all_trades_pnl, n_permutations=1000)
         mc_equity = monte_carlo_equity_from_returns(trade_returns, n_simulations=500)
 
         log(2, f"  Monte Carlo: p={mc_perm['p_value']:.3f}, "
@@ -433,7 +415,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "sharpe": sharpe,
                 "calmar": calmar,
                 "risk_per_trade": fk,
-                "tr_trace": all_trades_binary,
+                "tr_trace": all_trades_pnl,
                 "best_config": {
                     "risk_per_trade": fk,
                     "tp_mult": b_config["tp"],
@@ -488,7 +470,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "risk_adjustment": risk_adjustment,
                 "vol_targeting": risk_result.get("vol_targeting"),
             },
-            "tr_trace": all_trades_binary,
+            "tr_trace": all_trades_pnl,
             "rrr": rrr,
             "win_rate": mean_wr,
             "sharpe": sharpe,
