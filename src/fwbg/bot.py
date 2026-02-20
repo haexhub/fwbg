@@ -55,7 +55,6 @@ class AssetConfig:
     point_value: float = 0.0001
     sl_mult: float = 25.0
     tp_mult: float = 40.0
-    dd_scaling: Dict[str, float] = field(default_factory=dict)
     ensemble: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -69,7 +68,6 @@ class AssetConfig:
             point_value=data.get("point_value", 0.0001),
             sl_mult=data.get("sl_mult", 25.0),
             tp_mult=data.get("tp_mult", 40.0),
-            dd_scaling=data.get("dd_scaling", {}),
             ensemble=data.get("ensemble", {}),
         )
 

@@ -484,7 +484,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "ct_short": ct_short,
                 "separate_long_short": ctx.separate_long_short,
                 "features": features_list,
-                "dd_scaling": {"10": 0.5, "20": 0.25},
                 "circuit_breaker": circuit_breaker,
                 "risk_adjustment": risk_adjustment,
                 "vol_targeting": risk_result.get("vol_targeting"),
