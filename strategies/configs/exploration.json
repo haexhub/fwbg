@@ -1,6 +1,6 @@
 {
   "name": "Exploration",
-  "description": "Maximale Feature-Exploration mit allen verf\u00fcgbaren Indicator-Plugins - ML lernt optimale Marktbedingungen",
+  "description": "Maximale Feature-Exploration mit allen verfügbaren Indicator-Plugins - ML lernt optimale Marktbedingungen",
   "tags": [
     "exploration",
     "parameter_search",
@@ -24,60 +24,145 @@
     "assignments": {
       "FOREX": {
         "preset": "exploration_base",
-        "tp": [1.5, 2, 2.5, 3, 3.5]
+        "tp": [
+          1.5,
+          2,
+          2.5,
+          3,
+          3.5
+        ]
       },
       "INDEX": {
         "preset": "exploration_base",
-        "tp": [2, 2.5, 3, 3.5, 4]
+        "tp": [
+          2,
+          2.5,
+          3,
+          3.5,
+          4
+        ]
       },
       "COMMODITY": {
         "preset": "exploration_base",
-        "tp": [2, 2.5, 3, 3.5, 4]
+        "tp": [
+          2,
+          2.5,
+          3,
+          3.5,
+          4
+        ]
       },
       "CRYPTO": {
         "preset": "exploration_crypto",
-        "tp": [2, 3, 4, 5, 6]
+        "tp": [
+          2,
+          3,
+          4,
+          5,
+          6
+        ]
       },
       "BRENT": {
         "preset": "exploration_base",
-        "tp": [1.5, 2, 2.5, 3, 3.5]
+        "tp": [
+          1.5,
+          2,
+          2.5,
+          3,
+          3.5
+        ]
       },
       "GOLD": {
         "preset": "exploration_base",
-        "tp": [2.5, 3, 3.5, 4, 4.5]
+        "tp": [
+          2.5,
+          3,
+          3.5,
+          4,
+          4.5
+        ]
       },
       "XAUUSD": {
         "preset": "exploration_base",
-        "tp": [2.5, 3, 3.5, 4, 4.5]
+        "tp": [
+          2.5,
+          3,
+          3.5,
+          4,
+          4.5
+        ]
       },
       "SILVER": {
         "preset": "exploration_base",
-        "tp": [1.5, 2, 2.5, 3, 3.5]
+        "tp": [
+          1.5,
+          2,
+          2.5,
+          3,
+          3.5
+        ]
       },
       "XAGUSD": {
         "preset": "exploration_base",
-        "tp": [1.5, 2, 2.5, 3, 3.5]
+        "tp": [
+          1.5,
+          2,
+          2.5,
+          3,
+          3.5
+        ]
       },
       "DAX": {
         "preset": "exploration_base",
-        "tp": [2, 2.5, 3, 3.5, 4]
+        "tp": [
+          2,
+          2.5,
+          3,
+          3.5,
+          4
+        ]
       },
       "DOW30": {
         "preset": "exploration_base",
-        "tp": [2, 2.5, 3, 3.5, 4]
+        "tp": [
+          2,
+          2.5,
+          3,
+          3.5,
+          4
+        ]
       },
       "FTSE100": {
         "preset": "exploration_base",
-        "tp": [1.5, 2, 2.5, 3, 3.5]
+        "tp": [
+          1.5,
+          2,
+          2.5,
+          3,
+          3.5
+        ]
       },
       "NAS100": {
         "preset": "exploration_base",
-        "tp": [2.5, 3, 3.5, 4, 4.5]
+        "tp": [
+          2.5,
+          3,
+          3.5,
+          4,
+          4.5
+        ]
       },
       "SPX500": {
         "preset": "exploration_base",
-        "tp": [2, 2.5, 3, 3.5, 4]
+        "tp": [
+          2,
+          2.5,
+          3,
+          3.5,
+          4
+        ]
       }
     }
-  }
+  },
+  "datasource": "forexsb"
 }

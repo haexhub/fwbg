@@ -1,7 +1,12 @@
 {
   "name": "Screen: Macro",
   "description": "Konzept-Screening: Makro-Kontext (Risikosentiment, Yield Curve, Cross-Asset) als primäre Signalquelle auf HOUR-Daten. Kein technisches Signal.",
-  "tags": ["screening", "step1", "macro", "cross_asset"],
+  "tags": [
+    "screening",
+    "step1",
+    "macro",
+    "cross_asset"
+  ],
   "hypothesis": "Makro-Faktoren (VIX-Regime, Yield Curve, Cross-Asset Flows) treiben systematische Bewegungen in FX, Indices und Rohstoffen - unabhängig von technischen Signalen.",
   "expected_outcome": "VIX-Niveau, Yield Curve Veränderungen und Cross-Asset Momentum werden selektiert. Asymmetrie zwischen Risk-On und Risk-Off Phasen.",
   "pipeline": {
@@ -17,12 +22,19 @@
       {
         "name": "trend",
         "params": {
-          "adx_periods": [14],
-          "ema_periods": [50, 200],
+          "adx_periods": [
+            14
+          ],
+          "ema_periods": [
+            50,
+            200
+          ],
           "sma_periods": [],
           "cci_periods": [],
           "aroon_period": 14,
-          "er_periods": [10],
+          "er_periods": [
+            10
+          ],
           "supertrend_period": 14,
           "supertrend_multiplier": 3.0
         }
@@ -61,8 +73,7 @@
     ],
     "data_loading": [
       {
-        "name": "macro_data",
-        "source": "forexsb"
+        "name": "macro_data"
       }
     ]
   },
@@ -75,10 +86,59 @@
   "grids": {
     "presets_dir": "../grids",
     "assignments": {
-      "FOREX":     {"preset": "screening_base", "tp": [1.5, 2.5, 3.5], "sl": [2.0, 3.0, 4.0]},
-      "INDEX":     {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
-      "COMMODITY": {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
-      "CRYPTO":    {"preset": "screening_base", "tp": [2.0, 3.0, 5.0], "sl": [3.0, 5.0, 7.0]}
+      "FOREX": {
+        "preset": "screening_base",
+        "tp": [
+          1.5,
+          2.5,
+          3.5
+        ],
+        "sl": [
+          2.0,
+          3.0,
+          4.0
+        ]
+      },
+      "INDEX": {
+        "preset": "screening_base",
+        "tp": [
+          2.0,
+          3.0,
+          4.0
+        ],
+        "sl": [
+          3.0,
+          4.0,
+          5.0
+        ]
+      },
+      "COMMODITY": {
+        "preset": "screening_base",
+        "tp": [
+          2.0,
+          3.0,
+          4.0
+        ],
+        "sl": [
+          3.0,
+          4.0,
+          5.0
+        ]
+      },
+      "CRYPTO": {
+        "preset": "screening_base",
+        "tp": [
+          2.0,
+          3.0,
+          5.0
+        ],
+        "sl": [
+          3.0,
+          5.0,
+          7.0
+        ]
+      }
     }
-  }
+  },
+  "datasource": "forexsb"
 }

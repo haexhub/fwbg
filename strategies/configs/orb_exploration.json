@@ -8,8 +8,8 @@
     "intraday"
   ],
   "timeframe": "MINUTE_15",
-  "hypothesis": "Opening Range Breakout Features (rolling + session-spezifisch) liefern pr\u00e4diktiven Edge, besonders f\u00fcr Indices und FX Majors bei Session-Opens. ML lernt welche Stunden und welche Breakout-Typen profitabel sind.",
-  "expected_outcome": "Feature Selection w\u00e4hlt ORB-Features in stabilem Subset. Session-spezifische Features (s08, s13, s14) st\u00e4rker als Rolling f\u00fcr Forex/Indices.",
+  "hypothesis": "Opening Range Breakout Features (rolling + session-spezifisch) liefern prädiktiven Edge, besonders für Indices und FX Majors bei Session-Opens. ML lernt welche Stunden und welche Breakout-Typen profitabel sind.",
+  "expected_outcome": "Feature Selection wählt ORB-Features in stabilem Subset. Session-spezifische Features (s08, s13, s14) stärker als Rolling für Forex/Indices.",
   "pipeline": "orb_simple",
   "exit_strategy": "atr_based",
   "exit_params": "atr_standard_at",
@@ -22,20 +22,45 @@
     "assignments": {
       "FOREX": {
         "preset": "orb_exploration_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "INDEX": {
         "preset": "orb_exploration_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "COMMODITY": {
         "preset": "orb_exploration_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "CRYPTO": {
         "preset": "orb_exploration_crypto",
-        "tp": [2.0, 3.0, 4.0, 5.0, 6.0]
+        "tp": [
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ]
       }
     }
-  }
+  },
+  "datasource": "forexsb"
 }

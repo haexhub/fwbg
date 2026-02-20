@@ -502,6 +502,8 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
 
             # Modell-Info
             model = strategy_metadata.get('model', {})
+            if not isinstance(model, dict):
+                model = {}
             f.write("MODELL\n")
             f.write(f"{'-'*40}\n")
             f.write(f"  Typ:          {model.get('type', '-')}\n")

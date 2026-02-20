@@ -5,7 +5,12 @@
       "params": {
         "auto_d": false,
         "default_d": 0.4,
-        "columns": ["O", "H", "L", "C"]
+        "columns": [
+          "O",
+          "H",
+          "L",
+          "C"
+        ]
       }
     }
   ],
@@ -13,8 +18,18 @@
     {
       "name": "trend",
       "params": {
-        "adx_periods": [7, 14, 21],
-        "ema_periods": [8, 21, 50, 100, 200],
+        "adx_periods": [
+          7,
+          14,
+          21
+        ],
+        "ema_periods": [
+          8,
+          21,
+          50,
+          100,
+          200
+        ],
         "supertrend_period": 14,
         "supertrend_multiplier": 3.0
       }
@@ -22,23 +37,47 @@
     {
       "name": "momentum",
       "params": {
-        "rsi_periods": [7, 14, 21]
+        "rsi_periods": [
+          7,
+          14,
+          21
+        ]
       }
     },
     {
       "name": "volatility",
       "params": {
-        "atr_periods": [7, 14, 21],
-        "vol_est_windows": [20, 50]
+        "atr_periods": [
+          7,
+          14,
+          21
+        ],
+        "vol_est_windows": [
+          20,
+          50
+        ]
       }
     },
     {
       "name": "regime",
       "params": {
-        "hurst_windows": [100, 200, 500],
-        "entropy_windows": [50, 100],
-        "vr_windows": [100, 200],
-        "vr_lags": [5, 10]
+        "hurst_windows": [
+          100,
+          200,
+          500
+        ],
+        "entropy_windows": [
+          50,
+          100
+        ],
+        "vr_windows": [
+          100,
+          200
+        ],
+        "vr_lags": [
+          5,
+          10
+        ]
       }
     },
     {
@@ -48,7 +87,11 @@
     {
       "name": "risk",
       "params": {
-        "dd_windows": [50, 100, 200]
+        "dd_windows": [
+          50,
+          100,
+          200
+        ]
       }
     },
     {
@@ -62,7 +105,11 @@
     {
       "name": "distribution",
       "params": {
-        "windows": [20, 50, 100]
+        "windows": [
+          20,
+          50,
+          100
+        ]
       }
     },
     {
@@ -165,12 +212,10 @@
   ],
   "data_loading": [
     {
-      "name": "macro_data",
-      "source": "forexsb"
+      "name": "macro_data"
     },
     {
-      "name": "cot_positioning",
-      "source": "forexsb"
+      "name": "cot_positioning"
     }
   ]
 }
