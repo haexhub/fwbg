@@ -1,0 +1,6 @@
+{
+  "name": "atr_trailing",
+  "version": "1.0.0",
+  "description": "ATR-based exit strategy with breakeven stop and trailing stop",
+  "phase": "exit_strategies"
+}
