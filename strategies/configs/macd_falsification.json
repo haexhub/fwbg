@@ -1,0 +1,66 @@
+{
+  "name": "MACD Strategy Falsification",
+  "description": "Isolierter Test der MACD-Strategie aus dem Video: Zero-Line-Filter (nur Longs über 0, nur Shorts unter 0), Distance Rule (Crossover weit von 0 = stärkeres Signal) und Histogram-Flip als Crossover-Bestätigung. Nur MACD-Features, keine confoundierenden Indikatoren.",
+  "tags": ["macd", "screening", "falsification", "momentum", "trend"],
+  "timeframe": "HOUR_4",
+  "hypothesis": "MACD Zero-Line-Filter (trend_macd_above_zero), Distance Rule (trend_macd_dist_zero) und Histogram-Flip (trend_macd_hist_flip) haben statistisch signifikanten prädiktiven Edge auf H4 FOREX-Daten. Falls falsifiziert: kein Edge in DSR/PBO/Monte-Carlo, oder MACD-Features werden von Boruta nicht selektiert.",
+  "expected_outcome": "Falsifiziert wenn: p > 0.05, DSR < 0.95, PBO > 0.35 oder MACD-Features durchgehend nicht selektiert. Bestätigt wenn: trend_macd_above_zero oder trend_macd_dist_zero über mehrere Folds selektiert und statistische Tests bestanden.",
+  "pipeline": {
+    "indicators": [
+      {
+        "name": "trend",
+        "params": {
+          "macd_only": true
+        }
+      },
+      {
+        "name": "time_season",
+        "params": {
+          "include_raw": false,
+          "include_encoded": true
+        }
+      }
+    ],
+    "feature_selection": [
+      {
+        "name": "stability",
+        "params": {
+          "inner_selector": "boruta",
+          "inner_params": {
+            "n_iter": 5,
+            "n_estimators": 30,
+            "max_depth": 4,
+            "min_z_score": 0.5
+          },
+          "n_bootstrap": 3,
+          "threshold": 0.6,
+          "bootstrap_ratio": 0.8
+        }
+      },
+      {
+        "name": "correlation_filter",
+        "params": {
+          "max_correlation": 0.85,
+          "max_features": 8
+        }
+      }
+    ]
+  },
+  "exit_strategy": "atr_based",
+  "exit_params": "atr_standard_at",
+  "model": "xgboost_screen",
+  "validation": "walk_forward_screening",
+  "filters": "screening",
+  "resources": "exploration_heavy",
+  "grids": {
+    "presets_dir": "../grids",
+    "assignments": {
+      "FOREX": {
+        "preset": "screening_base",
+        "tp": [1.5, 2.0, 2.5, 3.0],
+        "sl": [2.0, 3.0, 4.0]
+      }
+    }
+  },
+  "datasource": "forexsb"
+}

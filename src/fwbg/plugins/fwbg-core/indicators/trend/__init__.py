@@ -86,6 +86,7 @@ class TrendIndicators(BaseIndicator):
         sma_periods: List[int] = None,
         supertrend_period: int = 14,
         supertrend_multiplier: float = 3.0,
+        macd_only: bool = False,
         **params
     ) -> pd.DataFrame:
         """
@@ -98,6 +99,7 @@ class TrendIndicators(BaseIndicator):
             sma_periods: SMA-Perioden (default: [20, 50, 200])
             supertrend_period: ATR-Periode für Supertrend (default: 14)
             supertrend_multiplier: ATR-Multiplikator für Supertrend (default: 3.0)
+            macd_only: Wenn True, werden nur MACD-Features berechnet (default: False)
         """
         if adx_periods is None:
             adx_periods = [7, 14, 21]
@@ -108,56 +110,71 @@ class TrendIndicators(BaseIndicator):
 
         features = {}
 
-        # ADX
-        for period in adx_periods:
-            features[f"trend_adx_{period}"] = ta.trend.adx(
-                df["H"], df["L"], df["C"], window=period
-            )
+        if not macd_only:
+            # ADX
+            for period in adx_periods:
+                features[f"trend_adx_{period}"] = ta.trend.adx(
+                    df["H"], df["L"], df["C"], window=period
+                )
 
-        # EMA Distanz
-        for period in ema_periods:
-            ema = ta.trend.ema_indicator(df["C"], window=period)
-            features[f"trend_ema_dist_{period}"] = safe_divide(df["C"] - ema, df["C"])
+            # EMA Distanz
+            for period in ema_periods:
+                ema = ta.trend.ema_indicator(df["C"], window=period)
+                features[f"trend_ema_dist_{period}"] = safe_divide(df["C"] - ema, df["C"])
 
-        # SMA Distanz
-        for period in sma_periods:
-            sma = ta.trend.sma_indicator(df["C"], window=period)
-            features[f"trend_sma_dist_{period}"] = safe_divide(df["C"] - sma, df["C"])
+            # SMA Distanz
+            for period in sma_periods:
+                sma = ta.trend.sma_indicator(df["C"], window=period)
+                features[f"trend_sma_dist_{period}"] = safe_divide(df["C"] - sma, df["C"])
 
         # MACD
-        macd = ta.trend.MACD(df["C"])
-        features["trend_macd"] = safe_divide(macd.macd_diff(), df["C"])
-        features["trend_macd_signal"] = safe_divide(macd.macd_signal(), df["C"])
+        macd_ind = ta.trend.MACD(df["C"])
+        macd_line = macd_ind.macd()
+        macd_hist = macd_ind.macd_diff()
 
-        # CCI
-        for period in [14, 20]:
-            features[f"trend_cci_{period}"] = ta.trend.cci(
-                df["H"], df["L"], df["C"], window=period
+        # Existing: histogram (MACD line - Signal line) and signal line, normalized
+        features["trend_macd"] = safe_divide(macd_hist, df["C"])
+        features["trend_macd_signal"] = safe_divide(macd_ind.macd_signal(), df["C"])
+
+        # MACD line itself (fast EMA - slow EMA), normalized — needed for zero-line filter
+        features["trend_macd_line"] = safe_divide(macd_line, df["C"])
+        # Zero-line side: +1 bullish bias, -1 bearish bias (System 1: zero-line rule)
+        features["trend_macd_above_zero"] = np.sign(macd_line)
+        # Absolute distance from zero, normalized (System 1: distance rule — far = stronger)
+        features["trend_macd_dist_zero"] = safe_divide(macd_line.abs(), df["C"])
+        # Histogram flip: 1 when histogram just crossed zero (crossover signal)
+        features["trend_macd_hist_flip"] = (np.sign(macd_hist) != np.sign(macd_hist.shift(1))).astype(float)
+
+        if not macd_only:
+            # CCI
+            for period in [14, 20]:
+                features[f"trend_cci_{period}"] = ta.trend.cci(
+                    df["H"], df["L"], df["C"], window=period
+                )
+
+            # Aroon
+            aroon = ta.trend.AroonIndicator(df["H"], df["L"], window=25)
+            features["trend_aroon_up"] = aroon.aroon_up()
+            features["trend_aroon_down"] = aroon.aroon_down()
+
+            # Kaufman's Efficiency Ratio
+            for period in [10, 20, 50]:
+                change = abs(df["C"] - df["C"].shift(period))
+                volatility = abs(df["C"].diff()).rolling(period).sum()
+                features[f"trend_er_{period}"] = safe_divide(change, volatility)
+
+            # ER Change
+            features["trend_er_10_chg"] = features["trend_er_10"] - features["trend_er_10"].shift(5)
+            features["trend_er_20_chg"] = features["trend_er_20"] - features["trend_er_20"].shift(10)
+
+            # Supertrend
+            st_direction = _supertrend(
+                df["H"], df["L"], df["C"],
+                period=supertrend_period, multiplier=supertrend_multiplier,
             )
-
-        # Aroon
-        aroon = ta.trend.AroonIndicator(df["H"], df["L"], window=25)
-        features["trend_aroon_up"] = aroon.aroon_up()
-        features["trend_aroon_down"] = aroon.aroon_down()
-
-        # Kaufman's Efficiency Ratio
-        for period in [10, 20, 50]:
-            change = abs(df["C"] - df["C"].shift(period))
-            volatility = abs(df["C"].diff()).rolling(period).sum()
-            features[f"trend_er_{period}"] = safe_divide(change, volatility)
-
-        # ER Change
-        features["trend_er_10_chg"] = features["trend_er_10"] - features["trend_er_10"].shift(5)
-        features["trend_er_20_chg"] = features["trend_er_20"] - features["trend_er_20"].shift(10)
-
-        # Supertrend
-        st_direction = _supertrend(
-            df["H"], df["L"], df["C"],
-            period=supertrend_period, multiplier=supertrend_multiplier,
-        )
-        features["trend_supertrend"] = st_direction
-        # Supertrend Flip: 1 wenn gerade gewechselt, sonst 0
-        features["trend_supertrend_flip"] = (st_direction != st_direction.shift(1)).astype(float)
+            features["trend_supertrend"] = st_direction
+            # Supertrend Flip: 1 wenn gerade gewechselt, sonst 0
+            features["trend_supertrend_flip"] = (st_direction != st_direction.shift(1)).astype(float)
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
         features_df = shift_features(features, df.index)
@@ -176,6 +193,8 @@ class TrendIndicators(BaseIndicator):
             "trend_sma_dist_20", "trend_sma_dist_50", "trend_sma_dist_200",
             # MACD
             "trend_macd", "trend_macd_signal",
+            "trend_macd_line", "trend_macd_above_zero",
+            "trend_macd_dist_zero", "trend_macd_hist_flip",
             # CCI
             "trend_cci_14", "trend_cci_20",
             # Aroon
@@ -198,6 +217,7 @@ class TrendIndicators(BaseIndicator):
             "sma_periods": [20, 50, 200],
             "supertrend_period": 14,
             "supertrend_multiplier": 3.0,
+            "macd_only": False,
         }
 
     @classmethod
@@ -239,6 +259,11 @@ class TrendIndicators(BaseIndicator):
                 "min": 0.5,
                 "max": 20.0,
                 "step": 0.5,
+            },
+            "macd_only": {
+                "type": "bool",
+                "default": False,
+                "description": "When True, only MACD features are computed (trend_macd_line, trend_macd_above_zero, trend_macd_dist_zero, trend_macd_hist_flip, trend_macd, trend_macd_signal). All other features (ADX, EMA, SMA, CCI, Aroon, ER, Supertrend) are skipped. Use for isolated MACD strategy falsification.",
             },
         }
 
