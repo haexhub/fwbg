@@ -551,76 +551,70 @@ def calculate_annual_return(returns, risk_per_trade, rrr, total_bars, bars_per_y
     return annual_return
 
 
-def monte_carlo_permutation_test(trades, n_permutations=1000, random_seed=42, rrr=1.0):
+def monte_carlo_permutation_test(trade_pnls, n_permutations=1000, random_seed=42, rrr=None):
     """
-    Monte Carlo Signifikanz-Test für Trading-Strategien.
+    Monte Carlo Signifikanz-Test für Trading-Strategien (PnL-basiert).
 
-    Prüft ob die beobachtete PnL signifikant besser ist als eine Strategie
-    ohne Edge (Breakeven Win-Rate bei gegebenem RRR) mittels Bootstrap.
+    Verwendet einen Sign-Permutation-Test auf der tatsächlichen PnL-Verteilung.
+    Null-Hypothese: E[PnL] = 0 (kein Edge) — jeder Trade ist gleich wahrscheinlich
+    positiv oder negativ, unabhängig von seiner Größe.
 
-    Die Null-Hypothese ist "kein Edge" = Breakeven-WR = 1/(1+RRR), nicht 50%.
-    Bei RRR=1.0 entspricht das dem klassischen 50%-Test. Bei RRR>1.0 wird der
-    Test fairer: eine Strategie mit 55% WR und RRR=2.0 hat echten Edge.
+    Vorteile gegenüber binärem WR-Test:
+    - Kein RRR-Parameter nötig (implizit in der PnL-Verteilung enthalten)
+    - Breakeven-Trades (PnL=0) fließen korrekt als Null ein
+    - Asymmetrische Verteilungen werden erfasst (viele kleine Verluste, wenige große
+      Gewinne können trotzdem positiven Edge haben)
+    - Funktioniert korrekt für alle Exit-Strategien (atr_trailing, fixed, etc.)
 
     Args:
-        trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
+        trade_pnls: Liste tatsächlicher PnL-Werte (positiv=Gewinn, negativ=Verlust, 0=Breakeven)
         n_permutations: Anzahl Bootstrap-Samples
         random_seed: Seed für Reproduzierbarkeit
-        rrr: Risk-Reward-Ratio (TP/SL). Bestimmt die Breakeven-WR.
+        rrr: Ignoriert (nur für Rückwärtskompatibilität)
 
     Returns:
-        dict mit:
-            - p_value: P-Wert (< 0.05 = signifikant besser als kein Edge)
-            - observed_pnl: Beobachtete RRR-gewichtete PnL
-            - observed_win_rate: Beobachtete Win-Rate
-            - mean_random_pnl: Durchschnittliche PnL bei Breakeven-WR
-            - percentile: In welchem Perzentil die beobachtete PnL liegt
-            - is_significant: True wenn p < 0.05
+        dict mit p_value, observed_pnl, observed_mean_pnl, percentile, is_significant
     """
-    if len(trades) < 10:
+    pnl_arr = np.array(trade_pnls, dtype=float)
+    n_trades = len(pnl_arr)
+
+    if n_trades < 10:
         return {
             "p_value": 1.0,
-            "observed_pnl": sum(trades),
+            "observed_pnl": float(np.sum(pnl_arr)),
+            "observed_mean_pnl": 0.0,
             "observed_win_rate": 0.5,
             "mean_random_pnl": 0.0,
+            "std_random_pnl": 0.0,
             "percentile": 50.0,
             "is_significant": False,
             "n_permutations": 0,
         }
 
     rng = np.random.default_rng(random_seed)
-    trades_arr = np.array(trades)
-    n_trades = len(trades_arr)
-    observed_wins = np.sum(trades_arr > 0)
-    observed_wr = observed_wins / n_trades
+    observed_total = float(np.sum(pnl_arr))
+    observed_mean = float(np.mean(pnl_arr))
+    observed_wr = float(np.sum(pnl_arr > 0) / n_trades)
+    abs_pnl = np.abs(pnl_arr)
 
-    # RRR-gewichtete PnL: Wins zählen rrr, Losses zählen -1
-    observed_pnl = observed_wins * rrr + (n_trades - observed_wins) * (-1.0)
+    # Sign-Permutation: Null-Hypothese E[PnL]=0 — jeder Trade gleich wahrscheinlich
+    # positiv oder negativ. Für jede Permutation: zufällige Vorzeichen auf die
+    # absoluten PnL-Werte. Breakeven-Trades (abs_pnl=0) bleiben immer 0.
+    random_totals = np.empty(n_permutations)
+    for i in range(n_permutations):
+        signs = rng.choice(np.array([-1.0, 1.0]), size=n_trades)
+        random_totals[i] = np.sum(signs * abs_pnl)
 
-    # Null-Hypothese: kein Edge = Breakeven Win-Rate (1/(1+RRR))
-    # Bei RRR=1.0: breakeven_wr=0.5 (klassischer Test)
-    # Bei RRR=2.0: breakeven_wr=0.333 (braucht nur 33% WR zum Break-even)
-    breakeven_wr = 1.0 / (1.0 + max(rrr, 0.1))
-
-    random_pnls = []
-    for _ in range(n_permutations):
-        random_wins = np.sum(rng.random(n_trades) < breakeven_wr)
-        random_pnl = random_wins * rrr + (n_trades - random_wins) * (-1.0)
-        random_pnls.append(random_pnl)
-
-    random_pnls = np.array(random_pnls)
-
-    # P-Wert: Anteil der zufälligen PnLs >= beobachtete PnL
-    p_value = (np.sum(random_pnls >= observed_pnl) + 1) / (n_permutations + 1)
-
-    percentile = 100 * (np.sum(random_pnls < observed_pnl) / n_permutations)
+    p_value = float((np.sum(random_totals >= observed_total) + 1) / (n_permutations + 1))
+    percentile = float(100 * np.sum(random_totals < observed_total) / n_permutations)
 
     return {
         "p_value": p_value,
-        "observed_pnl": float(observed_pnl),
-        "observed_win_rate": float(observed_wr),
-        "mean_random_pnl": float(np.mean(random_pnls)),
-        "std_random_pnl": float(np.std(random_pnls)),
+        "observed_pnl": observed_total,
+        "observed_mean_pnl": observed_mean,
+        "observed_win_rate": observed_wr,
+        "mean_random_pnl": float(np.mean(random_totals)),
+        "std_random_pnl": float(np.std(random_totals)),
         "percentile": percentile,
         "is_significant": p_value < 0.05,
         "n_permutations": n_permutations,
