@@ -1,0 +1,7 @@
+{
+  "name": "market_structure",
+  "version": "1.0.0",
+  "description": "Break-of-Structure (BOS) and Change-of-Character (CHOCH) detection: identifies when price breaks rolling swing extremes and signals trend continuation or reversal.",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

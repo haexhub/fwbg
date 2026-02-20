@@ -11,6 +11,14 @@
       }
     },
     {
+      "name": "market_structure",
+      "params": {
+        "swing_lookback": 20,
+        "choch_lookback": 50,
+        "atr_period": 14
+      }
+    },
+    {
       "name": "liquidity_sweep",
       "params": {
         "swing_lookback": 50,
