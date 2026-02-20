@@ -1,24 +1,25 @@
 """
 Daten laden und Makro-Indikatoren integrieren
 """
+
 import os
 import pandas as pd
 import numpy as np
 
-from .config import TARGET_TZ, DATA_PATH
+from .config import TARGET_TZ
 
 
 def _has_header(path):
     """Prüft, ob die CSV-Datei einen Header hat."""
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         first_line = f.readline().strip()
         if not first_line:
             return True  # Leere Datei - pandas default
-        first_col = first_line.split(',')[0]
+        first_col = first_line.split(",")[0]
         # Ein Header hat typischerweise Text wie "Time", "Date", "Open" etc.
         # Kein Header hat Datum wie "2024-01-01" oder Zahl
         # Datum erkennen: enthält "-" und besteht aus digits/hyphens
-        is_date = '-' in first_col and all(c in '0123456789- :' for c in first_col)
+        is_date = "-" in first_col and all(c in "0123456789- :" for c in first_col)
         return not is_date  # Hat Header wenn NICHT Datum
 
 
@@ -31,7 +32,9 @@ def _validate_ohlc(df, path):
     # Check OHLC columns are numeric
     for col in present:
         if not pd.api.types.is_numeric_dtype(df[col]):
-            raise ValueError(f"{sym}: Column '{col}' is not numeric (dtype={df[col].dtype})")
+            raise ValueError(
+                f"{sym}: Column '{col}' is not numeric (dtype={df[col].dtype})"
+            )
 
     if present:
         # Check for inf values
@@ -45,7 +48,9 @@ def _validate_ohlc(df, path):
         min_vals = numeric_df.min()
         non_positive = min_vals[min_vals <= 0]
         if len(non_positive) > 0:
-            raise ValueError(f"{sym}: OHLC contains non-positive values: {non_positive.to_dict()}")
+            raise ValueError(
+                f"{sym}: OHLC contains non-positive values: {non_positive.to_dict()}"
+            )
 
 
 def load_data_aligned(path, is_sentiment=False):
@@ -137,6 +142,7 @@ def load_macro_csv(path):
 # Generic Data Loading Orchestrator
 # ============================================================================
 
+
 def run_data_loading(df, data_loading_configs):
     """
     Generic data-loading orchestrator.
@@ -195,9 +201,7 @@ def run_data_loading(df, data_loading_configs):
                         lambda d, lk=lookup: lk.get(d, np.nan)
                     ).ffill()
 
-            log.debug(
-                f"Loaded {len(result.data)} items from source '{source_name}'"
-            )
+            log.debug(f"Loaded {len(result.data)} items from source '{source_name}'")
 
         # 3. Run computation plugin
         if plugin_name:

@@ -1,41 +1,23 @@
 """
 Data Sources - Zentrale Konfiguration für Datenquellen.
 
-Unterstützt verschiedene Quelltypen:
-- CSV: Lokale CSV-Dateien
-- REST: REST API Endpunkte
-- WebSocket: WebSocket Streaming
+Persistenz über data/{name}/config.json — jede Quelle ist ein Verzeichnis.
 
-Beispiel:
-    from fwbg.core.data_sources import (
-        get_data_source,
-        register_csv_source,
-        register_rest_source,
-        register_websocket_source,
-    )
-
-    # CSV-Quelle (vorkonfiguriert)
-    source = get_data_source("forexsb")
-    adapter = source.create_adapter(timeframe="HOUR")
-
-    # REST API registrieren
-    register_rest_source(
-        name="alphavantage",
-        base_url="https://www.alphavantage.co/query",
-        api_key="YOUR_KEY",
-    )
-
-    # WebSocket registrieren
-    register_websocket_source(
-        name="binance_ws",
-        url="wss://stream.binance.com:9443/ws",
-    )
+Struktur:
+    data/
+      forexsb/
+        config.json          ← Quell-Konfiguration
+        raw/                 ← originale Uploads
+        datasource/          ← aufbereitete CSV-Dateien
+      alphavantage/
+        config.json
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Any
+import json
 import logging
 
 import pandas as pd
@@ -66,7 +48,7 @@ class SourceType(str, Enum):
 class DataSourceConfig(ABC):
     """Basis-Konfiguration für alle Datenquellen."""
     name: str
-    source_type: SourceType = field(init=False)  # Wird in Subclass gesetzt
+    source_type: SourceType = field(init=False)
     description: str = ""
 
     @abstractmethod
@@ -76,14 +58,12 @@ class DataSourceConfig(ABC):
 
     @abstractmethod
     def load(self, items: Dict[str, str], **params) -> "LoadResult":
-        """Load named data items from this source.
+        """Load named data items from this source."""
+        pass
 
-        Args:
-            items: Mapping of item name to prefix (e.g. {"VIX_DAY": "vix"})
-
-        Returns:
-            LoadResult with loaded DataFrames and metadata
-        """
+    @abstractmethod
+    def to_dict(self) -> dict:
+        """Serialize to JSON-compatible dict."""
         pass
 
 
@@ -91,13 +71,23 @@ class DataSourceConfig(ABC):
 class CSVSourceConfig(DataSourceConfig):
     """Konfiguration für CSV-Datenquellen."""
     path: Path = field(default_factory=lambda: Path("data"))
-    file_pattern: str = "{symbol}.csv"
+    file_pattern: str = "{symbol}_{timeframe}.csv"
     timeframe_map: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         self.source_type = SourceType.CSV
         if isinstance(self.path, str):
             self.path = Path(self.path)
+
+    def to_dict(self) -> dict:
+        return {
+            "type": "csv",
+            "name": self.name,
+            "description": self.description,
+            "path": str(self.path),
+            "file_pattern": self.file_pattern,
+            "timeframe_map": self.timeframe_map,
+        }
 
     def get_file_path(self, symbol: str, timeframe: str = None) -> Path:
         """Gibt den vollständigen Dateipfad für ein Symbol zurück."""
@@ -116,14 +106,7 @@ class CSVSourceConfig(DataSourceConfig):
         return list(self.path.glob(pattern))
 
     def load(self, items: Dict[str, str], **params) -> LoadResult:
-        """Load CSV files from self.path.
-
-        Args:
-            items: Mapping of filename (without .csv) to prefix
-
-        Returns:
-            LoadResult with loaded DataFrames indexed by date
-        """
+        """Load CSV files from self.path."""
         data = {}
         for filename, prefix in items.items():
             csv_path = self.path / f"{filename}.csv"
@@ -149,12 +132,6 @@ class CSVSourceConfig(DataSourceConfig):
         return LoadResult(data=data, source_name=self.name)
 
     def create_adapter(self, timeframe: str = "HOUR", **kwargs):
-        """
-        Erstellt einen CSV DataAdapter.
-
-        Hinweis: Der CSVDataAdapter muss separat implementiert
-        oder als Plugin installiert werden.
-        """
         from fwbg.core.registry import BROKER_ADAPTER_REGISTRY
 
         if "csv" in BROKER_ADAPTER_REGISTRY:
@@ -176,74 +153,58 @@ class CSVSourceConfig(DataSourceConfig):
 
 @dataclass
 class RESTSourceConfig(DataSourceConfig):
-    """
-    Konfiguration für REST API Datenquellen.
-
-    Beispiel:
-        config = RESTSourceConfig(
-            name="alphavantage",
-            base_url="https://www.alphavantage.co/query",
-            api_key="YOUR_KEY",
-            headers={"User-Agent": "FWBG/1.0"},
-            endpoints={
-                "historical": "/query?function=TIME_SERIES_INTRADAY&symbol={symbol}",
-                "quote": "/query?function=GLOBAL_QUOTE&symbol={symbol}",
-            },
-        )
-    """
+    """Konfiguration für REST API Datenquellen."""
     base_url: str = ""
     api_key: str = ""
-    api_key_param: str = "apikey"  # Query-Parameter für API-Key
-    api_key_header: str = ""  # Alternativ: Header für API-Key
+    api_key_param: str = "apikey"
+    api_key_header: str = ""
     headers: Dict[str, str] = field(default_factory=dict)
     endpoints: Dict[str, str] = field(default_factory=dict)
-    rate_limit: float = 1.0  # Sekunden zwischen Requests
+    rate_limit: float = 1.0
     timeout: float = 30.0
 
     def __post_init__(self):
         self.source_type = SourceType.REST
 
+    def to_dict(self) -> dict:
+        return {
+            "type": "rest",
+            "name": self.name,
+            "description": self.description,
+            "base_url": self.base_url,
+            "api_key": self.api_key,
+            "api_key_param": self.api_key_param,
+            "api_key_header": self.api_key_header,
+            "headers": self.headers,
+            "endpoints": self.endpoints,
+            "rate_limit": self.rate_limit,
+            "timeout": self.timeout,
+        }
+
     def get_endpoint_url(self, endpoint: str, **params) -> str:
         """Erstellt die vollständige URL für einen Endpunkt."""
         path = self.endpoints.get(endpoint, endpoint)
         url = f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
-
-        # Parameter einsetzen
         for key, value in params.items():
             url = url.replace(f"{{{key}}}", str(value))
-
-        # API-Key als Query-Parameter hinzufügen
         if self.api_key and self.api_key_param:
             separator = "&" if "?" in url else "?"
             url = f"{url}{separator}{self.api_key_param}={self.api_key}"
-
         return url
 
     def get_headers(self) -> Dict[str, str]:
-        """Gibt die Request-Headers zurück."""
         headers = dict(self.headers)
         if self.api_key and self.api_key_header:
             headers[self.api_key_header] = self.api_key
         return headers
 
     def load(self, items: Dict[str, str], **params) -> LoadResult:
-        """Load data from REST API endpoints.
-
-        Not implemented for batch loading — use create_adapter() for live data.
-        """
         raise NotImplementedError(
             f"REST source '{self.name}' does not support batch loading. "
             f"Use create_adapter() for live data fetching."
         )
 
     def create_adapter(self, **kwargs):
-        """
-        Erstellt einen REST DataAdapter.
-
-        Hinweis: Der RESTDataAdapter muss separat implementiert
-        oder als Plugin installiert werden.
-        """
-        # Versuche REST Adapter aus Registry zu laden
         from fwbg.core.registry import BROKER_ADAPTER_REGISTRY
 
         if "rest" in BROKER_ADAPTER_REGISTRY:
@@ -258,19 +219,7 @@ class RESTSourceConfig(DataSourceConfig):
 
 @dataclass
 class WebSocketSourceConfig(DataSourceConfig):
-    """
-    Konfiguration für WebSocket Streaming Datenquellen.
-
-    Beispiel:
-        config = WebSocketSourceConfig(
-            name="binance_ws",
-            url="wss://stream.binance.com:9443/ws",
-            subscribe_message={
-                "method": "SUBSCRIBE",
-                "params": ["{symbol}@kline_{timeframe}"],
-            },
-        )
-    """
+    """Konfiguration für WebSocket Streaming Datenquellen."""
     url: str = ""
     headers: Dict[str, str] = field(default_factory=dict)
     subscribe_message: Dict[str, Any] = field(default_factory=dict)
@@ -281,28 +230,32 @@ class WebSocketSourceConfig(DataSourceConfig):
     def __post_init__(self):
         self.source_type = SourceType.WEBSOCKET
 
+    def to_dict(self) -> dict:
+        return {
+            "type": "websocket",
+            "name": self.name,
+            "description": self.description,
+            "url": self.url,
+            "headers": self.headers,
+            "subscribe_message": self.subscribe_message,
+            "heartbeat_interval": self.heartbeat_interval,
+            "reconnect_delay": self.reconnect_delay,
+            "max_reconnect_attempts": self.max_reconnect_attempts,
+        }
+
     def get_subscribe_message(self, symbol: str, timeframe: str = "1m") -> Dict[str, Any]:
-        """Erstellt die Subscribe-Nachricht mit eingesetzten Parametern."""
-        import json
         msg_str = json.dumps(self.subscribe_message)
         msg_str = msg_str.replace("{symbol}", symbol.lower())
         msg_str = msg_str.replace("{timeframe}", timeframe)
         return json.loads(msg_str)
 
     def load(self, items: Dict[str, str], **params) -> LoadResult:
-        """WebSocket sources are streaming-only, no batch loading."""
         raise NotImplementedError(
             f"WebSocket source '{self.name}' is streaming-only. "
             f"Use create_adapter() for real-time data."
         )
 
     def create_adapter(self, **kwargs):
-        """
-        Erstellt einen WebSocket DataAdapter.
-
-        Hinweis: Der WebSocketDataAdapter muss separat implementiert
-        oder als Plugin installiert werden.
-        """
         from fwbg.core.registry import BROKER_ADAPTER_REGISTRY
 
         if "websocket" in BROKER_ADAPTER_REGISTRY:
@@ -324,12 +277,16 @@ class DBSourceConfig(DataSourceConfig):
     def __post_init__(self):
         self.source_type = SourceType.DATABASE
 
-    def load(self, items: Dict[str, str], **params) -> LoadResult:
-        """Load data from database via SQL queries.
+    def to_dict(self) -> dict:
+        return {
+            "type": "database",
+            "name": self.name,
+            "description": self.description,
+            "connection_string": self.connection_string,
+            "driver": self.driver,
+        }
 
-        Args:
-            items: Mapping of SQL query/table name to prefix
-        """
+    def load(self, items: Dict[str, str], **params) -> LoadResult:
         try:
             import sqlalchemy
         except ImportError:
@@ -355,26 +312,87 @@ DataSource = CSVSourceConfig | RESTSourceConfig | WebSocketSourceConfig | DBSour
 _DATA_SOURCES: Dict[str, DataSource] = {}
 
 
+def source_from_dict(d: dict) -> DataSource:
+    """Deserialize a source config from a dict."""
+    t = d.get("type")
+    if t == "csv":
+        return CSVSourceConfig(
+            name=d["name"],
+            description=d.get("description", ""),
+            path=Path(d.get("path", "data")),
+            file_pattern=d.get("file_pattern", "{symbol}_{timeframe}.csv"),
+            timeframe_map=d.get("timeframe_map", {}),
+        )
+    elif t == "rest":
+        return RESTSourceConfig(
+            name=d["name"],
+            description=d.get("description", ""),
+            base_url=d.get("base_url", ""),
+            api_key=d.get("api_key", ""),
+            api_key_param=d.get("api_key_param", "apikey"),
+            api_key_header=d.get("api_key_header", ""),
+            headers=d.get("headers", {}),
+            endpoints=d.get("endpoints", {}),
+            rate_limit=d.get("rate_limit", 1.0),
+            timeout=d.get("timeout", 30.0),
+        )
+    elif t == "websocket":
+        return WebSocketSourceConfig(
+            name=d["name"],
+            description=d.get("description", ""),
+            url=d.get("url", ""),
+            headers=d.get("headers", {}),
+            subscribe_message=d.get("subscribe_message", {}),
+            heartbeat_interval=d.get("heartbeat_interval", 30.0),
+            reconnect_delay=d.get("reconnect_delay", 5.0),
+            max_reconnect_attempts=d.get("max_reconnect_attempts", 10),
+        )
+    elif t == "database":
+        return DBSourceConfig(
+            name=d["name"],
+            description=d.get("description", ""),
+            connection_string=d.get("connection_string", ""),
+            driver=d.get("driver", "sqlalchemy"),
+        )
+    else:
+        raise ValueError(f"Unknown source type: {t!r}")
+
+
+def save_source_config(source: DataSource, data_root: Path = None) -> None:
+    """Write source config to data/{name}/config.json."""
+    root = data_root or DEFAULT_DATA_ROOT
+    config_path = Path(root) / source.name / "config.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(source.to_dict(), f, indent=2, ensure_ascii=False)
+    log.debug(f"Saved config for source '{source.name}' to {config_path}")
+
+
+def discover_sources(data_root: Path = None) -> None:
+    """Scan data_root for source directories and register all found sources."""
+    root = Path(data_root or DEFAULT_DATA_ROOT)
+    if not root.exists():
+        return
+    for config_file in sorted(root.glob("*/config.json")):
+        try:
+            with open(config_file, encoding="utf-8") as f:
+                d = json.load(f)
+            source = source_from_dict(d)
+            _DATA_SOURCES[source.name] = source
+            log.debug(f"Discovered source: {source.name} ({source.source_type})")
+        except Exception as e:
+            log.warning(f"Failed to load source from {config_file}: {e}")
+    log.info(f"Loaded {len(_DATA_SOURCES)} data sources from {root}")
+
+
 def register_csv_source(
     name: str,
     path: str | Path,
-    file_pattern: str = "{symbol}.csv",
+    file_pattern: str = "{symbol}_{timeframe}.csv",
     description: str = "",
     timeframe_map: Dict[str, str] = None,
 ) -> CSVSourceConfig:
-    """
-    Registriert eine CSV-Datenquelle.
-
-    Args:
-        name: Eindeutiger Name
-        path: Pfad zum Verzeichnis
-        file_pattern: Dateinamens-Pattern ({symbol}, {timeframe})
-        description: Optionale Beschreibung
-        timeframe_map: Mapping von Timeframe-Namen zu Pattern-Werten
-
-    Returns:
-        Die registrierte CSVSourceConfig
-    """
+    """Registriert eine CSV-Datenquelle."""
     source = CSVSourceConfig(
         name=name,
         path=Path(path),
@@ -398,23 +416,7 @@ def register_rest_source(
     rate_limit: float = 1.0,
     description: str = "",
 ) -> RESTSourceConfig:
-    """
-    Registriert eine REST API Datenquelle.
-
-    Args:
-        name: Eindeutiger Name
-        base_url: Basis-URL der API
-        api_key: API-Schlüssel
-        api_key_param: Query-Parameter für API-Key (default: "apikey")
-        api_key_header: Header für API-Key (alternativ zu Query-Param)
-        headers: Zusätzliche HTTP-Headers
-        endpoints: Dict von Endpunkt-Namen zu Pfaden
-        rate_limit: Sekunden zwischen Requests
-        description: Optionale Beschreibung
-
-    Returns:
-        Die registrierte RESTSourceConfig
-    """
+    """Registriert eine REST API Datenquelle."""
     source = RESTSourceConfig(
         name=name,
         base_url=base_url,
@@ -440,21 +442,7 @@ def register_websocket_source(
     reconnect_delay: float = 5.0,
     description: str = "",
 ) -> WebSocketSourceConfig:
-    """
-    Registriert eine WebSocket Datenquelle.
-
-    Args:
-        name: Eindeutiger Name
-        url: WebSocket URL (wss://...)
-        headers: HTTP-Headers für Verbindung
-        subscribe_message: Template für Subscribe-Nachricht
-        heartbeat_interval: Ping-Intervall in Sekunden
-        reconnect_delay: Verzögerung bei Reconnect
-        description: Optionale Beschreibung
-
-    Returns:
-        Die registrierte WebSocketSourceConfig
-    """
+    """Registriert eine WebSocket Datenquelle."""
     source = WebSocketSourceConfig(
         name=name,
         url=url,
@@ -487,19 +475,16 @@ def register_db_source(
     return source
 
 
+def delete_data_source(name: str) -> None:
+    """Remove a data source from the in-memory registry (does not delete files)."""
+    if name not in _DATA_SOURCES:
+        raise ValueError(f"Unknown data source: '{name}'")
+    del _DATA_SOURCES[name]
+    log.info(f"Unregistered data source: {name}")
+
+
 def get_data_source(name: str) -> DataSource:
-    """
-    Gibt eine registrierte Datenquelle zurück.
-
-    Args:
-        name: Name der Datenquelle
-
-    Returns:
-        DataSourceConfig (CSV, REST oder WebSocket)
-
-    Raises:
-        ValueError: Wenn Quelle nicht gefunden
-    """
+    """Gibt eine registrierte Datenquelle zurück."""
     if name not in _DATA_SOURCES:
         available = list(_DATA_SOURCES.keys())
         raise ValueError(f"Unknown data source: '{name}'. Available: {available}")
@@ -507,15 +492,7 @@ def get_data_source(name: str) -> DataSource:
 
 
 def list_data_sources(source_type: SourceType = None) -> List[str]:
-    """
-    Listet alle registrierten Datenquellen.
-
-    Args:
-        source_type: Optional - nur Quellen dieses Typs
-
-    Returns:
-        Liste von Namen
-    """
+    """Listet alle registrierten Datenquellen."""
     if source_type is None:
         return list(_DATA_SOURCES.keys())
     return [
@@ -530,12 +507,7 @@ def get_all_data_sources() -> Dict[str, DataSource]:
 
 
 def set_data_root(path: str | Path):
-    """
-    Setzt den Basis-Pfad für relative Daten-Pfade.
-
-    Args:
-        path: Neuer Basis-Pfad
-    """
+    """Setzt den Basis-Pfad für relative Daten-Pfade."""
     global DEFAULT_DATA_ROOT
     DEFAULT_DATA_ROOT = Path(path)
     log.info(f"Data root set to: {DEFAULT_DATA_ROOT}")
@@ -546,108 +518,8 @@ def get_data_root() -> Path:
     return DEFAULT_DATA_ROOT
 
 
-def _init_default_sources():
-    """Initialisiert die Standard-Datenquellen."""
-    root = DEFAULT_DATA_ROOT
-
-    # === CSV Quellen ===
-
-    # ForexSB - Forex Strategy Builder Daten
-    register_csv_source(
-        name="forexsb",
-        path=root / "forexsb",
-        file_pattern="{symbol}_{timeframe}.csv",
-        description="Forex Strategy Builder CSV exports",
-        timeframe_map={
-            "1H": "HOUR",
-            "H1": "HOUR",
-            "HOUR": "HOUR",
-            "15M": "MINUTE_15",
-            "M15": "MINUTE_15",
-            "MINUTE_15": "MINUTE_15",
-            "30M": "MINUTE_30",
-            "M30": "MINUTE_30",
-            "MINUTE_30": "MINUTE_30",
-        },
-    )
-
-    # Stooq - Stooq.com Daten
-    register_csv_source(
-        name="stooq",
-        path=root / "stooq",
-        file_pattern="{symbol}.csv",
-        description="Stooq.com historical data",
-    )
-
-    # Downloads - Manuell heruntergeladene Daten
-    register_csv_source(
-        name="downloads",
-        path=root / "downloads",
-        file_pattern="{symbol}.csv",
-        description="Manually downloaded data files",
-    )
-
-    # Yahoo - yfinance Daten
-    register_csv_source(
-        name="yahoo",
-        path=root / "yahoo",
-        file_pattern="{symbol}.csv",
-        description="Yahoo Finance data via yfinance",
-    )
-
-    # === REST API Quellen (Beispiele - API-Key muss gesetzt werden) ===
-
-    register_rest_source(
-        name="alphavantage",
-        base_url="https://www.alphavantage.co",
-        api_key_param="apikey",
-        endpoints={
-            "intraday": "query?function=TIME_SERIES_INTRADAY&symbol={symbol}&interval={timeframe}",
-            "daily": "query?function=TIME_SERIES_DAILY&symbol={symbol}",
-            "quote": "query?function=GLOBAL_QUOTE&symbol={symbol}",
-        },
-        rate_limit=12.0,  # 5 requests/minute = 12s zwischen Requests
-        description="Alpha Vantage API (free tier: 5 calls/min)",
-    )
-
-    register_rest_source(
-        name="polygon",
-        base_url="https://api.polygon.io",
-        api_key_param="apiKey",
-        endpoints={
-            "bars": "v2/aggs/ticker/{symbol}/range/{multiplier}/{timeframe}/{from}/{to}",
-            "quote": "v2/last/trade/{symbol}",
-        },
-        rate_limit=0.2,  # 5 requests/second
-        description="Polygon.io API",
-    )
-
-    # === WebSocket Quellen (Beispiele) ===
-
-    register_websocket_source(
-        name="binance_ws",
-        url="wss://stream.binance.com:9443/ws",
-        subscribe_message={
-            "method": "SUBSCRIBE",
-            "params": ["{symbol}@kline_{timeframe}"],
-            "id": 1,
-        },
-        description="Binance WebSocket Streams",
-    )
-
-    register_websocket_source(
-        name="finnhub_ws",
-        url="wss://ws.finnhub.io",
-        subscribe_message={
-            "type": "subscribe",
-            "symbol": "{symbol}",
-        },
-        description="Finnhub WebSocket (requires API key in URL)",
-    )
-
-
-# Initialisiere Standard-Quellen beim Import
-_init_default_sources()
+# Auto-discover sources from filesystem on import
+discover_sources(DEFAULT_DATA_ROOT)
 
 
 __all__ = [
@@ -660,11 +532,16 @@ __all__ = [
     "WebSocketSourceConfig",
     "DBSourceConfig",
     "DataSource",
+    # Serialization / persistence
+    "source_from_dict",
+    "save_source_config",
+    "discover_sources",
     # Registration
     "register_csv_source",
     "register_rest_source",
     "register_websocket_source",
     "register_db_source",
+    "delete_data_source",
     # Getters
     "get_data_source",
     "list_data_sources",
