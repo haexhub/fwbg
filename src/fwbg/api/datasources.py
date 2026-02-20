@@ -1,0 +1,243 @@
+"""REST API for data source management."""
+from pathlib import Path
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException, UploadFile, File
+from pydantic import BaseModel
+
+from fwbg.core.data_sources import (
+    _DATA_SOURCES,
+    CSVSourceConfig,
+    source_from_dict,
+    save_source_config,
+    delete_data_source,
+    get_data_root,
+)
+
+router = APIRouter()
+
+
+def _raw_dir(name: str) -> Path:
+    return get_data_root() / name / "raw"
+
+
+def _datasource_dir(name: str) -> Path:
+    """Datasource directory — uses the path from config for CSV, or data/{name}/datasource for others."""
+    source = _DATA_SOURCES.get(name)
+    if isinstance(source, CSVSourceConfig):
+        return source.path
+    return get_data_root() / name / "datasource"
+
+
+def _file_info(path: Path) -> dict:
+    stat = path.stat()
+    return {"name": path.name, "size": stat.st_size, "modified": stat.st_mtime}
+
+
+def _source_to_response(name: str) -> dict:
+    source = _DATA_SOURCES[name]
+    d = source.to_dict()
+
+    if isinstance(source, CSVSourceConfig):
+        ds_path = source.path
+        raw_path = _raw_dir(name)
+
+        files = []
+        if ds_path.exists():
+            files = [_file_info(f) for f in sorted(ds_path.glob("*.csv"))]
+
+        raw_files = []
+        if raw_path.exists():
+            raw_files = [_file_info(f) for f in sorted(raw_path.iterdir()) if f.is_file()]
+
+        d["files"] = files
+        d["file_count"] = len(files)
+        d["raw_files"] = raw_files
+        d["raw_file_count"] = len(raw_files)
+
+    return d
+
+
+# ── CRUD ──────────────────────────────────────────────────────────────────────
+
+@router.get("/datasources")
+def list_sources():
+    return [_source_to_response(name) for name in _DATA_SOURCES]
+
+
+@router.post("/datasources", status_code=201)
+def create_source(body: dict):
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if name in _DATA_SOURCES:
+        raise HTTPException(status_code=409, detail=f"Source already exists: {name}")
+
+    source_type = body.get("type")
+
+    if source_type == "csv":
+        # Auto-set path to data/{name}/datasource
+        root = get_data_root()
+        datasource_dir = root / name / "datasource"
+        raw_dir = root / name / "raw"
+        datasource_dir.mkdir(parents=True, exist_ok=True)
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        body["path"] = str(datasource_dir)
+    else:
+        # Non-CSV: just ensure the directory exists
+        (get_data_root() / name).mkdir(parents=True, exist_ok=True)
+
+    try:
+        source = source_from_dict(body)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    _DATA_SOURCES[name] = source
+    save_source_config(source)
+    return _source_to_response(name)
+
+
+@router.delete("/datasources/{name}", status_code=204)
+def remove_source(name: str):
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+
+    # Remove config.json (data files stay on disk)
+    config_path = get_data_root() / name / "config.json"
+    if config_path.exists():
+        config_path.unlink()
+
+    delete_data_source(name)
+
+
+# ── Raw files ─────────────────────────────────────────────────────────────────
+
+@router.get("/datasources/{name}/raw")
+def list_raw_files(name: str):
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+    raw_path = _raw_dir(name)
+    if not raw_path.exists():
+        return []
+    return [_file_info(f) for f in sorted(raw_path.iterdir()) if f.is_file()]
+
+
+@router.post("/datasources/{name}/raw", status_code=201)
+async def upload_raw_files(name: str, files: List[UploadFile] = File(...)):
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+    raw_path = _raw_dir(name)
+    raw_path.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for file in files:
+        dest = raw_path / file.filename
+        dest.write_bytes(await file.read())
+        saved.append(file.filename)
+    return {"saved": saved}
+
+
+@router.delete("/datasources/{name}/raw/{filename}", status_code=204)
+def delete_raw_file(name: str, filename: str):
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+    f = _raw_dir(name) / filename
+    if not f.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+    f.unlink()
+
+
+# ── Datasource files ──────────────────────────────────────────────────────────
+
+@router.get("/datasources/{name}/datasource")
+def list_datasource_files(name: str):
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+    ds_path = _datasource_dir(name)
+    if not ds_path.exists():
+        return []
+    return [_file_info(f) for f in sorted(ds_path.glob("*.csv"))]
+
+
+@router.delete("/datasources/{name}/datasource/{filename}", status_code=204)
+def delete_datasource_file(name: str, filename: str):
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+    f = _datasource_dir(name) / filename
+    if not f.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+    f.unlink()
+
+
+# ── ETL ───────────────────────────────────────────────────────────────────────
+
+@router.get("/datasources/{name}/raw/{filename}/preview")
+def preview_raw_file(name: str, filename: str, rows: int = 5):
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+    f = _raw_dir(name) / filename
+    if not f.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+    try:
+        import pandas as pd
+        df = pd.read_csv(f, nrows=rows + 1)
+        return {
+            "columns": list(df.columns),
+            "rows": df.head(rows).fillna("").values.tolist(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {e}")
+
+
+class ProcessRequest(BaseModel):
+    filename: str
+    symbol: str
+    timeframe: str
+    date_col: str
+    open_col: str
+    high_col: str
+    low_col: str
+    close_col: str
+    volume_col: Optional[str] = None
+
+
+@router.post("/datasources/{name}/process")
+def process_raw_file(name: str, req: ProcessRequest):
+    """ETL: read raw file with column mapping, write to datasource/SYMBOL_TIMEFRAME.csv."""
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+
+    raw_file = _raw_dir(name) / req.filename
+    if not raw_file.exists():
+        raise HTTPException(status_code=404, detail=f"Raw file not found: {req.filename}")
+
+    try:
+        import pandas as pd
+        df = pd.read_csv(raw_file)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {e}")
+
+    col_map = {
+        req.date_col: "DATE",
+        req.open_col: "OPEN",
+        req.high_col: "HIGH",
+        req.low_col: "LOW",
+        req.close_col: "CLOSE",
+    }
+    if req.volume_col:
+        col_map[req.volume_col] = "VOLUME"
+
+    for col in col_map:
+        if col not in df.columns:
+            raise HTTPException(status_code=400, detail=f"Column not found in file: {col!r}")
+
+    df = df[list(col_map.keys())].rename(columns=col_map)
+    df["DATE"] = pd.to_datetime(df["DATE"])
+    df = df.set_index("DATE").sort_index()
+
+    ds_path = _datasource_dir(name)
+    ds_path.mkdir(parents=True, exist_ok=True)
+
+    out_filename = f"{req.symbol}_{req.timeframe}.csv"
+    df.to_csv(ds_path / out_filename)
+
+    return {"output": out_filename, "rows": len(df)}
