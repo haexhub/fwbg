@@ -55,7 +55,6 @@ class AssetConfig:
     point_value: float = 0.0001
     sl_mult: float = 25.0
     tp_mult: float = 40.0
-    good_hours: List[int] = field(default_factory=lambda: list(range(8, 17)))
     dd_scaling: Dict[str, float] = field(default_factory=dict)
     ensemble: Dict[str, Any] = field(default_factory=dict)
 
@@ -70,7 +69,6 @@ class AssetConfig:
             point_value=data.get("point_value", 0.0001),
             sl_mult=data.get("sl_mult", 25.0),
             tp_mult=data.get("tp_mult", 40.0),
-            good_hours=data.get("good_hours", list(range(8, 17))),
             dd_scaling=data.get("dd_scaling", {}),
             ensemble=data.get("ensemble", {}),
         )
@@ -453,10 +451,6 @@ class TradingBot:
 
         # Verhindere mehrfache Signale pro Stunde
         if self.last_signal_hour.get(symbol) == current_hour:
-            return
-
-        # Prüfe good_hours
-        if now.hour not in cfg.good_hours:
             return
 
         try:
