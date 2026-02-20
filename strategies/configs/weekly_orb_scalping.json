@@ -1,0 +1,65 @@
+{
+  "name": "Weekly ORB Scalping",
+  "description": "Weekly Opening Range Breakout strategy. First 30-60 min of Monday define the weekly range. Breakouts and reloads to the WOR boundary are traded with ATR trailing stop.",
+  "tags": [
+    "weekly_orb",
+    "orb",
+    "intraday",
+    "swing",
+    "smart_money"
+  ],
+  "timeframe": "MINUTE_15",
+  "hypothesis": "Wöchentliche Opening Ranges werden von institutionellen Marktteilnehmern intensiv beobachtet. Breakouts über WOR High/Low haben höhere Continuation-Wahrscheinlichkeit als zufällige Intraday-Breakouts, da der akkumulierte Wochenend-Orderflow eine klare Richtungsentscheidung darstellt.",
+  "expected_outcome": "WOR-Features dominieren die Feature Selection. Stärkerer Edge als täglicher ORB auf wöchentlicher Basis, da mehr Marktteilnehmer diese Level beobachten. Besonders stark auf Indices und FX Majors.",
+  "pipeline": "weekly_orb",
+  "exit_strategy": "atr_trailing",
+  "exit_params": "atr_intraday_at",
+  "model": "xgboost_depth6",
+  "validation": "walk_forward_intraday",
+  "filters": "weekly_orb",
+  "resources": "standard",
+  "grids": {
+    "presets_dir": "../grids",
+    "assignments": {
+      "FOREX": {
+        "preset": "weekly_orb_forex",
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          4.0,
+          5.0
+        ]
+      },
+      "INDEX": {
+        "preset": "weekly_orb_index",
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0,
+          10.0
+        ]
+      },
+      "COMMODITY": {
+        "preset": "weekly_orb_base",
+        "tp": [
+          2.5,
+          3.0,
+          4.0,
+          5.0
+        ]
+      },
+      "CRYPTO": {
+        "preset": "weekly_orb_crypto",
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ]
+      }
+    }
+  }
+}
