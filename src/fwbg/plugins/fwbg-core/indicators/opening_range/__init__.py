@@ -7,6 +7,10 @@ Berechnet Features basierend auf dem Opening Range Konzept:
 - Statistik: Durchschnittliche Range, Breakout-Rate, Continuation-Rate
 
 Timeframe-Kompatibilität: Intraday (M1-H4). Auf DAY-Bars → NaN.
+
+range_bars akzeptiert int oder List[int]. Bei einer Liste werden für jeden
+Wert eigene Feature-Spalten mit Präfix rb{n}_ generiert, z.B. rb1_orb_range
+und rb2_orb_range. Das erlaubt dem ML-Modell, beide Varianten zu vergleichen.
 """
 from typing import Dict, List, Union
 
@@ -184,7 +188,7 @@ class OpeningRangeIndicator(BaseIndicator):
     def compute(
         self,
         df: pd.DataFrame,
-        range_bars: int = 1,
+        range_bars: Union[int, List[int]] = 1,
         atr_period: int = 14,
         sessions: List[int] = None,
         stat_window: int = 20,
@@ -204,16 +208,25 @@ class OpeningRangeIndicator(BaseIndicator):
                 return df
 
         if sessions is None:
-            sessions = [0, 8, 13, 14]
+            sessions = [8, 9, 14, 15]
+
+        # Normalisiere range_bars zu einer Liste
+        rb_list = [range_bars] if isinstance(range_bars, int) else list(range_bars)
+        use_prefix = len(rb_list) > 1
 
         features: Dict[str, Union[pd.Series, np.ndarray]] = {}
         atr = _compute_atr(df, atr_period)
 
-        if enable_rolling:
-            features.update(_rolling_orb_features(df, range_bars, atr))
+        for rb in rb_list:
+            pfx = f"rb{rb}_" if use_prefix else ""
 
-        if enable_session:
-            features.update(_session_orb_features(df, sessions, range_bars, atr))
+            if enable_rolling:
+                rolling = _rolling_orb_features(df, rb, atr)
+                features.update({f"{pfx}{k}": v for k, v in rolling.items()})
+
+            if enable_session:
+                session = _session_orb_features(df, sessions, rb, atr)
+                features.update({f"{pfx}{k}": v for k, v in session.items()})
 
         if enable_stats:
             features.update(_stat_features(df, stat_window))
@@ -225,21 +238,19 @@ class OpeningRangeIndicator(BaseIndicator):
         return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self) -> List[str]:
-        # Rolling
+        # Für den Default-Fall (range_bars=1, kein Präfix)
         rolling = [
             "orb_range", "orb_position", "orb_breakout_up",
             "orb_breakout_down", "orb_range_vs_atr",
         ]
-        # Session (default sessions)
         session = []
-        for h in [0, 8, 13, 14]:
-            prefix = f"orb_s{h:02d}"
+        for h in [8, 9, 14, 15]:
+            pfx = f"orb_s{h:02d}"
             session.extend([
-                f"{prefix}_range", f"{prefix}_position",
-                f"{prefix}_breakout_up", f"{prefix}_breakout_down",
-                f"{prefix}_range_vs_atr",
+                f"{pfx}_range", f"{pfx}_position",
+                f"{pfx}_breakout_up", f"{pfx}_breakout_down",
+                f"{pfx}_range_vs_atr",
             ])
-        # Stats
         stats = [
             "orb_stat_avg_range", "orb_stat_breakout_rate",
             "orb_stat_continuation_rate",
@@ -248,9 +259,9 @@ class OpeningRangeIndicator(BaseIndicator):
 
     def get_signal_columns(self) -> List[str]:
         signals = ["orb_breakout_up", "orb_breakout_down"]
-        for h in [0, 8, 13, 14]:
-            prefix = f"orb_s{h:02d}"
-            signals.extend([f"{prefix}_breakout_up", f"{prefix}_breakout_down"])
+        for h in [8, 9, 14, 15]:
+            pfx = f"orb_s{h:02d}"
+            signals.extend([f"{pfx}_breakout_up", f"{pfx}_breakout_down"])
         return signals
 
     @classmethod
@@ -258,7 +269,7 @@ class OpeningRangeIndicator(BaseIndicator):
         return {
             "range_bars": 1,
             "atr_period": 14,
-            "sessions": [0, 8, 13, 14],
+            "sessions": [8, 9, 14, 15],
             "stat_window": 20,
             "enable_rolling": True,
             "enable_session": True,
@@ -269,9 +280,9 @@ class OpeningRangeIndicator(BaseIndicator):
     def get_param_schema(cls) -> dict:
         return {
             "range_bars": {
-                "type": "int",
+                "type": "int | list[int]",
                 "default": 1,
-                "description": "Number of bars defining the opening range after each hour boundary. At M15: 1 bar = 15min range, 2 bars = 30min range. At M5: 1 bar = 5min range. Controls the trade-off between range stability and early signal.",
+                "description": "Number of bars defining the opening range after each hour boundary. At M15: 1 bar = 15min range, 2 bars = 30min range. At M5: 1 bar = 5min range. Can be a list (e.g. [1, 2]) to compute features for multiple range sizes simultaneously — each size gets its own prefixed columns (rb1_orb_*, rb2_orb_*) so the ML model can select the better variant.",
                 "min": 1,
                 "max": 12,
                 "step": 1,
@@ -286,8 +297,8 @@ class OpeningRangeIndicator(BaseIndicator):
             },
             "sessions": {
                 "type": "list[int]",
-                "default": [0, 8, 13, 14],
-                "description": "UTC hours for session-specific ORB features. Default: 0 (Asia/Tokyo), 8 (London), 13 (NY pre-market), 14 (NY open). Each session produces 5 features that persist until the next occurrence of that session hour.",
+                "default": [8, 9, 14, 15],
+                "description": "Data-local hours for session-specific ORB features. Default: 8/9 (DAX pre-open + Xetra open), 14/15 (US pre-market + NY open). Each session produces 5 features that persist until the next occurrence of that session hour.",
                 "min": 0,
                 "max": 23,
             },

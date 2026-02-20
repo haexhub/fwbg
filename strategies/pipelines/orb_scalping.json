@@ -3,13 +3,13 @@
     {
       "name": "opening_range",
       "params": {
-        "range_bars": 1,
+        "range_bars": [1, 2],
         "atr_period": 14,
         "sessions": [
-          0,
           8,
-          13,
-          14
+          9,
+          14,
+          15
         ],
         "stat_window": 20,
         "enable_rolling": true,
