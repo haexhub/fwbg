@@ -517,12 +517,12 @@ def run_optimizer(
         p_value = mc_stats.get("p_value", 1.0)
         fold_stability = e.get("fold_stability", 0)
 
-        # Filter aus Strategy-Config oder Defaults
-        strat_filters = strategy_metadata.get("filters", {}) if strategy_metadata else {}
-        MIN_ANNUAL_RETURN = strat_filters.get("min_annual_return", 10.0)
-        MIN_SHARPE = strat_filters.get("min_sharpe", 0.0)
-        MAX_DRAWDOWN = strat_filters.get("max_drawdown", 1.0)
-        MIN_FOLD_STABILITY = strat_filters.get("min_fold_stability", 0.5)
+        # Filter aus Strategy-Config (bereits durch StrategyConfig.from_dict aufgelöst)
+        f = strategy.filters
+        MIN_ANNUAL_RETURN = f.min_annual_return
+        MIN_SHARPE = f.min_sharpe
+        MAX_DRAWDOWN = f.max_drawdown
+        MIN_FOLD_STABILITY = f.min_fold_stability
         is_profitable = (
             sharpe >= MIN_SHARPE
             and annual_return >= MIN_ANNUAL_RETURN
