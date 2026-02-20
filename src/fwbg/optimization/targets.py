@@ -3,6 +3,7 @@ Target computation, trade simulation, and validation evaluation.
 
 Extracted from nested_cv.py for modularity (keeping files under 600 lines).
 """
+
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional, TYPE_CHECKING
@@ -24,9 +25,7 @@ def _resolve_distances(df: pd.DataFrame, tp: float, sl: float, ctx: SimulationCo
 
 
 def _validate_targets(
-    targets_long: np.ndarray,
-    targets_short: np.ndarray,
-    ctx: SimulationContext
+    targets_long: np.ndarray, targets_short: np.ndarray, ctx: SimulationContext
 ) -> Tuple[bool, bool]:
     """
     Prüft ob genug Targets für Long/Short vorhanden sind.
@@ -87,7 +86,11 @@ def _simulate_trades_core(
     cls = df["C"].values
     hgh = df["H"].values
     low = df["L"].values
-    regime = df["_regime"].values if "_regime" in df.columns else np.full(len(df), 7, dtype=np.int8)
+    regime = (
+        df["_regime"].values
+        if "_regime" in df.columns
+        else np.full(len(df), 7, dtype=np.int8)
+    )
     timestamps = df.index.values
     has_rv = "vol_rv_20" in df.columns
     rv_values = df["vol_rv_20"].values if has_rv else None
@@ -107,18 +110,36 @@ def _simulate_trades_core(
         direction = None
         # Long-Check: regime bitmask must have REGIME_LONG bit set
         if direction_filter in (None, 1):
-            if regime[i] & REGIME_LONG and ctx.long_enabled and probs_long is not None and probs_long[i, long_win_idx] >= ct_long:
+            if (
+                regime[i] & REGIME_LONG
+                and ctx.long_enabled
+                and probs_long is not None
+                and probs_long[i, long_win_idx] >= ct_long
+            ):
                 direction = 1
         # Short-Check: regime bitmask must have REGIME_SHORT bit set
         if direction is None and direction_filter in (None, -1):
-            if regime[i] & REGIME_SHORT and ctx.short_enabled and probs_short is not None and probs_short[i, short_win_idx] >= ct_short:
+            if (
+                regime[i] & REGIME_SHORT
+                and ctx.short_enabled
+                and probs_short is not None
+                and probs_short[i, short_win_idx] >= ct_short
+            ):
                 direction = -1
 
         if direction:
             trade = simulate_pro_trade(
-                cls, hgh, low, i, direction,
-                tp_dists[i], sl_dists[i], ctx.spread,
-                timestamps=timestamps, symbol=ctx.symbol, opens=opn,
+                cls,
+                hgh,
+                low,
+                i,
+                direction,
+                tp_dists[i],
+                sl_dists[i],
+                ctx.spread,
+                timestamps=timestamps,
+                symbol=ctx.symbol,
+                opens=opn,
                 max_bars=ctx.max_trade_bars,
                 timeout_bars=timeout_bars,
             )
@@ -157,8 +178,18 @@ def simulate_trades_sequential(
 ) -> Dict[str, Any]:
     """Simuliert Trades sequentiell mit gleichem CT für Long/Short."""
     return _simulate_trades_core(
-        df, probs_long, probs_short, long_win_idx, short_win_idx,
-        ct, ct, tp, sl, ctx, return_detailed, timeout_bars
+        df,
+        probs_long,
+        probs_short,
+        long_win_idx,
+        short_win_idx,
+        ct,
+        ct,
+        tp,
+        sl,
+        ctx,
+        return_detailed,
+        timeout_bars,
     )
 
 
@@ -176,13 +207,35 @@ def _simulate_single_direction(
     """Simuliert Trades für eine einzelne Richtung (Long oder Short)."""
     if direction == 1:
         return _simulate_trades_core(
-            df, probs, None, win_idx, None,
-            ct, 0.0, tp, sl, ctx, False, timeout_bars, direction_filter=1
+            df,
+            probs,
+            None,
+            win_idx,
+            None,
+            ct,
+            0.0,
+            tp,
+            sl,
+            ctx,
+            False,
+            timeout_bars,
+            direction_filter=1,
         )
     else:
         return _simulate_trades_core(
-            df, None, probs, None, win_idx,
-            0.0, ct, tp, sl, ctx, False, timeout_bars, direction_filter=-1
+            df,
+            None,
+            probs,
+            None,
+            win_idx,
+            0.0,
+            ct,
+            tp,
+            sl,
+            ctx,
+            False,
+            timeout_bars,
+            direction_filter=-1,
         )
 
 
@@ -202,17 +255,23 @@ def simulate_trades_sequential_separate_ct(
 ) -> Dict[str, Any]:
     """Simuliert Trades mit separaten CT-Thresholds für Long und Short."""
     return _simulate_trades_core(
-        df, probs_long, probs_short, long_win_idx, short_win_idx,
-        ct_long, ct_short, tp, sl, ctx, return_detailed, timeout_bars
+        df,
+        probs_long,
+        probs_short,
+        long_win_idx,
+        short_win_idx,
+        ct_long,
+        ct_short,
+        tp,
+        sl,
+        ctx,
+        return_detailed,
+        timeout_bars,
     )
 
 
 def compute_targets(
-    df: pd.DataFrame,
-    tp: int,
-    sl: int,
-    ctx: SimulationContext,
-    timeout_bars: int = None
+    df: pd.DataFrame, tp: int, sl: int, ctx: SimulationContext, timeout_bars: int = None
 ) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
     """
     Berechnet Long/Short Targets für einen DataFrame.
@@ -230,7 +289,11 @@ def compute_targets(
         (targets_long, targets_short, has_long, has_short)
     """
     result = compute_targets_cached(
-        df, tp, sl, ctx, timeout_bars,
+        df,
+        tp,
+        sl,
+        ctx,
+        timeout_bars,
         exit_strategy_mode=ctx.exit_strategy,
     )
     targets_long, targets_short = result[0], result[1]
@@ -272,7 +335,7 @@ def compute_targets_cached(
     exit_strategy = exit_strategy_class()
 
     extra = {}
-    if hasattr(ctx, 'exit_params') and ctx.exit_params:
+    if hasattr(ctx, "exit_params") and ctx.exit_params:
         extra = ctx.exit_params.copy()
 
     if grid_params is None:
@@ -293,7 +356,7 @@ def slice_targets_for_fold(
     full_targets_short: np.ndarray,
     full_df: pd.DataFrame,
     fold_df: pd.DataFrame,
-    ctx: SimulationContext
+    ctx: SimulationContext,
 ) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
     """
     Extrahiert Targets für einen bestimmten Fold aus gecachten Gesamt-Targets.
@@ -356,15 +419,13 @@ def slice_targets_for_fold(
 
 
 def _get_probs(
-    model: Optional["BaseModel"],
-    df: pd.DataFrame,
-    features: Optional[List[str]]
+    model: Optional["BaseModel"], df: pd.DataFrame, features: Optional[List[str]]
 ) -> Tuple[Optional[np.ndarray], Optional[int]]:
     """Berechnet Wahrscheinlichkeiten für ein Modell."""
     if not features or model is None:
         return None, None
     X = df[features].copy()
-    X_vals = X.values
+    X_vals = X.values.copy()
     inf_mask = np.isinf(X_vals)
     if inf_mask.any():
         X_vals[inf_mask] = np.nan
@@ -452,37 +513,74 @@ def evaluate_on_validation(
 
     # Meta-Labeling: filter predictions via meta-model
     if meta_mod_long is not None and probs_long is not None:
-        probs_long = _apply_meta_filter(val_df, probs_long, long_win_idx, features_long, meta_mod_long)
+        probs_long = _apply_meta_filter(
+            val_df, probs_long, long_win_idx, features_long, meta_mod_long
+        )
     if meta_mod_short is not None and probs_short is not None:
-        probs_short = _apply_meta_filter(val_df, probs_short, short_win_idx, features_short, meta_mod_short)
+        probs_short = _apply_meta_filter(
+            val_df, probs_short, short_win_idx, features_short, meta_mod_short
+        )
 
     # Probability Calibration: EV-optimal threshold replaces CT grid
     if ctx.probability_calibration:
         ct_ev = sl / (tp + sl)
         if ctx.separate_long_short:
             result = simulate_trades_sequential_separate_ct(
-                val_df, probs_long, probs_short, long_win_idx, short_win_idx,
-                ct_ev, ct_ev, tp, sl, ctx, return_detailed=False,
+                val_df,
+                probs_long,
+                probs_short,
+                long_win_idx,
+                short_win_idx,
+                ct_ev,
+                ct_ev,
+                tp,
+                sl,
+                ctx,
+                return_detailed=False,
                 timeout_bars=timeout_bars,
             )
             trades = result["trades"]
-            pnl = sum(t["pnl_raw"] for t in trades) if len(trades) >= 10 else float("-inf")
+            pnl = (
+                sum(t["pnl_raw"] for t in trades)
+                if len(trades) >= 10
+                else float("-inf")
+            )
             best_ct = (ct_ev, ct_ev)
         else:
             result = simulate_trades_sequential(
-                val_df, probs_long, probs_short, long_win_idx, short_win_idx,
-                ct_ev, tp, sl, ctx, return_detailed=False, timeout_bars=timeout_bars,
+                val_df,
+                probs_long,
+                probs_short,
+                long_win_idx,
+                short_win_idx,
+                ct_ev,
+                tp,
+                sl,
+                ctx,
+                return_detailed=False,
+                timeout_bars=timeout_bars,
             )
             trades = result["trades"]
-            pnl = sum(t["pnl_raw"] for t in trades) if len(trades) >= 10 else float("-inf")
+            pnl = (
+                sum(t["pnl_raw"] for t in trades)
+                if len(trades) >= 10
+                else float("-inf")
+            )
             best_ct = ct_ev
         return best_ct, pnl, {ct_ev: trades}
 
     # Separate CT-Optimierung wenn aktiviert
     if ctx.separate_long_short:
         return _evaluate_separate_ct(
-            val_df, probs_long, probs_short, long_win_idx, short_win_idx,
-            tp, sl, ctx, timeout_bars
+            val_df,
+            probs_long,
+            probs_short,
+            long_win_idx,
+            short_win_idx,
+            tp,
+            sl,
+            ctx,
+            timeout_bars,
         )
 
     # Standard: Gemeinsamer CT für Long und Short
@@ -491,8 +589,17 @@ def evaluate_on_validation(
     trades_by_ct = {}
     for ct in ctx.grid_ct:
         result = simulate_trades_sequential(
-            val_df, probs_long, probs_short, long_win_idx, short_win_idx,
-            ct, tp, sl, ctx, return_detailed=False, timeout_bars=timeout_bars
+            val_df,
+            probs_long,
+            probs_short,
+            long_win_idx,
+            short_win_idx,
+            ct,
+            tp,
+            sl,
+            ctx,
+            return_detailed=False,
+            timeout_bars=timeout_bars,
         )
         trades_by_ct[ct] = result["trades"]
 
@@ -542,8 +649,15 @@ def _optimize_ct_for_direction(
     trades_by_ct = {}
     for ct in ct_values:
         result = _simulate_single_direction(
-            val_df, probs, win_idx, ct, tp, sl, ctx,
-            direction=direction, timeout_bars=timeout_bars
+            val_df,
+            probs,
+            win_idx,
+            ct,
+            tp,
+            sl,
+            ctx,
+            direction=direction,
+            timeout_bars=timeout_bars,
         )
         trades_by_ct[ct] = result["trades"]
 
@@ -598,8 +712,15 @@ def _evaluate_separate_ct(
     best_ct_long, best_pnl_long, long_trades_by_ct = None, float("-inf"), {}
     if ctx.long_enabled and probs_long is not None:
         best_ct_long, best_pnl_long, long_trades_by_ct = _optimize_ct_for_direction(
-            val_df, probs_long, long_win_idx, long_cts, tp, sl, ctx,
-            direction=1, timeout_bars=timeout_bars
+            val_df,
+            probs_long,
+            long_win_idx,
+            long_cts,
+            tp,
+            sl,
+            ctx,
+            direction=1,
+            timeout_bars=timeout_bars,
         )
         trades_info["long"] = long_trades_by_ct
 
@@ -607,8 +728,15 @@ def _evaluate_separate_ct(
     best_ct_short, best_pnl_short, short_trades_by_ct = None, float("-inf"), {}
     if ctx.short_enabled and probs_short is not None:
         best_ct_short, best_pnl_short, short_trades_by_ct = _optimize_ct_for_direction(
-            val_df, probs_short, short_win_idx, short_cts, tp, sl, ctx,
-            direction=-1, timeout_bars=timeout_bars
+            val_df,
+            probs_short,
+            short_win_idx,
+            short_cts,
+            tp,
+            sl,
+            ctx,
+            direction=-1,
+            timeout_bars=timeout_bars,
         )
         trades_info["short"] = short_trades_by_ct
 
@@ -627,12 +755,25 @@ def _evaluate_separate_ct(
     # Kombinierter PnL (für Vergleich mit anderen Grid-Kombinationen)
     # Simuliere einmal mit den optimalen CTs um echten kombinierten PnL zu bekommen
     combined_result = simulate_trades_sequential_separate_ct(
-        val_df, probs_long, probs_short, long_win_idx, short_win_idx,
-        best_ct_long, best_ct_short, tp, sl, ctx, return_detailed=False,
-        timeout_bars=timeout_bars
+        val_df,
+        probs_long,
+        probs_short,
+        long_win_idx,
+        short_win_idx,
+        best_ct_long,
+        best_ct_short,
+        tp,
+        sl,
+        ctx,
+        return_detailed=False,
+        timeout_bars=timeout_bars,
     )
     combined_trades = combined_result["trades"]
-    combined_pnl = sum(t["pnl_raw"] for t in combined_trades) if len(combined_trades) >= 10 else float("-inf")
+    combined_pnl = (
+        sum(t["pnl_raw"] for t in combined_trades)
+        if len(combined_trades) >= 10
+        else float("-inf")
+    )
 
     trades_info["combined"] = {
         "ct_long": best_ct_long,
