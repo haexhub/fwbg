@@ -5,7 +5,12 @@
       "params": {
         "auto_d": false,
         "default_d": 0.4,
-        "columns": ["O", "H", "L", "C"]
+        "columns": [
+          "O",
+          "H",
+          "L",
+          "C"
+        ]
       }
     }
   ],
@@ -13,12 +18,33 @@
     {
       "name": "trend",
       "params": {
-        "adx_periods": [7, 14, 21],
-        "ema_periods": [8, 21, 50, 100, 200],
-        "sma_periods": [20, 50, 200],
-        "cci_periods": [14, 20],
+        "adx_periods": [
+          7,
+          14,
+          21
+        ],
+        "ema_periods": [
+          8,
+          21,
+          50,
+          100,
+          200
+        ],
+        "sma_periods": [
+          20,
+          50,
+          200
+        ],
+        "cci_periods": [
+          14,
+          20
+        ],
         "aroon_period": 25,
-        "er_periods": [10, 20, 50],
+        "er_periods": [
+          10,
+          20,
+          50
+        ],
         "supertrend_period": 14,
         "supertrend_multiplier": 3
       }
@@ -26,47 +52,116 @@
     {
       "name": "momentum",
       "params": {
-        "rsi_periods": [7, 14, 21],
-        "stoch_periods": [14, 21],
-        "williams_periods": [14, 21],
-        "roc_periods": [5, 10, 20]
+        "rsi_periods": [
+          7,
+          14,
+          21
+        ],
+        "stoch_periods": [
+          14,
+          21
+        ],
+        "williams_periods": [
+          14,
+          21
+        ],
+        "roc_periods": [
+          5,
+          10,
+          20
+        ]
       }
     },
     {
       "name": "volatility",
       "params": {
-        "bb_periods": [20],
-        "atr_periods": [7, 14, 21],
-        "vol_est_windows": [20, 50]
+        "bb_periods": [
+          20
+        ],
+        "atr_periods": [
+          7,
+          14,
+          21
+        ],
+        "vol_est_windows": [
+          20,
+          50
+        ]
       }
     },
     {
       "name": "regime",
       "params": {
-        "hurst_windows": [100, 200, 500],
+        "hurst_windows": [
+          100,
+          200,
+          500
+        ],
         "step": 10,
-        "entropy_windows": [50, 100],
-        "vr_windows": [100, 200],
-        "vr_lags": [5, 10]
+        "entropy_windows": [
+          50,
+          100
+        ],
+        "vr_windows": [
+          100,
+          200
+        ],
+        "vr_lags": [
+          5,
+          10
+        ]
       }
     },
     {
       "name": "structure",
       "params": {
-        "fft_windows": [64, 128, 256],
-        "path_windows": [10, 20, 50, 100],
-        "convexity_periods": [21, 50],
-        "event_periods": [20, 50],
-        "vwap_windows": [20, 50, 100]
+        "fft_windows": [
+          64,
+          128,
+          256
+        ],
+        "path_windows": [
+          10,
+          20,
+          50,
+          100
+        ],
+        "convexity_periods": [
+          21,
+          50
+        ],
+        "event_periods": [
+          20,
+          50
+        ],
+        "vwap_windows": [
+          20,
+          50,
+          100
+        ]
       }
     },
     {
       "name": "risk",
       "params": {
-        "dd_windows": [50, 100, 200],
-        "cvar_windows": [50, 100],
-        "cvar_percentiles": [5, 1],
-        "vov_windows": [20, 50, 100],
+        "dd_windows": [
+          50,
+          100,
+          200
+        ],
+        "cvar_windows": [
+          50,
+          100
+        ],
+        "cvar_percentiles": [
+          5,
+          1
+        ],
+        "vov_windows": [
+          20,
+          50,
+          100
+        ],
         "compute_correlations": true
       }
     },
@@ -87,7 +182,11 @@
     {
       "name": "distribution",
       "params": {
-        "windows": [20, 50, 100],
+        "windows": [
+          20,
+          50,
+          100
+        ],
         "z_score_lookback": 200,
         "compute_changes": true
       }
@@ -95,8 +194,17 @@
     {
       "name": "dynamics",
       "params": {
-        "lookbacks": [4, 8, 24],
-        "lag_periods": [4, 8, 24, 48]
+        "lookbacks": [
+          4,
+          8,
+          24
+        ],
+        "lag_periods": [
+          4,
+          8,
+          24,
+          48
+        ]
       }
     },
     {
@@ -104,7 +212,10 @@
       "params": {
         "h4_bars": 4,
         "d1_bars": 24,
-        "ema_periods": [20, 50]
+        "ema_periods": [
+          20,
+          50
+        ]
       }
     },
     {
@@ -176,7 +287,11 @@
     {
       "name": "fractal_dimension",
       "params": {
-        "windows": [50, 100, 200],
+        "windows": [
+          50,
+          100,
+          200
+        ],
         "k_max": 10
       }
     },
@@ -185,7 +300,11 @@
       "params": {
         "wavelet": "db4",
         "levels": 3,
-        "windows": [20, 50, 100]
+        "windows": [
+          20,
+          50,
+          100
+        ]
       }
     },
     {
@@ -197,14 +316,20 @@
     {
       "name": "topological_features",
       "params": {
-        "windows": [50, 100],
+        "windows": [
+          50,
+          100
+        ],
         "embedding_dim": 3
       }
     },
     {
       "name": "adversarial_validation",
       "params": {
-        "windows": [100, 200],
+        "windows": [
+          100,
+          200
+        ],
         "step": 10
       }
     }
@@ -235,12 +360,10 @@
   ],
   "data_loading": [
     {
-      "name": "macro_data",
-      "source": "forexsb"
+      "name": "macro_data"
     },
     {
-      "name": "cot_positioning",
-      "source": "forexsb"
+      "name": "cot_positioning"
     }
   ]
 }

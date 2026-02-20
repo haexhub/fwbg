@@ -456,6 +456,9 @@ class StrategyConfig:
     resources: ResourceConfig = field(default_factory=ResourceConfig)
     regime_filter: RegimeFilterConfig = field(default_factory=RegimeFilterConfig)
 
+    # Default data source name for data_loading pipeline entries without explicit source
+    datasource: Optional[str] = None
+
     # Timeframe override (None = use TIMEFRAME env var)
     timeframe: Optional[str] = None
 
@@ -494,6 +497,7 @@ class StrategyConfig:
             filters=FilterConfig.from_dict(filters_data),
             resources=ResourceConfig.from_dict(resources_data),
             regime_filter=RegimeFilterConfig.from_dict(data.get("regime_filter")),
+            datasource=data.get("datasource"),
             timeframe=data.get("timeframe"),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
@@ -521,8 +525,19 @@ class StrategyConfig:
         return GridConfig()
 
     def get_data_loading(self) -> List[Dict[str, Any]]:
-        """Returns configured data loading plugins from pipeline."""
-        return self.pipeline.get("data_loading", [])
+        """Returns configured data loading plugins from pipeline.
+
+        Entries without an explicit 'source' inherit self.datasource.
+        """
+        entries = self.pipeline.get("data_loading", [])
+        if not self.datasource:
+            return entries
+        result = []
+        for entry in entries:
+            if not entry.get("source"):
+                entry = {**entry, "source": self.datasource}
+            result.append(entry)
+        return result
 
     def get_indicators(self) -> List[Dict[str, Any]]:
         """Returns configured indicator plugins from pipeline."""

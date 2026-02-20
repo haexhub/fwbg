@@ -5,7 +5,12 @@
       "params": {
         "range_bars": 1,
         "atr_period": 14,
-        "sessions": [0, 8, 13, 14],
+        "sessions": [
+          0,
+          8,
+          13,
+          14
+        ],
         "stat_window": 20,
         "enable_rolling": true,
         "enable_session": true,
@@ -15,12 +20,33 @@
     {
       "name": "trend",
       "params": {
-        "adx_periods": [7, 14, 21],
-        "ema_periods": [8, 21, 50, 100, 200],
-        "sma_periods": [20, 50, 200],
-        "cci_periods": [14, 20],
+        "adx_periods": [
+          7,
+          14,
+          21
+        ],
+        "ema_periods": [
+          8,
+          21,
+          50,
+          100,
+          200
+        ],
+        "sma_periods": [
+          20,
+          50,
+          200
+        ],
+        "cci_periods": [
+          14,
+          20
+        ],
         "aroon_period": 25,
-        "er_periods": [10, 20, 50],
+        "er_periods": [
+          10,
+          20,
+          50
+        ],
         "supertrend_period": 14,
         "supertrend_multiplier": 3.0
       }
@@ -28,17 +54,38 @@
     {
       "name": "momentum",
       "params": {
-        "rsi_periods": [7, 14, 21],
-        "stoch_periods": [14, 21],
-        "williams_periods": [14, 21],
-        "roc_periods": [5, 10, 20]
+        "rsi_periods": [
+          7,
+          14,
+          21
+        ],
+        "stoch_periods": [
+          14,
+          21
+        ],
+        "williams_periods": [
+          14,
+          21
+        ],
+        "roc_periods": [
+          5,
+          10,
+          20
+        ]
       }
     },
     {
       "name": "volatility",
       "params": {
-        "atr_periods": [7, 14, 21],
-        "vol_est_windows": [20, 50]
+        "atr_periods": [
+          7,
+          14,
+          21
+        ],
+        "vol_est_windows": [
+          20,
+          50
+        ]
       }
     },
     {
@@ -75,8 +122,7 @@
   ],
   "data_loading": [
     {
-      "name": "macro_data",
-      "source": "forexsb"
+      "name": "macro_data"
     }
   ]
 }

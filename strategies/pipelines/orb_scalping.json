@@ -5,7 +5,12 @@
       "params": {
         "range_bars": 1,
         "atr_period": 14,
-        "sessions": [0, 8, 13, 14],
+        "sessions": [
+          0,
+          8,
+          13,
+          14
+        ],
         "stat_window": 20,
         "enable_rolling": true,
         "enable_session": true,
@@ -49,12 +54,27 @@
     {
       "name": "trend",
       "params": {
-        "adx_periods": [7, 14],
-        "ema_periods": [8, 21, 50],
-        "sma_periods": [20, 50],
-        "cci_periods": [14],
+        "adx_periods": [
+          7,
+          14
+        ],
+        "ema_periods": [
+          8,
+          21,
+          50
+        ],
+        "sma_periods": [
+          20,
+          50
+        ],
+        "cci_periods": [
+          14
+        ],
         "aroon_period": 25,
-        "er_periods": [10, 20],
+        "er_periods": [
+          10,
+          20
+        ],
         "supertrend_period": 14,
         "supertrend_multiplier": 3.0
       }
@@ -62,17 +82,32 @@
     {
       "name": "momentum",
       "params": {
-        "rsi_periods": [7, 14],
-        "stoch_periods": [14],
-        "williams_periods": [14],
-        "roc_periods": [5, 10]
+        "rsi_periods": [
+          7,
+          14
+        ],
+        "stoch_periods": [
+          14
+        ],
+        "williams_periods": [
+          14
+        ],
+        "roc_periods": [
+          5,
+          10
+        ]
       }
     },
     {
       "name": "volatility",
       "params": {
-        "atr_periods": [7, 14],
-        "vol_est_windows": [20]
+        "atr_periods": [
+          7,
+          14
+        ],
+        "vol_est_windows": [
+          20
+        ]
       }
     },
     {
@@ -123,8 +158,7 @@
   ],
   "data_loading": [
     {
-      "name": "macro_data",
-      "source": "forexsb"
+      "name": "macro_data"
     }
   ]
 }

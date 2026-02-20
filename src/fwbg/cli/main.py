@@ -430,7 +430,7 @@ def run_optimizer(
 
     # Stats ausgeben
     stats = pool_manager.get_status()
-    print(f"\nPeak Workers: {stats['peak_workers']}, RAM-Throttles: {stats['ram_throttle_count']}")
+    print(f"\nPeak Workers: {stats['peak_workers']}")
 
     # Trenne erfolgreiche von fehlgeschlagenen Ergebnissen
     all_results = raw_results

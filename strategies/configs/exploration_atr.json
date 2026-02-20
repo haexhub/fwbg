@@ -1,6 +1,6 @@
 {
   "name": "Exploration ATR",
-  "description": "Maximale Feature-Exploration mit ATR-basierter dynamischer Exit-Strategie - TP/SL passen sich der Volatilit\u00e4t an",
+  "description": "Maximale Feature-Exploration mit ATR-basierter dynamischer Exit-Strategie - TP/SL passen sich der Volatilität an",
   "tags": [
     "exploration",
     "parameter_search",
@@ -9,8 +9,8 @@
     "atr_based",
     "dynamic_exits"
   ],
-  "hypothesis": "ATR-basierte dynamische TP/SL bieten bessere Anpassung an Marktvolatilit\u00e4t als fixe Spread-Multiplikatoren. ML lernt optimale ATR-Multiplikatoren f\u00fcr verschiedene Marktregime.",
-  "expected_outcome": "H\u00f6here Risk-Adjusted Returns durch volatilit\u00e4ts-angepasste Exits. Bessere Performance in verschiedenen Volatilit\u00e4tsregimen.",
+  "hypothesis": "ATR-basierte dynamische TP/SL bieten bessere Anpassung an Marktvolatilität als fixe Spread-Multiplikatoren. ML lernt optimale ATR-Multiplikatoren für verschiedene Marktregime.",
+  "expected_outcome": "Höhere Risk-Adjusted Returns durch volatilitäts-angepasste Exits. Bessere Performance in verschiedenen Volatilitätsregimen.",
   "pipeline": "exploration_full_atr",
   "exit_strategy": "atr_based",
   "exit_params": "atr_standard_at",
@@ -25,60 +25,145 @@
     "assignments": {
       "FOREX": {
         "preset": "exploration_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "INDEX": {
         "preset": "exploration_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "COMMODITY": {
         "preset": "exploration_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "CRYPTO": {
         "preset": "exploration_crypto",
-        "tp": [2.0, 3.0, 4.0, 5.0, 6.0]
+        "tp": [
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ]
       },
       "BRENT": {
         "preset": "exploration_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "GOLD": {
         "preset": "exploration_base",
-        "tp": [2.5, 3.0, 3.5, 4.0, 4.5]
+        "tp": [
+          2.5,
+          3.0,
+          3.5,
+          4.0,
+          4.5
+        ]
       },
       "XAUUSD": {
         "preset": "exploration_base",
-        "tp": [2.5, 3.0, 3.5, 4.0, 4.5]
+        "tp": [
+          2.5,
+          3.0,
+          3.5,
+          4.0,
+          4.5
+        ]
       },
       "SILVER": {
         "preset": "exploration_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "XAGUSD": {
         "preset": "exploration_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "DAX": {
         "preset": "exploration_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "DOW30": {
         "preset": "exploration_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "FTSE100": {
         "preset": "exploration_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "NAS100": {
         "preset": "exploration_base",
-        "tp": [2.5, 3.0, 3.5, 4.0, 4.5]
+        "tp": [
+          2.5,
+          3.0,
+          3.5,
+          4.0,
+          4.5
+        ]
       },
       "SPX500": {
         "preset": "exploration_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       }
     }
-  }
+  },
+  "datasource": "forexsb"
 }

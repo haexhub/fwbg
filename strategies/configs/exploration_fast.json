@@ -23,60 +23,145 @@
     "assignments": {
       "FOREX": {
         "preset": "exploration_fast_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "INDEX": {
         "preset": "exploration_fast_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "COMMODITY": {
         "preset": "exploration_fast_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "CRYPTO": {
         "preset": "exploration_fast_crypto",
-        "tp": [2.0, 3.0, 4.0, 5.0, 6.0]
+        "tp": [
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ]
       },
       "BRENT": {
         "preset": "exploration_fast_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "GOLD": {
         "preset": "exploration_fast_base",
-        "tp": [2.5, 3.0, 3.5, 4.0, 4.5]
+        "tp": [
+          2.5,
+          3.0,
+          3.5,
+          4.0,
+          4.5
+        ]
       },
       "XAUUSD": {
         "preset": "exploration_fast_base",
-        "tp": [2.5, 3.0, 3.5, 4.0, 4.5]
+        "tp": [
+          2.5,
+          3.0,
+          3.5,
+          4.0,
+          4.5
+        ]
       },
       "SILVER": {
         "preset": "exploration_fast_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "XAGUSD": {
         "preset": "exploration_fast_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "DAX": {
         "preset": "exploration_fast_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "DOW30": {
         "preset": "exploration_fast_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       },
       "FTSE100": {
         "preset": "exploration_fast_base",
-        "tp": [1.5, 2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "NAS100": {
         "preset": "exploration_fast_base",
-        "tp": [2.5, 3.0, 3.5, 4.0, 4.5]
+        "tp": [
+          2.5,
+          3.0,
+          3.5,
+          4.0,
+          4.5
+        ]
       },
       "SPX500": {
         "preset": "exploration_fast_base",
-        "tp": [2.0, 2.5, 3.0, 3.5, 4.0]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5,
+          4.0
+        ]
       }
     }
-  }
+  },
+  "datasource": "forexsb"
 }
