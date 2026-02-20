@@ -623,9 +623,65 @@ def run_optimizer(
     }
 
 
+def _run_data_command(argv):
+    """Führt Daten-ETL-Kommandos aus (fwbg data <subcommand>)."""
+    data_parser = argparse.ArgumentParser(
+        prog="fwbg data",
+        description="Datenquellen-Verwaltung",
+    )
+    subparsers = data_parser.add_subparsers(dest="subcmd")
+
+    prep_parser = subparsers.add_parser("prepare", help="Rohdaten in Standard-Format konvertieren")
+    prep_parser.add_argument("--source", required=True, help="Name der Datenquelle (z.B. dukascopy)")
+
+    list_parser = subparsers.add_parser("list", help="Registrierte Datenquellen anzeigen")
+
+    args = data_parser.parse_args(argv)
+
+    from fwbg.core.data_sources import get_data_source, discover_sources, _DATA_SOURCES, CSVSourceConfig
+
+    if not _DATA_SOURCES:
+        discover_sources()
+
+    if args.subcmd == "prepare":
+        try:
+            source = get_data_source(args.source)
+        except ValueError as e:
+            print(f"Fehler: {e}")
+            return
+
+        if not isinstance(source, CSVSourceConfig):
+            print(f"Fehler: '{args.source}' ist keine CSV-Datenquelle")
+            return
+
+        if source.raw_path is None:
+            print(f"Fehler: Datenquelle '{args.source}' hat keinen raw_path konfiguriert")
+            return
+
+        print(f"Konvertiere {args.source}: {source.raw_path} → {source.path}")
+        converted = source.prepare()
+        print(f"Fertig: {len(converted)} Symbole konvertiert: {converted}")
+
+    elif args.subcmd == "list":
+        if not _DATA_SOURCES:
+            print("Keine Datenquellen registriert.")
+            return
+        print(f"Registrierte Datenquellen ({len(_DATA_SOURCES)}):")
+        for name, src in _DATA_SOURCES.items():
+            print(f"  {name}: {src.source_type.value} → {src.path}")
+
+    else:
+        data_parser.print_help()
+
+
 def main():
     """CLI-Einstiegspunkt mit Argument-Parsing."""
     import sys
+
+    # Handle 'data' subcommand (ETL: raw → datasource)
+    if len(sys.argv) > 1 and sys.argv[1] == "data":
+        _run_data_command(sys.argv[2:])
+        return
 
     # Handle 'api' subcommand
     if len(sys.argv) > 1 and sys.argv[1] == "api":
@@ -676,6 +732,8 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     parser.add_argument("--reverse-worst", type=str, metavar="RUN_ID", help="Analysiere schlechteste Strategien umgekehrt")
     parser.add_argument("--reverse-n", type=int, default=10, help="Anzahl der schlechtesten Strategien (default: 10)")
     parser.add_argument("--timeframe", type=str, help="Timeframe (überschreibt TIMEFRAME env)")
+    parser.add_argument("--data-path", type=str, metavar="DIR",
+                        help="Datenpfad (überschreibt DATA_PATH, z.B. data/dukascopy/datasource)")
 
     args = parser.parse_args()
 
@@ -710,6 +768,10 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             strategy_metadata = {}
         if args.timeframe:
             strategy_metadata["timeframe"] = args.timeframe
+
+        # CLI --data-path überschreibt DATA_PATH
+        if args.data_path:
+            data_config.DATA_PATH = args.data_path
 
         # Parse asset filter
         asset_filter = None

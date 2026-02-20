@@ -53,6 +53,26 @@ def _validate_ohlc(df, path):
             )
 
 
+def _parse_timestamp_col(series):
+    """Parst eine Timestamp-Spalte flexibel.
+
+    Unterstützt:
+    - ISO-Datetime-Strings ("2024-01-01 09:00:00")
+    - Unix-Millisekunden (z.B. 1388534400000 — > 1e12)
+    - Unix-Sekunden (z.B. 1388534400 — > 1e9)
+    """
+    sample = series.iloc[0]
+    try:
+        val = float(sample)
+        if val > 1e12:
+            return pd.to_datetime(series, unit="ms")
+        if val > 1e9:
+            return pd.to_datetime(series, unit="s")
+    except (ValueError, TypeError):
+        pass
+    return pd.to_datetime(series)
+
+
 def load_data_aligned(path, is_sentiment=False):
     """Lädt OHLC-Daten aus CSV mit Zeitzone-Alignment."""
     try:
@@ -60,15 +80,19 @@ def load_data_aligned(path, is_sentiment=False):
         has_header = _has_header(path)
         df_raw = pd.read_csv(path, header=0 if has_header else None)
 
-        # Bei Header: erste Spalte ist Index 0
-        # Ohne Header: prüfe ob erste Spalte numerisch ist (Index-Spalte)
+        # Bestimme Start-Offset der Datenspalten.
+        # Mit Header: start=0 (erste Spalte ist Timestamp).
+        #   AUSNAHME: wenn erste Spalte ein fortlaufender Zeilenindex ist (0,1,2,...).
+        #   Heuristik: Wert ist numerisch und < 1e6 (kein Unix-Timestamp).
+        # Ohne Header: start=0 (erste Spalte ist immer Datum/Timestamp).
         start = 0
-        if not has_header:
-            # Ohne Header: erste Spalte ist immer Datum
-            start = 0
-        else:
-            # Mit Header: prüfe ob erste Datenspalte numerisch ist
-            start = 1 if str(df_raw.iloc[0, 0]).isdigit() else 0
+        if has_header:
+            try:
+                first_val = float(df_raw.iloc[0, 0])
+                # Zeilenindex ist typisch < 1.000.000; Unix-Sekunden > 1e9
+                start = 1 if first_val < 1e6 else 0
+            except (ValueError, TypeError):
+                start = 0
 
         if len(df_raw.columns) >= start + 6:
             # 6 Spalten: T, O, H, L, C, V
@@ -87,7 +111,7 @@ def load_data_aligned(path, is_sentiment=False):
             df = df_raw.iloc[:, [start, start + 1]].copy()
             df.columns = ["T", "C"]
             df["O"] = df["H"] = df["L"] = df["C"]
-        df["T"] = pd.to_datetime(df["T"])
+        df["T"] = _parse_timestamp_col(df["T"])
         if is_sentiment:
             if df["T"].dt.tz is None:
                 df["T"] = df["T"].dt.tz_localize("UTC")
