@@ -23,40 +23,69 @@
     "assignments": {
       "FOREX": {
         "preset": "orb_scalping_forex",
-        "tp": [
-          1.5,
-          2.0,
-          2.5,
-          3.0
-        ]
+        "tp": [1.5, 2.0, 2.5, 3.0]
       },
       "INDEX": {
         "preset": "orb_scalping_index",
-        "tp": [
-          3.0,
-          4.0,
-          5.0,
-          6.0,
-          8.0
-        ]
+        "tp": [3.0, 4.0, 5.0, 6.0, 8.0]
       },
       "COMMODITY": {
         "preset": "orb_scalping_base",
-        "tp": [
-          2.0,
-          2.5,
-          3.0,
-          3.5
-        ]
+        "tp": [2.0, 2.5, 3.0, 3.5]
       },
       "CRYPTO": {
         "preset": "orb_scalping_crypto",
-        "tp": [
-          2.0,
-          3.0,
-          4.0,
-          5.0
-        ]
+        "tp": [2.0, 3.0, 4.0, 5.0]
+      },
+      "DAX": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [1.5, 2.0, 2.5, 3.0]
+      },
+      "FTSE100": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [1.5, 2.0, 2.5, 3.0]
+      },
+      "DOW30": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [2.0, 2.5, 3.0]
+      },
+      "NAS100": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [2.0, 2.5, 3.0]
+      },
+      "SPX500": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [1.5, 2.0, 2.5, 3.0]
+      },
+      "EU50": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [1.5, 2.0, 2.5, 3.0]
+      },
+      "CAC40": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [1.5, 2.0, 2.5, 3.0]
+      },
+      "JP225": {
+        "preset": "orb_scalping_index",
+        "tp": [4.0, 5.0, 6.0, 8.0],
+        "sl": [2.0, 2.5, 3.0]
+      },
+      "ASX200": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "HK50": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [2.0, 2.5, 3.0]
       }
     }
   }
