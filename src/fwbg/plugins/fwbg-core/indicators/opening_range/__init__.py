@@ -298,7 +298,7 @@ class OpeningRangeIndicator(BaseIndicator):
     def get_param_schema(cls) -> dict:
         return {
             "range_bars": {
-                "type": "int | list[int]",
+                "type": "list[int]",
                 "default": 1,
                 "description": "Number of bars defining the opening range after each hour boundary. At M15: 1 bar = 15min range, 2 bars = 30min range. At M5: 1 bar = 5min range. Can be a list (e.g. [1, 2]) to compute features for multiple range sizes simultaneously — each size gets its own prefixed columns (rb1_orb_*, rb2_orb_*) so the ML model can select the better variant.",
                 "min": 1,

@@ -394,7 +394,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         report_phase(sym, "Monte Carlo Validierung...")
 
         t_mc = time.time()
-        mc_perm = monte_carlo_permutation_test(all_trades_binary, n_permutations=1000)
+        mc_perm = monte_carlo_permutation_test(all_trades_binary, n_permutations=1000, rrr=rrr)
         mc_equity = monte_carlo_equity_from_returns(trade_returns, n_simulations=500)
 
         log(2, f"  Monte Carlo: p={mc_perm['p_value']:.3f}, "

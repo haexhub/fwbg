@@ -551,24 +551,29 @@ def calculate_annual_return(returns, risk_per_trade, rrr, total_bars, bars_per_y
     return annual_return
 
 
-def monte_carlo_permutation_test(trades, n_permutations=1000, random_seed=42):
+def monte_carlo_permutation_test(trades, n_permutations=1000, random_seed=42, rrr=1.0):
     """
     Monte Carlo Signifikanz-Test für Trading-Strategien.
 
-    Prüft ob die beobachtete Win-Rate signifikant besser ist als eine
-    zufällige Strategie (50% Win-Rate) mittels Bootstrap.
+    Prüft ob die beobachtete PnL signifikant besser ist als eine Strategie
+    ohne Edge (Breakeven Win-Rate bei gegebenem RRR) mittels Bootstrap.
+
+    Die Null-Hypothese ist "kein Edge" = Breakeven-WR = 1/(1+RRR), nicht 50%.
+    Bei RRR=1.0 entspricht das dem klassischen 50%-Test. Bei RRR>1.0 wird der
+    Test fairer: eine Strategie mit 55% WR und RRR=2.0 hat echten Edge.
 
     Args:
         trades: Liste von Trade-Ergebnissen (1.0 = Win, -1.0 = Loss)
         n_permutations: Anzahl Bootstrap-Samples
         random_seed: Seed für Reproduzierbarkeit
+        rrr: Risk-Reward-Ratio (TP/SL). Bestimmt die Breakeven-WR.
 
     Returns:
         dict mit:
-            - p_value: P-Wert (< 0.05 = signifikant besser als Zufall)
-            - observed_pnl: Beobachtete PnL
+            - p_value: P-Wert (< 0.05 = signifikant besser als kein Edge)
+            - observed_pnl: Beobachtete RRR-gewichtete PnL
             - observed_win_rate: Beobachtete Win-Rate
-            - mean_random_pnl: Durchschnittliche PnL bei 50% Win-Rate
+            - mean_random_pnl: Durchschnittliche PnL bei Breakeven-WR
             - percentile: In welchem Perzentil die beobachtete PnL liegt
             - is_significant: True wenn p < 0.05
     """
@@ -583,32 +588,31 @@ def monte_carlo_permutation_test(trades, n_permutations=1000, random_seed=42):
             "n_permutations": 0,
         }
 
-    # Verwende isolierten RandomState statt globalem np.random.seed()
-    # Dies verhindert Side-Effects auf andere Teile des Codes
     rng = np.random.default_rng(random_seed)
     trades_arr = np.array(trades)
     n_trades = len(trades_arr)
-    observed_pnl = np.sum(trades_arr)
     observed_wins = np.sum(trades_arr > 0)
     observed_wr = observed_wins / n_trades
 
-    # Null-Hypothese: 50% Win-Rate (Zufall)
-    # Generiere Bootstrap-Samples mit 50% Win-Rate
+    # RRR-gewichtete PnL: Wins zählen rrr, Losses zählen -1
+    observed_pnl = observed_wins * rrr + (n_trades - observed_wins) * (-1.0)
+
+    # Null-Hypothese: kein Edge = Breakeven Win-Rate (1/(1+RRR))
+    # Bei RRR=1.0: breakeven_wr=0.5 (klassischer Test)
+    # Bei RRR=2.0: breakeven_wr=0.333 (braucht nur 33% WR zum Break-even)
+    breakeven_wr = 1.0 / (1.0 + max(rrr, 0.1))
+
     random_pnls = []
     for _ in range(n_permutations):
-        # Simuliere n_trades mit 50% Win-Rate (verwende isolierten rng)
-        random_wins = np.sum(rng.random(n_trades) > 0.5)
-        random_losses = n_trades - random_wins
-        random_pnl = random_wins * 1.0 + random_losses * (-1.0)
+        random_wins = np.sum(rng.random(n_trades) < breakeven_wr)
+        random_pnl = random_wins * rrr + (n_trades - random_wins) * (-1.0)
         random_pnls.append(random_pnl)
 
     random_pnls = np.array(random_pnls)
 
-    # P-Wert: Anteil der zufälligen PnLs die >= beobachtete PnL sind
-    # (einseitiger Test: ist die Strategie besser als 50% Win-Rate?)
+    # P-Wert: Anteil der zufälligen PnLs >= beobachtete PnL
     p_value = (np.sum(random_pnls >= observed_pnl) + 1) / (n_permutations + 1)
 
-    # Perzentil
     percentile = 100 * (np.sum(random_pnls < observed_pnl) / n_permutations)
 
     return {
