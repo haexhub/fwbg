@@ -414,37 +414,20 @@ class TestCalculateCalmarRatio:
 
 
 class TestMonteCarloPermutationTest:
-    """Tests für monte_carlo_permutation_test."""
+    """Smoke-Test für monte_carlo_permutation_test (Basis-Interface).
 
-    def test_significant_strategy(self):
-        """Test: Signifikante Strategie hat niedrigen p-Wert."""
-        # Stark profitable Trades
-        trades = [1.0] * 80 + [-1.0] * 20  # 80% Winrate
+    Ausführliche Tests mit PnL-Verteilungen, Breakeven-Szenarien und
+    asymmetrischen Profilen sind in tests/simulation/test_monte_carlo.py.
+    """
 
-        result = monte_carlo_permutation_test(trades, n_permutations=100)
-        p_value = result["p_value"]
+    def test_returns_valid_result_structure(self):
+        """Funktion gibt dict mit gültigem p-Wert zurück und stürzt nicht ab."""
+        pnls = [200.0] * 40 + [-80.0] * 60
+        result = monte_carlo_permutation_test(pnls, n_permutations=100, random_seed=42)
 
-        assert p_value < 0.5, "Signifikante Strategie sollte p < 0.5 haben"
-
-    def test_random_strategy(self):
-        """Test: Zufällige Strategie hat höheren p-Wert."""
-        # 50/50 Trades
-        trades = [1.0, -1.0] * 50
-
-        result = monte_carlo_permutation_test(trades, n_permutations=100)
-        p_value = result["p_value"]
-
-        assert p_value > 0.1, "Zufällige Strategie sollte höheren p-Wert haben"
-
-    def test_few_trades(self):
-        """Test: Wenige Trades."""
-        trades = [1.0, -1.0, 1.0]
-
-        # Sollte nicht crashen
-        result = monte_carlo_permutation_test(trades, n_permutations=50)
-        p_value = result["p_value"]
-
-        assert 0.0 <= p_value <= 1.0
+        assert "p_value" in result
+        assert "is_significant" in result
+        assert 0.0 <= result["p_value"] <= 1.0
 
 
 class TestEquitySmoothness:
