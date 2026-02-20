@@ -14,7 +14,9 @@
         "stat_window": 20,
         "enable_rolling": true,
         "enable_session": true,
-        "enable_stats": true
+        "enable_stats": true,
+        "enable_retracement": true,
+        "retest_atr_width": 0.3
       }
     },
     {
@@ -52,50 +54,25 @@
       }
     },
     {
-      "name": "trend",
+      "name": "fair_value_gap",
       "params": {
-        "adx_periods": [
-          7,
-          14
-        ],
-        "ema_periods": [
-          8,
-          21,
-          50
-        ],
-        "sma_periods": [
-          20,
-          50
-        ],
-        "cci_periods": [
-          14
-        ],
-        "aroon_period": 25,
-        "er_periods": [
-          10,
-          20
-        ],
-        "supertrend_period": 14,
-        "supertrend_multiplier": 3.0
+        "atr_period": 14,
+        "lookback": 100
       }
     },
     {
-      "name": "momentum",
+      "name": "microstructure",
       "params": {
-        "rsi_periods": [
-          7,
-          14
-        ],
-        "stoch_periods": [
-          14
-        ],
-        "williams_periods": [
-          14
-        ],
-        "roc_periods": [
-          5,
-          10
-        ]
+        "atr_period": 14,
+        "rolling_window": 5
+      }
+    },
+    {
+      "name": "volume_profile",
+      "params": {
+        "atr_period": 14,
+        "n_levels": 50,
+        "value_area_pct": 0.70
       }
     },
     {
@@ -122,13 +99,6 @@
       "params": {
         "include_raw": true,
         "include_encoded": true
-      }
-    },
-    {
-      "name": "fair_value_gap",
-      "params": {
-        "atr_period": 14,
-        "lookback": 100
       }
     }
   ],

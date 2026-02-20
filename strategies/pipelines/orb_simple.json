@@ -14,64 +14,31 @@
         "stat_window": 20,
         "enable_rolling": true,
         "enable_session": true,
-        "enable_stats": true
+        "enable_stats": true,
+        "enable_retracement": true,
+        "retest_atr_width": 0.3
       }
     },
     {
-      "name": "trend",
+      "name": "fair_value_gap",
       "params": {
-        "adx_periods": [
-          7,
-          14,
-          21
-        ],
-        "ema_periods": [
-          8,
-          21,
-          50,
-          100,
-          200
-        ],
-        "sma_periods": [
-          20,
-          50,
-          200
-        ],
-        "cci_periods": [
-          14,
-          20
-        ],
-        "aroon_period": 25,
-        "er_periods": [
-          10,
-          20,
-          50
-        ],
-        "supertrend_period": 14,
-        "supertrend_multiplier": 3.0
+        "atr_period": 14,
+        "lookback": 100
       }
     },
     {
-      "name": "momentum",
+      "name": "microstructure",
       "params": {
-        "rsi_periods": [
-          7,
-          14,
-          21
-        ],
-        "stoch_periods": [
-          14,
-          21
-        ],
-        "williams_periods": [
-          14,
-          21
-        ],
-        "roc_periods": [
-          5,
-          10,
-          20
-        ]
+        "atr_period": 14,
+        "rolling_window": 5
+      }
+    },
+    {
+      "name": "volume_profile",
+      "params": {
+        "atr_period": 14,
+        "n_levels": 50,
+        "value_area_pct": 0.70
       }
     },
     {
@@ -79,12 +46,10 @@
       "params": {
         "atr_periods": [
           7,
-          14,
-          21
+          14
         ],
         "vol_est_windows": [
-          20,
-          50
+          20
         ]
       }
     },
@@ -118,11 +83,6 @@
         "max_correlation": 0.7,
         "max_features": 50
       }
-    }
-  ],
-  "data_loading": [
-    {
-      "name": "macro_data"
     }
   ]
 }

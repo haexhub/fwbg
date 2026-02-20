@@ -1,0 +1,7 @@
+{
+  "name": "volume_profile",
+  "version": "1.0.0",
+  "description": "Session volume profile: POC, Value Area High/Low as ML features",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

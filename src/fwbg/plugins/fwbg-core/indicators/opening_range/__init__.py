@@ -65,6 +65,8 @@ def _session_orb_features(
     sessions: List[int],
     range_bars: int,
     atr: pd.Series,
+    enable_retracement: bool = False,
+    retest_atr_width: float = 0.3,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """
     Compute session-specific ORB features.
@@ -116,6 +118,15 @@ def _session_orb_features(
         features[f"{prefix}_range_vs_atr"] = safe_divide(or_range, atr).where(
             valid, np.nan
         )
+
+        if enable_retracement:
+            # Reload zone: is price within retest_atr_width * ATR of the ORB boundary?
+            # This captures the "test of the broken level" setup described by ICT/IVB traders.
+            half_band = retest_atr_width * atr
+            near_high = (df["C"] >= or_high - half_band) & (df["C"] <= or_high + half_band)
+            near_low = (df["C"] >= or_low - half_band) & (df["C"] <= or_low + half_band)
+            features[f"{prefix}_retest_zone_up"] = near_high.astype(int).where(valid, np.nan)
+            features[f"{prefix}_retest_zone_down"] = near_low.astype(int).where(valid, np.nan)
 
     return features
 
@@ -195,6 +206,8 @@ class OpeningRangeIndicator(BaseIndicator):
         enable_rolling: bool = True,
         enable_session: bool = True,
         enable_stats: bool = True,
+        enable_retracement: bool = True,
+        retest_atr_width: float = 0.3,
         **params,
     ) -> pd.DataFrame:
         if not isinstance(df.index, pd.DatetimeIndex):
@@ -225,7 +238,9 @@ class OpeningRangeIndicator(BaseIndicator):
                 features.update({f"{pfx}{k}": v for k, v in rolling.items()})
 
             if enable_session:
-                session = _session_orb_features(df, sessions, rb, atr)
+                session = _session_orb_features(
+                    df, sessions, rb, atr, enable_retracement, retest_atr_width
+                )
                 features.update({f"{pfx}{k}": v for k, v in session.items()})
 
         if enable_stats:
@@ -250,6 +265,7 @@ class OpeningRangeIndicator(BaseIndicator):
                 f"{pfx}_range", f"{pfx}_position",
                 f"{pfx}_breakout_up", f"{pfx}_breakout_down",
                 f"{pfx}_range_vs_atr",
+                f"{pfx}_retest_zone_up", f"{pfx}_retest_zone_down",
             ])
         stats = [
             "orb_stat_avg_range", "orb_stat_breakout_rate",
@@ -274,6 +290,8 @@ class OpeningRangeIndicator(BaseIndicator):
             "enable_rolling": True,
             "enable_session": True,
             "enable_stats": True,
+            "enable_retracement": True,
+            "retest_atr_width": 0.3,
         }
 
     @classmethod
@@ -324,6 +342,19 @@ class OpeningRangeIndicator(BaseIndicator):
                 "type": "bool",
                 "default": True,
                 "description": "Enable statistical features: rolling average range, breakout rate, and continuation rate over the stat_window.",
+            },
+            "enable_retracement": {
+                "type": "bool",
+                "default": True,
+                "description": "Enable reload-zone features: binary signal when price is within retest_atr_width * ATR of the session ORB high or low. Captures the IVB/ICT 'test of the broken level' setup where smart money reloads after a breakout.",
+            },
+            "retest_atr_width": {
+                "type": "float",
+                "default": 0.3,
+                "description": "Half-bandwidth in ATR units around the ORB high/low that defines the reload zone. A value of 0.3 means the zone extends 0.3 * ATR above and below the boundary.",
+                "min": 0.1,
+                "max": 1.0,
+                "step": 0.1,
             },
         }
 
