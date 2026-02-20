@@ -75,6 +75,7 @@ ig = [
 api = [
     "fastapi>=0.115",
     "uvicorn>=0.34",
+    "python-multipart>=0.0.9",
 ]
 # All optional dependencies
 full = [
