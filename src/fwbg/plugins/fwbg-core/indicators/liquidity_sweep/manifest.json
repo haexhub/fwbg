@@ -1,0 +1,7 @@
+{
+  "name": "liquidity_sweep",
+  "version": "1.0.0",
+  "description": "Liquidity sweep (fake-out / stop-hunt) detection: price wicks beyond a swing high/low but closes back inside, signalling a rejection zone.",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

@@ -1,0 +1,73 @@
+{
+  "name": "Liquidity Sweep Scalping",
+  "description": "Scalping strategy based on fake-out / stop-hunt patterns. Price wicks beyond a 50-bar swing high or low but closes back inside, signalling a rejection zone. Entry on M1 when price re-enters the sweep zone; EMA 50/200 for trend filter; FVG and S/D flip for confluence.",
+  "tags": [
+    "liquidity_sweep",
+    "fake_out",
+    "stop_hunt",
+    "scalping",
+    "smart_money",
+    "intraday"
+  ],
+  "timeframe": "MINUTE_1",
+  "hypothesis": "Liquidity sweeps (fake-outs beyond swing highs/lows that close back inside) leave behind high-probability rejection zones. Price re-testing these zones with EMA trend alignment and FVG/S/D confluence produces reliable scalping entries. ML learns which combinations of sweep recency, zone proximity, trend alignment, and displacement are most predictive.",
+  "expected_outcome": "Edge on liquid index and FX markets during active sessions. lsw_bull_active / lsw_bear_active and recency features selected as important. Higher win rate when EMA 50/200 trend aligns with sweep direction.",
+  "pipeline": "liq_sweep_scalping",
+  "exit_strategy": "atr_trailing",
+  "exit_params": "atr_intraday_at",
+  "model": "xgboost_depth6",
+  "validation": "walk_forward_intraday",
+  "filters": "orb_scalping",
+  "resources": "standard",
+  "grids": {
+    "presets_dir": "../grids",
+    "assignments": {
+      "FOREX": {
+        "preset": "orb_scalping_forex",
+        "tp": [1.5, 2.0, 2.5, 3.0]
+      },
+      "INDEX": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0]
+      },
+      "COMMODITY": {
+        "preset": "orb_scalping_base",
+        "tp": [2.0, 2.5, 3.0, 3.5]
+      },
+      "CRYPTO": {
+        "preset": "orb_scalping_crypto",
+        "tp": [2.0, 3.0, 4.0, 5.0]
+      },
+      "DAX": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "FTSE100": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "DOW30": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [2.0, 2.5, 3.0]
+      },
+      "NAS100": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [2.0, 2.5, 3.0]
+      },
+      "SPX500": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "EU50": {
+        "preset": "orb_scalping_index",
+        "tp": [3.0, 4.0, 5.0, 6.0],
+        "sl": [1.5, 2.0, 2.5]
+      }
+    }
+  }
+}
