@@ -73,14 +73,21 @@ class CSVSourceConfig(DataSourceConfig):
     path: Path = field(default_factory=lambda: Path("data"))
     file_pattern: str = "{symbol}_{timeframe}.csv"
     timeframe_map: Dict[str, str] = field(default_factory=dict)
+    # ETL: raw → datasource conversion
+    raw_path: Path = field(default=None)
+    raw_pattern: str = "{raw_symbol}_m15.csv"
+    timestamp_unit: str = ""          # "ms" for Unix milliseconds, "" for auto-detect
+    symbol_map: Dict[str, str] = field(default_factory=dict)  # raw_prefix → symbol
 
     def __post_init__(self):
         self.source_type = SourceType.CSV
         if isinstance(self.path, str):
             self.path = Path(self.path)
+        if isinstance(self.raw_path, str):
+            self.raw_path = Path(self.raw_path)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "type": "csv",
             "name": self.name,
             "description": self.description,
@@ -88,6 +95,80 @@ class CSVSourceConfig(DataSourceConfig):
             "file_pattern": self.file_pattern,
             "timeframe_map": self.timeframe_map,
         }
+        if self.raw_path is not None:
+            d["raw_path"] = str(self.raw_path)
+            d["raw_pattern"] = self.raw_pattern
+        if self.timestamp_unit:
+            d["timestamp_unit"] = self.timestamp_unit
+        if self.symbol_map:
+            d["symbol_map"] = self.symbol_map
+        return d
+
+    def prepare(self) -> List[str]:
+        """ETL: Konvertiert Rohdaten (raw_path) ins Standard-Format (path).
+
+        Liest jede Datei aus raw_path, mappt den Dateinamen via symbol_map auf
+        ein bekanntes Symbol, konvertiert Timestamps (z.B. Unix ms → ISO datetime)
+        und schreibt das Ergebnis nach path/{symbol}_{timeframe}.csv.
+
+        Returns:
+            Liste der erfolgreich konvertierten Symbole.
+        """
+        if self.raw_path is None or not self.symbol_map:
+            return []
+
+        import pandas as pd
+
+        raw_dir = Path(self.raw_path)
+        if not raw_dir.exists():
+            log.warning(f"prepare(): raw_path nicht gefunden: {raw_dir}")
+            return []
+
+        out_dir = Path(self.path)
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        converted = []
+        suffix = "_m15.csv"  # Bestimmt aus raw_pattern
+        raw_files = sorted(raw_dir.glob("*_m15.csv"))
+
+        for raw_file in raw_files:
+            stem = raw_file.stem                      # z.B. DE40_DAX_m15
+            prefix = stem.rsplit("_m15", 1)[0]        # z.B. DE40_DAX
+            symbol = self.symbol_map.get(prefix)
+            if not symbol:
+                log.debug(f"prepare(): kein Mapping für '{prefix}', übersprungen")
+                continue
+
+            try:
+                df = pd.read_csv(raw_file)
+
+                if "timestamp" not in df.columns:
+                    log.warning(f"prepare(): Keine 'timestamp'-Spalte in {raw_file.name}")
+                    continue
+
+                if self.timestamp_unit == "ms":
+                    df["T"] = pd.to_datetime(df["timestamp"], unit="ms")
+                    df["T"] = df["T"].dt.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    df["T"] = df["timestamp"].astype(str)
+
+                cols = [c for c in ["open", "high", "low", "close"] if c in df.columns]
+                out = df[["T"] + cols].copy()
+                out.columns = ["T", "O", "H", "L", "C"]
+                out["V"] = 0
+
+                # Timeframe-Suffix aus file_pattern bestimmen
+                # file_pattern: "{symbol}_MINUTE_15.csv" → Suffix = "MINUTE_15"
+                tf_part = self.file_pattern.replace("{symbol}_", "").replace(".csv", "")
+                dst = out_dir / f"{symbol}_{tf_part}.csv"
+                out.to_csv(dst, index=False)
+                log.info(f"prepare(): {raw_file.name} → {dst.name} ({len(out)} Bars)")
+                converted.append(symbol)
+
+            except Exception as e:
+                log.warning(f"prepare(): Fehler bei {raw_file.name}: {e}")
+
+        return converted
 
     def get_file_path(self, symbol: str, timeframe: str = None) -> Path:
         """Gibt den vollständigen Dateipfad für ein Symbol zurück."""
@@ -316,12 +397,17 @@ def source_from_dict(d: dict) -> DataSource:
     """Deserialize a source config from a dict."""
     t = d.get("type")
     if t == "csv":
+        raw_path = d.get("raw_path")
         return CSVSourceConfig(
             name=d["name"],
             description=d.get("description", ""),
             path=Path(d.get("path", "data")),
             file_pattern=d.get("file_pattern", "{symbol}_{timeframe}.csv"),
             timeframe_map=d.get("timeframe_map", {}),
+            raw_path=Path(raw_path) if raw_path else None,
+            raw_pattern=d.get("raw_pattern", "{raw_symbol}_m15.csv"),
+            timestamp_unit=d.get("timestamp_unit", ""),
+            symbol_map=d.get("symbol_map", {}),
         )
     elif t == "rest":
         return RESTSourceConfig(

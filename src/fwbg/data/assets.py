@@ -63,6 +63,11 @@ class AssetRegistry:
         "SPX500": {"class": "INDEX", "point": 0.1, "spread": 0.6, "currency": ["USD"]},                 # 0.6 points
         "NAS100": {"class": "INDEX", "point": 0.1, "spread": 2.0, "currency": ["USD"]},                 # 2.0 points
         "FTSE100": {"class": "INDEX", "point": 1.0, "spread": 4.0, "currency": ["GBP"]},                # 4.0 points
+        "EU50":   {"class": "INDEX", "point": 1.0, "spread": 3.0, "currency": ["EUR"]},                 # 3.0 points
+        "CAC40":  {"class": "INDEX", "point": 1.0, "spread": 2.0, "currency": ["EUR"]},                 # 2.0 points
+        "JP225":  {"class": "INDEX", "point": 1.0, "spread": 20.0, "currency": ["JPY"]},                # 20.0 points
+        "ASX200": {"class": "INDEX", "point": 1.0, "spread": 2.0, "currency": ["AUD"]},                 # 2.0 points
+        "HK50":   {"class": "INDEX", "point": 1.0, "spread": 8.0, "currency": ["HKD"]},                 # 8.0 points
         # Commodities
         "XAUUSD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},            # 0.60 USD
         "GOLD": {"class": "COMMODITY", "point": 0.1, "spread": 0.60, "currency": ["USD"]},              # 0.60 USD

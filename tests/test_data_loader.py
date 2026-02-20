@@ -177,6 +177,29 @@ class TestRealDataFormats:
         assert len(df) == 2
         assert df["C"].iloc[0] == pytest.approx(1.1005, rel=0.01)
 
+    def test_dukascopy_unix_ms_format(self, tmp_path):
+        """Testet das Dukascopy-Format: Unix-ms-Timestamps, kein Volume."""
+        csv_path = tmp_path / "DAX_MINUTE_15.csv"
+        # 1388534400000 = 2014-01-01 00:00:00 UTC
+        csv_path.write_text(
+            "timestamp,open,high,low,close\n"
+            "1388534400000,9552.1,9553.0,9551.0,9552.5\n"
+            "1388535300000,9552.5,9554.0,9552.0,9553.0\n"
+        )
+
+        df = load_data_aligned(str(csv_path))
+
+        assert df is not None
+        assert len(df) == 2
+        assert "O" in df.columns and "H" in df.columns
+        assert "L" in df.columns and "C" in df.columns
+        # Timestamp muss korrekt geparst sein (kein Unix-Integer als Datum)
+        assert df.index[0].year == 2014
+        assert df["O"].iloc[0] == pytest.approx(9552.1)
+        assert df["C"].iloc[0] == pytest.approx(9552.5)
+        # Kein Volume → V=0
+        assert df["V"].iloc[0] == 0
+
     def test_yfinance_macro_format(self, tmp_path):
         """Testet yfinance Makro-Daten Format."""
         csv_path = tmp_path / "yfinance_macro.csv"
