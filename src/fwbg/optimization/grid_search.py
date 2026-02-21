@@ -421,14 +421,14 @@ def run_grid_search(
     if len(features) < 1:
         log(2, f"  Keine Features verfügbar - übersprungen", sym)
         if progress_callback:
-            grid_total = ctx.grid_combinations_per_run()
+            grid_total = ctx.total_grid_combinations()
             for i in range(grid_total):
                 progress_callback(i + 1, grid_total)
         return [], []
 
     log(2, f"  {len(features)} Features verfügbar: {features[:5]}...", sym)
 
-    grid_total = ctx.grid_combinations_per_run()
+    grid_total = ctx.total_grid_combinations()
     total_grid_combos = ctx.total_grid_combinations()
 
     # === FEATURE SELECTION ===
