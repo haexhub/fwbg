@@ -154,6 +154,19 @@ class CSVSourceConfig(DataSourceConfig):
                     if self.timezone:
                         ts = ts.dt.tz_convert(self.timezone)
                     df["T"] = ts.dt.strftime("%Y-%m-%d %H:%M:%S")
+                    if self.timezone:
+                        # DST fall-back creates duplicate naive strings; keep earliest UTC bar.
+                        # Affects ~4 M15 bars (02:00-02:45 local) on 1 Sunday/year in Oct.
+                        # For exchange-traded indices these bars fall outside trading hours.
+                        before = len(df)
+                        df = df.drop_duplicates(subset=["T"], keep="first")
+                        dropped = before - len(df)
+                        if dropped:
+                            log.warning(
+                                f"prepare(): {symbol}: {dropped} Bars durch DST-Rückfall "
+                                f"entfernt (doppelte naive Timestamps nach {self.timezone}-"
+                                f"Konvertierung). Betrifft nur Sonntag 02:00-03:00 Uhr."
+                            )
                 else:
                     df["T"] = df["timestamp"].astype(str)
 

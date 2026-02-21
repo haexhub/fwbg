@@ -5,12 +5,7 @@
       "params": {
         "range_bars": [1, 2],
         "atr_period": 14,
-        "sessions": [
-          8,
-          9,
-          14,
-          15
-        ],
+        "sessions": [1, 2, 3, 8, 9, 14, 15],
         "stat_window": 20,
         "enable_rolling": true,
         "enable_session": true,
