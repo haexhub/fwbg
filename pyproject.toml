@@ -76,6 +76,7 @@ api = [
     "fastapi>=0.115",
     "uvicorn>=0.34",
     "python-multipart>=0.0.9",
+    "watchfiles>=1.0",  # smarter hot-reload (inotify-based, replaces polling StatReload)
 ]
 # All optional dependencies
 full = [
