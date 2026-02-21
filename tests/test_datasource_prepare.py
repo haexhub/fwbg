@@ -270,3 +270,47 @@ class TestCSVSourceTimezone:
         src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
         restored = source_from_dict(src.to_dict())
         assert restored.timezone == "Europe/Berlin"
+
+    def test_dst_fallback_removes_duplicate_timestamps(self, tmp_path):
+        """Duplikate naive Timestamps beim DST-Rückfall (Oktober) werden entfernt.
+
+        Beim Rückfall in Europa/Berlin (letzter Sonntag Oktober) drehen die Uhren
+        von 03:00 CEST (= 01:00 UTC) zurück auf 02:00 CET. Dadurch entstehen
+        in den naiven Strings doppelte Einträge für 02:00-02:45 local.
+
+        Input: 9 Bars  00:00–02:00 UTC (15-Min-Raster)
+        Erwartung: 5 Zeilen (02:00, 02:15, 02:30, 02:45, 03:00 lokal, je erste UTC behalten)
+        """
+        raw = tmp_path / "raw"
+        raw.mkdir()
+        # 2024-10-27 DST fall-back: 01:00 UTC = 03:00 CEST → 02:00 CET
+        # Bars: 00:00..02:00 UTC every 15 min = 9 bars
+        base_ms = 1729987200000  # 2024-10-27 00:00:00 UTC
+        step_ms = 900000         # 15 min
+        lines = ["timestamp,open,high,low,close"]
+        for i in range(9):
+            lines.append(f"{base_ms + i * step_ms},100,101,99,100")
+        (raw / "DE40_DAX_m15.csv").write_text("\n".join(lines) + "\n")
+
+        from fwbg.core.data_sources import CSVSourceConfig
+        src = CSVSourceConfig(
+            name="dst_dedup",
+            path=tmp_path / "out",
+            file_pattern="{symbol}_MINUTE_15.csv",
+            raw_path=raw,
+            raw_pattern="{raw_symbol}_m15.csv",
+            timestamp_unit="ms",
+            symbol_map={"DE40_DAX": "DAX"},
+            timezone="Europe/Berlin",
+        )
+        src.prepare()
+        rows = list(csv.DictReader((tmp_path / "out" / "DAX_MINUTE_15.csv").open()))
+        timestamps = [r["T"] for r in rows]
+        # Deduplicated: no duplicate naive timestamps
+        assert len(timestamps) == len(set(timestamps)), (
+            f"Duplikate in Timestamps: {[t for t in timestamps if timestamps.count(t) > 1]}"
+        )
+        # 9 raw → 5 unique (4 pairs deduplicated + 1 last bar)
+        assert len(rows) == 5, f"Erwartet 5 Zeilen nach DST-Dedup, bekommen: {len(rows)}"
+        assert rows[0]["T"] == "2024-10-27 02:00:00"
+        assert rows[-1]["T"] == "2024-10-27 03:00:00"
