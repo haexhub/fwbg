@@ -12,21 +12,25 @@ import pytest
 from fwbg.core.registry import (
     INDICATOR_REGISTRY,
     EXIT_STRATEGY_REGISTRY,
+    EXIT_MODIFIER_REGISTRY,
     FEATURE_SELECTOR_REGISTRY,
     PREPROCESSOR_REGISTRY,
     BROKER_ADAPTER_REGISTRY,
     register_indicator,
     register_exit_strategy,
+    register_exit_modifier,
     register_feature_selector,
     register_preprocessor,
     register_broker_adapter,
     get_indicator,
     get_exit_strategy,
+    get_exit_modifier,
     get_feature_selector,
     get_preprocessor,
     get_broker_adapter,
     list_indicators,
     list_exit_strategies,
+    list_exit_modifiers,
     list_feature_selectors,
     list_preprocessors,
     list_broker_adapters,
@@ -88,6 +92,75 @@ class TestRegisterIndicator:
 
         # Cleanup
         del INDICATOR_REGISTRY[""]
+
+
+class TestRegisterExitModifier:
+    """Tests für @register_exit_modifier Decorator."""
+
+    def test_registers_class(self):
+        """Decorator sollte Klasse in EXIT_MODIFIER_REGISTRY registrieren."""
+        @register_exit_modifier("test_modifier_1")
+        class TestModifier1:
+            pass
+
+        assert "test_modifier_1" in EXIT_MODIFIER_REGISTRY
+        assert EXIT_MODIFIER_REGISTRY["test_modifier_1"] is TestModifier1
+
+        del EXIT_MODIFIER_REGISTRY["test_modifier_1"]
+
+    def test_sets_name_attribute(self):
+        """Decorator sollte name-Attribut setzen."""
+        @register_exit_modifier("test_modifier_2")
+        class TestModifier2:
+            pass
+
+        assert TestModifier2.name == "test_modifier_2"
+
+        del EXIT_MODIFIER_REGISTRY["test_modifier_2"]
+
+
+class TestGetExitModifier:
+    """Tests für get_exit_modifier()."""
+
+    def test_returns_registered_class(self):
+        """Sollte registrierte Modifier-Klasse zurückgeben."""
+        @register_exit_modifier("test_modifier_get")
+        class TestModifierGet:
+            pass
+
+        cls = get_exit_modifier("test_modifier_get")
+        assert cls is TestModifierGet
+
+        del EXIT_MODIFIER_REGISTRY["test_modifier_get"]
+
+    def test_raises_for_unknown(self):
+        """Sollte ValueError für unbekannten Namen werfen."""
+        with pytest.raises(ValueError) as exc_info:
+            get_exit_modifier("nonexistent_modifier_xyz")
+
+        assert "nonexistent_modifier_xyz" in str(exc_info.value)
+        assert "Available" in str(exc_info.value)
+
+
+class TestListExitModifiers:
+    """Tests für list_exit_modifiers()."""
+
+    def test_returns_list(self):
+        """list_exit_modifiers sollte Liste zurückgeben."""
+        result = list_exit_modifiers()
+        assert isinstance(result, list)
+
+    def test_reflects_registry(self):
+        """Liste sollte aktuelle Registry-Inhalte widerspiegeln."""
+        @register_exit_modifier("list_test_modifier")
+        class ListTestModifier:
+            pass
+
+        try:
+            modifiers = list_exit_modifiers()
+            assert "list_test_modifier" in modifiers
+        finally:
+            del EXIT_MODIFIER_REGISTRY["list_test_modifier"]
 
 
 class TestRegisterExitStrategy:

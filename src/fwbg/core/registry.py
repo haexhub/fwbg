@@ -11,6 +11,7 @@ import logging
 from fwbg_sdk.registry import (
     INDICATOR_REGISTRY,
     EXIT_STRATEGY_REGISTRY,
+    EXIT_MODIFIER_REGISTRY,
     FEATURE_SELECTOR_REGISTRY,
     PREPROCESSOR_REGISTRY,
     RISK_MANAGER_REGISTRY,
@@ -18,6 +19,7 @@ from fwbg_sdk.registry import (
     MODEL_REGISTRY,
     register_indicator,
     register_exit_strategy,
+    register_exit_modifier,
     register_feature_selector,
     register_preprocessor,
     register_risk_manager,
@@ -29,6 +31,7 @@ if TYPE_CHECKING:
     from fwbg_sdk import (
         BaseIndicator,
         BaseExitStrategy,
+        BaseExitModifier,
         BaseFeatureSelector,
         BasePreprocessor,
         BaseRiskManager,
@@ -129,6 +132,16 @@ def get_exit_strategy(name: str) -> Type["BaseExitStrategy"]:
     return EXIT_STRATEGY_REGISTRY[name]
 
 
+def get_exit_modifier(name: str) -> Type["BaseExitModifier"]:
+    """Get exit modifier class by name, auto-discovering if needed."""
+    if not EXIT_MODIFIER_REGISTRY:
+        _ensure_plugins_loaded()
+    if name not in EXIT_MODIFIER_REGISTRY:
+        available = list(EXIT_MODIFIER_REGISTRY.keys())
+        raise ValueError(f"Unknown exit modifier: '{name}'. Available: {available}")
+    return EXIT_MODIFIER_REGISTRY[name]
+
+
 def get_feature_selector(name: str) -> Type["BaseFeatureSelector"]:
     """Get feature selector class by name, auto-discovering if needed."""
     if not FEATURE_SELECTOR_REGISTRY:
@@ -157,6 +170,11 @@ def list_indicators() -> list:
 def list_exit_strategies() -> list:
     """List all registered exit strategies."""
     return list(EXIT_STRATEGY_REGISTRY.keys())
+
+
+def list_exit_modifiers() -> list:
+    """List all registered exit modifiers."""
+    return list(EXIT_MODIFIER_REGISTRY.keys())
 
 
 def list_feature_selectors() -> list:

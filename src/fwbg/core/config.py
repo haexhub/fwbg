@@ -441,6 +441,10 @@ class StrategyConfig:
     exit_strategy: str = "fixed"
     exit_params: Dict[str, Any] = field(default_factory=dict)
 
+    # Exit modifier (optional add-on replacing the simulation kernel)
+    exit_modifier: Optional[str] = None
+    exit_modifier_params: Dict[str, Any] = field(default_factory=dict)
+
     # Risk management
     risk_management: str = "kelly"
     risk_params: Dict[str, Any] = field(default_factory=dict)
@@ -477,6 +481,9 @@ class StrategyConfig:
         # Resolve sections: string loads preset file, dict/None passes through
         pipeline = _resolve_section(data.get("pipeline", {}), "pipelines", strategy_dir)
         exit_params = _resolve_section(data.get("exit_params", {}), "exit_params", strategy_dir)
+        exit_modifier_params = _resolve_section(
+            data.get("exit_modifier_params", {}), "exit_modifier_params", strategy_dir
+        )
         model_data = _resolve_section(data.get("model", {}), "models", strategy_dir)
         validation_data = _resolve_section(data.get("validation", {}), "validations", strategy_dir)
         filters_data = _resolve_section(data.get("filters", {}), "filters", strategy_dir)
@@ -490,6 +497,8 @@ class StrategyConfig:
             pipeline=pipeline,
             exit_strategy=data.get("exit_strategy", "fixed"),
             exit_params=exit_params,
+            exit_modifier=data.get("exit_modifier"),
+            exit_modifier_params=exit_modifier_params or {},
             risk_management=data.get("risk_management", "kelly"),
             risk_params=risk_params,
             grids=grids,

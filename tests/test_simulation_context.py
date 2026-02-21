@@ -94,6 +94,21 @@ class TestSimulationContextBasic:
         assert ctx.exit_strategy == "fixed"
         assert ctx.min_fold_stability == 0.5
         assert ctx.early_termination is True
+        assert ctx.exit_modifier is None
+        assert ctx.exit_modifier_params == {}
+
+    def test_exit_modifier_can_be_set(self):
+        """exit_modifier und exit_modifier_params sollten setzbar sein."""
+        ctx = SimulationContext(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            exit_modifier="trailing_stop",
+            exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+        )
+        assert ctx.exit_modifier == "trailing_stop"
+        assert ctx.exit_modifier_params == {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
 
     def test_custom_values(self):
         """Custom-Werte sollten übernommen werden."""
