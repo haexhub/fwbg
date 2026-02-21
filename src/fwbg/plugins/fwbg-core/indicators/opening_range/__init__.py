@@ -47,15 +47,30 @@ def _rolling_orb_features(
     or_high = df["H"].where(or_mask).groupby(hour_group).transform("max")
     or_low = df["L"].where(or_mask).groupby(hour_group).transform("min")
     or_range = or_high - or_low
+    or_midpoint = (or_high + or_low) / 2
 
     # Features only valid after range is established
     valid = bar_in_hour >= range_bars
 
     features["orb_range"] = safe_divide(or_range, df["C"]).where(valid, np.nan)
     features["orb_position"] = safe_divide(df["C"] - or_low, or_range).where(valid, np.nan)
-    features["orb_breakout_up"] = (df["C"] > or_high).astype(int).where(valid, np.nan)
-    features["orb_breakout_down"] = (df["C"] < or_low).astype(int).where(valid, np.nan)
+
+    # Event feature: 1 only on the FIRST bar where C crosses above/below the range boundary.
+    # Subsequent bars that remain above/below are 0 (transition detection, not state).
+    above_int = (df["C"] > or_high).astype(np.int8)
+    below_int = (df["C"] < or_low).astype(np.int8)
+    prev_above = above_int.groupby(hour_group).shift(1).fillna(0).astype(np.int8)
+    prev_below = below_int.groupby(hour_group).shift(1).fillna(0).astype(np.int8)
+    features["orb_breakout_up"] = (above_int - prev_above).clip(lower=0).where(valid, np.nan)
+    features["orb_breakout_down"] = (below_int - prev_below).clip(lower=0).where(valid, np.nan)
+
     features["orb_range_vs_atr"] = safe_divide(or_range, atr).where(valid, np.nan)
+
+    # POC proxy: normalized distance from close to ORB midpoint (equilibrium without tick volume)
+    features["orb_poc_dist"] = safe_divide(df["C"] - or_midpoint, atr).where(valid, np.nan)
+
+    # SL distance: entry at midpoint → SL at ORB Low = (or_high - or_low) / 2
+    features["orb_sl_dist"] = (or_range / 2).where(valid, np.nan)
 
     return features
 
@@ -104,20 +119,43 @@ def _session_orb_features(
         valid = (session_id > 0) & ~in_range_period
 
         or_range = or_high - or_low
+        or_midpoint = (or_high + or_low) / 2
 
         features[f"{prefix}_range"] = safe_divide(or_range, df["C"]).where(valid, np.nan)
         features[f"{prefix}_position"] = safe_divide(
             df["C"] - or_low, or_range
         ).where(valid, np.nan)
+
+        # Event feature: 1 only on the first bar crossing above/below per session.
+        sess_above_int = (df["C"] > or_high).astype(np.int8)
+        sess_below_int = (df["C"] < or_low).astype(np.int8)
+        sess_prev_above = sess_above_int.groupby(session_id).shift(1).fillna(0).astype(np.int8)
+        sess_prev_below = sess_below_int.groupby(session_id).shift(1).fillna(0).astype(np.int8)
         features[f"{prefix}_breakout_up"] = (
-            (df["C"] > or_high).astype(int).where(valid, np.nan)
+            (sess_above_int - sess_prev_above).clip(lower=0).where(valid, np.nan)
         )
         features[f"{prefix}_breakout_down"] = (
-            (df["C"] < or_low).astype(int).where(valid, np.nan)
+            (sess_below_int - sess_prev_below).clip(lower=0).where(valid, np.nan)
         )
+
         features[f"{prefix}_range_vs_atr"] = safe_divide(or_range, atr).where(
             valid, np.nan
         )
+
+        # POC proxy: normalized distance from close to ORB midpoint
+        features[f"{prefix}_poc_dist"] = safe_divide(
+            df["C"] - or_midpoint, atr
+        ).where(valid, np.nan)
+
+        # SL distance: entry at midpoint → SL at ORB Low = half the ORB range
+        features[f"{prefix}_sl_dist"] = (or_range / 2).where(valid, np.nan)
+
+        # Post-breakout STATE: 1 for all bars after first breakout in this session.
+        # Resets at each new session start via groupby(session_id).cummax().
+        above_cummax = sess_above_int.groupby(session_id).cummax()
+        below_cummax = sess_below_int.groupby(session_id).cummax()
+        features[f"{prefix}_post_bull"] = above_cummax.where(valid, np.nan)
+        features[f"{prefix}_post_bear"] = below_cummax.where(valid, np.nan)
 
         if enable_retracement:
             # Reload zone: is price within retest_atr_width * ATR of the ORB boundary?
@@ -127,6 +165,24 @@ def _session_orb_features(
             near_low = (df["C"] >= or_low - half_band) & (df["C"] <= or_low + half_band)
             features[f"{prefix}_retest_zone_up"] = near_high.astype(int).where(valid, np.nan)
             features[f"{prefix}_retest_zone_down"] = near_low.astype(int).where(valid, np.nan)
+
+            # Retest (reload) entry signal — recommended ORB entry at ORB midpoint (POC proxy).
+            # Fires when: post-breakout AND price near midpoint AND thesis still valid.
+            # Bull: broken up AND retrace to midpoint AND still above ORB Low
+            # Bear: broken down AND retrace to midpoint AND still below ORB High
+            near_poc = (df["C"] >= or_midpoint - half_band) & (df["C"] <= or_midpoint + half_band)
+            still_valid_bull = df["C"] > or_low
+            still_valid_bear = df["C"] < or_high
+
+            post_bull_flag = above_cummax.where(valid, 0).astype(bool)
+            post_bear_flag = below_cummax.where(valid, 0).astype(bool)
+
+            features[f"{prefix}_retest_bull"] = (
+                (post_bull_flag & near_poc & still_valid_bull).astype(float).where(valid, np.nan)
+            )
+            features[f"{prefix}_retest_bear"] = (
+                (post_bear_flag & near_poc & still_valid_bear).astype(float).where(valid, np.nan)
+            )
 
     return features
 
@@ -252,20 +308,30 @@ class OpeningRangeIndicator(BaseIndicator):
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
+    # UTC sessions covered by the orb_scalping pipeline:
+    # 0=Nikkei/ASX200 open, 1=Nikkei/HK50 morning, 2=All Asia morning,
+    # 5=Nikkei/HK50 afternoon open, 6=DAX pre-market, 7=Xetra/DAX open,
+    # 8=London open, 12=NY pre-dawn, 13=NY pre-market, 14=approaching NYSE open
+    _PIPELINE_SESSIONS = [0, 1, 2, 5, 6, 7, 8, 12, 13, 14]
+
     def get_feature_columns(self) -> List[str]:
-        # Für den Default-Fall (range_bars=1, kein Präfix)
+        # Default: range_bars=1 (no prefix), sessions from orb_scalping pipeline
         rolling = [
             "orb_range", "orb_position", "orb_breakout_up",
             "orb_breakout_down", "orb_range_vs_atr",
+            "orb_poc_dist", "orb_sl_dist",
         ]
         session = []
-        for h in [8, 9, 14, 15]:
+        for h in self._PIPELINE_SESSIONS:
             pfx = f"orb_s{h:02d}"
             session.extend([
                 f"{pfx}_range", f"{pfx}_position",
                 f"{pfx}_breakout_up", f"{pfx}_breakout_down",
                 f"{pfx}_range_vs_atr",
+                f"{pfx}_poc_dist", f"{pfx}_sl_dist",
+                f"{pfx}_post_bull", f"{pfx}_post_bear",
                 f"{pfx}_retest_zone_up", f"{pfx}_retest_zone_down",
+                f"{pfx}_retest_bull", f"{pfx}_retest_bear",
             ])
         stats = [
             "orb_stat_avg_range", "orb_stat_breakout_rate",
@@ -275,9 +341,12 @@ class OpeningRangeIndicator(BaseIndicator):
 
     def get_signal_columns(self) -> List[str]:
         signals = ["orb_breakout_up", "orb_breakout_down"]
-        for h in [8, 9, 14, 15]:
+        for h in self._PIPELINE_SESSIONS:
             pfx = f"orb_s{h:02d}"
-            signals.extend([f"{pfx}_breakout_up", f"{pfx}_breakout_down"])
+            signals.extend([
+                f"{pfx}_breakout_up", f"{pfx}_breakout_down",
+                f"{pfx}_retest_bull", f"{pfx}_retest_bear",
+            ])
         return signals
 
     @classmethod
