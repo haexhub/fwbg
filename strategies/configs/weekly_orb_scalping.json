@@ -9,25 +9,25 @@
     "smart_money"
   ],
   "timeframe": "MINUTE_15",
-  "hypothesis": "Wöchentliche Opening Ranges werden von institutionellen Marktteilnehmern intensiv beobachtet. Breakouts über WOR High/Low haben höhere Continuation-Wahrscheinlichkeit als zufällige Intraday-Breakouts, da der akkumulierte Wochenend-Orderflow eine klare Richtungsentscheidung darstellt.",
-  "expected_outcome": "WOR-Features dominieren die Feature Selection. Stärkerer Edge als täglicher ORB auf wöchentlicher Basis, da mehr Marktteilnehmer diese Level beobachten. Besonders stark auf Indices und FX Majors.",
-  "pipeline": "weekly_orb",
-  "exit_strategy": "atr_based",
-  "exit_params": "atr_intraday",
+  "hypothesis": "W\u00f6chentliche Opening Ranges werden von institutionellen Marktteilnehmern intensiv beobachtet. Breakouts \u00fcber WOR High/Low haben h\u00f6here Continuation-Wahrscheinlichkeit als zuf\u00e4llige Intraday-Breakouts, da der akkumulierte Wochenend-Orderflow eine klare Richtungsentscheidung darstellt.",
+  "expected_outcome": "WOR-Features dominieren die Feature Selection. St\u00e4rkerer Edge als t\u00e4glicher ORB auf w\u00f6chentlicher Basis, da mehr Marktteilnehmer diese Level beobachten. Besonders stark auf Indices und FX Majors.",
+  "pipeline": "weekly_orb_v1",
+  "exit_strategy": "orb_based",
+  "exit_params": "atr_intraday_v1",
   "exit_modifier": "trailing_stop",
   "exit_modifier_params": {
     "breakeven_trigger": 0.5,
     "trail_atr_mult": 0.5
   },
-  "model": "xgboost_depth6",
-  "validation": "walk_forward_intraday",
-  "filters": "weekly_orb",
-  "resources": "standard",
+  "model": "xgboost_depth6_v1",
+  "validation": "walk_forward_intraday_v1",
+  "filters": "weekly_orb_v1",
+  "resources": "standard_v1",
   "grids": {
     "presets_dir": "../grids",
     "assignments": {
       "FOREX": {
-        "preset": "weekly_orb_forex",
+        "preset": "weekly_orb_forex_v1",
         "tp": [
           2.0,
           2.5,
@@ -37,7 +37,7 @@
         ]
       },
       "INDEX": {
-        "preset": "weekly_orb_index",
+        "preset": "weekly_orb_index_v1",
         "tp": [
           4.0,
           5.0,
@@ -47,7 +47,7 @@
         ]
       },
       "COMMODITY": {
-        "preset": "weekly_orb_base",
+        "preset": "weekly_orb_base_v1",
         "tp": [
           2.5,
           3.0,
@@ -56,7 +56,7 @@
         ]
       },
       "CRYPTO": {
-        "preset": "weekly_orb_crypto",
+        "preset": "weekly_orb_crypto_v1",
         "tp": [
           3.0,
           4.0,

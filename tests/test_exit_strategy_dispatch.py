@@ -19,6 +19,7 @@ from fwbg.plugins import import_plugin_module
 
 _fixed = import_plugin_module("fwbg-core", "exit_strategies", "fixed")
 _atr = import_plugin_module("fwbg-premium", "exit_strategies", "atr_based")
+import_plugin_module("fwbg-premium", "exit_strategies", "orb_based")  # registers via decorator
 
 if _fixed is None:
     pytest.skip("fwbg-core exit_strategies plugin not available", allow_module_level=True)
