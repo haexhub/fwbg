@@ -565,6 +565,32 @@ Optionale Sektion um nur bestimmte Assets zu testen oder auszuschließen. Kann a
 
 ---
 
+## Datenquellen und Zeitzone
+
+**Alle Datasources müssen UTC-Timestamps verwenden.** Der Optimizer liest OHLCV-Daten mit naive `DatetimeIndex` und interpretiert Stunden direkt als UTC-Stunden. Eine Konvertierung in eine lokale Zeitzone (z.B. `Europe/Berlin`) ist explizit nicht erlaubt, weil:
+
+1. **DST-Duplikate**: Beim Rückfall (Oktober) erscheinen naive Strings wie "02:00:00" zweimal → `reindex` crasht.
+2. **Keine Daten-Lücken**: UTC-Timestamps sind immer eindeutig, kein Bar geht verloren.
+3. **Stabile Asian-Session-Stunden**: JP225 (09:00 JST = 00:00 UTC) und HK50 (09:30 HKT = 01:30 UTC) haben kein DST — in UTC sind ihre Opens immer auf derselben UTC-Stunde.
+
+### ORB Session-Konfiguration
+
+Für ORB-Strategien müssen `sessions`-Stunden in UTC angegeben werden. Da europäische Märkte DST haben, deckt eine lokale Stunde je nach Jahreszeit zwei UTC-Stunden ab:
+
+| Markt-Open | Lokal | UTC Winter (CET=+1) | UTC Sommer (CEST=+2) |
+|---|---|---|---|
+| JP225 09:00 JST | — | 00 UTC | 00 UTC |
+| HK50 09:30 HKT | — | 01 UTC | 01 UTC |
+| ASX200 ~10:00 AEST | — | 00 UTC | 23 UTC (Vortag) |
+| DAX 08:00 | 08 CET/CEST | **07 UTC** | **06 UTC** |
+| EU 09:00 | 09 CET/CEST | **08 UTC** | **07 UTC** |
+| US Pre-open 14:00 | 14 CET/CEST | **13 UTC** | **12 UTC** |
+| US Open ~15:30 | 15 CET/CEST | **14 UTC** | **13 UTC** |
+
+**Empfohlene UTC-Sessions für globale Index-Strategie:** `[0, 1, 2, 6, 7, 8, 12, 13, 14]`
+
+---
+
 ## Vollständige Beispiele
 
 ### Exploration (alle Features, ATR-Based)
