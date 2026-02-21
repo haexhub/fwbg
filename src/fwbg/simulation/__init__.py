@@ -14,8 +14,9 @@ from .trade import (
     adjust_risk_for_target_dd,
     find_optimal_circuit_breaker,
     calculate_equity_smoothness,
+    pnl_to_returns,
 )
-from .equity import simulate_equity, filter_correlated_assets
+from .equity import simulate_equity, simulate_equity_from_pnl, filter_correlated_assets
 
 __all__ = [
     "_simulate_trade_numba",
@@ -28,6 +29,8 @@ __all__ = [
     "adjust_risk_for_target_dd",
     "find_optimal_circuit_breaker",
     "calculate_equity_smoothness",
+    "pnl_to_returns",
     "simulate_equity",
+    "simulate_equity_from_pnl",
     "filter_correlated_assets",
 ]

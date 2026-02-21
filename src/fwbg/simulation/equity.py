@@ -69,6 +69,64 @@ def simulate_equity(trades, risk_per_trade, rrr, start_equity=100.0, compound_ca
     }
 
 
+def simulate_equity_from_pnl(pnl_raw, fk, start_equity=100.0, compound_cap=1e6):
+    """Equity-Simulation mit tatsächlichen PnL-Werten statt binärem Kelly.
+
+    Im Gegensatz zu simulate_equity (das feste +risk*rrr / -risk verwendet)
+    nutzt diese Funktion die echten Trade-PnL-Magnitudes. Skalierung:
+    durchschnittlicher Loss-Return = -fk (konsistent mit Kelly-Sizing).
+
+    Args:
+        pnl_raw: Liste der tatsächlichen PnL-Werte (positiv=Gewinn, negativ=Verlust)
+        fk: Kelly-Fraktion (Risiko pro Trade)
+        start_equity: Startkapital (default: 100.0)
+        compound_cap: Ab diesem Equity-Wert wird nicht mehr kompoundiert
+
+    Returns:
+        dict mit equity_curve, final_equity, max_drawdown, drawdowns
+    """
+    if not pnl_raw:
+        return {
+            "equity_curve": [start_equity],
+            "final_equity": start_equity,
+            "max_drawdown": 0.0,
+            "drawdowns": [0.0],
+        }
+
+    from fwbg.simulation.trade import pnl_to_returns
+    returns = pnl_to_returns(pnl_raw, fk)
+
+    equity = start_equity
+    equity_curve = [equity]
+    peak = equity
+    max_dd = 0.0
+    drawdowns = [0.0]
+
+    for r in returns:
+        effective_equity = min(equity, compound_cap)
+        equity += effective_equity * r
+        equity_curve.append(equity)
+
+        if equity > peak:
+            peak = equity
+        dd = (peak - equity) / peak if peak > 0 else 0.0
+        if dd > max_dd:
+            max_dd = dd
+        drawdowns.append(dd * 100)
+
+        if equity <= 0:
+            equity = 0.0
+            max_dd = 1.0
+            break
+
+    return {
+        "equity_curve": equity_curve,
+        "final_equity": equity,
+        "max_drawdown": max_dd,
+        "drawdowns": drawdowns,
+    }
+
+
 def filter_correlated_assets(results, threshold=CORR_THRESHOLD):
     """
     Filtert Assets mit zu hoher Währungskorrelation.

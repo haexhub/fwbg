@@ -24,6 +24,7 @@ from fwbg.simulation.trade import (
     calculate_equity_smoothness,
     adjust_risk_for_target_dd,
     find_optimal_circuit_breaker,
+    pnl_to_returns,
 )
 
 
@@ -580,3 +581,39 @@ class TestEdgeCases:
 
         # Keine Targets sollten erreicht werden
         assert np.sum(targets_long) == 0
+
+
+class TestPnlToReturns:
+    """Tests für pnl_to_returns: skaliert pnl_raw auf Kelly-Returns."""
+
+    def test_avg_loss_return_equals_minus_fk(self):
+        """Durchschnittlicher Loss-Return muss genau -fk sein."""
+        pnl = [16.0, 16.0, -24.0, -24.0, 16.0]
+        returns = pnl_to_returns(pnl, fk=0.02)
+        losses = [r for r in returns if r < 0]
+        avg_loss = sum(losses) / len(losses)
+        assert abs(avg_loss + 0.02) < 1e-12
+
+    def test_preserves_sign(self):
+        """Positives pnl → positiver Return, negatives pnl → negativer Return."""
+        pnl = [10.0, -5.0, 20.0]
+        returns = pnl_to_returns(pnl, fk=0.01)
+        assert returns[0] > 0
+        assert returns[1] < 0
+        assert returns[2] > 0
+
+    def test_proportional_to_pnl(self):
+        """Doppelter Win-PnL → doppelter Return."""
+        pnl = [20.0, -10.0, 10.0, -10.0]
+        returns = pnl_to_returns(pnl, fk=0.02)
+        assert abs(returns[0] / returns[2] - 2.0) < 1e-12
+
+    def test_all_wins_fallback(self):
+        """Keine Losses → kein Crash, alle Returns positiv."""
+        pnl = [10.0, 20.0, 15.0]
+        returns = pnl_to_returns(pnl, fk=0.02)
+        assert len(returns) == 3
+        assert all(r > 0 for r in returns)
+
+    def test_empty_returns_empty(self):
+        assert pnl_to_returns([], fk=0.02) == []

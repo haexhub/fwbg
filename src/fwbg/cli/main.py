@@ -46,7 +46,7 @@ from fwbg.results.storage import (
     load_run,
 )
 from fwbg.optimization.resource_manager import SimplePoolManager, get_resource_info
-from fwbg.simulation.equity import simulate_equity, filter_correlated_assets
+from fwbg.simulation.equity import simulate_equity_from_pnl, filter_correlated_assets
 from fwbg.results.plotting import create_asset_plot
 from .commands import (
     show_runs,
@@ -276,8 +276,7 @@ def run_optimizer(
             _years = _total_test_bars / _bars_per_year if _bars_per_year > 0 else 1
 
             # Equity simulieren für annual_return
-            from fwbg.simulation.equity import simulate_equity as _sim_eq
-            _eq_result = _sim_eq(_trades, _risk, _rrr)
+            _eq_result = simulate_equity_from_pnl(_trades, fk=_risk)
             _final_eq = _eq_result["final_equity"]
             _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
 
@@ -470,8 +469,7 @@ def run_optimizer(
 
         # Equity-Simulation
         risk = e["config"]["risk_per_trade"]
-        rrr = e["rrr"]
-        sim = simulate_equity(e["tr_trace"], risk, rrr)
+        sim = simulate_equity_from_pnl(e["tr_trace"], fk=risk)
 
         eq = sim["equity_curve"]
         final_equity = sim["final_equity"]

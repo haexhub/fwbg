@@ -17,6 +17,7 @@ from fwbg.data.loader import load_data_aligned, run_data_loading
 from fwbg.simulation.trade import (
     calculate_sharpe_ratio, calculate_calmar_from_returns,
     monte_carlo_permutation_test, monte_carlo_equity_from_returns,
+    pnl_to_returns,
 )
 from fwbg.core import get_risk_manager
 from fwbg.utils.progress import report_done, report_phase
@@ -275,14 +276,16 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             if fid is not None:
                 grid_results_by_fold.setdefault(fid, []).append(gr)
 
-        trade_returns = risk_result["trade_returns"]
-        returns_arr = np.array(trade_returns)
-        non_ann_sr = float(np.mean(returns_arr) / np.std(returns_arr)) if len(returns_arr) > 1 and np.std(returns_arr) > 0 else 0.0
+        # Per-trade returns from actual pnl_raw (not binary Kelly).
+        # Scaled so avg loss return = -fk — consistent with what MC permutation test sees.
+        pnl_returns = pnl_to_returns(all_trades_pnl, fk)
+        pnl_returns_arr = np.array(pnl_returns)
+        non_ann_sr = float(np.mean(pnl_returns_arr) / np.std(pnl_returns_arr)) if len(pnl_returns_arr) > 1 and np.std(pnl_returns_arr) > 0 else 0.0
 
         from .overfitting import compute_overfitting_metrics
         try:
             overfitting = compute_overfitting_metrics(
-                trade_returns=trade_returns,
+                trade_returns=pnl_returns,
                 observed_sr=non_ann_sr,
                 n_strategies=len(accumulated_grid_results),
                 grid_results_by_fold=grid_results_by_fold,
@@ -377,7 +380,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         t_mc = time.time()
         mc_perm = monte_carlo_permutation_test(all_trades_pnl, n_permutations=1000)
-        mc_equity = monte_carlo_equity_from_returns(trade_returns, n_simulations=500)
+        mc_equity = monte_carlo_equity_from_returns(pnl_returns, n_simulations=500)
 
         log(2, f"  Monte Carlo: p={mc_perm['p_value']:.3f}, "
                f"Equity median={mc_equity['median_equity']:.1f}, "
@@ -397,8 +400,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
         total_test_bars = sum(r["test_size"] for r in all_fold_results)
         actual_trades_per_year = total_trades * bars_per_year / total_test_bars if total_test_bars > 0 else total_trades
-        sharpe = calculate_sharpe_ratio(risk_result["trade_returns"], trades_per_year=actual_trades_per_year)
-        calmar = calculate_calmar_from_returns(risk_result["trade_returns"])
+        sharpe = calculate_sharpe_ratio(pnl_returns, trades_per_year=actual_trades_per_year)
+        calmar = calculate_calmar_from_returns(pnl_returns)
 
         ct_long, ct_short, ct_display = _parse_ct_value(b_config["ct"])
 

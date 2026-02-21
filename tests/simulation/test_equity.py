@@ -8,7 +8,7 @@ Testet:
 import pytest
 import numpy as np
 
-from fwbg.simulation.equity import simulate_equity, filter_correlated_assets
+from fwbg.simulation.equity import simulate_equity, simulate_equity_from_pnl, filter_correlated_assets
 
 
 class TestSimulateEquity:
@@ -296,3 +296,46 @@ class TestEquityEdgeCases:
 
         # Wins bringen 0, Losses kosten 2%
         assert result["final_equity"] < 100.0
+
+
+class TestSimulateEquityFromPnl:
+    """Tests für simulate_equity_from_pnl: Equity-Simulation mit echten PnL-Werten."""
+
+    def test_returns_correct_structure(self):
+        """Funktion gibt dict mit equity_curve, final_equity, max_drawdown zurück."""
+        pnl = [16.0, -24.0, 16.0]
+        result = simulate_equity_from_pnl(pnl, fk=0.02)
+        assert "equity_curve" in result
+        assert "final_equity" in result
+        assert "max_drawdown" in result
+        assert "drawdowns" in result
+        assert len(result["equity_curve"]) == 4  # start + 3 trades
+
+    def test_losing_when_realized_rrr_too_low(self):
+        """WR=50%, realized_RRR=0.67 → negatives EV → Verlust."""
+        # wins=16, losses=-24 → avg_win/avg_loss = 0.67
+        # EV = 0.5 * (0.02 * 16/24) - 0.5 * 0.02 = 0.5*0.01333 - 0.01 = -0.00333 < 0
+        pnl = [16.0, -24.0] * 50
+        result = simulate_equity_from_pnl(pnl, fk=0.02)
+        assert result["final_equity"] < 100.0
+
+    def test_profitable_when_realized_rrr_high(self):
+        """WR=50%, realized_RRR=2.0 → positives EV → Gewinn."""
+        # wins=48, losses=-24 → avg_win/avg_loss = 2.0
+        # EV = 0.5 * (0.02 * 48/24) - 0.5 * 0.02 = 0.5*0.04 - 0.01 = 0.01 > 0
+        pnl = [48.0, -24.0] * 50
+        result = simulate_equity_from_pnl(pnl, fk=0.02)
+        assert result["final_equity"] > 100.0
+
+    def test_no_losses_fallback_no_crash(self):
+        """Nur Gewinne → kein Absturz, Equity steigt."""
+        pnl = [16.0, 20.0, 18.0]
+        result = simulate_equity_from_pnl(pnl, fk=0.02)
+        assert result["final_equity"] > 100.0
+        assert result["max_drawdown"] == 0.0
+
+    def test_empty_trades(self):
+        """Keine Trades → Equity bleibt bei Start."""
+        result = simulate_equity_from_pnl([], fk=0.02)
+        assert result["final_equity"] == 100.0
+        assert result["max_drawdown"] == 0.0
