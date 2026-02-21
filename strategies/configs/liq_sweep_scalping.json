@@ -15,6 +15,11 @@
   "pipeline": "liq_sweep_scalping",
   "exit_strategy": "atr_based",
   "exit_params": "atr_intraday",
+  "exit_modifier": "trailing_stop",
+  "exit_modifier_params": {
+    "breakeven_trigger": 0.5,
+    "trail_atr_mult": 0.5
+  },
   "model": "xgboost_depth6",
   "validation": "walk_forward_intraday",
   "filters": "orb_scalping",
@@ -24,49 +29,121 @@
     "assignments": {
       "FOREX": {
         "preset": "orb_scalping_forex",
-        "tp": [1.5, 2.0, 2.5, 3.0]
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "INDEX": {
         "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0]
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ]
       },
       "COMMODITY": {
         "preset": "orb_scalping_base",
-        "tp": [2.0, 2.5, 3.0, 3.5]
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "CRYPTO": {
         "preset": "orb_scalping_crypto",
-        "tp": [2.0, 3.0, 4.0, 5.0]
+        "tp": [
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ]
       },
       "DAX": {
         "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5]
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5
+        ]
       },
       "FTSE100": {
         "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0],
-        "sl": [1.5, 2.0, 2.5]
+        "tp": [
+          3.0,
+          4.0,
+          5.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5
+        ]
       },
       "DOW30": {
         "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [2.0, 2.5, 3.0]
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
+        "sl": [
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "NAS100": {
         "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [2.0, 2.5, 3.0]
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
+        "sl": [
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "SPX500": {
         "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0],
-        "sl": [1.5, 2.0, 2.5]
+        "tp": [
+          3.0,
+          4.0,
+          5.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5
+        ]
       },
       "EU50": {
         "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5]
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5
+        ]
       }
     }
   }
