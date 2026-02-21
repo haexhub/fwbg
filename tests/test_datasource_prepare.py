@@ -7,6 +7,7 @@ Sichert ab:
 - Ausgabe enthält korrekte OHLCV-Spalten (T, O, H, L, C, V=0)
 - Dateien werden korrekt im datasource-Verzeichnis abgelegt
 - Fehlende symbol_map-Einträge werden übersprungen (kein Absturz)
+- timezone-Feld konvertiert UTC-Timestamps in die Ziel-Zeitzone (DST-aware)
 """
 import csv
 import pytest
@@ -161,3 +162,111 @@ class TestCSVSourceSerialization:
         assert str(restored.raw_path) == str(csv_source.raw_path)
         assert restored.timestamp_unit == csv_source.timestamp_unit
         assert restored.symbol_map == csv_source.symbol_map
+
+
+# ---------------------------------------------------------------------------
+# Tests: Timezone-Konvertierung
+# ---------------------------------------------------------------------------
+
+class TestCSVSourceTimezone:
+    """Sichert ab dass UTC-Timestamps in die konfigurierte Zeitzone konvertiert werden.
+
+    Referenz-Timestamp: 1388534400000 ms
+      = 2014-01-01 00:00:00 UTC
+      = 2014-01-01 01:00:00 Europe/Berlin (CET = UTC+1 im Winter)
+      = 2014-01-01 09:00:00 Asia/Tokyo    (JST = UTC+9)
+    """
+
+    def _make_source(self, raw_dir, datasource_dir, timezone):
+        from fwbg.core.data_sources import CSVSourceConfig
+        return CSVSourceConfig(
+            name="tz_test",
+            path=datasource_dir,
+            file_pattern="{symbol}_MINUTE_15.csv",
+            raw_path=raw_dir,
+            raw_pattern="{raw_symbol}_m15.csv",
+            timestamp_unit="ms",
+            symbol_map={"DE40_DAX": "DAX"},
+            timezone=timezone,
+        )
+
+    def test_no_timezone_keeps_utc(self, raw_dir, datasource_dir):
+        """Ohne timezone bleibt der Timestamp in UTC (bisheriges Verhalten)."""
+        from fwbg.core.data_sources import CSVSourceConfig
+        src = CSVSourceConfig(
+            name="no_tz",
+            path=datasource_dir,
+            file_pattern="{symbol}_MINUTE_15.csv",
+            raw_path=raw_dir,
+            raw_pattern="{raw_symbol}_m15.csv",
+            timestamp_unit="ms",
+            symbol_map={"DE40_DAX": "DAX"},
+        )
+        src.prepare()
+        rows = list(csv.DictReader((datasource_dir / "DAX_MINUTE_15.csv").open()))
+        # 1388534400000 ms = 2014-01-01 00:00:00 UTC
+        assert rows[0]["T"] == "2014-01-01 00:00:00"
+
+    def test_europe_berlin_winter_offset(self, raw_dir, datasource_dir):
+        """timezone='Europe/Berlin' verschiebt UTC+1h im Winter (CET)."""
+        src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
+        src.prepare()
+        rows = list(csv.DictReader((datasource_dir / "DAX_MINUTE_15.csv").open()))
+        # 2014-01-01 00:00:00 UTC → 2014-01-01 01:00:00 CET
+        assert rows[0]["T"] == "2014-01-01 01:00:00", (
+            f"Erwartet 01:00:00 CET, bekommen: {rows[0]['T']}"
+        )
+
+    def test_europe_berlin_second_bar(self, raw_dir, datasource_dir):
+        """Auch der zweite Bar wird korrekt verschoben (+15 min)."""
+        src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
+        src.prepare()
+        rows = list(csv.DictReader((datasource_dir / "DAX_MINUTE_15.csv").open()))
+        # 1388535300000 ms = 2014-01-01 00:15:00 UTC → 01:15:00 CET
+        assert rows[1]["T"] == "2014-01-01 01:15:00", (
+            f"Erwartet 01:15:00 CET, bekommen: {rows[1]['T']}"
+        )
+
+    def test_europe_berlin_dst_summer(self, tmp_path):
+        """timezone='Europe/Berlin' verschiebt UTC+2h im Sommer (CEST)."""
+        raw = tmp_path / "raw"
+        raw.mkdir()
+        # 2024-07-01 06:00:00 UTC = 2024-07-01 08:00:00 CEST (UTC+2)
+        ts_ms = 1719813600000  # 2024-07-01 06:00:00 UTC
+        (raw / "DE40_DAX_m15.csv").write_text(
+            f"timestamp,open,high,low,close\n{ts_ms},100,101,99,100\n"
+        )
+        from fwbg.core.data_sources import CSVSourceConfig
+        src = CSVSourceConfig(
+            name="dst_test",
+            path=tmp_path / "out",
+            file_pattern="{symbol}_MINUTE_15.csv",
+            raw_path=raw,
+            raw_pattern="{raw_symbol}_m15.csv",
+            timestamp_unit="ms",
+            symbol_map={"DE40_DAX": "DAX"},
+            timezone="Europe/Berlin",
+        )
+        src.prepare()
+        rows = list(csv.DictReader((tmp_path / "out" / "DAX_MINUTE_15.csv").open()))
+        assert rows[0]["T"] == "2024-07-01 08:00:00", (
+            f"Erwartet 08:00:00 CEST, bekommen: {rows[0]['T']}"
+        )
+
+    def test_timezone_in_to_dict(self, raw_dir, datasource_dir):
+        """to_dict() muss timezone enthalten wenn gesetzt."""
+        src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
+        d = src.to_dict()
+        assert d.get("timezone") == "Europe/Berlin"
+
+    def test_no_timezone_not_in_to_dict(self, csv_source):
+        """to_dict() darf 'timezone' nicht enthalten wenn nicht gesetzt."""
+        d = csv_source.to_dict()
+        assert "timezone" not in d
+
+    def test_source_from_dict_restores_timezone(self, raw_dir, datasource_dir):
+        """source_from_dict() muss timezone korrekt deserialisieren."""
+        from fwbg.core.data_sources import source_from_dict
+        src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
+        restored = source_from_dict(src.to_dict())
+        assert restored.timezone == "Europe/Berlin"
