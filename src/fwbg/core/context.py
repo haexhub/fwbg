@@ -231,20 +231,6 @@ class SimulationContext:
 
         return len(self.grid_tp) * len(self.grid_sl) * n_timeout * n_modifier
 
-    def grid_combinations_per_run(self) -> int:
-        """Berechnet Grid-Kombinationen pro Run."""
-        n_timeout = self._effective_timeout_grid_size()
-
-        if self.separate_long_short:
-            long_tp, long_sl, _ = self.get_long_grid()
-            short_tp, short_sl, _ = self.get_short_grid()
-            return (
-                (len(long_tp) * len(long_sl) + len(short_tp) * len(short_sl))
-                * n_timeout
-            )
-
-        return len(self.grid_tp) * len(self.grid_sl) * n_timeout
-
 
 # Type hint import für AssetConfig
 if TYPE_CHECKING:

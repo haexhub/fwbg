@@ -223,7 +223,9 @@ def process_single_fold(
     all_grid_results = []
 
     if fold.fold_id == 0:  # Only log once
-        log(1, f"Grid-Search: {len(grid.tp)}x{len(grid.sl)}x{len(grid.ct)} x {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
+        n_timeout = len(grid.timeout_bars) if grid.timeout_bars else 1
+        n_modifier = len(ctx.grid_exit_modifier_params) if ctx.grid_exit_modifier_params else 1
+        log(1, f"Grid-Search: {len(grid.tp)}×{len(grid.sl)}×{n_timeout}×{n_modifier} modifier × {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
         if ctx.min_rrr > 0:
             log(1, f"Min RRR Filter: {ctx.min_rrr}", sym)
 

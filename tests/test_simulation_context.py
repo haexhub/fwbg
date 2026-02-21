@@ -302,44 +302,6 @@ class TestSimulationContextCombinations:
         # Total: 6 + 2 = 8
         assert ctx.total_grid_combinations() == 8
 
-    def test_grid_combinations_per_run(self):
-        """Kombinationen pro Run sollten korrekt sein."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15, 20, 25],  # 3
-            grid_sl=[10, 15],  # 2
-            grid_ct=[0.5],
-        )
-
-        # 3 × 2 × 1 (timeout) = 6
-        assert ctx.grid_combinations_per_run() == 6
-
-    def test_grid_combinations_per_run_separate(self):
-        """Kombinationen pro Run mit separate Long/Short."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15, 20],
-            grid_sl=[10],
-            grid_ct=[0.5],
-            separate_long_short=True,
-            long_grid_tp=[20, 25],  # 2
-            long_grid_sl=[15],  # 1
-            long_grid_ct=[0.5],
-            short_grid_tp=[10, 15, 20],  # 3
-            short_grid_sl=[20, 25],  # 2
-            short_grid_ct=[0.5],
-        )
-
-        # Long: 2 × 1 = 2
-        # Short: 3 × 2 = 6
-        # Total: (2 + 6) × 1 (timeout) = 8
-        assert ctx.grid_combinations_per_run() == 8
 
 
 class TestSimulationContextEdgeCases:
@@ -417,7 +379,6 @@ class TestSimulationContextEdgeCases:
         )
 
         assert ctx.total_grid_combinations() == 1
-        assert ctx.grid_combinations_per_run() == 1
 
     def test_very_large_grids(self):
         """Sehr große Grids sollten korrekt berechnet werden."""

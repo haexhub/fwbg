@@ -20,7 +20,6 @@ class TestGridProgressCallback:
 
         # Minimaler ctx mit 2 TP, 2 SL = 4 Kombinationen
         ctx = MagicMock()
-        ctx.grid_combinations_per_run.return_value = 4
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False  # Kein RRR-Filter
@@ -102,7 +101,6 @@ class TestGridProgressCallback:
 
         # ctx mit 4 Grid-Kombinationen
         ctx = MagicMock()
-        ctx.grid_combinations_per_run.return_value = 4
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False
@@ -148,7 +146,6 @@ class TestGridProgressCallback:
         progress_callback = MagicMock()
 
         ctx = MagicMock()
-        ctx.grid_combinations_per_run.return_value = 4
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False
@@ -205,7 +202,6 @@ class TestProgressCallbackSequence:
 
         # ctx mit 4 Grid-Kombinationen (2 TP x 2 SL)
         ctx = MagicMock()
-        ctx.grid_combinations_per_run.return_value = 4
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False  # Kein RRR-Filter - alle Combos werden verarbeitet
@@ -272,7 +268,6 @@ class TestProgressCallbackSequence:
 
         # ctx mit min_rrr Filter - einige Combos werden übersprungen
         ctx = MagicMock()
-        ctx.grid_combinations_per_run.return_value = 4  # 2 TP x 2 SL = 4
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0.5  # RRR-Filter: TP/SL muss >= 0.5 sein
         ctx.early_pruning_enabled = False
@@ -452,7 +447,6 @@ class TestSuccessiveHalving:
         from fwbg.optimization.grid_search import run_grid_search
 
         ctx = MagicMock()
-        ctx.grid_combinations_per_run.return_value = 4
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False
@@ -483,7 +477,6 @@ class TestSuccessiveHalving:
         from fwbg.optimization.grid_search import run_grid_search
 
         ctx = MagicMock()
-        ctx.grid_combinations_per_run.return_value = 2
         ctx.total_grid_combinations.return_value = 2
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False
