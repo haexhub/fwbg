@@ -551,6 +551,27 @@ def calculate_annual_return(returns, risk_per_trade, rrr, total_bars, bars_per_y
     return annual_return
 
 
+def pnl_to_returns(pnl_raw, fk):
+    """Konvertiert tatsächliche PnL-Werte in Kelly-skalierte Per-Trade-Returns.
+
+    Skaliert so, dass der durchschnittliche Loss-Return exakt -fk ist.
+    Gewinner reflektieren die tatsächlich realisierte RRR (nicht die erwartete).
+
+    Args:
+        pnl_raw: Liste der tatsächlichen PnL-Werte (positiv=Gewinn, negativ=Verlust)
+        fk: Kelly-Fraktion (Risiko pro Trade, z.B. 0.02 = 2%)
+
+    Returns:
+        Liste der Per-Trade-Returns als Anteil des Kapitals.
+        Bei leerer Eingabe: leere Liste.
+    """
+    if not pnl_raw:
+        return []
+    losses = [abs(p) for p in pnl_raw if p < 0]
+    scale = float(np.mean(losses)) if losses else float(np.mean(np.abs(pnl_raw))) or 1.0
+    return [fk * p / scale for p in pnl_raw]
+
+
 def monte_carlo_permutation_test(trade_pnls, n_permutations=1000, random_seed=42, rrr=None):
     """
     Monte Carlo Signifikanz-Test für Trading-Strategien (PnL-basiert).

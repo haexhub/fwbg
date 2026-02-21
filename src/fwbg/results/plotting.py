@@ -8,7 +8,7 @@ from matplotlib.ticker import FuncFormatter, NullFormatter
 import numpy as np
 
 from fwbg.data.config import WALK_FORWARD_FOLDS, OOS_SIZE, TIMEFRAME
-from fwbg.simulation.equity import simulate_equity
+from fwbg.simulation.equity import simulate_equity_from_pnl
 
 
 def _format_currency(x, _):
@@ -78,10 +78,9 @@ def create_asset_plot(result, plots_path, trade_directions=None):
     risk = config.get("risk_per_trade", 0.01)
     if risk <= 0:
         risk = 0.01  # Minimum für Visualisierung
-    rrr = result.get("rrr", 1.0)
 
-    # Equity simulieren
-    eq_result = simulate_equity(trades, risk, rrr)
+    # Equity mit echten PnL-Magnitudes simulieren (nicht binäres Kelly)
+    eq_result = simulate_equity_from_pnl(trades, fk=risk)
     eq = eq_result["equity_curve"]
     drawdowns = eq_result["drawdowns"]
     max_dd = eq_result["max_drawdown"]
