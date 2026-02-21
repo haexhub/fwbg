@@ -543,6 +543,83 @@ class TestSimulationContextTradeDirections:
         assert ctx.short_enabled is False
 
 
+class TestSimulationContextModifierGrid:
+    """Tests für grid_exit_modifier_params Dimension."""
+
+    def test_default_grid_exit_modifier_params_is_none_list(self):
+        """grid_exit_modifier_params sollte standardmäßig [None] sein."""
+        ctx = SimulationContext(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            grid_tp=[1.0],
+            grid_sl=[1.0],
+            grid_ct=[0.5],
+        )
+        assert ctx.grid_exit_modifier_params == [None]
+
+    def test_total_grid_combinations_multiplies_by_modifier_grid_size(self):
+        """total_grid_combinations() soll exit_modifier_params_grid berücksichtigen."""
+        ctx = SimulationContext(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            grid_tp=[1.0, 2.0],  # 2
+            grid_sl=[1.0, 2.0],  # 2
+            grid_ct=[0.5],
+            grid_exit_modifier_params=[
+                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
+                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+            ],  # 2
+        )
+        # 2 × 2 × 1 (timeout) × 2 (modifier) = 8
+        assert ctx.total_grid_combinations() == 8
+
+    def test_total_grid_combinations_single_modifier_params_unchanged(self):
+        """total_grid_combinations() soll mit 1 modifier_params wie bisher funktionieren."""
+        ctx = SimulationContext(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            grid_tp=[1.0, 2.0],  # 2
+            grid_sl=[1.0, 2.0],  # 2
+            grid_ct=[0.5],
+            grid_exit_modifier_params=[None],  # 1 (default)
+        )
+        # 2 × 2 × 1 × 1 = 4 (unchanged from before)
+        assert ctx.total_grid_combinations() == 4
+
+    def test_total_grid_combinations_separate_long_short_with_modifier_grid(self):
+        """Separate long/short + modifier grid soll korrekt multipliziert werden."""
+        ctx = SimulationContext(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            grid_tp=[1.0, 2.0],
+            grid_sl=[1.0],
+            grid_ct=[0.5],
+            separate_long_short=True,
+            long_grid_tp=[1.0, 2.0, 3.0],  # 3
+            long_grid_sl=[1.0, 2.0],  # 2
+            long_grid_ct=[0.5],
+            short_grid_tp=[1.0, 2.0],  # 2
+            short_grid_sl=[1.0],  # 1
+            short_grid_ct=[0.5],
+            grid_exit_modifier_params=[
+                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
+                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+            ],  # 2
+        )
+        # Long: 3 × 2 × 1 = 6
+        # Short: 2 × 1 × 1 = 2
+        # Total: (6 + 2) × 2 modifier = 16
+        assert ctx.total_grid_combinations() == 16
+
+
 class TestSimulationContextEarlyTermination:
     """Tests für Early Termination Parameter."""
 
