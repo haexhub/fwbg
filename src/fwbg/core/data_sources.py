@@ -78,6 +78,7 @@ class CSVSourceConfig(DataSourceConfig):
     raw_pattern: str = "{raw_symbol}_m15.csv"
     timestamp_unit: str = ""          # "ms" for Unix milliseconds, "" for auto-detect
     symbol_map: Dict[str, str] = field(default_factory=dict)  # raw_prefix → symbol
+    timezone: str = ""                # IANA timezone for UTC→local conversion, e.g. "Europe/Berlin"
 
     def __post_init__(self):
         self.source_type = SourceType.CSV
@@ -102,6 +103,8 @@ class CSVSourceConfig(DataSourceConfig):
             d["timestamp_unit"] = self.timestamp_unit
         if self.symbol_map:
             d["symbol_map"] = self.symbol_map
+        if self.timezone:
+            d["timezone"] = self.timezone
         return d
 
     def prepare(self) -> List[str]:
@@ -147,8 +150,10 @@ class CSVSourceConfig(DataSourceConfig):
                     continue
 
                 if self.timestamp_unit == "ms":
-                    df["T"] = pd.to_datetime(df["timestamp"], unit="ms")
-                    df["T"] = df["T"].dt.strftime("%Y-%m-%d %H:%M:%S")
+                    ts = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+                    if self.timezone:
+                        ts = ts.dt.tz_convert(self.timezone)
+                    df["T"] = ts.dt.strftime("%Y-%m-%d %H:%M:%S")
                 else:
                     df["T"] = df["timestamp"].astype(str)
 
@@ -408,6 +413,7 @@ def source_from_dict(d: dict) -> DataSource:
             raw_pattern=d.get("raw_pattern", "{raw_symbol}_m15.csv"),
             timestamp_unit=d.get("timestamp_unit", ""),
             symbol_map=d.get("symbol_map", {}),
+            timezone=d.get("timezone", ""),
         )
     elif t == "rest":
         return RESTSourceConfig(
