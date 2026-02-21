@@ -133,6 +133,69 @@ class TestGridPresetLoading:
 # ============================================================
 
 
+class TestGridConfigExitModifierParamsGrid:
+    """Tests für exit_modifier_params_grid in GridConfig."""
+
+    def test_absent_exit_modifier_params_grid_defaults_to_none_list(self):
+        """Ohne exit_modifier_params_grid soll Default [None] verwendet werden."""
+        cfg = GridConfig.from_dict({"tp": [1.0], "sl": [1.0], "ct": [0.5]})
+        assert cfg.exit_modifier_params_grid == [None]
+
+    def test_list_exit_modifier_params_grid_parsed_as_is(self):
+        """Liste wird unverändert übernommen."""
+        cfg = GridConfig.from_dict({
+            "tp": [1.0], "sl": [1.0], "ct": [0.5],
+            "exit_modifier_params_grid": [
+                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
+                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+            ],
+        })
+        assert len(cfg.exit_modifier_params_grid) == 2
+        assert cfg.exit_modifier_params_grid[0] == {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0}
+        assert cfg.exit_modifier_params_grid[1] == {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
+
+    def test_single_dict_exit_modifier_params_grid_wrapped_in_list(self):
+        """Einzelnes Dict wird in Liste gepackt."""
+        cfg = GridConfig.from_dict({
+            "tp": [1.0], "sl": [1.0], "ct": [0.5],
+            "exit_modifier_params_grid": {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+        })
+        assert cfg.exit_modifier_params_grid == [{"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}]
+
+    def test_exit_modifier_params_grid_with_none_in_list(self):
+        """Liste mit None-Eintrag (=kein Modifier) ist erlaubt."""
+        cfg = GridConfig.from_dict({
+            "tp": [1.0], "sl": [1.0], "ct": [0.5],
+            "exit_modifier_params_grid": [
+                None,
+                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+            ],
+        })
+        assert len(cfg.exit_modifier_params_grid) == 2
+        assert cfg.exit_modifier_params_grid[0] is None
+        assert cfg.exit_modifier_params_grid[1] == {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
+
+    def test_exit_modifier_params_grid_preserved_through_preset_override(self, tmp_path):
+        """exit_modifier_params_grid aus Assignment-Override wird genutzt."""
+        grids_dir = tmp_path / "grids"
+        grids_dir.mkdir()
+        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
+
+        grids_data = {
+            "assignments": {
+                "FOREX": {
+                    "preset": "base",
+                    "exit_modifier_params_grid": [
+                        {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
+                        {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+                    ],
+                },
+            },
+        }
+        result = _parse_grids(grids_data, str(tmp_path))
+        assert len(result["FOREX"].exit_modifier_params_grid) == 2
+
+
 class TestRegimeFilterPresets:
     """Tests for regime filter resolution in preset system."""
 

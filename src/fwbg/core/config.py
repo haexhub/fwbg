@@ -96,6 +96,10 @@ class GridConfig:
     short_ct: List[float] = None
     separate_long_short: bool = False
 
+    # Exit-Modifier-Params Grid: Liste von Modifier-Param-Dicts zum Vergleichen
+    # [None] = nur ctx-Default verwenden (kein Grid), [dict1, dict2] = Grid über Modifier-Params
+    exit_modifier_params_grid: List[Optional[dict]] = field(default_factory=lambda: [None])
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GridConfig":
         """Erstellt GridConfig aus Dictionary."""
@@ -114,6 +118,14 @@ class GridConfig:
             data.get("regime_filter_grid")
         )
 
+        emp_raw = data.get("exit_modifier_params_grid")
+        if emp_raw is None:
+            exit_modifier_params_grid = [None]
+        elif isinstance(emp_raw, dict):
+            exit_modifier_params_grid = [emp_raw]
+        else:
+            exit_modifier_params_grid = list(emp_raw)
+
         return cls(
             tp=data.get("tp", [1.0, 1.5, 2.0, 2.5]),
             sl=data.get("sl", [1.0, 1.5, 2.0]),
@@ -127,6 +139,7 @@ class GridConfig:
             short_sl=data.get("short_sl"),
             short_ct=data.get("short_ct"),
             separate_long_short=data.get("separate_long_short", has_separate),
+            exit_modifier_params_grid=exit_modifier_params_grid,
         )
 
     def get_long_grid(self) -> tuple:
@@ -380,6 +393,7 @@ def _parse_grids(grids_data: dict, strategy_dir: Optional[str] = None) -> Dict[s
         "tp", "sl", "ct", "timeout_bars",
         "long_tp", "long_sl", "long_ct",
         "short_tp", "short_sl", "short_ct",
+        "exit_modifier_params_grid",
     }
 
     for asset_class, assignment in assignments.items():

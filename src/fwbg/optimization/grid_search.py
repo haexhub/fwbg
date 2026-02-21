@@ -6,6 +6,7 @@ Enthält:
 - _process_tp_sl_combo_wrapper: Wrapper für parallele Verarbeitung
 - run_grid_search: Grid-Search über TP/SL/Timeout Kombinationen
 """
+import dataclasses
 from typing import Tuple, Optional, List
 
 import numpy as np
@@ -135,6 +136,7 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "selected_features_short": inner_result["selected_features_short"],
         "fold_stability": inner_result.get("fold_stability", 0),
         "regime_filter": regime_config,
+        "exit_modifier_params": ctx.exit_modifier_params,
     }
 
     if ctx.separate_long_short and "ct_long" in inner_result:
@@ -152,6 +154,7 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "fold_stability": inner_result.get("fold_stability", 0),
         "features": inner_result["selected_features"],
         "regime_filter": regime_config,
+        "exit_modifier_params": ctx.exit_modifier_params,
     }
     if isinstance(conf_thresh, tuple):
         grid_result["ct_long"] = conf_thresh[0]
@@ -227,22 +230,29 @@ def _build_combo_tuples(
     combo_idx = 0
     skipped_count = 0
 
-    for tp in grid.tp:
-        for sl in grid.sl:
-            rrr = tp / sl
-            if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                skipped_count += len(timeout_values)
-                log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
-                continue
+    for modifier_params in ctx.grid_exit_modifier_params:
+        # Create a per-modifier ctx so each combo carries the right exit_modifier_params
+        if modifier_params is not None:
+            combo_ctx = dataclasses.replace(ctx, exit_modifier_params=modifier_params)
+        else:
+            combo_ctx = ctx
 
-            for timeout_bars in timeout_values:
-                combos.append((
-                    tp, sl, timeout_bars, combo_idx,
-                    features, inner_folds, ctx, regime_config,
-                    0, total_grid_combos, inner_df,
-                    selected_features_long, selected_features_short
-                ))
-                combo_idx += 1
+        for tp in grid.tp:
+            for sl in grid.sl:
+                rrr = tp / sl
+                if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
+                    skipped_count += len(timeout_values)
+                    log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                    continue
+
+                for timeout_bars in timeout_values:
+                    combos.append((
+                        tp, sl, timeout_bars, combo_idx,
+                        features, inner_folds, combo_ctx, regime_config,
+                        0, total_grid_combos, inner_df,
+                        selected_features_long, selected_features_short
+                    ))
+                    combo_idx += 1
 
     return combos, skipped_count
 
@@ -260,9 +270,9 @@ def _run_with_successive_halving(
     # Pre-compute cached targets for all combos
     combo_targets = {}
     for combo_idx, combo in enumerate(combos):
-        tp, sl, timeout_bars = combo[0], combo[1], combo[2]
+        tp, sl, timeout_bars, combo_ctx = combo[0], combo[1], combo[2], combo[6]
         combo_targets[combo_idx] = _compute_cached_targets(
-            tp, sl, timeout_bars, inner_folds, inner_df, ctx
+            tp, sl, timeout_bars, inner_folds, inner_df, combo_ctx
         )
 
     # State per combo: list of fold results
@@ -276,11 +286,11 @@ def _run_with_successive_halving(
 
         for combo_idx in list(active_indices):
             combo = combos[combo_idx]
-            tp, sl, timeout_bars = combo[0], combo[1], combo[2]
+            tp, sl, timeout_bars, combo_ctx = combo[0], combo[1], combo[2], combo[6]
 
             fold_result = _evaluate_single_fold(
                 fold_idx, train_df, val_df,
-                features, tp, sl, ctx, timeout_bars,
+                features, tp, sl, combo_ctx, timeout_bars,
                 cached_targets=combo_targets[combo_idx],
                 selected_features_long=selected_features_long,
                 selected_features_short=selected_features_short,
@@ -327,15 +337,15 @@ def _run_with_successive_halving(
             continue
 
         combo = combos[combo_idx]
-        tp, sl, timeout_bars = combo[0], combo[1], combo[2]
+        tp, sl, timeout_bars, combo_ctx = combo[0], combo[1], combo[2], combo[6]
 
         result = _aggregate_cv_folds(
-            combo_fold_results[combo_idx], n_folds, ctx,
+            combo_fold_results[combo_idx], n_folds, combo_ctx,
             selected_features_long, selected_features_short,
         )
 
         candidate, grid_result = _build_candidate_and_grid_result(
-            result, tp, sl, timeout_bars, regime_config, ctx,
+            result, tp, sl, timeout_bars, regime_config, combo_ctx,
         )
         if candidate:
             candidates.append(candidate)

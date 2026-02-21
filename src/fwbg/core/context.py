@@ -106,6 +106,10 @@ class SimulationContext:
     exit_modifier: Optional[str] = None
     exit_modifier_params: dict = field(default_factory=dict)
 
+    # Grid über Exit-Modifier-Params: Liste von Dicts zum Durchsuchen
+    # [None] = nur ctx-Default verwenden; [dict1, dict2] = Grid über Modifier-Params
+    grid_exit_modifier_params: List[Optional[dict]] = field(default_factory=lambda: [None])
+
     # Model Hyperparameters (from StrategyConfig)
     model_hyperparameters: dict = field(default_factory=dict)
 
@@ -168,6 +172,8 @@ class SimulationContext:
             # Exit-Modifier Plugin (optional)
             exit_modifier=strategy.exit_modifier,
             exit_modifier_params=strategy.exit_modifier_params,
+            # Grid über Exit-Modifier-Params (aus GridConfig)
+            grid_exit_modifier_params=grid.exit_modifier_params_grid,
             # Model Hyperparameters
             model_hyperparameters=strategy.model.hyperparameters,
             # Pipeline: Preprocessing
@@ -212,6 +218,7 @@ class SimulationContext:
     def total_grid_combinations(self) -> int:
         """Berechnet Gesamtzahl der Grid-Kombinationen."""
         n_timeout = self._effective_timeout_grid_size()
+        n_modifier = len(self.grid_exit_modifier_params) if self.grid_exit_modifier_params else 1
         # With pipeline, we don't iterate over feature groups anymore
         # All indicator plugins are applied together
 
@@ -220,9 +227,9 @@ class SimulationContext:
             short_tp, short_sl, _ = self.get_short_grid()
             long_combos = len(long_tp) * len(long_sl) * n_timeout
             short_combos = len(short_tp) * len(short_sl) * n_timeout
-            return long_combos + short_combos
+            return (long_combos + short_combos) * n_modifier
 
-        return len(self.grid_tp) * len(self.grid_sl) * n_timeout
+        return len(self.grid_tp) * len(self.grid_sl) * n_timeout * n_modifier
 
     def grid_combinations_per_run(self) -> int:
         """Berechnet Grid-Kombinationen pro Run."""
