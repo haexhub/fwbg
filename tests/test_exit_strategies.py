@@ -247,3 +247,38 @@ class TestTrailingStopModifier:
         t_long_trail, _ = strategy.compute_targets(ohlc_with_atr, ctx_trailing, tp_mult=2.0, sl_mult=1.0)
         # Trailing stop changes outcomes — arrays should differ
         assert not np.array_equal(t_long_base, t_long_trail)
+
+    def test_trail_tp_atr_mult_changes_targets(self, ohlc_with_atr):
+        """trail_tp_atr_mult > 0 sollte andere Targets als trail_tp_atr_mult=0 produzieren."""
+        from fwbg.pipeline.registry import get_registry
+        registry = get_registry()
+        registry.auto_discover()
+        from fwbg.core.registry import get_exit_modifier
+        modifier_cls = get_exit_modifier("trailing_stop")
+        modifier = modifier_cls()
+
+        opens = ohlc_with_atr["O"].values
+        closes = ohlc_with_atr["C"].values
+        highs = ohlc_with_atr["H"].values
+        lows = ohlc_with_atr["L"].values
+        atr_values = ohlc_with_atr["_atr"].values
+
+        # tp_mult=0.5 → TP within single-bar range → many TP hits
+        # breakeven_trigger=0.0 → trailing TP starts immediately
+        # trail_atr_mult=0.0 → no trailing SL, only trailing TP matters
+        shared = dict(
+            tp_mult=0.5, sl_mult=3.0, spread=0.0, slippage=0.0,
+            min_tp_distance=0.0, min_sl_distance=0.0,
+            max_bars=150, timeout_val=0,
+            breakeven_trigger=0.0, trail_atr_mult=0.0,
+        )
+        t_long_no_trail_tp, _ = modifier.compute_targets(
+            opens, closes, highs, lows, atr_values,
+            **shared, trail_tp_atr_mult=0.0,
+        )
+        t_long_trail_tp, _ = modifier.compute_targets(
+            opens, closes, highs, lows, atr_values,
+            **shared, trail_tp_atr_mult=1.0,
+        )
+        # Trailing TP ratchets the TP upward, making TP hits harder → different outcomes
+        assert not np.array_equal(t_long_no_trail_tp, t_long_trail_tp)
