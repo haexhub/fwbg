@@ -252,6 +252,54 @@ def get_grid_detail(run_id: str, filename: str) -> dict:
         raise HTTPException(500, f"Failed to read grid detail: {e}")
 
 
+@router.get("/{run_id}/trades/{symbol}")
+def get_run_symbol_trades(run_id: str, symbol: str) -> dict:
+    """Return all detailed trades for a specific symbol across all walk-forward folds.
+
+    Reads the stored grid-detail file and extracts full trade records (entry/exit
+    timestamps, prices, direction, TP/SL levels) from each fold's test_trades_detail.
+    Falls back to test_trades_trace for older runs that don't have test_trades_detail.
+    """
+    results_dir = get_test_results_dir()
+    grid_dir = results_dir / run_id / "grid_details"
+
+    if not grid_dir.exists():
+        raise HTTPException(404, f"No grid details for run: {run_id}")
+
+    # Find the grid-detail file for this symbol (matched by the "symbol" field inside)
+    trades: list[dict] = []
+    found = False
+    for filepath in sorted(grid_dir.glob("*.json")):
+        try:
+            data = json.loads(filepath.read_text())
+        except (json.JSONDecodeError, IOError):
+            continue
+
+        if data.get("symbol", "").upper() != symbol.upper():
+            continue
+
+        found = True
+        for fold in data.get("walk_forward", {}).get("fold_details", []):
+            fold_id = fold.get("fold_id")
+            # Prefer test_trades_detail (full trade info with timing/prices)
+            detail_trades = fold.get("test_trades_detail", [])
+            if detail_trades:
+                for trade in detail_trades:
+                    if isinstance(trade, dict) and "entry_time" in trade:
+                        trades.append({**trade, "fold_id": fold_id})
+            else:
+                # Fallback: test_trades_trace (older format, may have entry_time)
+                for trade in fold.get("test_trades_trace", []):
+                    if isinstance(trade, dict) and "entry_time" in trade:
+                        trades.append({**trade, "fold_id": fold_id})
+        break
+
+    if not found:
+        raise HTTPException(404, f"No grid detail found for symbol: {symbol}")
+
+    return {"symbol": symbol, "run_id": run_id, "trades": trades}
+
+
 @router.get("/{run_id}/progress")
 def get_run_progress(run_id: str) -> dict:
     """Get progress for an active or completed run.

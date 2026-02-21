@@ -342,6 +342,7 @@ def process_single_fold(
         "test_win_rate": test_result["win_rate"],
         "test_trades": test_result["n_trades"],
         "test_trades_trace": test_result["trades"],
+        "test_trades_detail": test_result.get("trades_detailed", []),
         "best_config": {
             "tp": b["params"][0],
             "sl": b["params"][1],
