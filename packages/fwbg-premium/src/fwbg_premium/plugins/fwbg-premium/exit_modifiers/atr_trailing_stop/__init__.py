@@ -58,6 +58,7 @@ def _simulate_trade_trailing_numba(
     timeout_bars: int,
     breakeven_trigger: float,
     trail_distance: float,
+    trail_tp_dist: float,
 ) -> tuple:
     """
     Single-trade simulation mit Breakeven- und Trailing-Stop.
@@ -68,6 +69,8 @@ def _simulate_trade_trailing_numba(
                            sofort wenn trail_distance > 0).
         trail_distance:    Absoluter Abstand des Trailing-Stops vom besten
                            erreichten Preis (0.0 = kein Trailing).
+        trail_tp_dist:     Absoluter Abstand des Trailing-TPs vom besten
+                           erreichten Preis (0.0 = kein Trailing-TP).
 
     Returns:
         (result, exit_idx, exit_price, exit_reason)
@@ -137,6 +140,16 @@ def _simulate_trade_trailing_numba(
                 if new_sl < sl:
                     sl = new_sl
 
+        if trailing_active and trail_tp_dist > 0.0:
+            if direction == 1:
+                new_tp = best_price + trail_tp_dist
+                if new_tp > tp:
+                    tp = new_tp
+            else:
+                new_tp = best_price - trail_tp_dist
+                if new_tp < tp:
+                    tp = new_tp
+
         if direction == 1:
             tp_hit = highs[j] >= tp
             sl_hit = lows[j] <= sl
@@ -174,6 +187,7 @@ def _compute_targets_trailing_numba(
     timeout_val: int,
     breakeven_trigger: float,
     trail_atr_mult: float,
+    trail_tp_atr_mult: float,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -187,11 +201,12 @@ def _compute_targets_trailing_numba(
         tp_distance = max(atr * tp_mult, min_tp_distance)
         sl_distance = max(atr * sl_mult, min_sl_distance)
         trail_distance = atr * trail_atr_mult if trail_atr_mult > 0.0 else 0.0
+        trail_tp_dist = atr * trail_tp_atr_mult if trail_tp_atr_mult > 0.0 else 0.0
 
         result_long, _, _, _ = _simulate_trade_trailing_numba(
             opens, closes, highs, lows, i, 1,
             tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_val, breakeven_trigger, trail_distance,
+            max_bars, timeout_val, breakeven_trigger, trail_distance, trail_tp_dist,
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
@@ -199,7 +214,7 @@ def _compute_targets_trailing_numba(
         result_short, _, _, _ = _simulate_trade_trailing_numba(
             opens, closes, highs, lows, i, -1,
             tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_val, breakeven_trigger, trail_distance,
+            max_bars, timeout_val, breakeven_trigger, trail_distance, trail_tp_dist,
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
@@ -224,6 +239,7 @@ def _compute_targets_trailing_with_durations_numba(
     timeout_val: int,
     breakeven_trigger: float,
     trail_atr_mult: float,
+    trail_tp_atr_mult: float,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -239,11 +255,12 @@ def _compute_targets_trailing_with_durations_numba(
         tp_distance = max(atr * tp_mult, min_tp_distance)
         sl_distance = max(atr * sl_mult, min_sl_distance)
         trail_distance = atr * trail_atr_mult if trail_atr_mult > 0.0 else 0.0
+        trail_tp_dist = atr * trail_tp_atr_mult if trail_tp_atr_mult > 0.0 else 0.0
 
         result_long, exit_long, _, _ = _simulate_trade_trailing_numba(
             opens, closes, highs, lows, i, 1,
             tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_val, breakeven_trigger, trail_distance,
+            max_bars, timeout_val, breakeven_trigger, trail_distance, trail_tp_dist,
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
@@ -252,7 +269,7 @@ def _compute_targets_trailing_with_durations_numba(
         result_short, exit_short, _, _ = _simulate_trade_trailing_numba(
             opens, closes, highs, lows, i, -1,
             tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_val, breakeven_trigger, trail_distance,
+            max_bars, timeout_val, breakeven_trigger, trail_distance, trail_tp_dist,
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
@@ -301,6 +318,7 @@ class TrailingStopModifier(BaseExitModifier):
         return_durations: bool = False,
         breakeven_trigger: float = 0.5,
         trail_atr_mult: float = 0.5,
+        trail_tp_atr_mult: float = 0.0,
         **kwargs,
     ):
         if return_durations:
@@ -309,7 +327,7 @@ class TrailingStopModifier(BaseExitModifier):
                 tp_mult, sl_mult, spread, slippage,
                 min_tp_distance, min_sl_distance,
                 max_bars, timeout_val,
-                breakeven_trigger, trail_atr_mult,
+                breakeven_trigger, trail_atr_mult, trail_tp_atr_mult,
             )
 
         return _compute_targets_trailing_numba(
@@ -317,7 +335,7 @@ class TrailingStopModifier(BaseExitModifier):
             tp_mult, sl_mult, spread, slippage,
             min_tp_distance, min_sl_distance,
             max_bars, timeout_val,
-            breakeven_trigger, trail_atr_mult,
+            breakeven_trigger, trail_atr_mult, trail_tp_atr_mult,
         )
 
 
