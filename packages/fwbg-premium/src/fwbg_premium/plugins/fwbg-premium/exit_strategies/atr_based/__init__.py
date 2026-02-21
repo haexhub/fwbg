@@ -390,6 +390,26 @@ class AtrExitStrategy(BaseExitStrategy):
         # max_bars: Wie weit maximal simuliert wird
         max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(df)
 
+        # === EXIT MODIFIER DISPATCH ===
+        # Wenn ein Exit-Modifier konfiguriert ist, delegiert die Simulation an diesen.
+        # Der Modifier erhält dieselben Arrays und gibt (targets_long, targets_short) zurück.
+        exit_modifier_name = getattr(ctx, "exit_modifier", None)
+        if exit_modifier_name:
+            from fwbg.core.registry import get_exit_modifier
+            modifier_cls = get_exit_modifier(exit_modifier_name)
+            modifier = modifier_cls()
+            modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}
+            timeout_val = timeout_bars if timeout_bars else 0
+            return modifier.compute_targets(
+                opn_v, cls_v, hgh_v, low_v, atr_v,
+                tp_mult, sl_mult,
+                ctx.spread, slippage,
+                min_tp_distance, min_sl_distance,
+                max_bars, timeout_val,
+                return_durations=return_durations,
+                **modifier_params,
+            )
+
         # === ADAPTIVER TIMEOUT ===
         if adaptive_timeout:
             atr_ma_v = pd.Series(atr_v).rolling(window=atr_ma_period, min_periods=1).mean().values

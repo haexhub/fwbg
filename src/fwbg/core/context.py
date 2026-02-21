@@ -101,6 +101,11 @@ class SimulationContext:
     exit_strategy: str = "fixed"
     exit_params: dict = field(default_factory=dict)
 
+    # Exit-Modifier: optionales Plugin das die Simulation der Exit-Strategie erweitert
+    # (z.B. trailing_stop, breakeven_stop) — kann unabhängig von der Exit-Strategie getestet werden
+    exit_modifier: Optional[str] = None
+    exit_modifier_params: dict = field(default_factory=dict)
+
     # Model Hyperparameters (from StrategyConfig)
     model_hyperparameters: dict = field(default_factory=dict)
 
@@ -160,6 +165,9 @@ class SimulationContext:
             # Exit-Strategy Plugin
             exit_strategy=strategy.exit_strategy,
             exit_params=strategy.exit_params,
+            # Exit-Modifier Plugin (optional)
+            exit_modifier=strategy.exit_modifier,
+            exit_modifier_params=strategy.exit_modifier_params,
             # Model Hyperparameters
             model_hyperparameters=strategy.model.hyperparameters,
             # Pipeline: Preprocessing

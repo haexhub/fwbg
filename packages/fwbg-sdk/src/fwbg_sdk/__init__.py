@@ -19,6 +19,7 @@ from fwbg_sdk.indicators import BaseIndicator, shift_features, safe_divide, EPSI
 from fwbg_sdk.preprocessors import BasePreprocessor
 from fwbg_sdk.feature_selectors import BaseFeatureSelector
 from fwbg_sdk.exit_strategies import BaseExitStrategy
+from fwbg_sdk.exit_modifiers import BaseExitModifier
 from fwbg_sdk.risk_managers import BaseRiskManager
 from fwbg_sdk.data_loaders import BaseDataLoader
 
@@ -40,6 +41,7 @@ from fwbg_sdk.testing import (
 from fwbg_sdk.registry import (
     register_indicator,
     register_exit_strategy,
+    register_exit_modifier,
     register_feature_selector,
     register_preprocessor,
     register_risk_manager,
@@ -48,6 +50,7 @@ from fwbg_sdk.registry import (
     # Registries (for advanced use / fwbg internals)
     INDICATOR_REGISTRY,
     EXIT_STRATEGY_REGISTRY,
+    EXIT_MODIFIER_REGISTRY,
     FEATURE_SELECTOR_REGISTRY,
     PREPROCESSOR_REGISTRY,
     RISK_MANAGER_REGISTRY,
@@ -73,6 +76,7 @@ __all__ = [
     "BasePreprocessor",
     "BaseFeatureSelector",
     "BaseExitStrategy",
+    "BaseExitModifier",
     "BaseRiskManager",
     "BaseDataLoader",
     "BaseModel",
@@ -85,6 +89,7 @@ __all__ = [
     # Registration decorators
     "register_indicator",
     "register_exit_strategy",
+    "register_exit_modifier",
     "register_feature_selector",
     "register_preprocessor",
     "register_risk_manager",
@@ -102,6 +107,7 @@ __all__ = [
     # Registries
     "INDICATOR_REGISTRY",
     "EXIT_STRATEGY_REGISTRY",
+    "EXIT_MODIFIER_REGISTRY",
     "FEATURE_SELECTOR_REGISTRY",
     "PREPROCESSOR_REGISTRY",
     "RISK_MANAGER_REGISTRY",

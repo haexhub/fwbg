@@ -9,6 +9,7 @@ from typing import Dict, Type, TYPE_CHECKING
 if TYPE_CHECKING:
     from fwbg_sdk.indicators import BaseIndicator
     from fwbg_sdk.exit_strategies import BaseExitStrategy
+    from fwbg_sdk.exit_modifiers import BaseExitModifier
     from fwbg_sdk.feature_selectors import BaseFeatureSelector
     from fwbg_sdk.preprocessors import BasePreprocessor
     from fwbg_sdk.risk_managers import BaseRiskManager
@@ -20,6 +21,7 @@ log = logging.getLogger(__name__)
 # Global registries — populated by decorators at import time
 INDICATOR_REGISTRY: Dict[str, Type["BaseIndicator"]] = {}
 EXIT_STRATEGY_REGISTRY: Dict[str, Type["BaseExitStrategy"]] = {}
+EXIT_MODIFIER_REGISTRY: Dict[str, Type["BaseExitModifier"]] = {}
 FEATURE_SELECTOR_REGISTRY: Dict[str, Type["BaseFeatureSelector"]] = {}
 PREPROCESSOR_REGISTRY: Dict[str, Type["BasePreprocessor"]] = {}
 RISK_MANAGER_REGISTRY: Dict[str, Type["BaseRiskManager"]] = {}
@@ -55,6 +57,26 @@ def register_exit_strategy(name: str):
         EXIT_STRATEGY_REGISTRY[name] = cls
         cls.name = name
         log.debug(f"Registered exit strategy: {name}")
+        return cls
+    return decorator
+
+
+def register_exit_modifier(name: str):
+    """Decorator to register an exit modifier plugin.
+
+    Exit modifiers are optional add-ons that replace the simulation kernel
+    of a base exit strategy (e.g., atr_based) with additional logic such as
+    trailing stops or breakeven protection.
+
+    Example:
+        @register_exit_modifier("trailing_stop")
+        class TrailingStopModifier(BaseExitModifier):
+            ...
+    """
+    def decorator(cls):
+        EXIT_MODIFIER_REGISTRY[name] = cls
+        cls.name = name
+        log.debug(f"Registered exit modifier: {name}")
         return cls
     return decorator
 

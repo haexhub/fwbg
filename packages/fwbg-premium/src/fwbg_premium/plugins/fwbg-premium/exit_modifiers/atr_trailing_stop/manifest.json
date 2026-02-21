@@ -1,0 +1,6 @@
+{
+  "name": "trailing_stop",
+  "version": "1.0.0",
+  "description": "ATR-based trailing stop exit modifier with breakeven protection",
+  "phase": "exit_modifiers"
+}
