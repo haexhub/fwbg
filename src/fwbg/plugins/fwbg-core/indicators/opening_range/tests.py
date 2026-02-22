@@ -977,3 +977,609 @@ class TestORBRetestEntry:
             assert f"{pfx}_retest_bear" in signals, (
                 f"{pfx}_retest_bear missing from get_signal_columns()"
             )
+
+
+class TestCarryForwardDays:
+    """carry_forward_days: if no breakout, carry the ORB range to the next session occurrence."""
+
+    def _make_multi_day_df(self, n_days=4):
+        """Create M15 data spanning n_days with controlled values.
+
+        All close values = 100.0 (within any reasonable range).
+        Session hour = 8. Each day has bars from 00:00 to 23:45.
+        """
+        n = n_days * 24 * 4  # 4 bars per hour, 24 hours per day
+        idx = pd.date_range("2024-01-02 00:00", periods=n, freq="15min")
+        close = np.full(n, 100.0)
+        high = close + 0.5
+        low = close - 0.5
+        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
+        return df
+
+    def _set_session_range(self, df, day, session_hour, or_high, or_low):
+        """Set the range bar H/L for a given day's session hour."""
+        day_start = df.index[0] + pd.Timedelta(days=day)
+        session_time = day_start.replace(hour=session_hour, minute=0)
+        if session_time in df.index:
+            df.loc[session_time, "H"] = or_high
+            df.loc[session_time, "L"] = or_low
+
+    def test_default_no_carry(self):
+        """carry_forward_days=0 (default): each session uses its own range."""
+        ind = _get_indicator()
+        df = self._make_multi_day_df(n_days=3)
+        # Day 0: session range [97, 103]
+        self._set_session_range(df, 0, 8, 103.0, 97.0)
+        # Day 1: session range [98, 102]
+        self._set_session_range(df, 1, 8, 102.0, 98.0)
+
+        result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=0)
+
+        # Day 1's range should be its own (not carried from day 0)
+        day1_start = df.index[0] + pd.Timedelta(days=1, hours=8, minutes=15)
+        if day1_start in result.index:
+            sl_dist = result.loc[day1_start, "orb_s08_sl_dist"]
+            if not pd.isna(sl_dist):
+                assert sl_dist == pytest.approx(4.0, abs=0.1), (
+                    f"With carry_forward_days=0, day 1 should use its own range (4.0), got {sl_dist}"
+                )
+
+    def test_carry_preserves_range_on_no_breakout(self):
+        """carry_forward_days=1: no-breakout range carries to next session."""
+        ind = _get_indicator()
+        df = self._make_multi_day_df(n_days=3)
+        # Day 0: wide range [95, 105], no breakout (C=100, within range)
+        self._set_session_range(df, 0, 8, 105.0, 95.0)
+        # Day 1: narrow range [99, 101] — should be REPLACED by carried [95, 105]
+        self._set_session_range(df, 1, 8, 101.0, 99.0)
+
+        result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=1)
+
+        # Day 1 should have sl_dist = 10.0 (from carried range), not 2.0 (its own)
+        # Find a valid bar in day 1's session (after range period)
+        day1_post_range = df.index[0] + pd.Timedelta(days=1, hours=8, minutes=15)
+        if day1_post_range in result.index:
+            sl_dist = result.loc[day1_post_range, "orb_s08_sl_dist"]
+            if not pd.isna(sl_dist):
+                assert sl_dist == pytest.approx(10.0, abs=0.1), (
+                    f"Carried range should be 10.0 (from day 0), got {sl_dist}"
+                )
+
+    def test_carry_resets_after_breakout(self):
+        """If a carried session has a breakout, carry chain stops."""
+        ind = _get_indicator()
+        df = self._make_multi_day_df(n_days=4)
+        # Day 0: range [95, 105], no breakout (C=100)
+        self._set_session_range(df, 0, 8, 105.0, 95.0)
+        # Day 1: narrow range [99, 101] → carried to [95, 105]
+        self._set_session_range(df, 1, 8, 101.0, 99.0)
+        # Force breakout on day 1 (C=110 > carried or_high=105)
+        day1_breakout = df.index[0] + pd.Timedelta(days=1, hours=9)
+        if day1_breakout in df.index:
+            df.loc[day1_breakout, "C"] = 110.0
+            df.loc[day1_breakout, "H"] = 110.0
+        # Day 2: range [98, 102] — should use OWN range (carry chain broken)
+        self._set_session_range(df, 2, 8, 102.0, 98.0)
+
+        result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=2)
+
+        # Day 2 should use its own range (4.0), not the carried one (10.0)
+        day2_post_range = df.index[0] + pd.Timedelta(days=2, hours=8, minutes=15)
+        if day2_post_range in result.index:
+            sl_dist = result.loc[day2_post_range, "orb_s08_sl_dist"]
+            if not pd.isna(sl_dist):
+                assert sl_dist == pytest.approx(4.0, abs=0.1), (
+                    f"After breakout in carried session, day 2 should use own range (4.0), got {sl_dist}"
+                )
+
+    def test_carry_respects_max_days(self):
+        """carry_forward_days=1: carry stops after 1 day even without breakout."""
+        ind = _get_indicator()
+        df = self._make_multi_day_df(n_days=4)
+        # Day 0: range [95, 105], no breakout
+        self._set_session_range(df, 0, 8, 105.0, 95.0)
+        # Day 1: narrow [99, 101] → carried to [95, 105], no breakout
+        self._set_session_range(df, 1, 8, 101.0, 99.0)
+        # Day 2: [98, 102] → carry_forward_days=1, so carry should have expired
+        self._set_session_range(df, 2, 8, 102.0, 98.0)
+
+        result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=1)
+
+        # Day 2 should use its own range (4.0), carry expired after 1 day
+        day2_post_range = df.index[0] + pd.Timedelta(days=2, hours=8, minutes=15)
+        if day2_post_range in result.index:
+            sl_dist = result.loc[day2_post_range, "orb_s08_sl_dist"]
+            if not pd.isna(sl_dist):
+                assert sl_dist == pytest.approx(4.0, abs=0.1), (
+                    f"carry_forward_days=1 should expire after 1 day, got sl_dist={sl_dist}"
+                )
+
+    def test_carried_session_has_no_range_bar_masking(self):
+        """Carried sessions should have valid features even during the session hour bars."""
+        ind = _get_indicator()
+        df = self._make_multi_day_df(n_days=3)
+        # Day 0: range [95, 105], no breakout
+        self._set_session_range(df, 0, 8, 105.0, 95.0)
+        # Day 1: will be carried
+        self._set_session_range(df, 1, 8, 101.0, 99.0)
+
+        result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=1)
+
+        # In a normal (non-carried) session, the range bar at 08:00 has NaN features.
+        # For a carried session, the range is pre-established → 08:00 bar should be valid.
+        day1_range_bar = df.index[0] + pd.Timedelta(days=1, hours=8)
+        if day1_range_bar in result.index:
+            val = result.loc[day1_range_bar, "orb_s08_sl_dist"]
+            # After shift_features, the value at day1_range_bar is actually computed
+            # from the previous bar. But the key check is: the range bar itself
+            # should NOT mask out valid features in a carried session.
+            # Check that at least the next bar after range bar is valid
+            next_bar = df.index[0] + pd.Timedelta(days=1, hours=8, minutes=15)
+            if next_bar in result.index:
+                val_next = result.loc[next_bar, "orb_s08_sl_dist"]
+                assert not pd.isna(val_next), (
+                    "Carried session bars should have valid features (not NaN)"
+                )
+
+    def test_carry_forward_in_default_params(self):
+        """carry_forward_days should appear in get_default_params()."""
+        params = _orb.OpeningRangeIndicator.get_default_params()
+        assert "carry_forward_days" in params
+        assert params["carry_forward_days"] == 0
+
+    def test_carry_forward_in_param_schema(self):
+        """carry_forward_days should appear in get_param_schema()."""
+        schema = _orb.OpeningRangeIndicator.get_param_schema()
+        assert "carry_forward_days" in schema
+        assert schema["carry_forward_days"]["default"] == 0
+
+
+class TestPreRangeBars:
+    """pre_range_bars: include N bars before session start in range calculation."""
+
+    def _make_pre_range_df(self, n_days=2):
+        """Create M15 data with controlled pre-session values."""
+        n = n_days * 24 * 4
+        idx = pd.date_range("2024-01-02 00:00", periods=n, freq="15min")
+        close = np.full(n, 100.0)
+        high = close + 0.5
+        low = close - 0.5
+        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
+        return df
+
+    def test_default_no_expansion(self):
+        """pre_range_bars=0 (default): range uses only session-hour bars."""
+        ind = _get_indicator()
+        df = self._make_pre_range_df()
+        # Session at hour 8, range bar at 08:00
+        session_bar = df.index[0] + pd.Timedelta(hours=8)
+        df.loc[session_bar, "H"] = 103.0
+        df.loc[session_bar, "L"] = 97.0
+        # Pre-session bar at 07:45 has extreme values
+        pre_bar = df.index[0] + pd.Timedelta(hours=7, minutes=45)
+        df.loc[pre_bar, "H"] = 110.0
+        df.loc[pre_bar, "L"] = 90.0
+
+        result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
+                             enable_stats=False, pre_range_bars=0)
+
+        # Range should be 103 - 97 = 6.0 (pre-session bar ignored)
+        post_range = df.index[0] + pd.Timedelta(hours=8, minutes=15)
+        if post_range in result.index:
+            sl_dist = result.loc[post_range, "orb_s08_sl_dist"]
+            if not pd.isna(sl_dist):
+                assert sl_dist == pytest.approx(6.0, abs=0.1), (
+                    f"pre_range_bars=0 should ignore pre-session bars, got sl_dist={sl_dist}"
+                )
+
+    def test_pre_range_expands_high(self):
+        """pre_range_bars=2: pre-session bar with higher high expands the range."""
+        ind = _get_indicator()
+        df = self._make_pre_range_df()
+        # Session at hour 8
+        session_bar = df.index[0] + pd.Timedelta(hours=8)
+        df.loc[session_bar, "H"] = 103.0
+        df.loc[session_bar, "L"] = 97.0
+        # Pre-bar 1 (07:45): H = 106 → should expand range high to 106
+        pre_bar1 = df.index[0] + pd.Timedelta(hours=7, minutes=45)
+        df.loc[pre_bar1, "H"] = 106.0
+        df.loc[pre_bar1, "L"] = 99.0
+
+        result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
+                             enable_stats=False, pre_range_bars=2)
+
+        # Range should be 106 - 97 = 9.0 (expanded high from pre-bar)
+        post_range = df.index[0] + pd.Timedelta(hours=8, minutes=15)
+        if post_range in result.index:
+            sl_dist = result.loc[post_range, "orb_s08_sl_dist"]
+            if not pd.isna(sl_dist):
+                assert sl_dist == pytest.approx(9.0, abs=0.1), (
+                    f"pre_range_bars=2 should expand high to 106, got sl_dist={sl_dist}"
+                )
+
+    def test_pre_range_expands_low(self):
+        """pre_range_bars=2: pre-session bar with lower low expands the range."""
+        ind = _get_indicator()
+        df = self._make_pre_range_df()
+        session_bar = df.index[0] + pd.Timedelta(hours=8)
+        df.loc[session_bar, "H"] = 103.0
+        df.loc[session_bar, "L"] = 97.0
+        # Pre-bar 1 (07:45): L = 94 → should expand range low to 94
+        pre_bar1 = df.index[0] + pd.Timedelta(hours=7, minutes=45)
+        df.loc[pre_bar1, "H"] = 101.0
+        df.loc[pre_bar1, "L"] = 94.0
+
+        result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
+                             enable_stats=False, pre_range_bars=2)
+
+        # Range should be 103 - 94 = 9.0 (expanded low from pre-bar)
+        post_range = df.index[0] + pd.Timedelta(hours=8, minutes=15)
+        if post_range in result.index:
+            sl_dist = result.loc[post_range, "orb_s08_sl_dist"]
+            if not pd.isna(sl_dist):
+                assert sl_dist == pytest.approx(9.0, abs=0.1), (
+                    f"pre_range_bars=2 should expand low to 94, got sl_dist={sl_dist}"
+                )
+
+    def test_no_expansion_when_pre_bars_within_range(self):
+        """pre_range_bars > 0 but pre-bars are within session range → no change."""
+        ind = _get_indicator()
+        df = self._make_pre_range_df()
+        session_bar = df.index[0] + pd.Timedelta(hours=8)
+        df.loc[session_bar, "H"] = 103.0
+        df.loc[session_bar, "L"] = 97.0
+        # Pre-bar at 07:45 has values within session range
+        pre_bar1 = df.index[0] + pd.Timedelta(hours=7, minutes=45)
+        df.loc[pre_bar1, "H"] = 101.0
+        df.loc[pre_bar1, "L"] = 99.0
+
+        result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
+                             enable_stats=False, pre_range_bars=2)
+
+        # Range should still be 103 - 97 = 6.0
+        post_range = df.index[0] + pd.Timedelta(hours=8, minutes=15)
+        if post_range in result.index:
+            sl_dist = result.loc[post_range, "orb_s08_sl_dist"]
+            if not pd.isna(sl_dist):
+                assert sl_dist == pytest.approx(6.0, abs=0.1), (
+                    f"pre-bars within range should not change it, got sl_dist={sl_dist}"
+                )
+
+    def test_pre_range_in_default_params(self):
+        """pre_range_bars should appear in get_default_params()."""
+        params = _orb.OpeningRangeIndicator.get_default_params()
+        assert "pre_range_bars" in params
+        assert params["pre_range_bars"] == 0
+
+    def test_pre_range_in_param_schema(self):
+        """pre_range_bars should appear in get_param_schema()."""
+        schema = _orb.OpeningRangeIndicator.get_param_schema()
+        assert "pre_range_bars" in schema
+        assert schema["pre_range_bars"]["default"] == 0
+
+
+
+class TestCfPrbListPrefixes:
+    """Tests for carry_forward_days / pre_range_bars list parameter prefix generation."""
+
+    def test_scalar_params_no_prefix(self):
+        """Scalar cf=0, prb=0 → no cf/prb prefix on session columns."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=0, pre_range_bars=0)
+
+        # Should have unprefixed session columns
+        assert "orb_s08_range" in result.columns
+        # Should NOT have cf/prb prefixed columns
+        cf_cols = [c for c in result.columns if c.startswith("cf")]
+        assert len(cf_cols) == 0, f"Unexpected cf-prefixed columns: {cf_cols}"
+
+    def test_cf_list_generates_prefixed_columns(self):
+        """carry_forward_days=[0, 1] → cf0_prb0_ and cf1_prb0_ prefixed columns."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=[0, 1],
+                             pre_range_bars=0)
+
+        assert "cf0_prb0_orb_s08_range" in result.columns, (
+            f"Missing cf0_prb0_ prefix. Columns: {[c for c in result.columns if 'orb_s08' in c]}"
+        )
+        assert "cf1_prb0_orb_s08_range" in result.columns, (
+            f"Missing cf1_prb0_ prefix. Columns: {[c for c in result.columns if 'orb_s08' in c]}"
+        )
+        # Unprefixed should NOT exist
+        assert "orb_s08_range" not in result.columns
+
+    def test_prb_list_generates_prefixed_columns(self):
+        """pre_range_bars=[0, 1] → cf0_prb0_ and cf0_prb1_ prefixed columns."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=0,
+                             pre_range_bars=[0, 1])
+
+        assert "cf0_prb0_orb_s08_range" in result.columns
+        assert "cf0_prb1_orb_s08_range" in result.columns
+        assert "orb_s08_range" not in result.columns
+
+    def test_combined_lists_generate_cartesian_prefixes(self):
+        """cf=[0,1], prb=[0,1] → 4 variant sets (cartesian product)."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=[0, 1],
+                             pre_range_bars=[0, 1])
+
+        expected_prefixes = ["cf0_prb0_", "cf0_prb1_", "cf1_prb0_", "cf1_prb1_"]
+        for prefix in expected_prefixes:
+            col = f"{prefix}orb_s08_range"
+            assert col in result.columns, (
+                f"Missing {prefix} variant. Got: {[c for c in result.columns if 'orb_s08_range' in c]}"
+            )
+
+    def test_cf_prb_prefix_does_not_affect_rolling_features(self):
+        """Rolling features should NOT get cf/prb prefix."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], enable_rolling=True,
+                             enable_stats=False, carry_forward_days=[0, 1],
+                             pre_range_bars=0)
+
+        # Rolling features should exist WITHOUT cf/prb prefix
+        assert "orb_range" in result.columns
+        assert "orb_position" in result.columns
+        # Session features should have cf/prb prefix
+        assert "cf0_prb0_orb_s08_range" in result.columns
+
+    def test_cf_prb_prefix_does_not_affect_stats_features(self):
+        """Stat features should NOT get cf/prb prefix."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], enable_rolling=False,
+                             enable_stats=True, carry_forward_days=[0, 1],
+                             pre_range_bars=0)
+
+        assert "orb_stat_avg_range" in result.columns
+        assert "orb_stat_breakout_rate" in result.columns
+
+    def test_rb_and_cf_prb_prefixes_combined(self):
+        """range_bars=[1,2] + cf=[0,1] → rb1_cf0_prb0_, rb2_cf1_prb0_, etc."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], range_bars=[1, 2],
+                             enable_rolling=False, enable_stats=False,
+                             carry_forward_days=[0, 1], pre_range_bars=0)
+
+        # Should have combined rb + cf/prb prefixes
+        assert "rb1_cf0_prb0_orb_s08_range" in result.columns
+        assert "rb1_cf1_prb0_orb_s08_range" in result.columns
+        assert "rb2_cf0_prb0_orb_s08_range" in result.columns
+        assert "rb2_cf1_prb0_orb_s08_range" in result.columns
+
+    def test_single_cf_with_prb_list_triggers_prefix(self):
+        """cf=0 (scalar) + prb=[0,1] (list) → prefix active (len(prb_list) > 1)."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=0,
+                             pre_range_bars=[0, 1])
+
+        # Even though cf is scalar, prb being a list triggers prefix mode
+        assert "cf0_prb0_orb_s08_range" in result.columns
+        assert "cf0_prb1_orb_s08_range" in result.columns
+
+    def test_retest_signals_get_cf_prb_prefix(self):
+        """Retest signal columns (retest_bull, retest_bear) get cf/prb prefix."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], enable_rolling=False,
+                             enable_stats=False, enable_retracement=True,
+                             carry_forward_days=[0, 1], pre_range_bars=0)
+
+        assert "cf0_prb0_orb_s08_retest_bull" in result.columns
+        assert "cf1_prb0_orb_s08_retest_bull" in result.columns
+        assert "cf0_prb0_orb_s08_retest_bear" in result.columns
+        assert "cf1_prb0_orb_s08_retest_bear" in result.columns
+
+    def test_variant_count_matches_cartesian_product(self):
+        """Number of session variant sets = len(cf_list) × len(prb_list)."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+        result = ind.compute(df, sessions=[8], enable_rolling=False,
+                             enable_stats=False, carry_forward_days=[0, 1, 2],
+                             pre_range_bars=[0, 1])
+
+        # 3 cf × 2 prb = 6 variants; each has orb_s08_range
+        range_cols = [c for c in result.columns if c.endswith("orb_s08_range")]
+        assert len(range_cols) == 6, (
+            f"Expected 6 variants (3×2), got {len(range_cols)}: {range_cols}"
+        )
+
+
+class TestStrategyConfigSignalColumnIntegration:
+    """Integration tests: verify ALL signal columns referenced in strategy
+    configs actually exist in the indicator output.
+
+    This catches prefix mismatches (e.g. missing rb_ prefix) that cause
+    the SignalModel to output zeros and zero trades.
+    """
+
+    @staticmethod
+    def _load_json(path):
+        import json
+        with open(path) as f:
+            return json.load(f)
+
+    @staticmethod
+    def _collect_signal_columns(strategy_cfg):
+        """Extract all signal columns from model_hyperparameters + model_hyperparameters_grid."""
+        signal_cols = set()
+        assignments = strategy_cfg.get("grids", {}).get("assignments", {})
+        for asset, asset_cfg in assignments.items():
+            hp = asset_cfg.get("model_hyperparameters", {})
+            for key in ("signal_column_long", "signal_column_short"):
+                val = hp.get(key)
+                if val:
+                    signal_cols.add(val)
+            for variant in asset_cfg.get("model_hyperparameters_grid", []):
+                if variant:
+                    for key in ("signal_column_long", "signal_column_short"):
+                        val = variant.get(key)
+                        if val:
+                            signal_cols.add(val)
+        return signal_cols
+
+    @staticmethod
+    def _get_pipeline_orb_params(pipeline_cfg):
+        """Extract opening_range indicator params from pipeline config."""
+        for ind in pipeline_cfg.get("indicators", []):
+            if ind.get("name") == "opening_range":
+                return ind.get("params", {})
+        return None
+
+    def _compute_indicator_columns(self, orb_params):
+        """Run indicator with given params on synthetic data, return output columns."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=3000)
+        result = ind.compute(df, **orb_params)
+        return set(result.columns)
+
+    @pytest.fixture
+    def strategy_dir(self):
+        import os
+        return os.path.normpath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "strategies",
+        ))
+
+    def _run_config_check(self, strategy_dir, strategy_file, pipeline_name):
+        """Core check: compute indicator with pipeline params, verify all signal columns exist."""
+        import os
+
+        strategy_path = os.path.join(strategy_dir, "configs", strategy_file)
+        pipeline_path = os.path.join(strategy_dir, "pipelines", f"{pipeline_name}.json")
+
+        if not os.path.exists(strategy_path) or not os.path.exists(pipeline_path):
+            pytest.skip(f"Config files not found: {strategy_file} / {pipeline_name}")
+
+        strategy_cfg = self._load_json(strategy_path)
+        pipeline_cfg = self._load_json(pipeline_path)
+
+        orb_params = self._get_pipeline_orb_params(pipeline_cfg)
+        if orb_params is None:
+            pytest.skip(f"No opening_range indicator in {pipeline_name}")
+
+        output_cols = self._compute_indicator_columns(orb_params)
+        signal_cols = self._collect_signal_columns(strategy_cfg)
+        assert len(signal_cols) > 0, f"No signal columns found in {strategy_file}"
+
+        missing = signal_cols - output_cols
+        assert len(missing) == 0, (
+            f"Signal columns from {strategy_file} not found in indicator output "
+            f"(pipeline={pipeline_name}).\n"
+            f"Missing ({len(missing)}): {sorted(missing)[:10]}\n"
+            f"Example expected: {sorted(signal_cols)[0]}\n"
+            f"Example actual: {sorted(c for c in output_cols if 'retest_bull' in c)[:5]}"
+        )
+
+    def test_orb_exploration_signal_columns(self, strategy_dir):
+        """All signal columns in orb_exploration.json exist in orb_simple_v1 output."""
+        self._run_config_check(strategy_dir, "orb_exploration.json", "orb_simple_v1")
+
+    def test_orb_pdhl_scalping_signal_columns(self, strategy_dir):
+        """All signal columns in orb_pdhl_scalping.json exist in orb_scalping_v1 output."""
+        self._run_config_check(strategy_dir, "orb_pdhl_scalping.json", "orb_scalping_v1")
+
+    def test_deep_orb_index_signal_columns(self, strategy_dir):
+        """All signal columns in deep_orb_index.json exist in orb_simple_v1 output."""
+        self._run_config_check(strategy_dir, "deep_orb_index.json", "orb_simple_v1")
+
+    def test_signal_model_nonzero_predictions_with_prefixed_column(self):
+        """SignalModel with a valid prefixed signal column produces non-zero predictions."""
+        from fwbg.plugins import import_plugin_module
+        signal_mod = import_plugin_module("fwbg-core", "models", "signal")
+        if signal_mod is None:
+            pytest.skip("signal model plugin not available")
+
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=3000)
+        result = ind.compute(
+            df, range_bars=[1, 2], sessions=[8],
+            enable_rolling=False, enable_stats=False,
+            enable_retracement=True, retest_atr_width=0.3,
+            carry_forward_days=[0, 1, 2], pre_range_bars=[0, 1],
+        )
+
+        signal_col = "rb1_cf0_prb0_orb_s08_retest_bull"
+        assert signal_col in result.columns, (
+            f"{signal_col} not in output. "
+            f"Retest cols: {[c for c in result.columns if 'retest_bull' in c][:10]}"
+        )
+
+        model = signal_mod.SignalModel()
+        from fwbg_sdk.models import TrainingContext
+        ctx = TrainingContext(direction="long")
+        features_df = result[[signal_col]].fillna(0)
+        targets = np.zeros(len(result))
+        model.train(features_df, targets, ctx, signal_column_long=signal_col)
+
+        probs = model._predict_probability_impl(features_df)
+        signal_fires = (features_df[signal_col] > 0).sum()
+        nonzero_preds = (probs[:, 1] > 0).sum()
+
+        assert nonzero_preds > 0, (
+            f"SignalModel produced 0 non-zero predictions. "
+            f"Signal fires: {signal_fires}, signal col values: "
+            f"{features_df[signal_col].value_counts().to_dict()}"
+        )
+        assert nonzero_preds == signal_fires, (
+            f"SignalModel predictions ({nonzero_preds}) should match "
+            f"signal fires ({signal_fires})"
+        )
+
+    def test_required_features_auto_collect_matches_indicator_output(self):
+        """required_features auto-collected from model_hyperparameters_grid
+        must all exist in indicator output."""
+        import os
+        strategy_dir = os.path.normpath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "strategies",
+        ))
+        strategy_path = os.path.join(strategy_dir, "configs", "orb_pdhl_scalping.json")
+        pipeline_path = os.path.join(strategy_dir, "pipelines", "orb_scalping_v1.json")
+
+        if not os.path.exists(strategy_path) or not os.path.exists(pipeline_path):
+            pytest.skip("Config files not found")
+
+        strategy_cfg = self._load_json(strategy_path)
+        pipeline_cfg = self._load_json(pipeline_path)
+        orb_params = self._get_pipeline_orb_params(pipeline_cfg)
+        output_cols = self._compute_indicator_columns(orb_params)
+
+        # Simulate auto-collect from SimulationContext.create()
+        auto_collected = set()
+        assignments = strategy_cfg.get("grids", {}).get("assignments", {})
+        for asset, asset_cfg in assignments.items():
+            hp = asset_cfg.get("model_hyperparameters", {})
+            for key in ("signal_column_long", "signal_column_short"):
+                val = hp.get(key)
+                if val:
+                    auto_collected.add(val)
+            for variant in asset_cfg.get("model_hyperparameters_grid", []):
+                if variant:
+                    for key in ("signal_column_long", "signal_column_short"):
+                        val = variant.get(key)
+                        if val:
+                            auto_collected.add(val)
+
+        missing = auto_collected - output_cols
+        assert len(missing) == 0, (
+            f"Auto-collected required_features not in indicator output.\n"
+            f"Missing ({len(missing)}): {sorted(missing)[:10]}\n"
+            f"This would cause 'Feature X nicht in inner_df' warnings at runtime."
+        )

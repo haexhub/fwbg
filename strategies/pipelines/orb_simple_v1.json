@@ -29,7 +29,9 @@
         "enable_session": true,
         "enable_stats": true,
         "enable_retracement": true,
-        "retest_atr_width": 0.3
+        "retest_atr_width": 0.3,
+        "carry_forward_days": [0, 1, 2],
+        "pre_range_bars": [0, 1]
       }
     },
     {

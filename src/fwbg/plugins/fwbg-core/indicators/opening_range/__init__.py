@@ -82,12 +82,19 @@ def _session_orb_features(
     atr: pd.Series,
     enable_retracement: bool = False,
     retest_atr_width: float = 0.3,
+    carry_forward_days: int = 0,
+    pre_range_bars: int = 0,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """
     Compute session-specific ORB features.
 
     For each configured session hour, compute the opening range at that hour
     and forward-fill until the next occurrence of that session hour.
+
+    carry_forward_days: if no breakout occurs during a session, carry the range
+        forward to the next N session occurrences. 0 = no carry (default).
+    pre_range_bars: include N bars before the session start in the range
+        calculation, expanding the opening range window backward. 0 = disabled.
     """
     features: Dict[str, Union[pd.Series, np.ndarray]] = {}
 
@@ -114,8 +121,87 @@ def _session_orb_features(
         or_high = df["H"].where(or_mask).groupby(session_id).transform("max")
         or_low = df["L"].where(or_mask).groupby(session_id).transform("min")
 
+        # --- pre_range_bars: expand range to include pre-session bars ---
+        if pre_range_bars > 0:
+            start_positions = np.where(session_start.values)[0]
+            arr_h = or_high.values.copy()
+            arr_l = or_low.values.copy()
+            sid_vals = session_id.values
+
+            for pos in start_positions:
+                sid = sid_vals[pos]
+                if sid == 0:
+                    continue
+                pre_start = max(0, pos - pre_range_bars)
+                if pre_start < pos:
+                    pre_h = df["H"].values[pre_start:pos].max()
+                    pre_l = df["L"].values[pre_start:pos].min()
+                    sess_mask = sid_vals == sid
+                    cur_h = arr_h[sess_mask][0]
+                    cur_l = arr_l[sess_mask][0]
+                    if not np.isnan(cur_h):
+                        arr_h[sess_mask] = max(cur_h, pre_h)
+                        arr_l[sess_mask] = min(cur_l, pre_l)
+
+            or_high = pd.Series(arr_h, index=df.index)
+            or_low = pd.Series(arr_l, index=df.index)
+
+        # --- carry_forward_days: carry range from no-breakout sessions ---
+        carried_session_ids = set()
+        if carry_forward_days > 0:
+            unique_sids = sorted(session_id.unique())
+            arr_h = or_high.values.copy()
+            arr_l = or_low.values.copy()
+            sid_vals = session_id.values
+            close_vals = df["C"].values
+
+            carry_remaining = 0
+            carry_h = None
+            carry_l = None
+
+            for sid in unique_sids:
+                if sid == 0:
+                    continue
+
+                sess_mask = sid_vals == sid
+
+                if carry_remaining > 0:
+                    # Use carried range instead of this session's own range
+                    arr_h[sess_mask] = carry_h
+                    arr_l[sess_mask] = carry_l
+                    carried_session_ids.add(sid)
+
+                    # Check breakout against carried range
+                    sess_close = close_vals[sess_mask]
+                    had_breakout = (sess_close > carry_h).any() or (sess_close < carry_l).any()
+
+                    if had_breakout:
+                        carry_remaining = 0
+                    else:
+                        carry_remaining -= 1
+                else:
+                    # Use own range, check for breakout
+                    own_h = arr_h[sess_mask][0]
+                    own_l = arr_l[sess_mask][0]
+
+                    if not np.isnan(own_h):
+                        sess_close = close_vals[sess_mask]
+                        had_breakout = (sess_close > own_h).any() or (sess_close < own_l).any()
+
+                        if not had_breakout:
+                            carry_remaining = carry_forward_days
+                            carry_h = own_h
+                            carry_l = own_l
+
+            or_high = pd.Series(arr_h, index=df.index)
+            or_low = pd.Series(arr_l, index=df.index)
+
         # Valid: after first session, not within the opening range bars themselves
+        # For carried sessions, range is pre-established → no range period masking
         in_range_period = is_session & (bar_in_block < range_bars)
+        if carried_session_ids:
+            is_carried = session_id.isin(carried_session_ids)
+            in_range_period = in_range_period & ~is_carried
         valid = (session_id > 0) & ~in_range_period
 
         or_range = or_high - or_low
@@ -264,6 +350,8 @@ class OpeningRangeIndicator(BaseIndicator):
         enable_stats: bool = True,
         enable_retracement: bool = True,
         retest_atr_width: float = 0.3,
+        carry_forward_days: Union[int, List[int]] = 0,
+        pre_range_bars: Union[int, List[int]] = 0,
         **params,
     ) -> pd.DataFrame:
         if not isinstance(df.index, pd.DatetimeIndex):
@@ -281,23 +369,32 @@ class OpeningRangeIndicator(BaseIndicator):
 
         # Normalisiere range_bars zu einer Liste
         rb_list = [range_bars] if isinstance(range_bars, int) else list(range_bars)
-        use_prefix = len(rb_list) > 1
+        use_rb_prefix = len(rb_list) > 1
+
+        # Normalisiere carry_forward_days / pre_range_bars zu Listen
+        cf_list = [carry_forward_days] if isinstance(carry_forward_days, int) else list(carry_forward_days)
+        prb_list = [pre_range_bars] if isinstance(pre_range_bars, int) else list(pre_range_bars)
+        use_cf_prb_prefix = len(cf_list) > 1 or len(prb_list) > 1
 
         features: Dict[str, Union[pd.Series, np.ndarray]] = {}
         atr = _compute_atr(df, atr_period)
 
         for rb in rb_list:
-            pfx = f"rb{rb}_" if use_prefix else ""
+            rb_pfx = f"rb{rb}_" if use_rb_prefix else ""
 
             if enable_rolling:
                 rolling = _rolling_orb_features(df, rb, atr)
-                features.update({f"{pfx}{k}": v for k, v in rolling.items()})
+                features.update({f"{rb_pfx}{k}": v for k, v in rolling.items()})
 
             if enable_session:
-                session = _session_orb_features(
-                    df, sessions, rb, atr, enable_retracement, retest_atr_width
-                )
-                features.update({f"{pfx}{k}": v for k, v in session.items()})
+                for cf in cf_list:
+                    for prb in prb_list:
+                        cf_prb_pfx = f"cf{cf}_prb{prb}_" if use_cf_prb_prefix else ""
+                        session = _session_orb_features(
+                            df, sessions, rb, atr, enable_retracement, retest_atr_width,
+                            cf, prb,
+                        )
+                        features.update({f"{rb_pfx}{cf_prb_pfx}{k}": v for k, v in session.items()})
 
         if enable_stats:
             features.update(_stat_features(df, stat_window))
@@ -361,6 +458,8 @@ class OpeningRangeIndicator(BaseIndicator):
             "enable_stats": True,
             "enable_retracement": True,
             "retest_atr_width": 0.3,
+            "carry_forward_days": 0,
+            "pre_range_bars": 0,
         }
 
     @classmethod
@@ -424,6 +523,22 @@ class OpeningRangeIndicator(BaseIndicator):
                 "min": 0.1,
                 "max": 1.0,
                 "step": 0.1,
+            },
+            "carry_forward_days": {
+                "type": "list[int]",
+                "default": 0,
+                "description": "If no breakout occurs during a session, carry the ORB range forward to the next N session occurrences. 0 = disabled (each session uses its own range). Can be a list (e.g. [0, 1, 2]) to compute features for multiple carry durations — each gets prefixed columns (cf0_prb0_orb_*, cf1_prb0_orb_*) so the optimizer can select the best variant.",
+                "min": 0,
+                "max": 5,
+                "step": 1,
+            },
+            "pre_range_bars": {
+                "type": "list[int]",
+                "default": 0,
+                "description": "Number of bars before the session start to include in the range calculation. Expands the opening range window backward. Can be a list (e.g. [0, 1]) to compute features for multiple pre-range sizes — each gets prefixed columns (cf0_prb0_orb_*, cf0_prb1_orb_*) so the optimizer can select the best variant.",
+                "min": 0,
+                "max": 8,
+                "step": 1,
             },
         }
 
