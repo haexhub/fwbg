@@ -48,8 +48,9 @@ class OrbExitStrategy(BaseExitStrategy):
         min_tp_pips: int = 8,
         min_sl_pips: int = 5,
         timeout_bars: int = None,
+        return_durations: bool = False,
         **kwargs,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple:
         """Compute win/loss targets using ORB-range SL and ATR-based TP."""
         if params is not None:
             tp_mult = params.tp_value
@@ -78,31 +79,36 @@ class OrbExitStrategy(BaseExitStrategy):
         n = len(cls_v)
         targets_long = np.zeros(n, dtype=np.float64)
         targets_short = np.zeros(n, dtype=np.float64)
+        if return_durations:
+            durations_long = np.zeros(n, dtype=np.int64)
+            durations_short = np.zeros(n, dtype=np.int64)
 
         for i in range(n - 1):
-            entry_idx = i + 1
-            if entry_idx >= n:
-                continue
-
             tp_distance = max(atr_v[i] * tp_mult, min_tp_distance)
             sl_distance = max(sl_dist_v[i], min_sl_distance)
 
-            result_long, _, _, _ = _simulate_trade_numba(
+            result_long, exit_long, _, _ = _simulate_trade_numba(
                 opn_v, cls_v, hgh_v, low_v, i, 1,
                 tp_distance, sl_distance, ctx.spread, slippage,
                 max_bars, timeout_val,
             )
             if result_long == 1.0:
                 targets_long[i] = 1.0
+            if return_durations:
+                durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
-            result_short, _, _, _ = _simulate_trade_numba(
+            result_short, exit_short, _, _ = _simulate_trade_numba(
                 opn_v, cls_v, hgh_v, low_v, i, -1,
                 tp_distance, sl_distance, ctx.spread, slippage,
                 max_bars, timeout_val,
             )
             if result_short == 1.0:
                 targets_short[i] = 1.0
+            if return_durations:
+                durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
 
+        if return_durations:
+            return targets_long, targets_short, durations_long, durations_short
         return targets_long, targets_short
 
     def resolve_distances(
