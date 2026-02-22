@@ -199,14 +199,14 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Detect sample bias
         sample_bias_detected = any(ratio > 2.0 for ratio in bias_ratios if ratio > 0)
 
-        log(1, f"Walk-Forward Results:", sym)
+        log(1, "Walk-Forward Results:", sym)
         log(1, f"  Win-Rate: {mean_wr*100:.1f}% ± {std_wr*100:.1f}% (range: {min(win_rates)*100:.1f}%-{max(win_rates)*100:.1f}%)", sym)
         log(1, f"  PnL: {mean_pnl:.1f} ± {std_pnl:.1f} (range: {min(pnls):.1f}-{max(pnls):.1f})", sym)
         log(1, f"  Total Trades: {total_trades}", sym)
         log(1, f"  Bias Ratios: {[f'{r:.2f}x' for r in bias_ratios]}", sym)
 
         if sample_bias_detected:
-            log(1, f"  WARNING: Sample bias detected in some folds (>2x ratio)", sym)
+            log(1, "  WARNING: Sample bias detected in some folds (>2x ratio)", sym)
 
         # Check if fold configs are consistent (CV = coefficient of variation)
         configs = [r["best_config"] for r in all_fold_results]
@@ -225,7 +225,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         config_inconsistent = not is_consistent and len(all_fold_results) > 1
 
         if config_inconsistent:
-            log(1, f"  WARNING: Fold configs vary across folds (aggregating all trades)", sym)
+            log(1, "  WARNING: Fold configs vary across folds (aggregating all trades)", sym)
             log(1, f"    TP: {tp_values} (CV={tp_cv:.2f})", sym)
             log(1, f"    SL: {sl_values} (CV={sl_cv:.2f})", sym)
             log(1, f"    RRR: {[f'{r:.2f}' for r in rrr_values]} (std={rrr_std:.3f})", sym)

@@ -1,5 +1,4 @@
 """Tests for Plateau Feature Selection plugin."""
-import numpy as np
 import pytest
 
 from fwbg.plugins import import_plugin_module

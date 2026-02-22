@@ -6,7 +6,6 @@ into a composite risk regime score. Requires macro_data columns.
 """
 from typing import List
 
-import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseIndicator, shift_features, register_indicator

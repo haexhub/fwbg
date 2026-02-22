@@ -97,7 +97,6 @@ class TestAtrExitStrategyTargets:
 
     def test_atr_adapts_to_volatility(self, forex_context):
         """ATR-basierte Exits sollten sich an Volatilität anpassen."""
-        strategy = AtrExitStrategy()
 
         # Niedrige Volatilität
         n = 100

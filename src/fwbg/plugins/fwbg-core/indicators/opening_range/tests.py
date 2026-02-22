@@ -365,7 +365,7 @@ class TestRangeBarsListMode:
 
         for prefix in ["rb1", "rb2"]:
             assert f"{prefix}_orb_stat_avg_range" in result.columns or \
-                   f"orb_stat_avg_range" in result.columns, \
+                   "orb_stat_avg_range" in result.columns, \
                    f"stat column missing for {prefix}"
 
     def test_list_mode_session_columns_have_rb_prefix(self):
@@ -527,7 +527,7 @@ class TestBreakoutEventFeature:
         # Create enough bars so session_id > 0 (first session is discarded)
         n = 200  # ~50 hours of M15 data
         idx = pd.date_range("2024-01-01 00:00", periods=n, freq="15min")
-        rng = np.random.default_rng(99)
+        _rng = np.random.default_rng(99)
         close = 100.0 * np.ones(n)
 
         # In hour 08 (bars at 08:00, 08:15, 08:30, 08:45):
@@ -603,7 +603,8 @@ class TestBreakoutEventFeature:
         low = close - 0.5
 
         b = n_warmup
-        high[b] = 101.0; low[b] = 99.0   # range bar
+        high[b] = 101.0
+        low[b] = 99.0   # range bar
         close[b + 1] = 102.0              # first upward crossing
         close[b + 2] = 98.0              # reversal: first downward crossing
         close[b + 3] = 97.0              # sustained below
@@ -648,8 +649,10 @@ class TestORBSLDist:
         high = close + 0.5
         low = close - 0.5
         b = n_warmup  # bar 20 = 05:00 → range bar for that hour
-        high[b] = 103.0; low[b] = 97.0   # ORB range = 6.0, half = 3.0
-        high = np.maximum(high, close); low = np.minimum(low, close)
+        high[b] = 103.0
+        low[b] = 97.0   # ORB range = 6.0, half = 3.0
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, enable_session=False, enable_stats=False)
         # After shift_features: computed value for bar i appears at result.iloc[i+1].
@@ -707,9 +710,11 @@ class TestORBPocDist:
         high = close + 0.5
         low = close - 0.5
         b = n_warmup
-        high[b] = 103.0; low[b] = 97.0   # midpoint = (103+97)/2 = 100.0
+        high[b] = 103.0
+        low[b] = 97.0   # midpoint = (103+97)/2 = 100.0
         # bar b+1: C = 100.0 → exactly at midpoint → poc_dist = 0/ATR = 0
-        high = np.maximum(high, close); low = np.minimum(low, close)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, enable_session=False, enable_stats=False)
         # After shift: bar b+1 value at result.iloc[b+2]
@@ -745,13 +750,15 @@ class TestORBPostBreakoutState:
         high = close + 0.5
         low = close - 0.5
         b = n_pre_hour_bars
-        high[b] = 103.0; low[b] = 97.0
+        high[b] = 103.0
+        low[b] = 97.0
         # b+1: close stays 100 (no breakout)
         close[b + 2] = 104.0   # upside breakout
         close[b + 3] = 100.0   # retrace to midpoint
         close[b + 4] = 98.0    # near or_low, still valid (98 > 97)
         close[b + 5] = 96.0    # below or_low (thesis invalidated)
-        high = np.maximum(high, close); low = np.minimum(low, close)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         return df, b
 
@@ -796,14 +803,17 @@ class TestORBPostBreakoutState:
         b2 = session_bars[4]   # second 08:00 (next day)
 
         # First session: upside breakout
-        high[b1] = 103.0; low[b1] = 97.0
+        high[b1] = 103.0
+        low[b1] = 97.0
         close[b1 + 1] = 104.0  # breakout in session 1
 
         # Second session: normal range bar, no breakout
-        high[b2] = 103.0; low[b2] = 97.0
+        high[b2] = 103.0
+        low[b2] = 97.0
         # b2+1 stays at close=100 (no breakout)
 
-        high = np.maximum(high, close); low = np.minimum(low, close)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False)
 
@@ -823,11 +833,13 @@ class TestORBPostBreakoutState:
         high = close + 0.5
         low = close - 0.5
         b = 32  # bar 32 = 08:00
-        high[b] = 103.0; low[b] = 97.0
+        high[b] = 103.0
+        low[b] = 97.0
         close[b + 1] = 100.0   # no breakout
         close[b + 2] = 96.0    # downside breakout (C=96 < or_low=97)
         close[b + 3] = 100.0   # retrace
-        high = np.maximum(high, close); low = np.minimum(low, close)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False)
 
@@ -859,11 +871,13 @@ class TestORBRetestEntry:
         high = close + 0.5
         low = close - 0.5
         b = n_pre_hour_bars
-        high[b] = 103.0; low[b] = 97.0
+        high[b] = 103.0
+        low[b] = 97.0
         close[b + 1] = 104.0   # upside breakout
         close[b + 2] = 100.0   # retrace to midpoint
         close[b + 3] = 96.0    # below or_low (invalidated)
-        high = np.maximum(high, close); low = np.minimum(low, close)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         return df, b
 
@@ -933,11 +947,13 @@ class TestORBRetestEntry:
         high = close + 0.5
         low = close - 0.5
         b = 32
-        high[b] = 103.0; low[b] = 97.0   # midpoint = 100
+        high[b] = 103.0
+        low[b] = 97.0   # midpoint = 100
         close[b + 1] = 96.0   # downside breakout (C=96 < or_low=97)
         close[b + 2] = 100.0  # retrace to midpoint — retest_bear SHOULD fire
         # still_valid_bear: C < or_high=103 → True ✓
-        high = np.maximum(high, close); low = np.minimum(low, close)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_atr_width=1.0)

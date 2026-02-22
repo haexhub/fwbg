@@ -56,16 +56,16 @@ class MicrostructureIndicator(BaseIndicator):
 
         o = df["O"]
         h = df["H"]
-        l = df["L"]
+        low = df["L"]
         c = df["C"]
 
         # Bar Range (vermeidet Division durch 0)
-        bar_range = h - l
+        bar_range = h - low
         bar_range_safe = bar_range.replace(0, np.nan)
 
         # Upper und Lower Wick
         upper_wick = h - np.maximum(o, c)
-        lower_wick = np.minimum(o, c) - l
+        lower_wick = np.minimum(o, c) - low
         body = np.abs(c - o)
 
         # --- Wick Imbalance ---
@@ -84,9 +84,9 @@ class MicrostructureIndicator(BaseIndicator):
 
         # --- ATR und Range/ATR ---
         tr = pd.concat([
-            h - l,
+            h - low,
             (h - c.shift(1)).abs(),
-            (l - c.shift(1)).abs()
+            (low - c.shift(1)).abs()
         ], axis=1).max(axis=1)
         atr = tr.rolling(atr_period).mean()
         features["micro_range_over_atr"] = bar_range / atr
@@ -139,7 +139,7 @@ class MicrostructureIndicator(BaseIndicator):
             # --- Accumulation/Distribution Line ---
             # CLV (Close Location Value): Wo der Close innerhalb der Range liegt
             # CLV = ((C - L) - (H - C)) / (H - L) = (2C - L - H) / (H - L)
-            clv = safe_divide(2 * c - l - h, bar_range)
+            clv = safe_divide(2 * c - low - h, bar_range)
             ad_flow = clv * v
             features["micro_ad_line"] = ad_flow.cumsum()
             # Normalisiert: A/D relativ zum Rolling-Mean (für Stationarität)
@@ -160,7 +160,7 @@ class MicrostructureIndicator(BaseIndicator):
             features["micro_vwap_pressure"] = features["micro_pressure_sum"] / rolling_window
             features["micro_relative_volume"] = 1.0
             # A/D und CMF brauchen Volume - nutze CLV als Proxy
-            clv = safe_divide(2 * c - l - h, bar_range)
+            clv = safe_divide(2 * c - low - h, bar_range)
             features["micro_ad_line"] = clv.cumsum()
             ad_cumsum = features["micro_ad_line"]
             ad_mean = ad_cumsum.rolling(50).mean()

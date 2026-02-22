@@ -38,7 +38,7 @@ def _make_bull_bos_df(swing_lookback=5, n_post=4):
     Bar swing_lookback:       C=106 → breaks above swing high (100) → bull BOS
     Bars after:               C=107, price stays above
     """
-    n = swing_lookback + 1 + n_post
+    _n = swing_lookback + 1 + n_post
     highs  = [100.0] * swing_lookback + [106.0] + [107.0] * n_post
     lows   = [98.0]  * swing_lookback + [104.0] + [105.0] * n_post
     closes = [99.0]  * swing_lookback + [106.0] + [107.0] * n_post
@@ -52,7 +52,7 @@ def _make_bear_bos_df(swing_lookback=5, n_post=4):
     Bar swing_lookback:       C=94 → breaks below swing low (100) → bear BOS
     Bars after:               C=93, price stays below
     """
-    n = swing_lookback + 1 + n_post
+    _n = swing_lookback + 1 + n_post
     highs  = [102.0] * swing_lookback + [99.0] + [98.0] * n_post
     lows   = [100.0] * swing_lookback + [93.0] + [92.0] * n_post
     closes = [101.0] * swing_lookback + [94.0] + [93.0] * n_post
@@ -67,7 +67,7 @@ def _make_choch_df(swing_lookback=5, n_post=4):
     """
     sw = swing_lookback
     # Phase 1: descending — swing low at bar sw, close breaks below → bear BOS
-    n = sw + 1 + 1 + n_post
+    _n = sw + 1 + 1 + n_post
     lows   = [100.0 - i for i in range(sw)] + [90.0] + [92.0] + [94.0] * n_post
     highs  = [102.0 - i for i in range(sw)] + [94.0] + [105.0] + [103.0] * n_post
     closes = [101.0 - i for i in range(sw)] + [91.0] + [104.0] + [103.0] * n_post
@@ -253,7 +253,7 @@ class TestCHOCH:
         """Bear BOS after bullish trend = bearish CHOCH."""
         sw = 5
         # Build a bull BOS first, then a bear BOS
-        n = sw + 3 + 4
+        _n = sw + 3 + 4
         # Bars 0..sw-1: low at 100 (establishing swing low), high at 110
         # Bar sw:       C=106 > swing_high(=102) → bull BOS, trend=+1
         # Bar sw+1:     C=108

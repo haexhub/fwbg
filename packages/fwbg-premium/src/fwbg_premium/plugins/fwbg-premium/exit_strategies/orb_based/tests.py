@@ -26,7 +26,8 @@ def _make_ohlc(n=100, spread=1.0, seed=42):
     close = 10000 * np.exp(np.cumsum(rng.normal(0, 0.001, n)))
     high = close + np.abs(rng.normal(0, spread * 2, n))
     low = close - np.abs(rng.normal(0, spread * 2, n))
-    open_ = np.roll(close, 1); open_[0] = close[0]
+    open_ = np.roll(close, 1)
+    open_[0] = close[0]
     high = np.maximum(high, np.maximum(open_, close))
     low = np.minimum(low, np.minimum(open_, close))
     return pd.DataFrame({"O": open_, "H": high, "L": low, "C": close})

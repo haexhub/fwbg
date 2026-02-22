@@ -134,7 +134,7 @@ def format_terminal_output(result):
 
     # Suggested Grid
     grid = result["suggested_grid"]
-    lines.append(f"\n  Suggested Grid:")
+    lines.append("\n  Suggested Grid:")
     lines.append(f"    TP: {grid['tp']}")
     lines.append(f"    SL: {grid['sl']}")
     lines.append(f"    Reasoning: {grid['reasoning']}")

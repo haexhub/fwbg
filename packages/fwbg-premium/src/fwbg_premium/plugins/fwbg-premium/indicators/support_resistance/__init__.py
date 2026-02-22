@@ -14,7 +14,7 @@ from typing import List
 import numpy as np
 import pandas as pd
 
-from fwbg_sdk import BaseIndicator, shift_features, safe_divide, EPSILON, register_indicator
+from fwbg_sdk import BaseIndicator, shift_features, EPSILON, register_indicator
 
 
 def _detect_swings(highs: np.ndarray, lows: np.ndarray, period: int):

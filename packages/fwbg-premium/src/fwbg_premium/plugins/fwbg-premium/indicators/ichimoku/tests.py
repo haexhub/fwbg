@@ -249,7 +249,6 @@ class TestTKRelationship:
 
     def test_tk_cross_fires_after_trend_change(self):
         """After flat -> uptrend transition, a bullish TK cross should fire."""
-        n = 400
         close = np.concatenate([np.full(200, 100.0), np.linspace(100, 200, 200)])
         df = _make_ohlc(close)
         result = _get_ind().compute(df)

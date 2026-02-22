@@ -55,7 +55,7 @@ class MacroSurpriseIndicator(BaseIndicator):
 
         o = df["O"]
         h = df["H"]
-        l = df["L"]
+        low = df["L"]
         c = df["C"]
         c_prev = c.shift(1)
 
@@ -69,7 +69,7 @@ class MacroSurpriseIndicator(BaseIndicator):
         features["macro_gap_pct"] = gap_pct
 
         # Gap relativ zur durchschnittlichen Range
-        avg_range = (h - l).rolling(vol_lookback).mean()
+        avg_range = (h - low).rolling(vol_lookback).mean()
         features["macro_gap_normalized"] = gap / avg_range
 
         # Gap Direction
@@ -124,7 +124,7 @@ class MacroSurpriseIndicator(BaseIndicator):
         expected_move = rolling_std * c_prev
 
         # Actual Move
-        actual_move = (h - l)
+        actual_move = (h - low)
 
         # Surprise = Actual / Expected
         expected_move_safe = expected_move.replace(0, np.nan)

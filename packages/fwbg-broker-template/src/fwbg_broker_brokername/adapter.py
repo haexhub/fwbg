@@ -10,8 +10,7 @@ import pandas as pd
 
 from fwbg.adapters.broker import (
     BrokerAdapter, OrderSide, OrderType, OrderStatus,
-    OrderResult, Position, AccountInfo, BarData,
-    Symbol, Timeframe,
+    OrderResult, Position, AccountInfo, Symbol, Timeframe,
 )
 from .mappings import SYMBOL_TO_BROKER
 

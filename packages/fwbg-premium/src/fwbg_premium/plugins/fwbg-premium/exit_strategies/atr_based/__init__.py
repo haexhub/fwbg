@@ -45,9 +45,9 @@ def _call_numba(func, *args):
         _clear_numba_cache()
         return func(*args)
 
-from fwbg_sdk import BaseExitStrategy, register_exit_strategy
-from fwbg.simulation import _simulate_trade_numba
-from fwbg.core import GridParams
+from fwbg_sdk import BaseExitStrategy, register_exit_strategy  # noqa: E402
+from fwbg.simulation import _simulate_trade_numba  # noqa: E402
+from fwbg.core import GridParams  # noqa: E402
 
 if TYPE_CHECKING:
     from fwbg.core.context import SimulationContext

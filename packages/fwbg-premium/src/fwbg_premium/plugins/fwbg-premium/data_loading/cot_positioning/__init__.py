@@ -4,9 +4,6 @@ COT Positioning DataLoader — computes features from CFTC positioning data.
 Expects COT data to be loaded as macro_cot_{symbol} base columns via DataSource.
 Computes: z-scores, extremes, momentum, crowded trade flags.
 """
-import numpy as np
-import pandas as pd
-
 from fwbg_sdk import BaseDataLoader, register_data_loader
 
 

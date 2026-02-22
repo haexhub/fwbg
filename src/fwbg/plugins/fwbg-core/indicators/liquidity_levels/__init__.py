@@ -54,13 +54,13 @@ def _compute_liquidity_features(
     """Compute all liquidity level features."""
     n = len(df)
     h = df["H"].values
-    l = df["L"].values
+    low = df["L"].values
     c = df["C"].values
 
     # ATR
     prev_c = np.roll(c, 1)
     prev_c[0] = c[0]
-    tr = np.maximum(h - l, np.maximum(np.abs(h - prev_c), np.abs(l - prev_c)))
+    tr = np.maximum(h - low, np.maximum(np.abs(h - prev_c), np.abs(low - prev_c)))
     atr = pd.Series(tr).rolling(atr_period, min_periods=1).mean().values
 
     # Find all swing highs and lows
@@ -73,9 +73,9 @@ def _compute_liquidity_features(
         if h[i] == np.max(h[i - swing_lookback:i + swing_lookback + 1]):
             swing_high_bars.append(i)
             swing_high_prices.append(h[i])
-        if l[i] == np.min(l[i - swing_lookback:i + swing_lookback + 1]):
+        if low[i] == np.min(low[i - swing_lookback:i + swing_lookback + 1]):
             swing_low_bars.append(i)
-            swing_low_prices.append(l[i])
+            swing_low_prices.append(low[i])
 
     swing_high_bars = np.array(swing_high_bars)
     swing_high_prices = np.array(swing_high_prices)
@@ -123,7 +123,7 @@ def _compute_liquidity_features(
                 eql_dist[i] = (c[i] - nearest[0]) / current_atr
                 eql_count[i] = nearest[1]
                 eql_active[i] = 1.0
-                if l[i] < nearest[0] and c[i] > nearest[0]:
+                if low[i] < nearest[0] and c[i] > nearest[0]:
                     sweep_down[i] = 1.0
 
     return {

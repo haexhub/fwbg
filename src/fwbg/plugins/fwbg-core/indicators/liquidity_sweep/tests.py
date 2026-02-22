@@ -21,7 +21,7 @@ def _make_bull_sweep_df(swing_lookback=5, n_post=4):
     Bar swing_lookback:       L=98 (sweep below 100), C=104 (closes back above)
     Bars after:               L=104, C=106 (price rises, zone stays active)
     """
-    sweep_i = swing_lookback
+    _sweep_i = swing_lookback
     n = swing_lookback + 1 + n_post
     lows = [100.0] * swing_lookback + [98.0] + [104.0] * n_post
     closes = [104.0] * swing_lookback + [104.0] + [106.0] * n_post

@@ -9,7 +9,7 @@ import json
 import time
 import threading
 import tempfile
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, List

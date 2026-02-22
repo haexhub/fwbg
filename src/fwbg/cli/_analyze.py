@@ -3,7 +3,6 @@
 import argparse
 import json
 import os
-import glob
 
 from fwbg.exploration.exit_analyzer import analyze_asset, format_terminal_output, write_json
 from fwbg.data.config import DATA_PATH, TIMEFRAME

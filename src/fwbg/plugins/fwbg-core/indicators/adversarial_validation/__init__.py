@@ -11,7 +11,7 @@ from typing import List
 import numpy as np
 import pandas as pd
 
-from fwbg_sdk import BaseIndicator, shift_features, safe_divide, register_indicator
+from fwbg_sdk import BaseIndicator, shift_features, register_indicator
 
 
 def _select_feature_columns(df: pd.DataFrame, exclude_prefixes: List[str]) -> List[str]:

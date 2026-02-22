@@ -19,7 +19,7 @@ Interpretation (aus IVB/ICT-Konzept):
 
 Timeframe-Kompatibilität: Intraday (M1-H4). Auf DAY-Bars → NaN.
 """
-from typing import Dict, List, Union, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd

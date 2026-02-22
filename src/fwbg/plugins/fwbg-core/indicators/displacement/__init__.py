@@ -27,17 +27,17 @@ def _compute_displacement_features(
 
     o = df["O"].values
     h = df["H"].values
-    l = df["L"].values
+    low = df["L"].values
     c = df["C"].values
 
-    candle_range = h - l
+    candle_range = h - low
     body = np.abs(c - o)
     safe_range = np.where(candle_range > EPSILON, candle_range, np.nan)
 
     # ATR
     prev_c = np.roll(c, 1)
     prev_c[0] = c[0]
-    tr = np.maximum(candle_range, np.maximum(np.abs(h - prev_c), np.abs(l - prev_c)))
+    tr = np.maximum(candle_range, np.maximum(np.abs(h - prev_c), np.abs(low - prev_c)))
     atr = pd.Series(tr).rolling(atr_period, min_periods=1).mean().values
     safe_atr = np.where(atr > EPSILON, atr, 1.0)
 
@@ -49,14 +49,14 @@ def _compute_displacement_features(
 
     # Wick ratios
     upper_wick = h - np.maximum(o, c)
-    lower_wick = np.minimum(o, c) - l
+    lower_wick = np.minimum(o, c) - low
     features["disp_upper_wick_ratio"] = upper_wick / safe_range
     features["disp_lower_wick_ratio"] = lower_wick / safe_range
 
     # FVG detection at current bar: H[i-2] < L[i] (bull) or L[i-2] > H[i] (bear)
     fvg_formed = np.zeros(n)
     for i in range(2, n):
-        if h[i - 2] < l[i] or l[i - 2] > h[i]:
+        if h[i - 2] < low[i] or low[i - 2] > h[i]:
             fvg_formed[i] = 1.0
     features["disp_fvg_formed"] = fvg_formed
 
@@ -80,7 +80,7 @@ def _compute_displacement_features(
     features["disp_range_expansion"] = candle_range / safe_avg_range
 
     # Close position: (C - L) / (H - L). 1=top, 0=bottom
-    features["disp_close_position"] = (c - l) / safe_range
+    features["disp_close_position"] = (c - low) / safe_range
 
     return features
 

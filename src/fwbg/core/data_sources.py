@@ -131,7 +131,7 @@ class CSVSourceConfig(DataSourceConfig):
         out_dir.mkdir(parents=True, exist_ok=True)
 
         converted = []
-        suffix = "_m15.csv"  # Bestimmt aus raw_pattern
+        _suffix = "_m15.csv"  # Bestimmt aus raw_pattern
         raw_files = sorted(raw_dir.glob("*_m15.csv"))
 
         for raw_file in raw_files:

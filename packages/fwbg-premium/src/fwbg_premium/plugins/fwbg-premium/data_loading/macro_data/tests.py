@@ -1,7 +1,6 @@
 """Tests for macro_data DataLoader plugin - Yield Curve Shape features."""
 import numpy as np
 import pandas as pd
-import pytest
 
 from fwbg.core.registry import get_data_loader
 

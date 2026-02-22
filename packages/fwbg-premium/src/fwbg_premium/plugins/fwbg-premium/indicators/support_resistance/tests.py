@@ -49,7 +49,6 @@ class TestSwingDetection:
 
     def test_no_lookahead_bias(self):
         """Swing at index i must NOT be confirmed before index i + period."""
-        n = 30
         highs = np.array(
             [float(i) for i in range(15)] + [float(14 - i) for i in range(15)]
         )

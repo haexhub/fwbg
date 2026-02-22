@@ -35,20 +35,20 @@ class _SafeJsonEncoder(json.JSONEncoder):
         return obj
 
 
-from fwbg.data import config as data_config
-from fwbg.core.config import StrategyConfig
-from fwbg.optimization.process import process_symbol
-from fwbg.utils.progress import ProgressTracker, init_progress_queue, report_result
-from fwbg.results.storage import (
+from fwbg.data import config as data_config  # noqa: E402
+from fwbg.core.config import StrategyConfig  # noqa: E402
+from fwbg.optimization.process import process_symbol  # noqa: E402
+from fwbg.utils.progress import ProgressTracker, init_progress_queue, report_result  # noqa: E402
+from fwbg.results.storage import (  # noqa: E402
     generate_run_id,
     create_run_directory,
     save_run_results,
     load_run,
 )
-from fwbg.optimization.resource_manager import SimplePoolManager, get_resource_info
-from fwbg.simulation.equity import simulate_equity_from_pnl, filter_correlated_assets
-from fwbg.results.plotting import create_asset_plot
-from .commands import (
+from fwbg.optimization.resource_manager import SimplePoolManager, get_resource_info  # noqa: E402
+from fwbg.simulation.equity import simulate_equity_from_pnl, filter_correlated_assets  # noqa: E402
+from fwbg.results.plotting import create_asset_plot  # noqa: E402
+from .commands import (  # noqa: E402
     show_runs,
     show_comparison,
     prompt_strategy_metadata,
@@ -368,7 +368,7 @@ def run_optimizer(
             if status == "ok":
                 output_lines.append(f"  Risk/Trade={risk_per_trade:.4f}, p={p_value:.3f}")
             elif status == "no_edge":
-                output_lines.append(f"  Reason: No profitable edge")
+                output_lines.append("  Reason: No profitable edge")
             elif status == "not_significant":
                 output_lines.append(f"  Reason: p-value={p_value:.3f} (not significant)")
 
@@ -499,6 +499,7 @@ def run_optimizer(
         # Profitabilitätsprüfung
         sharpe = e.get("sharpe", 0)
         wr = e["win_rate"]
+        rrr = e.get("rrr", 0)
 
         # Jahresrendite berechnen
         bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
@@ -632,7 +633,7 @@ def _run_data_command(argv):
     prep_parser = subparsers.add_parser("prepare", help="Rohdaten in Standard-Format konvertieren")
     prep_parser.add_argument("--source", required=True, help="Name der Datenquelle (z.B. dukascopy)")
 
-    list_parser = subparsers.add_parser("list", help="Registrierte Datenquellen anzeigen")
+    _list_parser = subparsers.add_parser("list", help="Registrierte Datenquellen anzeigen")
 
     args = data_parser.parse_args(argv)
 

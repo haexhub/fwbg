@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.plugins import import_plugin_module
 
 
 @pytest.fixture

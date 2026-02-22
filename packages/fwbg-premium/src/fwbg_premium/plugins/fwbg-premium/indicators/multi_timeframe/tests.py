@@ -15,10 +15,10 @@ def make_h1(n=2000, seed=42):
     o[0] = c[0]
     sp = c * 0.0001
     h = np.maximum(o, c) + np.abs(np.random.randn(n)) * sp
-    l = np.minimum(o, c) - np.abs(np.random.randn(n)) * sp
+    low = np.minimum(o, c) - np.abs(np.random.randn(n)) * sp
     v = np.random.randint(500, 5000, n).astype(float)
     return pd.DataFrame(
-        {"O": o, "H": h, "L": l, "C": c, "V": v},
+        {"O": o, "H": h, "L": low, "C": c, "V": v},
         index=pd.date_range("2022-01-03 00:00", periods=n, freq="h"),
     )
 

@@ -49,7 +49,7 @@ def _compute_pdl_features(
 
     # Shift by 1 day to get PREVIOUS day high/low
     # Create mapping: date -> (high, low)
-    unique_days = day_group.unique()
+    _unique_days = day_group.unique()
     day_hl = pd.DataFrame({
         "high": df["H"].groupby(day_group).max(),
         "low": df["L"].groupby(day_group).min(),

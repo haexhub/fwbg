@@ -66,7 +66,6 @@ def _derivable_timeframes(native_tfs: list[str]) -> list[str]:
 
 def _resample_ohlcv(df, target_tf: str):
     """Resample an OHLCV DataFrame to a higher timeframe."""
-    import pandas as pd
 
     rule = _RESAMPLE_RULE.get(target_tf)
     if not rule:

@@ -86,7 +86,7 @@ class TestFeatureColumns:
             assert col in result.columns, f"Missing: {col}"
 
     def test_feature_count_default(self, indicator, random_walk_df):
-        result = indicator.compute(random_walk_df)
+        _result = indicator.compute(random_walk_df)
         cols = indicator.get_feature_columns()
         # Default: 3 levels, 3 windows
         # Per window: 1 approx_energy + 3 detail_energy + 3 detail_mean = 7
@@ -109,7 +109,7 @@ class TestFeatureColumns:
         assert len(result) == len(random_walk_df)
 
     def test_feature_prefix(self, indicator, random_walk_df):
-        result = indicator.compute(random_walk_df)
+        _result = indicator.compute(random_walk_df)
         for col in indicator.get_feature_columns():
             assert col.startswith("wt_"), f"Feature {col} missing wt_ prefix"
 

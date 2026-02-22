@@ -224,7 +224,7 @@ class TestMACD:
 
     def test_macd_hist_flip_fires_at_trend_reversal(self):
         """MACD histogram sign change should produce a flip signal at reversal."""
-        n = 400
+        _n = 400
         close = np.concatenate([np.linspace(100, 80, 200), np.linspace(80, 120, 200)])
         df = create_ohlc(close)
         result = self._indicator().compute(df)
@@ -346,7 +346,7 @@ class TestSupertrend:
 
     def test_supertrend_flip_fires_at_direction_change(self):
         """After a trend reversal (up -> down), trend_supertrend_flip should fire."""
-        n = 400
+        _n = 400
         close = np.concatenate([np.linspace(100, 200, 200), np.linspace(200, 100, 200)])
         df = create_ohlc(close)
         result = self._indicator().compute(df)
