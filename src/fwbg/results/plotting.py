@@ -127,6 +127,7 @@ def create_asset_plot(result, plots_path, trade_directions=None):
 
     # Titel zusammenbauen
     win_rate = result.get('win_rate', 0)
+    rrr = result.get('rrr', 0)
     sharpe = result.get('sharpe', 0)
 
     # CT-Werte für Titel

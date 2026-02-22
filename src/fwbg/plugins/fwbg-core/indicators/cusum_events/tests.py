@@ -202,7 +202,7 @@ class TestCusumBarsSince:
                 loc = bs.index.get_loc(bar)
                 if loc + 1 < len(bs):
                     assert bs.iloc[loc + 1] <= 0.05, (
-                        f"bars_since should reset near event"
+                        "bars_since should reset near event"
                     )
 
 

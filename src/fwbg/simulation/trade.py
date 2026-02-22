@@ -60,7 +60,7 @@ def compute_targets_numba(
 
 # Cache für Sub-Stunden-Daten (wird einmal pro Symbol geladen)
 # Thread-safe durch Lock geschützt
-import threading
+import threading  # noqa: E402
 _cache_lock = threading.Lock()
 _m15_cache = {}  # 15-Min-Daten
 _m30_cache = {}  # 30-Min-Daten

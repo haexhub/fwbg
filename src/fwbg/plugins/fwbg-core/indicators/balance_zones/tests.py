@@ -38,7 +38,7 @@ def _make_balanced_df(lookback=10, n_post=5):
     Bar lookback:       O=102, C=105 → bullish breakout (close > 101).
     Bars after:         O=102, C=103 → price stays above (continuation).
     """
-    n = lookback + 1 + n_post
+    _n = lookback + 1 + n_post
     opens  = [99.0]  * lookback + [102.0] + [102.0] * n_post
     closes = [101.0] * lookback + [105.0] + [103.0] * n_post
     highs  = [c + 0.5 for c in closes]
@@ -53,7 +53,7 @@ def _make_bear_breakout_df(lookback=10, n_post=5):
     Bar lookback:       O=98, C=95 → bearish breakout (close < 99).
     Bars after:         stay below.
     """
-    n = lookback + 1 + n_post
+    _n = lookback + 1 + n_post
     opens  = [101.0] * lookback + [98.0]  + [98.0]  * n_post
     closes = [99.0]  * lookback + [95.0]  + [97.0]  * n_post
     highs  = [c + 0.5 for c in closes]
@@ -71,7 +71,7 @@ def _make_fake_bear_df(lookback=10):
         → bz_fake_bear fires (after shift appears at iloc[lookback+2]).
     """
     lb = lookback
-    n = lb + 2 + 3
+    _n = lb + 2 + 3
     opens  = [99.0]  * lb + [102.0, 100.0] + [100.0] * 3
     closes = [101.0] * lb + [104.0, 100.0] + [100.0] * 3
     highs  = [101.5] * lb + [104.5, 100.5] + [100.5] * 3
@@ -89,7 +89,7 @@ def _make_fake_bull_df(lookback=10):
         → bz_fake_bull fires (after shift appears at iloc[lookback+2]).
     """
     lb = lookback
-    n = lb + 2 + 3
+    _n = lb + 2 + 3
     opens  = [101.0] * lb + [ 98.0, 100.0] + [100.0] * 3
     closes = [ 99.0] * lb + [ 96.0, 100.0] + [100.0] * 3
     highs  = [ 99.5] * lb + [ 98.5, 100.5] + [100.5] * 3
@@ -259,7 +259,7 @@ class TestInBalance:
         """Zone width / ATR > balance_atr_threshold → bz_in_balance=0."""
         lb = 10
         # Wide zone: bodies ranging from 90 to 110, ATR small
-        n = lb + 5
+        _n = lb + 5
         opens  = list(range(90, 90 + lb)) + [100.0] * 5
         closes = list(range(91, 91 + lb)) + [100.0] * 5
         highs  = [c + 0.2 for c in closes]
@@ -361,7 +361,7 @@ class TestDistances:
         """Close < zone_top while in zone → bz_zone_top_dist > 0."""
         lb = 10
         df = _make_balanced_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        _result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
 
         # In-zone bars: close=101 == zone_top=101 → dist = 0; use earlier bars
         # close=101, zone_top after 5 bars = 101; but at bar 2 (close=101, zone so far)
@@ -374,7 +374,7 @@ class TestDistances:
         highs2  = [101.5] * n_small
         lows2   = [98.5]  * n_small
         df2 = _make_df(highs2, lows2, closes2, opens2)
-        result2 = _bz.BalanceZonesIndicator().compute(df2, lookback=lb)
+        _result2 = _bz.BalanceZonesIndicator().compute(df2, lookback=lb)
 
         # zone_top = 101 (body_top = max(99, 100) = 100... wait body_top = max(O,C) = 100)
         # zone_top = 100, close = 100 → dist = 0. Let me use close < body_top...
@@ -382,7 +382,7 @@ class TestDistances:
         closes3 = [99.5]  * n_small  # close=99.5, zone_top=rolling max body_top = max(99,99.5)=99.5
         highs3  = [100.5] * n_small
         lows3   = [98.5]  * n_small
-        df3 = _make_df(highs3, lows3, closes3, opens3)
+        _df3 = _make_df(highs3, lows3, closes3, opens3)
         # After zone is established (zone_top=99.5), close=99.5 == zone_top → dist = 0
         # To test dist > 0, we need close < zone_top
         opens4  = [99.0]  * lb + [98.0] * 5

@@ -1,6 +1,5 @@
 """Tests for fwbg-sdk CLI (init, add commands)."""
 import json
-from pathlib import Path
 from click.testing import CliRunner
 from fwbg_sdk.cli import main
 

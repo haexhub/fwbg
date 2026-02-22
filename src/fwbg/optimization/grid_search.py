@@ -281,7 +281,8 @@ def _run_with_successive_halving(
             # not something we can recover from per-combo.
             raise
         except Exception as tgt_e:
-            import sys, traceback
+            import sys
+            import traceback
             print(f"\n[ERROR] {sym}: target precompute failed for combo={combo_idx} "
                   f"tp={tp} sl={sl}: {type(tgt_e).__name__}: {tgt_e}\n"
                   f"{traceback.format_exc()}", file=sys.stderr, flush=True)
@@ -433,7 +434,7 @@ def run_grid_search(
         features = clean_features
 
     if len(features) < 1:
-        log(2, f"  Keine Features verfügbar - übersprungen", sym)
+        log(2, "  Keine Features verfügbar - übersprungen", sym)
         if progress_callback:
             grid_total = ctx.total_grid_combinations()
             for i in range(grid_total):
@@ -456,7 +457,7 @@ def run_grid_search(
         )
 
     if not selected_features_long and not selected_features_short:
-        log(2, f"  Keine Features selektiert - übersprungen", sym)
+        log(2, "  Keine Features selektiert - übersprungen", sym)
         if progress_callback:
             for i in range(grid_total):
                 progress_callback(i + 1, grid_total)
@@ -522,10 +523,11 @@ def run_grid_search(
                         candidates.append(candidate)
                     if grid_result:
                         grid_results.append(grid_result)
-                except (ImportError, ModuleNotFoundError) as e:
+                except (ImportError, ModuleNotFoundError):
                     raise  # Let outer handler deal with it
                 except Exception as e:
-                    import sys, traceback
+                    import sys
+                    import traceback
                     tb = traceback.format_exc()
                     print(f"\n[ERROR] {sym}: combo {i} failed: {type(e).__name__}: {e}\n{tb}",
                           file=sys.stderr, flush=True)
@@ -536,14 +538,16 @@ def run_grid_search(
     except (ImportError, ModuleNotFoundError) as outer_e:
         # Setup/environment errors must never be silently swallowed.
         # They indicate broken dependencies or stale Numba caches.
-        import sys, traceback
+        import sys
+        import traceback
         tb = traceback.format_exc()
         print(f"\n[ERROR] {sym}: {type(outer_e).__name__}: {outer_e}\n{tb}",
               file=sys.stderr, flush=True)
         log(1, f"  FATAL: {type(outer_e).__name__}: {outer_e}\n{tb}", sym)
         raise
     except Exception as outer_e:
-        import sys, traceback
+        import sys
+        import traceback
         tb = traceback.format_exc()
         print(f"\n[ERROR] {sym}: Grid-Search failed: {type(outer_e).__name__}: {outer_e}\n{tb}",
               file=sys.stderr, flush=True)

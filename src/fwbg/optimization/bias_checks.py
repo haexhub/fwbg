@@ -195,7 +195,7 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
     # Logging
     if verbose:
         print(f"\n{'='*80}")
-        print(f"SYSTEMATIC BIAS CHECK")
+        print("SYSTEMATIC BIAS CHECK")
         print(f"{'='*80}")
         print(f"{severity} {message}")
         print(f"  OK: {ok_count}/{total}")
@@ -203,12 +203,12 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
         print(f"  Biased: {len(biased_assets)}/{total}")
 
         if biased_assets:
-            print(f"\nBiased Assets:")
+            print("\nBiased Assets:")
             for a in biased_assets:
                 print(f"  - {a['symbol']}: {a['mean_bias']:.2f}x (ratios: {[f'{r:.2f}' for r in a['bias_ratios']]})")
 
         if warned_assets and verbose:
-            print(f"\nWarning Assets:")
+            print("\nWarning Assets:")
             for a in warned_assets:
                 print(f"  - {a['symbol']}: {a['mean_bias']:.2f}x")
 

@@ -40,16 +40,16 @@ def _compute_sdf_features(
     """Compute supply/demand flip zone features."""
     n = len(df)
     h = df["H"].values
-    l = df["L"].values
+    low = df["L"].values
     c = df["C"].values
 
     # ATR
     prev_c = np.roll(c, 1)
     prev_c[0] = c[0]
-    tr = np.maximum(h - l, np.maximum(np.abs(h - prev_c), np.abs(l - prev_c)))
+    tr = np.maximum(h - low, np.maximum(np.abs(h - prev_c), np.abs(low - prev_c)))
     atr = pd.Series(tr).rolling(atr_period, min_periods=1).mean().values
 
-    swing_highs, swing_lows = _find_swing_points(h, l, swing_lookback)
+    swing_highs, swing_lows = _find_swing_points(h, low, swing_lookback)
 
     bull_active = np.zeros(n)
     bear_active = np.zeros(n)

@@ -248,7 +248,6 @@ _TEMPLATE_MAP = {
 
 
 def _tests_template(plugin_name: str, plugin_type: str) -> str:
-    info = PLUGIN_TYPES[plugin_type]
     return textwrap.dedent(f'''\
         """Tests for {plugin_name} plugin."""
         import pytest
@@ -433,9 +432,9 @@ def init(name: str, plugin: tuple, output_dir: str):
     click.echo(f"Created plugin package '{name}' at {pkg_dir}")
     for ptype, pname in parsed_plugins:
         click.echo(f"  - {ptype}: {pname}")
-    click.echo(f"\nNext steps:")
+    click.echo("\nNext steps:")
     click.echo(f"  cd {pkg_dir}")
-    click.echo(f"  pip install -e .")
+    click.echo("  pip install -e .")
 
 
 @main.command()

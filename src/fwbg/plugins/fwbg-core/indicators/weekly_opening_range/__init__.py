@@ -113,7 +113,7 @@ def _weekly_stat_features(
 
     # Aggregate one value per week (the first bar's range)
     # Using shift to get previous week's stats (no lookahead)
-    unique_weeks = week_id.drop_duplicates().sort_values()
+    _unique_weeks = week_id.drop_duplicates().sort_values()
     week_range_map = (
         or_range_first.where(bar_in_week == 0)
         .groupby(week_id)
@@ -126,7 +126,7 @@ def _weekly_stat_features(
     week_range_rolling_std = week_range_map.rolling(stat_window, min_periods=max(1, stat_window // 2)).std().shift(1)
 
     avg_map = week_range_rolling_avg.to_dict()
-    std_map = week_range_rolling_std.to_dict()
+    _std_map = week_range_rolling_std.to_dict()
 
     features["wor_stat_avg_range"] = week_id.map(avg_map).where(valid, np.nan)
     # Normalized: how wide is this week's range vs historical average?
@@ -139,7 +139,7 @@ def _weekly_stat_features(
     # Breakout rate: fraction of past weeks where price broke out of WOR
     or_high_week = df["H"].where(bar_in_week == 0).groupby(week_id).transform("max")
     or_low_week = df["L"].where(bar_in_week == 0).groupby(week_id).transform("min")
-    broke_out = ((df["H"].max() > or_high_week) | (df["L"].min() < or_low_week)).astype(float)
+    _broke_out = ((df["H"].max() > or_high_week) | (df["L"].min() < or_low_week)).astype(float)
 
     # Per-week breakout flag (any bar in week broke out of first-bar range)
     week_breakout = (

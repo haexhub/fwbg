@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from fwbg_sdk.testing import (
     create_sample_ohlcv, assert_features_shifted,
     assert_no_inf, create_sample_asset,

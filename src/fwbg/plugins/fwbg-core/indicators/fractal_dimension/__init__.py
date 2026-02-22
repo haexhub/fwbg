@@ -17,7 +17,7 @@ from typing import List
 import numpy as np
 import pandas as pd
 
-from fwbg_sdk import BaseIndicator, shift_features, safe_divide, register_indicator
+from fwbg_sdk import BaseIndicator, shift_features, register_indicator
 
 
 def _higuchi_fd(series: np.ndarray, k_max: int) -> float:

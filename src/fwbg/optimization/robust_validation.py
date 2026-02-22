@@ -196,7 +196,7 @@ def run_robust_validation(
     """
     if verbose:
         print(f"\n{'=' * 80}")
-        print(f"ROBUST WALK-FORWARD VALIDATION")
+        print("ROBUST WALK-FORWARD VALIDATION")
         print(f"{'=' * 80}")
         print(f"Asset: {ctx.symbol}")
         print(f"Walk-Forward Folds: {n_walk_forward_folds}")
@@ -338,7 +338,7 @@ def run_robust_validation(
     # Aggregate results
     if len(fold_results) == 0:
         if verbose:
-            print(f"\nERROR: No successful folds")
+            print("\nERROR: No successful folds")
         return RobustValidationResult(
             mean_win_rate=0.0,
             std_win_rate=0.0,
@@ -405,23 +405,23 @@ def run_robust_validation(
         print()
 
         if result.sample_bias_detected:
-            print(f"⚠️  WARNING: Sample bias detected!")
-            print(f"   Some folds have Holdout/Inner ratio > 2.0x")
+            print("⚠️  WARNING: Sample bias detected!")
+            print("   Some folds have Holdout/Inner ratio > 2.0x")
             print(f"   Ratios: {[f'{r:.2f}x' for r in result.holdout_vs_inner_ratios]}")
         else:
-            print(f"✓ No extreme sample bias detected")
+            print("✓ No extreme sample bias detected")
 
         print()
         if result.is_robust(min_total_trades=500, max_win_rate_std=0.15):
-            print(f"✓ ROBUST: Passes robustness checks")
+            print("✓ ROBUST: Passes robustness checks")
         else:
-            print(f"❌ NOT ROBUST:")
+            print("❌ NOT ROBUST:")
             if result.total_trades < 500:
                 print(f"   - Not enough trades ({result.total_trades} < 500)")
             if result.std_win_rate > 0.15:
                 print(f"   - Win-rate too inconsistent (std={result.std_win_rate:.2f} > 0.15)")
             if result.sample_bias_detected:
-                print(f"   - Sample bias detected")
+                print("   - Sample bias detected")
         print(f"{'=' * 80}")
 
     return result

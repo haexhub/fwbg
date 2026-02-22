@@ -6,7 +6,6 @@ Each preset file embeds metadata:
 File naming convention: {slug}_v{version}.json
 """
 import json
-import os
 import re
 from pathlib import Path
 

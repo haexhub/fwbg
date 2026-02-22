@@ -257,7 +257,7 @@ def run_plugin_tests(fqn: str) -> dict:
 @router.get("/{fqn:path}")
 def get_plugin(fqn: str) -> dict:
     """Get plugin details by fully qualified name."""
-    registry = get_plugin_registry()
+    _registry = get_plugin_registry()
     try:
         return _plugin_to_dict(fqn)
     except Exception:

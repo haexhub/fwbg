@@ -1,5 +1,5 @@
 """Base plugin class and phase enum for the pipeline system."""
-from abc import ABC, abstractmethod
+from abc import ABC
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
@@ -220,7 +220,7 @@ class BasePlugin(ABC):
         return readme.read_text(encoding="utf-8")
 
     @classmethod
-    def validate_docs(cls) -> "DocsValidationResult":
+    def validate_docs(cls) -> "DocsValidationResult":  # noqa: F821
         """Validate plugin documentation for path safety."""
         from fwbg_sdk.docs import DocsValidationResult, validate_plugin_docs
 
