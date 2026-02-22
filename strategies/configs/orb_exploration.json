@@ -1,15 +1,16 @@
 {
   "name": "ORB Exploration",
-  "description": "Opening Range Breakout Feature-Test: ORB-Features + Kontext-Indikatoren auf M15-Daten.",
+  "description": "Rule-based ORB strategy: entry on breakout retracement, TP/SL optimization via grid search.",
   "tags": [
     "orb",
     "exploration",
     "session_based",
-    "intraday"
+    "intraday",
+    "rule_based"
   ],
   "timeframe": "MINUTE_15",
-  "hypothesis": "Opening Range Breakout Features (rolling + session-spezifisch) liefern pr\u00e4diktiven Edge, besonders f\u00fcr Indices und FX Majors bei Session-Opens. ML lernt welche Stunden und welche Breakout-Typen profitabel sind.",
-  "expected_outcome": "Feature Selection w\u00e4hlt ORB-Features in stabilem Subset. Session-spezifische Features (s08, s13, s14) st\u00e4rker als Rolling f\u00fcr Forex/Indices.",
+  "hypothesis": "Opening Range Breakout retracement entries are consistently profitable across sessions. Rule-based direction with grid-optimized TP/SL.",
+  "expected_outcome": "Session-specific signals (s08, s13, s14) produce concentrated, high-quality entries.",
   "pipeline": "orb_simple_v1",
   "exit_strategy": "orb_based",
   "exit_params": "atr_intraday_v1",
@@ -18,7 +19,7 @@
     "breakeven_trigger": 0.5,
     "trail_atr_mult": 0.5
   },
-  "model": "xgboost_depth6_v1",
+  "model": "signal_orb_v1",
   "validation": "walk_forward_intraday_v1",
   "filters": "orb_scalping_v1",
   "resources": "standard_v1",
@@ -27,40 +28,23 @@
     "assignments": {
       "FOREX": {
         "preset": "orb_scalping_forex_v1",
-        "tp": [
-          1.5,
-          2.0,
-          2.5,
-          3.0
-        ]
+        "ct": [0.5],
+        "tp": [1.5, 2.0, 2.5, 3.0]
       },
       "INDEX": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          3.0,
-          4.0,
-          5.0,
-          6.0,
-          8.0
-        ]
+        "ct": [0.5],
+        "tp": [3.0, 4.0, 5.0, 6.0, 8.0]
       },
       "COMMODITY": {
         "preset": "orb_scalping_base_v1",
-        "tp": [
-          2.0,
-          2.5,
-          3.0,
-          3.5
-        ]
+        "ct": [0.5],
+        "tp": [2.0, 2.5, 3.0, 3.5]
       },
       "CRYPTO": {
         "preset": "orb_scalping_crypto_v1",
-        "tp": [
-          2.0,
-          3.0,
-          4.0,
-          5.0
-        ]
+        "ct": [0.5],
+        "tp": [2.0, 3.0, 4.0, 5.0]
       }
     }
   }

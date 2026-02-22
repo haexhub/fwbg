@@ -1,16 +1,16 @@
 {
   "name": "Deep ORB: INDEX",
-  "description": "Step-2-Vertiefung der ORB-Strategie f\u00fcr INDEX-Assets. Erweiterte TP/CT-Grids \u00fcber bisheriges Ceiling (tp=4.0, ct=0.65). Ohne Regime-Filter-Grid da diese Trade-Volumen zu stark reduzieren.",
+  "description": "Rule-based ORB strategy for INDEX assets. Wider TP/SL grids for deeper parameter exploration.",
   "tags": [
     "orb",
     "deep",
     "index",
-    "step2",
-    "intraday"
+    "intraday",
+    "rule_based"
   ],
   "timeframe": "MINUTE_15",
-  "hypothesis": "Das ORB-Edge in DAX ist st\u00e4rker als die initiale Exploration zeigte. TP=4.0 und CT=0.65 lagen am Grid-Ceiling \u2013 das Optimum liegt h\u00f6her.",
-  "expected_outcome": "TP wandert auf 4.5-5.5, CT auf 0.70+. Mehr Trades und bessere Fold-Stabilit\u00e4t ohne restriktive Regime-Filter.",
+  "hypothesis": "ORB edge in indices is stronger than initial exploration showed. Rule-based entries with wider TP/SL grid to find optimal parameters.",
+  "expected_outcome": "Higher TP values optimal due to index volatility. ORB-range SL provides natural risk level.",
   "pipeline": "orb_simple_v1",
   "exit_strategy": "orb_based",
   "exit_params": "atr_intraday_v1",
@@ -19,7 +19,7 @@
     "breakeven_trigger": 0.5,
     "trail_atr_mult": 0.5
   },
-  "model": "xgboost_depth6_v1",
+  "model": "signal_orb_v1",
   "validation": "walk_forward_intraday_v1",
   "filters": "orb_scalping_v1",
   "resources": "standard_v1",
@@ -28,199 +28,63 @@
     "assignments": {
       "DAX": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          6.0,
-          7.0,
-          8.0,
-          10.0,
-          12.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75,
-          0.8
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [6.0, 7.0, 8.0, 10.0, 12.0],
+        "sl": [0.9, 1.0, 1.1]
       },
       "NAS100": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          7.0,
-          8.0,
-          10.0,
-          12.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75,
-          0.8
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [7.0, 8.0, 10.0, 12.0],
+        "sl": [0.9, 1.0, 1.1]
       },
       "DOW30": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          6.0,
-          7.0,
-          8.0,
-          10.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75,
-          0.8
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [6.0, 7.0, 8.0, 10.0],
+        "sl": [0.9, 1.0, 1.1]
       },
       "SPX500": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          5.0,
-          6.0,
-          7.0,
-          8.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75,
-          0.8
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [5.0, 6.0, 7.0, 8.0],
+        "sl": [0.9, 1.0, 1.1]
       },
       "FTSE100": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          5.0,
-          6.0,
-          7.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [5.0, 6.0, 7.0],
+        "sl": [0.9, 1.0, 1.1]
       },
       "EU50": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          6.0,
-          7.0,
-          8.0,
-          9.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75,
-          0.8
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [6.0, 7.0, 8.0, 9.0],
+        "sl": [0.9, 1.0, 1.1]
       },
       "CAC40": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          5.0,
-          6.0,
-          7.0,
-          8.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [5.0, 6.0, 7.0, 8.0],
+        "sl": [0.9, 1.0, 1.1]
       },
       "JP225": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          6.0,
-          7.0,
-          8.0,
-          10.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75,
-          0.8
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [6.0, 7.0, 8.0, 10.0],
+        "sl": [0.9, 1.0, 1.1]
       },
       "ASX200": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          5.0,
-          6.0,
-          7.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [5.0, 6.0, 7.0],
+        "sl": [0.9, 1.0, 1.1]
       },
       "HK50": {
         "preset": "orb_scalping_index_v1",
-        "tp": [
-          6.0,
-          7.0,
-          8.0,
-          10.0
-        ],
-        "ct": [
-          0.65,
-          0.7,
-          0.75,
-          0.8
-        ],
-        "sl": [
-          0.9,
-          1.0,
-          1.1
-        ]
+        "ct": [0.5],
+        "tp": [6.0, 7.0, 8.0, 10.0],
+        "sl": [0.9, 1.0, 1.1]
       }
     }
   }

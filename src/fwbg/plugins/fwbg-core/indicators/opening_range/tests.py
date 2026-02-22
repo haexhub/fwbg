@@ -627,7 +627,7 @@ class TestBreakoutEventFeature:
 
 
 class TestORBSLDist:
-    """orb_sl_dist = (or_high - or_low) / 2 — raw SL distance from midpoint entry to ORB boundary."""
+    """orb_sl_dist = or_high - or_low — full ORB range as SL distance (entry near breakout → SL at opposite boundary)."""
 
     def test_rolling_sl_dist_column_exists(self):
         ind = _get_indicator()
@@ -635,11 +635,11 @@ class TestORBSLDist:
         result = ind.compute(df, enable_session=False, enable_stats=False)
         assert "orb_sl_dist" in result.columns, "orb_sl_dist column missing from rolling ORB output"
 
-    def test_rolling_sl_dist_equals_half_range(self):
-        """orb_sl_dist must equal (or_high - or_low) / 2 (half the ORB range width).
+    def test_rolling_sl_dist_equals_full_range(self):
+        """orb_sl_dist must equal or_high - or_low (full ORB range).
 
-        Entry at midpoint → SL at ORB Low = exactly half the range width.
-        ORB: high=103, low=97 → range=6.0, orb_sl_dist = 3.0 (not 6.0).
+        Entry near breakout boundary → SL at opposite boundary = full range.
+        ORB: high=103, low=97 → range=6.0, orb_sl_dist = 6.0.
         """
         ind = _get_indicator()
         n_warmup = 5 * 4  # 5 hours = 20 bars of 15-min data (00:00–04:45)
@@ -650,18 +650,18 @@ class TestORBSLDist:
         low = close - 0.5
         b = n_warmup  # bar 20 = 05:00 → range bar for that hour
         high[b] = 103.0
-        low[b] = 97.0   # ORB range = 6.0, half = 3.0
+        low[b] = 97.0   # ORB range = 6.0
         high = np.maximum(high, close)
         low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, enable_session=False, enable_stats=False)
         # After shift_features: computed value for bar i appears at result.iloc[i+1].
         # Bar b is the range bar (valid=False) → result.iloc[b+1] = NaN.
-        # Bars b+1, b+2, b+3 are post-range bars (valid=True) → result.iloc[b+2:b+5] = 3.0.
+        # Bars b+1, b+2, b+3 are post-range bars (valid=True) → result.iloc[b+2:b+5] = 6.0.
         sl_vals = result["orb_sl_dist"].iloc[b + 1:b + 5].dropna()
         assert len(sl_vals) > 0, "No non-NaN values found for orb_sl_dist in post-range bars"
-        assert (sl_vals.round(6) == 3.0).all(), (
-            f"Expected orb_sl_dist = 3.0 (half of 6.0 range), got: {sl_vals.values}"
+        assert (sl_vals.round(6) == 6.0).all(), (
+            f"Expected orb_sl_dist = 6.0 (full ORB range), got: {sl_vals.values}"
         )
 
     def test_rolling_sl_dist_positive(self):

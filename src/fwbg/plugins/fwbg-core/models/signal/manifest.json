@@ -1,0 +1,6 @@
+{
+  "name": "signal",
+  "version": "1.0.0",
+  "description": "Signal model for rule-based strategies — uses indicator columns as entry signals",
+  "phase": "model"
+}

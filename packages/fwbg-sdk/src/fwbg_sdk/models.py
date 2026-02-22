@@ -18,6 +18,7 @@ class TrainingContext:
     categorical_features: Optional[List[str]] = None
     validation_data: Optional[Tuple[pd.DataFrame, np.ndarray]] = None
     fold_information: Optional[dict] = None  # {"fold": 3, "total_folds": 8}
+    direction: Optional[str] = None  # "long" or "short" — used by signal model
 
 
 @dataclass
