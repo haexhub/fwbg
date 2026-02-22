@@ -5,17 +5,35 @@ import pathlib
 import numpy as np
 from numba import njit, prange
 
-_CACHE_DIR = pathlib.Path(__file__).parent / "__pycache__"
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]  # src/fwbg/simulation -> project root
 
 
 def _clear_numba_cache():
-    """Delete stale Numba .nbi/.nbc cache files for this module."""
-    for pattern in ("*.nbi", "*.nbc"):
-        for f in _CACHE_DIR.glob(pattern):
-            try:
-                f.unlink()
-            except OSError:
-                pass
+    """Delete ALL stale Numba .nbi/.nbc cache files project-wide.
+
+    Numba inlines called functions into the caller's cache, so a signature
+    change in _simulate_trade_numba can break caches in atr_based, trade.py,
+    mfe_mae.py etc. We must clear everything.
+    """
+    removed = 0
+    for subdir in ("src", "packages"):
+        root = _PROJECT_ROOT / subdir
+        if root.exists():
+            for f in root.rglob("*.nbi"):
+                try:
+                    f.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+            for f in root.rglob("*.nbc"):
+                try:
+                    f.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+    if removed:
+        import logging
+        logging.getLogger(__name__).info(f"Cleared {removed} stale Numba cache files")
 
 
 @njit(cache=True)
