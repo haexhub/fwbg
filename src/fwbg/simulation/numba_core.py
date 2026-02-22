@@ -1,31 +1,41 @@
 """
 Numba-optimierte Kernfunktionen für Trade-Simulation.
+
+Cache versioning: bump _CACHE_VERSION whenever the return signature of any
+@njit function changes.  At import time we compare against a stamp file;
+on mismatch we wipe every .nbi/.nbc we can find and rewrite the stamp.
 """
 import pathlib
 import numpy as np
 from numba import njit, prange
 
-_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]  # src/fwbg/simulation -> project root
+# Bump this whenever a @njit function signature/return type changes.
+_CACHE_VERSION = "2"
+
+_THIS_DIR = pathlib.Path(__file__).resolve().parent
+_STAMP_FILE = _THIS_DIR / "__pycache__" / ".numba_cache_version"
 
 
 def _clear_numba_cache():
-    """Delete ALL stale Numba .nbi/.nbc cache files project-wide.
-
-    Numba inlines called functions into the caller's cache, so a signature
-    change in _simulate_trade_numba can break caches in atr_based, trade.py,
-    mfe_mae.py etc. We must clear everything.
-    """
+    """Delete ALL Numba .nbi/.nbc cache files reachable from this package."""
     removed = 0
-    for subdir in ("src", "packages"):
-        root = _PROJECT_ROOT / subdir
-        if root.exists():
-            for f in root.rglob("*.nbi"):
-                try:
-                    f.unlink()
-                    removed += 1
-                except OSError:
-                    pass
-            for f in root.rglob("*.nbc"):
+    # Walk upward to find project root (directory containing src/ or packages/)
+    search_roots = []
+    for parent in _THIS_DIR.parents:
+        src = parent / "src"
+        pkg = parent / "packages"
+        if src.is_dir() or pkg.is_dir():
+            if src.is_dir():
+                search_roots.append(src)
+            if pkg.is_dir():
+                search_roots.append(pkg)
+            break
+    # Fallback: at least clear our own directory tree
+    if not search_roots:
+        search_roots.append(_THIS_DIR)
+    for root in search_roots:
+        for ext in ("*.nbi", "*.nbc"):
+            for f in root.rglob(ext):
                 try:
                     f.unlink()
                     removed += 1
@@ -34,6 +44,21 @@ def _clear_numba_cache():
     if removed:
         import logging
         logging.getLogger(__name__).info(f"Cleared {removed} stale Numba cache files")
+
+
+def _check_cache_version():
+    """Clear all Numba caches if the version stamp doesn't match."""
+    _STAMP_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        current = _STAMP_FILE.read_text().strip()
+    except (FileNotFoundError, OSError):
+        current = ""
+    if current != _CACHE_VERSION:
+        _clear_numba_cache()
+        try:
+            _STAMP_FILE.write_text(_CACHE_VERSION)
+        except OSError:
+            pass
 
 
 @njit(cache=True)
@@ -240,21 +265,4 @@ def compute_targets_with_durations_numba(
     return targets_long, targets_short, durations_long, durations_short
 
 
-def _validate_numba_cache():
-    """Validate that cached Numba functions return expected tuple sizes.
-
-    Stale caches (e.g. after signature changes) can silently return wrong
-    tuple sizes, causing 'not enough values to unpack' errors at runtime.
-    """
-    dummy = np.array([100.0, 101.0, 102.0])
-    try:
-        result = _simulate_trade_numba(dummy, dummy, dummy, dummy, 0, 1, 1.0, 1.0, 0.0, 0.0, 2, 0)
-        if not isinstance(result, tuple) or len(result) != 4:
-            raise ValueError(f"_simulate_trade_numba returned {len(result)} values, expected 4")
-    except (ValueError, TypeError, ModuleNotFoundError):
-        _clear_numba_cache()
-        # Force recompile by calling again
-        _simulate_trade_numba(dummy, dummy, dummy, dummy, 0, 1, 1.0, 1.0, 0.0, 0.0, 2, 0)
-
-
-_validate_numba_cache()
+_check_cache_version()
