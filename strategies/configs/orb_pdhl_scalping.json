@@ -1,16 +1,15 @@
 {
-  "name": "ORB + PDH/PDL Scalping",
-  "description": "Rule-based ORB strategy: breakout direction is deterministic, entry on retracement to ORB midpoint. Grid search optimizes TP/SL only.",
+  "name": "PDH/PDL Retest Scalping",
+  "description": "Rule-based PDH/PDL strategy: breakout above Previous Day High or below Previous Day Low, entry on retracement to midpoint (PDH+PDL)/2. Grid search optimizes TP/SL only.",
   "tags": [
-    "orb",
     "pdhl",
     "scalping",
     "intraday",
     "rule_based"
   ],
   "timeframe": "MINUTE_15",
-  "hypothesis": "ORB breakouts with retracement produce high-probability intraday setups. Direction is rule-based (breakout direction), ML only optimizes TP/SL via grid search.",
-  "expected_outcome": "Trades only on retest signals after confirmed breakout. Strong edge on indices and FX majors during NY/London sessions.",
+  "hypothesis": "PDH/PDL breakouts with retracement to the range midpoint produce high-probability intraday setups. Direction is rule-based (breakout direction), optimizer tunes TP/SL via grid search.",
+  "expected_outcome": "Trades only on retest signals after confirmed breakout above PDH or below PDL. Max 1 entry per direction per day.",
   "pipeline": "orb_scalping_v1",
   "exit_strategy": "atr_based",
   "exit_params": "atr_intraday_v1",
@@ -24,82 +23,142 @@
       "FOREX": {
         "preset": "orb_scalping_forex_v1",
         "ct": [0.5],
-        "tp": [1.5, 2.0, 2.5, 3.0]
-      },
-      "INDEX": {
-        "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [3.0, 4.0, 5.0, 6.0, 8.0]
-      },
-      "COMMODITY": {
-        "preset": "orb_scalping_base_v1",
-        "ct": [0.5],
-        "tp": [2.0, 2.5, 3.0, 3.5]
-      },
-      "CRYPTO": {
-        "preset": "orb_scalping_crypto_v1",
-        "ct": [0.5],
-        "tp": [2.0, 3.0, 4.0, 5.0]
+        "tp": [1.5, 2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "DAX": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "sl": [1.5, 2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "FTSE100": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "sl": [1.5, 2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "DOW30": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [2.0, 2.5, 3.0]
+        "sl": [2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "NAS100": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [2.0, 2.5, 3.0]
+        "sl": [2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "SPX500": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "sl": [1.5, 2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "EU50": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "sl": [1.5, 2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "CAC40": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "sl": [1.5, 2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "JP225": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [2.0, 2.5, 3.0]
+        "sl": [2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "ASX200": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5]
+        "sl": [1.5, 2.0, 2.5],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       },
       "HK50": {
         "preset": "orb_scalping_index_v1",
         "ct": [0.5],
         "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [2.0, 2.5, 3.0]
+        "sl": [2.0, 2.5, 3.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+      },
+      "COMMODITY": {
+        "preset": "orb_scalping_base_v1",
+        "ct": [0.5],
+        "tp": [2.0, 2.5, 3.0, 3.5],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+      },
+      "CRYPTO": {
+        "preset": "orb_scalping_crypto_v1",
+        "ct": [0.5],
+        "tp": [2.0, 3.0, 4.0, 5.0],
+        "model_hyperparameters": {
+          "signal_column_long": "pdl_retest_bull",
+          "signal_column_short": "pdl_retest_bear"
+        },
+        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
       }
     }
   }
