@@ -93,6 +93,7 @@ class SimulationContext:
     early_pruning_enabled: bool = False
     early_pruning_keep_ratio: float = 0.5
     early_pruning_min_survivors: int = 10
+    early_pruning_min_folds_before_pruning_ratio: float = 0.3
     probability_calibration: bool = False
     calibration_method: str = "isotonic"
     meta_labeling: bool = False
@@ -185,6 +186,7 @@ class SimulationContext:
             early_pruning_enabled=strategy.validation.early_pruning.enabled,
             early_pruning_keep_ratio=strategy.validation.early_pruning.keep_ratio,
             early_pruning_min_survivors=strategy.validation.early_pruning.min_survivors,
+            early_pruning_min_folds_before_pruning_ratio=strategy.validation.early_pruning.min_folds_before_pruning_ratio,
             probability_calibration=strategy.validation.probability_calibration,
             calibration_method=strategy.validation.calibration_method,
             meta_labeling=strategy.validation.meta_labeling,

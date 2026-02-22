@@ -12,23 +12,23 @@
   "timeframe": "MINUTE_1",
   "hypothesis": "Liquidity sweeps (fake-outs beyond swing highs/lows that close back inside) leave behind high-probability rejection zones. Price re-testing these zones with EMA trend alignment and FVG/S/D confluence produces reliable scalping entries. ML learns which combinations of sweep recency, zone proximity, trend alignment, and displacement are most predictive.",
   "expected_outcome": "Edge on liquid index and FX markets during active sessions. lsw_bull_active / lsw_bear_active and recency features selected as important. Higher win rate when EMA 50/200 trend aligns with sweep direction.",
-  "pipeline": "liq_sweep_scalping",
+  "pipeline": "liq_sweep_scalping_v1",
   "exit_strategy": "atr_based",
-  "exit_params": "atr_intraday",
+  "exit_params": "atr_intraday_v1",
   "exit_modifier": "trailing_stop",
   "exit_modifier_params": {
     "breakeven_trigger": 0.5,
     "trail_atr_mult": 0.5
   },
-  "model": "xgboost_depth6",
-  "validation": "walk_forward_intraday",
-  "filters": "orb_scalping",
-  "resources": "standard",
+  "model": "xgboost_depth6_v1",
+  "validation": "walk_forward_intraday_v1",
+  "filters": "orb_scalping_v1",
+  "resources": "standard_v1",
   "grids": {
     "presets_dir": "../grids",
     "assignments": {
       "FOREX": {
-        "preset": "orb_scalping_forex",
+        "preset": "orb_scalping_forex_v1",
         "tp": [
           1.5,
           2.0,
@@ -37,7 +37,7 @@
         ]
       },
       "INDEX": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           3.0,
           4.0,
@@ -46,7 +46,7 @@
         ]
       },
       "COMMODITY": {
-        "preset": "orb_scalping_base",
+        "preset": "orb_scalping_base_v1",
         "tp": [
           2.0,
           2.5,
@@ -55,7 +55,7 @@
         ]
       },
       "CRYPTO": {
-        "preset": "orb_scalping_crypto",
+        "preset": "orb_scalping_crypto_v1",
         "tp": [
           2.0,
           3.0,
@@ -64,7 +64,7 @@
         ]
       },
       "DAX": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           3.0,
           4.0,
@@ -78,7 +78,7 @@
         ]
       },
       "FTSE100": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           3.0,
           4.0,
@@ -91,7 +91,7 @@
         ]
       },
       "DOW30": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           3.0,
           4.0,
@@ -105,7 +105,7 @@
         ]
       },
       "NAS100": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           3.0,
           4.0,
@@ -119,7 +119,7 @@
         ]
       },
       "SPX500": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           3.0,
           4.0,
@@ -132,7 +132,7 @@
         ]
       },
       "EU50": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           3.0,
           4.0,

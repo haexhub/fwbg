@@ -1,0 +1,50 @@
+{
+  "_meta": {
+    "name": "exploration_regime",
+    "description": "",
+    "version": 1
+  },
+  "condition_grids": [
+    {
+      "column": "trend_adx_14",
+      "operator": ">=",
+      "values": [
+        null,
+        25
+      ],
+      "directions": 6,
+      "else_directions": 0
+    },
+    {
+      "column": "macro_vix",
+      "operator": "<=",
+      "values": [
+        null,
+        30
+      ],
+      "directions": 6,
+      "else_directions": 0
+    },
+    {
+      "column": "regime_hurst_100",
+      "operator": ">=",
+      "values": [
+        null,
+        0.45
+      ],
+      "directions": 6,
+      "else_directions": 0
+    },
+    {
+      "column": "regime_cluster_label",
+      "operator": ">=",
+      "values": [
+        null,
+        1,
+        2
+      ],
+      "directions": 6,
+      "else_directions": 0
+    }
+  ]
+}

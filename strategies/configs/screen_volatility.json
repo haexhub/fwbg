@@ -1,8 +1,13 @@
 {
   "name": "Screen: Volatility Regime",
-  "description": "Konzept-Screening: Volatilitäts-Regime (ATR, Hurst, Variance Ratio, Entropy) als Signalquelle auf HOUR-Daten. Testet ob Regime-Zustand Richtung vorhersagt.",
-  "tags": ["screening", "step1", "volatility", "regime"],
-  "hypothesis": "Der aktuelle Volatilitäts-Regime (trending vs ranging, hohe vs niedrige Vol) ist prädiktiv für zukünftige Preisbewegungen - unabhängig von konkreten technischen Signalen.",
+  "description": "Konzept-Screening: Volatilit\u00e4ts-Regime (ATR, Hurst, Variance Ratio, Entropy) als Signalquelle auf HOUR-Daten. Testet ob Regime-Zustand Richtung vorhersagt.",
+  "tags": [
+    "screening",
+    "step1",
+    "volatility",
+    "regime"
+  ],
+  "hypothesis": "Der aktuelle Volatilit\u00e4ts-Regime (trending vs ranging, hohe vs niedrige Vol) ist pr\u00e4diktiv f\u00fcr zuk\u00fcnftige Preisbewegungen - unabh\u00e4ngig von konkreten technischen Signalen.",
   "expected_outcome": "Hurst-Exponent, Variance Ratio und ATR-Niveau werden selektiert. Regime-Zustand bestimmt ob Long oder Short Edge hat.",
   "pipeline": {
     "indicators": [
@@ -10,18 +15,38 @@
         "name": "volatility",
         "params": {
           "bb_period": 20,
-          "atr_periods": [7, 14, 21],
-          "vol_est_windows": [20, 50]
+          "atr_periods": [
+            7,
+            14,
+            21
+          ],
+          "vol_est_windows": [
+            20,
+            50
+          ]
         }
       },
       {
         "name": "regime",
         "params": {
-          "hurst_windows": [100, 200, 500],
+          "hurst_windows": [
+            100,
+            200,
+            500
+          ],
           "step": 10,
-          "entropy_windows": [50, 100],
-          "vr_windows": [100, 200],
-          "vr_lags": [5, 10]
+          "entropy_windows": [
+            50,
+            100
+          ],
+          "vr_windows": [
+            100,
+            200
+          ],
+          "vr_lags": [
+            5,
+            10
+          ]
         }
       },
       {
@@ -72,18 +97,66 @@
     ]
   },
   "exit_strategy": "atr_based",
-  "exit_params": "atr_standard_at",
-  "model": "xgboost_screen",
-  "validation": "walk_forward_screening",
-  "filters": "screening",
-  "resources": "exploration_heavy",
+  "exit_params": "atr_standard_at_v1",
+  "model": "xgboost_screen_v1",
+  "validation": "walk_forward_screening_v1",
+  "filters": "screening_v1",
+  "resources": "exploration_heavy_v1",
   "grids": {
     "presets_dir": "../grids",
     "assignments": {
-      "FOREX":     {"preset": "screening_base", "tp": [1.5, 2.5, 3.5], "sl": [2.0, 3.0, 4.0]},
-      "INDEX":     {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
-      "COMMODITY": {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
-      "CRYPTO":    {"preset": "screening_base", "tp": [2.0, 3.0, 5.0], "sl": [3.0, 5.0, 7.0]}
+      "FOREX": {
+        "preset": "screening_base_v1",
+        "tp": [
+          1.5,
+          2.5,
+          3.5
+        ],
+        "sl": [
+          2.0,
+          3.0,
+          4.0
+        ]
+      },
+      "INDEX": {
+        "preset": "screening_base_v1",
+        "tp": [
+          2.0,
+          3.0,
+          4.0
+        ],
+        "sl": [
+          3.0,
+          4.0,
+          5.0
+        ]
+      },
+      "COMMODITY": {
+        "preset": "screening_base_v1",
+        "tp": [
+          2.0,
+          3.0,
+          4.0
+        ],
+        "sl": [
+          3.0,
+          4.0,
+          5.0
+        ]
+      },
+      "CRYPTO": {
+        "preset": "screening_base_v1",
+        "tp": [
+          2.0,
+          3.0,
+          5.0
+        ],
+        "sl": [
+          3.0,
+          5.0,
+          7.0
+        ]
+      }
     }
   }
 }

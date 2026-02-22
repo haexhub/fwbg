@@ -1,0 +1,11 @@
+{
+  "_meta": {
+    "name": "atr_standard_at",
+    "description": "",
+    "version": 1
+  },
+  "atr_period": 14,
+  "min_tp_pips": 10,
+  "min_sl_pips": 15,
+  "adaptive_timeout": false
+}

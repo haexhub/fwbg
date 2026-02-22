@@ -1,14 +1,14 @@
 {
   "name": "Screen: Macro",
-  "description": "Konzept-Screening: Makro-Kontext (Risikosentiment, Yield Curve, Cross-Asset) als primäre Signalquelle auf HOUR-Daten. Kein technisches Signal.",
+  "description": "Konzept-Screening: Makro-Kontext (Risikosentiment, Yield Curve, Cross-Asset) als prim\u00e4re Signalquelle auf HOUR-Daten. Kein technisches Signal.",
   "tags": [
     "screening",
     "step1",
     "macro",
     "cross_asset"
   ],
-  "hypothesis": "Makro-Faktoren (VIX-Regime, Yield Curve, Cross-Asset Flows) treiben systematische Bewegungen in FX, Indices und Rohstoffen - unabhängig von technischen Signalen.",
-  "expected_outcome": "VIX-Niveau, Yield Curve Veränderungen und Cross-Asset Momentum werden selektiert. Asymmetrie zwischen Risk-On und Risk-Off Phasen.",
+  "hypothesis": "Makro-Faktoren (VIX-Regime, Yield Curve, Cross-Asset Flows) treiben systematische Bewegungen in FX, Indices und Rohstoffen - unabh\u00e4ngig von technischen Signalen.",
+  "expected_outcome": "VIX-Niveau, Yield Curve Ver\u00e4nderungen und Cross-Asset Momentum werden selektiert. Asymmetrie zwischen Risk-On und Risk-Off Phasen.",
   "pipeline": {
     "indicators": [
       {
@@ -78,16 +78,16 @@
     ]
   },
   "exit_strategy": "atr_based",
-  "exit_params": "atr_standard_at",
-  "model": "xgboost_screen",
-  "validation": "walk_forward_screening",
-  "filters": "screening",
-  "resources": "exploration_heavy",
+  "exit_params": "atr_standard_at_v1",
+  "model": "xgboost_screen_v1",
+  "validation": "walk_forward_screening_v1",
+  "filters": "screening_v1",
+  "resources": "exploration_heavy_v1",
   "grids": {
     "presets_dir": "../grids",
     "assignments": {
       "FOREX": {
-        "preset": "screening_base",
+        "preset": "screening_base_v1",
         "tp": [
           1.5,
           2.5,
@@ -100,7 +100,7 @@
         ]
       },
       "INDEX": {
-        "preset": "screening_base",
+        "preset": "screening_base_v1",
         "tp": [
           2.0,
           3.0,
@@ -113,7 +113,7 @@
         ]
       },
       "COMMODITY": {
-        "preset": "screening_base",
+        "preset": "screening_base_v1",
         "tp": [
           2.0,
           3.0,
@@ -126,7 +126,7 @@
         ]
       },
       "CRYPTO": {
-        "preset": "screening_base",
+        "preset": "screening_base_v1",
         "tp": [
           2.0,
           3.0,

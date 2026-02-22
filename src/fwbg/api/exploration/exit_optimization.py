@@ -11,7 +11,9 @@ router = APIRouter(tags=["exit-optimization"])
 
 
 class ExitOptimizationRequest(BaseModel):
-    asset: str  # e.g. "BRENT_HOUR.csv"
+    source: str
+    symbol: str  # e.g. "ASX200"
+    timeframe: str = "HOUR"
     exit_strategy: str = "atr_based"
     exit_params: dict = {"atr_period": 14}
     max_bars: int = 48
@@ -22,19 +24,27 @@ def run_exit_optimization(req: ExitOptimizationRequest):
     """Run MFE/MAE analysis for a single asset. Returns full result."""
     from fwbg.exploration.exit_analyzer import analyze_asset, write_json
     from fwbg.api.deps import get_test_results_dir
-    from fwbg.data.config import DATA_PATH
+    from fwbg.core.data_sources import get_data_source, CSVSourceConfig
 
-    data_file = os.path.join(DATA_PATH, req.asset)
-    if not os.path.exists(data_file):
-        raise HTTPException(404, f"Data file not found: {req.asset}")
+    try:
+        ds = get_data_source(req.source)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
 
-    result = analyze_asset(data_file, req.exit_strategy, req.exit_params, req.max_bars)
+    if not isinstance(ds, CSVSourceConfig):
+        raise HTTPException(400, f"Source '{req.source}' is not a CSV source")
+
+    path = ds.get_file_path(req.symbol, req.timeframe)
+    if not path.exists():
+        raise HTTPException(404, f"Data file not found: {req.symbol}_{req.timeframe} in {req.source}")
+
+    result = analyze_asset(str(path), req.exit_strategy, req.exit_params, req.max_bars)
 
     # Cache result to disk
     out_dir = os.path.join(get_test_results_dir(), "exploration")
     os.makedirs(out_dir, exist_ok=True)
-    symbol = req.asset.replace(".csv", "")
-    write_json(result, os.path.join(out_dir, f"{symbol}.json"))
+    cache_key = f"{req.symbol}_{req.timeframe}"
+    write_json(result, os.path.join(out_dir, f"{cache_key}.json"))
 
     return result
 

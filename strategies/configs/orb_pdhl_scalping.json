@@ -11,81 +11,197 @@
   "timeframe": "MINUTE_15",
   "hypothesis": "ORB breakouts with displacement towards PDH/PDL produce high-probability intraday setups. Supply/demand flip zones and liquidity levels add confluence. ML learns which combinations of ORB break direction, displacement quality, and proximity to daily levels are profitable.",
   "expected_outcome": "Strong edge on indices and FX majors during NY/London sessions. PDL features and displacement features selected as important by feature selection. Higher win rate when displacement is present.",
-  "pipeline": "orb_scalping",
+  "pipeline": "orb_scalping_v1",
   "exit_strategy": "atr_based",
-  "exit_params": "atr_intraday",
-  "model": "xgboost_depth6",
-  "validation": "walk_forward_intraday",
-  "filters": "orb_scalping",
-  "resources": "standard",
+  "exit_params": "atr_intraday_v1",
+  "model": "xgboost_depth6_v1",
+  "validation": "walk_forward_intraday_v1",
+  "filters": "orb_scalping_v1",
+  "resources": "standard_v1",
   "grids": {
     "presets_dir": "../grids",
     "assignments": {
       "FOREX": {
-        "preset": "orb_scalping_forex",
-        "tp": [1.5, 2.0, 2.5, 3.0]
+        "preset": "orb_scalping_forex_v1",
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "INDEX": {
-        "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0, 8.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ]
       },
       "COMMODITY": {
-        "preset": "orb_scalping_base",
-        "tp": [2.0, 2.5, 3.0, 3.5]
+        "preset": "orb_scalping_base_v1",
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ]
       },
       "CRYPTO": {
-        "preset": "orb_scalping_crypto",
-        "tp": [2.0, 3.0, 4.0, 5.0]
+        "preset": "orb_scalping_crypto_v1",
+        "tp": [
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ]
       },
       "DAX": {
-        "preset": "orb_scalping_index",
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "FTSE100": {
-        "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "DOW30": {
-        "preset": "orb_scalping_index",
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [2.0, 2.5, 3.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "sl": [
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "NAS100": {
-        "preset": "orb_scalping_index",
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [2.0, 2.5, 3.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "sl": [
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "SPX500": {
-        "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "EU50": {
-        "preset": "orb_scalping_index",
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "CAC40": {
-        "preset": "orb_scalping_index",
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [1.5, 2.0, 2.5, 3.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "JP225": {
-        "preset": "orb_scalping_index",
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [2.0, 2.5, 3.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "sl": [
+          2.0,
+          2.5,
+          3.0
+        ]
       },
       "ASX200": {
-        "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
+        "sl": [
+          1.5,
+          2.0,
+          2.5
+        ]
       },
       "HK50": {
-        "preset": "orb_scalping_index",
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [2.0, 2.5, 3.0]
+        "preset": "orb_scalping_index_v1",
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
+        "sl": [
+          2.0,
+          2.5,
+          3.0
+        ]
       }
     }
   }

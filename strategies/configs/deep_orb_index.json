@@ -1,6 +1,6 @@
 {
   "name": "Deep ORB: INDEX",
-  "description": "Step-2-Vertiefung der ORB-Strategie für INDEX-Assets. Erweiterte TP/CT-Grids über bisheriges Ceiling (tp=4.0, ct=0.65). Ohne Regime-Filter-Grid da diese Trade-Volumen zu stark reduzieren.",
+  "description": "Step-2-Vertiefung der ORB-Strategie f\u00fcr INDEX-Assets. Erweiterte TP/CT-Grids \u00fcber bisheriges Ceiling (tp=4.0, ct=0.65). Ohne Regime-Filter-Grid da diese Trade-Volumen zu stark reduzieren.",
   "tags": [
     "orb",
     "deep",
@@ -9,25 +9,25 @@
     "intraday"
   ],
   "timeframe": "MINUTE_15",
-  "hypothesis": "Das ORB-Edge in DAX ist stärker als die initiale Exploration zeigte. TP=4.0 und CT=0.65 lagen am Grid-Ceiling – das Optimum liegt höher.",
-  "expected_outcome": "TP wandert auf 4.5-5.5, CT auf 0.70+. Mehr Trades und bessere Fold-Stabilität ohne restriktive Regime-Filter.",
-  "pipeline": "orb_simple",
+  "hypothesis": "Das ORB-Edge in DAX ist st\u00e4rker als die initiale Exploration zeigte. TP=4.0 und CT=0.65 lagen am Grid-Ceiling \u2013 das Optimum liegt h\u00f6her.",
+  "expected_outcome": "TP wandert auf 4.5-5.5, CT auf 0.70+. Mehr Trades und bessere Fold-Stabilit\u00e4t ohne restriktive Regime-Filter.",
+  "pipeline": "orb_simple_v1",
   "exit_strategy": "atr_based",
-  "exit_params": "atr_intraday",
+  "exit_params": "atr_intraday_v1",
   "exit_modifier": "trailing_stop",
   "exit_modifier_params": {
     "breakeven_trigger": 0.5,
     "trail_atr_mult": 0.5
   },
-  "model": "xgboost_depth6",
-  "validation": "walk_forward_intraday",
-  "filters": "orb_scalping",
-  "resources": "standard",
+  "model": "xgboost_depth6_v1",
+  "validation": "walk_forward_intraday_v1",
+  "filters": "orb_scalping_v1",
+  "resources": "standard_v1",
   "grids": {
     "presets_dir": "../grids",
     "assignments": {
       "DAX": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           6.0,
           7.0,
@@ -48,7 +48,7 @@
         ]
       },
       "NAS100": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           7.0,
           8.0,
@@ -68,7 +68,7 @@
         ]
       },
       "DOW30": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           6.0,
           7.0,
@@ -88,7 +88,7 @@
         ]
       },
       "SPX500": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           5.0,
           6.0,
@@ -108,7 +108,7 @@
         ]
       },
       "FTSE100": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           5.0,
           6.0,
@@ -126,7 +126,7 @@
         ]
       },
       "EU50": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           6.0,
           7.0,
@@ -146,7 +146,7 @@
         ]
       },
       "CAC40": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           5.0,
           6.0,
@@ -165,7 +165,7 @@
         ]
       },
       "JP225": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           6.0,
           7.0,
@@ -185,7 +185,7 @@
         ]
       },
       "ASX200": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           5.0,
           6.0,
@@ -203,7 +203,7 @@
         ]
       },
       "HK50": {
-        "preset": "orb_scalping_index",
+        "preset": "orb_scalping_index_v1",
         "tp": [
           6.0,
           7.0,

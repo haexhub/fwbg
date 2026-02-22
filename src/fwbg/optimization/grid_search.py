@@ -7,6 +7,7 @@ Enthält:
 - run_grid_search: Grid-Search über TP/SL/Timeout Kombinationen
 """
 import dataclasses
+import math
 from typing import Tuple, Optional, List
 
 import numpy as np
@@ -271,9 +272,20 @@ def _run_with_successive_halving(
     combo_targets = {}
     for combo_idx, combo in enumerate(combos):
         tp, sl, timeout_bars, combo_ctx = combo[0], combo[1], combo[2], combo[6]
-        combo_targets[combo_idx] = _compute_cached_targets(
-            tp, sl, timeout_bars, inner_folds, inner_df, combo_ctx
-        )
+        try:
+            combo_targets[combo_idx] = _compute_cached_targets(
+                tp, sl, timeout_bars, inner_folds, inner_df, combo_ctx
+            )
+        except (ImportError, ModuleNotFoundError):
+            # Re-raise setup errors — they indicate broken dependencies,
+            # not something we can recover from per-combo.
+            raise
+        except Exception as tgt_e:
+            import sys, traceback
+            print(f"\n[ERROR] {sym}: target precompute failed for combo={combo_idx} "
+                  f"tp={tp} sl={sl}: {type(tgt_e).__name__}: {tgt_e}\n"
+                  f"{traceback.format_exc()}", file=sys.stderr, flush=True)
+            combo_targets[combo_idx] = None
 
     # State per combo: list of fold results
     combo_fold_results = {i: [] for i in range(n_combos)}
@@ -297,8 +309,10 @@ def _run_with_successive_halving(
             )
             combo_fold_results[combo_idx].append(fold_result)
 
-        # Prune after each fold except the last
-        if fold_idx < n_folds - 1:
+        # Prune after each fold except the last, but not before the ratio of folds completed
+        ratio = getattr(ctx, "early_pruning_min_folds_before_pruning_ratio", 0.3)
+        min_folds = max(1, math.ceil(n_folds * ratio))
+        if fold_idx < n_folds - 1 and fold_idx >= min_folds - 1:
             scores = []
             for idx in active_indices:
                 pnls = [r["pnl"] for r in combo_fold_results[idx] if r.get("success")]
@@ -508,14 +522,31 @@ def run_grid_search(
                         candidates.append(candidate)
                     if grid_result:
                         grid_results.append(grid_result)
+                except (ImportError, ModuleNotFoundError) as e:
+                    raise  # Let outer handler deal with it
                 except Exception as e:
+                    import sys, traceback
+                    tb = traceback.format_exc()
+                    print(f"\n[ERROR] {sym}: combo {i} failed: {type(e).__name__}: {e}\n{tb}",
+                          file=sys.stderr, flush=True)
                     log(1, f"  ERROR in combo {i}: {type(e).__name__}: {e}", sym)
-                    import traceback
-                    log(2, f"  Traceback: {traceback.format_exc()}", sym)
                     progress_reported += 1
                     if progress_callback:
                         progress_callback(progress_reported, grid_total)
+    except (ImportError, ModuleNotFoundError) as outer_e:
+        # Setup/environment errors must never be silently swallowed.
+        # They indicate broken dependencies or stale Numba caches.
+        import sys, traceback
+        tb = traceback.format_exc()
+        print(f"\n[ERROR] {sym}: {type(outer_e).__name__}: {outer_e}\n{tb}",
+              file=sys.stderr, flush=True)
+        log(1, f"  FATAL: {type(outer_e).__name__}: {outer_e}\n{tb}", sym)
+        raise
     except Exception as outer_e:
+        import sys, traceback
+        tb = traceback.format_exc()
+        print(f"\n[ERROR] {sym}: Grid-Search failed: {type(outer_e).__name__}: {outer_e}\n{tb}",
+              file=sys.stderr, flush=True)
         log(1, f"  OUTER ERROR: {type(outer_e).__name__}: {outer_e}", sym)
 
     log(2, f"  {len(candidates)} Kandidaten aus {len(combos)} Kombinationen", sym)

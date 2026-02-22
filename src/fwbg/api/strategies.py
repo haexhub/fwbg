@@ -9,6 +9,17 @@ from fwbg.core.config import _parse_grids, _resolve_section
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
 
+# Strategy JSON field name → relative preset subdirectory
+SECTION_FIELD_DIRS: dict[str, str] = {
+    "pipeline": "pipelines",
+    "exit_params": "exit_params",
+    "model": "models",
+    "validation": "validations",
+    "filters": "filters",
+    "resources": "resources",
+    "risk_params": "risk_params",
+}
+
 
 def _serialize_grid(grid) -> dict:
     """Serialize a GridConfig object to a plain dict for API responses."""
@@ -101,16 +112,7 @@ def get_strategy(name: str) -> dict:
 
     # Resolve string preset references to inline dicts
     strategy_dir = str(filepath.parent.resolve())
-    _section_dirs = {
-        "pipeline": "pipelines",
-        "exit_params": "exit_params",
-        "model": "models",
-        "validation": "validations",
-        "filters": "filters",
-        "resources": "resources",
-        "risk_params": "risk_params",
-    }
-    for key, section_dir in _section_dirs.items():
+    for key, section_dir in SECTION_FIELD_DIRS.items():
         if key in data:
             data[key] = _resolve_section(data[key], section_dir, strategy_dir)
 
