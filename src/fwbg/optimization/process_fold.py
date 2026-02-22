@@ -152,12 +152,18 @@ def process_single_fold(
     full_pool = get_feature_columns(train_df)
 
     # Entferne Features mit inf/nan (XGBoost verträgt keine inf)
+    # Never drop required_features (signal columns for SignalModel) — they are
+    # essential for the model even if they have moderate NaN ratios.
+    protected_cols = set(ctx.required_features) if ctx.required_features else set()
     clean_pool = []
     excluded_inf = 0
     excluded_nan = 0
     drop_cols = []
     for col in full_pool:
         if col in train_df.columns:
+            if col in protected_cols:
+                clean_pool.append(col)
+                continue
             has_inf = np.isinf(train_df[col]).any()
             nan_ratio = train_df[col].isna().sum() / len(train_df)
             if has_inf:
@@ -323,7 +329,15 @@ def process_single_fold(
         return None, all_grid_results
 
     # === TEST EVALUATION (on this fold's test set) ===
-    test_result = evaluate_on_holdout(test_df, train_df, b, ctx)
+    # Apply winning candidate's model_hyperparameters and exit_modifier_params
+    # so holdout evaluation uses the same params that won the grid search.
+    import dataclasses
+    holdout_ctx = ctx
+    if b.get("model_hyperparameters") and b["model_hyperparameters"] != ctx.model_hyperparameters:
+        holdout_ctx = dataclasses.replace(holdout_ctx, model_hyperparameters=b["model_hyperparameters"])
+    if b.get("exit_modifier_params") and b["exit_modifier_params"] != ctx.exit_modifier_params:
+        holdout_ctx = dataclasses.replace(holdout_ctx, exit_modifier_params=b["exit_modifier_params"])
+    test_result = evaluate_on_holdout(test_df, train_df, b, holdout_ctx)
 
     if test_result["n_trades"] < 5:
         log(2, f"  Fold {fold.fold_id + 1}: Too few test trades ({test_result['n_trades']})", sym)
@@ -350,6 +364,8 @@ def process_single_fold(
             "sl": b["params"][1],
             "ct": b["params"][2],
             "rrr": b["rrr"],
+            "model_hyperparameters": b.get("model_hyperparameters"),
+            "exit_modifier_params": b.get("exit_modifier_params"),
         },
         "selected_features_long": b.get("selected_features_long", []),
         "selected_features_short": b.get("selected_features_short", []),

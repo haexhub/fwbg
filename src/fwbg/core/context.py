@@ -111,8 +111,15 @@ class SimulationContext:
     # [None] = nur ctx-Default verwenden; [dict1, dict2] = Grid über Modifier-Params
     grid_exit_modifier_params: List[Optional[dict]] = field(default_factory=lambda: [None])
 
-    # Model Hyperparameters (from StrategyConfig)
+    # Model Hyperparameters (from StrategyConfig, merged with per-asset grid overrides)
     model_hyperparameters: dict = field(default_factory=dict)
+
+    # Required features: always included in feature selection, bypass selection plugins
+    required_features: List[str] = field(default_factory=list)
+
+    # Grid über Model-Hyperparameters: Liste von HP-Dicts zum Durchsuchen
+    # [None] = nur ctx-Default verwenden; [dict1, dict2] = Grid über Model-HPs
+    grid_model_hyperparameters: List[Optional[dict]] = field(default_factory=lambda: [None])
 
     # Preprocessing (from Pipeline)
     preprocessing_plugins: List[dict] = None  # List of {"name": ..., "params": ...}
@@ -138,6 +145,31 @@ class SimulationContext:
         if grid.separate_long_short:
             long_tp, long_sl, long_ct = grid.get_long_grid()
             short_tp, short_sl, short_ct = grid.get_short_grid()
+
+        # Merge per-asset model hyperparameters (grid overrides base model config)
+        model_hp = dict(strategy.model.hyperparameters)
+        if grid.model_hyperparameters:
+            model_hp.update(grid.model_hyperparameters)
+
+        # Merge required_features: base model + per-asset grid
+        req_feats = list(strategy.model.required_features)
+        for f in grid.required_features:
+            if f not in req_feats:
+                req_feats.append(f)
+
+        # Auto-add signal columns from base model_hyperparameters to required_features
+        for key in ('signal_column_long', 'signal_column_short'):
+            val = model_hp.get(key)
+            if val and val not in req_feats:
+                req_feats.append(val)
+
+        # Auto-add signal columns from model_hyperparameters_grid to required_features
+        for hp_variant in grid.model_hyperparameters_grid:
+            if hp_variant and isinstance(hp_variant, dict):
+                for key in ('signal_column_long', 'signal_column_short'):
+                    val = hp_variant.get(key)
+                    if val and val not in req_feats:
+                        req_feats.append(val)
 
         return cls(
             symbol=asset.symbol,
@@ -175,8 +207,11 @@ class SimulationContext:
             exit_modifier_params=strategy.exit_modifier_params,
             # Grid über Exit-Modifier-Params (aus GridConfig)
             grid_exit_modifier_params=grid.exit_modifier_params_grid,
-            # Model Hyperparameters
-            model_hyperparameters=strategy.model.hyperparameters,
+            # Grid über Model-Hyperparameters (aus GridConfig)
+            grid_model_hyperparameters=grid.model_hyperparameters_grid,
+            # Model Hyperparameters (merged with per-asset grid overrides)
+            model_hyperparameters=model_hp,
+            required_features=req_feats,
             # Pipeline: Preprocessing
             preprocessing_plugins=strategy.get_preprocessing(),
             # Validation
@@ -221,6 +256,7 @@ class SimulationContext:
         """Berechnet Gesamtzahl der Grid-Kombinationen."""
         n_timeout = self._effective_timeout_grid_size()
         n_modifier = len(self.grid_exit_modifier_params) if self.grid_exit_modifier_params else 1
+        n_model_hp = len(self.grid_model_hyperparameters) if self.grid_model_hyperparameters else 1
         # With pipeline, we don't iterate over feature groups anymore
         # All indicator plugins are applied together
 
@@ -229,9 +265,9 @@ class SimulationContext:
             short_tp, short_sl, _ = self.get_short_grid()
             long_combos = len(long_tp) * len(long_sl) * n_timeout
             short_combos = len(short_tp) * len(short_sl) * n_timeout
-            return (long_combos + short_combos) * n_modifier
+            return (long_combos + short_combos) * n_modifier * n_model_hp
 
-        return len(self.grid_tp) * len(self.grid_sl) * n_timeout * n_modifier
+        return len(self.grid_tp) * len(self.grid_sl) * n_timeout * n_modifier * n_model_hp
 
 
 # Type hint import für AssetConfig

@@ -101,6 +101,16 @@ class GridConfig:
     # [None] = nur ctx-Default verwenden (kein Grid), [dict1, dict2] = Grid über Modifier-Params
     exit_modifier_params_grid: List[Optional[dict]] = field(default_factory=lambda: [None])
 
+    # Per-asset model hyperparameters override (merged into base model config)
+    model_hyperparameters: Dict[str, Any] = field(default_factory=dict)
+
+    # Per-asset required features (always included in feature selection)
+    required_features: List[str] = field(default_factory=list)
+
+    # Model-Hyperparameters Grid: Liste von HP-Dicts zum Vergleichen
+    # [None] = nur ctx-Default verwenden (kein Grid), [dict1, dict2] = Grid über Model-HPs
+    model_hyperparameters_grid: List[Optional[Dict[str, Any]]] = field(default_factory=lambda: [None])
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GridConfig":
         """Erstellt GridConfig aus Dictionary."""
@@ -127,6 +137,14 @@ class GridConfig:
         else:
             exit_modifier_params_grid = list(emp_raw)
 
+        mhp_raw = data.get("model_hyperparameters_grid")
+        if mhp_raw is None:
+            model_hyperparameters_grid = [None]
+        elif isinstance(mhp_raw, dict):
+            model_hyperparameters_grid = [mhp_raw]
+        else:
+            model_hyperparameters_grid = list(mhp_raw)
+
         return cls(
             tp=data.get("tp", [1.0, 1.5, 2.0, 2.5]),
             sl=data.get("sl", [1.0, 1.5, 2.0]),
@@ -141,6 +159,9 @@ class GridConfig:
             short_ct=data.get("short_ct"),
             separate_long_short=data.get("separate_long_short", has_separate),
             exit_modifier_params_grid=exit_modifier_params_grid,
+            model_hyperparameters=data.get("model_hyperparameters", {}),
+            required_features=data.get("required_features", []),
+            model_hyperparameters_grid=model_hyperparameters_grid,
         )
 
     def get_long_grid(self) -> tuple:
@@ -180,6 +201,7 @@ class ModelConfig:
         "random_state": 42
     })
     trade_directions: List[str] = field(default_factory=lambda: ["long", "short"])
+    required_features: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ModelConfig":
@@ -193,6 +215,7 @@ class ModelConfig:
                 "n_estimators": 100, "max_depth": 5, "random_state": 42
             }),
             trade_directions=directions,
+            required_features=data.get("required_features", []),
         )
 
     @property
@@ -413,6 +436,9 @@ def _parse_grids(grids_data: dict, strategy_dir: Optional[str] = None) -> Dict[s
         "long_tp", "long_sl", "long_ct",
         "short_tp", "short_sl", "short_ct",
         "exit_modifier_params_grid",
+        "model_hyperparameters",
+        "required_features",
+        "model_hyperparameters_grid",
     }
 
     for asset_class, assignment in assignments.items():
