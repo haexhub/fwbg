@@ -83,6 +83,11 @@ class SimulationContext:
     first_fold_min_pnl: float = -10.0
     first_fold_min_trades: int = 5
 
+    # Minimum trades per CT in inner CV evaluation (evaluate_on_validation).
+    # Default 10 ensures statistical significance.  Lower for rare-event signal
+    # models where each inner fold may have few entry signals.
+    min_eval_trades: int = 10
+
     # Model
     model_type: str = "xgboost"
 
@@ -178,6 +183,7 @@ class SimulationContext:
             point=asset.point,
             currencies=asset.currencies,
             min_trades=strategy.filters.min_trades,
+            min_eval_trades=strategy.filters.min_eval_trades,
             min_rrr=strategy.filters.min_rrr,
             max_trade_bars=None,  # Kein globales Limit, timeout_bars pro Kombination
             grid_tp=grid.tp,

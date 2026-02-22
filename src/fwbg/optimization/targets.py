@@ -522,6 +522,7 @@ def evaluate_on_validation(
         )
 
     # Probability Calibration: EV-optimal threshold replaces CT grid
+    min_eval = ctx.min_eval_trades
     if ctx.probability_calibration:
         ct_ev = sl / (tp + sl)
         if ctx.separate_long_short:
@@ -542,7 +543,7 @@ def evaluate_on_validation(
             trades = result["trades"]
             pnl = (
                 sum(t["pnl_raw"] for t in trades)
-                if len(trades) >= 10
+                if len(trades) >= min_eval
                 else float("-inf")
             )
             best_ct = (ct_ev, ct_ev)
@@ -563,7 +564,7 @@ def evaluate_on_validation(
             trades = result["trades"]
             pnl = (
                 sum(t["pnl_raw"] for t in trades)
-                if len(trades) >= 10
+                if len(trades) >= min_eval
                 else float("-inf")
             )
             best_ct = ct_ev
@@ -607,7 +608,7 @@ def evaluate_on_validation(
     best_ct = None
     best_pnl = float("-inf")
     for ct, ct_trades in trades_by_ct.items():
-        if len(ct_trades) >= 10:
+        if len(ct_trades) >= min_eval:
             ct_pnl = sum(t["pnl_raw"] for t in ct_trades)
             if ct_pnl > best_pnl:
                 best_pnl = ct_pnl
@@ -769,9 +770,10 @@ def _evaluate_separate_ct(
         timeout_bars=timeout_bars,
     )
     combined_trades = combined_result["trades"]
+    min_eval = ctx.min_eval_trades
     combined_pnl = (
         sum(t["pnl_raw"] for t in combined_trades)
-        if len(combined_trades) >= 10
+        if len(combined_trades) >= min_eval
         else float("-inf")
     )
 
