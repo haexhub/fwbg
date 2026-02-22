@@ -1,8 +1,8 @@
 {
   "_meta": {
     "name": "signal_orb",
-    "description": "Rule-based signal model for ORB strategies. Uses retest_bull/retest_bear indicator columns as entry signals.",
-    "version": 1
+    "description": "Rule-based signal model for ORB strategies. Uses retest_bull/retest_bear indicator columns as entry signals. Signal columns are configured per-asset via grid assignment model_hyperparameters.",
+    "version": 2
   },
   "type": "signal",
   "architecture": "long_short_separate",
@@ -11,7 +11,7 @@
     "short"
   ],
   "hyperparameters": {
-    "signal_column_long": "orb_s0_retest_bull",
-    "signal_column_short": "orb_s0_retest_bear"
+    "signal_column_long": "",
+    "signal_column_short": ""
   }
 }

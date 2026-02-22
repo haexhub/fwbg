@@ -35,6 +35,8 @@ def _compute_pdl_features(
     df: pd.DataFrame,
     atr: np.ndarray,
     ma_period: int,
+    enable_retest: bool = True,
+    retest_atr_width: float = 0.3,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all previous day level features."""
     features: Dict[str, Union[pd.Series, np.ndarray]] = {}
@@ -79,30 +81,75 @@ def _compute_pdl_features(
     features["pdl_above_high"] = (close > pdh).astype(float)
     features["pdl_below_low"] = (close < pdl_low).astype(float)
 
-    # Break detection: first bar of the day where close crosses PDH/PDL
+    # Midpoint of PDH-PDL range
+    midpoint = (pdh + pdl_low) / 2
+    features["pdl_midpoint_dist"] = (close - midpoint) / safe_atr
+
+    # Break detection + post-breakout state + retest EVENT signals
+    # All computed in a single forward pass per day for correct sequencing.
     above = close > pdh
     below = close < pdl_low
     day_ids = pd.Series(day_group).factorize()[0]
 
+    half_band = retest_atr_width * atr
+    near_midpoint = (close >= midpoint - half_band) & (close <= midpoint + half_band)
+
     high_break = np.zeros(n)
     low_break = np.zeros(n)
+    post_bull = np.zeros(n)
+    post_bear = np.zeros(n)
+    retest_bull = np.zeros(n)
+    retest_bear = np.zeros(n)
+
     prev_day_id = -1
-    already_broke_high = False
-    already_broke_low = False
+    broke_high = False
+    broke_low = False
+    retested_bull = False
+    retested_bear = False
+
     for i in range(n):
         if day_ids[i] != prev_day_id:
             prev_day_id = day_ids[i]
-            already_broke_high = False
-            already_broke_low = False
-        if above[i] and not already_broke_high:
+            broke_high = False
+            broke_low = False
+            retested_bull = False
+            retested_bear = False
+
+        if np.isnan(pdh[i]):
+            continue
+
+        if above[i] and not broke_high:
             high_break[i] = 1.0
-            already_broke_high = True
-        if below[i] and not already_broke_low:
+            broke_high = True
+        if below[i] and not broke_low:
             low_break[i] = 1.0
-            already_broke_low = True
+            broke_low = True
+
+        if broke_high:
+            post_bull[i] = 1.0
+        if broke_low:
+            post_bear[i] = 1.0
+
+        if enable_retest:
+            # Bull retest: broke above PDH, price retraces to midpoint,
+            # still above PDL (thesis valid), fire once per day.
+            if broke_high and not retested_bull and near_midpoint[i] and close[i] > pdl_low[i]:
+                retest_bull[i] = 1.0
+                retested_bull = True
+            # Bear retest: broke below PDL, price retraces to midpoint,
+            # still below PDH (thesis valid), fire once per day.
+            if broke_low and not retested_bear and near_midpoint[i] and close[i] < pdh[i]:
+                retest_bear[i] = 1.0
+                retested_bear = True
 
     features["pdl_high_break"] = high_break
     features["pdl_low_break"] = low_break
+    features["pdl_post_bull"] = post_bull
+    features["pdl_post_bear"] = post_bear
+
+    if enable_retest:
+        features["pdl_retest_bull"] = retest_bull
+        features["pdl_retest_bear"] = retest_bear
 
     # Rolling MA of position
     pos_series = pd.Series(features["pdl_position"])
@@ -144,8 +191,13 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         "pdl_range_vs_atr",
         "pdl_above_high",
         "pdl_below_low",
+        "pdl_midpoint_dist",
         "pdl_high_break",
         "pdl_low_break",
+        "pdl_post_bull",
+        "pdl_post_bear",
+        "pdl_retest_bull",
+        "pdl_retest_bear",
         "pdl_range_position_ma",
         "pdl_day_range_expanding",
     ]
@@ -155,6 +207,8 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         df: pd.DataFrame,
         atr_period: int = 14,
         ma_period: int = 20,
+        enable_retest: bool = True,
+        retest_atr_width: float = 0.3,
         **params,
     ) -> pd.DataFrame:
         if not isinstance(df.index, pd.DatetimeIndex):
@@ -167,7 +221,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 return df
 
         atr = _compute_atr(df, atr_period)
-        features = _compute_pdl_features(df, atr, ma_period)
+        features = _compute_pdl_features(df, atr, ma_period, enable_retest, retest_atr_width)
 
         if not features:
             return df
@@ -182,12 +236,19 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         return [
             "pdl_above_high", "pdl_below_low",
             "pdl_high_break", "pdl_low_break",
+            "pdl_post_bull", "pdl_post_bear",
+            "pdl_retest_bull", "pdl_retest_bear",
             "pdl_day_range_expanding",
         ]
 
     @classmethod
     def get_default_params(cls) -> dict:
-        return {"atr_period": 14, "ma_period": 20}
+        return {
+            "atr_period": 14,
+            "ma_period": 20,
+            "enable_retest": True,
+            "retest_atr_width": 0.3,
+        }
 
     @classmethod
     def get_param_schema(cls) -> dict:
@@ -207,6 +268,19 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "min": 5,
                 "max": 100,
                 "step": 5,
+            },
+            "enable_retest": {
+                "type": "bool",
+                "default": True,
+                "description": "Enable PDH/PDL retest signals. After breakout above PDH (or below PDL), fires once when price retraces to the midpoint (PDH+PDL)/2.",
+            },
+            "retest_atr_width": {
+                "type": "float",
+                "default": 0.3,
+                "description": "Half-bandwidth in ATR units around the PDH/PDL midpoint for retest detection. 0.3 = zone extends 0.3*ATR above and below midpoint.",
+                "min": 0.1,
+                "max": 2.0,
+                "step": 0.1,
             },
         }
 

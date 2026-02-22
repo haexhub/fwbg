@@ -238,7 +238,7 @@ def list_data_loaders() -> list:
 
 def get_model(name: str) -> Type["BaseModel"]:
     """Get model class by name, auto-discovering if needed."""
-    if not MODEL_REGISTRY:
+    if name not in MODEL_REGISTRY:
         _ensure_plugins_loaded()
     if name not in MODEL_REGISTRY:
         available = list(MODEL_REGISTRY.keys())

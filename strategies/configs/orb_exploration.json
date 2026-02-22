@@ -28,23 +28,871 @@
     "assignments": {
       "FOREX": {
         "preset": "orb_scalping_forex_v1",
-        "ct": [0.5],
-        "tp": [1.5, 2.0, 2.5, 3.0]
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s08_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s08_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s08_retest_bear"
+          }
+        ]
       },
-      "INDEX": {
+      "DAX": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [3.0, 4.0, 5.0, 6.0, 8.0]
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s07_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s07_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s07_retest_bear"
+          }
+        ]
+      },
+      "EU50": {
+        "preset": "orb_scalping_index_v1",
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s07_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s07_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s07_retest_bear"
+          }
+        ]
+      },
+      "CAC40": {
+        "preset": "orb_scalping_index_v1",
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s07_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s07_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s07_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s07_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s07_retest_bear"
+          }
+        ]
+      },
+      "FTSE100": {
+        "preset": "orb_scalping_index_v1",
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s08_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s08_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s08_retest_bear"
+          }
+        ]
+      },
+      "NAS100": {
+        "preset": "orb_scalping_index_v1",
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s14_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s14_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s14_retest_bear"
+          }
+        ]
+      },
+      "SPX500": {
+        "preset": "orb_scalping_index_v1",
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s14_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s14_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s14_retest_bear"
+          }
+        ]
+      },
+      "DOW30": {
+        "preset": "orb_scalping_index_v1",
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s14_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s14_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s14_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s14_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s14_retest_bear"
+          }
+        ]
+      },
+      "JP225": {
+        "preset": "orb_scalping_index_v1",
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s00_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s00_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s00_retest_bear"
+          }
+        ]
+      },
+      "ASX200": {
+        "preset": "orb_scalping_index_v1",
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s00_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s00_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s00_retest_bear"
+          }
+        ]
+      },
+      "HK50": {
+        "preset": "orb_scalping_index_v1",
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s01_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s01_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s01_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s01_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s01_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s01_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s01_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s01_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s01_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s01_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s01_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s01_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s01_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s01_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s01_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s01_retest_bear"
+          }
+        ]
       },
       "COMMODITY": {
         "preset": "orb_scalping_base_v1",
-        "ct": [0.5],
-        "tp": [2.0, 2.5, 3.0, 3.5]
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s08_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s08_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s08_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s08_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s08_retest_bear"
+          }
+        ]
       },
       "CRYPTO": {
         "preset": "orb_scalping_crypto_v1",
-        "ct": [0.5],
-        "tp": [2.0, 3.0, 4.0, 5.0]
+        "ct": [
+          0.5
+        ],
+        "tp": [
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ],
+        "model_hyperparameters": {
+          "signal_column_long": "rb1_cf0_prb0_orb_s00_retest_bull",
+          "signal_column_short": "rb1_cf0_prb0_orb_s00_retest_bear"
+        },
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rb1_cf0_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf0_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf0_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf0_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf1_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf1_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf1_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf2_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb1_cf2_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb1_cf2_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf0_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf0_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf0_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf1_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf1_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf1_prb1_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb0_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf2_prb0_orb_s00_retest_bear"
+          },
+          {
+            "signal_column_long": "rb2_cf2_prb1_orb_s00_retest_bull",
+            "signal_column_short": "rb2_cf2_prb1_orb_s00_retest_bear"
+          }
+        ]
       }
     }
   }
