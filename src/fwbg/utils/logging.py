@@ -34,6 +34,9 @@ def set_progress_ui_active(active: bool):
         os.environ.pop("_OPTIMIZER_PROGRESS_UI", None)
 
 
+_LEVEL_MAP = {0: "error", 1: "info", 2: "debug", 3: "debug"}
+
+
 def log(level, msg, sym=""):
     """
     Logging-Funktion mit Level-Kontrolle.
@@ -49,6 +52,15 @@ def log(level, msg, sym=""):
     # Immer in den Buffer schreiben, unabhängig von Level/UI
     if _log_buffer is not None:
         _log_buffer.append(line)
+
+    # Route to structured JSONL logger (logs.jsonl) via progress queue
+    from .progress import report_log
+    report_log(
+        symbol=sym or "",
+        stage="processing",
+        level=_LEVEL_MAP.get(level, "info"),
+        message=msg,
+    )
 
     # Unterdrücke nur Level-1 Logs wenn Progress-UI aktiv (Level 2+ kommen durch)
     # Das verhindert Spam bei normalen Status-Meldungen, zeigt aber wichtige Details

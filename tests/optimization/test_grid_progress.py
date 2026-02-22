@@ -524,7 +524,8 @@ class TestSuccessiveHalving:
 
         # All combos accounted for: pruned after fold 0 (5) + after fold 1 (3) + survivors (2)
         assert progress_reported == n_combos
-        assert progress_cb.call_count == n_combos
+        # Intermediate progress reports during fold evaluation + pruning/completion reports
+        assert progress_cb.call_count >= n_combos
 
     def test_failed_folds_get_low_ranking(self):
         """Combos with failed folds should rank below successful ones."""

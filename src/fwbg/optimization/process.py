@@ -502,8 +502,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     except Exception as e:
         import traceback
         import sys
+        from fwbg.utils.progress import report_log
         tb = traceback.format_exc()
         print(f"[{sym}] FEHLER: {e}\n{tb}", file=sys.stderr, flush=True)
+        report_log(sym, "processing", "error", f"{e}", traceback=tb)
         report_done(sym, "error")
         result = {"symbol": sym, "status": "error", "error": f"{e}\n{tb}"}
         return result
