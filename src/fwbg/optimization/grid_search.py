@@ -283,9 +283,12 @@ def _run_with_successive_halving(
         except Exception as tgt_e:
             import sys
             import traceback
+            tb = traceback.format_exc()
             print(f"\n[ERROR] {sym}: target precompute failed for combo={combo_idx} "
                   f"tp={tp} sl={sl}: {type(tgt_e).__name__}: {tgt_e}\n"
-                  f"{traceback.format_exc()}", file=sys.stderr, flush=True)
+                  f"{tb}", file=sys.stderr, flush=True)
+            log(1, f"  ERROR target precompute combo={combo_idx} tp={tp} sl={sl}: "
+                   f"{type(tgt_e).__name__}: {tgt_e}", sym)
             combo_targets[combo_idx] = None
 
     # State per combo: list of fold results
@@ -296,8 +299,11 @@ def _run_with_successive_halving(
 
     for fold_idx in range(n_folds):
         train_df, val_df = inner_folds[fold_idx]
+        n_active = len(active_indices)
+        remaining = grid_total - progress_reported
+        remaining_folds = max(1, n_folds - fold_idx)
 
-        for combo_idx in list(active_indices):
+        for eval_count, combo_idx in enumerate(list(active_indices)):
             combo = combos[combo_idx]
             tp, sl, timeout_bars, combo_ctx = combo[0], combo[1], combo[2], combo[6]
 
@@ -309,6 +315,12 @@ def _run_with_successive_halving(
                 selected_features_short=selected_features_short,
             )
             combo_fold_results[combo_idx].append(fold_result)
+
+            # Report intermediate progress during fold evaluation
+            if progress_callback and n_active > 0:
+                fold_share = remaining / remaining_folds
+                partial = int(progress_reported + (eval_count + 1) / n_active * fold_share)
+                progress_callback(min(partial, grid_total), grid_total)
 
         # Prune after each fold except the last, but not before the ratio of folds completed
         ratio = getattr(ctx, "early_pruning_min_folds_before_pruning_ratio", 0.3)
