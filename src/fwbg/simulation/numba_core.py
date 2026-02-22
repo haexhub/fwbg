@@ -1,8 +1,21 @@
 """
 Numba-optimierte Kernfunktionen für Trade-Simulation.
 """
+import pathlib
 import numpy as np
 from numba import njit, prange
+
+_CACHE_DIR = pathlib.Path(__file__).parent / "__pycache__"
+
+
+def _clear_numba_cache():
+    """Delete stale Numba .nbi/.nbc cache files for this module."""
+    for pattern in ("*.nbi", "*.nbc"):
+        for f in _CACHE_DIR.glob(pattern):
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
 
 @njit(cache=True)
@@ -207,3 +220,23 @@ def compute_targets_with_durations_numba(
         durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
 
     return targets_long, targets_short, durations_long, durations_short
+
+
+def _validate_numba_cache():
+    """Validate that cached Numba functions return expected tuple sizes.
+
+    Stale caches (e.g. after signature changes) can silently return wrong
+    tuple sizes, causing 'not enough values to unpack' errors at runtime.
+    """
+    dummy = np.array([100.0, 101.0, 102.0])
+    try:
+        result = _simulate_trade_numba(dummy, dummy, dummy, dummy, 0, 1, 1.0, 1.0, 0.0, 0.0, 2, 0)
+        if not isinstance(result, tuple) or len(result) != 4:
+            raise ValueError(f"_simulate_trade_numba returned {len(result)} values, expected 4")
+    except (ValueError, TypeError, ModuleNotFoundError):
+        _clear_numba_cache()
+        # Force recompile by calling again
+        _simulate_trade_numba(dummy, dummy, dummy, dummy, 0, 1, 1.0, 1.0, 0.0, 0.0, 2, 0)
+
+
+_validate_numba_cache()
