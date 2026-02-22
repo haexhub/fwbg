@@ -61,6 +61,11 @@ def _check_cache_version():
             pass
 
 
+# IMPORTANT: Must run BEFORE @njit definitions so stale caches are cleared
+# before Numba loads them into memory at decoration time.
+_check_cache_version()
+
+
 @njit(cache=True)
 def _simulate_trade_numba(
     opens: np.ndarray,
@@ -263,6 +268,3 @@ def compute_targets_with_durations_numba(
         durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
 
     return targets_long, targets_short, durations_long, durations_short
-
-
-_check_cache_version()
