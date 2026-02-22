@@ -17,14 +17,14 @@ from fwbg_sdk.registry import (
     RISK_MANAGER_REGISTRY,
     DATA_LOADER_REGISTRY,
     MODEL_REGISTRY,
-    register_indicator,
-    register_exit_strategy,
-    register_exit_modifier,
-    register_feature_selector,
-    register_preprocessor,
-    register_risk_manager,
-    register_data_loader,
-    register_model,
+    register_indicator,  # noqa: F401 - re-exported via core.__init__
+    register_exit_strategy,  # noqa: F401
+    register_exit_modifier,  # noqa: F401
+    register_feature_selector,  # noqa: F401
+    register_preprocessor,  # noqa: F401
+    register_risk_manager,  # noqa: F401
+    register_data_loader,  # noqa: F401
+    register_model,  # noqa: F401
 )
 
 if TYPE_CHECKING:
