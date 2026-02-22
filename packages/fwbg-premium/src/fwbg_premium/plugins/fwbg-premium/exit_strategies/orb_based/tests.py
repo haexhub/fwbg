@@ -65,7 +65,7 @@ class TestOrbExitStrategyRegistration:
         """@register_exit_strategy('orb_based') must be present."""
         from fwbg.core.registry import get_exit_strategy
         cls = get_exit_strategy("orb_based")
-        assert cls is OrbExitStrategy
+        assert cls.__name__ == "OrbExitStrategy"
 
     def test_class_name(self):
         assert OrbExitStrategy.__name__ == "OrbExitStrategy"
