@@ -97,6 +97,7 @@ def create_mock_context(
     ctx.probability_calibration = False
     ctx.calibration_method = "isotonic"
     ctx.model_type = "xgboost"
+    ctx.min_eval_trades = 10
     return ctx
 
 

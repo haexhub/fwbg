@@ -290,6 +290,7 @@ class FilterConfig:
     """Filter-Parameter für Strategie-Auswahl."""
     min_rrr: float = 0.0
     min_trades: int = 50
+    min_eval_trades: int = 10  # Min trades per CT in inner CV evaluation
     min_annual_return: float = 10.0
     max_drawdown: float = 1.0
     min_sharpe: float = 0.0
@@ -300,6 +301,7 @@ class FilterConfig:
         return cls(
             min_rrr=data.get("min_rrr", 0.0),
             min_trades=data.get("min_trades", 50),
+            min_eval_trades=data.get("min_eval_trades", 10),
             min_annual_return=data.get("min_annual_return", 10.0),
             max_drawdown=data.get("max_drawdown", 1.0),
             min_sharpe=data.get("min_sharpe", 0.0),
