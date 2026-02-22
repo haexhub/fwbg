@@ -337,11 +337,12 @@ class TestProgressCallbackSequence:
 class TestSuccessiveHalving:
     """Tests for successive halving grid search pruning."""
 
-    def _make_ctx(self, keep_ratio=0.5, min_survivors=2):
+    def _make_ctx(self, keep_ratio=0.5, min_survivors=2, min_folds_before_pruning_ratio=0.0):
         ctx = MagicMock()
         ctx.early_pruning_enabled = True
         ctx.early_pruning_keep_ratio = keep_ratio
         ctx.early_pruning_min_survivors = min_survivors
+        ctx.early_pruning_min_folds_before_pruning_ratio = min_folds_before_pruning_ratio
         ctx.sample_weights = False
         ctx.separate_long_short = False
         return ctx

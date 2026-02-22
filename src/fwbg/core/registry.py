@@ -42,6 +42,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# Tracks whether a full auto_discover() has been completed.
+# A single plugin loaded via import_plugin_module() does NOT set this flag.
+_plugins_fully_loaded = False
+
 # Broker adapter registry (fwbg-internal, not in SDK)
 BROKER_ADAPTER_REGISTRY: Dict[str, Type["BrokerAdapter"]] = {}
 
@@ -101,13 +105,15 @@ def discover_plugins():
 
 
 def _ensure_plugins_loaded():
-    """Trigger full plugin discovery if registries are empty."""
-    if INDICATOR_REGISTRY:
+    """Trigger full plugin discovery if not yet completed."""
+    global _plugins_fully_loaded
+    if _plugins_fully_loaded:
         return
     try:
         from fwbg.pipeline.registry import get_registry
         registry = get_registry()
         registry.auto_discover()
+        _plugins_fully_loaded = True
     except Exception:
         pass
 

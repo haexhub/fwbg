@@ -9,22 +9,22 @@
   ],
   "hypothesis": "S/R-Zonen mit Trend-Kontext liefern allein ausreichend Edge f\u00fcr profitable Entries \u2014 ohne klassische technische Indikatoren.",
   "expected_outcome": "Nachweis, dass die 31 S/R-Features pr\u00e4diktiven Wert haben, bevor sie mit dem vollen Feature-Set kombiniert werden.",
-  "pipeline": "sr_trend",
+  "pipeline": "sr_trend_v1",
   "exit_strategy": "atr_based",
-  "exit_params": "atr_intraday",
-  "model": "xgboost_depth3",
-  "validation": "walk_forward_sr_trend",
-  "filters": "sr_strict",
-  "resources": "standard",
+  "exit_params": "atr_intraday_v1",
+  "model": "xgboost_depth3_v1",
+  "validation": "walk_forward_sr_trend_v1",
+  "filters": "sr_strict_v1",
+  "resources": "standard_v1",
   "grids": {
     "presets_dir": "../grids",
     "regime_filters_dir": "../regime_filters",
-    "regime_filter_grid": "sr_trend_class",
+    "regime_filter_grid": "sr_trend_class_v1",
     "assignments": {
-      "FOREX": "sr_forex_index",
-      "INDEX": "sr_forex_index",
-      "COMMODITY": "sr_commodity",
-      "CRYPTO": "sr_crypto"
+      "FOREX": "sr_forex_index_v1",
+      "INDEX": "sr_forex_index_v1",
+      "COMMODITY": "sr_commodity_v1",
+      "CRYPTO": "sr_crypto_v1"
     }
   }
 }

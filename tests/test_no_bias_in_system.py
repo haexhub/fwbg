@@ -275,9 +275,19 @@ class TestSystematicBiasInResults:
         total_assets = 0
         non_walk_forward = []
 
+        # Statuses where no walk-forward result is expected (strategy found no edge / no data)
+        _SKIP_STATUSES = {
+            'no_successful_folds', 'no_data', 'insufficient_data',
+            'insufficient_data_for_folds', 'macro_asset', 'error',
+        }
+
         for json_file in json_files:
             with open(json_file) as f:
                 data = json.load(f)
+
+            # Assets with no successful folds are valid optimizer outcomes, not legacy format
+            if data.get('status') in _SKIP_STATUSES:
+                continue
 
             wf_results = data.get('walk_forward', {})
             if not wf_results or 'mean_bias_ratio' not in wf_results:
@@ -425,7 +435,12 @@ class TestSystematicBiasInResults:
 
             # Skip assets that had no candidates or errors - they can't have walk-forward data
             status = data.get('status', '')
-            if status in ('no_candidates', 'error', 'skipped'):
+            _NO_WF_STATUSES = {
+                'no_candidates', 'error', 'skipped', 'no_successful_folds',
+                'no_data', 'insufficient_data', 'insufficient_data_for_folds',
+                'macro_asset',
+            }
+            if status in _NO_WF_STATUSES:
                 skipped_assets.append(data['symbol'])
                 continue
 

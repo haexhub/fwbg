@@ -1,0 +1,99 @@
+{
+  "_meta": {
+    "name": "weekly_orb",
+    "description": "",
+    "version": 1
+  },
+  "indicators": [
+    {
+      "name": "weekly_opening_range",
+      "params": {
+        "range_bars": [
+          2,
+          4
+        ],
+        "atr_period": 14,
+        "stat_window": 12,
+        "enable_stats": true,
+        "enable_retracement": true,
+        "retest_atr_width": 0.3
+      }
+    },
+    {
+      "name": "opening_range",
+      "params": {
+        "range_bars": [
+          1,
+          2
+        ],
+        "atr_period": 14,
+        "sessions": [
+          0,
+          1,
+          2,
+          6,
+          7,
+          8,
+          12,
+          13,
+          14
+        ],
+        "stat_window": 20,
+        "enable_rolling": true,
+        "enable_session": true,
+        "enable_stats": false,
+        "enable_retracement": true,
+        "retest_atr_width": 0.3
+      }
+    },
+    {
+      "name": "previous_day_levels",
+      "params": {
+        "atr_period": 14,
+        "ma_period": 20
+      }
+    },
+    {
+      "name": "fair_value_gap",
+      "params": {
+        "atr_period": 14,
+        "lookback": 100
+      }
+    },
+    {
+      "name": "microstructure",
+      "params": {
+        "atr_period": 14,
+        "rolling_window": 5
+      }
+    },
+    {
+      "name": "volume_profile",
+      "params": {
+        "atr_period": 14,
+        "n_levels": 50,
+        "value_area_pct": 0.7
+      }
+    },
+    {
+      "name": "volatility",
+      "params": {
+        "atr_periods": [
+          7,
+          14
+        ],
+        "vol_est_windows": [
+          20
+        ]
+      }
+    },
+    {
+      "name": "time_season",
+      "params": {
+        "include_raw": true,
+        "include_encoded": true
+      }
+    }
+  ],
+  "feature_selection": []
+}

@@ -30,12 +30,33 @@ Kombinierbar:
     breakeven_trigger=0.5, trail_atr_mult=0.0  → nur Breakeven
     breakeven_trigger=0.0, trail_atr_mult=0.5  → nur Trailing ab Entry
 """
+import pathlib
 from typing import Tuple
 
 import numpy as np
 from numba import njit
 
 from fwbg_sdk import BaseExitModifier, register_exit_modifier
+
+_CACHE_DIR = pathlib.Path(__file__).parent / "__pycache__"
+
+
+def _clear_numba_cache():
+    for pattern in ("*.nbi", "*.nbc"):
+        for f in _CACHE_DIR.glob(pattern):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
+def _call_numba(func, *args):
+    """Call a Numba-JIT function with automatic stale-cache recovery."""
+    try:
+        return func(*args)
+    except ModuleNotFoundError:
+        _clear_numba_cache()
+        return func(*args)
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +343,7 @@ class TrailingStopModifier(BaseExitModifier):
         **kwargs,
     ):
         if return_durations:
-            return _compute_targets_trailing_with_durations_numba(
+            return _call_numba(_compute_targets_trailing_with_durations_numba,
                 opens, closes, highs, lows, atr_values,
                 tp_mult, sl_mult, spread, slippage,
                 min_tp_distance, min_sl_distance,
@@ -330,7 +351,7 @@ class TrailingStopModifier(BaseExitModifier):
                 breakeven_trigger, trail_atr_mult, trail_tp_atr_mult,
             )
 
-        return _compute_targets_trailing_numba(
+        return _call_numba(_compute_targets_trailing_numba,
             opens, closes, highs, lows, atr_values,
             tp_mult, sl_mult, spread, slippage,
             min_tp_distance, min_sl_distance,

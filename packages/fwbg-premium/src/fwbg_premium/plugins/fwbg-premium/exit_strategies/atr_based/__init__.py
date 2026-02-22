@@ -9,10 +9,41 @@ basierend auf der aktuellen Volatilität relativ zur mittleren Volatilität.
 Bei hoher Volatilität wird der Timeout verkürzt (schnellere Preisbewegungen),
 bei niedriger Volatilität verlängert.
 """
+import pathlib
 from typing import Dict, Any, Iterator, Tuple, Union, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 from numba import njit
+
+_CACHE_DIR = pathlib.Path(__file__).parent / "__pycache__"
+
+
+def _clear_numba_cache():
+    """Delete stale Numba .nbi/.nbc cache files for this module.
+
+    Called automatically when a ModuleNotFoundError is raised during Numba cache
+    loading (which happens after package restructuring / module renames).
+    """
+    for pattern in ("*.nbi", "*.nbc"):
+        for f in _CACHE_DIR.glob(pattern):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
+def _call_numba(func, *args):
+    """Call a Numba-JIT function with automatic stale-cache recovery.
+
+    If Numba's pickle cache references a module that no longer exists
+    (e.g. after package restructuring), it raises ModuleNotFoundError.
+    We clear the cache and retry once — Numba will recompile from source.
+    """
+    try:
+        return func(*args)
+    except ModuleNotFoundError:
+        _clear_numba_cache()
+        return func(*args)
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
 from fwbg.simulation import _simulate_trade_numba
@@ -416,7 +447,7 @@ class AtrExitStrategy(BaseExitStrategy):
             atr_ma_v = np.nan_to_num(atr_ma_v, nan=0.0).astype(np.float64)
 
             if return_durations:
-                return _compute_targets_atr_adaptive_timeout_with_durations_numba(
+                return _call_numba(_compute_targets_atr_adaptive_timeout_with_durations_numba,
                     opn_v, cls_v, hgh_v, low_v,
                     atr_v, atr_ma_v,
                     tp_mult, sl_mult,
@@ -426,7 +457,7 @@ class AtrExitStrategy(BaseExitStrategy):
                     base_timeout, min_timeout, max_timeout
                 )
 
-            return _compute_targets_atr_adaptive_timeout_numba(
+            return _call_numba(_compute_targets_atr_adaptive_timeout_numba,
                 opn_v, cls_v, hgh_v, low_v,
                 atr_v, atr_ma_v,
                 tp_mult, sl_mult,
@@ -440,7 +471,7 @@ class AtrExitStrategy(BaseExitStrategy):
         timeout_val = timeout_bars if timeout_bars else 0
 
         if return_durations:
-            return _compute_targets_atr_with_durations_numba(
+            return _call_numba(_compute_targets_atr_with_durations_numba,
                 opn_v, cls_v, hgh_v, low_v,
                 atr_v, tp_mult, sl_mult,
                 ctx.spread, slippage,
@@ -448,7 +479,7 @@ class AtrExitStrategy(BaseExitStrategy):
                 max_bars, timeout_val
             )
 
-        return _compute_targets_atr_numba(
+        return _call_numba(_compute_targets_atr_numba,
             opn_v, cls_v, hgh_v, low_v,
             atr_v, tp_mult, sl_mult,
             ctx.spread, slippage,

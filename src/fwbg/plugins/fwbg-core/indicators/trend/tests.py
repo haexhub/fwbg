@@ -176,3 +176,225 @@ class TestPluginAttributes:
         """Plugin should have phase attribute."""
         from fwbg_sdk import PluginPhase
         assert indicator.phase == PluginPhase.INDICATORS
+
+
+# ── NEW: MACD tests ───────────────────────────────────────────────────────────
+
+class TestMACD:
+    """
+    MACD = 12-EMA - 26-EMA (trend following momentum oscillator).
+    Signal line = 9-EMA of MACD. Histogram = MACD - Signal.
+
+    Note: the plugin normalises all MACD values by dividing by Close price,
+    so columns are named trend_macd_line, trend_macd, trend_macd_signal,
+    trend_macd_above_zero, trend_macd_hist_flip.
+    """
+
+    @staticmethod
+    def _indicator():
+        from fwbg.plugins import import_plugin_module
+        _trend = import_plugin_module("fwbg-core", "indicators", "trend")
+        return _trend.TrendIndicators()
+
+    def test_macd_line_positive_in_sustained_uptrend(self):
+        """12-EMA > 26-EMA in uptrend -> MACD line should be positive."""
+        n = 300
+        close = np.linspace(100, 200, n)
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        col = "trend_macd_line"
+        assert col in result.columns, f"Expected {col} column"
+        valid = result[col].dropna()
+        assert len(valid) >= 50
+        assert (valid.iloc[-50:] > 0).all(), \
+            f"{col}: should be positive in uptrend, got min={valid.iloc[-50:].min():.6f}"
+
+    def test_macd_line_negative_in_sustained_downtrend(self):
+        """12-EMA < 26-EMA in downtrend -> MACD line should be negative."""
+        n = 300
+        close = np.linspace(200, 100, n)
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        col = "trend_macd_line"
+        assert col in result.columns, f"Expected {col} column"
+        valid = result[col].dropna()
+        assert len(valid) >= 50
+        assert (valid.iloc[-50:] < 0).all(), \
+            f"{col}: should be negative in downtrend, got max={valid.iloc[-50:].max():.6f}"
+
+    def test_macd_hist_flip_fires_at_trend_reversal(self):
+        """MACD histogram sign change should produce a flip signal at reversal."""
+        n = 400
+        close = np.concatenate([np.linspace(100, 80, 200), np.linspace(80, 120, 200)])
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        col = "trend_macd_hist_flip"
+        assert col in result.columns, f"Expected {col} column"
+        flips = result[col].dropna()
+        assert flips.sum() > 0, f"{col}: should have at least one flip at reversal"
+
+    def test_macd_above_zero_positive_in_uptrend(self):
+        """In sustained uptrend, trend_macd_above_zero (sign of MACD line) should be 1."""
+        n = 300
+        close = np.linspace(100, 200, n)
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        col = "trend_macd_above_zero"
+        assert col in result.columns, f"Expected {col} column"
+        valid = result[col].dropna()
+        assert len(valid) >= 50
+        assert (valid.iloc[-50:] == 1).all(), \
+            f"{col}: should be 1 in uptrend"
+
+
+# ── NEW: Aroon tests ──────────────────────────────────────────────────────────
+
+class TestAroon:
+    """
+    Aroon Up/Down measures time since the last N-period high/low.
+    Range: 0-100. High Aroon Up = recent new high = uptrend.
+    """
+
+    @staticmethod
+    def _indicator():
+        from fwbg.plugins import import_plugin_module
+        _trend = import_plugin_module("fwbg-core", "indicators", "trend")
+        return _trend.TrendIndicators()
+
+    def test_aroon_up_near_100_in_new_high_trend(self):
+        """Continuous new highs -> Aroon Up approaches 100."""
+        n = 300
+        close = np.linspace(100, 200, n)  # continuous new highs
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        col = "trend_aroon_up"
+        assert col in result.columns, f"Expected {col} column"
+        valid = result[col].dropna()
+        assert len(valid) >= 50
+        assert valid.iloc[-50:].mean() > 80, \
+            f"{col}: Aroon Up should be near 100 in continuous new highs trend, got {valid.iloc[-50:].mean():.1f}"
+
+    def test_aroon_down_near_100_in_new_low_trend(self):
+        """Continuous new lows -> Aroon Down approaches 100."""
+        n = 300
+        close = np.linspace(200, 100, n)
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        col = "trend_aroon_down"
+        assert col in result.columns, f"Expected {col} column"
+        valid = result[col].dropna()
+        assert len(valid) >= 50
+        assert valid.iloc[-50:].mean() > 80, \
+            f"{col}: Aroon Down should be near 100 in downtrend, got {valid.iloc[-50:].mean():.1f}"
+
+    def test_aroon_values_bounded_0_to_100(self):
+        """Aroon Up and Down must always be in [0, 100]."""
+        n = 300
+        np.random.seed(42)
+        close = 100 + np.cumsum(np.random.randn(n) * 0.5)
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        aroon_cols = [c for c in result.columns if "aroon" in c]
+        assert len(aroon_cols) > 0, "Expected trend_aroon_up / trend_aroon_down columns"
+        for col in aroon_cols:
+            valid = result[col].dropna()
+            assert (valid >= 0).all() and (valid <= 100).all(), \
+                f"{col}: Aroon must be in [0,100], got [{valid.min():.1f}, {valid.max():.1f}]"
+
+
+# ── NEW: Supertrend tests ─────────────────────────────────────────────────────
+
+class TestSupertrend:
+    """
+    Supertrend is an ATR-based trend-following indicator.
+    Direction: +1 (uptrend / price above band) or -1 (downtrend / price below band).
+    Flip: fires when direction changes (trend_supertrend_flip = 1.0).
+    """
+
+    @staticmethod
+    def _indicator():
+        from fwbg.plugins import import_plugin_module
+        _trend = import_plugin_module("fwbg-core", "indicators", "trend")
+        return _trend.TrendIndicators()
+
+    def test_supertrend_is_binary_plus_minus_1(self):
+        """Supertrend direction must be exactly +1 or -1."""
+        n = 300
+        np.random.seed(42)
+        close = 100 + np.cumsum(np.random.randn(n) * 0.5)
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        col = "trend_supertrend"
+        assert col in result.columns, f"Expected {col} column"
+        valid = result[col].dropna()
+        assert valid.isin([1, -1]).all(), \
+            f"{col}: supertrend must be +1 or -1, got unique values: {sorted(valid.unique())}"
+
+    def test_supertrend_positive_in_sustained_uptrend(self):
+        """In a strong uptrend, supertrend should be +1 most of the time."""
+        n = 300
+        close = np.linspace(100, 200, n)
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        col = "trend_supertrend"
+        assert col in result.columns, f"Expected {col} column"
+        valid = result[col].dropna()
+        assert len(valid) >= 100
+        pct_positive = (valid.iloc[-100:] == 1).mean()
+        assert pct_positive > 0.6, \
+            f"{col}: should mostly be +1 in uptrend, got {pct_positive:.1%}"
+
+    def test_supertrend_flip_fires_at_direction_change(self):
+        """After a trend reversal (up -> down), trend_supertrend_flip should fire."""
+        n = 400
+        close = np.concatenate([np.linspace(100, 200, 200), np.linspace(200, 100, 200)])
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        col = "trend_supertrend_flip"
+        assert col in result.columns, f"Expected {col} column"
+        flips = result[col].dropna()
+        assert flips.sum() > 0, f"{col}: should have at least one flip at reversal"
+
+
+# ── NEW: CCI tests ────────────────────────────────────────────────────────────
+
+class TestCCI:
+    """
+    Commodity Channel Index: measures deviation of Typical Price from its SMA.
+    Overbought: CCI > 100. Oversold: CCI < -100. Neutral: near 0.
+    Plugin columns: trend_cci_14, trend_cci_20.
+    """
+
+    @staticmethod
+    def _indicator():
+        from fwbg.plugins import import_plugin_module
+        _trend = import_plugin_module("fwbg-core", "indicators", "trend")
+        return _trend.TrendIndicators()
+
+    def test_cci_high_in_overbought_uptrend(self):
+        """In a sustained uptrend, CCI should frequently exceed 50."""
+        n = 300
+        close = np.linspace(100, 200, n)
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        cci_cols = [c for c in result.columns if "cci" in c]
+        assert len(cci_cols) > 0, "Expected at least one trend_cci_* column"
+        for col in cci_cols:
+            valid = result[col].dropna()
+            assert len(valid) >= 50
+            assert valid.iloc[-50:].mean() > 50, \
+                f"{col}: CCI should be high (>50) in sustained uptrend, got mean={valid.iloc[-50:].mean():.1f}"
+
+    def test_cci_low_in_oversold_downtrend(self):
+        """In a sustained downtrend, CCI should be below -50."""
+        n = 300
+        close = np.linspace(200, 100, n)
+        df = create_ohlc(close)
+        result = self._indicator().compute(df)
+        cci_cols = [c for c in result.columns if "cci" in c]
+        assert len(cci_cols) > 0, "Expected at least one trend_cci_* column"
+        for col in cci_cols:
+            valid = result[col].dropna()
+            assert len(valid) >= 50
+            assert valid.iloc[-50:].mean() < -50, \
+                f"{col}: CCI should be low (<-50) in sustained downtrend, got mean={valid.iloc[-50:].mean():.1f}"

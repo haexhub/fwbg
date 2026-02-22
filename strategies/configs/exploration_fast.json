@@ -9,20 +9,20 @@
   ],
   "hypothesis": "ML soll selbst lernen, welche Features relevant sind - ohne Preprocessing fuer Target-Caching",
   "expected_outcome": "Identifikation der wichtigsten Features mit beschleunigter Grid-Suche durch Caching",
-  "pipeline": "exploration_fast",
+  "pipeline": "exploration_fast_v1",
   "exit_strategy": "atr_based",
-  "exit_params": "atr_standard",
-  "model": "xgboost_depth6",
-  "validation": "walk_forward_exploration_fast",
-  "filters": "permissive",
-  "resources": "exploration_heavy",
+  "exit_params": "atr_standard_v1",
+  "model": "xgboost_depth6_v1",
+  "validation": "walk_forward_exploration_fast_v1",
+  "filters": "permissive_v1",
+  "resources": "exploration_heavy_v1",
   "grids": {
     "presets_dir": "../grids",
     "regime_filters_dir": "../regime_filters",
-    "regime_filter_grid": "exploration_regime",
+    "regime_filter_grid": "exploration_regime_v1",
     "assignments": {
       "FOREX": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -32,7 +32,7 @@
         ]
       },
       "INDEX": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           2.0,
           2.5,
@@ -42,7 +42,7 @@
         ]
       },
       "COMMODITY": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           2.0,
           2.5,
@@ -52,7 +52,7 @@
         ]
       },
       "CRYPTO": {
-        "preset": "exploration_fast_crypto",
+        "preset": "exploration_fast_crypto_v1",
         "tp": [
           2.0,
           3.0,
@@ -62,7 +62,7 @@
         ]
       },
       "BRENT": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -72,7 +72,7 @@
         ]
       },
       "GOLD": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           2.5,
           3.0,
@@ -82,7 +82,7 @@
         ]
       },
       "XAUUSD": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           2.5,
           3.0,
@@ -92,7 +92,7 @@
         ]
       },
       "SILVER": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -102,7 +102,7 @@
         ]
       },
       "XAGUSD": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -112,7 +112,7 @@
         ]
       },
       "DAX": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           2.0,
           2.5,
@@ -122,7 +122,7 @@
         ]
       },
       "DOW30": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           2.0,
           2.5,
@@ -132,7 +132,7 @@
         ]
       },
       "FTSE100": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -142,7 +142,7 @@
         ]
       },
       "NAS100": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           2.5,
           3.0,
@@ -152,7 +152,7 @@
         ]
       },
       "SPX500": {
-        "preset": "exploration_fast_base",
+        "preset": "exploration_fast_base_v1",
         "tp": [
           2.0,
           2.5,

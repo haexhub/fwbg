@@ -1,20 +1,35 @@
 {
   "name": "Screen: Momentum",
-  "description": "Konzept-Screening: Technische Momentum-Indikatoren (RSI, ADX, ROC) auf HOUR-Daten. Testet ob Trend-Stärke und Overbought/Oversold-Signale prädiktiv sind.",
-  "tags": ["screening", "step1", "momentum", "technical"],
-  "hypothesis": "Momentum-Signale (ADX Trend-Stärke, RSI, ROC) haben prädiktiven Edge für Trend-Fortsetzung auf stündlichen Daten.",
+  "description": "Konzept-Screening: Technische Momentum-Indikatoren (RSI, ADX, ROC) auf HOUR-Daten. Testet ob Trend-St\u00e4rke und Overbought/Oversold-Signale pr\u00e4diktiv sind.",
+  "tags": [
+    "screening",
+    "step1",
+    "momentum",
+    "technical"
+  ],
+  "hypothesis": "Momentum-Signale (ADX Trend-St\u00e4rke, RSI, ROC) haben pr\u00e4diktiven Edge f\u00fcr Trend-Fortsetzung auf st\u00fcndlichen Daten.",
   "expected_outcome": "ADX und RSI werden selektiert. Edge nur in Trending-Phasen.",
   "pipeline": {
     "indicators": [
       {
         "name": "trend",
         "params": {
-          "adx_periods": [14, 21],
-          "ema_periods": [21, 50, 200],
+          "adx_periods": [
+            14,
+            21
+          ],
+          "ema_periods": [
+            21,
+            50,
+            200
+          ],
           "sma_periods": [],
           "cci_periods": [],
           "aroon_period": 14,
-          "er_periods": [10, 20],
+          "er_periods": [
+            10,
+            20
+          ],
           "supertrend_period": 14,
           "supertrend_multiplier": 3.0
         }
@@ -22,10 +37,21 @@
       {
         "name": "momentum",
         "params": {
-          "rsi_periods": [7, 14],
-          "stoch_periods": [14],
-          "williams_periods": [14],
-          "roc_periods": [5, 10, 20]
+          "rsi_periods": [
+            7,
+            14
+          ],
+          "stoch_periods": [
+            14
+          ],
+          "williams_periods": [
+            14
+          ],
+          "roc_periods": [
+            5,
+            10,
+            20
+          ]
         }
       },
       {
@@ -62,18 +88,66 @@
     ]
   },
   "exit_strategy": "atr_based",
-  "exit_params": "atr_standard_at",
-  "model": "xgboost_screen",
-  "validation": "walk_forward_screening",
-  "filters": "screening",
-  "resources": "exploration_heavy",
+  "exit_params": "atr_standard_at_v1",
+  "model": "xgboost_screen_v1",
+  "validation": "walk_forward_screening_v1",
+  "filters": "screening_v1",
+  "resources": "exploration_heavy_v1",
   "grids": {
     "presets_dir": "../grids",
     "assignments": {
-      "FOREX":     {"preset": "screening_base", "tp": [1.5, 2.5, 3.5], "sl": [2.0, 3.0, 4.0]},
-      "INDEX":     {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
-      "COMMODITY": {"preset": "screening_base", "tp": [2.0, 3.0, 4.0], "sl": [3.0, 4.0, 5.0]},
-      "CRYPTO":    {"preset": "screening_base", "tp": [2.0, 3.0, 5.0], "sl": [3.0, 5.0, 7.0]}
+      "FOREX": {
+        "preset": "screening_base_v1",
+        "tp": [
+          1.5,
+          2.5,
+          3.5
+        ],
+        "sl": [
+          2.0,
+          3.0,
+          4.0
+        ]
+      },
+      "INDEX": {
+        "preset": "screening_base_v1",
+        "tp": [
+          2.0,
+          3.0,
+          4.0
+        ],
+        "sl": [
+          3.0,
+          4.0,
+          5.0
+        ]
+      },
+      "COMMODITY": {
+        "preset": "screening_base_v1",
+        "tp": [
+          2.0,
+          3.0,
+          4.0
+        ],
+        "sl": [
+          3.0,
+          4.0,
+          5.0
+        ]
+      },
+      "CRYPTO": {
+        "preset": "screening_base_v1",
+        "tp": [
+          2.0,
+          3.0,
+          5.0
+        ],
+        "sl": [
+          3.0,
+          5.0,
+          7.0
+        ]
+      }
     }
   }
 }

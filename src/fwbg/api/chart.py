@@ -28,6 +28,21 @@ _RESAMPLE_RULE: dict[str, str] = {
 }
 
 
+def _parse_symbol_timeframe(stem: str) -> tuple[str, str] | None:
+    """Parse a filename stem like 'ASX200_MINUTE_15' into ('ASX200', 'MINUTE_15').
+
+    Uses known timeframe names (longest first) to avoid splitting 'MINUTE_15'
+    into ('ASX200_MINUTE', '15') at the last underscore.
+    """
+    for tf in sorted(_TIMEFRAME_ORDER, key=len, reverse=True):
+        suffix = f"_{tf}"
+        if stem.endswith(suffix):
+            symbol = stem[: -len(suffix)]
+            if symbol:
+                return symbol, tf
+    return None
+
+
 def _derivable_timeframes(native_tfs: list[str]) -> list[str]:
     """Given a list of native (on-disk) timeframes, return all timeframes that
     can be produced — native ones plus any higher timeframes derivable via
@@ -115,10 +130,10 @@ def list_sources() -> list[dict]:
         # Scan directory for {SYMBOL}_{TIMEFRAME}.csv files
         symbols_map: dict[str, list[str]] = defaultdict(list)
         for f in source.list_files("*.csv"):
-            parts = f.stem.rsplit("_", 1)
-            if len(parts) != 2:
+            parsed = _parse_symbol_timeframe(f.stem)
+            if not parsed:
                 continue
-            symbol, timeframe = parts
+            symbol, timeframe = parsed
             symbols_map[symbol].append(timeframe)
 
         symbols_list = []

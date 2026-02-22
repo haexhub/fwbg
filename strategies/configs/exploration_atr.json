@@ -1,6 +1,6 @@
 {
   "name": "Exploration ATR",
-  "description": "Maximale Feature-Exploration mit ATR-basierter dynamischer Exit-Strategie - TP/SL passen sich der Volatilität an",
+  "description": "Maximale Feature-Exploration mit ATR-basierter dynamischer Exit-Strategie - TP/SL passen sich der Volatilit\u00e4t an",
   "tags": [
     "exploration",
     "parameter_search",
@@ -9,22 +9,22 @@
     "atr_based",
     "dynamic_exits"
   ],
-  "hypothesis": "ATR-basierte dynamische TP/SL bieten bessere Anpassung an Marktvolatilität als fixe Spread-Multiplikatoren. ML lernt optimale ATR-Multiplikatoren für verschiedene Marktregime.",
-  "expected_outcome": "Höhere Risk-Adjusted Returns durch volatilitäts-angepasste Exits. Bessere Performance in verschiedenen Volatilitätsregimen.",
-  "pipeline": "exploration_full_atr",
+  "hypothesis": "ATR-basierte dynamische TP/SL bieten bessere Anpassung an Marktvolatilit\u00e4t als fixe Spread-Multiplikatoren. ML lernt optimale ATR-Multiplikatoren f\u00fcr verschiedene Marktregime.",
+  "expected_outcome": "H\u00f6here Risk-Adjusted Returns durch volatilit\u00e4ts-angepasste Exits. Bessere Performance in verschiedenen Volatilit\u00e4tsregimen.",
+  "pipeline": "exploration_full_atr_v1",
   "exit_strategy": "atr_based",
-  "exit_params": "atr_standard_at",
-  "model": "xgboost_depth6",
-  "validation": "walk_forward_exploration_atr",
-  "filters": "permissive",
-  "resources": "standard",
+  "exit_params": "atr_standard_at_v1",
+  "model": "xgboost_depth6_v1",
+  "validation": "walk_forward_exploration_atr_v1",
+  "filters": "permissive_v1",
+  "resources": "standard_v1",
   "grids": {
     "presets_dir": "../grids",
     "regime_filters_dir": "../regime_filters",
-    "regime_filter_grid": "exploration_regime",
+    "regime_filter_grid": "exploration_regime_v1",
     "assignments": {
       "FOREX": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -34,7 +34,7 @@
         ]
       },
       "INDEX": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           2.0,
           2.5,
@@ -44,7 +44,7 @@
         ]
       },
       "COMMODITY": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           2.0,
           2.5,
@@ -54,7 +54,7 @@
         ]
       },
       "CRYPTO": {
-        "preset": "exploration_crypto",
+        "preset": "exploration_crypto_v1",
         "tp": [
           2.0,
           3.0,
@@ -64,7 +64,7 @@
         ]
       },
       "BRENT": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -74,7 +74,7 @@
         ]
       },
       "GOLD": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           2.5,
           3.0,
@@ -84,7 +84,7 @@
         ]
       },
       "XAUUSD": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           2.5,
           3.0,
@@ -94,7 +94,7 @@
         ]
       },
       "SILVER": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -104,7 +104,7 @@
         ]
       },
       "XAGUSD": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -114,7 +114,7 @@
         ]
       },
       "DAX": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           2.0,
           2.5,
@@ -124,7 +124,7 @@
         ]
       },
       "DOW30": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           2.0,
           2.5,
@@ -134,7 +134,7 @@
         ]
       },
       "FTSE100": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           1.5,
           2.0,
@@ -144,7 +144,7 @@
         ]
       },
       "NAS100": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           2.5,
           3.0,
@@ -154,7 +154,7 @@
         ]
       },
       "SPX500": {
-        "preset": "exploration_base",
+        "preset": "exploration_base_v1",
         "tp": [
           2.0,
           2.5,

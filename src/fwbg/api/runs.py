@@ -380,6 +380,25 @@ def get_run_logs(
     return entries
 
 
+@router.delete("/{run_id}")
+def delete_run(run_id: str) -> dict:
+    """Delete all results for a completed run."""
+    import shutil
+
+    results_dir = get_test_results_dir()
+    run_dir = results_dir / run_id
+
+    if not run_dir.exists():
+        raise HTTPException(404, f"Run not found: {run_id}")
+
+    try:
+        shutil.rmtree(run_dir)
+    except Exception as e:
+        raise HTTPException(500, f"Failed to delete run: {e}")
+
+    return {"run_id": run_id, "deleted": True}
+
+
 @router.post("/{run_id}/cancel")
 def cancel_run(run_id: str) -> dict:
     """Cancel an active run."""

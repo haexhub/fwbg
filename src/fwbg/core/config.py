@@ -6,6 +6,7 @@ Alle Config-Klassen sind hier definiert - keine Duplikate in anderen Modulen.
 """
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Union
+import glob
 import json
 import os
 
@@ -213,6 +214,7 @@ class EarlyPruningConfig:
     enabled: bool = False
     keep_ratio: float = 0.5
     min_survivors: int = 10
+    min_folds_before_pruning_ratio: float = 0.3
 
     @classmethod
     def from_dict(cls, data) -> "EarlyPruningConfig":
@@ -222,6 +224,7 @@ class EarlyPruningConfig:
             enabled=data.get("enabled", False),
             keep_ratio=data.get("keep_ratio", 0.5),
             min_survivors=data.get("min_survivors", 10),
+            min_folds_before_pruning_ratio=data.get("min_folds_before_pruning_ratio", 0.3),
         )
 
 
@@ -323,15 +326,31 @@ class ResourceConfig:
 
 
 def _load_json_preset(name: str, presets_dir: str) -> dict:
-    """Load a JSON preset file from the given directory."""
+    """Load a JSON preset file from the given directory.
+
+    Tries ``{name}.json`` first; if not found, falls back to the highest-version
+    ``{name}_v*.json`` file (versioned naming scheme).
+    """
+    real_dir = os.path.realpath(presets_dir)
+
     path = os.path.join(presets_dir, f"{name}.json")
     resolved = os.path.realpath(path)
-    if not resolved.startswith(os.path.realpath(presets_dir)):
+    if not resolved.startswith(real_dir):
         raise ValueError(f"Preset name '{name}' resolves outside allowed directory")
+
     if not os.path.isfile(resolved):
-        raise FileNotFoundError(f"Preset '{name}' not found at {path}")
+        # Fall back to versioned filename (e.g. name_v1.json, name_v2.json …)
+        matches = sorted(glob.glob(os.path.join(presets_dir, f"{name}_v*.json")))
+        if not matches:
+            raise FileNotFoundError(f"Preset '{name}' not found at {path}")
+        resolved = os.path.realpath(matches[-1])  # highest lexicographic = highest version
+        if not resolved.startswith(real_dir):
+            raise ValueError(f"Preset name '{name}' resolves outside allowed directory")
+
     with open(resolved, "r") as f:
-        return json.load(f)
+        data = json.load(f)
+    data.pop("_meta", None)  # strip embedded metadata before returning content
+    return data
 
 
 def _resolve_regime_filter(

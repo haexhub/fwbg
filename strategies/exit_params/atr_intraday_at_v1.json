@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "name": "atr_intraday_at",
+    "description": "",
+    "version": 1
+  },
+  "atr_period": 14,
+  "min_tp_pips": 8,
+  "min_sl_pips": 12,
+  "adaptive_timeout": false,
+  "breakeven_trigger": 0.5,
+  "trail_atr_mult": 0.5
+}

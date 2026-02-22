@@ -190,6 +190,69 @@ class TestBuildComboTuples:
         assert len(combos) == 12  # (4-1) valid pairs × 2 timeout × 2 modifiers
 
 
+class TestMinFoldsBeforePruning:
+    """Tests für min_folds_before_pruning_ratio in EarlyPruningConfig."""
+
+    def test_early_pruning_config_parses_min_folds_before_pruning_ratio(self):
+        """EarlyPruningConfig.from_dict liest min_folds_before_pruning_ratio."""
+        from fwbg.core.config import EarlyPruningConfig
+        config = EarlyPruningConfig.from_dict({
+            "enabled": True, "keep_ratio": 0.5, "min_survivors": 10,
+            "min_folds_before_pruning_ratio": 0.4,
+        })
+        assert config.min_folds_before_pruning_ratio == pytest.approx(0.4)
+
+    def test_early_pruning_config_defaults_min_folds_before_pruning_ratio_to_0_3(self):
+        """Ohne Angabe von min_folds_before_pruning_ratio: Default ist 0.3."""
+        from fwbg.core.config import EarlyPruningConfig
+        config = EarlyPruningConfig.from_dict({"enabled": True})
+        assert config.min_folds_before_pruning_ratio == pytest.approx(0.3)
+
+    def test_early_pruning_config_from_empty_dict_defaults_ratio_to_0_3(self):
+        """Leeres Dict → min_folds_before_pruning_ratio == 0.3."""
+        from fwbg.core.config import EarlyPruningConfig
+        config = EarlyPruningConfig()
+        assert config.min_folds_before_pruning_ratio == pytest.approx(0.3)
+
+    def test_simulation_context_exposes_early_pruning_min_folds_ratio(self):
+        """SimulationContext hat early_pruning_min_folds_before_pruning_ratio."""
+        ctx = SimulationContext(
+            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
+            grid_tp=[10.0], grid_sl=[10.0], grid_ct=[0.5],
+            early_pruning_min_folds_before_pruning_ratio=0.4,
+        )
+        assert ctx.early_pruning_min_folds_before_pruning_ratio == pytest.approx(0.4)
+
+    def test_pruning_skipped_for_early_folds_respects_ratio_setting(self):
+        """Mit min_folds_before_pruning_ratio=0.3: 30% der Folds abwarten.
+
+        Prüft, dass das Feld im Context korrekt propagiert wird.
+        """
+        ctx = SimulationContext(
+            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
+            grid_tp=[10.0], grid_sl=[20.0], grid_ct=[0.5],
+            early_pruning_enabled=True,
+            early_pruning_keep_ratio=0.5,
+            early_pruning_min_survivors=5,
+            early_pruning_min_folds_before_pruning_ratio=0.3,
+        )
+        assert ctx.early_pruning_min_folds_before_pruning_ratio == pytest.approx(0.3)
+        assert 0.0 <= ctx.early_pruning_min_folds_before_pruning_ratio <= 1.0
+
+    def test_validation_config_propagates_min_folds_ratio_to_context(self):
+        """ValidationConfig.from_dict propagiert min_folds_before_pruning_ratio korrekt."""
+        from fwbg.core.config import ValidationConfig
+        val_cfg = ValidationConfig.from_dict({
+            "early_pruning": {
+                "enabled": True,
+                "keep_ratio": 0.5,
+                "min_survivors": 10,
+                "min_folds_before_pruning_ratio": 0.4,
+            }
+        })
+        assert val_cfg.early_pruning.min_folds_before_pruning_ratio == pytest.approx(0.4)
+
+
 class TestEarlyExitProgressCallbacks:
     """Tests für Early-Exit Progress-Callback-Anzahl in run_grid_search."""
 
