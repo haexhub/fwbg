@@ -30,6 +30,7 @@ class TestGridProgressCallback:
         ctx.trade_directions = ["long", "short"]
         ctx.model_hyperparams = {"n_estimators": 10, "max_depth": 2}
         ctx.grid_exit_modifier_params = [None]
+        ctx.grid_model_hyperparameters = [None]
 
         # Minimaler grid mit 2x2 = 4 Kombinationen
         grid = MagicMock()
@@ -105,6 +106,7 @@ class TestGridProgressCallback:
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False
         ctx.grid_exit_modifier_params = [None]
+        ctx.grid_model_hyperparameters = [None]
 
         grid = MagicMock()
         grid.tp = [10, 20]
@@ -150,6 +152,7 @@ class TestGridProgressCallback:
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False
         ctx.grid_exit_modifier_params = [None]
+        ctx.grid_model_hyperparameters = [None]
 
         grid = MagicMock()
         grid.tp = [10, 20]
@@ -212,6 +215,7 @@ class TestProgressCallbackSequence:
         ctx.trade_directions = ["long", "short"]
         ctx.model_hyperparams = {"n_estimators": 10, "max_depth": 2}
         ctx.grid_exit_modifier_params = [None]
+        ctx.grid_model_hyperparameters = [None]
 
         grid = MagicMock()
         grid.tp = [10, 20]
@@ -278,6 +282,7 @@ class TestProgressCallbackSequence:
         ctx.trade_directions = ["long", "short"]
         ctx.model_hyperparams = {"n_estimators": 10, "max_depth": 2}
         ctx.grid_exit_modifier_params = [None]
+        ctx.grid_model_hyperparameters = [None]
 
         grid = MagicMock()
         # TP=10, SL=30 -> RRR=0.33 < 0.5 -> SKIP
@@ -457,6 +462,7 @@ class TestSuccessiveHalving:
         ctx.early_pruning_keep_ratio = 0.5
         ctx.early_pruning_min_survivors = 2
         ctx.grid_exit_modifier_params = [None]
+        ctx.grid_model_hyperparameters = [None]
 
         grid = MagicMock()
         grid.tp = [10, 20]
@@ -487,6 +493,7 @@ class TestSuccessiveHalving:
         ctx.early_pruning_keep_ratio = 0.5
         ctx.early_pruning_min_survivors = 10  # More than available combos
         ctx.grid_exit_modifier_params = [None]
+        ctx.grid_model_hyperparameters = [None]
 
         grid = MagicMock()
         grid.tp = [10]

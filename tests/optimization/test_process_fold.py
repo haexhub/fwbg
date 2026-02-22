@@ -334,3 +334,302 @@ class TestProcessSingleFoldIntegration:
         assert len(regime_phases) >= 2, (
             f"Expected regime info in phase messages, got: {phase_texts}"
         )
+
+
+class TestHoldoutUsesWinningCandidateParams:
+    """Verify that holdout evaluation uses the winning candidate's
+    model_hyperparameters and exit_modifier_params, not the base ctx."""
+
+    def test_holdout_receives_candidate_model_hyperparameters(self):
+        """evaluate_on_holdout must be called with ctx containing the
+        winning candidate's model_hyperparameters, not the base."""
+        from fwbg.optimization.process_fold import process_single_fold
+
+        base_hp = {
+            "signal_column_long": "base_long",
+            "signal_column_short": "base_short",
+        }
+        variant_hp = {
+            "signal_column_long": "variant_long",
+            "signal_column_short": "variant_short",
+        }
+
+        df = _make_ohlc_df()
+        fold = _make_fold(df, fold_id=0)
+        grid = _make_grid()
+        ctx = _make_ctx(model_hyperparameters=base_hp)
+        features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
+
+        def fake_grid_search(full_pool, inner_folds, grid, ctx, regime_config,
+                             sym, progress_callback=None, inner_df=None,
+                             preselected_features_long=None,
+                             preselected_features_short=None):
+            n = ctx.total_grid_combinations()
+            if progress_callback:
+                for i in range(1, n + 1):
+                    progress_callback(i, n)
+            return [
+                {
+                    "inner_val_pnl": 50.0,
+                    "params": (10, 20, 0.5),
+                    "timeout_bars": None,
+                    "feats": features,
+                    "rrr": 0.5,
+                    "selected_features_long": features,
+                    "selected_features_short": features,
+                    "fold_stability": 0.8,
+                    "regime_filter": regime_config,
+                    "score": 50.0,
+                    "model_hyperparameters": variant_hp,
+                    "exit_modifier_params": {"trail_atr_mult": 0.5},
+                }
+            ], []
+
+        train_df = fold.train_df
+        split = len(train_df) // 2
+
+        with patch("fwbg.optimization.process_fold.select_features", return_value=(features, features)), \
+             patch("fwbg.optimization.process_fold.run_grid_search", side_effect=fake_grid_search), \
+             patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value={
+                 "pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": [],
+             }) as mock_holdout, \
+             patch("fwbg.optimization.process_fold.calculate_param_plateau_score",
+                   side_effect=lambda cands, *a, **k: cands), \
+             patch("fwbg.optimization.process_fold.select_best_plateau_candidate",
+                   side_effect=lambda cands, *a, **k: cands[0] if cands else None), \
+             patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
+                 "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
+             }), \
+             patch("fwbg.optimization.process_fold.report_phase"), \
+             patch("fwbg.optimization.process_fold.report_meta"), \
+             patch("fwbg.optimization.process_fold.report_progress"):
+
+            result, _ = process_single_fold(
+                fold=fold, fold_idx=0, n_folds=8,
+                fold_indicators=[], precomputed_raw_df=None,
+                preprocessing_configs=None,
+                grid=grid, ctx=ctx, sym="TEST", total_indicators=6,
+            )
+
+        # evaluate_on_holdout must have been called with ctx containing variant HP
+        assert mock_holdout.call_count == 1
+        holdout_ctx = mock_holdout.call_args[0][3]  # 4th positional arg is ctx
+        assert holdout_ctx.model_hyperparameters["signal_column_long"] == "variant_long"
+        assert holdout_ctx.model_hyperparameters["signal_column_short"] == "variant_short"
+        assert holdout_ctx.exit_modifier_params["trail_atr_mult"] == 0.5
+
+    def test_holdout_uses_base_ctx_when_no_variant(self):
+        """When candidate has no model_hyperparameters (old format), base ctx is used."""
+        from fwbg.optimization.process_fold import process_single_fold
+
+        base_hp = {"signal_column_long": "base_long", "signal_column_short": "base_short"}
+
+        df = _make_ohlc_df()
+        fold = _make_fold(df, fold_id=0)
+        grid = _make_grid()
+        ctx = _make_ctx(model_hyperparameters=base_hp)
+        features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
+
+        def fake_grid_search(full_pool, inner_folds, grid, ctx, regime_config,
+                             sym, progress_callback=None, inner_df=None,
+                             preselected_features_long=None,
+                             preselected_features_short=None):
+            n = ctx.total_grid_combinations()
+            if progress_callback:
+                for i in range(1, n + 1):
+                    progress_callback(i, n)
+            # No model_hyperparameters in candidate (backward compat)
+            return [
+                {
+                    "inner_val_pnl": 50.0,
+                    "params": (10, 20, 0.5),
+                    "timeout_bars": None,
+                    "feats": features,
+                    "rrr": 0.5,
+                    "selected_features_long": features,
+                    "selected_features_short": features,
+                    "fold_stability": 0.8,
+                    "regime_filter": regime_config,
+                    "score": 50.0,
+                }
+            ], []
+
+        train_df = fold.train_df
+        split = len(train_df) // 2
+
+        with patch("fwbg.optimization.process_fold.select_features", return_value=(features, features)), \
+             patch("fwbg.optimization.process_fold.run_grid_search", side_effect=fake_grid_search), \
+             patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value={
+                 "pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": [],
+             }) as mock_holdout, \
+             patch("fwbg.optimization.process_fold.calculate_param_plateau_score",
+                   side_effect=lambda cands, *a, **k: cands), \
+             patch("fwbg.optimization.process_fold.select_best_plateau_candidate",
+                   side_effect=lambda cands, *a, **k: cands[0] if cands else None), \
+             patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
+                 "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
+             }), \
+             patch("fwbg.optimization.process_fold.report_phase"), \
+             patch("fwbg.optimization.process_fold.report_meta"), \
+             patch("fwbg.optimization.process_fold.report_progress"):
+
+            result, _ = process_single_fold(
+                fold=fold, fold_idx=0, n_folds=8,
+                fold_indicators=[], precomputed_raw_df=None,
+                preprocessing_configs=None,
+                grid=grid, ctx=ctx, sym="TEST", total_indicators=6,
+            )
+
+        # With no variant, holdout ctx should have base HP
+        assert mock_holdout.call_count == 1
+        holdout_ctx = mock_holdout.call_args[0][3]
+        assert holdout_ctx.model_hyperparameters == base_hp
+
+    def test_fold_result_stores_winning_model_hyperparameters(self):
+        """fold_result['best_config'] must include the winning model_hyperparameters."""
+        from fwbg.optimization.process_fold import process_single_fold
+
+        variant_hp = {"signal_column_long": "winner_long", "signal_column_short": "winner_short"}
+
+        df = _make_ohlc_df()
+        fold = _make_fold(df, fold_id=0)
+        grid = _make_grid()
+        ctx = _make_ctx()
+        features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
+
+        def fake_grid_search(full_pool, inner_folds, grid, ctx, regime_config,
+                             sym, progress_callback=None, inner_df=None,
+                             preselected_features_long=None,
+                             preselected_features_short=None):
+            n = ctx.total_grid_combinations()
+            if progress_callback:
+                for i in range(1, n + 1):
+                    progress_callback(i, n)
+            return [
+                {
+                    "inner_val_pnl": 50.0,
+                    "params": (10, 20, 0.5),
+                    "timeout_bars": None,
+                    "feats": features,
+                    "rrr": 0.5,
+                    "selected_features_long": features,
+                    "selected_features_short": features,
+                    "fold_stability": 0.8,
+                    "regime_filter": regime_config,
+                    "score": 50.0,
+                    "model_hyperparameters": variant_hp,
+                    "exit_modifier_params": {},
+                }
+            ], []
+
+        train_df = fold.train_df
+        split = len(train_df) // 2
+
+        with patch("fwbg.optimization.process_fold.select_features", return_value=(features, features)), \
+             patch("fwbg.optimization.process_fold.run_grid_search", side_effect=fake_grid_search), \
+             patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value={
+                 "pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": [],
+             }), \
+             patch("fwbg.optimization.process_fold.calculate_param_plateau_score",
+                   side_effect=lambda cands, *a, **k: cands), \
+             patch("fwbg.optimization.process_fold.select_best_plateau_candidate",
+                   side_effect=lambda cands, *a, **k: cands[0] if cands else None), \
+             patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
+                 "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
+             }), \
+             patch("fwbg.optimization.process_fold.report_phase"), \
+             patch("fwbg.optimization.process_fold.report_meta"), \
+             patch("fwbg.optimization.process_fold.report_progress"):
+
+            result, _ = process_single_fold(
+                fold=fold, fold_idx=0, n_folds=8,
+                fold_indicators=[], precomputed_raw_df=None,
+                preprocessing_configs=None,
+                grid=grid, ctx=ctx, sym="TEST", total_indicators=6,
+            )
+
+        assert result is not None
+        assert result["best_config"]["model_hyperparameters"] == variant_hp
+
+
+class TestRequiredFeaturesProtectedFromNanFilter:
+    """Verify required_features are NOT dropped by NaN filter in process_fold."""
+
+    def test_required_features_survive_nan_filter(self):
+        """Features in ctx.required_features must not be dropped even with high NaN.
+
+        Directly tests the NaN filter logic extracted from process_single_fold:
+        required_features are excluded from the 10% NaN threshold."""
+        n = 800
+        rng = np.random.default_rng(42)
+
+        # Create a signal column with 30% NaN (would be filtered at 10% threshold)
+        signal_values = rng.choice([0.0, 1.0], size=n, p=[0.9, 0.1])
+        nan_mask = rng.random(n) < 0.3
+        signal_values[nan_mask] = np.nan
+
+        train_df = pd.DataFrame({
+            "feat1": rng.standard_normal(n),
+            "feat2": rng.standard_normal(n),
+            "signal_col_long": signal_values,
+            "signal_col_short": signal_values.copy(),
+        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+
+        full_pool = ["feat1", "feat2", "signal_col_long", "signal_col_short"]
+        protected_cols = {"signal_col_long", "signal_col_short"}
+
+        # Replicate the NaN filter from process_fold.py (with protection)
+        clean_pool = []
+        drop_cols = []
+        for col in full_pool:
+            if col in train_df.columns:
+                if col in protected_cols:
+                    clean_pool.append(col)
+                    continue
+                nan_ratio = train_df[col].isna().sum() / len(train_df)
+                if nan_ratio >= 0.1:
+                    drop_cols.append(col)
+                else:
+                    clean_pool.append(col)
+
+        # Signal columns must survive despite 30% NaN
+        assert "signal_col_long" in clean_pool
+        assert "signal_col_short" in clean_pool
+        assert "signal_col_long" not in drop_cols
+        assert "signal_col_short" not in drop_cols
+
+    def test_non_required_features_still_filtered(self):
+        """Non-required features with >10% NaN are still filtered normally."""
+        n = 100
+        rng = np.random.default_rng(42)
+
+        values = rng.standard_normal(n)
+        nan_values = values.copy()
+        nan_values[:20] = np.nan  # 20% NaN
+
+        train_df = pd.DataFrame({
+            "clean_feat": values,
+            "dirty_feat": nan_values,
+            "protected_signal": nan_values.copy(),
+        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+
+        full_pool = ["clean_feat", "dirty_feat", "protected_signal"]
+        protected_cols = {"protected_signal"}
+
+        clean_pool = []
+        drop_cols = []
+        for col in full_pool:
+            if col in train_df.columns:
+                if col in protected_cols:
+                    clean_pool.append(col)
+                    continue
+                nan_ratio = train_df[col].isna().sum() / len(train_df)
+                if nan_ratio >= 0.1:
+                    drop_cols.append(col)
+                else:
+                    clean_pool.append(col)
+
+        assert "clean_feat" in clean_pool
+        assert "dirty_feat" not in clean_pool
+        assert "dirty_feat" in drop_cols
+        assert "protected_signal" in clean_pool

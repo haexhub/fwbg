@@ -296,6 +296,7 @@ class TestRunGridSearch:
         ctx.min_rrr = 0
         ctx.exit_strategy = "fixed"
         ctx.exit_params = {}
+        ctx.required_features = []
 
         grid = GridConfig(tp=[1.0], sl=[1.0], ct=[0.5])
 

@@ -82,6 +82,24 @@ def select_features(
         if selected_short:
             log(2, f"  Feature Selection (Short): {len(selected_short)} Features ausgewählt", sym)
 
+    # Merge required_features (always included, bypass feature selection)
+    if ctx.required_features:
+        available_required = [f for f in ctx.required_features if f in features]
+        if available_required:
+            if selected_long is not None:
+                for f in available_required:
+                    if f not in selected_long:
+                        selected_long.append(f)
+            if selected_short is not None:
+                for f in available_required:
+                    if f not in selected_short:
+                        selected_short.append(f)
+            # If both None but required_features exist, bootstrap feature lists
+            if selected_long is None and selected_short is None:
+                selected_long = list(available_required)
+                selected_short = list(available_required)
+            log(2, f"  Required Features: {len(available_required)} forced", sym)
+
     return selected_long, selected_short
 
 
@@ -138,6 +156,7 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "fold_stability": inner_result.get("fold_stability", 0),
         "regime_filter": regime_config,
         "exit_modifier_params": ctx.exit_modifier_params,
+        "model_hyperparameters": ctx.model_hyperparameters,
     }
 
     if ctx.separate_long_short and "ct_long" in inner_result:
@@ -156,6 +175,7 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "features": inner_result["selected_features"],
         "regime_filter": regime_config,
         "exit_modifier_params": ctx.exit_modifier_params,
+        "model_hyperparameters": ctx.model_hyperparameters,
     }
     if isinstance(conf_thresh, tuple):
         grid_result["ct_long"] = conf_thresh[0]
@@ -231,29 +251,32 @@ def _build_combo_tuples(
     combo_idx = 0
     skipped_count = 0
 
-    for modifier_params in ctx.grid_exit_modifier_params:
-        # Create a per-modifier ctx so each combo carries the right exit_modifier_params
-        if modifier_params is not None:
-            combo_ctx = dataclasses.replace(ctx, exit_modifier_params=modifier_params)
-        else:
+    for model_hp_variant in ctx.grid_model_hyperparameters:
+        for modifier_params in ctx.grid_exit_modifier_params:
+            # Create a per-variant ctx with the right model HPs and exit_modifier_params
             combo_ctx = ctx
+            if model_hp_variant is not None:
+                merged_hp = {**ctx.model_hyperparameters, **model_hp_variant}
+                combo_ctx = dataclasses.replace(combo_ctx, model_hyperparameters=merged_hp)
+            if modifier_params is not None:
+                combo_ctx = dataclasses.replace(combo_ctx, exit_modifier_params=modifier_params)
 
-        for tp in grid.tp:
-            for sl in grid.sl:
-                rrr = tp / sl
-                if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                    skipped_count += len(timeout_values)
-                    log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
-                    continue
+            for tp in grid.tp:
+                for sl in grid.sl:
+                    rrr = tp / sl
+                    if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
+                        skipped_count += len(timeout_values)
+                        log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
+                        continue
 
-                for timeout_bars in timeout_values:
-                    combos.append((
-                        tp, sl, timeout_bars, combo_idx,
-                        features, inner_folds, combo_ctx, regime_config,
-                        0, total_grid_combos, inner_df,
-                        selected_features_long, selected_features_short
-                    ))
-                    combo_idx += 1
+                    for timeout_bars in timeout_values:
+                        combos.append((
+                            tp, sl, timeout_bars, combo_idx,
+                            features, inner_folds, combo_ctx, regime_config,
+                            0, total_grid_combos, inner_df,
+                            selected_features_long, selected_features_short
+                        ))
+                        combo_idx += 1
 
     return combos, skipped_count
 
@@ -469,11 +492,12 @@ def run_grid_search(
         )
 
     if not selected_features_long and not selected_features_short:
-        log(2, "  Keine Features selektiert - übersprungen", sym)
-        if progress_callback:
-            for i in range(grid_total):
-                progress_callback(i + 1, grid_total)
-        return [], []
+        if not ctx.required_features:
+            log(2, "  Keine Features selektiert - übersprungen", sym)
+            if progress_callback:
+                for i in range(grid_total):
+                    progress_callback(i + 1, grid_total)
+            return [], []
 
     # Reduzierte Feature-Liste für Grid-Search
     effective_features = selected_features_long or selected_features_short or features
