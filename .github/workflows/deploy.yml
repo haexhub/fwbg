@@ -36,9 +36,11 @@ jobs:
           pip install -e ".[dev,api]"
           pip install -e packages/fwbg-premium
 
-      - name: Run Core Tests
-        run: |
-          python -m pytest tests/ -v --tb=short
+      - name: Lint
+        run: ruff check src/ packages/
+
+      - name: Run Tests
+        run: python -m pytest
 
   build-and-push:
     name: Build and Push Docker Image

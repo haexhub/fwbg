@@ -56,6 +56,7 @@ dependencies = [
 dev = [
     "pytest>=9.0",
     "pytest-cov>=7.0",
+    "ruff>=0.9",
     "black>=26.0",
     "isort>=7.0",
     "mypy>=1.15",
@@ -114,8 +115,14 @@ warn_unused_configs = true
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "strategies/configs"]
-python_files = ["test_*.py", "*.test.py"]
+testpaths = [
+    "tests",
+    "strategies/configs",
+    "src/fwbg/plugins",
+    "packages/fwbg-premium/src/fwbg_premium/plugins",
+    "packages/fwbg-sdk/tests",
+]
+python_files = ["test_*.py", "*.test.py", "tests.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short --import-mode=importlib"
 
