@@ -12,7 +12,7 @@
   "hypothesis": "Das ORB-Edge in DAX ist st\u00e4rker als die initiale Exploration zeigte. TP=4.0 und CT=0.65 lagen am Grid-Ceiling \u2013 das Optimum liegt h\u00f6her.",
   "expected_outcome": "TP wandert auf 4.5-5.5, CT auf 0.70+. Mehr Trades und bessere Fold-Stabilit\u00e4t ohne restriktive Regime-Filter.",
   "pipeline": "orb_simple_v1",
-  "exit_strategy": "atr_based",
+  "exit_strategy": "orb_based",
   "exit_params": "atr_intraday_v1",
   "exit_modifier": "trailing_stop",
   "exit_modifier_params": {
@@ -42,9 +42,9 @@
           0.8
         ],
         "sl": [
-          2.0,
-          2.5,
-          3.0
+          0.9,
+          1.0,
+          1.1
         ]
       },
       "NAS100": {
@@ -62,9 +62,9 @@
           0.8
         ],
         "sl": [
-          2.0,
-          2.5,
-          3.0
+          0.9,
+          1.0,
+          1.1
         ]
       },
       "DOW30": {
@@ -82,9 +82,9 @@
           0.8
         ],
         "sl": [
-          2.0,
-          2.5,
-          3.0
+          0.9,
+          1.0,
+          1.1
         ]
       },
       "SPX500": {
@@ -102,9 +102,9 @@
           0.8
         ],
         "sl": [
-          1.5,
-          2.0,
-          2.5
+          0.9,
+          1.0,
+          1.1
         ]
       },
       "FTSE100": {
@@ -120,9 +120,9 @@
           0.75
         ],
         "sl": [
-          1.5,
-          2.0,
-          2.5
+          0.9,
+          1.0,
+          1.1
         ]
       },
       "EU50": {
@@ -140,9 +140,9 @@
           0.8
         ],
         "sl": [
-          1.5,
-          2.0,
-          2.5
+          0.9,
+          1.0,
+          1.1
         ]
       },
       "CAC40": {
@@ -159,9 +159,9 @@
           0.75
         ],
         "sl": [
-          1.5,
-          2.0,
-          2.5
+          0.9,
+          1.0,
+          1.1
         ]
       },
       "JP225": {
@@ -179,9 +179,9 @@
           0.8
         ],
         "sl": [
-          2.0,
-          2.5,
-          3.0
+          0.9,
+          1.0,
+          1.1
         ]
       },
       "ASX200": {
@@ -197,9 +197,9 @@
           0.75
         ],
         "sl": [
-          1.5,
-          2.0,
-          2.5
+          0.9,
+          1.0,
+          1.1
         ]
       },
       "HK50": {
@@ -217,9 +217,9 @@
           0.8
         ],
         "sl": [
-          2.0,
-          2.5,
-          3.0
+          0.9,
+          1.0,
+          1.1
         ]
       }
     }
