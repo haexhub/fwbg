@@ -334,6 +334,112 @@ class TestSimulateProTrade:
 
         assert trade is None
 
+    def test_timeout_inside_loop_matches_numba(self):
+        """Timeout must fire INSIDE the loop, matching _simulate_trade_numba.
+
+        Scenario: Long trade in slight uptrend. TP/SL are wide enough to not
+        trigger within timeout_bars (8), but SL would hit at bar 15 if the
+        trade kept running. The correct behavior is timeout at bar 8, NOT
+        SL at bar 15.
+        """
+        n = 30
+        # Price drifts up slightly for bars 0-9, then drops hard for bars 10-20
+        opens = np.zeros(n)
+        closes = np.zeros(n)
+        highs = np.zeros(n)
+        lows = np.zeros(n)
+
+        for i in range(n):
+            if i <= 9:
+                # Slight uptrend: +0.5 per bar
+                opens[i] = 100.0 + i * 0.5
+                closes[i] = opens[i] + 0.3
+            else:
+                # Sharp drop: -2.0 per bar after bar 9
+                opens[i] = 105.0 - (i - 9) * 2.0
+                closes[i] = opens[i] - 1.5
+            highs[i] = max(opens[i], closes[i]) + 0.2
+            lows[i] = min(opens[i], closes[i]) - 0.2
+
+        # Entry at bar 1 (idx=0), Long
+        # TP = entry + 50 (never reached)
+        # SL = entry - 10 (hit around bar 14-15 when price drops below ~90)
+        # timeout_bars = 8 → should exit at bar 8 close (~104.3, profitable)
+        trade = simulate_pro_trade(
+            closes=closes, highs=highs, lows=lows,
+            idx=0, direction=1, tp_distance=50.0, sl_distance=10.0,
+            spread=0.0, opens=opens, max_bars=100, timeout_bars=8,
+        )
+
+        assert trade is not None, "Trade should complete via timeout"
+        assert trade.get("exit_reason") == "timeout", (
+            f"Expected timeout exit, got: {trade}"
+        )
+        # entry_idx=1, timeout_idx = 1+8-1 = 8
+        assert trade["exit_idx"] == 8, (
+            f"Expected exit at bar 8 (timeout), got bar {trade['exit_idx']}"
+        )
+
+        # Cross-check: _simulate_trade_numba must produce the same result
+        result_numba, exit_idx_numba, _, exit_reason_numba = _simulate_trade_numba(
+            opens, closes, highs, lows,
+            idx=0, direction=1,
+            tp_distance=50.0, sl_distance=10.0,
+            spread=0.0, slippage=0.0,
+            max_bars=100, timeout_bars=8,
+        )
+        assert exit_reason_numba == 2, "Numba should timeout"
+        assert exit_idx_numba == 8, "Numba should exit at bar 8"
+        # Both must agree on the result sign
+        assert (trade["result"] > 0) == (result_numba > 0), (
+            f"Result mismatch: pro_trade={trade['result']}, numba={result_numba}"
+        )
+
+    def test_timeout_prevents_later_sl(self):
+        """SL that would fire after timeout must NOT trigger."""
+        n = 20
+        # Flat for 5 bars, then crash
+        opens = np.full(n, 100.0)
+        closes = np.full(n, 100.0)
+        highs = np.full(n, 100.2)
+        lows = np.full(n, 99.8)
+
+        # Bar 7+: price crashes to SL
+        for i in range(7, n):
+            opens[i] = 100.0 - (i - 6) * 5.0
+            closes[i] = opens[i] - 3.0
+            highs[i] = opens[i] + 0.5
+            lows[i] = closes[i] - 0.5
+
+        # timeout_bars=5 → exit at bar 5 (entry at bar 1)
+        # SL at entry - 8 = 92.0, would be hit around bar 8-9
+        trade = simulate_pro_trade(
+            closes=closes, highs=highs, lows=lows,
+            idx=0, direction=1, tp_distance=50.0, sl_distance=8.0,
+            spread=0.0, opens=opens, max_bars=100, timeout_bars=5,
+        )
+
+        assert trade is not None
+        assert trade.get("exit_reason") == "timeout"
+        assert trade["exit_idx"] == 5  # entry_idx=1, 1+5-1=5
+
+    def test_timeout_none_no_timeout(self):
+        """timeout_bars=None should disable timeout (no change from original)."""
+        n = 20
+        opens = np.full(n, 100.0)
+        closes = np.full(n, 100.0)
+        highs = np.full(n, 100.1)
+        lows = np.full(n, 99.9)
+
+        trade = simulate_pro_trade(
+            closes=closes, highs=highs, lows=lows,
+            idx=0, direction=1, tp_distance=50.0, sl_distance=50.0,
+            spread=0.0, opens=opens, max_bars=15, timeout_bars=None,
+        )
+
+        # No TP/SL hit, no timeout → None
+        assert trade is None
+
 
 class TestCalculateSharpeRatio:
     """Tests für calculate_sharpe_ratio."""

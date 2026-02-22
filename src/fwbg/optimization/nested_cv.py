@@ -138,6 +138,7 @@ def train_model(
     ctx: SimulationContext,
     use_reduced_params: bool = False,
     sample_weight: Optional[np.ndarray] = None,
+    direction: Optional[str] = None,
 ) -> Optional[BaseModel]:
     """
     Trainiert ein ML-Modell via Plugin-Registry.
@@ -145,6 +146,7 @@ def train_model(
     Args:
         use_reduced_params: Wenn True, werden Hyperparameter reduziert (für Inner CV)
         sample_weight: Optional - Uniqueness-basierte Sample Weights (AFML Ch. 4)
+        direction: "long" or "short" — passed to TrainingContext for signal model
     """
     if features is None or np.count_nonzero(targets) < min_trades // 2:
         return None
@@ -156,7 +158,7 @@ def train_model(
         params = model_class.get_reduced_hyperparameters(params)
 
     model = model_class()
-    training_context = TrainingContext(sample_weights=sample_weight)
+    training_context = TrainingContext(sample_weights=sample_weight, direction=direction)
     model.train(train_df[features], targets, training_context, **params)
 
     if ctx.probability_calibration:
@@ -291,11 +293,11 @@ def _evaluate_single_fold(
 
     mod_long = train_model(
         train_df, targets_long, feat_long, ctx.min_trades, ctx,
-        use_reduced_params=True, sample_weight=weights,
+        use_reduced_params=True, sample_weight=weights, direction="long",
     ) if has_long else None
     mod_short = train_model(
         train_df, targets_short, feat_short, ctx.min_trades, ctx,
-        use_reduced_params=True, sample_weight=weights,
+        use_reduced_params=True, sample_weight=weights, direction="short",
     ) if has_short else None
 
     # Meta-Labeling: train meta-models to filter primary predictions
@@ -520,8 +522,8 @@ def evaluate_on_holdout(
     else:
         targets_long, targets_short, has_long, has_short = compute_targets(inner_df, tp, sl, ctx, timeout_bars)
 
-    mod_long = train_model(inner_df, targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights) if has_long and features_long else None
-    mod_short = train_model(inner_df, targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights) if has_short and features_short else None
+    mod_long = train_model(inner_df, targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="long") if has_long and features_long else None
+    mod_short = train_model(inner_df, targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="short") if has_short and features_short else None
 
     if not mod_long and not mod_short:
         return {"trades": [], "trades_detailed": [], "pnl": 0, "win_rate": 0, "n_trades": 0}

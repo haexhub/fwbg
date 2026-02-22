@@ -1,13 +1,13 @@
 """
 ORB-Based Exit Strategy Plugin.
 
-SL = orb_sl_dist column (half the ORB range) when available, fallback to ATR * sl_mult.
+SL = orb_sl_dist column (full ORB range) when available, fallback to ATR * sl_mult.
 TP = ATR * tp_mult (optimizer searches best multiple).
 
 Design rationale:
   - SL is anchored to the ORB range: if price falls below ORB Low after an
     upside breakout, the ORB thesis is invalidated — the SL should be exactly there.
-    For midpoint entry: SL distance = (or_high - or_low) / 2 = orb_sl_dist.
+    Entry is near the breakout boundary, so SL distance = full ORB range.
   - TP remains ATR-based so the optimizer can find the best risk-reward multiple.
 """
 from typing import Dict, Any, Iterator, Tuple, Union, TYPE_CHECKING
@@ -28,13 +28,13 @@ class OrbExitStrategy(BaseExitStrategy):
     Exit strategy for ORB (Opening Range Breakout) setups.
 
     SL: Uses `orb_sl_dist` (or any `*_sl_dist`) column when present — this equals
-        half the ORB range, i.e. the distance from the midpoint entry to the ORB Low.
-        Falls back to ATR * sl_mult when no sl_dist column is found.
+        the full ORB range, i.e. the distance from the breakout entry to the
+        opposite ORB boundary. Falls back to ATR * sl_mult when no sl_dist column.
 
     TP: ATR * tp_mult (optimizer searches 1.5x–4x).
 
-    The default sl_mult = 1.0 means "use orb_sl_dist as-is", which gives the
-    exact ORB-range stop. Values > 1.0 add a buffer above/below the ORB boundary.
+    The default sl_mult = 1.0 means "use orb_sl_dist as-is", which places the SL
+    at the opposite ORB boundary. Values > 1.0 add a buffer beyond the boundary.
     """
 
     def compute_targets(
@@ -202,8 +202,8 @@ class OrbExitStrategy(BaseExitStrategy):
                 "type": "float",
                 "default": 1.0,
                 "description": (
-                    "Multiplier on orb_sl_dist (= half ORB range). "
-                    "1.0 = exact ORB Low stop, >1.0 adds buffer beyond ORB Low. "
+                    "Multiplier on orb_sl_dist (= full ORB range). "
+                    "1.0 = SL at opposite ORB boundary, >1.0 adds buffer beyond. "
                     "Fallback to ATR * sl_mult if no orb_sl_dist column present."
                 ),
                 "min": 0.5,
@@ -266,6 +266,7 @@ class OrbExitStrategy(BaseExitStrategy):
     def _get_sl_dist(df: pd.DataFrame, atr_v: np.ndarray, sl_mult: float) -> np.ndarray:
         """Return raw SL distances: use orb_sl_dist * sl_mult if available, else ATR * sl_mult.
 
+        orb_sl_dist = full ORB range (distance from breakout entry to opposite boundary).
         Detects any column ending in '_sl_dist' (covers both orb_sl_dist and
         session-specific orb_s08_sl_dist etc.).
         """
@@ -274,8 +275,9 @@ class OrbExitStrategy(BaseExitStrategy):
             None,
         )
         if sl_col is not None:
-            sl_vals = df[sl_col].fillna(pd.Series(atr_v * sl_mult, index=df.index)).values
-            return (sl_vals * sl_mult).astype(np.float64)
+            raw = df[sl_col].values.astype(np.float64)
+            fallback = atr_v * sl_mult
+            return np.where(np.isnan(raw), fallback, raw * sl_mult).astype(np.float64)
         return (atr_v * sl_mult).astype(np.float64)
 
 

@@ -69,8 +69,8 @@ def _rolling_orb_features(
     # POC proxy: normalized distance from close to ORB midpoint (equilibrium without tick volume)
     features["orb_poc_dist"] = safe_divide(df["C"] - or_midpoint, atr).where(valid, np.nan)
 
-    # SL distance: entry at midpoint → SL at ORB Low = (or_high - or_low) / 2
-    features["orb_sl_dist"] = (or_range / 2).where(valid, np.nan)
+    # SL distance: full ORB range (entry near ORB High → SL at ORB Low, or vice versa)
+    features["orb_sl_dist"] = or_range.where(valid, np.nan)
 
     return features
 
@@ -147,8 +147,8 @@ def _session_orb_features(
             df["C"] - or_midpoint, atr
         ).where(valid, np.nan)
 
-        # SL distance: entry at midpoint → SL at ORB Low = half the ORB range
-        features[f"{prefix}_sl_dist"] = (or_range / 2).where(valid, np.nan)
+        # SL distance: full ORB range (entry near breakout side → SL at opposite boundary)
+        features[f"{prefix}_sl_dist"] = or_range.where(valid, np.nan)
 
         # Post-breakout STATE: 1 for all bars after first breakout in this session.
         # Resets at each new session start via groupby(session_id).cummax().

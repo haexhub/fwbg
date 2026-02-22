@@ -1,7 +1,7 @@
 """Tests for OrbExitStrategy plugin.
 
 The orb_based strategy uses ORB-range SL and ATR-based TP:
-- SL = orb_sl_dist column if present (half the ORB range), fallback to ATR * sl_mult
+- SL = orb_sl_dist column if present (full ORB range), fallback to ATR * sl_mult
 - TP = ATR * tp_mult (optimizer searches best multiple)
 """
 import numpy as np
@@ -93,7 +93,7 @@ class TestOrbExitStrategySmoke:
     def test_compute_targets_no_crash_with_orb_sl_dist(self, ohlc_df, ctx):
         """compute_targets must not crash when orb_sl_dist column is present."""
         df = ohlc_df.copy()
-        df["orb_sl_dist"] = df["C"] * 0.002  # ~20 price units, realistic ORB half-range
+        df["orb_sl_dist"] = df["C"] * 0.002  # ~20 price units, realistic ORB range
         strategy = OrbExitStrategy()
         tl, ts = strategy.compute_targets(df, ctx, tp_mult=2.0, sl_mult=1.0)
         assert len(tl) == len(df)
@@ -152,6 +152,40 @@ class TestOrbExitStrategySL:
         # min_sl_pips=5, spread=1.0 → min_sl = 5.0
         _, sl_dists = strategy.resolve_distances(df, tp=2.0, sl=1.0, ctx=ctx)
         assert (sl_dists >= 5.0).all(), f"Min SL not enforced: {sl_dists.min():.4f}"
+
+    def test_no_double_sl_mult_on_nan_fallback(self, ohlc_df, ctx):
+        """NaN orb_sl_dist rows must use ATR*sl_mult, NOT ATR*sl_mult^2.
+
+        Regression test: _get_sl_dist previously did:
+            sl_vals = df[col].fillna(atr * sl_mult).values
+            return sl_vals * sl_mult       # ← double multiplication for NaN rows!
+        """
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        sl_mult = 2.0
+
+        # Half the rows have orb_sl_dist, half NaN
+        sl_col = np.full(len(df), np.nan)
+        sl_col[::2] = 100.0  # even rows: known value
+        df["orb_sl_dist"] = sl_col
+
+        atr_v = strategy._get_atr(df, 14)
+        sl_dists = strategy._get_sl_dist(df, atr_v, sl_mult)
+
+        # Even rows: orb_sl_dist * sl_mult = 100.0 * 2.0 = 200.0
+        even_mask = np.arange(len(df)) % 2 == 0
+        np.testing.assert_allclose(
+            sl_dists[even_mask], 200.0,
+            err_msg="orb_sl_dist rows should be orb_sl_dist * sl_mult",
+        )
+
+        # Odd rows (NaN): should be ATR * sl_mult (NOT ATR * sl_mult^2)
+        odd_mask = ~even_mask
+        expected_fallback = atr_v[odd_mask] * sl_mult
+        np.testing.assert_allclose(
+            sl_dists[odd_mask], expected_fallback,
+            err_msg="NaN fallback should be ATR * sl_mult, not ATR * sl_mult^2",
+        )
 
 
 # --- TP Tests ---

@@ -442,7 +442,26 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             "pnl_raw": float(pnl_raw),
         }
 
+    # Timeout-Index berechnen (muss INNERHALB des Loops geprüft werden,
+    # exakt wie in _simulate_trade_numba — sonst Mismatch zwischen Labels und Trading)
+    timeout_idx = -1
+    if timeout_bars is not None and timeout_bars > 0:
+        timeout_idx = min(entry_idx + timeout_bars - 1, len(closes) - 1)
+
     for j in range(entry_idx, min(entry_idx + max_bars, len(closes))):
+        # Timeout-Check ZUERST (Priorität über TP/SL, matches _simulate_trade_numba)
+        if timeout_idx > 0 and j >= timeout_idx:
+            exit_price = closes[j]
+            if direction == 1:
+                pnl = exit_price - entry
+            else:
+                pnl = entry - exit_price
+            result = 1.0 if pnl > 0 else -1.0
+            trade_result = make_result(result, j, exit_price)
+            trade_result["exit_reason"] = "timeout"
+            trade_result["timeout_bars"] = timeout_bars
+            return trade_result
+
         if direction == 1:  # Long
             tp_hit = highs[j] >= tp
             sl_hit = lows[j] <= sl
@@ -479,27 +498,7 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             elif sl_hit:
                 return make_result(-1.0, j, sl)
 
-    # Kein TP/SL erreicht bis zum Ende der verfügbaren Daten
-    # Wenn timeout_bars gesetzt ist, schließe zum Close-Preis
-    if timeout_bars is not None:
-        timeout_idx = min(entry_idx + timeout_bars - 1, len(closes) - 1)
-        if timeout_idx >= entry_idx:
-            exit_price = closes[timeout_idx]
-
-            # Berechne ob Gewinn oder Verlust
-            if direction == 1:  # Long
-                pnl = exit_price - entry
-            else:  # Short
-                pnl = entry - exit_price
-
-            result = 1.0 if pnl > 0 else -1.0
-
-            trade_result = make_result(result, timeout_idx, exit_price)
-            trade_result["exit_reason"] = "timeout"
-            trade_result["timeout_bars"] = timeout_bars
-            return trade_result
-
-    # Kein Timeout - Trade wird ignoriert
+    # Kein Exit (weder TP/SL noch Timeout innerhalb max_bars)
     return None
 
 
