@@ -12,7 +12,7 @@
     ],
     "preprocessing": ["fractional_diff"],
     "feature_selection": ["boruta", "plateau"],
-    "exit_strategies": ["atr_based"],
+    "exit_strategies": ["atr_based", "orb_based"],
     "data_loading": ["macro_data", "cot_positioning"]
   }
 }

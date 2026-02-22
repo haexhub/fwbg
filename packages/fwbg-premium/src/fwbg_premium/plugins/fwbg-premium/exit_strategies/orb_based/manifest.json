@@ -1,0 +1,6 @@
+{
+  "name": "orb_based",
+  "version": "1.0.0",
+  "description": "ORB-range based stop loss with ATR-based take profit",
+  "phase": "exit_strategy"
+}
