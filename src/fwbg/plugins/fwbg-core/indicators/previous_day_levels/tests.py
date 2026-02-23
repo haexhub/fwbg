@@ -419,20 +419,25 @@ class TestPDLSLDist:
         assert len(vals) > 0
         assert (vals > 0).all(), "rl50_pdl_sl_dist should be strictly positive"
 
-    def test_sl_dist_equals_half_range(self):
-        """rl50_pdl_sl_dist must equal (PDH - PDL) / 2 for rl=0.5."""
+    def test_sl_dist_reaches_beyond_boundary(self):
+        """rl50_pdl_sl_dist = (1-rl)*R + buffer, ensuring SL clears PDL/PDH."""
         ind = _get_indicator()
         df = _make_deterministic_retest_data()
         result = ind.compute(df)
 
-        # Day 1: PDH=110, PDL=90 -> range=20 -> sl_dist=10
+        # Day 1: PDH=110, PDL=90 -> range=20
+        # sl_dist = (1-0.5)*20 + 0.3*20/2 = 10 + 3 = 13
+        # (0.3 = default retest_atr_width, buffer = half retest band)
         day1 = result.loc["2024-01-02"]
         sl_vals = day1["rl50_pdl_sl_dist"].dropna()
         assert len(sl_vals) > 0
-        expected = (110.0 - 90.0) / 2  # = 10.0
+        pd_range = 110.0 - 90.0
+        rl = 0.5
+        retest_atr_width = 0.3  # default
+        expected = (1 - rl) * pd_range + retest_atr_width * pd_range / 2  # 13.0
         np.testing.assert_allclose(
             sl_vals.iloc[0], expected, rtol=1e-10,
-            err_msg=f"rl50_pdl_sl_dist should be {expected} (half prev day range)"
+            err_msg=f"rl50_pdl_sl_dist should be {expected}"
         )
 
     def test_sl_dist_no_nan_after_warmup(self):
@@ -528,21 +533,23 @@ class TestPDLRetracementLevels:
             assert f"{pfx}pdl_sl_dist" in result.columns
 
     def test_sl_dist_varies_with_rl(self):
-        """Deeper retrace = smaller SL distance: sl_dist = (1-rl) * range."""
+        """Deeper retrace = smaller SL distance: sl_dist = (1-rl)*R + buffer."""
         ind = _get_indicator()
         df = _make_deterministic_retest_data()
         result = ind.compute(df, retracement_levels=[0.3, 0.5, 0.7])
 
-        # Day 1: PDH=110, PDL=90 -> range=20
+        # Day 1: PDH=110, PDL=90 -> range=20, retest_atr_width=0.3 (default)
+        # buffer = 0.3 * 20 / 2 = 3.0
         day1 = result.loc["2024-01-02"]
+        buffer = 0.3 * 20 / 2  # 3.0
 
         sl30 = day1["rl30_pdl_sl_dist"].dropna().iloc[0]
         sl50 = day1["rl50_pdl_sl_dist"].dropna().iloc[0]
         sl70 = day1["rl70_pdl_sl_dist"].dropna().iloc[0]
 
-        np.testing.assert_allclose(sl30, 0.7 * 20, rtol=1e-10)  # 14.0
-        np.testing.assert_allclose(sl50, 0.5 * 20, rtol=1e-10)  # 10.0
-        np.testing.assert_allclose(sl70, 0.3 * 20, rtol=1e-10)  # 6.0
+        np.testing.assert_allclose(sl30, 0.7 * 20 + buffer, rtol=1e-10)  # 17.0
+        np.testing.assert_allclose(sl50, 0.5 * 20 + buffer, rtol=1e-10)  # 13.0
+        np.testing.assert_allclose(sl70, 0.3 * 20 + buffer, rtol=1e-10)  # 9.0
 
         assert sl30 > sl50 > sl70, "Deeper retrace = smaller SL distance"
 

@@ -466,3 +466,69 @@ class TestSignalProperties:
         assert (before_breakout == 0).all(), (
             f"pdl_retest_bull fired before breakout: {before_breakout[before_breakout > 0]}"
         )
+
+
+class TestSessionFiltering:
+    """Verify session hour filtering zeroes out signals outside trading hours."""
+
+    def test_session_filtering_blocks_off_session_trades(self):
+        """Retest fires at 12:00-13:00 but session=8..10 → no trades."""
+        df = _make_pdhl_bull_retest()
+        # Session hours 8-10: the retest at 12:00 (shifted to 13:00) is outside
+        ctx = _minimal_ctx(model_hyperparameters={
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_start_hour": 8,
+            "signal_end_hour": 10,
+        })
+        trades = _run_strategy(df, ctx)
+        assert len(trades) == 0, (
+            f"Expected 0 trades outside session 8-10, got {len(trades)}: "
+            f"{[(t['direction'], t.get('signal_time')) for t in trades]}"
+        )
+
+    def test_session_filtering_allows_in_session_trades(self):
+        """Retest fires at 12:00 (shifted to 13:00), session=0..23 → trade occurs."""
+        df = _make_pdhl_bull_retest()
+        ctx = _minimal_ctx(model_hyperparameters={
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_start_hour": 0,
+            "signal_end_hour": 23,
+        })
+        trades = _run_strategy(df, ctx)
+        long_trades = [t for t in trades if t["direction"] == "LONG"]
+        assert len(long_trades) == 1
+
+    def test_midnight_crossing_session_allows_in_session_trades(self):
+        """Session 22-6 (crosses midnight) allows trade at 01:00 (inside session).
+
+        Uses the standard bull_retest data (retest fires at 12:00 shifted to 13:00)
+        and a session of 0-14 to include the signal, versus 14-22 to exclude it.
+        """
+        df = _make_pdhl_bull_retest()
+
+        # Session 22-14 (crosses midnight) includes hour 13 → trade should fire
+        ctx_in = _minimal_ctx(model_hyperparameters={
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_start_hour": 22,
+            "signal_end_hour": 14,
+        })
+        trades_in = _run_strategy(df, ctx_in)
+        long_in = [t for t in trades_in if t["direction"] == "LONG"]
+        assert len(long_in) == 1, (
+            f"Expected 1 LONG trade in session 22-14, got {len(long_in)}"
+        )
+
+        # Session 14-22 (no midnight crossing) excludes hour 13 → no trades
+        ctx_out = _minimal_ctx(model_hyperparameters={
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_start_hour": 14,
+            "signal_end_hour": 22,
+        })
+        trades_out = _run_strategy(df, ctx_out)
+        assert len(trades_out) == 0, (
+            f"Expected 0 trades in session 14-22, got {len(trades_out)}"
+        )

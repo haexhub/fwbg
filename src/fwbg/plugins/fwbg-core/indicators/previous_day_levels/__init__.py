@@ -140,7 +140,10 @@ def _compute_retest_features(
     - Bull entry = PDH - rl * pd_range (retrace from PDH downward)
     - Bear entry = PDL + rl * pd_range (retrace from PDL upward)
 
-    SL distance = max((1 - rl) * pd_range, min_sl_atr_mult * atr).
+    SL distance = max((1 - rl) * pd_range + half_band, min_sl_atr_mult * atr).
+    The half_band buffer (= retest_atr_width * pd_range / 2) ensures SL
+    reaches beyond PDL (long) / PDH (short) even when the actual entry
+    deviates from the theoretical retracement level.
     When the previous day range is small (low volatility), the ATR floor
     ensures the SL isn't unreasonably tight.
 
@@ -189,8 +192,12 @@ def _compute_retest_features(
         features["pdl_retest_bull"] = retest_bull
         features["pdl_retest_bear"] = retest_bear
 
-    # SL distance with ATR-based minimum floor for low-volatility days
-    range_based_sl = (1 - rl) * pd_range
+    # SL distance: reach at least PDL (long) / PDH (short) + buffer for entry deviation.
+    # (1-rl)*R puts SL at boundary when entry = theoretical.
+    # Adding half_band ensures SL clears the boundary even when actual entry
+    # deviates from theoretical by up to the retest band width.
+    entry_buffer = retest_atr_width * np.nan_to_num(pd_range, nan=0.0) / 2
+    range_based_sl = (1 - rl) * pd_range + entry_buffer
     if min_sl_atr_mult > 0:
         atr_floor = min_sl_atr_mult * atr
         features["pdl_sl_dist"] = np.maximum(range_based_sl, atr_floor)
