@@ -52,8 +52,7 @@ def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
 
 
 def _compute_break_state(
-    high: np.ndarray,
-    low: np.ndarray,
+    close: np.ndarray,
     pdh: np.ndarray,
     pdl_low: np.ndarray,
     day_ids: np.ndarray,
@@ -62,7 +61,8 @@ def _compute_break_state(
 ) -> tuple:
     """Compute break detection and post-breakout state arrays.
 
-    Uses High/Low (not Close) so gap-opens and intrabar breakouts are caught.
+    Uses Close for breakout confirmation — at least one bar must close
+    above PDH (bull) or below PDL (bear) for a valid breakout.
     When session_mask is None (all_hours mode), breaks are detected 24/7.
     When session_mask is provided (session_only mode), only session bars
     can trigger breakouts — off-session bars inherit state but cannot set it.
@@ -70,8 +70,8 @@ def _compute_break_state(
     Returns (high_break, low_break, post_bull, post_bear,
              broke_high_arr, broke_low_arr).
     """
-    above = high > pdh
-    below = low < pdl_low
+    above = close > pdh
+    below = close < pdl_low
 
     high_break = np.zeros(n)
     low_break = np.zeros(n)
@@ -118,6 +118,7 @@ def _compute_retest_features(
     pdl_low: np.ndarray,
     pd_range: np.ndarray,
     close: np.ndarray,
+    atr: np.ndarray,
     day_ids: np.ndarray,
     retest_atr_width: float,
     rl: float,
@@ -125,6 +126,7 @@ def _compute_retest_features(
     broke_high_arr: np.ndarray,
     broke_low_arr: np.ndarray,
     n: int,
+    min_sl_atr_mult: float = 0.0,
     session_mask: np.ndarray = None,
 ) -> Dict[str, np.ndarray]:
     """Compute retest signals and SL distance for a given retracement level.
@@ -133,7 +135,9 @@ def _compute_retest_features(
     - Bull entry = PDH - rl * pd_range (retrace from PDH downward)
     - Bear entry = PDL + rl * pd_range (retrace from PDL upward)
 
-    SL distance = (1 - rl) * pd_range (distance from entry to opposite boundary).
+    SL distance = max((1 - rl) * pd_range, min_sl_atr_mult * atr).
+    When the previous day range is small (low volatility), the ATR floor
+    ensures the SL isn't unreasonably tight.
 
     Retest signals only fire during trading session (session_mask=True).
     """
@@ -178,7 +182,13 @@ def _compute_retest_features(
         features["pdl_retest_bull"] = retest_bull
         features["pdl_retest_bear"] = retest_bear
 
-    features["pdl_sl_dist"] = (1 - rl) * pd_range
+    # SL distance with ATR-based minimum floor for low-volatility days
+    range_based_sl = (1 - rl) * pd_range
+    if min_sl_atr_mult > 0:
+        atr_floor = min_sl_atr_mult * atr
+        features["pdl_sl_dist"] = np.maximum(range_based_sl, atr_floor)
+    else:
+        features["pdl_sl_dist"] = range_based_sl
 
     return features
 
@@ -197,6 +207,7 @@ def _compute_range_variant(
     retracement_levels: Union[float, List[float]],
     skip_weekends: bool = True,
     session_break: bool = False,
+    min_sl_atr_mult: float = 0.0,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all PDL features for a single range mode + break mode.
 
@@ -278,13 +289,11 @@ def _compute_range_variant(
     features["pdl_midpoint_dist"] = (close - midpoint) / safe_atr
 
     # Break detection + post-breakout state (NOT rl-dependent)
-    # Uses H/L (not Close) so gap-opens and intrabar breakouts are caught.
+    # Uses Close for breakout confirmation (bar must close beyond PDH/PDL).
     # session_break=True → only session bars trigger breaks; False → 24/7.
-    high_v = df["H"].values
-    low_v = df["L"].values
     break_mask = session_mask_arr if session_break else None
     high_break, low_break, post_bull, post_bear, broke_high_arr, broke_low_arr = \
-        _compute_break_state(high_v, low_v, pdh, pdl_low, day_ids, n, break_mask)
+        _compute_break_state(close, pdh, pdl_low, day_ids, n, break_mask)
 
     features["pdl_high_break"] = high_break
     features["pdl_low_break"] = low_break
@@ -297,9 +306,11 @@ def _compute_range_variant(
     for rl in rl_list:
         rl_pfx = f"rl{int(rl * 100)}_"
         retest_feats = _compute_retest_features(
-            pdh, pdl_low, pd_range, close, day_ids,
+            pdh, pdl_low, pd_range, close, atr, day_ids,
             retest_atr_width, rl, enable_retest,
-            broke_high_arr, broke_low_arr, n, session_mask_arr,
+            broke_high_arr, broke_low_arr, n,
+            min_sl_atr_mult=min_sl_atr_mult,
+            session_mask=session_mask_arr,
         )
         for k, v in retest_feats.items():
             features[f"{rl_pfx}{k}"] = v
@@ -340,6 +351,7 @@ def _compute_pdl_features(
     range_modes: Union[List[str], Tuple[str, ...]] = ("hl_session",),
     break_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
     skip_weekends: bool = True,
+    min_sl_atr_mult: float = 0.0,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all previous day level features for all range × break modes."""
     all_features: Dict[str, Union[pd.Series, np.ndarray]] = {}
@@ -367,6 +379,7 @@ def _compute_pdl_features(
                 df, atr, session_mask, session_mask_arr, day_group, day_ids, mode,
                 ma_period, enable_retest, retest_atr_width, retracement_levels,
                 skip_weekends, session_break=(break_mode == "session_only"),
+                min_sl_atr_mult=min_sl_atr_mult,
             )
             for k, v in mode_feats.items():
                 all_features[f"{combined_pfx}{k}"] = v
@@ -416,6 +429,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         range_modes: Union[List[str], Tuple[str, ...]] = ("hl_session",),
         break_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
         skip_weekends: bool = True,
+        min_sl_atr_mult: float = 0.0,
         **params,
     ) -> pd.DataFrame:
         if not isinstance(df.index, pd.DatetimeIndex):
@@ -431,7 +445,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         features = _compute_pdl_features(
             df, atr, ma_period, enable_retest, retest_atr_width, retracement_levels,
             session_start_hour, session_end_hour, range_modes, break_modes,
-            skip_weekends,
+            skip_weekends, min_sl_atr_mult,
         )
 
         if not features:
@@ -465,6 +479,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "range_modes": ["hl_session"],
             "break_modes": ["all_hours"],
             "skip_weekends": True,
+            "min_sl_atr_mult": 0.0,
         }
 
     @classmethod
@@ -557,6 +572,19 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                     "Skip Saturday/Sunday when computing previous day levels. "
                     "Monday uses Friday's range. Set False for 24/7 markets (crypto)."
                 ),
+            },
+            "min_sl_atr_mult": {
+                "type": "float",
+                "default": 0.0,
+                "description": (
+                    "Minimum SL distance as a multiple of ATR. When the previous day "
+                    "range is very small (low volatility), this floor prevents the SL "
+                    "from being unreasonably tight. 0 = no floor (pure range-based). "
+                    "E.g., 1.0 means SL is at least 1x ATR."
+                ),
+                "min": 0.0,
+                "max": 5.0,
+                "step": 0.5,
             },
         }
 
