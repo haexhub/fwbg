@@ -160,3 +160,66 @@ def test_direction_none_defaults_to_short():
     )
     # direction=None -> else branch -> short column
     assert model._signal_col == "orb_s0_retest_bear"
+
+
+def _make_df_with_datetime_index(n=24, signal_col="sig"):
+    """DataFrame with DatetimeIndex and a signal column (1 signal per bar)."""
+    idx = pd.date_range("2024-06-01 00:00", periods=n, freq="h")
+    df = pd.DataFrame({
+        "feature_a": np.random.randn(n),
+        signal_col: np.ones(n),  # all bars have signal=1
+    }, index=idx)
+    return df
+
+
+def test_hour_filter_zeros_outside_window():
+    """Signals outside [7, 17) should be zeroed out."""
+    df = _make_df_with_datetime_index(24, signal_col="sig")
+    model = SignalModel()
+    targets = np.ones(24)
+    model.train(
+        df, targets, TrainingContext(direction="long"),
+        signal_column_long="sig",
+        signal_start_hour=7,
+        signal_end_hour=17,
+    )
+    probs = model.predict_probability(df)
+
+    # Hours 0-6 and 17-23 should have prob=0 for win class
+    hours = df.index.hour
+    for i, h in enumerate(hours):
+        if 7 <= h < 17:
+            assert probs[i, 1] == 1.0, f"Hour {h} should pass"
+        else:
+            assert probs[i, 1] == 0.0, f"Hour {h} should be filtered"
+
+
+def test_no_hour_filter_by_default():
+    """Without start/end hour, all signals pass through."""
+    df = _make_df_with_datetime_index(24, signal_col="sig")
+    model = SignalModel()
+    targets = np.ones(24)
+    model.train(
+        df, targets, TrainingContext(direction="long"),
+        signal_column_long="sig",
+    )
+    probs = model.predict_probability(df)
+    np.testing.assert_array_equal(probs[:, 1], np.ones(24))
+
+
+def test_hour_filter_with_non_datetime_index():
+    """Hour filter is silently skipped for non-DatetimeIndex."""
+    df = pd.DataFrame({
+        "feature_a": np.random.randn(5),
+        "sig": [0, 1, 1, 0, 1],
+    })
+    model = SignalModel()
+    targets = np.array([0, 1, 1, 0, 1])
+    model.train(
+        df, targets, TrainingContext(direction="long"),
+        signal_column_long="sig",
+        signal_start_hour=7,
+        signal_end_hour=17,
+    )
+    probs = model.predict_probability(df)
+    np.testing.assert_array_equal(probs[:, 1], [0, 1, 1, 0, 1])

@@ -5,6 +5,7 @@ Hauptmodul für die Verarbeitung einzelner Symbole mit Walk-Forward Optimierung.
 Fold-Verarbeitung ist in process_fold.py ausgelagert.
 Grid-Search Funktionen sind in grid_search.py ausgelagert.
 """
+import gc
 import os
 import time
 import numpy as np
@@ -150,7 +151,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         all_fold_results = []
         accumulated_grid_results = []
 
-        fold_indicators, precomputed_raw_df, total_indicators = precompute_indicators(df, strategy, sym)
+        fold_indicators, precomputed_raw_df, total_indicators = precompute_indicators(
+            df, strategy, sym, indicator_overrides=grid.indicator_overrides,
+        )
         preprocessing_configs = strategy.get_preprocessing()
 
         for fold_idx, fold in enumerate(wf_folds):
@@ -162,6 +165,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             accumulated_grid_results.extend(grid_results)
             if fold_result:
                 all_fold_results.append(fold_result)
+            gc.collect()
 
         # === END OF WALK-FORWARD LOOP ===
 
@@ -230,15 +234,56 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(1, f"    SL: {sl_values} (CV={sl_cv:.2f})", sym)
             log(1, f"    RRR: {[f'{r:.2f}' for r in rrr_values]} (std={rrr_std:.3f})", sym)
 
-        # Representative fold for output config: median fold by OOS PnL (avoids cherry-picking)
-        sorted_folds = sorted(all_fold_results, key=lambda f: f.get("test_pnl", 0))
+        # === MODEL HYPERPARAMETERS CONSISTENCY ===
+        # For rule-based signal strategies, model_hyperparameters define the strategy
+        # (rl level, hour window). Different HP = different strategy. Only aggregate
+        # trades from folds that agree on the same HP to avoid mixing strategies.
+        hp_list = [r["best_config"].get("model_hyperparameters") or {} for r in all_fold_results]
+
+        def _hp_key(hp):
+            """Hashable key for model_hyperparameters (ignoring None values)."""
+            if not hp:
+                return ()
+            return tuple(sorted((k, v) for k, v in hp.items() if v is not None))
+
+        hp_keys = [_hp_key(hp) for hp in hp_list]
+        hp_counts = {}
+        for key in hp_keys:
+            hp_counts[key] = hp_counts.get(key, 0) + 1
+        majority_hp_key = max(hp_counts, key=hp_counts.get) if hp_counts else ()
+        majority_hp_count = hp_counts.get(majority_hp_key, 0)
+        hp_consistent = majority_hp_count == len(all_fold_results)
+
+        if not hp_consistent:
+            # Only aggregate trades from folds with majority model_hyperparameters
+            consistent_folds = [
+                r for r, key in zip(all_fold_results, hp_keys)
+                if key == majority_hp_key
+            ]
+            inconsistent_count = len(all_fold_results) - len(consistent_folds)
+            # Show what each fold picked
+            for i, (r, hp) in enumerate(zip(all_fold_results, hp_list)):
+                sig = hp.get("signal_column_short", hp.get("signal_column_long", "?"))
+                rl_tag = sig.split("_")[0] if sig.startswith("rl") else "?"
+                sh = hp.get("signal_start_hour")
+                eh = hp.get("signal_end_hour")
+                hours_tag = f"{sh}-{eh}" if sh is not None else "all"
+                is_majority = "✓" if hp_keys[i] == majority_hp_key else "✗"
+                log(2, f"    Fold {i+1}: {rl_tag} hours={hours_tag} {is_majority}", sym)
+            log(1, f"  Model HP inconsistent: {majority_hp_count}/{len(all_fold_results)} folds agree. "
+                   f"Dropping {inconsistent_count} inconsistent fold(s).", sym)
+        else:
+            consistent_folds = all_fold_results
+
+        # Representative fold: median by OOS PnL among consistent folds
+        sorted_folds = sorted(consistent_folds, key=lambda f: f.get("test_pnl", 0))
         representative_fold = sorted_folds[len(sorted_folds) // 2]
 
         b_config = representative_fold["best_config"]
 
-        # Always aggregate all fold trades — never cherry-pick a single fold
+        # Aggregate trades only from consistent folds
         all_trades = []
-        for fold_result in all_fold_results:
+        for fold_result in consistent_folds:
             all_trades.extend(fold_result["test_trades_trace"])
 
         # Actual PnL values for Monte Carlo test and result trace
@@ -358,6 +403,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     "ct_long": ct_long,
                     "ct_short": ct_short,
                     "features": features_list,
+                    "model_hyperparameters": b_config.get("model_hyperparameters"),
                 },
                 "walk_forward": wf_summary,
                 "overfitting": overfitting,
@@ -427,6 +473,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     "ct_long": ct_long,
                     "ct_short": ct_short,
                     "features": features_list,
+                    "model_hyperparameters": b_config.get("model_hyperparameters"),
                 },
                 "walk_forward": wf_summary,
                 "monte_carlo": mc_summary,
@@ -472,6 +519,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "circuit_breaker": circuit_breaker,
                 "risk_adjustment": risk_adjustment,
                 "vol_targeting": risk_result.get("vol_targeting"),
+                "model_hyperparameters": b_config.get("model_hyperparameters"),
             },
             "tr_trace": all_trades_pnl,
             "rrr": rrr,

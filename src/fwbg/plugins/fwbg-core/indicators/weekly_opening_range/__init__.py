@@ -88,6 +88,11 @@ def _weekly_orb_features(
         features["wor_retest_zone_up"] = near_high.astype(int).where(valid, np.nan)
         features["wor_retest_zone_down"] = near_low.astype(int).where(valid, np.nan)
 
+    # SL distance for orb_based exit strategy.
+    # Entry near WOR boundary (retest zone), SL at opposite boundary.
+    # SL distance = full WOR range.
+    features["wor_sl_dist"] = or_range.where(valid, np.nan)
+
     return features
 
 
@@ -242,6 +247,7 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
             "wor_range_vs_atr",
             "wor_dist_to_high", "wor_dist_to_low",
             "wor_retest_zone_up", "wor_retest_zone_down",
+            "wor_sl_dist",
         ]
         stats = [
             "wor_stat_avg_range",

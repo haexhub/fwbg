@@ -36,6 +36,8 @@ class SignalModel(BaseModel):
         super().__init__()
         self._classes = np.array([0, 1])
         self._signal_col: str = ""
+        self._start_hour: Optional[int] = None
+        self._end_hour: Optional[int] = None
 
     def train(
         self,
@@ -52,6 +54,10 @@ class SignalModel(BaseModel):
         else:
             self._signal_col = hyperparameters.get("signal_column_short", "")
 
+        # Session hour filter (injected from indicator_overrides per asset class)
+        self._start_hour = hyperparameters.get("signal_start_hour")
+        self._end_hour = hyperparameters.get("signal_end_hour")
+
         self._fitted = True
 
     def _predict_probability_impl(self, features: pd.DataFrame) -> np.ndarray:
@@ -59,6 +65,19 @@ class SignalModel(BaseModel):
         if self._signal_col and self._signal_col in features.columns:
             probs[:, 1] = features[self._signal_col].fillna(0).clip(0, 1).values
         probs[:, 0] = 1.0 - probs[:, 1]
+
+        # Hour window filter: zero out signals outside allowed hours
+        if self._start_hour is not None and self._end_hour is not None:
+            if isinstance(features.index, pd.DatetimeIndex):
+                hours = features.index.hour
+                if self._start_hour < self._end_hour:
+                    in_session = (hours >= self._start_hour) & (hours < self._end_hour)
+                else:
+                    # Crosses midnight (e.g., ASX200: 23-06)
+                    in_session = (hours >= self._start_hour) | (hours < self._end_hour)
+                probs[~in_session, 1] = 0.0
+                probs[~in_session, 0] = 1.0
+
         return probs
 
     @property

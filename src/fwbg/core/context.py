@@ -156,22 +156,30 @@ class SimulationContext:
         if grid.model_hyperparameters:
             model_hp.update(grid.model_hyperparameters)
 
+        # Inject session hours from indicator_overrides as hard trading limits.
+        # The SignalModel uses these to zero out signals outside session hours.
+        pdl_overrides = grid.indicator_overrides.get("previous_day_levels", {})
+        if "session_start_hour" in pdl_overrides:
+            model_hp.setdefault("signal_start_hour", pdl_overrides["session_start_hour"])
+        if "session_end_hour" in pdl_overrides:
+            model_hp.setdefault("signal_end_hour", pdl_overrides["session_end_hour"])
+
         # Merge required_features: base model + per-asset grid
         req_feats = list(strategy.model.required_features)
         for f in grid.required_features:
             if f not in req_feats:
                 req_feats.append(f)
 
-        # Auto-add signal columns from base model_hyperparameters to required_features
-        for key in ('signal_column_long', 'signal_column_short'):
+        # Auto-add signal columns + sl_dist_column from base model_hyperparameters
+        for key in ('signal_column_long', 'signal_column_short', 'sl_dist_column'):
             val = model_hp.get(key)
             if val and val not in req_feats:
                 req_feats.append(val)
 
-        # Auto-add signal columns from model_hyperparameters_grid to required_features
+        # Auto-add signal columns + sl_dist_column from model_hyperparameters_grid
         for hp_variant in grid.model_hyperparameters_grid:
             if hp_variant and isinstance(hp_variant, dict):
-                for key in ('signal_column_long', 'signal_column_short'):
+                for key in ('signal_column_long', 'signal_column_short', 'sl_dist_column'):
                     val = hp_variant.get(key)
                     if val and val not in req_feats:
                         req_feats.append(val)

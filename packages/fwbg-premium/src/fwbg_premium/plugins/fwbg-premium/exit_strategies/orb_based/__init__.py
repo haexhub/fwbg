@@ -1,13 +1,16 @@
 """
 ORB-Based Exit Strategy Plugin.
 
-SL = orb_sl_dist column (full ORB range) when available, fallback to ATR * sl_mult.
+SL = indicator-provided *_sl_dist column, fallback to ATR * sl_mult.
 TP = ATR * tp_mult (optimizer searches best multiple).
 
 Design rationale:
-  - SL is anchored to the ORB range: if price falls below ORB Low after an
-    upside breakout, the ORB thesis is invalidated — the SL should be exactly there.
-    Entry is near the breakout boundary, so SL distance = full ORB range.
+  - SL is anchored to the structural level that invalidates the trade thesis.
+  - When sl_dist_column is explicitly set (via exit_params), the column value
+    is the ABSOLUTE SL distance — used as-is, no sl_mult applied.
+    E.g. pdl_sl_dist = pd_range/2 → SL exactly at PDL (long) or PDH (short).
+  - When auto-detected (no explicit sl_dist_column), sl_mult is applied as a
+    buffer multiplier on the raw distance (1.0 = exact boundary, >1.0 = buffer).
   - TP remains ATR-based so the optimizer can find the best risk-reward multiple.
 """
 from typing import Dict, Any, Iterator, Tuple, Union, TYPE_CHECKING
@@ -27,14 +30,11 @@ class OrbExitStrategy(BaseExitStrategy):
     """
     Exit strategy for ORB (Opening Range Breakout) setups.
 
-    SL: Uses `orb_sl_dist` (or any `*_sl_dist`) column when present — this equals
-        the full ORB range, i.e. the distance from the breakout entry to the
-        opposite ORB boundary. Falls back to ATR * sl_mult when no sl_dist column.
+    SL: When sl_dist_column is explicitly set in exit_params, uses that column
+        as the ABSOLUTE SL distance (no multiplier). When auto-detected, applies
+        sl_mult as buffer multiplier. Falls back to ATR * sl_mult when no column.
 
-    TP: ATR * tp_mult (optimizer searches 1.5x–4x).
-
-    The default sl_mult = 1.0 means "use orb_sl_dist as-is", which places the SL
-    at the opposite ORB boundary. Values > 1.0 add a buffer beyond the boundary.
+    TP: ATR * tp_mult (optimizer searches best multiple).
     """
 
     def compute_targets(
@@ -62,13 +62,20 @@ class OrbExitStrategy(BaseExitStrategy):
                 min_tp_pips = params.extra.get("min_tp_pips", min_tp_pips)
                 min_sl_pips = params.extra.get("min_sl_pips", min_sl_pips)
 
+        exit_params = ctx.exit_params if ctx.exit_params else {}
+        sl_dist_column = exit_params.get("sl_dist_column")
+        # Per-combo override from model_hyperparameters (grid search selects rl variant)
+        hp_sl_dist = ctx.model_hyperparameters.get("sl_dist_column")
+        if hp_sl_dist:
+            sl_dist_column = hp_sl_dist
+
         opn_v = df["O"].values.astype(np.float64)
         cls_v = df["C"].values.astype(np.float64)
         hgh_v = df["H"].values.astype(np.float64)
         low_v = df["L"].values.astype(np.float64)
 
         atr_v = self._get_atr(df, atr_period)
-        sl_dist_v = self._get_sl_dist(df, atr_v, sl_mult)
+        sl_dist_v = self._get_sl_dist(df, atr_v, sl_mult, sl_dist_column)
 
         min_tp_distance = ctx.spread * min_tp_pips
         min_sl_distance = ctx.spread * min_sl_pips
@@ -118,17 +125,22 @@ class OrbExitStrategy(BaseExitStrategy):
         sl: float,
         ctx: "SimulationContext",
     ) -> Tuple[np.ndarray, np.ndarray]:
-        """TP = ATR * tp_mult per bar; SL = orb_sl_dist * sl_mult or ATR * sl_mult fallback."""
+        """TP = ATR * tp_mult; SL = absolute sl_dist (explicit) or sl_dist * sl_mult (auto) or ATR * sl_mult."""
         exit_params = ctx.exit_params if ctx.exit_params else {}
         atr_period = exit_params.get("atr_period", 14)
         min_tp_pips = exit_params.get("min_tp_pips", 8)
         min_sl_pips = exit_params.get("min_sl_pips", 5)
+        sl_dist_column = exit_params.get("sl_dist_column")
+        # Per-combo override from model_hyperparameters (grid search selects rl variant)
+        hp_sl_dist = ctx.model_hyperparameters.get("sl_dist_column")
+        if hp_sl_dist:
+            sl_dist_column = hp_sl_dist
 
         min_tp_distance = ctx.spread * min_tp_pips
         min_sl_distance = ctx.spread * min_sl_pips
 
         atr_v = self._get_atr(df, atr_period)
-        sl_raw = self._get_sl_dist(df, atr_v, sl)
+        sl_raw = self._get_sl_dist(df, atr_v, sl, sl_dist_column)
 
         tp_dists = np.maximum(atr_v * tp, min_tp_distance)
         sl_dists = np.maximum(sl_raw, min_sl_distance)
@@ -263,20 +275,35 @@ class OrbExitStrategy(BaseExitStrategy):
         return np.nan_to_num(atr_v, nan=0.0)
 
     @staticmethod
-    def _get_sl_dist(df: pd.DataFrame, atr_v: np.ndarray, sl_mult: float) -> np.ndarray:
-        """Return raw SL distances: use orb_sl_dist * sl_mult if available, else ATR * sl_mult.
+    def _get_sl_dist(
+        df: pd.DataFrame,
+        atr_v: np.ndarray,
+        sl_mult: float,
+        sl_dist_column: str = None,
+    ) -> np.ndarray:
+        """Return SL distances per bar.
 
-        orb_sl_dist = full ORB range (distance from breakout entry to opposite boundary).
-        Detects any column ending in '_sl_dist' (covers both orb_sl_dist and
-        session-specific orb_s08_sl_dist etc.).
+        When sl_dist_column is explicitly set: column value is the ABSOLUTE SL
+        distance (no sl_mult applied). NaN rows fall back to ATR * sl_mult.
+
+        When auto-detected (no explicit sl_dist_column): applies sl_mult as
+        buffer multiplier on the raw distance. NaN rows fall back to ATR * sl_mult.
+
+        No column found at all: pure ATR * sl_mult.
         """
-        sl_col = next(
-            (c for c in df.columns if c == "orb_sl_dist" or c.endswith("_sl_dist")),
-            None,
-        )
+        explicit = sl_dist_column and sl_dist_column in df.columns
+        if explicit:
+            sl_col = sl_dist_column
+        else:
+            sl_col = next(
+                (c for c in df.columns if c == "orb_sl_dist" or c.endswith("_sl_dist")),
+                None,
+            )
         if sl_col is not None:
             raw = df[sl_col].values.astype(np.float64)
             fallback = atr_v * sl_mult
+            if explicit:
+                return np.where(np.isnan(raw), fallback, raw).astype(np.float64)
             return np.where(np.isnan(raw), fallback, raw * sl_mult).astype(np.float64)
         return (atr_v * sl_mult).astype(np.float64)
 

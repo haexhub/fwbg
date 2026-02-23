@@ -17,13 +17,16 @@ from .nested_cv import nested_cv_split, evaluate_on_holdout
 from .grid_search import run_grid_search, select_features
 
 
-def precompute_indicators(df, strategy, sym):
+def precompute_indicators(df, strategy, sym, indicator_overrides=None):
     """Split indicators by stationarity and precompute raw ones.
+
+    Args:
+        indicator_overrides: Per-asset indicator param overrides from GridConfig.
 
     Returns:
         (fold_indicators, precomputed_raw_df, total_indicators)
     """
-    indicators = strategy.get_indicators()
+    indicators = strategy.get_indicators(indicator_overrides=indicator_overrides)
     preprocessing_configs = strategy.get_preprocessing()
     has_preprocessing = bool(preprocessing_configs)
 
@@ -45,6 +48,10 @@ def precompute_indicators(df, strategy, sym):
                             if c not in base_cols
                             and not c.startswith('_')]
         precomputed_raw_df = precomputed_raw_df[raw_feature_cols]
+        # Downcast to float32 to halve memory (~5.7GB → ~2.8GB for 1700+ features)
+        float64_cols = precomputed_raw_df.select_dtypes(include=['float64']).columns
+        if len(float64_cols) > 0:
+            precomputed_raw_df[float64_cols] = precomputed_raw_df[float64_cols].astype(np.float32)
         log(1, f"Precomputed {len(raw_indicators)} raw indicators: "
                f"{len(raw_feature_cols)} features ({time.time()-t0:.1f}s)", sym)
 
@@ -140,13 +147,12 @@ def process_single_fold(
 
     # Merge precomputed raw indicator features
     if precomputed_raw_df is not None:
-        raw_train = precomputed_raw_df.reindex(train_df.index)
-        raw_test = precomputed_raw_df.reindex(test_df.index)
-        train_df = pd.concat([train_df, raw_train], axis=1)
-        test_df = pd.concat([test_df, raw_test], axis=1)
-
-    train_df = train_df.copy()
-    test_df = test_df.copy()
+        train_df = pd.concat(
+            [train_df, precomputed_raw_df.reindex(train_df.index)], axis=1
+        )
+        test_df = pd.concat(
+            [test_df, precomputed_raw_df.reindex(test_df.index)], axis=1
+        )
 
     # === FEATURE POOL CLEANING (before dropna to prevent all-NaN columns from destroying rows) ===
     full_pool = get_feature_columns(train_df)

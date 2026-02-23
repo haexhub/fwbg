@@ -1444,11 +1444,41 @@ class TestStrategyConfigSignalColumnIntegration:
                 return ind.get("params", {})
         return None
 
-    def _compute_indicator_columns(self, orb_params):
-        """Run indicator with given params on synthetic data, return output columns."""
-        ind = _get_indicator()
+    def _compute_indicator_columns(self, orb_params, pipeline_cfg=None):
+        """Run all indicators from pipeline on synthetic data, return output columns."""
         df = _make_ohlc_15min(n=3000)
+
+        # Always run opening_range
+        ind = _get_indicator()
         result = ind.compute(df, **orb_params)
+
+        # Also run other indicators from the pipeline if available
+        if pipeline_cfg:
+            from fwbg.plugins import import_plugin_module
+            from fwbg_sdk import BaseIndicator as _BaseInd
+            for ind_cfg in pipeline_cfg.get("indicators", []):
+                name = ind_cfg.get("name")
+                if name == "opening_range":
+                    continue
+                mod = import_plugin_module("fwbg-core", "indicators", name)
+                if mod is None:
+                    continue
+                # Find concrete indicator class (not BaseIndicator)
+                ind_cls = None
+                for attr_name in dir(mod):
+                    cls = getattr(mod, attr_name, None)
+                    if (isinstance(cls, type) and issubclass(cls, _BaseInd)
+                            and cls is not _BaseInd):
+                        ind_cls = cls
+                        break
+                if ind_cls is None:
+                    continue
+                params = ind_cfg.get("params", {})
+                try:
+                    result = ind_cls().compute(result, **params)
+                except Exception:
+                    pass
+
         return set(result.columns)
 
     @pytest.fixture
@@ -1475,7 +1505,7 @@ class TestStrategyConfigSignalColumnIntegration:
         if orb_params is None:
             pytest.skip(f"No opening_range indicator in {pipeline_name}")
 
-        output_cols = self._compute_indicator_columns(orb_params)
+        output_cols = self._compute_indicator_columns(orb_params, pipeline_cfg)
         signal_cols = self._collect_signal_columns(strategy_cfg)
         assert len(signal_cols) > 0, f"No signal columns found in {strategy_file}"
 
@@ -1559,7 +1589,7 @@ class TestStrategyConfigSignalColumnIntegration:
         strategy_cfg = self._load_json(strategy_path)
         pipeline_cfg = self._load_json(pipeline_path)
         orb_params = self._get_pipeline_orb_params(pipeline_cfg)
-        output_cols = self._compute_indicator_columns(orb_params)
+        output_cols = self._compute_indicator_columns(orb_params, pipeline_cfg)
 
         # Simulate auto-collect from SimulationContext.create()
         auto_collected = set()

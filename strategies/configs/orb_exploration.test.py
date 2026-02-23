@@ -34,8 +34,10 @@ from fwbg.core.config import StrategyConfig
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "orb_exploration.json")
 
 # Primary session signal to test (hour 8 = London open, reliably in config sessions)
-_PRIMARY_UP_SIGNAL = "rb1_orb_s08_breakout_up"
-_PRIMARY_DOWN_SIGNAL = "rb1_orb_s08_breakout_down"
+# With carry_forward_days=[0,1,2] and pre_range_bars=[0,1] in the pipeline,
+# session columns get cf/prb prefix. cf0_prb0 = base variant.
+_PRIMARY_UP_SIGNAL = "rb1_cf0_prb0_orb_s08_breakout_up"
+_PRIMARY_DOWN_SIGNAL = "rb1_cf0_prb0_orb_s08_breakout_down"
 
 
 def _load_config():
@@ -115,7 +117,7 @@ class TestORBBreakoutUp:
         sessions_that_should_fire = [0, 1, 2, 6, 7, 8, 12]
         fired_sessions = []
         for h in sessions_that_should_fire:
-            col = f"rb1_orb_s{h:02d}_breakout_up"
+            col = f"rb1_cf0_prb0_orb_s{h:02d}_breakout_up"
             if col in result.columns:
                 val = result[col].iloc[bo_idx + 1]
                 if val == 1:
@@ -207,7 +209,7 @@ class TestORBBreakoutDown:
         sessions_that_should_fire = [0, 1, 2, 6, 7, 8, 12]
         fired_sessions = []
         for h in sessions_that_should_fire:
-            col = f"rb1_orb_s{h:02d}_breakout_down"
+            col = f"rb1_cf0_prb0_orb_s{h:02d}_breakout_down"
             if col in result.columns:
                 val = result[col].iloc[bo_idx + 1]
                 if val == 1:
@@ -238,7 +240,7 @@ class TestORBBreakoutDown:
         df, bo_idx = make_orb_breakout_scenario(breakout_direction="down")
         result = compute_indicator_pool(df, indicators=indicators)
 
-        rb2_col = "rb2_orb_s08_breakout_down"
+        rb2_col = "rb2_cf0_prb0_orb_s08_breakout_down"
         if rb2_col in result.columns:
             # rb2 session 08 requires 2 range bars — both should be captured
             val = result[rb2_col].iloc[bo_idx + 1]
@@ -314,7 +316,7 @@ class TestORBPipelineFeatures:
         required_sessions = [0, 1, 2, 6, 7, 8, 12, 13, 14]
         missing = []
         for h in required_sessions:
-            col = f"rb1_orb_s{h:02d}_breakout_up"
+            col = f"rb1_cf0_prb0_orb_s{h:02d}_breakout_up"
             if col not in result.columns:
                 missing.append(col)
 

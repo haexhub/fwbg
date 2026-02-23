@@ -1,7 +1,9 @@
 """Tests for OrbExitStrategy plugin.
 
-The orb_based strategy uses ORB-range SL and ATR-based TP:
-- SL = orb_sl_dist column if present (full ORB range), fallback to ATR * sl_mult
+The orb_based strategy uses structural-level SL and ATR-based TP:
+- Explicit sl_dist_column: raw distance used as-is (no sl_mult). E.g. pdl_sl_dist.
+- Auto-detect *_sl_dist: distance * sl_mult (buffer tuning). E.g. orb_sl_dist.
+- No column: ATR * sl_mult fallback.
 - TP = ATR * tp_mult (optimizer searches best multiple)
 """
 import numpy as np
@@ -240,6 +242,149 @@ class TestOrbExitStrategyGrid:
         combos = list(strategy.iterate_grid(grid_config, ctx))
         assert all(c["sl_mult"] == 1.0 for c in combos), (
             "Default sl for orb_based should be [1.0] (exact ORB range)"
+        )
+
+
+# --- sl_dist_column selection ---
+
+class TestOrbExitStrategySLDistColumn:
+    """When multiple *_sl_dist columns exist (e.g. orb_sl_dist and pdl_sl_dist),
+    sl_dist_column in exit_params must select the correct one."""
+
+    def test_sl_dist_column_selects_pdl(self, ohlc_df):
+        """With sl_dist_column='pdl_sl_dist', must use pdl_sl_dist (not orb_sl_dist)."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_sl_dist"] = 100.0  # wrong column
+        df["pdl_sl_dist"] = 500.0  # correct column
+
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 5,
+                         "sl_dist_column": "pdl_sl_dist"},
+        )
+
+        _, sl_dists = strategy.resolve_distances(df, tp=2.0, sl=1.0, ctx=ctx)
+        # Must use pdl_sl_dist=500, not orb_sl_dist=100
+        assert (sl_dists >= 500.0).all(), (
+            f"Expected SL from pdl_sl_dist=500, got min={sl_dists.min():.2f}"
+        )
+
+    def test_explicit_sl_dist_column_ignores_sl_mult(self, ohlc_df):
+        """When sl_dist_column is explicitly set, sl_mult must NOT be applied.
+
+        The raw column value is the absolute SL distance (e.g. distance to PDL/PDH).
+        """
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["pdl_sl_dist"] = 100.0
+
+        atr_v = strategy._get_atr(df, 14)
+
+        # With explicit sl_dist_column: raw=100, sl_mult=3.0 → result should be 100 (NOT 300)
+        sl_dists = strategy._get_sl_dist(df, atr_v, sl_mult=3.0, sl_dist_column="pdl_sl_dist")
+        np.testing.assert_allclose(
+            sl_dists, 100.0,
+            err_msg="Explicit sl_dist_column must use raw value, NOT apply sl_mult",
+        )
+
+    def test_auto_detect_sl_dist_applies_sl_mult(self, ohlc_df):
+        """When no sl_dist_column is set, auto-detect applies sl_mult as buffer."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_sl_dist"] = 100.0
+
+        atr_v = strategy._get_atr(df, 14)
+
+        # Without explicit sl_dist_column: raw=100, sl_mult=2.0 → result should be 200
+        sl_dists = strategy._get_sl_dist(df, atr_v, sl_mult=2.0)
+        np.testing.assert_allclose(
+            sl_dists, 200.0,
+            err_msg="Auto-detect sl_dist must apply sl_mult as buffer multiplier",
+        )
+
+    def test_without_sl_dist_column_picks_first(self, ohlc_df):
+        """Without sl_dist_column, auto-detect picks the first *_sl_dist column."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_sl_dist"] = 100.0
+
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 5},
+        )
+
+        _, sl_dists = strategy.resolve_distances(df, tp=2.0, sl=1.0, ctx=ctx)
+        assert (sl_dists >= 100.0).all()
+
+    def test_sl_dist_column_missing_falls_back_to_auto(self, ohlc_df):
+        """If sl_dist_column specified but not in df, fall back to auto-detect."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_sl_dist"] = 200.0  # available for auto-detect
+
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 5,
+                         "sl_dist_column": "nonexistent_sl_dist"},
+        )
+
+        _, sl_dists = strategy.resolve_distances(df, tp=2.0, sl=1.0, ctx=ctx)
+        # Should fall back to orb_sl_dist
+        assert (sl_dists >= 200.0).all(), (
+            f"Expected fallback to orb_sl_dist=200, got min={sl_dists.min():.2f}"
+        )
+
+    def test_sl_dist_column_from_model_hyperparameters(self, ohlc_df):
+        """model_hyperparameters.sl_dist_column overrides exit_params.sl_dist_column."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["pdl_sl_dist"] = 100.0   # exit_params default
+        df["rl30_pdl_sl_dist"] = 500.0  # model_hyperparameters override
+
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 5,
+                         "sl_dist_column": "pdl_sl_dist"},
+            model_hyperparameters={"sl_dist_column": "rl30_pdl_sl_dist"},
+        )
+
+        _, sl_dists = strategy.resolve_distances(df, tp=2.0, sl=1.0, ctx=ctx)
+        # model_hyperparameters.sl_dist_column=rl30_pdl_sl_dist=500 must win
+        assert (sl_dists >= 500.0).all(), (
+            f"Expected SL from rl30_pdl_sl_dist=500, got min={sl_dists.min():.2f}"
+        )
+
+    def test_compute_targets_uses_sl_dist_column(self, ohlc_df):
+        """compute_targets must also respect sl_dist_column from exit_params."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_sl_dist"] = 0.5   # tight SL → more wins
+        df["pdl_sl_dist"] = 500.0  # very wide SL → almost all wins
+
+        ctx_orb = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"atr_period": 14, "min_tp_pips": 1, "min_sl_pips": 1},
+        )
+        ctx_pdl = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"atr_period": 14, "min_tp_pips": 1, "min_sl_pips": 1,
+                         "sl_dist_column": "pdl_sl_dist"},
+        )
+
+        tl_orb, _ = strategy.compute_targets(df, ctx_orb, tp_mult=2.0, sl_mult=1.0)
+        tl_pdl, _ = strategy.compute_targets(df, ctx_pdl, tp_mult=2.0, sl_mult=1.0)
+
+        # Wide SL (pdl) should produce more or equal wins than tight SL (orb)
+        assert tl_pdl.sum() >= tl_orb.sum(), (
+            f"Wide SL (pdl_sl_dist=500) should have >= wins than tight SL (orb_sl_dist=0.5): "
+            f"pdl={tl_pdl.sum()} vs orb={tl_orb.sum()}"
         )
 
 

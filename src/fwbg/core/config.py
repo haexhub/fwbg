@@ -111,6 +111,11 @@ class GridConfig:
     # [None] = nur ctx-Default verwenden (kein Grid), [dict1, dict2] = Grid über Model-HPs
     model_hyperparameters_grid: List[Optional[Dict[str, Any]]] = field(default_factory=lambda: [None])
 
+    # Per-asset indicator param overrides (merged into pipeline indicator params).
+    # Keys are indicator names, values are param dicts.
+    # Example: {"previous_day_levels": {"session_start_hour": 8, "session_end_hour": 17}}
+    indicator_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GridConfig":
         """Erstellt GridConfig aus Dictionary."""
@@ -162,6 +167,7 @@ class GridConfig:
             model_hyperparameters=data.get("model_hyperparameters", {}),
             required_features=data.get("required_features", []),
             model_hyperparameters_grid=model_hyperparameters_grid,
+            indicator_overrides=data.get("indicator_overrides", {}),
         )
 
     def get_long_grid(self) -> tuple:
@@ -611,9 +617,29 @@ class StrategyConfig:
             result.append(entry)
         return result
 
-    def get_indicators(self) -> List[Dict[str, Any]]:
-        """Returns configured indicator plugins from pipeline."""
-        return self.pipeline.get("indicators", [])
+    def get_indicators(self, indicator_overrides: Dict[str, Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Returns configured indicator plugins from pipeline.
+
+        If indicator_overrides is provided (from GridConfig per asset class),
+        merge them into the indicator params. This allows per-asset session
+        hours, etc.
+        """
+        indicators = self.pipeline.get("indicators", [])
+        if not indicator_overrides:
+            return indicators
+
+        import copy
+        result = []
+        for ind in indicators:
+            name = ind.get("name", "")
+            overrides = indicator_overrides.get(name)
+            if overrides:
+                ind = copy.deepcopy(ind)
+                params = ind.get("params", {})
+                params.update(overrides)
+                ind["params"] = params
+            result.append(ind)
+        return result
 
     def get_preprocessing(self) -> List[Dict[str, Any]]:
         """Returns configured preprocessing plugins from pipeline."""

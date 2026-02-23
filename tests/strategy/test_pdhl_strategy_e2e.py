@@ -43,8 +43,8 @@ def _minimal_ctx(**overrides) -> SimulationContext:
         exit_strategy="fixed",
         model_type="signal",
         model_hyperparameters={
-            "signal_column_long": "pdl_retest_bull",
-            "signal_column_short": "pdl_retest_bear",
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
         },
     )
     defaults.update(overrides)
@@ -61,13 +61,13 @@ def _run_strategy(df: pd.DataFrame, ctx: SimulationContext, tp: float = 6, sl: f
     """
     # 1) Compute indicator
     ind = _pdl_mod.PreviousDayLevelsIndicator()
-    df_feat = ind.compute(df.copy(), retest_atr_width=0.5)
+    df_feat = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
 
     # 2) Train SignalModel for long and short
     model_long = _signal_mod.SignalModel()
     model_short = _signal_mod.SignalModel()
 
-    feature_cols = [c for c in df_feat.columns if c.startswith("pdl_")]
+    feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
     features = df_feat[feature_cols].fillna(0)
 
     # Dummy targets (SignalModel ignores them)
@@ -109,7 +109,7 @@ def _run_strategy(df: pd.DataFrame, ctx: SimulationContext, tp: float = 6, sl: f
 def _make_pdhl_bull_retest():
     """3-day hourly data: Day 1 has breakout above PDH + retracement to midpoint.
 
-    Day 0 (Jan 1): range 90..110 → PDH=110, PDL=90, midpoint=100
+    Day 0 (Jan 1): H/L range 90..110 → PDH=110, PDL=90, midpoint=100
     Day 1 (Jan 2):
       - 00:00-08:00: price at 105 (between PDL and PDH, no breakout)
       - 09:00: breakout above PDH=110 → close=115
@@ -125,10 +125,16 @@ def _make_pdhl_bull_retest():
     low = np.full(n, 99.0)
     opn = np.full(n, 100.0)
 
-    # Day 0: set range 90-110
+    # Day 0: H/L establish range during session → PDH=110, PDL=90
     for i in range(24):
-        high[i] = 110.0
-        low[i] = 90.0
+        h = idx[i].hour
+        close[i] = 100.0; opn[i] = 100.0
+        if h == 8:
+            high[i] = 100.5; low[i] = 90.0
+        elif h == 11:
+            high[i] = 110.0; low[i] = 99.5
+        else:
+            high[i] = 100.5; low[i] = 99.5
 
     # Day 1
     for i in range(24, 48):
@@ -175,8 +181,16 @@ def _make_pdhl_bear_retest():
     low = np.full(n, 99.0)
     opn = np.full(n, 100.0)
 
+    # Day 0: H/L establish range during session → PDH=110, PDL=90
     for i in range(24):
-        high[i] = 110.0; low[i] = 90.0
+        h = idx[i].hour
+        close[i] = 100.0; opn[i] = 100.0
+        if h == 8:
+            high[i] = 100.5; low[i] = 90.0
+        elif h == 11:
+            high[i] = 110.0; low[i] = 99.5
+        else:
+            high[i] = 100.5; low[i] = 99.5
 
     for i in range(24, 48):
         h = idx[i].hour
@@ -204,7 +218,7 @@ def _make_pdhl_bear_retest():
 def _make_no_breakout():
     """3-day hourly data: price never breaks PDH/PDL → no trades.
 
-    Day 0: range 90..110
+    Day 0: H/L range 90..110 → PDH=110, PDL=90
     Day 1-2: price stays at 100 (inside range)
     """
     idx = pd.date_range("2024-01-01", periods=72, freq="h")
@@ -214,8 +228,16 @@ def _make_no_breakout():
     low = np.full(n, 99.0)
     opn = np.full(n, 100.0)
 
+    # Day 0: H/L establish range during session → PDH=110, PDL=90
     for i in range(24):
-        high[i] = 110.0; low[i] = 90.0
+        h = idx[i].hour
+        close[i] = 100.0; opn[i] = 100.0
+        if h == 8:
+            high[i] = 100.5; low[i] = 90.0
+        elif h == 11:
+            high[i] = 110.0; low[i] = 99.5
+        else:
+            high[i] = 100.5; low[i] = 99.5
 
     return pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
 
@@ -223,7 +245,7 @@ def _make_no_breakout():
 def _make_breakout_no_retracement():
     """3-day hourly data: breakout above PDH but price never returns to midpoint.
 
-    Day 0: range 90..110 → PDH=110, PDL=90, midpoint=100
+    Day 0: H/L range 90..110 → PDH=110, PDL=90, midpoint=100
     Day 1: breaks above 110, stays high (112-120), never touches midpoint=100
     """
     idx = pd.date_range("2024-01-01", periods=72, freq="h")
@@ -233,8 +255,16 @@ def _make_breakout_no_retracement():
     low = np.full(n, 99.0)
     opn = np.full(n, 100.0)
 
+    # Day 0: H/L establish range during session → PDH=110, PDL=90
     for i in range(24):
-        high[i] = 110.0; low[i] = 90.0
+        h = idx[i].hour
+        close[i] = 100.0; opn[i] = 100.0
+        if h == 8:
+            high[i] = 100.5; low[i] = 90.0
+        elif h == 11:
+            high[i] = 110.0; low[i] = 99.5
+        else:
+            high[i] = 100.5; low[i] = 99.5
 
     for i in range(24, 48):
         h = idx[i].hour
@@ -384,14 +414,14 @@ class TestSignalProperties:
         """pdl_retest_bull fires at most once per calendar day."""
         df = _make_pdhl_bull_retest()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
-        result = ind.compute(df.copy(), retest_atr_width=0.5)
+        result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
 
         for day_str in ["2024-01-01", "2024-01-02", "2024-01-03"]:
             try:
                 day = result.loc[day_str]
             except KeyError:
                 continue
-            count = day["pdl_retest_bull"].dropna().sum()
+            count = day["rl50_pdl_retest_bull"].dropna().sum()
             assert count <= 1.0, (
                 f"pdl_retest_bull fired {count} times on {day_str}"
             )
@@ -399,14 +429,14 @@ class TestSignalProperties:
     def test_retest_bear_fires_once_per_day(self):
         df = _make_pdhl_bear_retest()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
-        result = ind.compute(df.copy(), retest_atr_width=0.5)
+        result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
 
         for day_str in ["2024-01-01", "2024-01-02", "2024-01-03"]:
             try:
                 day = result.loc[day_str]
             except KeyError:
                 continue
-            count = day["pdl_retest_bear"].dropna().sum()
+            count = day["rl50_pdl_retest_bear"].dropna().sum()
             assert count <= 1.0, (
                 f"pdl_retest_bear fired {count} times on {day_str}"
             )
@@ -415,10 +445,10 @@ class TestSignalProperties:
         """First day has no previous day data → all signals NaN."""
         df = _make_pdhl_bull_retest()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
-        result = ind.compute(df.copy(), retest_atr_width=0.5)
+        result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
 
         day0 = result.loc["2024-01-01"]
-        for col in ["pdl_retest_bull", "pdl_retest_bear"]:
+        for col in ["rl50_pdl_retest_bull", "rl50_pdl_retest_bear"]:
             non_nan = day0[col].dropna()
             assert (non_nan == 0).all() or len(non_nan) == 0, (
                 f"{col} fired on day 0 (no previous day data)"
@@ -428,11 +458,11 @@ class TestSignalProperties:
         """Before the breakout bar, retest signal must be 0."""
         df = _make_pdhl_bull_retest()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
-        result = ind.compute(df.copy(), retest_atr_width=0.5)
+        result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
 
         day1 = result.loc["2024-01-02"]
         # Breakout at 09:00, shifted to 10:00. Before that, retest_bull must be 0.
-        before_breakout = day1.loc[day1.index.hour < 10, "pdl_retest_bull"].dropna()
+        before_breakout = day1.loc[day1.index.hour < 10, "rl50_pdl_retest_bull"].dropna()
         assert (before_breakout == 0).all(), (
             f"pdl_retest_bull fired before breakout: {before_breakout[before_breakout > 0]}"
         )

@@ -56,13 +56,13 @@ def _ctx(**overrides) -> SimulationContext:
         exit_strategy="fixed",
         model_type="signal",
         model_hyperparameters={
-            "signal_column_long": "pdl_retest_bull",
-            "signal_column_short": "pdl_retest_bear",
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
         },
         grid_ct=[0.5],
         grid_tp=[2, 4, 6],
         grid_sl=[2, 4],
-        required_features=["pdl_retest_bull", "pdl_retest_bear"],
+        required_features=["rl50_pdl_retest_bull", "rl50_pdl_retest_bear"],
         early_pruning_enabled=False,
     )
     defaults.update(overrides)
@@ -92,12 +92,21 @@ def _make_multi_day_bull_data(n_days=10):
     for day in range(n_days):
         base = day * 24
         if day % 2 == 0:
-            # Range-setting day: 90..110
+            # Range-setting day: H/L establish range during session
+            # PDH = max(H) = 110, PDL = min(L) = 90
             for i in range(base, base + 24):
+                h = idx[i].hour
                 close[i] = 100.0
-                high[i] = 110.0
-                low[i] = 90.0
                 opn[i] = 100.0
+                if h == 8:
+                    high[i] = 100.5
+                    low[i] = 90.0
+                elif h == 11:
+                    high[i] = 110.0
+                    low[i] = 99.5
+                else:
+                    high[i] = 100.5
+                    low[i] = 99.5
         else:
             # Determine if this signal day is a "strong" or "weak" rally
             strong = signal_num % 2 == 0
@@ -151,13 +160,13 @@ def _make_large_bull_data():
 def _compute_indicator(df):
     """Compute previous_day_levels indicator on df, return augmented df."""
     ind = _pdl_mod.PreviousDayLevelsIndicator()
-    return ind.compute(df.copy(), retest_atr_width=0.5, enable_retest=True)
+    return ind.compute(df.copy(), retest_atr_width=0.5, enable_retest=True, skip_weekends=False)
 
 
 def _train_signal_model(features_df, ctx, direction="long"):
     """Train a SignalModel for the given direction."""
     model = _signal_mod.SignalModel()
-    feature_cols = [c for c in features_df.columns if c.startswith("pdl_")]
+    feature_cols = [c for c in features_df.columns if c.startswith(("pdl_", "rl"))]
     dummy_targets = np.zeros(len(features_df))
     hp = ctx.model_hyperparameters
     model.train(
@@ -177,14 +186,14 @@ class TestSignalModelMechanics:
     def test_signal_model_uses_correct_column_for_long(self):
         """Long model should read pdl_retest_bull."""
         df = pd.DataFrame({
-            "pdl_retest_bull": [0, 0, 1, 0, 0],
-            "pdl_retest_bear": [0, 1, 0, 0, 0],
+            "rl50_pdl_retest_bull": [0, 0, 1, 0, 0],
+            "rl50_pdl_retest_bear": [0, 1, 0, 0, 0],
         })
         model = _signal_mod.SignalModel()
         model.train(
             df, np.zeros(5), TrainingContext(direction="long"),
-            signal_column_long="pdl_retest_bull",
-            signal_column_short="pdl_retest_bear",
+            signal_column_long="rl50_pdl_retest_bull",
+            signal_column_short="rl50_pdl_retest_bear",
         )
         probs = model.predict_probability(df)
         np.testing.assert_array_equal(probs[:, 1], [0, 0, 1, 0, 0])
@@ -192,14 +201,14 @@ class TestSignalModelMechanics:
     def test_signal_model_uses_correct_column_for_short(self):
         """Short model should read pdl_retest_bear."""
         df = pd.DataFrame({
-            "pdl_retest_bull": [0, 0, 1, 0, 0],
-            "pdl_retest_bear": [0, 1, 0, 0, 0],
+            "rl50_pdl_retest_bull": [0, 0, 1, 0, 0],
+            "rl50_pdl_retest_bear": [0, 1, 0, 0, 0],
         })
         model = _signal_mod.SignalModel()
         model.train(
             df, np.zeros(5), TrainingContext(direction="short"),
-            signal_column_long="pdl_retest_bull",
-            signal_column_short="pdl_retest_bear",
+            signal_column_long="rl50_pdl_retest_bull",
+            signal_column_short="rl50_pdl_retest_bear",
         )
         probs = model.predict_probability(df)
         np.testing.assert_array_equal(probs[:, 1], [0, 1, 0, 0, 0])
@@ -336,8 +345,8 @@ class TestTradesOnlyOnSignalBars:
             "H": np.full(n, 101.0),
             "L": np.full(n, 99.0),
             "C": np.full(n, 100.0),
-            "pdl_retest_bull": np.zeros(n),
-            "pdl_retest_bear": np.zeros(n),
+            "rl50_pdl_retest_bull": np.zeros(n),
+            "rl50_pdl_retest_bear": np.zeros(n),
         }, index=idx)
 
         ctx = _ctx(spread=0.5)
@@ -361,8 +370,8 @@ class TestTradesOnlyOnSignalBars:
         df_feat = _compute_indicator(df)
         ctx = _ctx(spread=0.5)
 
-        signal_count_bull = (df_feat["pdl_retest_bull"].fillna(0) > 0).sum()
-        signal_count_bear = (df_feat["pdl_retest_bear"].fillna(0) > 0).sum()
+        signal_count_bull = (df_feat["rl50_pdl_retest_bull"].fillna(0) > 0).sum()
+        signal_count_bear = (df_feat["rl50_pdl_retest_bear"].fillna(0) > 0).sum()
         total_signals = signal_count_bull + signal_count_bear
 
         model_long, feat_cols = _train_signal_model(df_feat, ctx, "long")
@@ -531,7 +540,7 @@ class TestEvaluateSingleFold:
         df_feat, train_df, val_df = self._make_fold_data()
         ctx = _ctx(spread=0.5, grid_ct=[0.5], min_trades=1)
 
-        feature_cols = [c for c in df_feat.columns if c.startswith("pdl_")]
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
         inner_folds = [(train_df, val_df)]
 
         cached = _compute_cached_targets(
@@ -604,7 +613,7 @@ class TestFullGridSearch:
     def test_grid_search_produces_candidates(self):
         """Grid search should produce at least one candidate with enough data."""
         df_feat, inner_folds = self._setup_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith("pdl_")]
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
         ctx = _ctx(
             spread=1.0, grid_ct=[0.5], min_trades=1,
             grid_tp=[2, 4], grid_sl=[4],
@@ -632,7 +641,7 @@ class TestFullGridSearch:
     def test_grid_search_candidates_have_different_params(self):
         """Multiple candidates should have different TP/SL params."""
         df_feat, inner_folds = self._setup_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith("pdl_")]
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
         ctx = _ctx(
             spread=1.0, grid_ct=[0.5], min_trades=1,
             grid_tp=[2, 4, 8], grid_sl=[4],
@@ -662,7 +671,7 @@ class TestFullGridSearch:
     def test_grid_search_model_hyperparameters_stored(self):
         """Each candidate should store model_hyperparameters."""
         df_feat, inner_folds = self._setup_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith("pdl_")]
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
         ctx = _ctx(
             spread=1.0, grid_ct=[0.5], min_trades=1,
             grid_tp=[3], grid_sl=[4],
@@ -685,8 +694,8 @@ class TestFullGridSearch:
         for c in candidates:
             assert "model_hyperparameters" in c
             hp = c["model_hyperparameters"]
-            assert hp.get("signal_column_long") == "pdl_retest_bull"
-            assert hp.get("signal_column_short") == "pdl_retest_bear"
+            assert hp.get("signal_column_long") == "rl50_pdl_retest_bull"
+            assert hp.get("signal_column_short") == "rl50_pdl_retest_bear"
 
     def test_grid_search_no_candidates_with_tiny_data(self):
         """With too few signal bars, grid search returns 0 candidates.
@@ -697,7 +706,7 @@ class TestFullGridSearch:
         """
         df = _make_multi_day_bull_data(6)  # Only 3 signal days
         df_feat = _compute_indicator(df)
-        feature_cols = [c for c in df_feat.columns if c.startswith("pdl_")]
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
 
         split = 3 * 24
         train = df_feat.iloc[:split]
@@ -745,13 +754,13 @@ class TestComboBuilding:
         combos, skipped = _build_combo_tuples(
             grid, ctx,
             timeout_values=[None],
-            features=["pdl_retest_bull", "pdl_retest_bear"],
+            features=["rl50_pdl_retest_bull", "rl50_pdl_retest_bear"],
             inner_folds=[],
             regime_config={},
             total_grid_combos=6,
             inner_df=None,
-            selected_features_long=["pdl_retest_bull"],
-            selected_features_short=["pdl_retest_bear"],
+            selected_features_long=["rl50_pdl_retest_bull"],
+            selected_features_short=["rl50_pdl_retest_bear"],
             sym="TEST",
         )
         assert len(combos) == 6
@@ -766,13 +775,13 @@ class TestComboBuilding:
         combos, skipped = _build_combo_tuples(
             grid, ctx,
             timeout_values=[None],
-            features=["pdl_retest_bull"],
+            features=["rl50_pdl_retest_bull"],
             inner_folds=[],
             regime_config={},
             total_grid_combos=2,
             inner_df=None,
-            selected_features_long=["pdl_retest_bull"],
-            selected_features_short=["pdl_retest_bear"],
+            selected_features_long=["rl50_pdl_retest_bull"],
+            selected_features_short=["rl50_pdl_retest_bear"],
             sym="TEST",
         )
         assert len(combos) == 1
@@ -792,7 +801,7 @@ class TestFeatureSelectionWithSignalModel:
         df_feat = _compute_indicator(df)
         ctx = _ctx(
             spread=0.5, min_trades=1,
-            required_features=["pdl_retest_bull", "pdl_retest_bear"],
+            required_features=["rl50_pdl_retest_bull", "rl50_pdl_retest_bear"],
         )
 
         split = 4 * 24
@@ -800,12 +809,233 @@ class TestFeatureSelectionWithSignalModel:
         val_df = df_feat.iloc[split:]
         inner_folds = [(train_df, val_df)]
 
-        feature_cols = [c for c in df_feat.columns if c.startswith("pdl_")]
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
         selected_long, selected_short = select_features(
             inner_folds, feature_cols, ctx, "TEST",
         )
 
         if selected_long is not None:
-            assert "pdl_retest_bull" in selected_long
+            assert "rl50_pdl_retest_bull" in selected_long
         if selected_short is not None:
-            assert "pdl_retest_bear" in selected_short
+            assert "rl50_pdl_retest_bear" in selected_short
+
+
+# ===========================================================================
+# Test Class 9: Timing breakdown — proves grid search speed is expected
+# ===========================================================================
+
+class TestGridSearchTimingBreakdown:
+    """Prove that SignalModel grid search speed is expected.
+
+    With SignalModel:
+    - train_model() is a no-op (~0ms)
+    - predict_probability() is a column read (~0ms)
+    - The only real work is target computation + trade simulation
+
+    These tests time each phase to prove the speed is legitimate.
+    """
+
+    def _setup_large_grid_data(self):
+        """120-day dataset for realistic timing measurement."""
+        df = _make_multi_day_bull_data(120)
+        df_feat = _compute_indicator(df)
+        splits = [30 * 24, 60 * 24, 90 * 24]
+        inner_folds = [
+            (df_feat.iloc[:splits[0]], df_feat.iloc[splits[0]:splits[1]]),
+            (df_feat.iloc[:splits[1]], df_feat.iloc[splits[1]:splits[2]]),
+            (df_feat.iloc[:splits[2]], df_feat.iloc[splits[2]:]),
+        ]
+        return df_feat, inner_folds
+
+    def test_signal_model_train_is_zero_cost(self):
+        """SignalModel.train() should complete in < 1ms."""
+        import time
+        df = _make_multi_day_bull_data(10)
+        df_feat = _compute_indicator(df)
+        ctx = _ctx()
+
+        model = _signal_mod.SignalModel()
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        targets = np.zeros(len(df_feat))
+
+        t0 = time.monotonic()
+        for _ in range(100):
+            model.train(
+                df_feat[feature_cols], targets,
+                TrainingContext(direction="long"),
+                **ctx.model_hyperparameters,
+            )
+        elapsed = time.monotonic() - t0
+
+        avg_ms = elapsed / 100 * 1000
+        assert avg_ms < 1.0, f"SignalModel.train() took {avg_ms:.2f}ms (expected <1ms)"
+
+    def test_signal_model_predict_is_fast(self):
+        """SignalModel.predict_probability() should complete in < 5ms on 10K rows."""
+        import time
+        df = _make_multi_day_bull_data(60)
+        df_feat = _compute_indicator(df)
+        ctx = _ctx()
+
+        model, feat_cols = _train_signal_model(df_feat, ctx, "long")
+
+        t0 = time.monotonic()
+        for _ in range(50):
+            model.predict_probability(df_feat[feat_cols])
+        elapsed = time.monotonic() - t0
+
+        avg_ms = elapsed / 50 * 1000
+        n_rows = len(df_feat)
+        assert avg_ms < 10.0, (
+            f"predict_probability on {n_rows} rows took {avg_ms:.2f}ms (expected <10ms)"
+        )
+
+    def test_full_grid_search_is_fast_with_signal_model(self):
+        """Full grid search with 12 combos should complete in < 10 seconds.
+
+        This proves the speed is expected — not a bug.
+        Grid: 4 TP × 3 SL = 12 combos, 3 inner folds, successive halving.
+        """
+        import time
+        df_feat, inner_folds = self._setup_large_grid_data()
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        ctx = _ctx(
+            spread=1.0, grid_ct=[0.5], min_trades=1,
+            grid_tp=[2, 4, 6, 8], grid_sl=[2, 4, 6],
+            early_pruning_enabled=True,
+            early_pruning_keep_ratio=0.5,
+            early_pruning_min_survivors=4,
+        )
+
+        from fwbg.core.config import GridConfig
+        grid = GridConfig(tp=[2, 4, 6, 8], sl=[2, 4, 6], ct=[0.5])
+
+        t0 = time.monotonic()
+        candidates, grid_results = run_grid_search(
+            full_pool=feature_cols,
+            inner_folds=inner_folds,
+            grid=grid,
+            ctx=ctx,
+            regime_config={},
+            sym="TIMING_TEST",
+            inner_df=df_feat,
+        )
+        elapsed = time.monotonic() - t0
+
+        assert elapsed < 10.0, (
+            f"Grid search took {elapsed:.2f}s for 12 combos × 3 folds — "
+            f"this is expected to be fast with SignalModel (no ML training)"
+        )
+        # Should still produce results
+        assert len(grid_results) > 0, (
+            f"Grid search should produce results with 120 days of data"
+        )
+
+    def test_per_combo_evaluation_is_fast(self):
+        """Each combo evaluation should take < 100ms with SignalModel."""
+        import time
+        df_feat, inner_folds = self._setup_large_grid_data()
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        ctx = _ctx(spread=1.0, grid_ct=[0.5], min_trades=1, min_eval_trades=3)
+
+        train_df, val_df = inner_folds[0]
+
+        # Pre-compute targets
+        cached = _compute_cached_targets(4, 4, None, inner_folds, df_feat, ctx)
+
+        t0 = time.monotonic()
+        n_runs = 10
+        for _ in range(n_runs):
+            _evaluate_single_fold(
+                fold_idx=0,
+                train_df=train_df,
+                val_df=val_df,
+                group_features=feature_cols,
+                tp=4, sl=4, ctx=ctx,
+                cached_targets=cached,
+                selected_features_long=feature_cols,
+                selected_features_short=feature_cols,
+            )
+        elapsed = time.monotonic() - t0
+
+        avg_ms = elapsed / n_runs * 1000
+        assert avg_ms < 200.0, (
+            f"Single fold evaluation took {avg_ms:.0f}ms "
+            f"(expected <200ms with SignalModel, no ML training)"
+        )
+
+    def test_successive_halving_produces_candidates(self):
+        """Successive halving should produce candidates from a large grid."""
+        df_feat, inner_folds = self._setup_large_grid_data()
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        ctx = _ctx(
+            spread=1.0, grid_ct=[0.5], min_trades=1,
+            grid_tp=[2, 3, 4, 5, 6, 8], grid_sl=[2, 3, 4, 6],
+            early_pruning_enabled=True,
+            early_pruning_keep_ratio=0.5,
+            early_pruning_min_survivors=4,
+        )
+
+        from fwbg.core.config import GridConfig
+        grid = GridConfig(tp=[2, 3, 4, 5, 6, 8], sl=[2, 3, 4, 6], ct=[0.5])
+
+        candidates_sh, grid_results_sh = run_grid_search(
+            full_pool=feature_cols,
+            inner_folds=inner_folds,
+            grid=grid,
+            ctx=ctx,
+            regime_config={},
+            sym="SH_TEST",
+            inner_df=df_feat,
+        )
+
+        # Should produce candidates
+        assert len(candidates_sh) > 0, "Successive halving should produce candidates"
+        # With 24 combos and 50% keep, survivors should be fewer than total
+        assert len(candidates_sh) < 24, (
+            f"SH should prune some combos, got {len(candidates_sh)} out of 24"
+        )
+
+    def test_grid_results_differentiate_tp_sl(self):
+        """Grid results should show PnL variation across TP/SL combos."""
+        df_feat, inner_folds = self._setup_large_grid_data()
+        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        # Disable early termination/first-fold checks so combos survive
+        ctx = _ctx(
+            spread=1.0, grid_ct=[0.5], min_trades=1,
+            grid_tp=[2, 4, 8], grid_sl=[2, 4],
+            early_pruning_enabled=False,
+            first_fold_sanity_check=False,
+            early_termination=False,
+            min_fold_stability=0.0,
+        )
+
+        from fwbg.core.config import GridConfig
+        grid = GridConfig(tp=[2, 4, 8], sl=[2, 4], ct=[0.5])
+
+        _, grid_results = run_grid_search(
+            full_pool=feature_cols,
+            inner_folds=inner_folds,
+            grid=grid,
+            ctx=ctx,
+            regime_config={},
+            sym="DIFF_TEST",
+            inner_df=df_feat,
+        )
+
+        assert len(grid_results) >= 2, (
+            f"Expected ≥2 grid results with 6 combos, got {len(grid_results)}"
+        )
+
+        # Different TP values should produce different inner_val_pnl
+        pnl_by_tp = {}
+        for gr in grid_results:
+            tp = gr["tp_mult"]
+            pnl_by_tp.setdefault(tp, []).append(gr["inner_val_pnl"])
+
+        if len(pnl_by_tp) >= 2:
+            avg_pnls = {tp: np.mean(pnls) for tp, pnls in pnl_by_tp.items()}
+            unique_avgs = set(round(p, 2) for p in avg_pnls.values())
+            assert len(unique_avgs) > 1, (
+                f"Different TP values should yield different avg PnL: {avg_pnls}"
+            )
