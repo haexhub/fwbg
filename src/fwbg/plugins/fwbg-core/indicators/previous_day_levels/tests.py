@@ -448,6 +448,69 @@ class TestPDLSLDist:
         result = ind.compute(_make_ohlc_15min())
         assert pd.isna(result["rl50_pdl_sl_dist"].iloc[0]), "rl50_pdl_sl_dist not shifted"
 
+    def test_sl_dist_atr_floor_kicks_in_for_small_range(self):
+        """When previous day range is tiny, min_sl_atr_mult * ATR provides a floor."""
+        # Build data where Day 0 has a tiny range (H=100.5, L=99.5 → range=1)
+        # but ATR is much larger (due to earlier volatile bars)
+        idx = pd.date_range("2024-01-01", periods=48, freq="h")
+        close = np.full(48, 100.0)
+        high = np.full(48, 100.5)
+        low = np.full(48, 99.5)
+        opn = np.full(48, 100.0)
+
+        # Day 0: tiny range (1 point) but earlier bars have larger true range
+        # to inflate ATR
+        for i in range(24):
+            if i < 5:
+                high[i] = 120.0  # large TR to inflate ATR
+                low[i] = 80.0
+                close[i] = 100.0
+            else:
+                high[i] = 100.5
+                low[i] = 99.5
+
+        df = pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
+        ind = _get_indicator()
+
+        # Without floor: sl_dist = 0.5 * 1 = 0.5
+        result_no_floor = ind.compute(df.copy(), min_sl_atr_mult=0.0)
+        # With floor: sl_dist = max(0.5, 1.5 * ATR)
+        result_with_floor = ind.compute(df.copy(), min_sl_atr_mult=1.5)
+
+        day1_no = result_no_floor.loc["2024-01-02"]["rl50_pdl_sl_dist"].dropna()
+        day1_fl = result_with_floor.loc["2024-01-02"]["rl50_pdl_sl_dist"].dropna()
+
+        if len(day1_no) > 0 and len(day1_fl) > 0:
+            # Floor should give a larger SL than pure range-based
+            assert day1_fl.iloc[0] >= day1_no.iloc[0], (
+                f"ATR floor SL ({day1_fl.iloc[0]:.2f}) should be >= "
+                f"range SL ({day1_no.iloc[0]:.2f})"
+            )
+            # And the floor should be meaningfully larger than 0.5
+            assert day1_fl.iloc[0] > 1.0, (
+                f"ATR floor should produce SL > 1.0, got {day1_fl.iloc[0]:.2f}"
+            )
+
+    def test_sl_dist_no_floor_when_range_is_large(self):
+        """When range is large, ATR floor doesn't change the SL."""
+        ind = _get_indicator()
+        df = _make_deterministic_retest_data()
+
+        # Day 1: PDH=110, PDL=90, range=20, sl_dist=10
+        result_no_floor = ind.compute(df.copy(), min_sl_atr_mult=0.0)
+        result_with_floor = ind.compute(df.copy(), min_sl_atr_mult=1.5)
+
+        day1_no = result_no_floor.loc["2024-01-02"]["rl50_pdl_sl_dist"].dropna()
+        day1_fl = result_with_floor.loc["2024-01-02"]["rl50_pdl_sl_dist"].dropna()
+
+        if len(day1_no) > 0 and len(day1_fl) > 0:
+            # Range of 20 → range-based SL = 10, which is likely larger than 1.5 * ATR
+            # So both should be equal (floor doesn't kick in)
+            np.testing.assert_allclose(
+                day1_no.iloc[0], day1_fl.iloc[0], rtol=1e-10,
+                err_msg="ATR floor should not affect SL when range is already large"
+            )
+
 
 class TestPDLRetracementLevels:
     """Tests for multiple retracement levels with rl{N}_ prefix."""
@@ -609,7 +672,7 @@ class TestPDLSessionFilteredBreaks:
 
     def test_off_session_breakout_detected(self):
         """A breakout above PDH at 3 AM (outside session 8-17) IS detected.
-        Breakouts use H/L and have no session filter — they are structural."""
+        Breakouts use Close and have no session filter in all_hours mode."""
         ind = _get_indicator()
         df = _make_off_session_breakout_data()
         result = ind.compute(df, session_start_hour=8, session_end_hour=17)

@@ -44,7 +44,8 @@
         "retest_atr_width": 0.3,
         "retracement_levels": [0.382, 0.5, 0.618, 0.7],
         "range_modes": ["hl_session", "hl_all"],
-        "break_modes": ["all_hours", "session_only"]
+        "break_modes": ["all_hours", "session_only"],
+        "min_sl_atr_mult": 1.5
       }
     },
     {
