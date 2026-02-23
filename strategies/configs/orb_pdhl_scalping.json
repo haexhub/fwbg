@@ -46,9 +46,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -56,9 +66,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -66,9 +86,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -76,9 +106,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -86,9 +126,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -96,9 +146,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -106,9 +166,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -116,9 +186,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -154,9 +234,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -164,9 +254,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -174,9 +274,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -184,9 +294,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -194,9 +314,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -204,9 +334,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -214,9 +354,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -224,9 +374,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -262,9 +422,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -272,9 +442,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -282,9 +462,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -292,9 +482,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -302,9 +502,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -312,9 +522,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -322,9 +542,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -332,9 +562,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -370,9 +610,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -380,9 +630,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -390,9 +650,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -400,9 +670,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -410,9 +690,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -420,9 +710,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -430,9 +730,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -440,9 +750,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -478,9 +798,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -488,9 +818,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -498,9 +838,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -508,9 +858,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -518,9 +878,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -528,9 +898,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -538,9 +918,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -548,9 +938,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -586,9 +986,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -596,9 +1006,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -606,9 +1026,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -616,9 +1046,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -626,9 +1066,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -636,9 +1086,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -646,9 +1106,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -656,9 +1126,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -694,9 +1174,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -704,9 +1194,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -714,9 +1214,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -724,9 +1234,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -734,9 +1254,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -744,9 +1274,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -754,9 +1294,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -764,9 +1314,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -802,9 +1362,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -812,9 +1382,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -822,9 +1402,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -832,9 +1422,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -842,9 +1442,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -852,9 +1462,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -862,9 +1482,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -872,9 +1502,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -910,9 +1550,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -920,9 +1570,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -930,9 +1590,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -940,9 +1610,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -950,9 +1630,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -960,9 +1650,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -970,9 +1670,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -980,9 +1690,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -1018,9 +1738,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -1028,9 +1758,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -1038,9 +1778,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -1048,9 +1798,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -1058,9 +1818,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -1068,9 +1838,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -1078,9 +1858,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -1088,9 +1878,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -1126,9 +1926,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -1136,9 +1946,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -1146,9 +1966,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -1156,9 +1986,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -1166,9 +2006,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -1176,9 +2026,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -1186,9 +2046,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -1196,9 +2066,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -1234,9 +2114,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -1244,9 +2134,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -1254,9 +2154,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -1264,9 +2174,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -1274,9 +2194,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -1284,9 +2214,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -1294,9 +2234,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -1304,9 +2254,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
@@ -1342,9 +2302,19 @@
             "sl_dist_column": "rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl50_pdl_retest_bull",
             "signal_column_short": "rl50_pdl_retest_bear",
             "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "rl61_pdl_retest_bull",
@@ -1352,9 +2322,19 @@
             "sl_dist_column": "rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl38_pdl_retest_bull",
@@ -1362,9 +2342,19 @@
             "sl_dist_column": "sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl50_pdl_retest_bull",
             "signal_column_short": "sb_rl50_pdl_retest_bear",
             "sl_dist_column": "sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "sb_rl61_pdl_retest_bull",
@@ -1372,9 +2362,19 @@
             "sl_dist_column": "sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "sb_rl70_pdl_retest_bull",
             "signal_column_short": "sb_rl70_pdl_retest_bear",
             "sl_dist_column": "sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "sb_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl38_pdl_retest_bull",
@@ -1382,9 +2382,19 @@
             "sl_dist_column": "ha_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl50_pdl_retest_bull",
             "signal_column_short": "ha_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_rl61_pdl_retest_bull",
@@ -1392,9 +2402,19 @@
             "sl_dist_column": "ha_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_rl70_pdl_retest_bull",
             "signal_column_short": "ha_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sr_rl70_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl38_pdl_retest_bull",
@@ -1402,9 +2422,19 @@
             "sl_dist_column": "ha_sb_rl38_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl38_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl50_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl50_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl50_pdl_sl_dist"
           },
           {
             "signal_column_long": "ha_sb_rl61_pdl_retest_bull",
@@ -1412,9 +2442,19 @@
             "sl_dist_column": "ha_sb_rl61_pdl_sl_dist"
           },
           {
+            "signal_column_long": "ha_sb_sr_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl61_pdl_sl_dist"
+          },
+          {
             "signal_column_long": "ha_sb_rl70_pdl_retest_bull",
             "signal_column_short": "ha_sb_rl70_pdl_retest_bear",
             "sl_dist_column": "ha_sb_rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_sb_sr_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_sb_sr_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_sb_sr_rl70_pdl_sl_dist"
           }
         ],
         "indicator_overrides": {
