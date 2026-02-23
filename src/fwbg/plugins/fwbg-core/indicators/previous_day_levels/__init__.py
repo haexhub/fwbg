@@ -47,23 +47,24 @@ def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
 
 
 def _compute_break_state(
-    close: np.ndarray,
+    high: np.ndarray,
+    low: np.ndarray,
     pdh: np.ndarray,
     pdl_low: np.ndarray,
     day_ids: np.ndarray,
     n: int,
-    session_mask: np.ndarray = None,
 ) -> tuple:
     """Compute break detection and post-breakout state arrays.
 
-    Only bars within the trading session (session_mask=True) can trigger
-    breakouts. Off-session bars inherit the current state but cannot set it.
+    Uses High/Low (not Close) so gap-opens and intrabar breakouts are caught.
+    No session filter — breakouts are structural events that happen 24/7.
+    The retest signal layer enforces session-only trade entries.
 
     Returns (high_break, low_break, post_bull, post_bear,
              broke_high_arr, broke_low_arr).
     """
-    above = close > pdh
-    below = close < pdl_low
+    above = high > pdh
+    below = low < pdl_low
 
     high_break = np.zeros(n)
     low_break = np.zeros(n)
@@ -85,15 +86,12 @@ def _compute_break_state(
         if np.isnan(pdh[i]):
             continue
 
-        # Only detect breakouts during trading session
-        in_session = session_mask[i] if session_mask is not None else True
-        if in_session:
-            if above[i] and not broke_high:
-                high_break[i] = 1.0
-                broke_high = True
-            if below[i] and not broke_low:
-                low_break[i] = 1.0
-                broke_low = True
+        if above[i] and not broke_high:
+            high_break[i] = 1.0
+            broke_high = True
+        if below[i] and not broke_low:
+            low_break[i] = 1.0
+            broke_low = True
 
         broke_high_arr[i] = broke_high
         broke_low_arr[i] = broke_low
@@ -268,9 +266,12 @@ def _compute_range_variant(
     features["pdl_midpoint_dist"] = (close - midpoint) / safe_atr
 
     # Break detection + post-breakout state (NOT rl-dependent)
-    # Break detection always uses session_mask regardless of range mode
+    # Uses H/L (not Close) so gap-opens and intrabar breakouts are caught.
+    # No session filter — breakouts are structural events; session filter is on retest only.
+    high_v = df["H"].values
+    low_v = df["L"].values
     high_break, low_break, post_bull, post_bear, broke_high_arr, broke_low_arr = \
-        _compute_break_state(close, pdh, pdl_low, day_ids, n, session_mask_arr)
+        _compute_break_state(high_v, low_v, pdh, pdl_low, day_ids, n)
 
     features["pdl_high_break"] = high_break
     features["pdl_low_break"] = low_break
