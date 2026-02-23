@@ -25,7 +25,7 @@ import pandas as pd
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, EPSILON
 
 _RANGE_MODE_PREFIX = {
-    "hl_session": "",       # default, backward compatible
+    "hl_session": "",       # default, no prefix
     "hl_all": "ha_",        # H/L all-hours
     "close_session": "cs_", # Close session-filtered
     "close_all": "ca_",     # Close all-hours
@@ -34,6 +34,11 @@ _RANGE_MODE_PREFIX = {
 _BREAK_MODE_PREFIX = {
     "all_hours": "",        # default — breaks detected 24/7
     "session_only": "sb_",  # breaks only during session hours
+}
+
+_RETEST_MODE_PREFIX = {
+    "all_hours": "",        # default — retests fire 24/7
+    "session_only": "sr_",  # retests only during session hours
 }
 
 
@@ -139,7 +144,9 @@ def _compute_retest_features(
     When the previous day range is small (low volatility), the ATR floor
     ensures the SL isn't unreasonably tight.
 
-    Retest signals only fire during trading session (session_mask=True).
+    When session_mask is None (all_hours retest mode), retests fire 24/7.
+    When session_mask is provided (session_only retest mode), retests only
+    fire during trading session.
     """
     features: Dict[str, np.ndarray] = {}
 
@@ -208,6 +215,7 @@ def _compute_range_variant(
     skip_weekends: bool = True,
     session_break: bool = False,
     min_sl_atr_mult: float = 0.0,
+    retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all PDL features for a single range mode + break mode.
 
@@ -221,7 +229,9 @@ def _compute_range_variant(
     - False (all_hours): breaks detected 24/7
     - True (session_only): breaks only during session hours
 
-    Retest signals always use session_mask regardless of break mode.
+    retest_modes controls retest signal timing (independently grid-searchable):
+    - all_hours (default, no prefix): retests fire 24/7
+    - session_only (sr_ prefix): retests only during session hours
     """
     features: Dict[str, Union[pd.Series, np.ndarray]] = {}
     n = len(df)
@@ -305,15 +315,18 @@ def _compute_range_variant(
 
     for rl in rl_list:
         rl_pfx = f"rl{int(rl * 100)}_"
-        retest_feats = _compute_retest_features(
-            pdh, pdl_low, pd_range, close, atr, day_ids,
-            retest_atr_width, rl, enable_retest,
-            broke_high_arr, broke_low_arr, n,
-            min_sl_atr_mult=min_sl_atr_mult,
-            session_mask=session_mask_arr,
-        )
-        for k, v in retest_feats.items():
-            features[f"{rl_pfx}{k}"] = v
+        for retest_mode in retest_modes:
+            retest_pfx = _RETEST_MODE_PREFIX[retest_mode]
+            retest_mask = session_mask_arr if retest_mode == "session_only" else None
+            retest_feats = _compute_retest_features(
+                pdh, pdl_low, pd_range, close, atr, day_ids,
+                retest_atr_width, rl, enable_retest,
+                broke_high_arr, broke_low_arr, n,
+                min_sl_atr_mult=min_sl_atr_mult,
+                session_mask=retest_mask,
+            )
+            for k, v in retest_feats.items():
+                features[f"{retest_pfx}{rl_pfx}{k}"] = v
 
     # Rolling MA of position
     pos_series = pd.Series(features["pdl_position"])
@@ -350,14 +363,28 @@ def _compute_pdl_features(
     session_end_hour: int = 21,
     range_modes: Union[List[str], Tuple[str, ...]] = ("hl_session",),
     break_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
+    retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
     skip_weekends: bool = True,
     min_sl_atr_mult: float = 0.0,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
-    """Compute all previous day level features for all range × break modes."""
+    """Compute all previous day level features for all range × break × retest modes."""
     all_features: Dict[str, Union[pd.Series, np.ndarray]] = {}
 
     # Group by trading day
-    day_group = df.index.normalize()
+    if session_start_hour < session_end_hour:
+        # Non-crossing session (e.g., DAX 7-17): UTC calendar date is correct
+        day_group = df.index.normalize()
+    else:
+        # Midnight-crossing session (e.g., ASX200 23-06):
+        # Bars at hour >= session_start belong to the NEXT trading day.
+        # Add (24 - session_start_hour) hours so session start aligns
+        # with calendar date boundary.
+        #   23:00 Jan 1 + 1h → 00:00 Jan 2 → normalize → Jan 2 ✓
+        #   05:00 Jan 2 + 1h → 06:00 Jan 2 → normalize → Jan 2 ✓
+        #   22:00 Jan 2 + 1h → 23:00 Jan 2 → normalize → Jan 2 ✓
+        #   23:00 Jan 2 + 1h → 00:00 Jan 3 → normalize → Jan 3 ✓
+        offset = pd.Timedelta(hours=24 - session_start_hour)
+        day_group = (df.index + offset).normalize()
 
     # Session mask: only bars within trading hours
     hours = df.index.hour
@@ -380,6 +407,7 @@ def _compute_pdl_features(
                 ma_period, enable_retest, retest_atr_width, retracement_levels,
                 skip_weekends, session_break=(break_mode == "session_only"),
                 min_sl_atr_mult=min_sl_atr_mult,
+                retest_modes=retest_modes,
             )
             for k, v in mode_feats.items():
                 all_features[f"{combined_pfx}{k}"] = v
@@ -428,6 +456,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         session_end_hour: int = 21,
         range_modes: Union[List[str], Tuple[str, ...]] = ("hl_session",),
         break_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
+        retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
         skip_weekends: bool = True,
         min_sl_atr_mult: float = 0.0,
         **params,
@@ -445,7 +474,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         features = _compute_pdl_features(
             df, atr, ma_period, enable_retest, retest_atr_width, retracement_levels,
             session_start_hour, session_end_hour, range_modes, break_modes,
-            skip_weekends, min_sl_atr_mult,
+            retest_modes, skip_weekends, min_sl_atr_mult,
         )
 
         if not features:
@@ -478,6 +507,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "session_end_hour": 21,
             "range_modes": ["hl_session"],
             "break_modes": ["all_hours"],
+            "retest_modes": ["all_hours"],
             "skip_weekends": True,
             "min_sl_atr_mult": 0.0,
         }
@@ -561,6 +591,17 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                     "Break detection timing modes. all_hours (default, no prefix): "
                     "breakouts detected 24/7 including pre-session gaps. "
                     "session_only (sb_ prefix): only session bars trigger breakouts. "
+                    "Use model_hyperparameters_grid to grid-search across modes."
+                ),
+                "options": ["all_hours", "session_only"],
+            },
+            "retest_modes": {
+                "type": "list[string]",
+                "default": ["all_hours"],
+                "description": (
+                    "Retest signal timing modes (independently grid-searchable). "
+                    "all_hours (default, no prefix): retest signals fire 24/7. "
+                    "session_only (sr_ prefix): retest signals only during session hours. "
                     "Use model_hyperparameters_grid to grid-search across modes."
                 ),
                 "options": ["all_hours", "session_only"],

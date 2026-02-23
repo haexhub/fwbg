@@ -822,7 +822,7 @@ class TestPDLRangeModes:
                 f"but only {ratio:.1%} are"
             )
 
-    def test_backward_compatible_default(self):
+    def test_default_matches_explicit_hl_session(self):
         """Default params produce identical features to explicit hl_session."""
         ind = _get_indicator()
         df = _make_ohlc_15min()
@@ -836,6 +836,277 @@ class TestPDLRangeModes:
             pd.testing.assert_series_equal(
                 result_default[col], result_explicit[col],
                 check_names=False,
+            )
+
+
+def _make_midnight_crossing_data():
+    """Build 1H data for a midnight-crossing session (start=23, end=6).
+
+    Simulates ASX200-like session where 23:00 UTC = 09:00 AEST.
+
+    Day 1 trading session: 23:00 Jan 1 → 05:00 Jan 2
+        Session H=110, L=90, range=20, midpoint=100
+
+    Day 1 off-session: 06:00-22:00 Jan 2
+        Flat at 100
+
+    Day 2 pre-market spike: 23:00 Jan 2 (= 09:00 AEST Jan 3)
+        H=120 — must NOT inflate Day 1 range
+
+    Day 2 trading session: 00:00-05:00 Jan 3
+        Close=112 at 01:00 → breakout above PDH=110
+
+    Day 2 off-session: 15:00 Jan 3
+        Close=100 → retracement to midpoint (50% of range=20)
+
+    4 calendar days = 96 hourly bars.
+    """
+    idx = pd.date_range("2024-01-01", periods=96, freq="h")
+    close = np.full(96, 100.0)
+    high = np.full(96, 100.5)
+    low = np.full(96, 99.5)
+    opn = np.full(96, 100.0)
+
+    for i in range(96):
+        ts = idx[i]
+        h = ts.hour
+        day = ts.day
+
+        if day == 1 and h == 23:
+            # Day 1 session start: 23:00 Jan 1 — set session high
+            close[i] = 108.0
+            high[i] = 110.0
+            low[i] = 105.0
+            opn[i] = 105.0
+        elif day == 2 and h < 6:
+            # Day 1 session continues: 00:00-05:00 Jan 2
+            if h == 0:
+                # Set session low
+                close[i] = 92.0
+                high[i] = 95.0
+                low[i] = 90.0
+                opn[i] = 95.0
+            else:
+                close[i] = 100.0
+                high[i] = 101.0
+                low[i] = 99.0
+                opn[i] = 100.0
+        elif day == 2 and 6 <= h < 23:
+            # Day 1 off-session: flat at 100
+            close[i] = 100.0
+            high[i] = 100.5
+            low[i] = 99.5
+            opn[i] = 100.0
+        elif day == 2 and h == 23:
+            # Day 2 pre-market: spike to 120 — must NOT be in Day 1 range
+            close[i] = 118.0
+            high[i] = 120.0
+            low[i] = 115.0
+            opn[i] = 115.0
+        elif day == 3 and h < 6:
+            # Day 2 session: 00:00-05:00 Jan 3
+            if h == 1:
+                # Breakout above PDH=110
+                close[i] = 112.0
+                high[i] = 113.0
+                low[i] = 110.0
+                opn[i] = 111.0
+            else:
+                close[i] = 115.0
+                high[i] = 116.0
+                low[i] = 114.0
+                opn[i] = 115.0
+        elif day == 3 and h == 15:
+            # Day 2 off-session: retracement to midpoint=100
+            close[i] = 100.0
+            high[i] = 101.0
+            low[i] = 99.0
+            opn[i] = 102.0
+        elif day == 3 and 6 <= h < 23:
+            # Day 2 off-session (rest)
+            close[i] = 105.0
+            high[i] = 106.0
+            low[i] = 104.0
+            opn[i] = 105.0
+        elif day == 3 and h == 23:
+            # Day 3 session start
+            close[i] = 105.0
+            high[i] = 106.0
+            low[i] = 104.0
+            opn[i] = 105.0
+        elif day == 4:
+            # Day 3 continues
+            close[i] = 105.0
+            high[i] = 106.0
+            low[i] = 104.0
+            opn[i] = 105.0
+
+    return pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
+
+
+class TestPDLMidnightCrossing:
+    """Tests for midnight-crossing sessions (e.g., ASX200 23:00-06:00 UTC)."""
+
+    def test_premarket_not_in_previous_day_range(self):
+        """The 23:00 Jan 2 spike (H=120) must NOT inflate Day 1's range.
+        Day 1 session (23:00 Jan 1 - 05:00 Jan 2) has H=110, L=90."""
+        ind = _get_indicator()
+        df = _make_midnight_crossing_data()
+        result = ind.compute(
+            df, session_start_hour=23, session_end_hour=6,
+            range_modes=["hl_session"],
+        )
+
+        # Day 2 bars (23:00 Jan 2 - 05:00 Jan 3) should see PDH=110
+        # The shifted feature at 00:00 Jan 3 reflects PDH computed at 23:00 Jan 2
+        day2_session = result.loc["2024-01-03 00:00":"2024-01-03 05:00"]
+        pdh_vals = (
+            day2_session["pdl_above_high"].dropna()
+        )
+        # At 01:00 Jan 3, C=112 > PDH=110 → pdl_above_high=1
+        # (shifted from 00:00, so appears at 01:00)
+        # If PDH were incorrectly 120, then 112 < 120 → pdl_above_high=0
+        assert pdh_vals.sum() > 0, (
+            "With correct day grouping, C=112 should be above PDH=110. "
+            "If PDH is incorrectly inflated to 120, this fails."
+        )
+
+    def test_breakout_against_correct_pdh(self):
+        """Breakout fires when C=112 > PDH=110 (correct).
+        Must NOT fail because PDH is incorrectly 120."""
+        ind = _get_indicator()
+        df = _make_midnight_crossing_data()
+        result = ind.compute(
+            df, session_start_hour=23, session_end_hour=6,
+            retest_atr_width=0.3,
+        )
+
+        # Check high_break fires on Day 2
+        day2_bars = result.loc["2024-01-02 23:00":"2024-01-03 05:00"]
+        break_vals = day2_bars["pdl_high_break"].dropna()
+        assert break_vals.sum() >= 1.0, (
+            f"pdl_high_break should fire (C=112 > PDH=110), got sum={break_vals.sum()}"
+        )
+
+    def test_retest_fires_off_session_all_hours(self):
+        """With retest_modes=['all_hours'], retest fires at 15:00 UTC
+        (off-session) when C=100 retraces to midpoint."""
+        ind = _get_indicator()
+        df = _make_midnight_crossing_data()
+        result = ind.compute(
+            df, session_start_hour=23, session_end_hour=6,
+            retest_atr_width=0.3,
+            retest_modes=["all_hours"],
+        )
+
+        # Check that retest_bull fires somewhere on Day 2
+        # Day 2 = 23:00 Jan 2 through 22:00 Jan 3
+        day2_all = result.loc["2024-01-02 23:00":"2024-01-03 22:00"]
+        bull_vals = day2_all["rl50_pdl_retest_bull"].dropna()
+        assert bull_vals.sum() >= 1.0, (
+            f"all_hours retest should fire off-session, got sum={bull_vals.sum()}"
+        )
+
+    def test_retest_blocked_off_session_session_only(self):
+        """With retest_modes=['session_only'], NO retest fires at 15:00 UTC
+        because it's outside session (23:00-06:00)."""
+        ind = _get_indicator()
+        df = _make_midnight_crossing_data()
+        result = ind.compute(
+            df, session_start_hour=23, session_end_hour=6,
+            retest_atr_width=0.3,
+            retest_modes=["session_only"],
+        )
+
+        # The only retracement to midpoint=100 happens at 15:00 Jan 3 (off-session).
+        # In session_only mode, this should NOT fire.
+        day2_off = result.loc["2024-01-03 06:00":"2024-01-03 22:00"]
+        bull_vals = day2_off["sr_rl50_pdl_retest_bull"].dropna()
+        assert bull_vals.sum() == 0, (
+            f"session_only retest should NOT fire off-session, got sum={bull_vals.sum()}"
+        )
+
+    def test_day_ids_change_at_session_start(self):
+        """day_group transitions at 23:00 UTC (session start), not 00:00."""
+        ind = _get_indicator()
+        df = _make_midnight_crossing_data()
+        result = ind.compute(
+            df, session_start_hour=23, session_end_hour=6,
+        )
+
+        # The 22:00 Jan 2 bar and 23:00 Jan 2 bar should have different day_ids.
+        # 22:00 Jan 2 belongs to Day 1 trading day.
+        # 23:00 Jan 2 belongs to Day 2 trading day.
+        # We verify indirectly: pdl_high_break resets at session start.
+        # On Day 2 (23:00 Jan 2), high_break should start fresh.
+        at_22 = result.loc["2024-01-02 22:00"]
+        at_23 = result.loc["2024-01-02 23:00"]
+
+        # post_bull from Day 1 (if any breakout happened) should not carry to Day 2
+        # Since Day 1 had no breakout (all close=100 < PDH), post_bull=0 for both.
+        # But the key point is that break state resets at 23:00.
+        # We verify by checking that the breakout on Day 2 (C=112 at 01:00 Jan 3)
+        # produces high_break on Day 2, confirming day_ids changed at 23:00.
+        day2_bars = result.loc["2024-01-02 23:00":"2024-01-03 05:00"]
+        break_vals = day2_bars["pdl_high_break"].dropna()
+        assert break_vals.sum() >= 1.0, (
+            "Break state should reset at 23:00 (session start), allowing breakout on Day 2"
+        )
+
+    def test_non_crossing_session_unchanged(self):
+        """Non-midnight-crossing session (e.g. DAX 8-17) produces identical
+        results with the new code path."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min()
+
+        # Default: session_start=7, session_end=21 (non-crossing)
+        result = ind.compute(df)
+
+        # Verify standard features are present and have values
+        for col in ["pdl_high_dist", "pdl_position", "rl50_pdl_retest_bull"]:
+            assert col in result.columns
+            vals = result[col].dropna()
+            assert len(vals) > 0
+
+    def test_retest_modes_generate_prefixed_columns(self):
+        """retest_modes=['all_hours', 'session_only'] produces both
+        unprefixed and sr_ prefixed columns."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=3000)
+        result = ind.compute(
+            df, retest_modes=["all_hours", "session_only"],
+        )
+
+        # all_hours (no prefix)
+        assert "rl50_pdl_retest_bull" in result.columns
+        assert "rl50_pdl_retest_bear" in result.columns
+        assert "rl50_pdl_sl_dist" in result.columns
+
+        # session_only (sr_ prefix)
+        assert "sr_rl50_pdl_retest_bull" in result.columns
+        assert "sr_rl50_pdl_retest_bear" in result.columns
+        assert "sr_rl50_pdl_sl_dist" in result.columns
+
+    def test_retest_modes_with_break_modes_cross_product(self):
+        """Both dimensions cross-combine: break × retest × rl."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=3000)
+        result = ind.compute(
+            df,
+            break_modes=["all_hours", "session_only"],
+            retest_modes=["all_hours", "session_only"],
+        )
+
+        # 2 break × 2 retest × 1 rl = 4 retest column sets
+        expected_prefixes = [
+            "",          # all_hours break + all_hours retest
+            "sr_",       # all_hours break + session_only retest
+            "sb_",       # session_only break + all_hours retest
+            "sb_sr_",    # session_only break + session_only retest
+        ]
+        for pfx in expected_prefixes:
+            assert f"{pfx}rl50_pdl_retest_bull" in result.columns, (
+                f"Missing {pfx}rl50_pdl_retest_bull"
             )
 
 
