@@ -31,6 +31,11 @@ _RANGE_MODE_PREFIX = {
     "close_all": "ca_",     # Close all-hours
 }
 
+_BREAK_MODE_PREFIX = {
+    "all_hours": "",        # default — breaks detected 24/7
+    "session_only": "sb_",  # breaks only during session hours
+}
+
 
 def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
     """Compute ATR from OHLC data."""
@@ -53,12 +58,14 @@ def _compute_break_state(
     pdl_low: np.ndarray,
     day_ids: np.ndarray,
     n: int,
+    session_mask: np.ndarray = None,
 ) -> tuple:
     """Compute break detection and post-breakout state arrays.
 
     Uses High/Low (not Close) so gap-opens and intrabar breakouts are caught.
-    No session filter — breakouts are structural events that happen 24/7.
-    The retest signal layer enforces session-only trade entries.
+    When session_mask is None (all_hours mode), breaks are detected 24/7.
+    When session_mask is provided (session_only mode), only session bars
+    can trigger breakouts — off-session bars inherit state but cannot set it.
 
     Returns (high_break, low_break, post_bull, post_bear,
              broke_high_arr, broke_low_arr).
@@ -86,12 +93,14 @@ def _compute_break_state(
         if np.isnan(pdh[i]):
             continue
 
-        if above[i] and not broke_high:
-            high_break[i] = 1.0
-            broke_high = True
-        if below[i] and not broke_low:
-            low_break[i] = 1.0
-            broke_low = True
+        in_session = session_mask[i] if session_mask is not None else True
+        if in_session:
+            if above[i] and not broke_high:
+                high_break[i] = 1.0
+                broke_high = True
+            if below[i] and not broke_low:
+                low_break[i] = 1.0
+                broke_low = True
 
         broke_high_arr[i] = broke_high
         broke_low_arr[i] = broke_low
@@ -187,8 +196,9 @@ def _compute_range_variant(
     retest_atr_width: float,
     retracement_levels: Union[float, List[float]],
     skip_weekends: bool = True,
+    session_break: bool = False,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
-    """Compute all PDL features for a single range mode.
+    """Compute all PDL features for a single range mode + break mode.
 
     Modes control how PDH/PDL is derived:
     - hl_session:    H/L during session hours
@@ -196,9 +206,11 @@ def _compute_range_variant(
     - close_session: Close during session hours
     - close_all:     Close for all 24h bars
 
-    Break detection and retest timing always use session_mask.
-    When skip_weekends=True, Saturday/Sunday are excluded from PDH/PDL
-    computation — Monday uses Friday's levels.
+    session_break controls break detection timing:
+    - False (all_hours): breaks detected 24/7
+    - True (session_only): breaks only during session hours
+
+    Retest signals always use session_mask regardless of break mode.
     """
     features: Dict[str, Union[pd.Series, np.ndarray]] = {}
     n = len(df)
@@ -267,11 +279,12 @@ def _compute_range_variant(
 
     # Break detection + post-breakout state (NOT rl-dependent)
     # Uses H/L (not Close) so gap-opens and intrabar breakouts are caught.
-    # No session filter — breakouts are structural events; session filter is on retest only.
+    # session_break=True → only session bars trigger breaks; False → 24/7.
     high_v = df["H"].values
     low_v = df["L"].values
+    break_mask = session_mask_arr if session_break else None
     high_break, low_break, post_bull, post_bear, broke_high_arr, broke_low_arr = \
-        _compute_break_state(high_v, low_v, pdh, pdl_low, day_ids, n)
+        _compute_break_state(high_v, low_v, pdh, pdl_low, day_ids, n, break_mask)
 
     features["pdl_high_break"] = high_break
     features["pdl_low_break"] = low_break
@@ -325,9 +338,10 @@ def _compute_pdl_features(
     session_start_hour: int = 7,
     session_end_hour: int = 21,
     range_modes: Union[List[str], Tuple[str, ...]] = ("hl_session",),
+    break_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
     skip_weekends: bool = True,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
-    """Compute all previous day level features for all range modes."""
+    """Compute all previous day level features for all range × break modes."""
     all_features: Dict[str, Union[pd.Series, np.ndarray]] = {}
 
     # Group by trading day
@@ -345,14 +359,17 @@ def _compute_pdl_features(
     day_ids = pd.Series(day_group).factorize()[0]
 
     for mode in range_modes:
-        pfx = _RANGE_MODE_PREFIX[mode]
-        mode_feats = _compute_range_variant(
-            df, atr, session_mask, session_mask_arr, day_group, day_ids, mode,
-            ma_period, enable_retest, retest_atr_width, retracement_levels,
-            skip_weekends,
-        )
-        for k, v in mode_feats.items():
-            all_features[f"{pfx}{k}"] = v
+        range_pfx = _RANGE_MODE_PREFIX[mode]
+        for break_mode in break_modes:
+            break_pfx = _BREAK_MODE_PREFIX[break_mode]
+            combined_pfx = f"{range_pfx}{break_pfx}"
+            mode_feats = _compute_range_variant(
+                df, atr, session_mask, session_mask_arr, day_group, day_ids, mode,
+                ma_period, enable_retest, retest_atr_width, retracement_levels,
+                skip_weekends, session_break=(break_mode == "session_only"),
+            )
+            for k, v in mode_feats.items():
+                all_features[f"{combined_pfx}{k}"] = v
 
     return all_features
 
@@ -397,6 +414,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         session_start_hour: int = 7,
         session_end_hour: int = 21,
         range_modes: Union[List[str], Tuple[str, ...]] = ("hl_session",),
+        break_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
         skip_weekends: bool = True,
         **params,
     ) -> pd.DataFrame:
@@ -412,7 +430,8 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         atr = _compute_atr(df, atr_period)
         features = _compute_pdl_features(
             df, atr, ma_period, enable_retest, retest_atr_width, retracement_levels,
-            session_start_hour, session_end_hour, range_modes, skip_weekends,
+            session_start_hour, session_end_hour, range_modes, break_modes,
+            skip_weekends,
         )
 
         if not features:
@@ -444,6 +463,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "session_start_hour": 7,
             "session_end_hour": 21,
             "range_modes": ["hl_session"],
+            "break_modes": ["all_hours"],
             "skip_weekends": True,
         }
 
@@ -518,6 +538,17 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                     "Use model_hyperparameters_grid to grid-search across modes."
                 ),
                 "options": ["hl_session", "hl_all", "close_session", "close_all"],
+            },
+            "break_modes": {
+                "type": "list[string]",
+                "default": ["all_hours"],
+                "description": (
+                    "Break detection timing modes. all_hours (default, no prefix): "
+                    "breakouts detected 24/7 including pre-session gaps. "
+                    "session_only (sb_ prefix): only session bars trigger breakouts. "
+                    "Use model_hyperparameters_grid to grid-search across modes."
+                ),
+                "options": ["all_hours", "session_only"],
             },
             "skip_weekends": {
                 "type": "bool",
