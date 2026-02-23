@@ -605,11 +605,24 @@ def _make_off_session_breakout_data():
 
 
 class TestPDLSessionFilteredBreaks:
-    """Breakouts outside trading session must be ignored."""
+    """Break detection is 24/7 (structural events), retest signals are session-only."""
 
-    def test_off_session_breakout_ignored(self):
-        """A breakout above PDH at 3 AM (outside session 8-17) must NOT
-        set broke_high, so retest_bull must NOT fire."""
+    def test_off_session_breakout_detected(self):
+        """A breakout above PDH at 3 AM (outside session 8-17) IS detected.
+        Breakouts use H/L and have no session filter — they are structural."""
+        ind = _get_indicator()
+        df = _make_off_session_breakout_data()
+        result = ind.compute(df, session_start_hour=8, session_end_hour=17)
+
+        day1 = result.loc["2024-01-02"]
+        high_break_vals = day1["pdl_high_break"].dropna()
+        assert high_break_vals.sum() >= 1.0, (
+            f"pdl_high_break should fire even off-session, got {high_break_vals.sum()}"
+        )
+
+    def test_off_session_breakout_retest_fires_in_session(self):
+        """Off-session breakout above PDH is detected, and the retest signal
+        fires during session hours when price retraces to entry level."""
         ind = _get_indicator()
         df = _make_off_session_breakout_data()
         result = ind.compute(df, session_start_hour=8, session_end_hour=17,
@@ -617,10 +630,14 @@ class TestPDLSessionFilteredBreaks:
 
         day1 = result.loc["2024-01-02"]
         bull_vals = day1["rl50_pdl_retest_bull"].dropna()
-        assert bull_vals.sum() == 0.0, (
-            f"retest_bull should NOT fire (breakout was off-session), "
+        assert bull_vals.sum() >= 1.0, (
+            f"retest_bull should fire (off-session breakout + in-session retest), "
             f"got {bull_vals.sum()}"
         )
+        # Verify retest fires during session hours (8-17), not off-session
+        fired_hours = day1.index[day1["rl50_pdl_retest_bull"] == 1.0].hour
+        for h in fired_hours:
+            assert 8 <= h < 17, f"retest_bull fired at hour {h}, outside session 8-17"
 
     def test_in_session_breakout_still_works(self):
         """The in-session breakout below PDL should still trigger
@@ -637,22 +654,20 @@ class TestPDLSessionFilteredBreaks:
             f"got {bear_vals.sum()}"
         )
 
-    def test_break_detection_respects_session(self):
-        """pdl_high_break should NOT fire at 3 AM off-session bar."""
+    def test_retest_only_fires_during_session(self):
+        """Even when breakout is 24/7, retest signals only fire during session."""
         ind = _get_indicator()
         df = _make_off_session_breakout_data()
-        result = ind.compute(df, session_start_hour=8, session_end_hour=17)
+        result = ind.compute(df, session_start_hour=8, session_end_hour=17,
+                             retest_atr_width=0.3)
 
         day1 = result.loc["2024-01-02"]
-        high_break_vals = day1["pdl_high_break"].dropna()
-        assert high_break_vals.sum() == 0.0, (
-            f"pdl_high_break should NOT fire off-session, got {high_break_vals.sum()}"
-        )
-
-        low_break_vals = day1["pdl_low_break"].dropna()
-        assert low_break_vals.sum() >= 1.0, (
-            f"pdl_low_break should fire in-session, got {low_break_vals.sum()}"
-        )
+        for col in ["rl50_pdl_retest_bull", "rl50_pdl_retest_bear"]:
+            fired = day1.index[day1[col] == 1.0]
+            for ts in fired:
+                assert 8 <= ts.hour < 17, (
+                    f"{col} fired at {ts} (hour {ts.hour}), outside session 8-17"
+                )
 
 
 class TestPDLRangeModes:
