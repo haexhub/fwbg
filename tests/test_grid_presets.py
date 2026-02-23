@@ -195,6 +195,34 @@ class TestGridConfigExitModifierParamsGrid:
         result = _parse_grids(grids_data, str(tmp_path))
         assert len(result["FOREX"].exit_modifier_params_grid) == 2
 
+    def test_indicator_overrides_preserved_through_preset_override(self, tmp_path):
+        """indicator_overrides from assignment-level override reach GridConfig."""
+        grids_dir = tmp_path / "grids"
+        grids_dir.mkdir()
+        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
+
+        grids_data = {
+            "assignments": {
+                "ASX200": {
+                    "preset": "base",
+                    "indicator_overrides": {
+                        "previous_day_levels": {
+                            "session_start_hour": 23,
+                            "session_end_hour": 6,
+                        }
+                    },
+                },
+            },
+        }
+        result = _parse_grids(grids_data, str(tmp_path))
+        overrides = result["ASX200"].indicator_overrides
+        assert overrides == {
+            "previous_day_levels": {
+                "session_start_hour": 23,
+                "session_end_hour": 6,
+            }
+        }
+
 
 class TestRegimeFilterPresets:
     """Tests for regime filter resolution in preset system."""

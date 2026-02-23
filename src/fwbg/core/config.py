@@ -438,17 +438,6 @@ def _parse_grids(grids_data: dict, strategy_dir: Optional[str] = None) -> Dict[s
     assignments = grids_data["assignments"]
     result: Dict[str, GridConfig] = {}
 
-    # Override fields allowed from assignment level
-    _override_keys = {
-        "tp", "sl", "ct", "timeout_bars",
-        "long_tp", "long_sl", "long_ct",
-        "short_tp", "short_sl", "short_ct",
-        "exit_modifier_params_grid",
-        "model_hyperparameters",
-        "required_features",
-        "model_hyperparameters_grid",
-    }
-
     for asset_class, assignment in assignments.items():
         if isinstance(assignment, str):
             # String → load preset by name
@@ -457,14 +446,14 @@ def _parse_grids(grids_data: dict, strategy_dir: Optional[str] = None) -> Dict[s
                 preset_cache[preset_name] = _load_json_preset(preset_name, presets_dir)
             resolved_data = dict(preset_cache[preset_name])
         elif isinstance(assignment, dict) and "preset" in assignment:
-            # Dict with "preset" → load + override
+            # Dict with "preset" → load + override with all assignment keys
             preset_name = assignment["preset"]
             if preset_name not in preset_cache:
                 preset_cache[preset_name] = _load_json_preset(preset_name, presets_dir)
             resolved_data = dict(preset_cache[preset_name])
-            for key in _override_keys:
-                if key in assignment:
-                    resolved_data[key] = assignment[key]
+            for key, value in assignment.items():
+                if key != "preset":
+                    resolved_data[key] = value
         elif isinstance(assignment, dict):
             # Inline legacy dict (no "preset" key)
             resolved_data = assignment
