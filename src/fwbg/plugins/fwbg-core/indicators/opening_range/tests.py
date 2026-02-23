@@ -1114,11 +1114,8 @@ class TestCarryForwardDays:
         # For a carried session, the range is pre-established → 08:00 bar should be valid.
         day1_range_bar = df.index[0] + pd.Timedelta(days=1, hours=8)
         if day1_range_bar in result.index:
-            val = result.loc[day1_range_bar, "orb_s08_sl_dist"]
-            # After shift_features, the value at day1_range_bar is actually computed
-            # from the previous bar. But the key check is: the range bar itself
-            # should NOT mask out valid features in a carried session.
-            # Check that at least the next bar after range bar is valid
+            # The range bar itself may have shifted features from the previous bar.
+            # Check that at least the next bar after range bar is valid.
             next_bar = df.index[0] + pd.Timedelta(days=1, hours=8, minutes=15)
             if next_bar in result.index:
                 val_next = result.loc[next_bar, "orb_s08_sl_dist"]
