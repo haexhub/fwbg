@@ -1,6 +1,6 @@
 {
   "name": "PDH/PDL Retest Scalping",
-  "description": "Rule-based PDH/PDL strategy: breakout above Previous Day High or below Previous Day Low, entry on retracement to midpoint (PDH+PDL)/2. Grid search optimizes TP/SL only.",
+  "description": "Rule-based PDH/PDL strategy: breakout above Previous Day High or below Previous Day Low, entry on retracement. Grid search optimizes retracement level, trading hours, and TP multiplier.",
   "tags": [
     "pdhl",
     "scalping",
@@ -8,11 +8,11 @@
     "rule_based"
   ],
   "timeframe": "MINUTE_15",
-  "hypothesis": "PDH/PDL breakouts with retracement to the range midpoint produce high-probability intraday setups. Direction is rule-based (breakout direction), optimizer tunes TP/SL via grid search.",
+  "hypothesis": "PDH/PDL breakouts with retracement produce high-probability intraday setups. Optimizer finds best retracement level (0.3-0.7), trading hour window, and TP via grid search.",
   "expected_outcome": "Trades only on retest signals after confirmed breakout above PDH or below PDL. Max 1 entry per direction per day.",
   "pipeline": "orb_scalping_v1",
-  "exit_strategy": "atr_based",
-  "exit_params": "atr_intraday_v1",
+  "exit_strategy": "orb_based",
+  "exit_params": "orb_pdhl_v1",
   "model": "signal_orb_v1",
   "validation": "walk_forward_intraday_v1",
   "filters": "orb_scalping_v1",
@@ -22,143 +22,887 @@
     "assignments": {
       "FOREX": {
         "preset": "orb_scalping_forex_v1",
-        "ct": [0.5],
-        "tp": [1.5, 2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          1.5,
+          2.0,
+          2.5,
+          3.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 7,
+            "session_end_hour": 17
+          }
+        }
       },
       "DAX": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [1.5, 2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 8,
+            "session_end_hour": 17
+          }
+        }
       },
       "FTSE100": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 8,
+            "session_end_hour": 17
+          }
+        }
       },
       "DOW30": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 14,
+            "session_end_hour": 21
+          }
+        }
       },
       "NAS100": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 14,
+            "session_end_hour": 21
+          }
+        }
       },
       "SPX500": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 14,
+            "session_end_hour": 21
+          }
+        }
       },
       "EU50": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [1.5, 2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 8,
+            "session_end_hour": 17
+          }
+        }
       },
       "CAC40": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [1.5, 2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 8,
+            "session_end_hour": 17
+          }
+        }
       },
       "JP225": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [4.0, 5.0, 6.0, 8.0],
-        "sl": [2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          4.0,
+          5.0,
+          6.0,
+          8.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 0,
+            "session_end_hour": 7
+          }
+        }
       },
       "ASX200": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [1.5, 2.0, 2.5],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 23,
+            "session_end_hour": 6
+          }
+        }
       },
       "HK50": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "tp": [3.0, 4.0, 5.0, 6.0],
-        "sl": [2.0, 2.5, 3.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          5.0,
+          6.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 1,
+            "session_end_hour": 8
+          }
+        }
       },
       "COMMODITY": {
         "preset": "orb_scalping_base_v1",
-        "ct": [0.5],
-        "tp": [2.0, 2.5, 3.0, 3.5],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          2.0,
+          2.5,
+          3.0,
+          3.5
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 8,
+            "session_end_hour": 21
+          }
+        }
       },
       "CRYPTO": {
         "preset": "orb_scalping_crypto_v1",
-        "ct": [0.5],
-        "tp": [2.0, 3.0, 4.0, 5.0],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          2.0,
+          3.0,
+          4.0,
+          5.0
+        ],
         "model_hyperparameters": {
-          "signal_column_long": "pdl_retest_bull",
-          "signal_column_short": "pdl_retest_bear"
+          "signal_column_long": "rl50_pdl_retest_bull",
+          "signal_column_short": "rl50_pdl_retest_bear",
+          "sl_dist_column": "rl50_pdl_sl_dist"
         },
-        "required_features": ["pdl_retest_bull", "pdl_retest_bear"]
+        "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl38_pdl_retest_bull",
+            "signal_column_short": "rl38_pdl_retest_bear",
+            "sl_dist_column": "rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl38_pdl_retest_bull",
+            "signal_column_short": "ha_rl38_pdl_retest_bear",
+            "sl_dist_column": "ha_rl38_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_short": "rl50_pdl_retest_bear",
+            "sl_dist_column": "rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_short": "ha_rl50_pdl_retest_bear",
+            "sl_dist_column": "ha_rl50_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl61_pdl_retest_bull",
+            "signal_column_short": "rl61_pdl_retest_bear",
+            "sl_dist_column": "rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl61_pdl_retest_bull",
+            "signal_column_short": "ha_rl61_pdl_retest_bear",
+            "sl_dist_column": "ha_rl61_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "rl70_pdl_retest_bull",
+            "signal_column_short": "rl70_pdl_retest_bear",
+            "sl_dist_column": "rl70_pdl_sl_dist"
+          },
+          {
+            "signal_column_long": "ha_rl70_pdl_retest_bull",
+            "signal_column_short": "ha_rl70_pdl_retest_bear",
+            "sl_dist_column": "ha_rl70_pdl_sl_dist"
+          }
+        ],
+        "indicator_overrides": {
+          "previous_day_levels": {
+            "session_start_hour": 0,
+            "session_end_hour": 24
+          }
+        }
       }
     }
   }

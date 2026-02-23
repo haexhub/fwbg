@@ -13,7 +13,7 @@
   "expected_outcome": "WOR retest signals dominate entries. Stronger edge than daily ORB on weekly basis.",
   "pipeline": "weekly_orb_v1",
   "exit_strategy": "orb_based",
-  "exit_params": "atr_intraday_v1",
+  "exit_params": "orb_wor_v1",
   "exit_modifier": "trailing_stop",
   "exit_modifier_params": {
     "breakeven_trigger": 0.5,

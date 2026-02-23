@@ -150,7 +150,7 @@ def get_exit_modifier(name: str) -> Type["BaseExitModifier"]:
 
 def get_feature_selector(name: str) -> Type["BaseFeatureSelector"]:
     """Get feature selector class by name, auto-discovering if needed."""
-    if not FEATURE_SELECTOR_REGISTRY:
+    if name not in FEATURE_SELECTOR_REGISTRY:
         _ensure_plugins_loaded()
     if name not in FEATURE_SELECTOR_REGISTRY:
         available = list(FEATURE_SELECTOR_REGISTRY.keys())

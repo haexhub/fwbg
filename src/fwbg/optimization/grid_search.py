@@ -281,6 +281,21 @@ def _build_combo_tuples(
     return combos, skipped_count
 
 
+def _target_cache_key(tp, sl, timeout_bars, ctx):
+    """Build a hashable key for target deduplication.
+
+    Only parameters that affect compute_targets output are included.
+    Signal columns and hour filters do NOT affect targets.
+    """
+    sl_dist_col = ctx.model_hyperparameters.get("sl_dist_column", "")
+    exit_mod = ctx.exit_modifier_params or {}
+    return (
+        tp, sl, timeout_bars,
+        sl_dist_col,
+        tuple(sorted(exit_mod.items())) if exit_mod else (),
+    )
+
+
 def _run_with_successive_halving(
     combos, inner_folds, ctx,
     features, regime_config, inner_df,
@@ -288,15 +303,29 @@ def _run_with_successive_halving(
     sym, progress_callback, progress_reported, grid_total,
 ):
     """Fold-by-fold grid search with successive halving between folds."""
+    import time as _time
+
     n_folds = len(inner_folds)
     n_combos = len(combos)
 
-    # Pre-compute cached targets for all combos
+    # Pre-compute cached targets with deduplication.
+    # Many combos share identical target-affecting params (e.g. hour-window variants
+    # differ only in signal columns, not in TP/SL/timeout/sl_dist). Deduplicating
+    # avoids redundant expensive bar-by-bar simulations.
+    t_tgt_start = _time.monotonic()
+    target_cache = {}  # cache_key -> computed targets
     combo_targets = {}
+    n_unique = 0
     for combo_idx, combo in enumerate(combos):
         tp, sl, timeout_bars, combo_ctx = combo[0], combo[1], combo[2], combo[6]
+        cache_key = _target_cache_key(tp, sl, timeout_bars, combo_ctx)
+
+        if cache_key in target_cache:
+            combo_targets[combo_idx] = target_cache[cache_key]
+            continue
+
         try:
-            combo_targets[combo_idx] = _compute_cached_targets(
+            result = _compute_cached_targets(
                 tp, sl, timeout_bars, inner_folds, inner_df, combo_ctx
             )
         except (ImportError, ModuleNotFoundError):
@@ -312,20 +341,30 @@ def _run_with_successive_halving(
                   f"{tb}", file=sys.stderr, flush=True)
             log(1, f"  ERROR target precompute combo={combo_idx} tp={tp} sl={sl}: "
                    f"{type(tgt_e).__name__}: {tgt_e}", sym)
-            combo_targets[combo_idx] = None
+            result = None
+
+        target_cache[cache_key] = result
+        combo_targets[combo_idx] = result
+        n_unique += 1
+    t_tgt_elapsed = _time.monotonic() - t_tgt_start
 
     # State per combo: list of fold results
     combo_fold_results = {i: [] for i in range(n_combos)}
     active_indices = set(range(n_combos))
 
-    log(2, f"  Successive Halving: {n_combos} combos × {n_folds} folds", sym)
+    log(2, f"  Successive Halving: {n_combos} combos × {n_folds} folds "
+           f"(target precompute: {t_tgt_elapsed:.1f}s, "
+           f"{n_unique} unique / {n_combos} total)", sym)
 
+    t_eval_total = 0.0
+    total_evals = 0
     for fold_idx in range(n_folds):
         train_df, val_df = inner_folds[fold_idx]
         n_active = len(active_indices)
         remaining = grid_total - progress_reported
         remaining_folds = max(1, n_folds - fold_idx)
 
+        t_fold_start = _time.monotonic()
         for eval_count, combo_idx in enumerate(list(active_indices)):
             combo = combos[combo_idx]
             tp, sl, timeout_bars, combo_ctx = combo[0], combo[1], combo[2], combo[6]
@@ -344,6 +383,13 @@ def _run_with_successive_halving(
                 fold_share = remaining / remaining_folds
                 partial = int(progress_reported + (eval_count + 1) / n_active * fold_share)
                 progress_callback(min(partial, grid_total), grid_total)
+
+        t_fold_elapsed = _time.monotonic() - t_fold_start
+        t_eval_total += t_fold_elapsed
+        total_evals += n_active
+        avg_ms = (t_fold_elapsed / n_active * 1000) if n_active > 0 else 0
+        log(2, f"  Fold {fold_idx}/{n_folds}: {n_active} combos in {t_fold_elapsed:.2f}s "
+               f"({avg_ms:.0f}ms/combo)", sym)
 
         # Prune after each fold except the last, but not before the ratio of folds completed
         ratio = getattr(ctx, "early_pruning_min_folds_before_pruning_ratio", 0.3)
@@ -377,6 +423,14 @@ def _run_with_successive_halving(
                         progress_callback(progress_reported, grid_total)
 
             active_indices = new_active
+
+    # Log timing summary
+    t_total = t_tgt_elapsed + t_eval_total
+    avg_ms_total = (t_eval_total / total_evals * 1000) if total_evals > 0 else 0
+    log(1, f"  Grid timing: {t_total:.1f}s total "
+           f"(targets={t_tgt_elapsed:.1f}s, eval={t_eval_total:.1f}s, "
+           f"{total_evals} evals @ {avg_ms_total:.0f}ms/eval, "
+           f"{len(active_indices)} survivors)", sym)
 
     # Aggregate survivors and report progress
     candidates = []

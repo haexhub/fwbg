@@ -119,7 +119,7 @@ class RunProgressWriter:
 
     def update_asset_stage(self, symbol: str, stage_name: str,
                            status: str = "running", description: str = "",
-                           progress_fraction: float = 0.0,
+                           progress_fraction: Optional[float] = None,
                            details: Optional[Dict] = None) -> None:
         with self._lock:
             asset = self._progress.assets.get(symbol)
@@ -138,7 +138,8 @@ class RunProgressWriter:
 
             stage.status = AssetStageStatus(status)
             stage.description = description
-            stage.progress_fraction = progress_fraction
+            if progress_fraction is not None:
+                stage.progress_fraction = progress_fraction
             if details:
                 stage.details.update(details)
 

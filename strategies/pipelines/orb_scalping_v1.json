@@ -41,7 +41,9 @@
         "atr_period": 14,
         "ma_period": 20,
         "enable_retest": true,
-        "retest_atr_width": 0.3
+        "retest_atr_width": 0.3,
+        "retracement_levels": [0.382, 0.5, 0.618, 0.7],
+        "range_modes": ["hl_session", "hl_all"]
       }
     },
     {
