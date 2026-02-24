@@ -74,11 +74,9 @@ def _signal_handler(signum, frame):
     """Handler for SIGINT/SIGTERM."""
     print("\n[Pool] Interrupt received, cleaning up...", file=sys.stderr)
     _cleanup_on_interrupt()
-    if signum == signal.SIGINT and _original_sigint:
-        signal.signal(signal.SIGINT, _original_sigint)
-    elif signum == signal.SIGTERM and _original_sigterm:
-        signal.signal(signal.SIGTERM, _original_sigterm)
-    sys.exit(1)
+    # Use os._exit to bypass ProcessPoolExecutor.__exit__ which calls
+    # shutdown(wait=True) and blocks until workers finish.
+    os._exit(1)
 
 
 class SimplePoolManager:

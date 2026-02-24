@@ -50,7 +50,9 @@
       "name": "previous_day_levels",
       "params": {
         "atr_period": 14,
-        "ma_period": 20
+        "ma_period": 20,
+        "resample_tf": "1h",
+        "min_retracement": 0.3
       }
     },
     {

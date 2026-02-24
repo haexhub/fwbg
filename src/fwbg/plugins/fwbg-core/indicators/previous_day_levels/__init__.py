@@ -57,17 +57,20 @@ def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
 
 
 def _compute_break_state(
-    close: np.ndarray,
+    above: np.ndarray,
+    below: np.ndarray,
     pdh: np.ndarray,
-    pdl_low: np.ndarray,
     day_ids: np.ndarray,
     n: int,
     session_mask: np.ndarray = None,
 ) -> tuple:
     """Compute break detection and post-breakout state arrays.
 
-    Uses Close for breakout confirmation — at least one bar must close
-    above PDH (bull) or below PDL (bear) for a valid breakout.
+    above/below are pre-computed boolean arrays indicating where price
+    crossed PDH/PDL.  The caller decides how to compute them (e.g.
+    native-bar Close, or resampled hourly Open/Close).
+    pdh is only used for the NaN guard (bars without previous-day data).
+
     When session_mask is None (all_hours mode), breaks are detected 24/7.
     When session_mask is provided (session_only mode), only session bars
     can trigger breakouts — off-session bars inherit state but cannot set it.
@@ -75,9 +78,6 @@ def _compute_break_state(
     Returns (high_break, low_break, post_bull, post_bear,
              broke_high_arr, broke_low_arr).
     """
-    above = close > pdh
-    below = close < pdl_low
-
     high_break = np.zeros(n)
     low_break = np.zeros(n)
     post_bull = np.zeros(n)
@@ -133,6 +133,9 @@ def _compute_retest_features(
     n: int,
     min_sl_atr_mult: float = 0.0,
     session_mask: np.ndarray = None,
+    high: np.ndarray = None,
+    low: np.ndarray = None,
+    min_retracement: float = 0.3,
 ) -> Dict[str, np.ndarray]:
     """Compute retest signals and SL distance for a given retracement level.
 
@@ -140,12 +143,12 @@ def _compute_retest_features(
     - Bull entry = PDH - rl * pd_range (retrace from PDH downward)
     - Bear entry = PDL + rl * pd_range (retrace from PDL upward)
 
+    min_retracement: minimum fraction of pd_range that must be retraced
+    (checked via High/Low) before a retest signal fires.  A bar's Low
+    touching PDH - min_retracement * pd_range is enough for bull; a bar's
+    High touching PDL + min_retracement * pd_range is enough for bear.
+
     SL distance = max((1 - rl) * pd_range + half_band, min_sl_atr_mult * atr).
-    The half_band buffer (= retest_atr_width * pd_range / 2) ensures SL
-    reaches beyond PDL (long) / PDH (short) even when the actual entry
-    deviates from the theoretical retracement level.
-    When the previous day range is small (low volatility), the ATR floor
-    ensures the SL isn't unreasonably tight.
 
     When session_mask is None (all_hours retest mode), retests fire 24/7.
     When session_mask is provided (session_only retest mode), retests only
@@ -161,31 +164,53 @@ def _compute_retest_features(
         near_entry_bull = (close >= entry_bull - half_band) & (close <= entry_bull + half_band)
         near_entry_bear = (close >= entry_bear - half_band) & (close <= entry_bear + half_band)
 
+        # Retracement thresholds (checked via H/L)
+        retrace_bull_threshold = pdh - min_retracement * pd_range
+        retrace_bear_threshold = pdl_low + min_retracement * pd_range
+
         retest_bull = np.zeros(n)
         retest_bear = np.zeros(n)
 
         prev_day_id = -1
         retested_bull = False
         retested_bear = False
+        retracement_ok_bull = False
+        retracement_ok_bear = False
 
         for i in range(n):
             if day_ids[i] != prev_day_id:
                 prev_day_id = day_ids[i]
                 retested_bull = False
                 retested_bear = False
+                retracement_ok_bull = False
+                retracement_ok_bear = False
 
             if np.isnan(pdh[i]):
                 continue
+
+            # Track retracement via High/Low (cumulative per day)
+            if min_retracement > 0 and low is not None:
+                if broke_high_arr[i] and not retracement_ok_bull:
+                    if low[i] <= retrace_bull_threshold[i]:
+                        retracement_ok_bull = True
+                if broke_low_arr[i] and not retracement_ok_bear:
+                    if high[i] >= retrace_bear_threshold[i]:
+                        retracement_ok_bear = True
+            else:
+                retracement_ok_bull = True
+                retracement_ok_bear = True
 
             # Only fire retest signals during trading session
             in_session = session_mask[i] if session_mask is not None else True
             if not in_session:
                 continue
 
-            if broke_high_arr[i] and not retested_bull and near_entry_bull[i] and close[i] > pdl_low[i]:
+            if broke_high_arr[i] and retracement_ok_bull and not retested_bull \
+                    and near_entry_bull[i] and close[i] > pdl_low[i]:
                 retest_bull[i] = 1.0
                 retested_bull = True
-            if broke_low_arr[i] and not retested_bear and near_entry_bear[i] and close[i] < pdh[i]:
+            if broke_low_arr[i] and retracement_ok_bear and not retested_bear \
+                    and near_entry_bear[i] and close[i] < pdh[i]:
                 retest_bear[i] = 1.0
                 retested_bear = True
 
@@ -193,9 +218,6 @@ def _compute_retest_features(
         features["pdl_retest_bear"] = retest_bear
 
     # SL distance: reach at least PDL (long) / PDH (short) + buffer for entry deviation.
-    # (1-rl)*R puts SL at boundary when entry = theoretical.
-    # Adding half_band ensures SL clears the boundary even when actual entry
-    # deviates from theoretical by up to the retest band width.
     entry_buffer = retest_atr_width * np.nan_to_num(pd_range, nan=0.0) / 2
     range_based_sl = (1 - rl) * pd_range + entry_buffer
     if min_sl_atr_mult > 0:
@@ -223,14 +245,26 @@ def _compute_range_variant(
     session_break: bool = False,
     min_sl_atr_mult: float = 0.0,
     retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
+    resample_tf: str = None,
+    min_retracement: float = 0.3,
+    session_start_hour: int = None,
+    session_end_hour: int = None,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all PDL features for a single range mode + break mode.
 
     Modes control how PDH/PDL is derived:
     - hl_session:    H/L during session hours
     - hl_all:        H/L for all 24h bars
-    - close_session: Close during session hours
-    - close_all:     Close for all 24h bars
+    - close_session: Close during session hours (resampled when resample_tf set)
+    - close_all:     Close for all 24h bars (resampled when resample_tf set)
+
+    resample_tf (e.g. "1h"):
+    - For close_* modes: PDH/PDL from resampled Close (e.g. hourly Close)
+    - For breakout: uses resampled Open/Close (hourly candle confirmation)
+    - For hl_* modes: no effect on range (max of max = max)
+
+    min_retracement: minimum fraction of pd_range price must retrace (via H/L)
+    before retest signal fires.  0.3 = at least 30%.
 
     session_break controls break detection timing:
     - False (all_hours): breaks detected 24/7
@@ -243,36 +277,62 @@ def _compute_range_variant(
     features: Dict[str, Union[pd.Series, np.ndarray]] = {}
     n = len(df)
 
-    # Select price series for range computation based on mode
-    if mode == "hl_session":
-        range_highs = df["H"].where(session_mask)
-        range_lows = df["L"].where(session_mask)
-    elif mode == "hl_all":
-        range_highs = df["H"]
-        range_lows = df["L"]
-    elif mode == "close_session":
-        range_highs = df["C"].where(session_mask)
-        range_lows = df["C"].where(session_mask)
-    elif mode == "close_all":
-        range_highs = df["C"]
-        range_lows = df["C"]
+    # --- Range computation ---
+    use_resampled_range = resample_tf and mode.startswith("close")
+
+    if use_resampled_range:
+        # Resample Close to target TF for range computation
+        c_resampled = df["C"].resample(resample_tf).last().dropna()
+
+        # Session mask on resampled index
+        if mode == "close_session":
+            r_hours = c_resampled.index.hour
+            if session_start_hour < session_end_hour:
+                r_session = (r_hours >= session_start_hour) & (r_hours < session_end_hour)
+            else:
+                r_session = (r_hours >= session_start_hour) | (r_hours < session_end_hour)
+            range_highs_r = c_resampled.where(r_session)
+            range_lows_r = c_resampled.where(r_session)
+        else:  # close_all
+            range_highs_r = c_resampled
+            range_lows_r = c_resampled
+
+        # Day group on resampled index
+        if session_start_hour is not None and session_start_hour >= session_end_hour:
+            r_offset = pd.Timedelta(hours=24 - session_start_hour)
+            r_day_group = (c_resampled.index + r_offset).normalize()
+        else:
+            r_day_group = c_resampled.index.normalize()
+
+        day_hl = pd.DataFrame({
+            "high": range_highs_r.groupby(r_day_group).max(),
+            "low": range_lows_r.groupby(r_day_group).min(),
+        })
     else:
-        raise ValueError(f"Unknown range mode: {mode}")
+        # Original logic: native-bar range
+        if mode == "hl_session":
+            range_highs = df["H"].where(session_mask)
+            range_lows = df["L"].where(session_mask)
+        elif mode == "hl_all":
+            range_highs = df["H"]
+            range_lows = df["L"]
+        elif mode == "close_session":
+            range_highs = df["C"].where(session_mask)
+            range_lows = df["C"].where(session_mask)
+        elif mode == "close_all":
+            range_highs = df["C"]
+            range_lows = df["C"]
+        else:
+            raise ValueError(f"Unknown range mode: {mode}")
 
-    # Per-day high/low
-    day_high = range_highs.groupby(day_group).transform("max")
-    day_low = range_lows.groupby(day_group).transform("min")
+        day_hl = pd.DataFrame({
+            "high": range_highs.groupby(day_group).max(),
+            "low": range_lows.groupby(day_group).min(),
+        })
 
-    # Shift by 1 day to get PREVIOUS day high/low
-    day_hl = pd.DataFrame({
-        "high": range_highs.groupby(day_group).max(),
-        "low": range_lows.groupby(day_group).min(),
-    })
-
+    # --- Weekend skip + shift (common path) ---
     if skip_weekends:
-        # Filter to weekdays only (Mon=0..Fri=4), so Monday looks back to Friday
         trading_day_hl = day_hl[day_hl.index.dayofweek < 5]
-        # Forward-fill trading day values onto weekend dates
         all_days_hl = trading_day_hl.reindex(day_hl.index, method="ffill")
         prev_day_hl = all_days_hl.shift(1)
     else:
@@ -286,6 +346,25 @@ def _compute_range_variant(
     close = df["C"].values
     safe_atr = np.where(atr > EPSILON, atr, 1.0)
     safe_range = np.where(np.abs(pd_range) > EPSILON, pd_range, np.nan)
+
+    # --- Current-day range (for pdl_day_range_expanding) ---
+    # Always use native-bar data for live current-day tracking
+    if mode.startswith("hl"):
+        if mode == "hl_session":
+            cur_highs = df["H"].where(session_mask)
+            cur_lows = df["L"].where(session_mask)
+        else:
+            cur_highs = df["H"]
+            cur_lows = df["L"]
+    else:
+        if mode == "close_session":
+            cur_highs = df["C"].where(session_mask)
+            cur_lows = df["C"].where(session_mask)
+        else:
+            cur_highs = df["C"]
+            cur_lows = df["C"]
+    day_high = cur_highs.groupby(day_group).transform("max")
+    day_low = cur_lows.groupby(day_group).transform("min")
 
     # Distance features (ATR-normalized)
     features["pdl_high_dist"] = (pdh - close) / safe_atr
@@ -305,12 +384,49 @@ def _compute_range_variant(
     midpoint = (pdh + pdl_low) / 2
     features["pdl_midpoint_dist"] = (close - midpoint) / safe_atr
 
-    # Break detection + post-breakout state (NOT rl-dependent)
-    # Uses Close for breakout confirmation (bar must close beyond PDH/PDL).
-    # session_break=True → only session bars trigger breaks; False → 24/7.
+    # --- Breakout detection ---
+    if resample_tf:
+        # Resample to get hourly Open/Close for breakout confirmation
+        r_df = df[["O", "C"]].resample(resample_tf).agg(
+            {"O": "first", "C": "last"}
+        ).dropna()
+
+        # Day group on resampled index (for PDH/PDL mapping)
+        if session_start_hour is not None and session_start_hour >= session_end_hour:
+            r_offset = pd.Timedelta(hours=24 - session_start_hour)
+            r_day_group = (r_df.index + r_offset).normalize()
+        else:
+            r_day_group = r_df.index.normalize()
+
+        r_pdh = prev_day_hl["high"].reindex(r_day_group).values
+        r_pdl = prev_day_hl["low"].reindex(r_day_group).values
+
+        r_above = (r_df["O"].values > r_pdh) | (r_df["C"].values > r_pdh)
+        r_below = (r_df["O"].values < r_pdl) | (r_df["C"].values < r_pdl)
+
+        # Map back to original bars at the LAST bar of each resampled period
+        # to avoid lookahead (hourly Close isn't known until the hour ends).
+        bar_duration = df.index[1] - df.index[0] if len(df) > 1 else pd.Timedelta(0)
+        end_offset = pd.Timedelta(resample_tf) - bar_duration
+        above = pd.Series(
+            r_above, index=r_df.index + end_offset,
+        ).reindex(df.index, method="ffill").fillna(False).values.astype(bool)
+        below = pd.Series(
+            r_below, index=r_df.index + end_offset,
+        ).reindex(df.index, method="ffill").fillna(False).values.astype(bool)
+
+        # Ensure NaN PDH bars don't trigger breakout
+        nan_mask = np.isnan(pdh)
+        above[nan_mask] = False
+        below[nan_mask] = False
+    else:
+        above = close > pdh
+        below = close < pdl_low
+
+    # Break state
     break_mask = session_mask_arr if session_break else None
     high_break, low_break, post_bull, post_bear, broke_high_arr, broke_low_arr = \
-        _compute_break_state(close, pdh, pdl_low, day_ids, n, break_mask)
+        _compute_break_state(above, below, pdh, day_ids, n, break_mask)
 
     features["pdl_high_break"] = high_break
     features["pdl_low_break"] = low_break
@@ -319,6 +435,9 @@ def _compute_range_variant(
 
     # Retest signals + SL distance per retracement level (always prefixed)
     rl_list = [retracement_levels] if isinstance(retracement_levels, (int, float)) else list(retracement_levels)
+
+    high_arr = df["H"].values
+    low_arr = df["L"].values
 
     for rl in rl_list:
         rl_pfx = f"rl{int(rl * 100)}_"
@@ -331,6 +450,9 @@ def _compute_range_variant(
                 broke_high_arr, broke_low_arr, n,
                 min_sl_atr_mult=min_sl_atr_mult,
                 session_mask=retest_mask,
+                high=high_arr,
+                low=low_arr,
+                min_retracement=min_retracement,
             )
             for k, v in retest_feats.items():
                 features[f"{retest_pfx}{rl_pfx}{k}"] = v
@@ -373,23 +495,16 @@ def _compute_pdl_features(
     retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
     skip_weekends: bool = True,
     min_sl_atr_mult: float = 0.0,
+    resample_tf: str = "1h",
+    min_retracement: float = 0.3,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all previous day level features for all range × break × retest modes."""
     all_features: Dict[str, Union[pd.Series, np.ndarray]] = {}
 
     # Group by trading day
     if session_start_hour < session_end_hour:
-        # Non-crossing session (e.g., DAX 7-17): UTC calendar date is correct
         day_group = df.index.normalize()
     else:
-        # Midnight-crossing session (e.g., ASX200 23-06):
-        # Bars at hour >= session_start belong to the NEXT trading day.
-        # Add (24 - session_start_hour) hours so session start aligns
-        # with calendar date boundary.
-        #   23:00 Jan 1 + 1h → 00:00 Jan 2 → normalize → Jan 2 ✓
-        #   05:00 Jan 2 + 1h → 06:00 Jan 2 → normalize → Jan 2 ✓
-        #   22:00 Jan 2 + 1h → 23:00 Jan 2 → normalize → Jan 2 ✓
-        #   23:00 Jan 2 + 1h → 00:00 Jan 3 → normalize → Jan 3 ✓
         offset = pd.Timedelta(hours=24 - session_start_hour)
         day_group = (df.index + offset).normalize()
 
@@ -398,7 +513,6 @@ def _compute_pdl_features(
     if session_start_hour < session_end_hour:
         session_mask = (hours >= session_start_hour) & (hours < session_end_hour)
     else:
-        # Crosses midnight (e.g., ASX200: 23-06 UTC)
         session_mask = (hours >= session_start_hour) | (hours < session_end_hour)
 
     session_mask_arr = np.array(session_mask)
@@ -415,6 +529,10 @@ def _compute_pdl_features(
                 skip_weekends, session_break=(break_mode == "session_only"),
                 min_sl_atr_mult=min_sl_atr_mult,
                 retest_modes=retest_modes,
+                resample_tf=resample_tf,
+                min_retracement=min_retracement,
+                session_start_hour=session_start_hour,
+                session_end_hour=session_end_hour,
             )
             for k, v in mode_feats.items():
                 all_features[f"{combined_pfx}{k}"] = v
@@ -466,6 +584,8 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
         skip_weekends: bool = True,
         min_sl_atr_mult: float = 0.0,
+        resample_tf: str = "1h",
+        min_retracement: float = 0.3,
         **params,
     ) -> pd.DataFrame:
         if not isinstance(df.index, pd.DatetimeIndex):
@@ -482,6 +602,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             df, atr, ma_period, enable_retest, retest_atr_width, retracement_levels,
             session_start_hour, session_end_hour, range_modes, break_modes,
             retest_modes, skip_weekends, min_sl_atr_mult,
+            resample_tf=resample_tf, min_retracement=min_retracement,
         )
 
         if not features:
@@ -517,6 +638,8 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "retest_modes": ["all_hours"],
             "skip_weekends": True,
             "min_sl_atr_mult": 0.0,
+            "resample_tf": "1h",
+            "min_retracement": 0.3,
         }
 
     @classmethod
@@ -633,6 +756,30 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "min": 0.0,
                 "max": 5.0,
                 "step": 0.5,
+            },
+            "resample_tf": {
+                "type": "string",
+                "default": "1h",
+                "description": (
+                    "Resample timeframe for Close-based range computation and breakout "
+                    "detection. Uses resampled Close for range and resampled Open/Close "
+                    "for breakout confirmation (no spikes). "
+                    "None = use native bar resolution."
+                ),
+                "options": [None, "1h", "4h"],
+            },
+            "min_retracement": {
+                "type": "float",
+                "default": 0.3,
+                "description": (
+                    "Minimum retracement of previous day range (checked via H/L) before "
+                    "retest signal fires. 0.3 = price must retrace at least 30% from "
+                    "breakout boundary. A bar's Low (bull) or High (bear) touching the "
+                    "threshold is sufficient."
+                ),
+                "min": 0.0,
+                "max": 0.9,
+                "step": 0.1,
             },
         }
 

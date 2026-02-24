@@ -18,6 +18,7 @@ from fwbg.simulation.trade import (
     _simulate_trade_numba,
     compute_targets_numba,
     simulate_pro_trade,
+    compute_session_mask,
     calculate_sharpe_ratio,
     calculate_calmar_ratio,
     monte_carlo_permutation_test,
@@ -26,6 +27,7 @@ from fwbg.simulation.trade import (
     find_optimal_circuit_breaker,
     pnl_to_returns,
 )
+from fwbg.simulation.numba_core import _simulate_trade_session_numba
 
 
 def create_price_arrays(n: int, trend: str = "flat", volatility: float = 0.01, seed: int = 42):
@@ -723,3 +725,254 @@ class TestPnlToReturns:
 
     def test_empty_returns_empty(self):
         assert pnl_to_returns([], fk=0.02) == []
+
+
+class TestComputeSessionMask:
+    """Tests for compute_session_mask helper."""
+
+    def test_non_crossing_session(self):
+        """Session 8-17: bars 08:00-16:59 are in-session."""
+        timestamps = pd.date_range("2025-01-02 06:00", periods=24, freq="1h")
+        mask = compute_session_mask(timestamps, 8, 17)
+        # 06:00, 07:00 → out of session
+        assert not mask[0]
+        assert not mask[1]
+        # 08:00-16:00 → in session
+        for i in range(2, 11):  # hours 8-16
+            assert mask[i], f"Hour {6+i} should be in session"
+        # 17:00 → out of session
+        assert not mask[11]
+
+    def test_midnight_crossing_session(self):
+        """Session 23-6: midnight-crossing (e.g. ASX200)."""
+        timestamps = pd.date_range("2025-01-02 20:00", periods=14, freq="1h")
+        mask = compute_session_mask(timestamps, 23, 6)
+        # 20:00, 21:00, 22:00 → out of session
+        assert not mask[0]
+        assert not mask[1]
+        assert not mask[2]
+        # 23:00-05:00 → in session
+        for i in range(3, 10):  # 23, 00, 01, 02, 03, 04, 05
+            assert mask[i], f"Index {i} should be in session"
+        # 06:00 → out of session
+        assert not mask[10]
+
+    def test_all_in_session(self):
+        """All bars within session → all True."""
+        timestamps = pd.date_range("2025-01-02 09:00", periods=8, freq="1h")
+        mask = compute_session_mask(timestamps, 8, 17)
+        assert mask.all()
+
+    def test_all_out_of_session(self):
+        """All bars outside session → all False."""
+        timestamps = pd.date_range("2025-01-02 18:00", periods=4, freq="1h")
+        mask = compute_session_mask(timestamps, 8, 17)
+        assert not mask.any()
+
+    def test_flat_bars_excluded(self):
+        """Flat bars (O==H==L==C, e.g. weekends/holidays) excluded from mask."""
+        timestamps = pd.date_range("2025-01-02 00:00", periods=8, freq="1h")
+        opens  = np.array([100, 100, 101, 102, 102, 102, 103, 104], dtype=np.float64)
+        highs  = np.array([101, 100, 102, 103, 102, 103, 104, 105], dtype=np.float64)
+        lows   = np.array([ 99, 100, 100, 101, 102, 101, 102, 103], dtype=np.float64)
+        closes = np.array([100, 100, 101, 102, 102, 102, 103, 104], dtype=np.float64)
+        # Bar 1 (01:00) and bar 4 (04:00) are flat (O==H==L==C)
+
+        mask_no_ohlc = compute_session_mask(timestamps, 0, 8)
+        assert mask_no_ohlc[1]  # without ohlc, flat bar passes
+        assert mask_no_ohlc[4]
+
+        mask_with_ohlc = compute_session_mask(
+            timestamps, 0, 8, ohlc=(opens, highs, lows, closes),
+        )
+        assert not mask_with_ohlc[1], "Flat bar at 01:00 should be excluded"
+        assert not mask_with_ohlc[4], "Flat bar at 04:00 should be excluded"
+        assert mask_with_ohlc[0]  # non-flat, in session
+        assert mask_with_ohlc[2]  # non-flat, in session
+
+
+class TestSessionAwareSimulation:
+    """Tests for session-aware trade simulation (exits only during session)."""
+
+    def _make_data(self, n=48, start="2025-01-02 20:00", freq="1h"):
+        """Create synthetic OHLC data spanning session and off-session hours."""
+        timestamps = pd.date_range(start, periods=n, freq=freq)
+        # Steadily rising prices
+        base = 100.0 + np.arange(n, dtype=np.float64) * 0.5
+        opens = base.copy()
+        closes = base + 0.3
+        highs = base + 0.8
+        lows = base - 0.2
+        return timestamps, opens, closes, highs, lows
+
+    def test_tp_only_during_session(self):
+        """TP should only trigger on in-session bars, skipping off-session."""
+        # Session 23-6 UTC. Data starts 20:00, entry at bar 0 (idx=-1 not possible
+        # with the numba fn, so we use idx=0 → entry at bar 1 = 21:00 = off-session).
+        # TP is set very tight so it would trigger immediately on next bar.
+        n = 24
+        timestamps, opens, closes, highs, lows = self._make_data(n, "2025-01-02 20:00")
+        in_session = compute_session_mask(timestamps, 23, 6)
+
+        # Set TP very small (0.01) so any price movement triggers it
+        # Entry at bar 1 (21:00, off-session). TP should NOT trigger at 21:00 or 22:00.
+        # First in-session bar is 23:00 (index 3).
+        result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
+            opens, closes, highs, lows, 0, 1,
+            0.01, 100.0, 0.0, 0.0, n, 0, in_session,
+        )
+        assert result == 1.0
+        # Exit must be on an in-session bar (hour 23-05)
+        exit_hour = timestamps[exit_idx].hour
+        assert exit_hour >= 23 or exit_hour < 6, f"Exit at hour {exit_hour} is off-session"
+
+    def test_sl_only_during_session(self):
+        """SL should only trigger on in-session bars."""
+        n = 24
+        timestamps = pd.date_range("2025-01-02 20:00", periods=n, freq="1h")
+        # Prices that drop immediately — SL would trigger on first bar after entry
+        base = 100.0 - np.arange(n, dtype=np.float64) * 2.0
+        opens = base.copy()
+        closes = base - 1.0
+        highs = base + 0.1
+        lows = base - 2.0
+        in_session = compute_session_mask(timestamps, 23, 6)
+
+        # SL tight (0.01), entry at bar 1 (21:00 off-session)
+        result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
+            opens, closes, highs, lows, 0, 1,
+            100.0, 0.01, 0.0, 0.0, n, 0, in_session,
+        )
+        assert result == -1.0
+        exit_hour = timestamps[exit_idx].hour
+        assert exit_hour >= 23 or exit_hour < 6, f"SL exit at hour {exit_hour} is off-session"
+
+    def test_timeout_counts_session_bars_only(self):
+        """Timeout should count only in-session bars, not total bars."""
+        n = 48
+        timestamps, opens, closes, highs, lows = self._make_data(n, "2025-01-02 20:00")
+        in_session = compute_session_mask(timestamps, 23, 6)
+
+        # timeout_bars=3 → should close after 3 SESSION bars
+        # Entry at bar 1 (21:00 off-session).
+        # Session bars: 23:00(3), 00:00(4), 01:00(5) → 3rd session bar = 01:00
+        result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
+            opens, closes, highs, lows, 0, 1,
+            100.0, 100.0, 0.0, 0.0, n, 3, in_session,
+        )
+        assert exit_reason == 2  # timeout
+        assert exit_idx == 5  # 01:00 UTC (3rd session bar after entry)
+        exit_hour = timestamps[exit_idx].hour
+        assert exit_hour >= 23 or exit_hour < 6
+
+    def test_trade_runs_through_off_session(self):
+        """Trade should survive through off-session gap without forced closure."""
+        # Session 8-17. Entry during session, price stays flat through night,
+        # TP hit next morning.
+        n = 48
+        timestamps = pd.date_range("2025-01-02 15:00", periods=n, freq="1h")
+        base = np.full(n, 100.0, dtype=np.float64)
+        opens = base.copy()
+        closes = base.copy()
+        highs = base + 0.1
+        lows = base - 0.1
+        # TP spike next day at 09:00 (index 18)
+        highs[18] = 120.0
+        closes[18] = 115.0
+        in_session = compute_session_mask(timestamps, 8, 17)
+
+        # Entry at bar 1 (16:00, in session). TP=10.0 (won't hit until bar 18).
+        # Off-session bars 17:00-07:00 should be skipped.
+        result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
+            opens, closes, highs, lows, 0, 1,
+            10.0, 100.0, 0.0, 0.0, n, 0, in_session,
+        )
+        assert result == 1.0
+        assert exit_idx == 18  # 09:00 next day
+        assert exit_reason == 0  # TP hit
+
+    def test_no_session_filter_matches_original(self):
+        """With all-True mask, session-aware function matches original."""
+        n = 20
+        np.random.seed(42)
+        opens = 100.0 + np.random.randn(n).cumsum()
+        closes = opens + np.random.randn(n) * 0.3
+        highs = np.maximum(opens, closes) + np.abs(np.random.randn(n)) * 0.5
+        lows = np.minimum(opens, closes) - np.abs(np.random.randn(n)) * 0.5
+        all_true = np.ones(n, dtype=np.bool_)
+
+        for direction in [1, -1]:
+            r1, e1, p1, re1 = _simulate_trade_numba(
+                opens, closes, highs, lows, 5, direction,
+                2.0, 1.0, 0.01, 0.005, n, 10,
+            )
+            r2, e2, p2, re2 = _simulate_trade_session_numba(
+                opens, closes, highs, lows, 5, direction,
+                2.0, 1.0, 0.01, 0.005, n, 10, all_true,
+            )
+            assert r1 == r2
+            assert e1 == e2
+            assert re1 == re2
+
+    def test_simulate_pro_trade_session_aware(self):
+        """simulate_pro_trade respects in_session mask for exits."""
+        n = 24
+        timestamps = pd.date_range("2025-01-02 20:00", periods=n, freq="1h")
+        base = 100.0 + np.arange(n, dtype=np.float64) * 0.5
+        opens = base.copy()
+        closes = base + 0.3
+        highs = base + 0.8
+        lows = base - 0.2
+        in_session = compute_session_mask(timestamps, 23, 6)
+
+        # timeout_bars=2 → 2 session bars. Entry at bar 1 (21:00 off-session).
+        # Session bars: 23:00(3), 00:00(4) → timeout at 00:00
+        trade = simulate_pro_trade(
+            closes, highs, lows, 0, 1, 100.0, 100.0, 0.0,
+            max_bars=n, timestamps=timestamps, opens=opens,
+            timeout_bars=2, in_session=in_session,
+        )
+        assert trade is not None
+        assert trade["exit_reason"] == "timeout"
+        exit_hour = timestamps[trade["exit_idx"]].hour
+        assert exit_hour >= 23 or exit_hour < 6, f"Exit at hour {exit_hour} is off-session"
+
+    def test_exit_session_wider_than_signal_session(self):
+        """Exit session (23-20) is wider than signal session (23-6).
+
+        TP at hour 15 (outside signal session, inside exit session) should fire.
+        """
+        n = 48
+        timestamps = pd.date_range("2025-01-02 20:00", periods=n, freq="1h")
+        base = np.full(n, 100.0, dtype=np.float64)
+        opens = base.copy()
+        closes = base.copy()
+        highs = base + 0.1
+        lows = base - 0.1
+
+        # TP spike at hour 15:00 UTC (index 19: 20:00 + 19h = 15:00 next day)
+        highs[19] = 120.0
+        closes[19] = 115.0
+
+        # Exit session 23-20 (full CFD hours, only 20-23 dead zone)
+        exit_mask = compute_session_mask(timestamps, 23, 20)
+
+        # Entry at bar 1 (21:00, off-session for exits).
+        # TP=10.0, won't hit until bar 19 (15:00, in exit session).
+        result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
+            opens, closes, highs, lows, 0, 1,
+            10.0, 100.0, 0.0, 0.0, n, 0, exit_mask,
+        )
+        assert result == 1.0, "TP should hit during exit session"
+        assert exit_idx == 19
+        assert exit_reason == 0  # TP
+
+        # Same trade with narrow signal session (23-6) as exit mask —
+        # TP at 15:00 is off-session, trade should NOT close there.
+        signal_mask = compute_session_mask(timestamps, 23, 6)
+        result2, exit_idx2, _, _ = _simulate_trade_session_numba(
+            opens, closes, highs, lows, 0, 1,
+            10.0, 100.0, 0.0, 0.0, n, 0, signal_mask,
+        )
+        # With narrow session, TP at 15:00 is skipped
+        assert exit_idx2 != 19, "Narrow session should skip bar 19 (15:00 UTC)"

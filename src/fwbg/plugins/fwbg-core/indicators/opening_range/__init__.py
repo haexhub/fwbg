@@ -116,10 +116,13 @@ def _session_orb_features(
         # Count bars within session hour per session_id (0-indexed)
         bar_in_block = is_session.astype(int).groupby(session_id).cumsum() - 1
 
-        # Opening range: first range_bars bars of each session hour block
-        or_mask = is_session & (bar_in_block < range_bars)
-        or_high = df["H"].where(or_mask).groupby(session_id).transform("max")
-        or_low = df["L"].where(or_mask).groupby(session_id).transform("min")
+        # Opening range: body of the combined reference candle (O of first bar, C of last bar)
+        or_mask_first = is_session & (bar_in_block == 0)
+        or_mask_last = is_session & (bar_in_block == range_bars - 1)
+        or_open = df["O"].where(or_mask_first).groupby(session_id).transform("first")
+        or_close = df["C"].where(or_mask_last).groupby(session_id).transform("last")
+        or_high = pd.Series(np.maximum(or_open.values, or_close.values), index=df.index)
+        or_low = pd.Series(np.minimum(or_open.values, or_close.values), index=df.index)
 
         # --- pre_range_bars: expand range to include pre-session bars ---
         if pre_range_bars > 0:
@@ -134,8 +137,10 @@ def _session_orb_features(
                     continue
                 pre_start = max(0, pos - pre_range_bars)
                 if pre_start < pos:
-                    pre_h = df["H"].values[pre_start:pos].max()
-                    pre_l = df["L"].values[pre_start:pos].min()
+                    pre_o = df["O"].values[pre_start:pos]
+                    pre_c = df["C"].values[pre_start:pos]
+                    pre_h = max(pre_o.max(), pre_c.max())
+                    pre_l = min(pre_o.min(), pre_c.min())
                     sess_mask = sid_vals == sid
                     cur_h = arr_h[sess_mask][0]
                     cur_l = arr_l[sess_mask][0]
@@ -233,8 +238,8 @@ def _session_orb_features(
             df["C"] - or_midpoint, atr
         ).where(valid, np.nan)
 
-        # SL distance: full ORB range (entry near breakout side → SL at opposite boundary)
-        features[f"{prefix}_sl_dist"] = or_range.where(valid, np.nan)
+        # SL distance: half body range (entry at midpoint → SL at body boundary)
+        features[f"{prefix}_sl_dist"] = (or_range / 2).where(valid, np.nan)
 
         # Post-breakout STATE: 1 for all bars after first breakout in this session.
         # Resets at each new session start via groupby(session_id).cummax().

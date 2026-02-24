@@ -119,6 +119,18 @@ class SimulationContext:
     # Model Hyperparameters (from StrategyConfig, merged with per-asset grid overrides)
     model_hyperparameters: dict = field(default_factory=dict)
 
+    # Session boundaries for indicator calculation (Opening Range, PDH/PDL).
+    # Also used by SignalModel to filter entries (via model_hyperparameters).
+    session_start_hour: Optional[int] = None
+    session_end_hour: Optional[int] = None
+
+    # Separate exit session: when trades may be closed (TP/SL/timeout).
+    # Defaults to session_start_hour/session_end_hour when not set.
+    # Allows wider exit window (e.g., full CFD hours) while keeping
+    # Opening Range / PDH/PDL calculation on exchange hours.
+    exit_session_start_hour: Optional[int] = None
+    exit_session_end_hour: Optional[int] = None
+
     # Required features: always included in feature selection, bypass selection plugins
     required_features: List[str] = field(default_factory=list)
 
@@ -157,12 +169,16 @@ class SimulationContext:
             model_hp.update(grid.model_hyperparameters)
 
         # Inject session hours from indicator_overrides as hard trading limits.
-        # The SignalModel uses these to zero out signals outside session hours.
+        # Used by SignalModel (entry filter) and trade simulation (exit closure).
         pdl_overrides = grid.indicator_overrides.get("previous_day_levels", {})
-        if "session_start_hour" in pdl_overrides:
-            model_hp.setdefault("signal_start_hour", pdl_overrides["session_start_hour"])
-        if "session_end_hour" in pdl_overrides:
-            model_hp.setdefault("signal_end_hour", pdl_overrides["session_end_hour"])
+        session_start = pdl_overrides.get("session_start_hour")
+        session_end = pdl_overrides.get("session_end_hour")
+        exit_session_start = pdl_overrides.get("exit_session_start_hour")
+        exit_session_end = pdl_overrides.get("exit_session_end_hour")
+        if session_start is not None:
+            model_hp.setdefault("signal_start_hour", session_start)
+        if session_end is not None:
+            model_hp.setdefault("signal_end_hour", session_end)
 
         # Merge required_features: base model + per-asset grid
         req_feats = list(strategy.model.required_features)
@@ -225,6 +241,12 @@ class SimulationContext:
             grid_model_hyperparameters=grid.model_hyperparameters_grid,
             # Model Hyperparameters (merged with per-asset grid overrides)
             model_hyperparameters=model_hp,
+            # Session boundaries for indicators + entry filtering
+            session_start_hour=session_start,
+            session_end_hour=session_end,
+            # Separate exit session (wider window for CFD assets)
+            exit_session_start_hour=exit_session_start,
+            exit_session_end_hour=exit_session_end,
             required_features=req_feats,
             # Pipeline: Preprocessing
             preprocessing_plugins=strategy.get_preprocessing(),

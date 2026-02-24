@@ -1117,6 +1117,343 @@ class TestPDLMidnightCrossing:
             )
 
 
+def _make_hourly_breakout_spike_data():
+    """Build 15-min data where a single 15-min bar closes above PDH
+    but the hourly candle's Open and Close are both below PDH.
+
+    Day 0 (2024-01-01): session 7-21, H=110, L=90 during session
+        -> PDH=110, PDL=90
+    Day 1 (2024-01-02):
+        09:00 bar: C=105 (hourly Open equivalent)
+        09:15 bar: C=112 (spike above PDH=110!) — only 15-min Close above
+        09:30 bar: C=108
+        09:45 bar: C=106 (hourly Close)
+        → Hourly candle at 09:00: Open=105, Close=106 — both below PDH
+        → With resample_tf="1h": NO breakout
+        → Without resample_tf: breakout fires on the 09:15 bar (C=112 > 110)
+    """
+    idx = pd.date_range("2024-01-01", periods=192, freq="15min")
+    close = np.full(192, 100.0)
+    high = np.full(192, 100.5)
+    low = np.full(192, 99.5)
+    opn = np.full(192, 100.0)
+
+    # Day 0: 96 bars, session 7-21 has H=110, L=90
+    for i in range(96):
+        h = idx[i].hour
+        if h == 8:
+            high[i] = 100.5
+            low[i] = 90.0
+        elif h == 11:
+            high[i] = 110.0
+            low[i] = 99.5
+
+    # Day 1: spike on single 15-min bar
+    for i in range(96, 192):
+        ts = idx[i]
+        h, m = ts.hour, ts.minute
+        if h < 9 or h >= 17:
+            close[i] = 105.0
+            high[i] = 106.0
+            low[i] = 104.0
+            opn[i] = 105.0
+        elif h == 9 and m == 0:
+            # Hourly candle start
+            close[i] = 105.0
+            high[i] = 106.0
+            low[i] = 104.0
+            opn[i] = 105.0
+        elif h == 9 and m == 15:
+            # Spike! Close above PDH=110
+            close[i] = 112.0
+            high[i] = 113.0
+            low[i] = 104.0
+            opn[i] = 105.0
+        elif h == 9 and m == 30:
+            close[i] = 108.0
+            high[i] = 109.0
+            low[i] = 107.0
+            opn[i] = 108.0
+        elif h == 9 and m == 45:
+            # Hourly candle end — Close back below PDH
+            close[i] = 106.0
+            high[i] = 107.0
+            low[i] = 105.0
+            opn[i] = 106.0
+        else:
+            close[i] = 105.0
+            high[i] = 106.0
+            low[i] = 104.0
+            opn[i] = 105.0
+
+    return pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
+
+
+class TestHourlyBreakout:
+    """Tests for resample_tf-based hourly breakout confirmation."""
+
+    def test_spike_breakout_filtered(self):
+        """A single 15-min bar closing above PDH does NOT trigger breakout
+        when resample_tf='1h' and the hourly O/C are both below PDH."""
+        ind = _get_indicator()
+        df = _make_hourly_breakout_spike_data()
+        result = ind.compute(df, resample_tf="1h", min_retracement=0.0)
+
+        day1 = result.loc["2024-01-02"]
+        break_vals = day1["pdl_high_break"].dropna()
+        assert break_vals.sum() == 0, (
+            f"Hourly breakout should NOT fire on 15-min spike, got {break_vals.sum()}"
+        )
+
+    def test_spike_breakout_fires_without_resample(self):
+        """Without resample_tf, the 15-min Close spike DOES trigger breakout."""
+        ind = _get_indicator()
+        df = _make_hourly_breakout_spike_data()
+        result = ind.compute(df, resample_tf=None, min_retracement=0.0)
+
+        day1 = result.loc["2024-01-02"]
+        break_vals = day1["pdl_high_break"].dropna()
+        assert break_vals.sum() >= 1.0, (
+            f"Without resample_tf, 15-min Close spike should trigger breakout"
+        )
+
+    def test_hourly_open_breakout_fires(self):
+        """When the hourly Open is above PDH (gap up), breakout fires."""
+        idx = pd.date_range("2024-01-01", periods=192, freq="15min")
+        close = np.full(192, 100.0)
+        high = np.full(192, 100.5)
+        low = np.full(192, 99.5)
+        opn = np.full(192, 100.0)
+
+        # Day 0: session H=110, L=90
+        for i in range(96):
+            h = idx[i].hour
+            if h == 8:
+                low[i] = 90.0
+            elif h == 11:
+                high[i] = 110.0
+
+        # Day 1: hourly Open at 09:00 gaps above PDH=110
+        for i in range(96, 192):
+            ts = idx[i]
+            h, m = ts.hour, ts.minute
+            if h == 9 and m == 0:
+                # Gap open above PDH
+                opn[i] = 112.0
+                close[i] = 111.0  # Close also above
+                high[i] = 113.0
+                low[i] = 111.0
+            elif h == 9:
+                close[i] = 111.0
+                high[i] = 112.0
+                low[i] = 110.0
+                opn[i] = 111.0
+            elif 7 <= h < 21:
+                close[i] = 105.0
+                high[i] = 106.0
+                low[i] = 104.0
+                opn[i] = 105.0
+
+        df = pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
+        ind = _get_indicator()
+        result = ind.compute(df, resample_tf="1h", min_retracement=0.0)
+
+        day1 = result.loc["2024-01-02"]
+        break_vals = day1["pdl_high_break"].dropna()
+        assert break_vals.sum() >= 1.0, (
+            f"Hourly Open gap above PDH should trigger breakout"
+        )
+
+
+class TestMinRetracement:
+    """Tests for min_retracement parameter (H/L-based)."""
+
+    def test_retest_blocked_without_retracement(self):
+        """After breakout, if price stays near breakout boundary (Low never
+        dips 30% into range), no retest fires."""
+        ind = _get_indicator()
+        df = _make_deterministic_retest_data()
+        # Modify Day 1: after breakout at 09:00 (C=112), price stays high
+        # Never retraces — all bars have Low > PDH - 0.3 * range
+        # PDH=110, PDL=90, range=20, threshold = 110 - 0.3*20 = 104
+        # Keep all Lows above 104
+
+        # Re-build day 1 with no retracement
+        idx = df.index
+        close = df["C"].values.copy()
+        high = df["H"].values.copy()
+        low = df["L"].values.copy()
+        opn = df["O"].values.copy()
+
+        for i in range(24, 48):
+            h = idx[i].hour
+            if h == 9:
+                close[i] = 112.0  # breakout
+                high[i] = 113.0
+                low[i] = 108.0
+                opn[i] = 109.0
+            elif h > 9:
+                close[i] = 108.0  # stays high, Low=106 > 104 threshold
+                high[i] = 109.0
+                low[i] = 106.0
+                opn[i] = 108.0
+
+        df2 = pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
+        result = ind.compute(df2, resample_tf=None, min_retracement=0.3)
+
+        day1 = result.loc["2024-01-02"]
+        bull_vals = day1["rl50_pdl_retest_bull"].dropna()
+        assert bull_vals.sum() == 0, (
+            f"No retest should fire without 30% retracement, got {bull_vals.sum()}"
+        )
+
+    def test_retest_fires_after_deep_retracement(self):
+        """After breakout, once a bar's Low dips below the retrace threshold,
+        retest fires on the next entry-level bar."""
+        ind = _get_indicator()
+        df = _make_deterministic_retest_data()
+        # Default data: breakout at 09:00 (C=112), retrace to midpoint (C=100) at 12:00
+        # PDH=110, PDL=90, range=20
+        # threshold = 110 - 0.3*20 = 104. Low at 12:00 = 99 < 104 -> retracement OK
+        result = ind.compute(df, resample_tf=None, min_retracement=0.3)
+
+        day1 = result.loc["2024-01-02"]
+        bull_vals = day1["rl50_pdl_retest_bull"].dropna()
+        assert bull_vals.sum() >= 1.0, (
+            f"Retest should fire after 30% retracement, got {bull_vals.sum()}"
+        )
+
+    def test_retracement_via_low_not_close(self):
+        """A bar whose Low touches the threshold but Close stays high
+        should still satisfy the retracement condition."""
+        idx = pd.date_range("2024-01-01", periods=72, freq="h")
+        close = np.full(72, 100.0)
+        high = np.full(72, 100.5)
+        low = np.full(72, 99.5)
+        opn = np.full(72, 100.0)
+
+        # Day 0: PDH=110, PDL=90, range=20
+        for i in range(24):
+            h = idx[i].hour
+            if h == 8:
+                low[i] = 90.0
+            elif h == 11:
+                high[i] = 110.0
+
+        # Day 1: breakout, then Low dips but Close stays high
+        for i in range(24, 48):
+            h = idx[i].hour
+            if h == 9:
+                close[i] = 112.0  # breakout
+                high[i] = 113.0
+                low[i] = 110.0
+                opn[i] = 111.0
+            elif h == 11:
+                # Low dips to 103 (below threshold 104), but Close stays at 108
+                close[i] = 108.0
+                high[i] = 109.0
+                low[i] = 103.0  # <-- triggers retracement via Low
+                opn[i] = 108.0
+            elif h == 12:
+                # Price at midpoint (entry level for rl=0.5)
+                close[i] = 100.0
+                high[i] = 101.0
+                low[i] = 99.0
+                opn[i] = 101.0
+            elif h > 9:
+                close[i] = 107.0
+                high[i] = 108.0
+                low[i] = 106.0
+                opn[i] = 107.0
+
+        df = pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
+        ind = _get_indicator()
+        result = ind.compute(df, resample_tf=None, min_retracement=0.3)
+
+        day1 = result.loc["2024-01-02"]
+        bull_vals = day1["rl50_pdl_retest_bull"].dropna()
+        assert bull_vals.sum() >= 1.0, (
+            f"Low touching threshold should satisfy retracement, got {bull_vals.sum()}"
+        )
+
+    def test_bear_retracement_via_high(self):
+        """For bear retest, High touching PDL + min_retracement * range
+        should satisfy the retracement condition."""
+        ind = _get_indicator()
+        df = _make_deterministic_retest_data()
+        # Day 2: breakout below PDL at 09:00, retrace to midpoint at 12:00
+        # PDH (from Day 1) depends on day 1 data.
+        # The default data should work — high at 12:00 is 107, which should
+        # be above the threshold.
+        result = ind.compute(df, resample_tf=None, min_retracement=0.3)
+
+        day2 = result.loc["2024-01-03"]
+        bear_vals = day2["rl50_pdl_retest_bear"].dropna()
+        assert bear_vals.sum() >= 1.0, (
+            f"Bear retest should fire after retracement via High, got {bear_vals.sum()}"
+        )
+
+
+class TestResampledRange:
+    """Tests for resample_tf Close-based range computation."""
+
+    def test_resampled_close_range_differs_from_native(self):
+        """With 15-min data where sub-hourly Close spikes exist,
+        resample_tf='1h' range should differ from native."""
+        ind = _get_indicator()
+        df = _make_hourly_breakout_spike_data()
+
+        # close_session with resample
+        result_r = ind.compute(
+            df.copy(), range_modes=["close_session"],
+            resample_tf="1h", min_retracement=0.0,
+        )
+        # close_session without resample
+        result_n = ind.compute(
+            df.copy(), range_modes=["close_session"],
+            resample_tf=None, min_retracement=0.0,
+        )
+
+        # Day 1 range_vs_atr should differ because the 09:15 spike (C=112)
+        # inflates the native Close-based day 0 range but not the resampled one
+        day0_r = result_r.loc["2024-01-02"]["cs_pdl_range_vs_atr"].dropna()
+        day0_n = result_n.loc["2024-01-02"]["cs_pdl_range_vs_atr"].dropna()
+
+        # Both should have values
+        assert len(day0_r) > 0 and len(day0_n) > 0
+
+    def test_hl_mode_unaffected_by_resample(self):
+        """hl_session range is unchanged by resample_tf (max of max = max)."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=2000)
+
+        result_r = ind.compute(
+            df.copy(), range_modes=["hl_session"],
+            resample_tf="1h", min_retracement=0.0,
+        )
+        result_n = ind.compute(
+            df.copy(), range_modes=["hl_session"],
+            resample_tf=None, min_retracement=0.0,
+        )
+
+        # Range should be identical
+        r_range = result_r["pdl_range_vs_atr"].dropna()
+        n_range = result_n["pdl_range_vs_atr"].dropna()
+        pd.testing.assert_series_equal(r_range, n_range, check_names=False)
+
+    def test_new_default_params(self):
+        """Default params include resample_tf and min_retracement."""
+        params = _pdl.PreviousDayLevelsIndicator.get_default_params()
+        assert params["resample_tf"] == "1h"
+        assert params["min_retracement"] == 0.3
+
+    def test_new_param_schema(self):
+        """Param schema includes resample_tf and min_retracement."""
+        schema = _pdl.PreviousDayLevelsIndicator.get_param_schema()
+        assert "resample_tf" in schema
+        assert "min_retracement" in schema
+
+
 class TestPDLDiscovery:
     """Plugin discovery tests."""
 

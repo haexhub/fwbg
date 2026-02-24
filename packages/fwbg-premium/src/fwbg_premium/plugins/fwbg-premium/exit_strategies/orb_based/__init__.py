@@ -18,7 +18,8 @@ import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
-from fwbg.simulation import _simulate_trade_numba
+from fwbg.simulation import _simulate_trade_numba, compute_session_mask
+from fwbg.simulation.numba_core import _simulate_trade_session_numba
 from fwbg.core import GridParams
 
 if TYPE_CHECKING:
@@ -83,6 +84,23 @@ class OrbExitStrategy(BaseExitStrategy):
         max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(df)
         timeout_val = timeout_bars if timeout_bars else 0
 
+        # Session-aware exits: only exit during session hours.
+        # Trades may run through off-session periods (overnight holds).
+        # Prefer exit_session hours (wider CFD window), fall back to session hours.
+        in_session = None
+        s_start = getattr(ctx, "exit_session_start_hour", None)
+        if s_start is None:
+            s_start = getattr(ctx, "session_start_hour", None)
+        s_end = getattr(ctx, "exit_session_end_hour", None)
+        if s_end is None:
+            s_end = getattr(ctx, "session_end_hour", None)
+        if isinstance(s_start, int) and isinstance(s_end, int):
+            in_session = compute_session_mask(
+                df.index, s_start, s_end,
+                ohlc=(opn_v, hgh_v, low_v, cls_v),
+            )
+        use_session = in_session is not None
+
         n = len(cls_v)
         targets_long = np.zeros(n, dtype=np.float64)
         targets_short = np.zeros(n, dtype=np.float64)
@@ -94,25 +112,35 @@ class OrbExitStrategy(BaseExitStrategy):
             tp_distance = max(atr_v[i] * tp_mult, min_tp_distance)
             sl_distance = max(sl_dist_v[i], min_sl_distance)
 
-            result_long, exit_long, _, _ = _simulate_trade_numba(
-                opn_v, cls_v, hgh_v, low_v, i, 1,
-                tp_distance, sl_distance, ctx.spread, slippage,
-                max_bars, timeout_val,
-            )
+            if use_session:
+                result_long, exit_long, _, _ = _simulate_trade_session_numba(
+                    opn_v, cls_v, hgh_v, low_v, i, 1,
+                    tp_distance, sl_distance, ctx.spread, slippage,
+                    max_bars, timeout_val, in_session,
+                )
+            else:
+                result_long, exit_long, _, _ = _simulate_trade_numba(
+                    opn_v, cls_v, hgh_v, low_v, i, 1,
+                    tp_distance, sl_distance, ctx.spread, slippage,
+                    max_bars, timeout_val,
+                )
             if result_long == 1.0:
                 targets_long[i] = 1.0
             if return_durations:
                 durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
-            result_short, exit_short, _, _ = _simulate_trade_numba(
-                opn_v, cls_v, hgh_v, low_v, i, -1,
-                tp_distance, sl_distance, ctx.spread, slippage,
-                max_bars, timeout_val,
-            )
-            if result_short == 1.0:
-                targets_short[i] = 1.0
-            if return_durations:
-                durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
+            if use_session:
+                result_short, exit_short, _, _ = _simulate_trade_session_numba(
+                    opn_v, cls_v, hgh_v, low_v, i, -1,
+                    tp_distance, sl_distance, ctx.spread, slippage,
+                    max_bars, timeout_val, in_session,
+                )
+            else:
+                result_short, exit_short, _, _ = _simulate_trade_numba(
+                    opn_v, cls_v, hgh_v, low_v, i, -1,
+                    tp_distance, sl_distance, ctx.spread, slippage,
+                    max_bars, timeout_val,
+                )
 
         if return_durations:
             return targets_long, targets_short, durations_long, durations_short
