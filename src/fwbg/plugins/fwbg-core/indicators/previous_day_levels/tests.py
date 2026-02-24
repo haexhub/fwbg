@@ -1046,9 +1046,6 @@ class TestPDLMidnightCrossing:
         # 23:00 Jan 2 belongs to Day 2 trading day.
         # We verify indirectly: pdl_high_break resets at session start.
         # On Day 2 (23:00 Jan 2), high_break should start fresh.
-        at_22 = result.loc["2024-01-02 22:00"]
-        at_23 = result.loc["2024-01-02 23:00"]
-
         # post_bull from Day 1 (if any breakout happened) should not carry to Day 2
         # Since Day 1 had no breakout (all close=100 < PDH), post_bull=0 for both.
         # But the key point is that break state resets at 23:00.
@@ -1214,7 +1211,7 @@ class TestHourlyBreakout:
         day1 = result.loc["2024-01-02"]
         break_vals = day1["pdl_high_break"].dropna()
         assert break_vals.sum() >= 1.0, (
-            f"Without resample_tf, 15-min Close spike should trigger breakout"
+            "Without resample_tf, 15-min Close spike should trigger breakout"
         )
 
     def test_hourly_open_breakout_fires(self):
@@ -1261,7 +1258,7 @@ class TestHourlyBreakout:
         day1 = result.loc["2024-01-02"]
         break_vals = day1["pdl_high_break"].dropna()
         assert break_vals.sum() >= 1.0, (
-            f"Hourly Open gap above PDH should trigger breakout"
+            "Hourly Open gap above PDH should trigger breakout"
         )
 
 
