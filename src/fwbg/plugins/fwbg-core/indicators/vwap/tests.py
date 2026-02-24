@@ -167,11 +167,7 @@ class TestVolumeWeighting:
         result = indicator.compute(df, session_start_hour=df.index[0].hour)
         vwap = result["vwap"]
 
-        # Nach shift: vwap[3] = VWAP nach 3 Bars = (100*1 + 110*10 + 90*1) / 12
-        expected_after_3_bars = (100 * 1 + 110 * 10 + 90 * 1) / 12
-        # vwap.iloc[3] wenn 4+ Bars existieren, sonst .iloc[-1]
-        # Da nur 3 Bars, ist vwap.iloc[2] der VWAP nach Bar 2 (shift um 1)
-        # Also: vwap.iloc[2] = VWAP nach Bar 1 (0-indexed)
+        # Da nur 3 Bars, ist vwap.iloc[2] der VWAP nach Bar 1 (shift um 1)
         # vwap.iloc[1] = VWAP von Bar 0 = close[0] = 100.0
         # vwap.iloc[2] = VWAP nach Bar 0+1 = (100+110*10)/11 ≈ 109.09
         expected_after_2_bars = (100 * 1 + 110 * 10) / 11
