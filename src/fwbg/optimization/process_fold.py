@@ -373,8 +373,8 @@ def process_single_fold(
             "model_hyperparameters": b.get("model_hyperparameters"),
             "exit_modifier_params": b.get("exit_modifier_params"),
         },
-        "selected_features_long": b.get("selected_features_long", []),
-        "selected_features_short": b.get("selected_features_short", []),
+        "selected_features_long": b.get("selected_features_long") or [],
+        "selected_features_short": b.get("selected_features_short") or [],
     }
 
     # Calculate bias ratio

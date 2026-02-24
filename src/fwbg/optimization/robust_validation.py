@@ -292,8 +292,8 @@ def run_robust_validation(
 
         inner_val_pnl = inner_result.get("avg_val_pnl", 0)
         best_ct = inner_result.get("best_ct", 0.6)
-        selected_features_long = inner_result.get("selected_features_long", [])
-        selected_features_short = inner_result.get("selected_features_short", [])
+        selected_features_long = inner_result.get("selected_features_long") or []
+        selected_features_short = inner_result.get("selected_features_short") or []
 
         # Evaluate on test fold (our "holdout")
         candidate = {
