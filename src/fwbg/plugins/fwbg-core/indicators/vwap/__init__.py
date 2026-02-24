@@ -88,9 +88,8 @@ class VwapIndicator(BaseIndicator):
         # Session-ID: neue Session wenn hour == session_start_hour
         # und die vorherige Bar eine andere Stunde hatte
         hours = pd.Series(df.index.hour, index=df.index)
-        at_start = hours == session_start_hour
-        prev_at_start = at_start.shift(1).fillna(False)
-        session_boundary = at_start & ~prev_at_start
+        prev_hour = hours.shift(1)
+        session_boundary = (hours == session_start_hour) & (prev_hour != session_start_hour)
         session_boundary.iloc[0] = True
         session_id = session_boundary.cumsum()
 

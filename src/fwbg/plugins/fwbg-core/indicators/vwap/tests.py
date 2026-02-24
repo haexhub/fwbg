@@ -58,12 +58,17 @@ def trending_df():
 
 @pytest.fixture
 def multi_session_df():
-    """DataFrame über 2 volle Handelstage (je 26 Bars à 15min, 9:00–15:45)."""
-    bars_per_session = 28  # 9:00 bis 15:45 = 28 × 15min
-    n = bars_per_session * 2
+    """DataFrame über 2 volle Handelstage mit Session-Reset bei 09:00.
+
+    Session 1: Jan 2 09:00 – Jan 3 08:45 (96 bars, price 100→105)
+    Session 2: Jan 3 09:00 – 15:45 (28 bars, price 108→103)
+    """
+    bars_session1 = 96  # 24h at 15min = full day until next 09:00
+    bars_session2 = 28  # 7h trading in session 2
+    n = bars_session1 + bars_session2
     close = np.concatenate([
-        np.linspace(100, 105, bars_per_session),
-        np.linspace(108, 103, bars_per_session),
+        np.linspace(100, 105, bars_session1),
+        np.linspace(108, 103, bars_session2),
     ])
     start = pd.Timestamp("2024-01-02 09:00:00")
     idx = pd.date_range(start, periods=n, freq="15min")
@@ -85,12 +90,16 @@ class TestVwapBasic:
         vwap = result["vwap"].dropna()
         assert (vwap.round(6) == 100.0).all(), "VWAP bei konstantem Preis muss 100.0 sein"
 
-    def test_vwap_is_between_high_and_low(self, indicator, trending_df):
-        """VWAP muss immer zwischen High und Low liegen."""
+    def test_vwap_within_session_range(self, indicator, trending_df):
+        """VWAP muss zwischen Session-cummin(L) und Session-cummax(H) liegen."""
         result = indicator.compute(trending_df)
         vwap = result["vwap"].dropna()
-        assert (vwap >= result["L"].loc[vwap.index]).all()
-        assert (vwap <= result["H"].loc[vwap.index]).all()
+        # VWAP is a cumulative weighted average of typical prices.
+        # Each tp is between L and H, so VWAP stays within session's running H/L envelope.
+        cum_h = result["H"].expanding().max().loc[vwap.index]
+        cum_l = result["L"].expanding().min().loc[vwap.index]
+        assert (vwap >= cum_l).all(), "VWAP below session cumulative low"
+        assert (vwap <= cum_h).all(), "VWAP above session cumulative high"
 
     def test_vwap_starts_at_typical_price(self, indicator):
         """Erstes VWAP einer Session muss Typical Price sein."""
@@ -113,26 +122,19 @@ class TestSessionReset:
         """VWAP muss am Beginn jeder neuen Session zurückgesetzt werden."""
         result = indicator.compute(multi_session_df, session_start_hour=9)
 
-        # Session 1 endet am letzten Bar von Tag 1 (9:00+27*15min = 15:45)
-        # Session 2 beginnt am nächsten 9:00-Bar
-        hours = result.index.hour
-        session2_start = result.index[result.index.date == result.index.date[1]][0]
-
+        # Session 2 starts at 09:00 Jan 3
+        session2_start = pd.Timestamp("2024-01-03 09:00:00")
         vwap = result["vwap"]
 
-        # Am Beginn von Session 2 (nach Shift): vwap entspricht letztem Bar von Session 1
-        # Das VWAP am Ende Session 1 und Beginn Session 2 müssen sich deutlich unterscheiden
-        # da die Preise in Session 2 bei ~108 starten (vs ~105 Ende Session 1)
-        sess1_last_idx = result.index[result.index < session2_start][-1]
-        sess2_first_idx = session2_start
-
-        vwap_end_s1 = vwap.loc[sess1_last_idx]
-        # Nach dem Shift: das erste vwap-Bar von Session 2 zeigt noch den letzten VWAP von S1
-        # Zwei Bars später sehen wir bereits den neuen Session-2-VWAP
-        # Weiter im Verlauf von Session 2 muss VWAP ~108 konvergieren
+        # Session 2 prices start at ~108, VWAP should converge there
         sess2_bars = vwap.loc[session2_start:]
-        # VWAP in Session 2 muss irgendwann über 106 kommen (session 2 starts at 108)
         assert sess2_bars.dropna().max() > 106, "VWAP in Session 2 muss bei ~108 liegen"
+
+        # VWAP just before session 2 (end of session 1) should be ~102-103
+        sess1_last_vwap = vwap.loc[:session2_start].iloc[-2]  # -2: before shift effect
+        assert sess1_last_vwap < 106, (
+            f"Session 1 VWAP end should be <106 (prices 100-105), got {sess1_last_vwap}"
+        )
 
     def test_session_boundary_at_correct_hour(self, indicator):
         """Session-Grenze muss bei genau session_start_hour auftreten."""
