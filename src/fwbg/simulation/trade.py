@@ -11,6 +11,42 @@ from fwbg.data.config import DATA_PATH
 from fwbg.simulation.numba_core import _simulate_trade_numba
 
 
+def compute_session_mask(timestamps, session_start_hour, session_end_hour,
+                         ohlc=None):
+    """Return boolean array: True for bars within trading session hours.
+
+    Used to restrict trade exits to session hours only.
+    Trades may run through off-session periods (overnight holds allowed),
+    but TP/SL/timeout exits only trigger on in-session bars.
+
+    Args:
+        timestamps: DatetimeIndex of bar timestamps
+        session_start_hour: Session start hour (UTC)
+        session_end_hour: Session end hour (UTC)
+        ohlc: Optional (opens, highs, lows, closes) arrays. When provided,
+              flat bars (O==H==L==C) are excluded from the mask. This
+              filters out weekends, holidays, and early closes automatically.
+
+    Returns:
+        bool array of length n.  True = bar is within session.
+    """
+    hours = timestamps.hour
+
+    if session_start_hour < session_end_hour:
+        mask = (hours >= session_start_hour) & (hours < session_end_hour)
+    else:  # midnight crossing (e.g. ASX200 23:00-06:00)
+        mask = (hours >= session_start_hour) | (hours < session_end_hour)
+
+    mask = np.asarray(mask, dtype=bool)
+
+    if ohlc is not None:
+        opens, highs, lows, closes = ohlc
+        flat = (opens == highs) & (highs == lows) & (lows == closes)
+        mask = mask & ~np.asarray(flat, dtype=bool)
+
+    return mask
+
+
 @njit(cache=True)
 def compute_targets_numba(
     opens: np.ndarray,
@@ -336,7 +372,7 @@ def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
 
 def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_distance, spread,
                        max_bars=None, timestamps=None, symbol=None,
-                       opens=None, timeout_bars=None):
+                       opens=None, timeout_bars=None, in_session=None):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
@@ -442,15 +478,20 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             "pnl_raw": float(pnl_raw),
         }
 
-    # Timeout-Index berechnen (muss INNERHALB des Loops geprüft werden,
-    # exakt wie in _simulate_trade_numba — sonst Mismatch zwischen Labels und Trading)
-    timeout_idx = -1
-    if timeout_bars is not None and timeout_bars > 0:
-        timeout_idx = min(entry_idx + timeout_bars - 1, len(closes) - 1)
+    # Session-aware exit: only check TP/SL/timeout on in-session bars.
+    # Trades may run through off-session periods (overnight holds).
+    # When in_session is None, all bars are eligible for exits (original behavior).
+    session_bars_elapsed = 0
 
     for j in range(entry_idx, min(entry_idx + max_bars, len(closes))):
-        # Timeout-Check ZUERST (Priorität über TP/SL, matches _simulate_trade_numba)
-        if timeout_idx > 0 and j >= timeout_idx:
+        # Skip off-session bars — no exits outside trading hours
+        if in_session is not None and not in_session[j]:
+            continue
+
+        session_bars_elapsed += 1
+
+        # Timeout check (counts only session bars when session-aware)
+        if timeout_bars is not None and timeout_bars > 0 and session_bars_elapsed >= timeout_bars:
             exit_price = closes[j]
             if direction == 1:
                 pnl = exit_price - entry
@@ -467,13 +508,11 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             sl_hit = lows[j] <= sl
 
             if tp_hit and sl_hit:
-                # Beide im selben Bar - versuche Sub-Stunden Lookup
                 if timestamps is not None and symbol is not None:
                     result = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp, sl)
                     if result is not None:
                         exit_price = tp if result > 0 else sl
                         return make_result(result, j, exit_price)
-                # Fallback: konservativ Loss
                 return make_result(-1.0, j, sl)
             elif tp_hit:
                 return make_result(1.0, j, tp)
@@ -485,13 +524,11 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             sl_hit = highs[j] >= sl
 
             if tp_hit and sl_hit:
-                # Beide im selben Bar - versuche Sub-Stunden Lookup
                 if timestamps is not None and symbol is not None:
                     result = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp, sl)
                     if result is not None:
                         exit_price = tp if result > 0 else sl
                         return make_result(result, j, exit_price)
-                # Fallback: konservativ Loss
                 return make_result(-1.0, j, sl)
             elif tp_hit:
                 return make_result(1.0, j, tp)

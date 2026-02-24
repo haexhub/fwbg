@@ -1896,7 +1896,9 @@
         "indicator_overrides": {
           "previous_day_levels": {
             "session_start_hour": 23,
-            "session_end_hour": 6
+            "session_end_hour": 6,
+            "exit_session_start_hour": 23,
+            "exit_session_end_hour": 20
           }
         }
       },

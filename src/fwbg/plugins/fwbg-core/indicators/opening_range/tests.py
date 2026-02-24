@@ -867,18 +867,23 @@ class TestORBRetestEntry:
         """
         n_total = n_pre_hour_bars + 10
         idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
+        open_ = np.full(n_total, 100.0)
         close = np.full(n_total, 100.0)
         high = close + 0.5
         low = close - 0.5
         b = n_pre_hour_bars
-        high[b] = 103.0
-        low[b] = 97.0
-        close[b + 1] = 104.0   # upside breakout
+        # Body-based range: O of first bar = 97, C of first bar = 103
+        # → or_high = max(97, 103) = 103, or_low = min(97, 103) = 97, midpoint = 100
+        open_[b] = 97.0
+        close[b] = 103.0
+        high[b] = 104.0
+        low[b] = 96.0
+        close[b + 1] = 104.0   # upside breakout (C > or_high=103)
         close[b + 2] = 100.0   # retrace to midpoint
         close[b + 3] = 96.0    # below or_low (invalidated)
-        high = np.maximum(high, close)
-        low = np.minimum(low, close)
-        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
+        high = np.maximum(high, np.maximum(open_, close))
+        low = np.minimum(low, np.minimum(open_, close))
+        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
         return df, b
 
     def test_retest_bull_column_exists(self):
@@ -943,18 +948,22 @@ class TestORBRetestEntry:
         ind = _get_indicator()
         n_total = 32 + 10
         idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
+        open_ = np.full(n_total, 100.0)
         close = np.full(n_total, 100.0)
         high = close + 0.5
         low = close - 0.5
         b = 32
-        high[b] = 103.0
-        low[b] = 97.0   # midpoint = 100
+        # Body-based range: O=103, C=97 → or_high=103, or_low=97, midpoint=100
+        open_[b] = 103.0
+        close[b] = 97.0
+        high[b] = 104.0
+        low[b] = 96.0
         close[b + 1] = 96.0   # downside breakout (C=96 < or_low=97)
         close[b + 2] = 100.0  # retrace to midpoint — retest_bear SHOULD fire
         # still_valid_bear: C < or_high=103 → True ✓
-        high = np.maximum(high, close)
-        low = np.minimum(low, close)
-        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
+        high = np.maximum(high, np.maximum(open_, close))
+        low = np.minimum(low, np.minimum(open_, close))
+        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_atr_width=1.0)
         assert "orb_s08_retest_bear" in result.columns
@@ -997,12 +1006,14 @@ class TestCarryForwardDays:
         return df
 
     def _set_session_range(self, df, day, session_hour, or_high, or_low):
-        """Set the range bar H/L for a given day's session hour."""
+        """Set the range bar O/C body for a given day's session hour."""
         day_start = df.index[0] + pd.Timedelta(days=day)
         session_time = day_start.replace(hour=session_hour, minute=0)
         if session_time in df.index:
-            df.loc[session_time, "H"] = or_high
-            df.loc[session_time, "L"] = or_low
+            df.loc[session_time, "O"] = or_low
+            df.loc[session_time, "C"] = or_high
+            df.loc[session_time, "H"] = or_high + 1.0
+            df.loc[session_time, "L"] = or_low - 1.0
 
     def test_default_no_carry(self):
         """carry_forward_days=0 (default): each session uses its own range."""
@@ -1017,12 +1028,13 @@ class TestCarryForwardDays:
                              enable_stats=False, carry_forward_days=0)
 
         # Day 1's range should be its own (not carried from day 0)
+        # sl_dist = or_range / 2 = (102-98) / 2 = 2.0
         day1_start = df.index[0] + pd.Timedelta(days=1, hours=8, minutes=15)
         if day1_start in result.index:
             sl_dist = result.loc[day1_start, "orb_s08_sl_dist"]
             if not pd.isna(sl_dist):
-                assert sl_dist == pytest.approx(4.0, abs=0.1), (
-                    f"With carry_forward_days=0, day 1 should use its own range (4.0), got {sl_dist}"
+                assert sl_dist == pytest.approx(2.0, abs=0.1), (
+                    f"With carry_forward_days=0, day 1 should use its own range/2 (2.0), got {sl_dist}"
                 )
 
     def test_carry_preserves_range_on_no_breakout(self):
@@ -1037,14 +1049,14 @@ class TestCarryForwardDays:
         result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
                              enable_stats=False, carry_forward_days=1)
 
-        # Day 1 should have sl_dist = 10.0 (from carried range), not 2.0 (its own)
+        # Day 1 should have sl_dist = 5.0 (carried range/2 = (105-95)/2), not 1.0 (its own)
         # Find a valid bar in day 1's session (after range period)
         day1_post_range = df.index[0] + pd.Timedelta(days=1, hours=8, minutes=15)
         if day1_post_range in result.index:
             sl_dist = result.loc[day1_post_range, "orb_s08_sl_dist"]
             if not pd.isna(sl_dist):
-                assert sl_dist == pytest.approx(10.0, abs=0.1), (
-                    f"Carried range should be 10.0 (from day 0), got {sl_dist}"
+                assert sl_dist == pytest.approx(5.0, abs=0.1), (
+                    f"Carried range/2 should be 5.0 (from day 0), got {sl_dist}"
                 )
 
     def test_carry_resets_after_breakout(self):
@@ -1066,13 +1078,13 @@ class TestCarryForwardDays:
         result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
                              enable_stats=False, carry_forward_days=2)
 
-        # Day 2 should use its own range (4.0), not the carried one (10.0)
+        # Day 2 should use its own range/2 (2.0), not the carried one (5.0)
         day2_post_range = df.index[0] + pd.Timedelta(days=2, hours=8, minutes=15)
         if day2_post_range in result.index:
             sl_dist = result.loc[day2_post_range, "orb_s08_sl_dist"]
             if not pd.isna(sl_dist):
-                assert sl_dist == pytest.approx(4.0, abs=0.1), (
-                    f"After breakout in carried session, day 2 should use own range (4.0), got {sl_dist}"
+                assert sl_dist == pytest.approx(2.0, abs=0.1), (
+                    f"After breakout in carried session, day 2 should use own range/2 (2.0), got {sl_dist}"
                 )
 
     def test_carry_respects_max_days(self):
@@ -1089,12 +1101,12 @@ class TestCarryForwardDays:
         result = ind.compute(df.copy(), sessions=[8], enable_rolling=False,
                              enable_stats=False, carry_forward_days=1)
 
-        # Day 2 should use its own range (4.0), carry expired after 1 day
+        # Day 2 should use its own range/2 (2.0), carry expired after 1 day
         day2_post_range = df.index[0] + pd.Timedelta(days=2, hours=8, minutes=15)
         if day2_post_range in result.index:
             sl_dist = result.loc[day2_post_range, "orb_s08_sl_dist"]
             if not pd.isna(sl_dist):
-                assert sl_dist == pytest.approx(4.0, abs=0.1), (
+                assert sl_dist == pytest.approx(2.0, abs=0.1), (
                     f"carry_forward_days=1 should expire after 1 day, got sl_dist={sl_dist}"
                 )
 
@@ -1609,4 +1621,199 @@ class TestStrategyConfigSignalColumnIntegration:
             f"Auto-collected required_features not in indicator output.\n"
             f"Missing ({len(missing)}): {sorted(missing)[:10]}\n"
             f"This would cause 'Feature X nicht in inner_df' warnings at runtime."
+        )
+
+
+class TestBodyBasedRange:
+    """Session ORB range is body-based (O/C), not wick-based (H/L).
+
+    The opening range uses Open of the first bar and Close of the last bar
+    in the range window.  or_high = max(O_first, C_last), or_low = min(O_first, C_last).
+    This gives a tighter range than H/L (filters wick noise).
+    """
+
+    def _make_body_vs_wick_df(self, range_bars=2):
+        """15min data where body and wicks clearly differ.
+
+        Range bars (session 08, bars b+0 and b+1 for range_bars=2):
+          bar0: O=98, H=104, L=95, C=99
+          bar1: O=101, H=106, L=96, C=102
+
+        Body range: or_high = max(O_bar0, C_bar1) = max(98, 102) = 102
+                    or_low  = min(O_bar0, C_bar1) = min(98, 102) = 98
+                    body_range = 4.0
+
+        Wick range: H_max = 106, L_min = 95 → wick_range = 11.0
+        """
+        n_warmup = 32  # 8 hours warmup
+        n_total = n_warmup + 8
+        idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
+        open_ = np.full(n_total, 100.0)
+        close = np.full(n_total, 100.0)
+        high = close + 0.5
+        low = close - 0.5
+        b = n_warmup  # 08:00
+
+        # bar0 (08:00): O=98, H=104, L=95, C=99
+        open_[b] = 98.0
+        close[b] = 99.0
+        high[b] = 104.0
+        low[b] = 95.0
+
+        # bar1 (08:15): O=101, H=106, L=96, C=102
+        open_[b + 1] = 101.0
+        close[b + 1] = 102.0
+        high[b + 1] = 106.0
+        low[b + 1] = 96.0
+
+        # post-range bars: normal
+        for i in range(2, 6):
+            close[b + i] = 100.0
+
+        high = np.maximum(high, np.maximum(open_, close))
+        low = np.minimum(low, np.minimum(open_, close))
+        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        return df, b
+
+    def test_session_range_uses_body_not_wicks(self):
+        """or_high/or_low must be derived from O/C body, not H/L wicks."""
+        ind = _get_indicator()
+        df, b = self._make_body_vs_wick_df(range_bars=2)
+        result = ind.compute(df, sessions=[8], range_bars=2,
+                             enable_rolling=False, enable_stats=False)
+
+        # Body range = max(98, 102) - min(98, 102) = 4.0
+        # _range feature is normalized: safe_divide(or_range, C) = 4.0 / 100.0 = 0.04
+        # After shift: result.iloc[b+3] has the value for bar b+2
+        range_val = result["orb_s08_range"].iloc[b + 3]
+        assert not np.isnan(range_val), "orb_s08_range should not be NaN for post-range bar"
+        expected = 4.0 / 100.0  # body_range / close
+        assert abs(range_val - expected) < 0.001, (
+            f"Expected normalized body range {expected} (4.0/100.0), "
+            f"got {range_val}. If ~0.11, range is still wick-based (H/L)."
+        )
+
+    def test_body_range_smaller_than_wick_range(self):
+        """Body-based range must be <= wick-based range for any candle."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=5000)
+        result = ind.compute(df, sessions=[8], range_bars=2,
+                             enable_rolling=False, enable_stats=False)
+
+        range_vals = result["orb_s08_range"].dropna()
+        assert len(range_vals) > 10, "Need enough session ranges to compare"
+        # Body range can't exceed wick range: max(O,C) - min(O,C) <= H - L
+        assert (range_vals >= 0).all(), "Body range should be non-negative"
+
+    def test_single_bar_body_range(self):
+        """With range_bars=1, or_high = max(O, C), or_low = min(O, C) of that single bar."""
+        ind = _get_indicator()
+        n_warmup = 32
+        n_total = n_warmup + 8
+        idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
+        open_ = np.full(n_total, 100.0)
+        close = np.full(n_total, 100.0)
+        high = close + 0.5
+        low = close - 0.5
+        b = n_warmup
+
+        # Single range bar: O=97, C=103 → body range = 6.0
+        # Wicks: H=105, L=94 → wick range = 11.0
+        open_[b] = 97.0
+        close[b] = 103.0
+        high[b] = 105.0
+        low[b] = 94.0
+
+        high = np.maximum(high, np.maximum(open_, close))
+        low = np.minimum(low, np.minimum(open_, close))
+        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        result = ind.compute(df, sessions=[8], range_bars=1,
+                             enable_rolling=False, enable_stats=False)
+
+        # _range = safe_divide(or_range, C) = 6.0 / 100.0 = 0.06
+        # After shift: result.iloc[b+2] has value for bar b+1
+        range_val = result["orb_s08_range"].iloc[b + 2]
+        assert not np.isnan(range_val), "range should not be NaN"
+        expected = 6.0 / 100.0
+        assert abs(range_val - expected) < 0.001, (
+            f"Expected normalized body range {expected} (6.0/100.0), got {range_val}"
+        )
+
+    def test_sl_dist_is_half_range(self):
+        """Session sl_dist = or_range / 2 (entry at midpoint → SL at body boundary)."""
+        ind = _get_indicator()
+        df, b = self._make_body_vs_wick_df(range_bars=2)
+        result = ind.compute(df, sessions=[8], range_bars=2,
+                             enable_rolling=False, enable_stats=False)
+
+        # Body range = 4.0, sl_dist = 4.0 / 2 = 2.0
+        sl_val = result["orb_s08_sl_dist"].iloc[b + 3]
+        assert not np.isnan(sl_val), "sl_dist should not be NaN"
+        assert abs(sl_val - 2.0) < 0.01, (
+            f"Expected sl_dist = 2.0 (body_range 4.0 / 2), got {sl_val}"
+        )
+
+    def test_poc_dist_reflects_body_midpoint(self):
+        """poc_dist = (C - midpoint) / ATR. Midpoint is body-based: (or_high + or_low) / 2."""
+        ind = _get_indicator()
+        df, b = self._make_body_vs_wick_df(range_bars=2)
+        # Post-range bar: C=100.0, body midpoint = (102+98)/2 = 100.0 → poc_dist ≈ 0
+        result = ind.compute(df, sessions=[8], range_bars=2,
+                             enable_rolling=False, enable_stats=False)
+
+        poc_val = result["orb_s08_poc_dist"].iloc[b + 3]
+        assert not np.isnan(poc_val), "poc_dist should not be NaN"
+        assert abs(poc_val) < 0.1, (
+            f"Expected poc_dist ≈ 0 (C=100 at body midpoint=100), got {poc_val}"
+        )
+
+    def test_breakout_uses_body_boundary(self):
+        """Breakout detection must use body-based or_high/or_low, not wick H/L."""
+        ind = _get_indicator()
+        df, b = self._make_body_vs_wick_df(range_bars=2)
+        df = df.copy()
+        # Post-range bar: C=103 → above body or_high=102 (breakout!)
+        # but below wick H_max=106 (would NOT be breakout if wick-based)
+        df.loc[df.index[b + 2], "C"] = 103.0
+        df.loc[df.index[b + 2], "H"] = 103.0
+        result = ind.compute(df, sessions=[8], range_bars=2,
+                             enable_rolling=False, enable_stats=False)
+
+        # After shift: result.iloc[b+3] has bar b+2's breakout value
+        bu_val = result["orb_s08_breakout_up"].iloc[b + 3]
+        assert bu_val == 1.0, (
+            f"Expected breakout_up=1 (C=103 > body or_high=102), got {bu_val}. "
+            f"If 0, breakout is still using wick-based boundary."
+        )
+
+    def test_rolling_orb_still_uses_wicks(self):
+        """Rolling (hourly) ORB features must remain wick-based (H/L), not body-based."""
+        ind = _get_indicator()
+        n_warmup = 5 * 4
+        n_total = n_warmup + 8
+        idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
+        close = np.full(n_total, 100.0)
+        open_ = np.full(n_total, 100.0)
+        high = close + 0.5
+        low = close - 0.5
+        b = n_warmup
+
+        # Range bar: body is narrow (O=99, C=101) but wicks are wide (H=105, L=95)
+        open_[b] = 99.0
+        close[b] = 101.0
+        high[b] = 105.0
+        low[b] = 95.0
+
+        high = np.maximum(high, np.maximum(open_, close))
+        low = np.minimum(low, np.minimum(open_, close))
+        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        result = ind.compute(df, enable_session=False, enable_stats=False)
+
+        # Rolling ORB uses H/L → sl_dist = raw range = 10.0
+        # (orb_range is normalized by C, but orb_sl_dist is raw)
+        sl_val = result["orb_sl_dist"].iloc[b + 2]
+        assert not np.isnan(sl_val), "Rolling orb_sl_dist should not be NaN"
+        assert abs(sl_val - 10.0) < 0.01, (
+            f"Expected rolling orb_sl_dist 10.0 (wick-based H/L range), got {sl_val}. "
+            f"Rolling ORB should NOT use body-based range."
         )

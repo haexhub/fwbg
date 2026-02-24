@@ -10,7 +10,7 @@ import numpy as np
 from numba import njit, prange
 
 # Bump this whenever a @njit function signature/return type changes.
-_CACHE_VERSION = "2"
+_CACHE_VERSION = "3"
 
 _THIS_DIR = pathlib.Path(__file__).resolve().parent
 _STAMP_FILE = _THIS_DIR / "__pycache__" / ".numba_cache_version"
@@ -164,6 +164,88 @@ def _simulate_trade_numba(
             return -1.0, j, sl, 1
 
     # Kein Exit (weder TP/SL noch Timeout innerhalb max_bars)
+    return 0.0, -1, 0.0, -1
+
+
+@njit(cache=True)
+def _simulate_trade_session_numba(
+    opens: np.ndarray,
+    closes: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    idx: int,
+    direction: int,
+    tp_distance: float,
+    sl_distance: float,
+    spread: float,
+    slippage: float,
+    max_bars: int,
+    timeout_bars: int,
+    in_session: np.ndarray,
+) -> tuple:
+    """
+    Session-aware trade simulation: exits only during session hours.
+
+    Trades may run through off-session periods (overnight holds allowed).
+    TP/SL checks and timeout counting only happen on in-session bars.
+
+    Args:
+        in_session: boolean array (len n). True = bar is within trading session.
+        Other args identical to _simulate_trade_numba.
+
+    Returns:
+        (result, exit_idx, exit_price, exit_reason)
+    """
+    entry_idx = idx + 1
+    n = len(closes)
+
+    if entry_idx >= n:
+        return 0.0, -1, 0.0, -1
+
+    entry_price = opens[entry_idx]
+
+    if direction == 1:
+        entry = entry_price + spread + slippage
+        tp = entry + tp_distance
+        sl = entry - sl_distance
+    else:
+        entry = entry_price - spread - slippage
+        tp = entry - tp_distance
+        sl = entry + sl_distance
+
+    end_idx = min(entry_idx + max_bars, n)
+    session_bars_elapsed = 0
+
+    for j in range(entry_idx, end_idx):
+        if not in_session[j]:
+            continue
+
+        session_bars_elapsed += 1
+
+        # Timeout check (counts only session bars)
+        if timeout_bars > 0 and session_bars_elapsed >= timeout_bars:
+            exit_price = closes[j]
+            if direction == 1:
+                pnl = exit_price - entry
+            else:
+                pnl = entry - exit_price
+            result = 1.0 if pnl > 0 else -1.0
+            return result, j, exit_price, 2
+
+        if direction == 1:
+            tp_hit = highs[j] >= tp
+            sl_hit = lows[j] <= sl
+        else:
+            tp_hit = lows[j] <= tp
+            sl_hit = highs[j] >= sl
+
+        if tp_hit and sl_hit:
+            return -1.0, j, sl, 1
+        if tp_hit:
+            return 1.0, j, tp, 0
+        if sl_hit:
+            return -1.0, j, sl, 1
+
     return 0.0, -1, 0.0, -1
 
 

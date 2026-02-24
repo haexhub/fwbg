@@ -532,3 +532,30 @@ class TestSessionFiltering:
         assert len(trades_out) == 0, (
             f"Expected 0 trades in session 14-22, got {len(trades_out)}"
         )
+
+    def test_exits_only_during_session_hours(self):
+        """Trade exits (TP/SL/timeout) only happen during session hours.
+
+        Trades may run through off-session periods (overnight holds allowed).
+        With session 0-18 and entry at 14:00, exit must be in-session.
+        With session 0-15, exit must still be on an in-session bar — trade
+        runs through off-session and exits next session.
+        """
+        df = _make_pdhl_bull_retest()
+
+        # Session 0-18: entry at 14:00 is within session → exit in session
+        ctx_wide = _minimal_ctx(
+            model_hyperparameters={
+                "signal_column_long": "rl50_pdl_retest_bull",
+                "signal_column_short": "rl50_pdl_retest_bear",
+                "signal_start_hour": 0,
+                "signal_end_hour": 23,
+            },
+            session_start_hour=0,
+            session_end_hour=18,
+        )
+        trades_wide = _run_strategy(df, ctx_wide)
+        long_wide = [t for t in trades_wide if t["direction"] == "LONG"]
+        assert len(long_wide) == 1
+        exit_hour = int(long_wide[0]["exit_time"][11:13])
+        assert exit_hour < 18, f"Exit at hour {exit_hour} should be within session 0-18"

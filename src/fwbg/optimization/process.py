@@ -353,7 +353,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         feature_counts = {}
         n_successful_folds = len(all_fold_results)
         for fr in all_fold_results:
-            for feat in fr.get("selected_features_long", []) + fr.get("selected_features_short", []):
+            for feat in (fr.get("selected_features_long") or []) + (fr.get("selected_features_short") or []):
                 feature_counts[feat] = feature_counts.get(feat, 0) + 1
 
         feature_stability_details = {

@@ -14,7 +14,7 @@ from fwbg.core import get_exit_strategy, GridParams
 if TYPE_CHECKING:
     from fwbg_sdk.models import BaseModel
 from fwbg.pipeline.features import REGIME_LONG, REGIME_SHORT
-from fwbg.simulation.trade import simulate_pro_trade
+from fwbg.simulation.trade import simulate_pro_trade, compute_session_mask
 
 
 def _resolve_distances(df: pd.DataFrame, tp: float, sl: float, ctx: SimulationContext):
@@ -98,6 +98,22 @@ def _simulate_trades_core(
     # TP/SL-Distanzen vom Exit-Strategy-Plugin berechnen lassen
     tp_dists, sl_dists = _resolve_distances(df, tp, sl, ctx)
 
+    # Session-aware exits: only exit during session hours.
+    # Trades may run through off-session periods (overnight holds).
+    # Prefer exit_session hours (wider CFD window), fall back to session hours.
+    in_session = None
+    s_start = getattr(ctx, "exit_session_start_hour", None)
+    if s_start is None:
+        s_start = getattr(ctx, "session_start_hour", None)
+    s_end = getattr(ctx, "exit_session_end_hour", None)
+    if s_end is None:
+        s_end = getattr(ctx, "session_end_hour", None)
+    if isinstance(s_start, int) and isinstance(s_end, int):
+        in_session = compute_session_mask(
+            df.index, s_start, s_end,
+            ohlc=(opn, hgh, low, cls),
+        )
+
     trades = []
     trades_detailed = [] if return_detailed else None
     next_allowed_entry = 0
@@ -142,6 +158,7 @@ def _simulate_trades_core(
                 opens=opn,
                 max_bars=ctx.max_trade_bars,
                 timeout_bars=timeout_bars,
+                in_session=in_session,
             )
             if trade:
                 t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"]}

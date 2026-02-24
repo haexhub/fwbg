@@ -7,6 +7,7 @@ from .numba_core import (
 )
 from .trade import (
     simulate_pro_trade,
+    compute_session_mask,
     calculate_sharpe_ratio,
     calculate_calmar_ratio,
     monte_carlo_permutation_test,
@@ -22,6 +23,7 @@ __all__ = [
     "_simulate_trade_numba",
     "compute_targets_numba",
     "simulate_pro_trade",
+    "compute_session_mask",
     "calculate_sharpe_ratio",
     "calculate_calmar_ratio",
     "monte_carlo_permutation_test",
