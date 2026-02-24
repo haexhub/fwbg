@@ -381,7 +381,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             sample_bias_detected, bias_ratios, mean_bias_ratio,
             config_inconsistent=config_inconsistent,
         )
-        features_list = representative_fold.get("selected_features_long", []) + representative_fold.get("selected_features_short", [])
+        features_list = (representative_fold.get("selected_features_long") or []) + (representative_fold.get("selected_features_short") or [])
 
         # === NO EDGE ===
         if fk <= 0:
