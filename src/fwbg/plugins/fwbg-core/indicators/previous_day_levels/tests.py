@@ -1441,7 +1441,7 @@ class TestResampledRange:
     def test_new_default_params(self):
         """Default params include resample_tf and min_retracement."""
         params = _pdl.PreviousDayLevelsIndicator.get_default_params()
-        assert params["resample_tf"] == "1h"
+        assert params["resample_tf"] is None
         assert params["min_retracement"] == 0.3
 
     def test_new_param_schema(self):

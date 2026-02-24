@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
-from fwbg.simulation import _simulate_trade_numba, compute_session_mask
+from fwbg.simulation import _simulate_trade_numba, _simulate_trade_trailing_numba, compute_session_mask
 from fwbg.simulation.numba_core import _simulate_trade_session_numba
 from fwbg.core import GridParams
 
@@ -101,6 +101,16 @@ class OrbExitStrategy(BaseExitStrategy):
             )
         use_session = in_session is not None
 
+        # === EXIT MODIFIER DISPATCH ===
+        # When an exit modifier (e.g. trailing_stop) is configured, use the
+        # trailing simulation kernel instead of the standard one.
+        # Key difference from atr_based: SL comes from sl_dist_column, not ATR.
+        exit_modifier_name = getattr(ctx, "exit_modifier", None)
+        modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}
+        use_trailing = bool(exit_modifier_name)
+        breakeven_trigger = modifier_params.get("breakeven_trigger", 0.5) if use_trailing else 0.0
+        trail_atr_mult = modifier_params.get("trail_atr_mult", 0.5) if use_trailing else 0.0
+
         n = len(cls_v)
         targets_long = np.zeros(n, dtype=np.float64)
         targets_short = np.zeros(n, dtype=np.float64)
@@ -112,7 +122,14 @@ class OrbExitStrategy(BaseExitStrategy):
             tp_distance = max(atr_v[i] * tp_mult, min_tp_distance)
             sl_distance = max(sl_dist_v[i], min_sl_distance)
 
-            if use_session:
+            if use_trailing:
+                trail_distance = atr_v[i] * trail_atr_mult if trail_atr_mult > 0.0 else 0.0
+                result_long, exit_long, _, _ = _simulate_trade_trailing_numba(
+                    opn_v, cls_v, hgh_v, low_v, i, 1,
+                    tp_distance, sl_distance, ctx.spread, slippage,
+                    max_bars, timeout_val, breakeven_trigger, trail_distance, 0.0,
+                )
+            elif use_session:
                 result_long, exit_long, _, _ = _simulate_trade_session_numba(
                     opn_v, cls_v, hgh_v, low_v, i, 1,
                     tp_distance, sl_distance, ctx.spread, slippage,
@@ -129,7 +146,14 @@ class OrbExitStrategy(BaseExitStrategy):
             if return_durations:
                 durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
-            if use_session:
+            if use_trailing:
+                trail_distance = atr_v[i] * trail_atr_mult if trail_atr_mult > 0.0 else 0.0
+                result_short, exit_short, _, _ = _simulate_trade_trailing_numba(
+                    opn_v, cls_v, hgh_v, low_v, i, -1,
+                    tp_distance, sl_distance, ctx.spread, slippage,
+                    max_bars, timeout_val, breakeven_trigger, trail_distance, 0.0,
+                )
+            elif use_session:
                 result_short, exit_short, _, _ = _simulate_trade_session_numba(
                     opn_v, cls_v, hgh_v, low_v, i, -1,
                     tp_distance, sl_distance, ctx.spread, slippage,
@@ -141,6 +165,10 @@ class OrbExitStrategy(BaseExitStrategy):
                     tp_distance, sl_distance, ctx.spread, slippage,
                     max_bars, timeout_val,
                 )
+            if result_short == 1.0:
+                targets_short[i] = 1.0
+            if return_durations:
+                durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
 
         if return_durations:
             return targets_long, targets_short, durations_long, durations_short

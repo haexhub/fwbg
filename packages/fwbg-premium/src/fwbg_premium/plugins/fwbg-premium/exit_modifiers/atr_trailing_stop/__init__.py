@@ -37,6 +37,7 @@ import numpy as np
 from numba import njit
 
 from fwbg_sdk import BaseExitModifier, register_exit_modifier
+from fwbg.simulation import _simulate_trade_trailing_numba  # shared kernel
 
 _CACHE_DIR = pathlib.Path(__file__).parent / "__pycache__"
 
@@ -57,138 +58,6 @@ def _call_numba(func, *args):
     except ModuleNotFoundError:
         _clear_numba_cache()
         return func(*args)
-
-
-# ---------------------------------------------------------------------------
-# Numba kernel — single-trade simulation mit Breakeven- und Trailing-Stop
-# ---------------------------------------------------------------------------
-
-@njit(cache=True)
-def _simulate_trade_trailing_numba(
-    opens: np.ndarray,
-    closes: np.ndarray,
-    highs: np.ndarray,
-    lows: np.ndarray,
-    idx: int,
-    direction: int,
-    tp_distance: float,
-    sl_distance: float,
-    spread: float,
-    slippage: float,
-    max_bars: int,
-    timeout_bars: int,
-    breakeven_trigger: float,
-    trail_distance: float,
-    trail_tp_dist: float,
-) -> tuple:
-    """
-    Single-trade simulation mit Breakeven- und Trailing-Stop.
-
-    Args:
-        breakeven_trigger: Bruchteil der TP-Distanz nach dem SL auf Entry
-                           gezogen wird (0.0 = kein Breakeven, Trailing startet
-                           sofort wenn trail_distance > 0).
-        trail_distance:    Absoluter Abstand des Trailing-Stops vom besten
-                           erreichten Preis (0.0 = kein Trailing).
-        trail_tp_dist:     Absoluter Abstand des Trailing-TPs vom besten
-                           erreichten Preis (0.0 = kein Trailing-TP).
-
-    Returns:
-        (result, exit_idx, exit_price, exit_reason)
-        result: 1.0=Win, -1.0=Loss, 0.0=kein Exit
-    """
-    entry_idx = idx + 1
-    n = len(closes)
-
-    if entry_idx >= n:
-        return 0.0, -1, 0.0, -1
-
-    entry_price = opens[entry_idx]
-
-    if direction == 1:  # Long
-        entry = entry_price + spread + slippage
-        tp = entry + tp_distance
-        sl = entry - sl_distance
-        be_trigger_price = entry + tp_distance * breakeven_trigger
-    else:  # Short
-        entry = entry_price - spread - slippage
-        tp = entry - tp_distance
-        sl = entry + sl_distance
-        be_trigger_price = entry - tp_distance * breakeven_trigger
-
-    end_idx = min(entry_idx + max_bars, n)
-
-    timeout_idx = -1
-    if timeout_bars > 0:
-        timeout_idx = min(entry_idx + timeout_bars - 1, n - 1)
-
-    best_price = entry
-    trailing_active = breakeven_trigger <= 0.0
-
-    for j in range(entry_idx, end_idx):
-        if timeout_idx > 0 and j >= timeout_idx:
-            exit_price = closes[j]
-            if direction == 1:
-                pnl = exit_price - entry
-            else:
-                pnl = entry - exit_price
-            return (1.0 if pnl > 0 else -1.0), j, exit_price, 2
-
-        if direction == 1:
-            if highs[j] > best_price:
-                best_price = highs[j]
-        else:
-            if lows[j] < best_price:
-                best_price = lows[j]
-
-        if not trailing_active and breakeven_trigger > 0.0:
-            if direction == 1 and best_price >= be_trigger_price:
-                trailing_active = True
-                if entry > sl:
-                    sl = entry
-            elif direction == -1 and best_price <= be_trigger_price:
-                trailing_active = True
-                if entry < sl:
-                    sl = entry
-
-        if trailing_active and trail_distance > 0.0:
-            if direction == 1:
-                new_sl = best_price - trail_distance
-                if new_sl > sl:
-                    sl = new_sl
-            else:
-                new_sl = best_price + trail_distance
-                if new_sl < sl:
-                    sl = new_sl
-
-        if trailing_active and trail_tp_dist > 0.0:
-            if direction == 1:
-                new_tp = best_price + trail_tp_dist
-                if new_tp > tp:
-                    tp = new_tp
-            else:
-                new_tp = best_price - trail_tp_dist
-                if new_tp < tp:
-                    tp = new_tp
-
-        if direction == 1:
-            tp_hit = highs[j] >= tp
-            sl_hit = lows[j] <= sl
-        else:
-            tp_hit = lows[j] <= tp
-            sl_hit = highs[j] >= sl
-
-        if sl_hit:
-            if direction == 1:
-                result = 1.0 if sl > entry else -1.0
-            else:
-                result = 1.0 if sl < entry else -1.0
-            return result, j, sl, 1
-
-        if tp_hit:
-            return 1.0, j, tp, 0
-
-    return 0.0, -1, 0.0, -1
 
 
 @njit(cache=True, parallel=False)
