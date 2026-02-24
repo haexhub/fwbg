@@ -1,0 +1,7 @@
+{
+  "name": "vwap",
+  "version": "1.0.0",
+  "description": "VWAP (Volume-Weighted Average Price) mit Session-Reset, Bands und Rolling Z-Score fuer Mean-Reversion-Signale",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

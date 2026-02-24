@@ -1,0 +1,47 @@
+{
+  "name": "Intraday MR: VWAP",
+  "description": "Intraday Mean Reversion auf VWAP-Basis mit Regime-Filter fuer US-Indizes und DAX. VWAP Z-Score als primaeres Signal, Hurst-Exponent als Ranging-Filter.",
+  "tags": [
+    "intraday",
+    "mean_reversion",
+    "vwap",
+    "regime",
+    "index",
+    "step1"
+  ],
+  "timeframe": "MINUTE_15",
+  "hypothesis": "Preis revertiert intraday zum VWAP in ranging Maerkten (Hurst < 0.5). VWAP Z-Score > 1.5 oder < -1.5 mit niedrigem ADX signalisiert ueberdehnte Moves.",
+  "expected_outcome": "VWAP Z-Score und Regime-Features werden selektiert. Beste Performance in Low-Trend-Phasen (ADX < 25, Hurst < 0.5).",
+  "pipeline": "mr_vwap_intraday_v1",
+  "exit_strategy": "atr_based",
+  "exit_params": "atr_intraday_at_v1",
+  "model": "xgboost_screen_v1",
+  "validation": "walk_forward_screening_v1",
+  "filters": "screening_v1",
+  "resources": "exploration_heavy_v1",
+  "grids": {
+    "presets_dir": "../grids",
+    "assignments": {
+      "NAS100": {
+        "preset": "mr_vwap_index_v1",
+        "tp": [1.0, 1.5, 2.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "SPX500": {
+        "preset": "mr_vwap_index_v1",
+        "tp": [1.0, 1.5, 2.0],
+        "sl": [1.5, 2.0, 2.5]
+      },
+      "DAX": {
+        "preset": "mr_vwap_index_v1",
+        "tp": [1.5, 2.0, 2.5],
+        "sl": [2.0, 2.5, 3.0]
+      },
+      "DOW30": {
+        "preset": "mr_vwap_index_v1",
+        "tp": [1.0, 1.5, 2.0],
+        "sl": [1.5, 2.0, 2.5]
+      }
+    }
+  }
+}

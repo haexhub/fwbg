@@ -259,22 +259,34 @@ def _session_orb_features(
             features[f"{prefix}_retest_zone_up"] = near_high.astype(int).where(valid, np.nan)
             features[f"{prefix}_retest_zone_down"] = near_low.astype(int).where(valid, np.nan)
 
-            # Retest (reload) entry signal — recommended ORB entry at ORB midpoint (POC proxy).
-            # Fires when: post-breakout AND price near midpoint AND thesis still valid.
-            # Bull: broken up AND retrace to midpoint AND still above ORB Low
-            # Bear: broken down AND retrace to midpoint AND still below ORB High
+            # Retest (reload) entry signal — fires on the FIRST bar price enters the midpoint
+            # zone after a breakout (event signal, not sustained state).
+            # Bull: broke above OR High AND retraced to midpoint AND no subsequent bear breakout
+            # Bear: broke below OR Low AND retraced to midpoint AND no subsequent bull breakout
             near_poc = (df["C"] >= or_midpoint - half_band) & (df["C"] <= or_midpoint + half_band)
-            still_valid_bull = df["C"] > or_low
-            still_valid_bear = df["C"] < or_high
 
             post_bull_flag = above_cummax.where(valid, 0).astype(bool)
             post_bear_flag = below_cummax.where(valid, 0).astype(bool)
 
+            # Thesis still valid: had breakout in one direction, but NOT also in the other.
+            # If price broke both sides the range is "used up" — no clean retest.
+            still_valid_bull = above_cummax.astype(bool) & ~below_cummax.astype(bool)
+            still_valid_bear = below_cummax.astype(bool) & ~above_cummax.astype(bool)
+
+            bull_cond = post_bull_flag & near_poc & still_valid_bull
+            bear_cond = post_bear_flag & near_poc & still_valid_bear
+
+            # First-touch: fire only when condition transitions False → True within the session
+            bull_int  = bull_cond.astype(np.int8)
+            bear_int  = bear_cond.astype(np.int8)
+            prev_bull = bull_int.groupby(session_id).shift(1).fillna(0).astype(np.int8)
+            prev_bear = bear_int.groupby(session_id).shift(1).fillna(0).astype(np.int8)
+
             features[f"{prefix}_retest_bull"] = (
-                (post_bull_flag & near_poc & still_valid_bull).astype(float).where(valid, np.nan)
+                (bull_int - prev_bull).clip(lower=0).astype(float).where(valid, np.nan)
             )
             features[f"{prefix}_retest_bear"] = (
-                (post_bear_flag & near_poc & still_valid_bear).astype(float).where(valid, np.nan)
+                (bear_int - prev_bear).clip(lower=0).astype(float).where(valid, np.nan)
             )
 
     return features
