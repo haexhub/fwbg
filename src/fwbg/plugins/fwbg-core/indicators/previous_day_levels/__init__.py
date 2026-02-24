@@ -495,7 +495,7 @@ def _compute_pdl_features(
     retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
     skip_weekends: bool = True,
     min_sl_atr_mult: float = 0.0,
-    resample_tf: str = "1h",
+    resample_tf: str = None,
     min_retracement: float = 0.3,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """Compute all previous day level features for all range × break × retest modes."""
@@ -584,7 +584,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
         skip_weekends: bool = True,
         min_sl_atr_mult: float = 0.0,
-        resample_tf: str = "1h",
+        resample_tf: str = None,
         min_retracement: float = 0.3,
         **params,
     ) -> pd.DataFrame:
@@ -638,7 +638,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "retest_modes": ["all_hours"],
             "skip_weekends": True,
             "min_sl_atr_mult": 0.0,
-            "resample_tf": "1h",
+            "resample_tf": None,
             "min_retracement": 0.3,
         }
 
@@ -759,7 +759,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             },
             "resample_tf": {
                 "type": "string",
-                "default": "1h",
+                "default": None,
                 "description": (
                     "Resample timeframe for Close-based range computation and breakout "
                     "detection. Uses resampled Close for range and resampled Open/Close "

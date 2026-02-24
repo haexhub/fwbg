@@ -96,6 +96,23 @@
             "signal_column_long": "rb2_cf2_prb1_orb_s07_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s07_retest_bear"
           }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ]
       },
       "NAS100": {
@@ -166,6 +183,23 @@
           {
             "signal_column_long": "rb2_cf2_prb1_orb_s14_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s14_retest_bear"
+          }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
           }
         ]
       },
@@ -238,6 +272,23 @@
             "signal_column_long": "rb2_cf2_prb1_orb_s14_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s14_retest_bear"
           }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ]
       },
       "SPX500": {
@@ -309,6 +360,23 @@
             "signal_column_long": "rb2_cf2_prb1_orb_s14_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s14_retest_bear"
           }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ]
       },
       "FTSE100": {
@@ -378,6 +446,23 @@
           {
             "signal_column_long": "rb2_cf2_prb1_orb_s08_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s08_retest_bear"
+          }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
           }
         ]
       },
@@ -450,6 +535,23 @@
             "signal_column_long": "rb2_cf2_prb1_orb_s07_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s07_retest_bear"
           }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ]
       },
       "CAC40": {
@@ -520,6 +622,23 @@
           {
             "signal_column_long": "rb2_cf2_prb1_orb_s07_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s07_retest_bear"
+          }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
           }
         ]
       },
@@ -592,6 +711,23 @@
             "signal_column_long": "rb2_cf2_prb1_orb_s00_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s00_retest_bear"
           }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ]
       },
       "ASX200": {
@@ -661,6 +797,23 @@
           {
             "signal_column_long": "rb2_cf2_prb1_orb_s00_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s00_retest_bear"
+          }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
           }
         ]
       },
@@ -732,6 +885,23 @@
           {
             "signal_column_long": "rb2_cf2_prb1_orb_s01_retest_bull",
             "signal_column_short": "rb2_cf2_prb1_orb_s01_retest_bear"
+          }
+        ],
+        "timeout_bars": [
+          null
+        ],
+        "exit_modifier_params_grid": [
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
           }
         ]
       }

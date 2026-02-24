@@ -3,6 +3,7 @@ Simulation Module - Trade-Simulation und Numba-Kernfunktionen.
 """
 from .numba_core import (
     _simulate_trade_numba,
+    _simulate_trade_trailing_numba,
     compute_targets_numba,
 )
 from .trade import (
@@ -21,6 +22,7 @@ from .equity import simulate_equity, simulate_equity_from_pnl, filter_correlated
 
 __all__ = [
     "_simulate_trade_numba",
+    "_simulate_trade_trailing_numba",
     "compute_targets_numba",
     "simulate_pro_trade",
     "compute_session_mask",
