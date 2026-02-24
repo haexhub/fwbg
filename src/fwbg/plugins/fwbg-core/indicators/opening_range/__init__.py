@@ -239,7 +239,9 @@ def _session_orb_features(
         ).where(valid, np.nan)
 
         # SL distance: half body range (entry at midpoint → SL at body boundary)
-        features[f"{prefix}_sl_dist"] = (or_range / 2).where(valid, np.nan)
+        # When body range is 0 (O==C doji), sl_dist is invalid → NaN
+        sl_dist = (or_range / 2).where(valid & (or_range > 0), np.nan)
+        features[f"{prefix}_sl_dist"] = sl_dist
 
         # Post-breakout STATE: 1 for all bars after first breakout in this session.
         # Resets at each new session start via groupby(session_id).cummax().
