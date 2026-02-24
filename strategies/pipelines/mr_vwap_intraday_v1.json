@@ -1,0 +1,82 @@
+{
+  "_meta": {
+    "name": "mr_vwap_intraday",
+    "description": "Mean Reversion auf VWAP-Basis mit Regime-Filter. VWAP Z-Score als primaeres Entry-Signal, Hurst/VR als Regime-Kontext, RSI/BB als Bestaetigung.",
+    "version": 1
+  },
+  "indicators": [
+    {
+      "name": "vwap",
+      "params": {
+        "session_start_hour": 9,
+        "zscore_windows": [20, 50],
+        "band_multipliers": [1.0, 2.0]
+      }
+    },
+    {
+      "name": "momentum",
+      "params": {
+        "rsi_periods": [7, 14],
+        "stoch_periods": [14],
+        "williams_periods": [14],
+        "roc_periods": [5]
+      }
+    },
+    {
+      "name": "volatility",
+      "params": {
+        "atr_periods": [14],
+        "bb_period": 20,
+        "vol_est_windows": [20]
+      }
+    },
+    {
+      "name": "regime",
+      "params": {
+        "hurst_windows": [100, 200],
+        "step": 10,
+        "entropy_windows": [50],
+        "vr_windows": [100],
+        "vr_lags": [5]
+      }
+    },
+    {
+      "name": "microstructure",
+      "params": {
+        "atr_period": 14,
+        "rolling_window": 5
+      }
+    },
+    {
+      "name": "time_season",
+      "params": {
+        "include_raw": false,
+        "include_encoded": true
+      }
+    }
+  ],
+  "feature_selection": [
+    {
+      "name": "stability",
+      "params": {
+        "inner_selector": "boruta",
+        "inner_params": {
+          "n_iter": 5,
+          "n_estimators": 30,
+          "max_depth": 4,
+          "min_z_score": 0.5
+        },
+        "n_bootstrap": 3,
+        "threshold": 0.6,
+        "bootstrap_ratio": 0.8
+      }
+    },
+    {
+      "name": "correlation_filter",
+      "params": {
+        "max_correlation": 0.7,
+        "max_features": 15
+      }
+    }
+  ]
+}

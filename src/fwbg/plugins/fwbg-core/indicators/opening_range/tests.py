@@ -916,10 +916,10 @@ class TestORBRetestEntry:
         )
 
     def test_retest_bull_fires_when_price_at_midpoint_after_breakout(self):
-        """retest_bull = 1 when post_bull=1 AND price retraces to the ORB midpoint."""
+        """retest_bull = 1 when post_bull=1 AND price retraces to the ORB midpoint (first touch)."""
         ind = _get_indicator()
         df, b = self._make_retest_df()
-        # Use wide retest_atr_width to ensure the zero-distance always qualifies
+        # Use wide retest_atr_width to ensure the zone always qualifies
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_atr_width=1.0)
         # Bar b+1 (C=104, breakout): post_bull becomes 1
@@ -930,17 +930,78 @@ class TestORBRetestEntry:
             f"retest_bull should be 1 when at midpoint after upside breakout, got {val}"
         )
 
+    def test_retest_bull_fires_only_on_first_touch(self):
+        """retest_bull fires only when price ENTERS the midpoint zone — not on subsequent bars."""
+        ind = _get_indicator()
+        n_pre = 32
+        n_total = n_pre + 10
+        idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
+        open_ = np.full(n_total, 100.0)
+        close = np.full(n_total, 100.0)
+        high = close + 0.5
+        low = close - 0.5
+        b = n_pre
+        open_[b] = 97.0
+        close[b] = 103.0
+        high[b] = 104.0
+        low[b] = 96.0
+        close[b + 1] = 104.0  # upside breakout
+        close[b + 2] = 100.0  # first touch of midpoint → fires
+        close[b + 3] = 100.0  # second bar at midpoint → must NOT fire again
+        high = np.maximum(high, np.maximum(open_, close))
+        low = np.minimum(low, np.minimum(open_, close))
+        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
+                             retest_atr_width=1.0)
+        # b+2 (first touch): result.iloc[b+3] = 1
+        val_first = result["orb_s08_retest_bull"].iloc[b + 3]
+        assert val_first == 1.0, f"retest_bull first touch should be 1, got {val_first}"
+        # b+3 (still in zone, same price): result.iloc[b+4] = 0
+        val_second = result["orb_s08_retest_bull"].iloc[b + 4]
+        assert val_second == 0.0, (
+            f"retest_bull must not fire twice in the same zone approach, got {val_second}"
+        )
+
+    def test_retest_bull_blocked_after_double_breakout(self):
+        """retest_bull = 0 if price also broke below OR Low after the bull breakout."""
+        ind = _get_indicator()
+        n_pre = 32
+        n_total = n_pre + 10
+        idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
+        open_ = np.full(n_total, 100.0)
+        close = np.full(n_total, 100.0)
+        high = close + 0.5
+        low = close - 0.5
+        b = n_pre
+        open_[b] = 97.0
+        close[b] = 103.0
+        high[b] = 104.0
+        low[b] = 96.0
+        close[b + 1] = 104.0  # bull breakout → above_cummax=1
+        close[b + 2] = 96.0   # bear breakout too → below_cummax=1 → still_valid_bull=False
+        close[b + 3] = 100.0  # retraces to midpoint — but double breakout, must NOT fire
+        high = np.maximum(high, np.maximum(open_, close))
+        low = np.minimum(low, np.minimum(open_, close))
+        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
+                             retest_atr_width=1.0)
+        # b+3 (at midpoint after double breakout): result.iloc[b+4] = 0
+        val = result["orb_s08_retest_bull"].iloc[b + 4]
+        assert val == 0.0, (
+            f"retest_bull should be 0 after a double breakout (bull+bear), got {val}"
+        )
+
     def test_retest_bull_zero_when_price_below_orb_low(self):
-        """retest_bull = 0 when C < or_low (ORB bull thesis invalidated)."""
+        """retest_bull = 0 when C < or_low (ORB bull thesis invalidated by bear breakout)."""
         ind = _get_indicator()
         df, b = self._make_retest_df()
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_atr_width=1.0)
-        # Bar b+3 (C=96 < or_low=97): still_valid_bull = False → retest_bull = 0
+        # Bar b+3 (C=96 < or_low=97): below_cummax=1 → still_valid_bull=False → retest_bull=0
         # After shift: result.iloc[b+4]
         val = result["orb_s08_retest_bull"].iloc[b + 4]
         assert val == 0.0, (
-            f"retest_bull should be 0 when price drops below or_low (thesis invalidated), got {val}"
+            f"retest_bull should be 0 when price breaks below or_low (thesis invalidated), got {val}"
         )
 
     def test_retest_bear_fires_when_price_at_midpoint_after_bear_breakout(self):
