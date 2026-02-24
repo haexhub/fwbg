@@ -82,6 +82,7 @@ def _session_orb_features(
     atr: pd.Series,
     enable_retracement: bool = False,
     retest_atr_width: float = 0.3,
+    retest_zone_width: float = 0.5,
     carry_forward_days: int = 0,
     pre_range_bars: int = 0,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
@@ -263,7 +264,14 @@ def _session_orb_features(
             # zone after a breakout (event signal, not sustained state).
             # Bull: broke above OR High AND retraced to midpoint AND no subsequent bear breakout
             # Bear: broke below OR Low AND retraced to midpoint AND no subsequent bull breakout
-            near_poc = (df["C"] >= or_midpoint - half_band) & (df["C"] <= or_midpoint + half_band)
+            #
+            # near_poc zone: range-based (fraction of OR range centred on midpoint).
+            # retest_zone_width=0.5  → covers the middle 50 % of the OR range (25 %–75 %).
+            # This is independent of ATR so the zone scales correctly with every range size,
+            # and fast retracement bars that skip an ATR-sized window are much less likely
+            # to miss the trigger.
+            zone_half = (retest_zone_width / 2) * or_range
+            near_poc = (df["C"] >= or_midpoint - zone_half) & (df["C"] <= or_midpoint + zone_half)
 
             post_bull_flag = above_cummax.where(valid, 0).astype(bool)
             post_bear_flag = below_cummax.where(valid, 0).astype(bool)
@@ -369,6 +377,7 @@ class OpeningRangeIndicator(BaseIndicator):
         enable_stats: bool = True,
         enable_retracement: bool = True,
         retest_atr_width: float = 0.3,
+        retest_zone_width: float = 0.5,
         carry_forward_days: Union[int, List[int]] = 0,
         pre_range_bars: Union[int, List[int]] = 0,
         **params,
@@ -411,7 +420,7 @@ class OpeningRangeIndicator(BaseIndicator):
                         cf_prb_pfx = f"cf{cf}_prb{prb}_" if use_cf_prb_prefix else ""
                         session = _session_orb_features(
                             df, sessions, rb, atr, enable_retracement, retest_atr_width,
-                            cf, prb,
+                            retest_zone_width, cf, prb,
                         )
                         features.update({f"{rb_pfx}{cf_prb_pfx}{k}": v for k, v in session.items()})
 
@@ -477,6 +486,7 @@ class OpeningRangeIndicator(BaseIndicator):
             "enable_stats": True,
             "enable_retracement": True,
             "retest_atr_width": 0.3,
+            "retest_zone_width": 0.5,
             "carry_forward_days": 0,
             "pre_range_bars": 0,
         }
@@ -538,7 +548,15 @@ class OpeningRangeIndicator(BaseIndicator):
             "retest_atr_width": {
                 "type": "float",
                 "default": 0.3,
-                "description": "Half-bandwidth in ATR units around the ORB high/low that defines the reload zone. A value of 0.3 means the zone extends 0.3 * ATR above and below the boundary.",
+                "description": "Half-bandwidth in ATR units around the ORB high/low that defines the boundary reload zone (retest_zone_up/down). A value of 0.3 means the zone extends 0.3 * ATR above and below the OR boundary.",
+                "min": 0.1,
+                "max": 1.0,
+                "step": 0.1,
+            },
+            "retest_zone_width": {
+                "type": "float",
+                "default": 0.5,
+                "description": "Width of the midpoint retest zone as a fraction of the OR range (0–1). Default 0.5 means the zone covers the middle 50 % of the range (25 %–75 % from OR low). Range-based so the zone scales correctly regardless of ATR size — prevents fast retracement bars from skipping a fixed ATR-width window.",
                 "min": 0.1,
                 "max": 1.0,
                 "step": 0.1,

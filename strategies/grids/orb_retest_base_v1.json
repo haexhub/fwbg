@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "name": "orb_retest_base",
+    "description": "ORB Midpoint Retest: ATR-basiertes SL-Grid, kein Timeout (Trades via TP/SL geschlossen).",
+    "version": 1
+  },
+  "sl": [1.5, 2.0, 2.5],
+  "ct": [0.5, 0.55, 0.6],
+  "timeout_bars": [null]
+}

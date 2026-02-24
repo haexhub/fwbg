@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "name": "orb_retest",
+    "description": "ORB Midpoint Retest: Einstieg bei erstem Retracement zum Midpoint (50%) der Opening Range nach Ausbruch. Sessions 7+8 fuer EU (Sommer CEST / Winter CET), 14 fuer US, 0 fuer JP, 1 fuer HK.",
+    "version": 1
+  },
+  "indicators": [
+    {
+      "name": "opening_range",
+      "params": {
+        "range_bars": [2, 3],
+        "sessions": [0, 1, 7, 8, 14],
+        "enable_rolling": false,
+        "enable_session": true,
+        "enable_stats": false,
+        "enable_retracement": true,
+        "retest_zone_width": 0.5,
+        "carry_forward_days": [0],
+        "pre_range_bars": [0, 2]
+      }
+    },
+    {
+      "name": "volatility",
+      "params": {
+        "atr_periods": [14]
+      }
+    },
+    {
+      "name": "time_season",
+      "params": {
+        "include_raw": false,
+        "include_encoded": true
+      }
+    }
+  ],
+  "feature_selection": []
+}

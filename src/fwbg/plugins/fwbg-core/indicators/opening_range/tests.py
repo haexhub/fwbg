@@ -907,7 +907,7 @@ class TestORBRetestEntry:
         df.loc[df.index[b + 1], "C"] = 100.0
         df.loc[df.index[b + 1], "H"] = 100.5
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
-                             retest_atr_width=1.0)
+                             retest_zone_width=1.0)
         # Bar b+2 is at midpoint (C=100) but post_bull=0 → retest_bull must be 0
         # After shift: result.iloc[b+3]
         val = result["orb_s08_retest_bull"].iloc[b + 3]
@@ -919,9 +919,9 @@ class TestORBRetestEntry:
         """retest_bull = 1 when post_bull=1 AND price retraces to the ORB midpoint (first touch)."""
         ind = _get_indicator()
         df, b = self._make_retest_df()
-        # Use wide retest_atr_width to ensure the zone always qualifies
+        # Use wide retest_zone_width to ensure the zone always qualifies
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
-                             retest_atr_width=1.0)
+                             retest_zone_width=1.0)
         # Bar b+1 (C=104, breakout): post_bull becomes 1
         # Bar b+2 (C=100 = midpoint): post_bull=1, near_poc=True, still_valid_bull=True → fires
         # After shift: result.iloc[b+3]
@@ -952,7 +952,7 @@ class TestORBRetestEntry:
         low = np.minimum(low, np.minimum(open_, close))
         df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
-                             retest_atr_width=1.0)
+                             retest_zone_width=1.0)
         # b+2 (first touch): result.iloc[b+3] = 1
         val_first = result["orb_s08_retest_bull"].iloc[b + 3]
         assert val_first == 1.0, f"retest_bull first touch should be 1, got {val_first}"
@@ -984,7 +984,7 @@ class TestORBRetestEntry:
         low = np.minimum(low, np.minimum(open_, close))
         df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
-                             retest_atr_width=1.0)
+                             retest_zone_width=1.0)
         # b+3 (at midpoint after double breakout): result.iloc[b+4] = 0
         val = result["orb_s08_retest_bull"].iloc[b + 4]
         assert val == 0.0, (
@@ -996,7 +996,7 @@ class TestORBRetestEntry:
         ind = _get_indicator()
         df, b = self._make_retest_df()
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
-                             retest_atr_width=1.0)
+                             retest_zone_width=1.0)
         # Bar b+3 (C=96 < or_low=97): below_cummax=1 → still_valid_bull=False → retest_bull=0
         # After shift: result.iloc[b+4]
         val = result["orb_s08_retest_bull"].iloc[b + 4]
@@ -1026,7 +1026,7 @@ class TestORBRetestEntry:
         low = np.minimum(low, np.minimum(open_, close))
         df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
-                             retest_atr_width=1.0)
+                             retest_zone_width=1.0)
         assert "orb_s08_retest_bear" in result.columns
         # Bar b+2 (C=100, post_bear=1, near midpoint, valid_bear) → retest_bear = 1
         # After shift: result.iloc[b+3]
