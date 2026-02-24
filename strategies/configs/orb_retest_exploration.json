@@ -1,6 +1,6 @@
 {
   "name": "ORB Retest Exploration",
-  "description": "Rule-based ORB Midpoint Retest strategy: Einstieg beim ersten Retracement zum Midpoint (50%) der Opening Range nach Ausbruch. Kein ML-Training, reiner Signalfilter. Kein Timeout — Trades via TP/SL geschlossen.",
+  "description": "Rule-based ORB Midpoint Retest strategy: Einstieg beim ersten Retracement zum Midpoint (50%) der Opening Range nach Ausbruch. Kein ML-Training, reiner Signalfilter. Kein Timeout — Trades via TP/SL geschlossen. EU-Assets: s08 = 8:00 UTC (Winter/CET), s07 = 7:00 UTC (Sommer/CEST) — Default ist Winter.",
   "tags": [
     "orb",
     "retest",
@@ -11,7 +11,7 @@
   ],
   "timeframe": "MINUTE_15",
   "hypothesis": "Nach einem Ausbruch aus der Opening Range (erste 30-45 min) kehrt der Kurs haeufig zum Midpoint zurueck. Einstieg beim ersten Beruehren des Midpoints in Richtung des Ausbruchs erzeugt positive Erwartungswerte.",
-  "expected_outcome": "Session-spezifische Signals (s07/s08 fuer EU, s14 fuer US) produzieren konzentrierte High-Quality-Einstiege.",
+  "expected_outcome": "Session-spezifische Signals (s08 fuer EU-Winter, s07 fuer EU-Sommer, s14 fuer US) produzieren konzentrierte High-Quality-Einstiege.",
   "pipeline": "orb_retest_v1",
   "exit_strategy": "orb_based",
   "exit_params": "atr_intraday_v1",
@@ -26,80 +26,84 @@
         "preset": "orb_retest_base_v1",
         "tp": [2.0, 3.0, 4.0, 6.0],
         "model_hyperparameters": {
-          "signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull",
-          "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear",
-          "signal_start_hour": 7,
+          "signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull",
+          "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear",
+          "sl_dist_column": "rb3_cf0_prb0_orb_s08_sl_dist",
+          "signal_start_hour": 8,
           "signal_end_hour": 17
         },
         "model_hyperparameters_grid": [
-          {"signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17}
+          {"signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s07_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s07_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s08_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s08_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17}
         ]
       },
       "EU50": {
         "preset": "orb_retest_base_v1",
         "tp": [2.0, 3.0, 4.0, 6.0],
         "model_hyperparameters": {
-          "signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull",
-          "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear",
-          "signal_start_hour": 7,
+          "signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull",
+          "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear",
+          "sl_dist_column": "rb3_cf0_prb0_orb_s08_sl_dist",
+          "signal_start_hour": 8,
           "signal_end_hour": 17
         },
         "model_hyperparameters_grid": [
-          {"signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17}
+          {"signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s07_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s07_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s08_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s08_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17}
         ]
       },
       "CAC40": {
         "preset": "orb_retest_base_v1",
         "tp": [2.0, 3.0, 4.0, 6.0],
         "model_hyperparameters": {
-          "signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull",
-          "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear",
-          "signal_start_hour": 7,
+          "signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull",
+          "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear",
+          "sl_dist_column": "rb3_cf0_prb0_orb_s08_sl_dist",
+          "signal_start_hour": 8,
           "signal_end_hour": 17
         },
         "model_hyperparameters_grid": [
-          {"signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17}
+          {"signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s07_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s07_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s08_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s08_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17}
         ]
       },
       "FTSE100": {
         "preset": "orb_retest_base_v1",
         "tp": [2.0, 3.0, 4.0, 6.0],
         "model_hyperparameters": {
-          "signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull",
-          "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear",
-          "signal_start_hour": 7,
+          "signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull",
+          "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear",
+          "sl_dist_column": "rb3_cf0_prb0_orb_s08_sl_dist",
+          "signal_start_hour": 8,
           "signal_end_hour": 17
         },
         "model_hyperparameters_grid": [
-          {"signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s07_retest_bear", "signal_start_hour": 7, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s08_retest_bear", "signal_start_hour": 8, "signal_end_hour": 17}
+          {"signal_column_long": "rb2_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s07_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s07_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s07_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s07_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s07_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s07_sl_dist", "signal_start_hour": 7, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s08_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s08_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s08_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s08_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s08_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s08_sl_dist", "signal_start_hour": 8, "signal_end_hour": 17}
         ]
       },
       "NAS100": {
@@ -108,14 +112,15 @@
         "model_hyperparameters": {
           "signal_column_long": "rb3_cf0_prb0_orb_s14_retest_bull",
           "signal_column_short": "rb3_cf0_prb0_orb_s14_retest_bear",
+          "sl_dist_column": "rb3_cf0_prb0_orb_s14_sl_dist",
           "signal_start_hour": 14,
           "signal_end_hour": 21
         },
         "model_hyperparameters_grid": [
-          {"signal_column_long": "rb2_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21}
+          {"signal_column_long": "rb2_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s14_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s14_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s14_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s14_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21}
         ]
       },
       "SPX500": {
@@ -124,14 +129,15 @@
         "model_hyperparameters": {
           "signal_column_long": "rb3_cf0_prb0_orb_s14_retest_bull",
           "signal_column_short": "rb3_cf0_prb0_orb_s14_retest_bear",
+          "sl_dist_column": "rb3_cf0_prb0_orb_s14_sl_dist",
           "signal_start_hour": 14,
           "signal_end_hour": 21
         },
         "model_hyperparameters_grid": [
-          {"signal_column_long": "rb2_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21}
+          {"signal_column_long": "rb2_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s14_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s14_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s14_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s14_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21}
         ]
       },
       "DOW30": {
@@ -140,14 +146,15 @@
         "model_hyperparameters": {
           "signal_column_long": "rb3_cf0_prb0_orb_s14_retest_bull",
           "signal_column_short": "rb3_cf0_prb0_orb_s14_retest_bear",
+          "sl_dist_column": "rb3_cf0_prb0_orb_s14_sl_dist",
           "signal_start_hour": 14,
           "signal_end_hour": 21
         },
         "model_hyperparameters_grid": [
-          {"signal_column_long": "rb2_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s14_retest_bear", "signal_start_hour": 14, "signal_end_hour": 21}
+          {"signal_column_long": "rb2_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s14_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s14_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s14_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s14_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s14_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s14_sl_dist", "signal_start_hour": 14, "signal_end_hour": 21}
         ]
       },
       "JP225": {
@@ -156,14 +163,15 @@
         "model_hyperparameters": {
           "signal_column_long": "rb3_cf0_prb0_orb_s00_retest_bull",
           "signal_column_short": "rb3_cf0_prb0_orb_s00_retest_bear",
+          "sl_dist_column": "rb3_cf0_prb0_orb_s00_sl_dist",
           "signal_start_hour": 0,
           "signal_end_hour": 7
         },
         "model_hyperparameters_grid": [
-          {"signal_column_long": "rb2_cf0_prb0_orb_s00_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s00_retest_bear", "signal_start_hour": 0, "signal_end_hour": 7},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s00_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s00_retest_bear", "signal_start_hour": 0, "signal_end_hour": 7},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s00_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s00_retest_bear", "signal_start_hour": 0, "signal_end_hour": 7},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s00_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s00_retest_bear", "signal_start_hour": 0, "signal_end_hour": 7}
+          {"signal_column_long": "rb2_cf0_prb0_orb_s00_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s00_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s00_sl_dist", "signal_start_hour": 0, "signal_end_hour": 7},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s00_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s00_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s00_sl_dist", "signal_start_hour": 0, "signal_end_hour": 7},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s00_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s00_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s00_sl_dist", "signal_start_hour": 0, "signal_end_hour": 7},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s00_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s00_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s00_sl_dist", "signal_start_hour": 0, "signal_end_hour": 7}
         ]
       },
       "HK50": {
@@ -172,14 +180,15 @@
         "model_hyperparameters": {
           "signal_column_long": "rb3_cf0_prb0_orb_s01_retest_bull",
           "signal_column_short": "rb3_cf0_prb0_orb_s01_retest_bear",
+          "sl_dist_column": "rb3_cf0_prb0_orb_s01_sl_dist",
           "signal_start_hour": 1,
           "signal_end_hour": 8
         },
         "model_hyperparameters_grid": [
-          {"signal_column_long": "rb2_cf0_prb0_orb_s01_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s01_retest_bear", "signal_start_hour": 1, "signal_end_hour": 8},
-          {"signal_column_long": "rb2_cf0_prb2_orb_s01_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s01_retest_bear", "signal_start_hour": 1, "signal_end_hour": 8},
-          {"signal_column_long": "rb3_cf0_prb0_orb_s01_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s01_retest_bear", "signal_start_hour": 1, "signal_end_hour": 8},
-          {"signal_column_long": "rb3_cf0_prb2_orb_s01_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s01_retest_bear", "signal_start_hour": 1, "signal_end_hour": 8}
+          {"signal_column_long": "rb2_cf0_prb0_orb_s01_retest_bull", "signal_column_short": "rb2_cf0_prb0_orb_s01_retest_bear", "sl_dist_column": "rb2_cf0_prb0_orb_s01_sl_dist", "signal_start_hour": 1, "signal_end_hour": 8},
+          {"signal_column_long": "rb2_cf0_prb2_orb_s01_retest_bull", "signal_column_short": "rb2_cf0_prb2_orb_s01_retest_bear", "sl_dist_column": "rb2_cf0_prb2_orb_s01_sl_dist", "signal_start_hour": 1, "signal_end_hour": 8},
+          {"signal_column_long": "rb3_cf0_prb0_orb_s01_retest_bull", "signal_column_short": "rb3_cf0_prb0_orb_s01_retest_bear", "sl_dist_column": "rb3_cf0_prb0_orb_s01_sl_dist", "signal_start_hour": 1, "signal_end_hour": 8},
+          {"signal_column_long": "rb3_cf0_prb2_orb_s01_retest_bull", "signal_column_short": "rb3_cf0_prb2_orb_s01_retest_bear", "sl_dist_column": "rb3_cf0_prb2_orb_s01_sl_dist", "signal_start_hour": 1, "signal_end_hour": 8}
         ]
       }
     }
