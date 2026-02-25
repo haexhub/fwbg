@@ -43,8 +43,8 @@ def _minimal_ctx(**overrides) -> SimulationContext:
         exit_strategy="fixed",
         model_type="signal",
         model_hyperparameters={
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
         },
     )
     defaults.update(overrides)
@@ -67,7 +67,7 @@ def _run_strategy(df: pd.DataFrame, ctx: SimulationContext, tp: float = 6, sl: f
     model_long = _signal_mod.SignalModel()
     model_short = _signal_mod.SignalModel()
 
-    feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+    feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
     features = df_feat[feature_cols].fillna(0)
 
     # Dummy targets (SignalModel ignores them)
@@ -411,7 +411,7 @@ class TestSignalProperties:
     """Verify signal column properties directly (not through trades)."""
 
     def test_retest_bull_fires_once_per_day(self):
-        """pdl_retest_bull fires at most once per calendar day."""
+        """hl_ses_pdl_retest_bull fires at most once per calendar day."""
         df = _make_pdhl_bull_retest()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
         result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
@@ -421,9 +421,9 @@ class TestSignalProperties:
                 day = result.loc[day_str]
             except KeyError:
                 continue
-            count = day["rl50_pdl_retest_bull"].dropna().sum()
+            count = day["hl_ses_rl50_pdl_retest_bull"].dropna().sum()
             assert count <= 1.0, (
-                f"pdl_retest_bull fired {count} times on {day_str}"
+                f"hl_ses_pdl_retest_bull fired {count} times on {day_str}"
             )
 
     def test_retest_bear_fires_once_per_day(self):
@@ -436,9 +436,9 @@ class TestSignalProperties:
                 day = result.loc[day_str]
             except KeyError:
                 continue
-            count = day["rl50_pdl_retest_bear"].dropna().sum()
+            count = day["hl_ses_rl50_pdl_retest_bear"].dropna().sum()
             assert count <= 1.0, (
-                f"pdl_retest_bear fired {count} times on {day_str}"
+                f"hl_ses_pdl_retest_bear fired {count} times on {day_str}"
             )
 
     def test_no_signal_on_first_day(self):
@@ -448,7 +448,7 @@ class TestSignalProperties:
         result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
 
         day0 = result.loc["2024-01-01"]
-        for col in ["rl50_pdl_retest_bull", "rl50_pdl_retest_bear"]:
+        for col in ["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"]:
             non_nan = day0[col].dropna()
             assert (non_nan == 0).all() or len(non_nan) == 0, (
                 f"{col} fired on day 0 (no previous day data)"
@@ -462,9 +462,9 @@ class TestSignalProperties:
 
         day1 = result.loc["2024-01-02"]
         # Breakout at 09:00, shifted to 10:00. Before that, retest_bull must be 0.
-        before_breakout = day1.loc[day1.index.hour < 10, "rl50_pdl_retest_bull"].dropna()
+        before_breakout = day1.loc[day1.index.hour < 10, "hl_ses_rl50_pdl_retest_bull"].dropna()
         assert (before_breakout == 0).all(), (
-            f"pdl_retest_bull fired before breakout: {before_breakout[before_breakout > 0]}"
+            f"hl_ses_pdl_retest_bull fired before breakout: {before_breakout[before_breakout > 0]}"
         )
 
 
@@ -476,8 +476,8 @@ class TestSessionFiltering:
         df = _make_pdhl_bull_retest()
         # Session hours 8-10: the retest at 12:00 (shifted to 13:00) is outside
         ctx = _minimal_ctx(model_hyperparameters={
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
             "signal_start_hour": 8,
             "signal_end_hour": 10,
         })
@@ -491,8 +491,8 @@ class TestSessionFiltering:
         """Retest fires at 12:00 (shifted to 13:00), session=0..23 → trade occurs."""
         df = _make_pdhl_bull_retest()
         ctx = _minimal_ctx(model_hyperparameters={
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
             "signal_start_hour": 0,
             "signal_end_hour": 23,
         })
@@ -510,8 +510,8 @@ class TestSessionFiltering:
 
         # Session 22-14 (crosses midnight) includes hour 13 → trade should fire
         ctx_in = _minimal_ctx(model_hyperparameters={
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
             "signal_start_hour": 22,
             "signal_end_hour": 14,
         })
@@ -523,8 +523,8 @@ class TestSessionFiltering:
 
         # Session 14-22 (no midnight crossing) excludes hour 13 → no trades
         ctx_out = _minimal_ctx(model_hyperparameters={
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
             "signal_start_hour": 14,
             "signal_end_hour": 22,
         })
@@ -546,8 +546,8 @@ class TestSessionFiltering:
         # Session 0-18: entry at 14:00 is within session → exit in session
         ctx_wide = _minimal_ctx(
             model_hyperparameters={
-                "signal_column_long": "rl50_pdl_retest_bull",
-                "signal_column_short": "rl50_pdl_retest_bear",
+                "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+                "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
                 "signal_start_hour": 0,
                 "signal_end_hour": 23,
             },

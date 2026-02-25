@@ -28,23 +28,23 @@ from fwbg_sdk import BaseIndicator, register_indicator, shift_features, EPSILON
 from fwbg_sdk.retest import apply_breakout_threshold, compute_break_state, compute_retest_signals
 
 _CANDLE_SPAN_PREFIX = {
-    "hl": "",       # default, no prefix
-    "body": "b_",   # body (O/C) range
+    "hl": "hl_",       # high/low range
+    "body": "body_",   # body (O/C) range
 }
 
 _RANGE_SCOPE_PREFIX = {
-    "session": "",   # default, no prefix
-    "all": "a_",     # all 24h bars
+    "session": "ses_",  # session hours only
+    "all": "all_",      # all 24h bars
 }
 
 _BREAK_MODE_PREFIX = {
-    "all_hours": "",        # default — breaks detected 24/7
-    "session_only": "sb_",  # breaks only during session hours
+    "all_hours": "",           # default — breaks detected 24/7
+    "session_only": "sesbrk_", # breaks only during session hours
 }
 
 _RETEST_MODE_PREFIX = {
-    "all_hours": "",        # default — retests fire 24/7
-    "session_only": "sr_",  # retests only during session hours
+    "all_hours": "",            # default — retests fire 24/7
+    "session_only": "sesret_",  # retests only during session hours
 }
 
 
@@ -449,22 +449,22 @@ class PreviousDayLevelsIndicator(BaseIndicator):
 
     # Representative feature list for default hl/session mode, rl=50 (0.5)
     _FEATURES = [
-        "pdl_high_dist",
-        "pdl_low_dist",
-        "pdl_position",
-        "pdl_range_vs_atr",
-        "pdl_above_high",
-        "pdl_below_low",
-        "pdl_midpoint_dist",
-        "pdl_high_break",
-        "pdl_low_break",
-        "pdl_post_bull",
-        "pdl_post_bear",
-        "rl50_pdl_retest_bull",
-        "rl50_pdl_retest_bear",
-        "rl50_pdl_sl_dist",
-        "pdl_range_position_ma",
-        "pdl_day_range_expanding",
+        "hl_ses_pdl_high_dist",
+        "hl_ses_pdl_low_dist",
+        "hl_ses_pdl_position",
+        "hl_ses_pdl_range_vs_atr",
+        "hl_ses_pdl_above_high",
+        "hl_ses_pdl_below_low",
+        "hl_ses_pdl_midpoint_dist",
+        "hl_ses_pdl_high_break",
+        "hl_ses_pdl_low_break",
+        "hl_ses_pdl_post_bull",
+        "hl_ses_pdl_post_bear",
+        "hl_ses_rl50_pdl_retest_bull",
+        "hl_ses_rl50_pdl_retest_bear",
+        "hl_ses_rl50_pdl_sl_dist",
+        "hl_ses_pdl_range_position_ma",
+        "hl_ses_pdl_day_range_expanding",
     ]
 
     def compute(
@@ -519,11 +519,11 @@ class PreviousDayLevelsIndicator(BaseIndicator):
 
     def get_signal_columns(self) -> List[str]:
         return [
-            "pdl_above_high", "pdl_below_low",
-            "pdl_high_break", "pdl_low_break",
-            "pdl_post_bull", "pdl_post_bear",
-            "rl50_pdl_retest_bull", "rl50_pdl_retest_bear",
-            "pdl_day_range_expanding",
+            "hl_ses_pdl_above_high", "hl_ses_pdl_below_low",
+            "hl_ses_pdl_high_break", "hl_ses_pdl_low_break",
+            "hl_ses_pdl_post_bull", "hl_ses_pdl_post_bear",
+            "hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear",
+            "hl_ses_pdl_day_range_expanding",
         ]
 
     @classmethod
@@ -586,7 +586,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "description": (
                     "Retracement fraction(s) of the PDH-PDL range for entry level. "
                     "0.5 = midpoint. 0 = at boundary. 0.382 = shallow retrace. "
-                    "Always generates rl{N}_ prefixed columns (e.g. rl50_pdl_retest_bull). "
+                    "Always generates rl{N}_ prefixed columns (e.g. hl_ses_rl50_pdl_retest_bull). "
                     "Pass a list to precompute multiple variants for grid search."
                 ),
                 "min": 0.0,
@@ -624,8 +624,8 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "default": ["session"],
                 "description": (
                     "Which bars to include for range computation. "
-                    "'session' (default, no prefix): only bars within session hours. "
-                    "'all' (a_ prefix): all 24h bars. "
+                    "'session' (ses_ prefix): only bars within session hours. "
+                    "'all' (all_ prefix): all 24h bars. "
                     "Pass a list to precompute both for grid search."
                 ),
                 "options": ["session", "all"],
@@ -634,9 +634,9 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "type": "list[string]",
                 "default": ["all_hours"],
                 "description": (
-                    "Break detection timing modes. all_hours (default, no prefix): "
+                    "Break detection timing modes. all_hours (default): "
                     "breakouts detected 24/7. "
-                    "session_only (sb_ prefix): only session bars trigger breakouts."
+                    "session_only (sesbrk_ prefix): only session bars trigger breakouts."
                 ),
                 "options": ["all_hours", "session_only"],
             },
@@ -645,8 +645,8 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "default": ["all_hours"],
                 "description": (
                     "Retest signal timing modes. "
-                    "all_hours (default, no prefix): retest signals fire 24/7. "
-                    "session_only (sr_ prefix): retest signals only during session hours."
+                    "all_hours (default): retest signals fire 24/7. "
+                    "session_only (sesret_ prefix): retest signals only during session hours."
                 ),
                 "options": ["all_hours", "session_only"],
             },

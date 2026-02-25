@@ -56,13 +56,13 @@ def _ctx(**overrides) -> SimulationContext:
         exit_strategy="fixed",
         model_type="signal",
         model_hyperparameters={
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
         },
         grid_ct=[0.5],
         grid_tp=[2, 4, 6],
         grid_sl=[2, 4],
-        required_features=["rl50_pdl_retest_bull", "rl50_pdl_retest_bear"],
+        required_features=["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"],
         early_pruning_enabled=False,
     )
     defaults.update(overrides)
@@ -166,7 +166,7 @@ def _compute_indicator(df):
 def _train_signal_model(features_df, ctx, direction="long"):
     """Train a SignalModel for the given direction."""
     model = _signal_mod.SignalModel()
-    feature_cols = [c for c in features_df.columns if c.startswith(("pdl_", "rl"))]
+    feature_cols = [c for c in features_df.columns if c.startswith("hl_ses_")]
     dummy_targets = np.zeros(len(features_df))
     hp = ctx.model_hyperparameters
     model.train(
@@ -186,14 +186,14 @@ class TestSignalModelMechanics:
     def test_signal_model_uses_correct_column_for_long(self):
         """Long model should read pdl_retest_bull."""
         df = pd.DataFrame({
-            "rl50_pdl_retest_bull": [0, 0, 1, 0, 0],
-            "rl50_pdl_retest_bear": [0, 1, 0, 0, 0],
+            "hl_ses_rl50_pdl_retest_bull": [0, 0, 1, 0, 0],
+            "hl_ses_rl50_pdl_retest_bear": [0, 1, 0, 0, 0],
         })
         model = _signal_mod.SignalModel()
         model.train(
             df, np.zeros(5), TrainingContext(direction="long"),
-            signal_column_long="rl50_pdl_retest_bull",
-            signal_column_short="rl50_pdl_retest_bear",
+            signal_column_long="hl_ses_rl50_pdl_retest_bull",
+            signal_column_short="hl_ses_rl50_pdl_retest_bear",
         )
         probs = model.predict_probability(df)
         np.testing.assert_array_equal(probs[:, 1], [0, 0, 1, 0, 0])
@@ -201,14 +201,14 @@ class TestSignalModelMechanics:
     def test_signal_model_uses_correct_column_for_short(self):
         """Short model should read pdl_retest_bear."""
         df = pd.DataFrame({
-            "rl50_pdl_retest_bull": [0, 0, 1, 0, 0],
-            "rl50_pdl_retest_bear": [0, 1, 0, 0, 0],
+            "hl_ses_rl50_pdl_retest_bull": [0, 0, 1, 0, 0],
+            "hl_ses_rl50_pdl_retest_bear": [0, 1, 0, 0, 0],
         })
         model = _signal_mod.SignalModel()
         model.train(
             df, np.zeros(5), TrainingContext(direction="short"),
-            signal_column_long="rl50_pdl_retest_bull",
-            signal_column_short="rl50_pdl_retest_bear",
+            signal_column_long="hl_ses_rl50_pdl_retest_bull",
+            signal_column_short="hl_ses_rl50_pdl_retest_bear",
         )
         probs = model.predict_probability(df)
         np.testing.assert_array_equal(probs[:, 1], [0, 1, 0, 0, 0])
@@ -345,8 +345,8 @@ class TestTradesOnlyOnSignalBars:
             "H": np.full(n, 101.0),
             "L": np.full(n, 99.0),
             "C": np.full(n, 100.0),
-            "rl50_pdl_retest_bull": np.zeros(n),
-            "rl50_pdl_retest_bear": np.zeros(n),
+            "hl_ses_rl50_pdl_retest_bull": np.zeros(n),
+            "hl_ses_rl50_pdl_retest_bear": np.zeros(n),
         }, index=idx)
 
         ctx = _ctx(spread=0.5)
@@ -370,8 +370,8 @@ class TestTradesOnlyOnSignalBars:
         df_feat = _compute_indicator(df)
         ctx = _ctx(spread=0.5)
 
-        signal_count_bull = (df_feat["rl50_pdl_retest_bull"].fillna(0) > 0).sum()
-        signal_count_bear = (df_feat["rl50_pdl_retest_bear"].fillna(0) > 0).sum()
+        signal_count_bull = (df_feat["hl_ses_rl50_pdl_retest_bull"].fillna(0) > 0).sum()
+        signal_count_bear = (df_feat["hl_ses_rl50_pdl_retest_bear"].fillna(0) > 0).sum()
         total_signals = signal_count_bull + signal_count_bear
 
         model_long, feat_cols = _train_signal_model(df_feat, ctx, "long")
@@ -540,7 +540,7 @@ class TestEvaluateSingleFold:
         df_feat, train_df, val_df = self._make_fold_data()
         ctx = _ctx(spread=0.5, grid_ct=[0.5], min_trades=1)
 
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         inner_folds = [(train_df, val_df)]
 
         cached = _compute_cached_targets(
@@ -613,7 +613,7 @@ class TestFullGridSearch:
     def test_grid_search_produces_candidates(self):
         """Grid search should produce at least one candidate with enough data."""
         df_feat, inner_folds = self._setup_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
             spread=1.0, grid_ct=[0.5], min_trades=1,
             grid_tp=[2, 4], grid_sl=[4],
@@ -641,7 +641,7 @@ class TestFullGridSearch:
     def test_grid_search_candidates_have_different_params(self):
         """Multiple candidates should have different TP/SL params."""
         df_feat, inner_folds = self._setup_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
             spread=1.0, grid_ct=[0.5], min_trades=1,
             grid_tp=[2, 4, 8], grid_sl=[4],
@@ -671,7 +671,7 @@ class TestFullGridSearch:
     def test_grid_search_model_hyperparameters_stored(self):
         """Each candidate should store model_hyperparameters."""
         df_feat, inner_folds = self._setup_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
             spread=1.0, grid_ct=[0.5], min_trades=1,
             grid_tp=[3], grid_sl=[4],
@@ -694,8 +694,8 @@ class TestFullGridSearch:
         for c in candidates:
             assert "model_hyperparameters" in c
             hp = c["model_hyperparameters"]
-            assert hp.get("signal_column_long") == "rl50_pdl_retest_bull"
-            assert hp.get("signal_column_short") == "rl50_pdl_retest_bear"
+            assert hp.get("signal_column_long") == "hl_ses_rl50_pdl_retest_bull"
+            assert hp.get("signal_column_short") == "hl_ses_rl50_pdl_retest_bear"
 
     def test_grid_search_no_candidates_with_tiny_data(self):
         """With too few signal bars, grid search returns 0 candidates.
@@ -706,7 +706,7 @@ class TestFullGridSearch:
         """
         df = _make_multi_day_bull_data(6)  # Only 3 signal days
         df_feat = _compute_indicator(df)
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
 
         split = 3 * 24
         train = df_feat.iloc[:split]
@@ -754,13 +754,13 @@ class TestComboBuilding:
         combos, skipped = _build_combo_tuples(
             grid, ctx,
             timeout_values=[None],
-            features=["rl50_pdl_retest_bull", "rl50_pdl_retest_bear"],
+            features=["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"],
             inner_folds=[],
             regime_config={},
             total_grid_combos=6,
             inner_df=None,
-            selected_features_long=["rl50_pdl_retest_bull"],
-            selected_features_short=["rl50_pdl_retest_bear"],
+            selected_features_long=["hl_ses_rl50_pdl_retest_bull"],
+            selected_features_short=["hl_ses_rl50_pdl_retest_bear"],
             sym="TEST",
         )
         assert len(combos) == 6
@@ -775,13 +775,13 @@ class TestComboBuilding:
         combos, skipped = _build_combo_tuples(
             grid, ctx,
             timeout_values=[None],
-            features=["rl50_pdl_retest_bull"],
+            features=["hl_ses_rl50_pdl_retest_bull"],
             inner_folds=[],
             regime_config={},
             total_grid_combos=2,
             inner_df=None,
-            selected_features_long=["rl50_pdl_retest_bull"],
-            selected_features_short=["rl50_pdl_retest_bear"],
+            selected_features_long=["hl_ses_rl50_pdl_retest_bull"],
+            selected_features_short=["hl_ses_rl50_pdl_retest_bear"],
             sym="TEST",
         )
         assert len(combos) == 1
@@ -801,7 +801,7 @@ class TestFeatureSelectionWithSignalModel:
         df_feat = _compute_indicator(df)
         ctx = _ctx(
             spread=0.5, min_trades=1,
-            required_features=["rl50_pdl_retest_bull", "rl50_pdl_retest_bear"],
+            required_features=["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"],
         )
 
         split = 4 * 24
@@ -809,15 +809,15 @@ class TestFeatureSelectionWithSignalModel:
         val_df = df_feat.iloc[split:]
         inner_folds = [(train_df, val_df)]
 
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         selected_long, selected_short = select_features(
             inner_folds, feature_cols, ctx, "TEST",
         )
 
         if selected_long is not None:
-            assert "rl50_pdl_retest_bull" in selected_long
+            assert "hl_ses_rl50_pdl_retest_bull" in selected_long
         if selected_short is not None:
-            assert "rl50_pdl_retest_bear" in selected_short
+            assert "hl_ses_rl50_pdl_retest_bear" in selected_short
 
 
 # ===========================================================================
@@ -855,7 +855,7 @@ class TestGridSearchTimingBreakdown:
         ctx = _ctx()
 
         model = _signal_mod.SignalModel()
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         targets = np.zeros(len(df_feat))
 
         t0 = time.monotonic()
@@ -898,7 +898,7 @@ class TestGridSearchTimingBreakdown:
         """
         import time
         df_feat, inner_folds = self._setup_large_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
             spread=1.0, grid_ct=[0.5], min_trades=1,
             grid_tp=[2, 4, 6, 8], grid_sl=[2, 4, 6],
@@ -935,7 +935,7 @@ class TestGridSearchTimingBreakdown:
         """Each combo evaluation should take < 100ms with SignalModel."""
         import time
         df_feat, inner_folds = self._setup_large_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(spread=1.0, grid_ct=[0.5], min_trades=1, min_eval_trades=3)
 
         train_df, val_df = inner_folds[0]
@@ -967,7 +967,7 @@ class TestGridSearchTimingBreakdown:
     def test_successive_halving_produces_candidates(self):
         """Successive halving should produce candidates from a large grid."""
         df_feat, inner_folds = self._setup_large_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
             spread=1.0, grid_ct=[0.5], min_trades=1,
             grid_tp=[2, 3, 4, 5, 6, 8], grid_sl=[2, 3, 4, 6],
@@ -999,7 +999,7 @@ class TestGridSearchTimingBreakdown:
     def test_grid_results_differentiate_tp_sl(self):
         """Grid results should show PnL variation across TP/SL combos."""
         df_feat, inner_folds = self._setup_large_grid_data()
-        feature_cols = [c for c in df_feat.columns if c.startswith(("pdl_", "rl"))]
+        feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         # Disable early termination/first-fold checks so combos survive
         ctx = _ctx(
             spread=1.0, grid_ct=[0.5], min_trades=1,

@@ -7,6 +7,7 @@ Grid-Search Funktionen sind in grid_search.py ausgelagert.
 """
 import gc
 import os
+import re
 import time
 import numpy as np
 
@@ -65,6 +66,31 @@ def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
         summary["config_inconsistent"] = True
 
     return summary
+
+
+def decode_signal_meta(signal_col: str) -> dict:
+    """Decode signal column name into readable metadata."""
+    if not signal_col:
+        return {}
+    meta = {}
+    if "pdl_" in signal_col:
+        m = re.match(r"^(.*?)rl(\d+)_", signal_col)
+        if m:
+            prefix, rl = m.group(1), int(m.group(2))
+            meta["retracement_level"] = rl / 100
+            meta["candle_span"] = "body" if prefix.startswith("body_") else "hl"
+            meta["range_scope"] = "all" if "all_" in prefix else "session"
+            meta["break_mode"] = "session_only" if "sesbrk_" in prefix else "all_hours"
+            meta["retest_mode"] = "session_only" if "sesret_" in prefix else "all_hours"
+    elif "orb_" in signal_col:
+        m = re.search(r"rb(\d+)_cf(\d+)_prb(\d+)_orb_s(\d+)_rl(\d+)", signal_col)
+        if m:
+            meta["range_bars"] = int(m.group(1))
+            meta["carry_forward"] = int(m.group(2))
+            meta["pre_range_bars"] = int(m.group(3))
+            meta["session_hour"] = int(m.group(4))
+            meta["retracement_level"] = int(m.group(5)) / 100
+    return meta
 
 
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
@@ -545,6 +571,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "risk_adjustment": risk_adjustment,
                 "vol_targeting": risk_result.get("vol_targeting"),
                 "model_hyperparameters": b_config.get("model_hyperparameters"),
+                "signal_meta": decode_signal_meta(
+                    (b_config.get("model_hyperparameters") or {}).get(
+                        "signal_column_long",
+                        (b_config.get("model_hyperparameters") or {}).get("signal_column_short", ""),
+                    )
+                ),
             },
             "tr_trace": all_trades_pnl,
             "rrr": rrr,
