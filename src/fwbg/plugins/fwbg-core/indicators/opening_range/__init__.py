@@ -19,6 +19,7 @@ import pandas as pd
 import ta
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide
+from fwbg_sdk.retest import apply_breakout_threshold, compute_break_state, compute_retest_signals
 
 
 def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
@@ -85,6 +86,9 @@ def _session_orb_features(
     retest_zone_width: float = 0.5,
     carry_forward_days: int = 0,
     pre_range_bars: int = 0,
+    range_mode: str = "hl",
+    breakout_threshold: float = 0.0,
+    breakout_threshold_abs: float = 0.0,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
     """
     Compute session-specific ORB features.
@@ -117,13 +121,20 @@ def _session_orb_features(
         # Count bars within session hour per session_id (0-indexed)
         bar_in_block = is_session.astype(int).groupby(session_id).cumsum() - 1
 
-        # Opening range: body of the combined reference candle (O of first bar, C of last bar)
-        or_mask_first = is_session & (bar_in_block == 0)
-        or_mask_last = is_session & (bar_in_block == range_bars - 1)
-        or_open = df["O"].where(or_mask_first).groupby(session_id).transform("first")
-        or_close = df["C"].where(or_mask_last).groupby(session_id).transform("last")
-        or_high = pd.Series(np.maximum(or_open.values, or_close.values), index=df.index)
-        or_low = pd.Series(np.minimum(or_open.values, or_close.values), index=df.index)
+        # Opening range computation
+        if range_mode == "hl":
+            # H/L of all bars in the range window
+            range_mask = is_session & (bar_in_block < range_bars)
+            or_high = df["H"].where(range_mask).groupby(session_id).transform("max")
+            or_low = df["L"].where(range_mask).groupby(session_id).transform("min")
+        else:
+            # Body: O of first bar, C of last bar
+            or_mask_first = is_session & (bar_in_block == 0)
+            or_mask_last = is_session & (bar_in_block == range_bars - 1)
+            or_open = df["O"].where(or_mask_first).groupby(session_id).transform("first")
+            or_close = df["C"].where(or_mask_last).groupby(session_id).transform("last")
+            or_high = pd.Series(np.maximum(or_open.values, or_close.values), index=df.index)
+            or_low = pd.Series(np.minimum(or_open.values, or_close.values), index=df.index)
 
         # --- pre_range_bars: expand range to include pre-session bars ---
         if pre_range_bars > 0:
@@ -138,10 +149,14 @@ def _session_orb_features(
                     continue
                 pre_start = max(0, pos - pre_range_bars)
                 if pre_start < pos:
-                    pre_o = df["O"].values[pre_start:pos]
-                    pre_c = df["C"].values[pre_start:pos]
-                    pre_h = max(pre_o.max(), pre_c.max())
-                    pre_l = min(pre_o.min(), pre_c.min())
+                    if range_mode == "hl":
+                        pre_h = df["H"].values[pre_start:pos].max()
+                        pre_l = df["L"].values[pre_start:pos].min()
+                    else:
+                        pre_o = df["O"].values[pre_start:pos]
+                        pre_c = df["C"].values[pre_start:pos]
+                        pre_h = max(pre_o.max(), pre_c.max())
+                        pre_l = min(pre_o.min(), pre_c.min())
                     sess_mask = sid_vals == sid
                     cur_h = arr_h[sess_mask][0]
                     cur_l = arr_l[sess_mask][0]
@@ -244,71 +259,68 @@ def _session_orb_features(
         sl_dist = (or_range / 2).where(valid & (or_range > 0), np.nan)
         features[f"{prefix}_sl_dist"] = sl_dist
 
-        # Post-breakout STATE: 1 for all bars after first breakout in this session.
-        # Only count breakouts that happen AFTER the range period (valid bars only).
-        # This prevents intra-range intermediate closes from falsely triggering post_bull/bear
-        # when or_high/or_low are body-based (max/min of or_open, or_close).
-        above_cummax = (
-            (df["C"] > or_high).where(valid, False).astype(np.int8)
-            .groupby(session_id).cummax()
+        # Post-breakout state via shared break detection (with threshold).
+        # Only count breakouts on valid bars (after range period).
+        close_vals = df["C"].values
+        or_high_vals = or_high.values
+        or_low_vals = or_low.values
+        or_range_vals = or_range.values
+        valid_vals = valid.values
+        sid_vals = session_id.values
+
+        above_raw, below_raw = apply_breakout_threshold(
+            close_vals, or_high_vals, or_low_vals, or_range_vals,
+            breakout_threshold, breakout_threshold_abs,
         )
-        below_cummax = (
-            (df["C"] < or_low).where(valid, False).astype(np.int8)
-            .groupby(session_id).cummax()
-        )
-        features[f"{prefix}_post_bull"] = above_cummax.where(valid, np.nan)
-        features[f"{prefix}_post_bear"] = below_cummax.where(valid, np.nan)
+        # Mask out range-period bars
+        above_masked = above_raw & valid_vals
+        below_masked = below_raw & valid_vals
+
+        _, _, post_bull_arr, post_bear_arr, broke_high_arr, broke_low_arr = \
+            compute_break_state(
+                above_masked, below_masked, or_high_vals,
+                sid_vals, len(df),
+            )
+        features[f"{prefix}_post_bull"] = pd.Series(
+            post_bull_arr, index=df.index,
+        ).where(valid, np.nan)
+        features[f"{prefix}_post_bear"] = pd.Series(
+            post_bear_arr, index=df.index,
+        ).where(valid, np.nan)
 
         if enable_retracement:
-            # Reload zone: is price within retest_atr_width * ATR of the ORB boundary?
-            # This captures the "test of the broken level" setup described by ICT/IVB traders.
-            half_band = retest_atr_width * atr
-            near_high = (df["C"] >= or_high - half_band) & (df["C"] <= or_high + half_band)
-            near_low = (df["C"] >= or_low - half_band) & (df["C"] <= or_low + half_band)
+            # Reload zone features (ATR-based)
+            half_band_atr = retest_atr_width * atr
+            near_high = (df["C"] >= or_high - half_band_atr) & (df["C"] <= or_high + half_band_atr)
+            near_low = (df["C"] >= or_low - half_band_atr) & (df["C"] <= or_low + half_band_atr)
             features[f"{prefix}_retest_zone_up"] = near_high.astype(int).where(valid, np.nan)
             features[f"{prefix}_retest_zone_down"] = near_low.astype(int).where(valid, np.nan)
 
-            # Retest (reload) entry signal — fires ONCE per session on the first bar price
-            # enters the midpoint zone after a breakout (session-locked event signal).
-            # Bull: broke above OR High AND retraced to midpoint AND no subsequent bear breakout
-            # Bear: broke below OR Low AND retraced to midpoint AND no subsequent bull breakout
-            #
-            # near_poc zone: range-based (fraction of OR range centred on midpoint).
-            # retest_zone_width=0.5  → covers the middle 50 % of the OR range (25 %–75 %).
-            # This is independent of ATR so the zone scales correctly with every range size,
-            # and fast retracement bars that skip an ATR-sized window are much less likely
-            # to miss the trigger.
-            zone_half = (retest_zone_width / 2) * or_range
-            near_poc = (df["C"] >= or_midpoint - zone_half) & (df["C"] <= or_midpoint + zone_half)
+            # Retest signals via shared logic.
+            # ORB entry is always at midpoint; zone is range-proportional.
+            midpoint_vals = (or_high_vals + or_low_vals) / 2
+            retest_half_band = retest_zone_width / 2 * or_range_vals
 
-            post_bull_flag = above_cummax.where(valid, 0).astype(bool)
-            post_bear_flag = below_cummax.where(valid, 0).astype(bool)
-
-            # Thesis still valid: had breakout in one direction, but NOT also in the other.
-            # If price broke both sides the range is "used up" — no clean retest.
-            still_valid_bull = above_cummax.astype(bool) & ~below_cummax.astype(bool)
-            still_valid_bear = below_cummax.astype(bool) & ~above_cummax.astype(bool)
-
-            bull_cond = post_bull_flag & near_poc & still_valid_bull
-            bear_cond = post_bear_flag & near_poc & still_valid_bear
-
-            # Session-level lock: once the signal fires, it never fires again in the same session.
-            # cummax() on the condition ensures re-entry into the zone does not re-trigger.
-            session_bull_fired = bull_cond.astype(np.int8).groupby(session_id).cummax()
-            session_bear_fired = bear_cond.astype(np.int8).groupby(session_id).cummax()
-            prev_bull_fired = (
-                session_bull_fired.groupby(session_id).shift(1).fillna(0).astype(np.int8)
+            retest_result = compute_retest_signals(
+                close=close_vals,
+                high=df["H"].values,
+                low=df["L"].values,
+                range_high=or_high_vals,
+                range_low=or_low_vals,
+                group_ids=sid_vals,
+                broke_high_arr=broke_high_arr,
+                broke_low_arr=broke_low_arr,
+                entry_bull=midpoint_vals,
+                entry_bear=midpoint_vals,
+                half_band=retest_half_band,
+                n=len(df),
             )
-            prev_bear_fired = (
-                session_bear_fired.groupby(session_id).shift(1).fillna(0).astype(np.int8)
-            )
-
-            features[f"{prefix}_retest_bull"] = (
-                (session_bull_fired - prev_bull_fired).clip(lower=0).astype(float).where(valid, np.nan)
-            )
-            features[f"{prefix}_retest_bear"] = (
-                (session_bear_fired - prev_bear_fired).clip(lower=0).astype(float).where(valid, np.nan)
-            )
+            features[f"{prefix}_retest_bull"] = pd.Series(
+                retest_result["retest_bull"], index=df.index,
+            ).where(valid, np.nan)
+            features[f"{prefix}_retest_bear"] = pd.Series(
+                retest_result["retest_bear"], index=df.index,
+            ).where(valid, np.nan)
 
     return features
 
@@ -393,6 +405,9 @@ class OpeningRangeIndicator(BaseIndicator):
         retest_zone_width: float = 0.5,
         carry_forward_days: Union[int, List[int]] = 0,
         pre_range_bars: Union[int, List[int]] = 0,
+        range_mode: str = "hl",
+        breakout_threshold: float = 0.0,
+        breakout_threshold_abs: float = 0.0,
         **params,
     ) -> pd.DataFrame:
         if not isinstance(df.index, pd.DatetimeIndex):
@@ -433,7 +448,8 @@ class OpeningRangeIndicator(BaseIndicator):
                         cf_prb_pfx = f"cf{cf}_prb{prb}_" if use_cf_prb_prefix else ""
                         session = _session_orb_features(
                             df, sessions, rb, atr, enable_retracement, retest_atr_width,
-                            retest_zone_width, cf, prb,
+                            retest_zone_width, cf, prb, range_mode,
+                            breakout_threshold, breakout_threshold_abs,
                         )
                         features.update({f"{rb_pfx}{cf_prb_pfx}{k}": v for k, v in session.items()})
 
@@ -502,6 +518,9 @@ class OpeningRangeIndicator(BaseIndicator):
             "retest_zone_width": 0.5,
             "carry_forward_days": 0,
             "pre_range_bars": 0,
+            "range_mode": "hl",
+            "breakout_threshold": 0.0,
+            "breakout_threshold_abs": 0.0,
         }
 
     @classmethod
@@ -589,6 +608,28 @@ class OpeningRangeIndicator(BaseIndicator):
                 "min": 0,
                 "max": 8,
                 "step": 1,
+            },
+            "range_mode": {
+                "type": "choice",
+                "default": "hl",
+                "description": "How to compute or_high/or_low. 'hl': H/L of range bars (true range). 'body': max/min of O/C (body range, ignoring wicks).",
+                "choices": ["hl", "body"],
+            },
+            "breakout_threshold": {
+                "type": "float",
+                "default": 0.0,
+                "description": "Minimum distance as fraction of range for breakout. E.g. 0.05 = close must be at least 5% of range beyond boundary. 0 = disabled.",
+                "min": 0.0,
+                "max": 0.5,
+                "step": 0.01,
+            },
+            "breakout_threshold_abs": {
+                "type": "float",
+                "default": 0.0,
+                "description": "Minimum distance in absolute terms (pips/points) for breakout. Effective threshold = max(pct * range, abs). 0 = disabled.",
+                "min": 0.0,
+                "max": 100.0,
+                "step": 1.0,
             },
         }
 

@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, EPSILON
+from fwbg_sdk.retest import compute_break_state, compute_retest_signals
 
 _RANGE_MODE_PREFIX = {
     "hl_session": "",       # default, no prefix
@@ -56,67 +57,6 @@ def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
     return pd.Series(tr).rolling(period, min_periods=1).mean().values
 
 
-def _compute_break_state(
-    above: np.ndarray,
-    below: np.ndarray,
-    pdh: np.ndarray,
-    day_ids: np.ndarray,
-    n: int,
-    session_mask: np.ndarray = None,
-) -> tuple:
-    """Compute break detection and post-breakout state arrays.
-
-    above/below are pre-computed boolean arrays indicating where price
-    crossed PDH/PDL.  The caller decides how to compute them (e.g.
-    native-bar Close, or resampled hourly Open/Close).
-    pdh is only used for the NaN guard (bars without previous-day data).
-
-    When session_mask is None (all_hours mode), breaks are detected 24/7.
-    When session_mask is provided (session_only mode), only session bars
-    can trigger breakouts — off-session bars inherit state but cannot set it.
-
-    Returns (high_break, low_break, post_bull, post_bear,
-             broke_high_arr, broke_low_arr).
-    """
-    high_break = np.zeros(n)
-    low_break = np.zeros(n)
-    post_bull = np.zeros(n)
-    post_bear = np.zeros(n)
-    broke_high_arr = np.zeros(n, dtype=bool)
-    broke_low_arr = np.zeros(n, dtype=bool)
-
-    prev_day_id = -1
-    broke_high = False
-    broke_low = False
-
-    for i in range(n):
-        if day_ids[i] != prev_day_id:
-            prev_day_id = day_ids[i]
-            broke_high = False
-            broke_low = False
-
-        if np.isnan(pdh[i]):
-            continue
-
-        in_session = session_mask[i] if session_mask is not None else True
-        if in_session:
-            if above[i] and not broke_high:
-                high_break[i] = 1.0
-                broke_high = True
-            if below[i] and not broke_low:
-                low_break[i] = 1.0
-                broke_low = True
-
-        broke_high_arr[i] = broke_high
-        broke_low_arr[i] = broke_low
-
-        if broke_high:
-            post_bull[i] = 1.0
-        if broke_low:
-            post_bear[i] = 1.0
-
-    return high_break, low_break, post_bull, post_bear, broke_high_arr, broke_low_arr
-
 
 def _compute_retest_features(
     pdh: np.ndarray,
@@ -139,101 +79,36 @@ def _compute_retest_features(
 ) -> Dict[str, np.ndarray]:
     """Compute retest signals and SL distance for a given retracement level.
 
-    Entry levels per rl (fraction of range from breakout boundary):
-    - Bull entry = PDH - rl * pd_range (retrace from PDH downward)
-    - Bear entry = PDL + rl * pd_range (retrace from PDL upward)
-
-    min_retracement: minimum fraction of pd_range that must be retraced
-    (checked via High/Low) before a retest signal fires.  A bar's Low
-    touching PDH - min_retracement * pd_range is enough for bull; a bar's
-    High touching PDL + min_retracement * pd_range is enough for bear.
-
-    SL distance = max((1 - rl) * pd_range + half_band, min_sl_atr_mult * atr).
-
-    When session_mask is None (all_hours retest mode), retests fire 24/7.
-    When session_mask is provided (session_only retest mode), retests only
-    fire during trading session.
+    Uses shared compute_retest_signals for signal logic.  SL distance
+    is PDHL-specific (range-based + ATR floor).
     """
     features: Dict[str, np.ndarray] = {}
 
+    # Pre-compute entry levels and zone width (PDHL: ATR-based zone)
+    entry_bull = pdh - rl * pd_range
+    entry_bear = pdl_low + rl * pd_range
+    band_basis = np.maximum(np.nan_to_num(pd_range, nan=0.0), atr)
+    half_band = retest_atr_width * band_basis / 2
+
     if enable_retest:
-        entry_bull = pdh - rl * pd_range
-        entry_bear = pdl_low + rl * pd_range
-
-        band_basis = np.maximum(np.nan_to_num(pd_range, nan=0.0), atr)
-        half_band = retest_atr_width * band_basis / 2
-        near_entry_bull = (close >= entry_bull - half_band) & (close <= entry_bull + half_band)
-        near_entry_bear = (close >= entry_bear - half_band) & (close <= entry_bear + half_band)
-
-        # Retracement thresholds (checked via H/L)
-        retrace_bull_threshold = pdh - min_retracement * pd_range
-        retrace_bear_threshold = pdl_low + min_retracement * pd_range
-
-        retest_bull = np.zeros(n)
-        retest_bear = np.zeros(n)
-
-        prev_day_id = -1
-        retested_bull = False
-        retested_bear = False
-        retracement_ok_bull = False
-        retracement_ok_bear = False
-        # Price must leave the entry zone before it can re-enter as retest.
-        # This ensures an actual breakout-away-return pattern.
-        departed_bull = False
-        departed_bear = False
-
-        for i in range(n):
-            if day_ids[i] != prev_day_id:
-                prev_day_id = day_ids[i]
-                retested_bull = False
-                retested_bear = False
-                retracement_ok_bull = False
-                retracement_ok_bear = False
-                departed_bull = False
-                departed_bear = False
-
-            if np.isnan(pdh[i]):
-                continue
-
-            # Track retracement via High/Low (cumulative per day)
-            if min_retracement > 0 and low is not None:
-                if broke_high_arr[i] and not retracement_ok_bull:
-                    if low[i] <= retrace_bull_threshold[i]:
-                        retracement_ok_bull = True
-                if broke_low_arr[i] and not retracement_ok_bear:
-                    if high[i] >= retrace_bear_threshold[i]:
-                        retracement_ok_bear = True
-            else:
-                retracement_ok_bull = True
-                retracement_ok_bear = True
-
-            # After breakout, price must first move ABOVE (bull) / BELOW
-            # (bear) the near-entry band before a retest can fire.  This
-            # prevents the breakout bar or subsequent continuation bars
-            # from triggering a false retest signal.
-            if broke_high_arr[i] and not departed_bull:
-                if close[i] > entry_bull[i] + half_band[i]:
-                    departed_bull = True
-            if broke_low_arr[i] and not departed_bear:
-                if close[i] < entry_bear[i] - half_band[i]:
-                    departed_bear = True
-
-            # Only fire retest signals during trading session
-            in_session = session_mask[i] if session_mask is not None else True
-            if not in_session:
-                continue
-
-            if departed_bull and retracement_ok_bull and not retested_bull \
-                    and near_entry_bull[i] and close[i] > pdl_low[i]:
-                retest_bull[i] = 1.0
-                retested_bull = True
-            if departed_bear and retracement_ok_bear and not retested_bear \
-                    and near_entry_bear[i] and close[i] < pdh[i]:
-                retest_bear[i] = 1.0
-                retested_bear = True
-
-        features["pdl_retest_bull"] = retest_bull
-        features["pdl_retest_bear"] = retest_bear
+        retest_result = compute_retest_signals(
+            close=close,
+            high=high,
+            low=low,
+            range_high=pdh,
+            range_low=pdl_low,
+            group_ids=day_ids,
+            broke_high_arr=broke_high_arr,
+            broke_low_arr=broke_low_arr,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
+            half_band=half_band,
+            n=n,
+            min_retracement=min_retracement,
+            session_mask=session_mask,
+        )
+        features["pdl_retest_bull"] = retest_result["retest_bull"]
+        features["pdl_retest_bear"] = retest_result["retest_bear"]
 
     # SL distance: reach at least PDL (long) / PDH (short) + buffer for entry deviation.
     entry_buffer = retest_atr_width * np.nan_to_num(pd_range, nan=0.0) / 2
@@ -444,7 +319,7 @@ def _compute_range_variant(
     # Break state
     break_mask = session_mask_arr if session_break else None
     high_break, low_break, post_bull, post_bear, broke_high_arr, broke_low_arr = \
-        _compute_break_state(above, below, pdh, day_ids, n, break_mask)
+        compute_break_state(above, below, pdh, day_ids, n, break_mask)
 
     features["pdl_high_break"] = high_break
     features["pdl_low_break"] = low_break

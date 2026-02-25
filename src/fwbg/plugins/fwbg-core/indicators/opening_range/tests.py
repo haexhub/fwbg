@@ -859,31 +859,31 @@ class TestORBRetestEntry:
     """orb_s{hh}_retest_bull/bear = entry signal: fires when post-breakout AND price near ORB midpoint."""
 
     def _make_retest_df(self, n_pre_hour_bars=32):
-        """M15 data with a planted post-breakout retrace scenario:
-          b+0: range bar (or_high=103, or_low=97, midpoint=100)
-          b+1: C=104 (upside breakout — post_bull becomes 1)
+        """M15 data with a planted post-breakout retrace scenario.
+
+        range_mode='hl' (default): or_high=104, or_low=96, midpoint=100, range=8.
+        With retest_zone_width=1.0: half_band=4, zone=[96,104].
+        Departure requires C > 104 (bull) / C < 96 (bear).
+
+          b+0: range bar (H=104, L=96)
+          b+1: C=106 (upside breakout + departure)
           b+2: C=100 (retrace to midpoint — retest_bull SHOULD fire)
-          b+3: C=96  (below or_low — thesis invalidated, retest_bull should NOT fire)
+          b+3: C=95  (below or_low — thesis invalidated)
         """
         n_total = n_pre_hour_bars + 10
         idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
-        open_ = np.full(n_total, 100.0)
         close = np.full(n_total, 100.0)
         high = close + 0.5
         low = close - 0.5
         b = n_pre_hour_bars
-        # Body-based range: O of first bar = 97, C of first bar = 103
-        # → or_high = max(97, 103) = 103, or_low = min(97, 103) = 97, midpoint = 100
-        open_[b] = 97.0
-        close[b] = 103.0
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 104.0   # upside breakout (C > or_high=103)
+        close[b + 1] = 106.0   # upside breakout + departure (C > or_high=104)
         close[b + 2] = 100.0   # retrace to midpoint
-        close[b + 3] = 96.0    # below or_low (invalidated)
-        high = np.maximum(high, np.maximum(open_, close))
-        low = np.minimum(low, np.minimum(open_, close))
-        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        close[b + 3] = 95.0    # below or_low (invalidated)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
+        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         return df, b
 
     def test_retest_bull_column_exists(self):
@@ -902,13 +902,13 @@ class TestORBRetestEntry:
         """retest_bull = 0 when there is no prior upside breakout (post_bull = 0)."""
         ind = _get_indicator()
         df, b = self._make_retest_df()
-        # Override b+1 to stay inside range (no breakout)
+        # Override b+1 to stay inside range (no breakout, no departure)
         df = df.copy()
         df.loc[df.index[b + 1], "C"] = 100.0
-        df.loc[df.index[b + 1], "H"] = 100.5
+        df.loc[df.index[b + 1], "H"] = 103.0
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_zone_width=1.0)
-        # Bar b+2 is at midpoint (C=100) but post_bull=0 → retest_bull must be 0
+        # Bar b+2 is at midpoint (C=100) but no breakout → retest_bull must be 0
         # After shift: result.iloc[b+3]
         val = result["orb_s08_retest_bull"].iloc[b + 3]
         assert val == 0.0, (
@@ -936,21 +936,18 @@ class TestORBRetestEntry:
         n_pre = 32
         n_total = n_pre + 10
         idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
-        open_ = np.full(n_total, 100.0)
         close = np.full(n_total, 100.0)
         high = close + 0.5
         low = close - 0.5
         b = n_pre
-        open_[b] = 97.0
-        close[b] = 103.0
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 104.0  # upside breakout
+        close[b + 1] = 106.0  # upside breakout + departure
         close[b + 2] = 100.0  # first touch of midpoint → fires
         close[b + 3] = 100.0  # second bar at midpoint → must NOT fire again
-        high = np.maximum(high, np.maximum(open_, close))
-        low = np.minimum(low, np.minimum(open_, close))
-        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
+        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_zone_width=1.0)
         # b+2 (first touch): result.iloc[b+3] = 1
@@ -962,46 +959,53 @@ class TestORBRetestEntry:
             f"retest_bull must not fire twice in the same zone approach, got {val_second}"
         )
 
-    def test_retest_bull_blocked_after_double_breakout(self):
-        """retest_bull = 0 if price also broke below OR Low after the bull breakout."""
+    def test_retest_fires_for_both_directions_after_double_breakout(self):
+        """After double breakout (both bull and bear), both retests can fire at midpoint.
+
+        This differs from the old ORB-specific logic which invalidated the first
+        breakout direction.  The shared retest logic (used by both ORB and PDHL)
+        treats each direction independently: if price departed and returned to
+        the zone while still above range_low / below range_high, the signal fires.
+        """
         ind = _get_indicator()
         n_pre = 32
         n_total = n_pre + 10
         idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
-        open_ = np.full(n_total, 100.0)
         close = np.full(n_total, 100.0)
         high = close + 0.5
         low = close - 0.5
         b = n_pre
-        open_[b] = 97.0
-        close[b] = 103.0
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 104.0  # bull breakout → above_cummax=1
-        close[b + 2] = 96.0   # bear breakout too → below_cummax=1 → still_valid_bull=False
-        close[b + 3] = 100.0  # retraces to midpoint — but double breakout, must NOT fire
-        high = np.maximum(high, np.maximum(open_, close))
-        low = np.minimum(low, np.minimum(open_, close))
-        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        close[b + 1] = 106.0  # bull breakout + departure
+        close[b + 2] = 94.0   # bear breakout + departure
+        close[b + 3] = 100.0  # midpoint — both retests fire
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
+        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_zone_width=1.0)
-        # b+3 (at midpoint after double breakout): result.iloc[b+4] = 0
-        val = result["orb_s08_retest_bull"].iloc[b + 4]
-        assert val == 0.0, (
-            f"retest_bull should be 0 after a double breakout (bull+bear), got {val}"
+        # Both bull and bear retests fire at b+3 (shifted to b+4)
+        val_bull = result["orb_s08_retest_bull"].iloc[b + 4]
+        val_bear = result["orb_s08_retest_bear"].iloc[b + 4]
+        assert val_bull == 1.0, (
+            f"retest_bull should fire at midpoint after bull departure, got {val_bull}"
+        )
+        assert val_bear == 1.0, (
+            f"retest_bear should fire at midpoint after bear departure, got {val_bear}"
         )
 
-    def test_retest_bull_zero_when_price_below_orb_low(self):
-        """retest_bull = 0 when C < or_low (ORB bull thesis invalidated by bear breakout)."""
+    def test_retest_bull_fires_only_once_per_session(self):
+        """retest_bull = 0 on subsequent bars after signal already fired."""
         ind = _get_indicator()
         df, b = self._make_retest_df()
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_zone_width=1.0)
-        # Bar b+3 (C=96 < or_low=97): below_cummax=1 → still_valid_bull=False → retest_bull=0
+        # retest_bull fires at b+2 (C=100, midpoint). At b+3 (C=95), already retested → 0.
         # After shift: result.iloc[b+4]
         val = result["orb_s08_retest_bull"].iloc[b + 4]
         assert val == 0.0, (
-            f"retest_bull should be 0 when price breaks below or_low (thesis invalidated), got {val}"
+            f"retest_bull should be 0 after already firing earlier in the session, got {val}"
         )
 
     def test_retest_bear_fires_when_price_at_midpoint_after_bear_breakout(self):
@@ -1009,76 +1013,65 @@ class TestORBRetestEntry:
         ind = _get_indicator()
         n_total = 32 + 10
         idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
-        open_ = np.full(n_total, 100.0)
         close = np.full(n_total, 100.0)
         high = close + 0.5
         low = close - 0.5
         b = 32
-        # Body-based range: O=103, C=97 → or_high=103, or_low=97, midpoint=100
-        open_[b] = 103.0
-        close[b] = 97.0
+        # H/L range: or_high=104, or_low=96, midpoint=100, range=8
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 96.0   # downside breakout (C=96 < or_low=97)
+        close[b + 1] = 94.0   # downside breakout + departure (C < or_low=96)
         close[b + 2] = 100.0  # retrace to midpoint — retest_bear SHOULD fire
-        # still_valid_bear: C < or_high=103 → True ✓
-        high = np.maximum(high, np.maximum(open_, close))
-        low = np.minimum(low, np.minimum(open_, close))
-        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
+        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_zone_width=1.0)
         assert "orb_s08_retest_bear" in result.columns
-        # Bar b+2 (C=100, post_bear=1, near midpoint, valid_bear) → retest_bear = 1
+        # Bar b+2 (C=100, post_bear=1, departed, near midpoint) → retest_bear = 1
         # After shift: result.iloc[b+3]
         val = result["orb_s08_retest_bear"].iloc[b + 3]
         assert val == 1.0, (
             f"retest_bear should be 1 when at midpoint after downside breakout, got {val}"
         )
 
-    def test_retest_bull_not_triggered_by_intra_range_close(self):
-        """retest_bull must NOT fire when an intermediate range bar closed above or_high.
+    def test_retest_bull_not_triggered_without_post_range_breakout(self):
+        """retest_bull must NOT fire when no close exceeds or_high in the post-range period.
 
-        or_high = max(O[first range bar], C[last range bar]).  With rb=2, the first
-        range bar may close *above* or_high (which equals its own open).  Before the
-        fix, above_cummax was computed across ALL bars including range bars, so
-        post_bull would be True from the very first valid bar — without any real
-        post-range breakout.
+        With rb=2 and range_mode='hl', the range covers bars b and b+1.
+        Post-range bars must break above or_high = max(H[b], H[b+1]) to trigger.
         """
         ind = _get_indicator()
         n_pre = 32
         n_total = n_pre + 10
         idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
-        open_ = np.full(n_total, 100.0)
         close = np.full(n_total, 100.0)
         high = close + 0.5
         low = close - 0.5
         b = n_pre
         # rb=2: range bars are b and b+1
-        # or_open = O[b] = 100, or_close = C[b+1] = 95 → or_high = 100, or_low = 95
-        # But C[b] = 105 > or_high = 100  ← intra-range close above body-high
-        open_[b] = 100.0
-        close[b] = 105.0    # intra-range bar exceeds or_high (100) — must NOT trigger post_bull
-        open_[b + 1] = 105.0
-        close[b + 1] = 95.0  # last range bar: or_close = 95 → or_high = max(100, 95) = 100
-        # First valid bar (b+2): price stays inside range (98), never breaks above 100
+        # range_mode='hl': or_high = max(H[b], H[b+1]) = 105, or_low = min(L[b], L[b+1]) = 95
+        high[b] = 105.0
+        low[b] = 95.0
+        high[b + 1] = 102.0
+        low[b + 1] = 98.0
+        # Post-range bars stay inside range
         close[b + 2] = 98.0
         close[b + 3] = 100.0
-        high = np.maximum(high, np.maximum(open_, close))
-        low = np.minimum(low, np.minimum(open_, close))
-        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
+        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              range_bars=2, retest_zone_width=1.0)
         # With rb=2: range = bars b,b+1; first valid = b+2.
         # Features are shifted by 1, so b+2 data appears at b+3 in the result.
-        # post_bull must be 0 because no close > 100 happened in the valid period.
         post_bull_b2 = result["orb_s08_post_bull"].iloc[b + 3]
         assert post_bull_b2 == 0.0, (
-            f"post_bull should be 0 when only an intra-range bar exceeded or_high, got {post_bull_b2}"
+            f"post_bull should be 0 when no close > or_high in post-range period, got {post_bull_b2}"
         )
-        # retest_bull must not fire either (b+3 raw → b+4 shifted)
         val = result["orb_s08_retest_bull"].iloc[b + 4]
         assert val == 0.0, (
-            f"retest_bull should be 0 when post_bull was caused by intra-range bar only, got {val}"
+            f"retest_bull should be 0 without post-range breakout, got {val}"
         )
 
     def test_retest_bull_does_not_refire_after_zone_exit_and_reentry(self):
@@ -1091,22 +1084,19 @@ class TestORBRetestEntry:
         n_pre = 32
         n_total = n_pre + 12
         idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
-        open_ = np.full(n_total, 100.0)
         close = np.full(n_total, 100.0)
         high = close + 0.5
         low = close - 0.5
         b = n_pre
-        open_[b] = 97.0
-        close[b] = 103.0   # or_high=103, or_low=97, midpoint=100
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 104.0  # bull breakout
+        close[b + 1] = 106.0  # bull breakout + departure
         close[b + 2] = 100.0  # first touch — signal fires here
-        close[b + 3] = 104.0  # exits zone (above)
+        close[b + 3] = 106.0  # exits zone (above)
         close[b + 4] = 100.0  # re-enters zone — must NOT fire again
-        high = np.maximum(high, np.maximum(open_, close))
-        low = np.minimum(low, np.minimum(open_, close))
-        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        high = np.maximum(high, close)
+        low = np.minimum(low, close)
+        df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
                              retest_zone_width=1.0)
         val_first = result["orb_s08_retest_bull"].iloc[b + 3]   # signal at b+2, shifted
@@ -1148,14 +1138,12 @@ class TestCarryForwardDays:
         return df
 
     def _set_session_range(self, df, day, session_hour, or_high, or_low):
-        """Set the range bar O/C body for a given day's session hour."""
+        """Set the range bar H/L for a given day's session hour."""
         day_start = df.index[0] + pd.Timedelta(days=day)
         session_time = day_start.replace(hour=session_hour, minute=0)
         if session_time in df.index:
-            df.loc[session_time, "O"] = or_low
-            df.loc[session_time, "C"] = or_high
-            df.loc[session_time, "H"] = or_high + 1.0
-            df.loc[session_time, "L"] = or_low - 1.0
+            df.loc[session_time, "H"] = or_high
+            df.loc[session_time, "L"] = or_low
 
     def test_default_no_carry(self):
         """carry_forward_days=0 (default): each session uses its own range."""
@@ -1818,10 +1806,10 @@ class TestBodyBasedRange:
         return df, b
 
     def test_session_range_uses_body_not_wicks(self):
-        """or_high/or_low must be derived from O/C body, not H/L wicks."""
+        """or_high/or_low must be derived from O/C body, not H/L wicks (range_mode='body')."""
         ind = _get_indicator()
         df, b = self._make_body_vs_wick_df(range_bars=2)
-        result = ind.compute(df, sessions=[8], range_bars=2,
+        result = ind.compute(df, sessions=[8], range_bars=2, range_mode="body",
                              enable_rolling=False, enable_stats=False)
 
         # Body range = max(98, 102) - min(98, 102) = 4.0
@@ -1839,7 +1827,7 @@ class TestBodyBasedRange:
         """Body-based range must be <= wick-based range for any candle."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=5000)
-        result = ind.compute(df, sessions=[8], range_bars=2,
+        result = ind.compute(df, sessions=[8], range_bars=2, range_mode="body",
                              enable_rolling=False, enable_stats=False)
 
         range_vals = result["orb_s08_range"].dropna()
@@ -1869,7 +1857,7 @@ class TestBodyBasedRange:
         high = np.maximum(high, np.maximum(open_, close))
         low = np.minimum(low, np.minimum(open_, close))
         df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
-        result = ind.compute(df, sessions=[8], range_bars=1,
+        result = ind.compute(df, sessions=[8], range_bars=1, range_mode="body",
                              enable_rolling=False, enable_stats=False)
 
         # _range = safe_divide(or_range, C) = 6.0 / 100.0 = 0.06
@@ -1885,7 +1873,7 @@ class TestBodyBasedRange:
         """Session sl_dist = or_range / 2 (entry at midpoint → SL at body boundary)."""
         ind = _get_indicator()
         df, b = self._make_body_vs_wick_df(range_bars=2)
-        result = ind.compute(df, sessions=[8], range_bars=2,
+        result = ind.compute(df, sessions=[8], range_bars=2, range_mode="body",
                              enable_rolling=False, enable_stats=False)
 
         # Body range = 4.0, sl_dist = 4.0 / 2 = 2.0
@@ -1900,7 +1888,7 @@ class TestBodyBasedRange:
         ind = _get_indicator()
         df, b = self._make_body_vs_wick_df(range_bars=2)
         # Post-range bar: C=100.0, body midpoint = (102+98)/2 = 100.0 → poc_dist ≈ 0
-        result = ind.compute(df, sessions=[8], range_bars=2,
+        result = ind.compute(df, sessions=[8], range_bars=2, range_mode="body",
                              enable_rolling=False, enable_stats=False)
 
         poc_val = result["orb_s08_poc_dist"].iloc[b + 3]
@@ -1918,7 +1906,7 @@ class TestBodyBasedRange:
         # but below wick H_max=106 (would NOT be breakout if wick-based)
         df.loc[df.index[b + 2], "C"] = 103.0
         df.loc[df.index[b + 2], "H"] = 103.0
-        result = ind.compute(df, sessions=[8], range_bars=2,
+        result = ind.compute(df, sessions=[8], range_bars=2, range_mode="body",
                              enable_rolling=False, enable_stats=False)
 
         # After shift: result.iloc[b+3] has bar b+2's breakout value
