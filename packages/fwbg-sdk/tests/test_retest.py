@@ -1,6 +1,5 @@
 """Tests for shared retest logic (fwbg_sdk.retest)."""
 import numpy as np
-import pytest
 
 from fwbg_sdk.retest import apply_breakout_threshold, compute_break_state, compute_retest_signals
 
