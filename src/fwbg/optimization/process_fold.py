@@ -63,31 +63,17 @@ def precompute_indicators(df, strategy, sym, indicator_overrides=None):
     return fold_indicators, precomputed_raw_df, total_indicators
 
 
-def process_single_fold(
-    fold, fold_idx, n_folds,
-    fold_indicators, precomputed_raw_df, preprocessing_configs,
-    grid, ctx, sym, total_indicators,
-):
-    """Process a single walk-forward fold.
+def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
+                      preprocessing_configs, ctx, sym,
+                      indicator_progress_callback=None):
+    """Prepare train/test DataFrames for a fold.
 
     Handles preprocessing, indicator computation, feature cleaning,
-    grid search, plateau selection, and test evaluation.
+    dropna, and OHLC restoration.
 
     Returns:
-        (fold_result dict or None, grid_results list)
+        (train_df, test_df, full_pool) or None if insufficient data.
     """
-    log(1, f"=== Processing Fold {fold.fold_id + 1}/{n_folds} ===", sym)
-    report_phase(sym, f"Fold {fold.fold_id + 1}/{n_folds}: Computing indicators...")
-
-    def indicator_progress(name, idx, total):
-        report_phase(sym, f"Fold {fold.fold_id + 1}: Indicators {name} ({idx}/{total})")
-
-    # === PREPROCESSING ===
-    # Preprocessing VOR Indikatoren anwenden (López de Prado):
-    # Fracdiff macht OHLC stationär → stationary-benefiting Indikatoren darauf.
-    # Original-OHLC wird für Targets/Trade-Simulation aufbewahrt.
-    t0 = time.time()
-
     pp_train_raw = fold.train_df
     pp_test_raw = fold.test_df
     orig_train_ohlc = None
@@ -108,20 +94,17 @@ def process_single_fold(
                 pp_cls = get_preprocessor(pp_name)
                 pp = pp_cls()
 
-                # Fit auf Train-Daten (kein Lookahead)
                 train_ctx = PipelineContext(
                     df=pp_train_raw.copy(), symbol=sym, asset_class=ctx.asset_class
                 )
                 pp.fit(train_ctx, **pp_params)
 
-                # Execute auf Train
                 train_ctx = PipelineContext(
                     df=pp_train_raw.copy(), symbol=sym, asset_class=ctx.asset_class
                 )
                 train_ctx = pp.execute(train_ctx, **pp_params)
                 pp_train_raw = train_ctx.df
 
-                # Execute auf Test (nutzt History vom Train-Fit)
                 test_ctx = PipelineContext(
                     df=pp_test_raw.copy(), symbol=sym, asset_class=ctx.asset_class
                 )
@@ -133,10 +116,10 @@ def process_single_fold(
         log(2, f"  Preprocessing: Train {len(fold.train_df)}→{len(pp_train_raw)}, "
                f"Test {len(fold.test_df)}→{len(pp_test_raw)}", sym)
 
-    # Compute per-fold indicators (only stationary-benefiting, or none if no preprocessing)
     if fold_indicators:
         train_df = compute_indicator_pool(
-            pp_train_raw, indicators=fold_indicators, progress_callback=indicator_progress
+            pp_train_raw, indicators=fold_indicators,
+            progress_callback=indicator_progress_callback,
         )
         test_df = compute_indicator_pool(
             pp_test_raw, indicators=fold_indicators, progress_callback=None
@@ -145,7 +128,6 @@ def process_single_fold(
         train_df = pp_train_raw.copy()
         test_df = pp_test_raw.copy()
 
-    # Merge precomputed raw indicator features
     if precomputed_raw_df is not None:
         train_df = pd.concat(
             [train_df, precomputed_raw_df.reindex(train_df.index)], axis=1
@@ -154,12 +136,9 @@ def process_single_fold(
             [test_df, precomputed_raw_df.reindex(test_df.index)], axis=1
         )
 
-    # === FEATURE POOL CLEANING (before dropna to prevent all-NaN columns from destroying rows) ===
+    # Feature pool cleaning (before dropna to prevent all-NaN columns from destroying rows)
     full_pool = get_feature_columns(train_df)
 
-    # Entferne Features mit inf/nan (XGBoost verträgt keine inf)
-    # Never drop required_features (signal columns for SignalModel) — they are
-    # essential for the model even if they have moderate NaN ratios.
     protected_cols = set(ctx.required_features) if ctx.required_features else set()
     clean_pool = []
     excluded_inf = 0
@@ -182,7 +161,6 @@ def process_single_fold(
                 clean_pool.append(col)
     full_pool = clean_pool
 
-    # Also check test set for all-NaN columns (e.g. indicators with warmup > test size)
     for col in list(full_pool):
         if col in test_df.columns and test_df[col].isna().all():
             full_pool.remove(col)
@@ -193,27 +171,63 @@ def process_single_fold(
         train_df = train_df.drop(columns=drop_cols, errors="ignore")
         test_df = test_df.drop(columns=drop_cols, errors="ignore")
 
-    log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features (excl: {excluded_inf} inf, {excluded_nan} nan)", sym)
+    log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features "
+           f"(excl: {excluded_inf} inf, {excluded_nan} nan)", sym)
 
-    # dropna AFTER removing bad columns
     train_df = train_df.dropna()
     test_df = test_df.dropna()
 
-    # Original-OHLC wiederherstellen (für Targets und Trade-Simulation)
     if orig_train_ohlc:
         for col in ohlc_cols:
             train_df[col] = orig_train_ohlc[col].reindex(train_df.index)
             test_df[col] = orig_test_ohlc[col].reindex(test_df.index)
 
-    log(2, f"  Fold {fold.fold_id + 1}: Train={train_df.shape} Test={test_df.shape} ({time.time()-t0:.1f}s)", sym)
+    log(2, f"  Fold {fold.fold_id + 1}: Train={train_df.shape} Test={test_df.shape}", sym)
 
     if len(train_df) < MIN_TRADES * 2:
         log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Train-Daten ({len(train_df)})", sym)
-        return None, []
+        return None
 
     if len(test_df) < MIN_TRADES:
         log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Test-Daten ({len(test_df)})", sym)
+        return None
+
+    if len(full_pool) < 5:
+        log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Features ({len(full_pool)})", sym)
+        return None
+
+    return train_df, test_df, full_pool
+
+
+def process_single_fold(
+    fold, fold_idx, n_folds,
+    fold_indicators, precomputed_raw_df, preprocessing_configs,
+    grid, ctx, sym, total_indicators,
+):
+    """Process a single walk-forward fold.
+
+    Handles grid search, plateau selection, and test evaluation.
+
+    Returns:
+        (fold_result dict or None, grid_results list)
+    """
+    log(1, f"=== Processing Fold {fold.fold_id + 1}/{n_folds} ===", sym)
+    report_phase(sym, f"Fold {fold.fold_id + 1}/{n_folds}: Computing indicators...")
+
+    def indicator_progress(name, idx, total):
+        report_phase(sym, f"Fold {fold.fold_id + 1}: Indicators {name} ({idx}/{total})")
+
+    t0 = time.time()
+    fold_data = prepare_fold_data(
+        fold, fold_indicators, precomputed_raw_df,
+        preprocessing_configs, ctx, sym,
+        indicator_progress_callback=indicator_progress,
+    )
+    if fold_data is None:
         return None, []
+    train_df, test_df, full_pool = fold_data
+
+    log(2, f"  Fold {fold.fold_id + 1}: Data prepared ({time.time()-t0:.1f}s)", sym)
 
     # Regime-Filter Kombinationen aus Grid (falls definiert)
     regime_filter_combinations = grid.regime_filter_grid.get_combinations()
@@ -225,10 +239,6 @@ def process_single_fold(
     if fold_idx == 0:
         report_meta(sym, indicator_count=total_indicators, feature_count=len(full_pool),
                     regime_combos=n_regime_combos)
-
-    if len(full_pool) < 5:
-        log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Features ({len(full_pool)})", sym)
-        return None, []
 
     # === GRID SEARCH OVER REGIME COMBOS ===
     candidates = []
@@ -370,6 +380,7 @@ def process_single_fold(
             "sl": b["params"][1],
             "ct": b["params"][2],
             "rrr": b["rrr"],
+            "timeout_bars": b.get("timeout_bars"),
             "model_hyperparameters": b.get("model_hyperparameters"),
             "exit_modifier_params": b.get("exit_modifier_params"),
         },

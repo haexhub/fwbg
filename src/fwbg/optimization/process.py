@@ -198,6 +198,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         mean_pnl = np.mean(pnls)
         std_pnl = np.std(pnls)
         total_trades = sum(trades_counts)
+        per_fold_total_trades = total_trades
         mean_bias_ratio = np.mean(bias_ratios)
 
         # Detect sample bias
@@ -275,23 +276,47 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         else:
             consistent_folds = all_fold_results
 
-        # Representative fold: median by OOS PnL among consistent folds
-        sorted_folds = sorted(consistent_folds, key=lambda f: f.get("test_pnl", 0))
-        representative_fold = sorted_folds[len(sorted_folds) // 2]
+        # === UNIFIED SIMULATION ===
+        # Derive one setting from consistent folds, re-simulate all folds.
+        from .unified_simulation import merge_unified_settings, run_unified_simulation
 
-        b_config = representative_fold["best_config"]
+        unified_candidate = merge_unified_settings(consistent_folds, all_fold_results)
+        unified_fold_results = run_unified_simulation(
+            wf_folds, unified_candidate,
+            fold_indicators, precomputed_raw_df, preprocessing_configs,
+            ctx, sym,
+        )
 
-        # Aggregate trades only from consistent folds
+        tp_unified, sl_unified, ct_unified = unified_candidate["params"]
+        b_config = {
+            "tp": tp_unified,
+            "sl": sl_unified,
+            "ct": ct_unified,
+            "rrr": tp_unified / sl_unified if sl_unified > 0 else 1.0,
+            "timeout_bars": unified_candidate.get("timeout_bars"),
+            "model_hyperparameters": unified_candidate.get("model_hyperparameters"),
+            "exit_modifier_params": unified_candidate.get("exit_modifier_params"),
+        }
+
+        # Aggregate trades from unified simulation
         all_trades = []
-        for fold_result in consistent_folds:
-            all_trades.extend(fold_result["test_trades_trace"])
+        for unified_fold_result in unified_fold_results:
+            all_trades.extend(unified_fold_result["trades"])
 
-        # Actual PnL values for Monte Carlo test and result trace
         all_trades_pnl = [t["pnl_raw"] for t in all_trades]
-        # Binary results (1/-1/0) kept for risk manager (Kelly fraction needs WR/RRR)
         all_trades_binary = [t["result"] for t in all_trades]
-        # Extract RV values for vol-targeted risk management
         rv_values = [t["rv_at_entry"] for t in all_trades if "rv_at_entry" in t]
+
+        # Recalculate metrics from unified trades
+        total_trades = len(all_trades)
+        mean_wr = sum(1 for t in all_trades if t["result"] == 1.0) / total_trades if total_trades > 0 else 0.0
+        mean_pnl = sum(all_trades_pnl) / len(unified_fold_results) if unified_fold_results else 0.0
+
+        if total_trades == 0:
+            log(1, "SKIP - Unified simulation produced no trades", sym)
+            report_done(sym, "no_unified_trades")
+            result = {"symbol": sym, "status": "no_unified_trades", "grid_results": accumulated_grid_results}
+            return result
 
         # === RISK MANAGEMENT PLUGIN ===
         # Computes risk_per_trade, circuit_breaker, risk_adjustment.
@@ -377,11 +402,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             all_fold_results,
             win_rates,
             pnls,
-            total_trades,
+            per_fold_total_trades,
             sample_bias_detected, bias_ratios, mean_bias_ratio,
             config_inconsistent=config_inconsistent,
         )
-        features_list = (representative_fold.get("selected_features_long") or []) + (representative_fold.get("selected_features_short") or [])
+        features_list = (unified_candidate.get("selected_features_long") or []) + (unified_candidate.get("selected_features_short") or [])
 
         # === NO EDGE ===
         if fk <= 0:
