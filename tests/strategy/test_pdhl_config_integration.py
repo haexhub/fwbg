@@ -317,24 +317,26 @@ class TestSignalHoursAre24h:
 
 
 class TestGridVariantCoverage:
-    """All required grid variants are present (rl38/50/61/70 × hl_session/hl_all)."""
+    """All required grid variants are present (rl0/38/50/61/70 × hl_session/hl_all)."""
 
     EXPECTED_VARIANTS = [
+        ("rl0_pdl_retest_bull", "rl0_pdl_retest_bear", "rl0_pdl_sl_dist"),
         ("rl38_pdl_retest_bull", "rl38_pdl_retest_bear", "rl38_pdl_sl_dist"),
         ("rl50_pdl_retest_bull", "rl50_pdl_retest_bear", "rl50_pdl_sl_dist"),
         ("rl61_pdl_retest_bull", "rl61_pdl_retest_bear", "rl61_pdl_sl_dist"),
         ("rl70_pdl_retest_bull", "rl70_pdl_retest_bear", "rl70_pdl_sl_dist"),
+        ("ha_rl0_pdl_retest_bull", "ha_rl0_pdl_retest_bear", "ha_rl0_pdl_sl_dist"),
         ("ha_rl38_pdl_retest_bull", "ha_rl38_pdl_retest_bear", "ha_rl38_pdl_sl_dist"),
         ("ha_rl50_pdl_retest_bull", "ha_rl50_pdl_retest_bear", "ha_rl50_pdl_sl_dist"),
         ("ha_rl61_pdl_retest_bull", "ha_rl61_pdl_retest_bear", "ha_rl61_pdl_sl_dist"),
         ("ha_rl70_pdl_retest_bull", "ha_rl70_pdl_retest_bear", "ha_rl70_pdl_sl_dist"),
     ]
 
-    def test_all_assets_have_8_grid_variants(self, pdhl_config):
+    def test_all_assets_have_10_grid_variants(self, pdhl_config):
         for asset, grid in pdhl_config.grids.items():
             non_none = [v for v in grid.model_hyperparameters_grid if v is not None]
-            assert len(non_none) == 8, (
-                f"{asset}: expected 8 grid variants, got {len(non_none)}"
+            assert len(non_none) == 10, (
+                f"{asset}: expected 10 grid variants (5 rl × 2 modes), got {len(non_none)}"
             )
 
     def test_all_expected_signal_columns_present(self, pdhl_config):
