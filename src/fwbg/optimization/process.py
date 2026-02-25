@@ -96,12 +96,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             return result
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
 
-        # Preview mode: limit to first N calendar days
-        if strategy.days_limit and len(df) > 0:
-            cutoff = df.index[0] + np.timedelta64(strategy.days_limit, "D")
-            df = df[df.index <= cutoff]
-            log(2, f"Preview: auf {strategy.days_limit} Tage begrenzt → {len(df)} Zeilen", sym)
-
         # === DATA LOADING (generic orchestrator) ===
         data_loading_configs = strategy.get_data_loading()
         if data_loading_configs:
