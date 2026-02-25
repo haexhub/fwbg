@@ -277,41 +277,19 @@ class TestORBFeatureComputation:
 
     def test_breakout_features_are_binary_events(self):
         """
-        orb_breakout_up / orb_s08_breakout_up müssen Event-Features sein:
+        orb_s08_breakout_up / orb_s08_breakout_down müssen Event-Features sein:
         Werte nur {0, 1, NaN}. Niemals dauerhaft 1 für mehrere Bars.
         """
         df = _make_m15_df(n=6000)
         result = _add_orb_features(df, sessions=[8])
 
-        for col in ["orb_breakout_up", "orb_breakout_down",
-                    "orb_s08_breakout_up", "orb_s08_breakout_down"]:
+        for col in ["orb_s08_breakout_up", "orb_s08_breakout_down"]:
             if col not in result.columns:
                 continue
             vals = result[col].dropna()
             assert set(vals.unique()).issubset({0.0, 1.0}), (
                 f"'{col}' enthält nicht-binäre Werte: {vals.unique()}"
             )
-
-    def test_rolling_orb_features_present(self):
-        """Rolling ORB Features (ohne Session-Prefix) müssen vorhanden sein."""
-        df = _make_m15_df(n=2000)
-        result = _add_orb_features(df)
-
-        for col in ["orb_range", "orb_position", "orb_range_vs_atr"]:
-            assert col in result.columns, f"Rolling ORB Feature '{col}' fehlt"
-
-    def test_stat_features_present_and_between_0_and_1(self):
-        """Statistische ORB Features müssen vorhanden sein und sinnvolle Werte haben."""
-        df = _make_m15_df(n=4000)
-        result = _add_orb_features(df)
-
-        for col in ["orb_stat_breakout_rate", "orb_stat_continuation_rate"]:
-            assert col in result.columns, f"Stat Feature '{col}' fehlt"
-            vals = result[col].dropna()
-            if len(vals) > 0:
-                assert (vals >= 0).all() and (vals <= 1).all(), (
-                    f"'{col}' enthält Werte außerhalb [0, 1]"
-                )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

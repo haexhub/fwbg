@@ -38,10 +38,6 @@
           13,
           14
         ],
-        "stat_window": 20,
-        "enable_rolling": true,
-        "enable_session": true,
-        "enable_stats": false,
         "enable_retracement": true,
         "retest_atr_width": 0.3
       }

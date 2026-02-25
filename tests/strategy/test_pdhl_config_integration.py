@@ -317,7 +317,7 @@ class TestSignalHoursAre24h:
 
 
 class TestGridVariantCoverage:
-    """All required grid variants are present (rl0/38/50/61/70 × hl_session/hl_all)."""
+    """All required grid variants are present (rl0/38/50/61/70 × session/all scope)."""
 
     EXPECTED_VARIANTS = [
         ("rl0_pdl_retest_bull", "rl0_pdl_retest_bear", "rl0_pdl_sl_dist"),
@@ -325,18 +325,18 @@ class TestGridVariantCoverage:
         ("rl50_pdl_retest_bull", "rl50_pdl_retest_bear", "rl50_pdl_sl_dist"),
         ("rl61_pdl_retest_bull", "rl61_pdl_retest_bear", "rl61_pdl_sl_dist"),
         ("rl70_pdl_retest_bull", "rl70_pdl_retest_bear", "rl70_pdl_sl_dist"),
-        ("ha_rl0_pdl_retest_bull", "ha_rl0_pdl_retest_bear", "ha_rl0_pdl_sl_dist"),
-        ("ha_rl38_pdl_retest_bull", "ha_rl38_pdl_retest_bear", "ha_rl38_pdl_sl_dist"),
-        ("ha_rl50_pdl_retest_bull", "ha_rl50_pdl_retest_bear", "ha_rl50_pdl_sl_dist"),
-        ("ha_rl61_pdl_retest_bull", "ha_rl61_pdl_retest_bear", "ha_rl61_pdl_sl_dist"),
-        ("ha_rl70_pdl_retest_bull", "ha_rl70_pdl_retest_bear", "ha_rl70_pdl_sl_dist"),
+        ("a_rl0_pdl_retest_bull", "a_rl0_pdl_retest_bear", "a_rl0_pdl_sl_dist"),
+        ("a_rl38_pdl_retest_bull", "a_rl38_pdl_retest_bear", "a_rl38_pdl_sl_dist"),
+        ("a_rl50_pdl_retest_bull", "a_rl50_pdl_retest_bear", "a_rl50_pdl_sl_dist"),
+        ("a_rl61_pdl_retest_bull", "a_rl61_pdl_retest_bear", "a_rl61_pdl_sl_dist"),
+        ("a_rl70_pdl_retest_bull", "a_rl70_pdl_retest_bear", "a_rl70_pdl_sl_dist"),
     ]
 
     def test_all_assets_have_10_grid_variants(self, pdhl_config):
         for asset, grid in pdhl_config.grids.items():
             non_none = [v for v in grid.model_hyperparameters_grid if v is not None]
             assert len(non_none) == 10, (
-                f"{asset}: expected 10 grid variants (5 rl × 2 modes), got {len(non_none)}"
+                f"{asset}: expected 10 grid variants (5 rl × 2 scopes), got {len(non_none)}"
             )
 
     def test_all_expected_signal_columns_present(self, pdhl_config):
@@ -386,15 +386,16 @@ class TestPipelineConfig:
             f"This adds ~45min delay to breakout confirmation!"
         )
 
-    def test_range_modes_include_both(self, pdhl_config):
-        """Both hl_session and hl_all range modes must be configured."""
+    def test_candle_span_and_range_scope(self, pdhl_config):
+        """candle_span and range_scope must be configured correctly."""
         pdl_ind = next(
             i for i in pdhl_config.pipeline["indicators"]
             if i["name"] == "previous_day_levels"
         )
-        modes = pdl_ind["params"].get("range_modes", [])
-        assert "hl_session" in modes, "hl_session missing from range_modes"
-        assert "hl_all" in modes, "hl_all missing from range_modes"
+        assert pdl_ind["params"].get("candle_span") == "hl"
+        scope = pdl_ind["params"].get("range_scope", [])
+        assert "session" in scope, "session missing from range_scope"
+        assert "all" in scope, "all missing from range_scope"
 
     def test_break_modes_all_hours(self, pdhl_config):
         """Break detection must use all_hours (not session_only)."""
@@ -508,14 +509,14 @@ class TestOvernightSignals:
             resample_tf=None,
             session_start_hour=8,
             session_end_hour=17,
-            range_modes=["hl_all"],
+            range_scope=["all"],
             break_modes=["all_hours"],
             retest_modes=["all_hours"],
         )
 
         day1 = result.loc["2024-01-02"]
-        # ha_ prefix = hl_all mode
-        for col in ["ha_rl50_pdl_retest_bull", "rl50_pdl_retest_bull"]:
+        # a_ prefix = all scope
+        for col in ["a_rl50_pdl_retest_bull", "rl50_pdl_retest_bull"]:
             if col in day1.columns:
                 count = day1[col].dropna().sum()
                 if count > 0:
@@ -538,17 +539,17 @@ class TestOvernightSignals:
             resample_tf=None,
             session_start_hour=8,
             session_end_hour=17,
-            range_modes=["hl_all"],
+            range_scope=["all"],
             break_modes=["all_hours"],
             retest_modes=["all_hours"],
         )
 
-        feature_cols = [c for c in result.columns if c.startswith(("pdl_", "rl", "ha_"))]
+        feature_cols = [c for c in result.columns if c.startswith(("pdl_", "rl", "a_"))]
         features = result[feature_cols].fillna(0)
 
         model = _signal_mod.SignalModel()
         hp = {
-            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_long": "a_rl50_pdl_retest_bull",
             "signal_start_hour": None,
             "signal_end_hour": None,
         }
@@ -570,8 +571,8 @@ class TestOvernightSignals:
                     off_session_signals.append(t)
 
         # We should have at least one off-session signal
-        if "ha_rl50_pdl_retest_bull" in features.columns:
-            day1_raw = features.loc["2024-01-02", "ha_rl50_pdl_retest_bull"]
+        if "a_rl50_pdl_retest_bull" in features.columns:
+            day1_raw = features.loc["2024-01-02", "a_rl50_pdl_retest_bull"]
             raw_signals = day1_raw[day1_raw > 0]
             if len(raw_signals) > 0:
                 # Raw signals exist → they should not be filtered
@@ -594,17 +595,17 @@ class TestOvernightSignals:
             resample_tf=None,
             session_start_hour=8,
             session_end_hour=17,
-            range_modes=["hl_all"],
+            range_scope=["all"],
             break_modes=["all_hours"],
             retest_modes=["all_hours"],
         )
 
-        feature_cols = [c for c in result.columns if c.startswith(("pdl_", "rl", "ha_"))]
+        feature_cols = [c for c in result.columns if c.startswith(("pdl_", "rl", "a_"))]
         features = result[feature_cols].fillna(0)
 
         model = _signal_mod.SignalModel()
         hp = {
-            "signal_column_long": "ha_rl50_pdl_retest_bull",
+            "signal_column_long": "a_rl50_pdl_retest_bull",
             "signal_start_hour": 8,
             "signal_end_hour": 17,
         }
@@ -762,9 +763,9 @@ class TestGridComboCreation:
                     "sl_dist_column": "rl38_pdl_sl_dist",
                 },
                 {
-                    "signal_column_long": "ha_rl50_pdl_retest_bull",
-                    "signal_column_short": "ha_rl50_pdl_retest_bear",
-                    "sl_dist_column": "ha_rl50_pdl_sl_dist",
+                    "signal_column_long": "a_rl50_pdl_retest_bull",
+                    "signal_column_short": "a_rl50_pdl_retest_bear",
+                    "sl_dist_column": "a_rl50_pdl_sl_dist",
                 },
             ],
         )
@@ -822,7 +823,7 @@ class TestFullPipelineIntegration:
             retest_atr_width=0.5,
             skip_weekends=False,
             resample_tf=None,
-            range_modes=["hl_session", "hl_all"],
+            range_scope=["session", "all"],
             break_modes=["all_hours"],
             retest_modes=["all_hours"],
         )
@@ -890,9 +891,9 @@ class TestFullPipelineIntegration:
         df = _make_overnight_breakout()
         trades = self._run_pipeline(
             df,
-            signal_col_long="ha_rl50_pdl_retest_bull",
-            signal_col_short="ha_rl50_pdl_retest_bear",
-            sl_dist_col="ha_rl50_pdl_sl_dist",
+            signal_col_long="a_rl50_pdl_retest_bull",
+            signal_col_short="a_rl50_pdl_retest_bear",
+            sl_dist_col="a_rl50_pdl_sl_dist",
             signal_start_hour=None,
             signal_end_hour=None,
         )
@@ -911,9 +912,9 @@ class TestFullPipelineIntegration:
         df = _make_overnight_breakout()
         trades = self._run_pipeline(
             df,
-            signal_col_long="ha_rl50_pdl_retest_bull",
-            signal_col_short="ha_rl50_pdl_retest_bear",
-            sl_dist_col="ha_rl50_pdl_sl_dist",
+            signal_col_long="a_rl50_pdl_retest_bull",
+            signal_col_short="a_rl50_pdl_retest_bear",
+            sl_dist_col="a_rl50_pdl_sl_dist",
             signal_start_hour=8,
             signal_end_hour=17,
         )

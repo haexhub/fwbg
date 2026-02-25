@@ -9,11 +9,13 @@ Computes features relative to previous day's high and low:
 - Retest signals at configurable retracement levels (rl{N}_ prefix)
 - SL distance for orb_based exit strategy
 
-Range modes (grid-searchable):
-- hl_session: H/L during session hours (default)
-- hl_all:     H/L for all 24h bars
-- close_session: Close during session hours
-- close_all:     Close for all 24h bars
+candle_span controls which prices define the range:
+- hl (default): H/L of candles (full candle including wicks)
+- body: max(O,C)/min(O,C) of candles (body only, ignoring wicks)
+
+range_scope controls which bars are included:
+- session (default): only bars within session hours
+- all: all 24h bars
 
 Timeframe: Intraday only (M1-H4). On daily bars returns df unchanged.
 """
@@ -23,13 +25,16 @@ import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, EPSILON
-from fwbg_sdk.retest import compute_break_state, compute_retest_signals
+from fwbg_sdk.retest import apply_breakout_threshold, compute_break_state, compute_retest_signals
 
-_RANGE_MODE_PREFIX = {
-    "hl_session": "",       # default, no prefix
-    "hl_all": "ha_",        # H/L all-hours
-    "close_session": "cs_", # Close session-filtered
-    "close_all": "ca_",     # Close all-hours
+_CANDLE_SPAN_PREFIX = {
+    "hl": "",       # default, no prefix
+    "body": "b_",   # body (O/C) range
+}
+
+_RANGE_SCOPE_PREFIX = {
+    "session": "",   # default, no prefix
+    "all": "a_",     # all 24h bars
 }
 
 _BREAK_MODE_PREFIX = {
@@ -55,7 +60,6 @@ def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
         np.maximum(np.abs(highs - prev_close), np.abs(lows - prev_close)),
     )
     return pd.Series(tr).rolling(period, min_periods=1).mean().values
-
 
 
 def _compute_retest_features(
@@ -122,6 +126,20 @@ def _compute_retest_features(
     return features
 
 
+def _get_range_columns(df, candle_span, session_mask, use_session_filter):
+    """Get high/low source columns based on candle_span and scope."""
+    if candle_span == "hl":
+        highs = df["H"]
+        lows = df["L"]
+    else:  # body
+        highs = df[["O", "C"]].max(axis=1)
+        lows = df[["O", "C"]].min(axis=1)
+
+    if use_session_filter:
+        return highs.where(session_mask), lows.where(session_mask)
+    return highs, lows
+
+
 def _compute_range_variant(
     df: pd.DataFrame,
     atr: np.ndarray,
@@ -129,7 +147,8 @@ def _compute_range_variant(
     session_mask_arr: np.ndarray,
     day_group: pd.DatetimeIndex,
     day_ids: np.ndarray,
-    mode: str,
+    candle_span: str,
+    scope: str,
     ma_period: int,
     enable_retest: bool,
     retest_atr_width: float,
@@ -142,81 +161,66 @@ def _compute_range_variant(
     min_retracement: float = 0.3,
     session_start_hour: int = None,
     session_end_hour: int = None,
+    breakout_threshold: float = 0.0,
+    breakout_threshold_abs: float = 0.0,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
-    """Compute all PDL features for a single range mode + break mode.
+    """Compute all PDL features for a single candle_span + scope + break mode.
 
-    Modes control how PDH/PDL is derived:
-    - hl_session:    H/L during session hours
-    - hl_all:        H/L for all 24h bars
-    - close_session: Close during session hours (resampled when resample_tf set)
-    - close_all:     Close for all 24h bars (resampled when resample_tf set)
+    candle_span: 'hl' (H/L wicks) or 'body' (max/min of O/C)
+    scope: 'session' (only session hours) or 'all' (24h)
 
     resample_tf (e.g. "1h"):
-    - For close_* modes: PDH/PDL from resampled Close (e.g. hourly Close)
+    - For body mode: PDH/PDL from resampled O/C body
     - For breakout: uses resampled Open/Close (hourly candle confirmation)
-    - For hl_* modes: no effect on range (max of max = max)
+    - For hl mode: no effect on range (max of max = max)
 
     min_retracement: minimum fraction of pd_range price must retrace (via H/L)
     before retest signal fires.  0.3 = at least 30%.
-
-    session_break controls break detection timing:
-    - False (all_hours): breaks detected 24/7
-    - True (session_only): breaks only during session hours
-
-    retest_modes controls retest signal timing (independently grid-searchable):
-    - all_hours (default, no prefix): retests fire 24/7
-    - session_only (sr_ prefix): retests only during session hours
     """
     features: Dict[str, Union[pd.Series, np.ndarray]] = {}
     n = len(df)
+    use_session_filter = (scope == "session")
 
     # --- Range computation ---
-    use_resampled_range = resample_tf and mode.startswith("close")
+    use_resampled_range = resample_tf and candle_span == "body"
 
     if use_resampled_range:
-        # Resample Close to target TF for range computation
-        c_resampled = df["C"].resample(resample_tf).last().dropna()
+        # Resample O/C to target TF for body range computation
+        r_df = df[["O", "C"]].resample(resample_tf).agg(
+            {"O": "first", "C": "last"}
+        ).dropna()
+        body_high_r = r_df[["O", "C"]].max(axis=1)
+        body_low_r = r_df[["O", "C"]].min(axis=1)
 
         # Session mask on resampled index
-        if mode == "close_session":
-            r_hours = c_resampled.index.hour
+        if use_session_filter:
+            r_hours = r_df.index.hour
             if session_start_hour < session_end_hour:
                 r_session = (r_hours >= session_start_hour) & (r_hours < session_end_hour)
             else:
                 r_session = (r_hours >= session_start_hour) | (r_hours < session_end_hour)
-            range_highs_r = c_resampled.where(r_session)
-            range_lows_r = c_resampled.where(r_session)
-        else:  # close_all
-            range_highs_r = c_resampled
-            range_lows_r = c_resampled
+            range_highs_r = body_high_r.where(r_session)
+            range_lows_r = body_low_r.where(r_session)
+        else:
+            range_highs_r = body_high_r
+            range_lows_r = body_low_r
 
         # Day group on resampled index
         if session_start_hour is not None and session_start_hour >= session_end_hour:
             r_offset = pd.Timedelta(hours=24 - session_start_hour)
-            r_day_group = (c_resampled.index + r_offset).normalize()
+            r_day_group = (r_df.index + r_offset).normalize()
         else:
-            r_day_group = c_resampled.index.normalize()
+            r_day_group = r_df.index.normalize()
 
         day_hl = pd.DataFrame({
             "high": range_highs_r.groupby(r_day_group).max(),
             "low": range_lows_r.groupby(r_day_group).min(),
         })
     else:
-        # Original logic: native-bar range
-        if mode == "hl_session":
-            range_highs = df["H"].where(session_mask)
-            range_lows = df["L"].where(session_mask)
-        elif mode == "hl_all":
-            range_highs = df["H"]
-            range_lows = df["L"]
-        elif mode == "close_session":
-            range_highs = df["C"].where(session_mask)
-            range_lows = df["C"].where(session_mask)
-        elif mode == "close_all":
-            range_highs = df["C"]
-            range_lows = df["C"]
-        else:
-            raise ValueError(f"Unknown range mode: {mode}")
+        # Native-bar range
+        range_highs, range_lows = _get_range_columns(
+            df, candle_span, session_mask, use_session_filter,
+        )
 
         day_hl = pd.DataFrame({
             "high": range_highs.groupby(day_group).max(),
@@ -241,21 +245,9 @@ def _compute_range_variant(
     safe_range = np.where(np.abs(pd_range) > EPSILON, pd_range, np.nan)
 
     # --- Current-day range (for pdl_day_range_expanding) ---
-    # Always use native-bar data for live current-day tracking
-    if mode.startswith("hl"):
-        if mode == "hl_session":
-            cur_highs = df["H"].where(session_mask)
-            cur_lows = df["L"].where(session_mask)
-        else:
-            cur_highs = df["H"]
-            cur_lows = df["L"]
-    else:
-        if mode == "close_session":
-            cur_highs = df["C"].where(session_mask)
-            cur_lows = df["C"].where(session_mask)
-        else:
-            cur_highs = df["C"]
-            cur_lows = df["C"]
+    cur_highs, cur_lows = _get_range_columns(
+        df, candle_span, session_mask, use_session_filter,
+    )
     day_high = cur_highs.groupby(day_group).transform("max")
     day_low = cur_lows.groupby(day_group).transform("min")
 
@@ -293,9 +285,12 @@ def _compute_range_variant(
 
         r_pdh = prev_day_hl["high"].reindex(r_day_group).values
         r_pdl = prev_day_hl["low"].reindex(r_day_group).values
+        r_range = r_pdh - r_pdl
 
-        r_above = (r_df["O"].values > r_pdh) | (r_df["C"].values > r_pdh)
-        r_below = (r_df["O"].values < r_pdl) | (r_df["C"].values < r_pdl)
+        # Apply breakout threshold to resampled data
+        offset = np.maximum(breakout_threshold * r_range, breakout_threshold_abs)
+        r_above = (r_df["O"].values > r_pdh + offset) | (r_df["C"].values > r_pdh + offset)
+        r_below = (r_df["O"].values < r_pdl - offset) | (r_df["C"].values < r_pdl - offset)
 
         # Map back to original bars at the LAST bar of each resampled period
         # to avoid lookahead (hourly Close isn't known until the hour ends).
@@ -313,8 +308,10 @@ def _compute_range_variant(
         above[nan_mask] = False
         below[nan_mask] = False
     else:
-        above = close > pdh
-        below = close < pdl_low
+        above, below = apply_breakout_threshold(
+            close, pdh, pdl_low, pd_range,
+            breakout_threshold, breakout_threshold_abs,
+        )
 
     # Break state
     break_mask = session_mask_arr if session_break else None
@@ -383,15 +380,18 @@ def _compute_pdl_features(
     retracement_levels: Union[float, List[float]] = 0.5,
     session_start_hour: int = 7,
     session_end_hour: int = 21,
-    range_modes: Union[List[str], Tuple[str, ...]] = ("hl_session",),
+    candle_span: str = "hl",
+    range_scope: Union[List[str], Tuple[str, ...]] = ("session",),
     break_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
     retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
     skip_weekends: bool = True,
     min_sl_atr_mult: float = 0.0,
     resample_tf: str = None,
     min_retracement: float = 0.3,
+    breakout_threshold: float = 0.0,
+    breakout_threshold_abs: float = 0.0,
 ) -> Dict[str, Union[pd.Series, np.ndarray]]:
-    """Compute all previous day level features for all range × break × retest modes."""
+    """Compute all previous day level features for all scope × break × retest modes."""
     all_features: Dict[str, Union[pd.Series, np.ndarray]] = {}
 
     # Group by trading day
@@ -411,13 +411,16 @@ def _compute_pdl_features(
     session_mask_arr = np.array(session_mask)
     day_ids = pd.Series(day_group).factorize()[0]
 
-    for mode in range_modes:
-        range_pfx = _RANGE_MODE_PREFIX[mode]
+    span_pfx = _CANDLE_SPAN_PREFIX[candle_span]
+
+    for scope in range_scope:
+        scope_pfx = _RANGE_SCOPE_PREFIX[scope]
         for break_mode in break_modes:
             break_pfx = _BREAK_MODE_PREFIX[break_mode]
-            combined_pfx = f"{range_pfx}{break_pfx}"
+            combined_pfx = f"{span_pfx}{scope_pfx}{break_pfx}"
             mode_feats = _compute_range_variant(
-                df, atr, session_mask, session_mask_arr, day_group, day_ids, mode,
+                df, atr, session_mask, session_mask_arr, day_group, day_ids,
+                candle_span, scope,
                 ma_period, enable_retest, retest_atr_width, retracement_levels,
                 skip_weekends, session_break=(break_mode == "session_only"),
                 min_sl_atr_mult=min_sl_atr_mult,
@@ -426,6 +429,8 @@ def _compute_pdl_features(
                 min_retracement=min_retracement,
                 session_start_hour=session_start_hour,
                 session_end_hour=session_end_hour,
+                breakout_threshold=breakout_threshold,
+                breakout_threshold_abs=breakout_threshold_abs,
             )
             for k, v in mode_feats.items():
                 all_features[f"{combined_pfx}{k}"] = v
@@ -442,7 +447,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
     benefits_from_stationary = False
     group = "session"
 
-    # Representative feature list for default hl_session mode, rl=50 (0.5)
+    # Representative feature list for default hl/session mode, rl=50 (0.5)
     _FEATURES = [
         "pdl_high_dist",
         "pdl_low_dist",
@@ -472,13 +477,16 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         retracement_levels: Union[float, List[float]] = 0.5,
         session_start_hour: int = 7,
         session_end_hour: int = 21,
-        range_modes: Union[List[str], Tuple[str, ...]] = ("hl_session",),
+        candle_span: str = "hl",
+        range_scope: Union[List[str], Tuple[str, ...]] = ("session",),
         break_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
         retest_modes: Union[List[str], Tuple[str, ...]] = ("all_hours",),
         skip_weekends: bool = True,
         min_sl_atr_mult: float = 0.0,
         resample_tf: str = None,
         min_retracement: float = 0.3,
+        breakout_threshold: float = 0.0,
+        breakout_threshold_abs: float = 0.0,
         **params,
     ) -> pd.DataFrame:
         if not isinstance(df.index, pd.DatetimeIndex):
@@ -493,9 +501,11 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         atr = _compute_atr(df, atr_period)
         features = _compute_pdl_features(
             df, atr, ma_period, enable_retest, retest_atr_width, retracement_levels,
-            session_start_hour, session_end_hour, range_modes, break_modes,
-            retest_modes, skip_weekends, min_sl_atr_mult,
+            session_start_hour, session_end_hour, candle_span, range_scope,
+            break_modes, retest_modes, skip_weekends, min_sl_atr_mult,
             resample_tf=resample_tf, min_retracement=min_retracement,
+            breakout_threshold=breakout_threshold,
+            breakout_threshold_abs=breakout_threshold_abs,
         )
 
         if not features:
@@ -526,13 +536,16 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "retracement_levels": 0.5,
             "session_start_hour": 7,
             "session_end_hour": 21,
-            "range_modes": ["hl_session"],
+            "candle_span": "hl",
+            "range_scope": ["session"],
             "break_modes": ["all_hours"],
             "retest_modes": ["all_hours"],
             "skip_weekends": True,
             "min_sl_atr_mult": 0.0,
             "resample_tf": None,
             "min_retracement": 0.3,
+            "breakout_threshold": 0.0,
+            "breakout_threshold_abs": 0.0,
         }
 
     @classmethod
@@ -572,18 +585,18 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "default": 0.5,
                 "description": (
                     "Retracement fraction(s) of the PDH-PDL range for entry level. "
-                    "0.5 = midpoint. 0.382 = shallow retrace. 0.7 = deep retrace. "
+                    "0.5 = midpoint. 0 = at boundary. 0.382 = shallow retrace. "
                     "Always generates rl{N}_ prefixed columns (e.g. rl50_pdl_retest_bull). "
                     "Pass a list to precompute multiple variants for grid search."
                 ),
-                "min": 0.1,
+                "min": 0.0,
                 "max": 0.9,
                 "step": 0.1,
             },
             "session_start_hour": {
                 "type": "int",
                 "default": 7,
-                "description": "UTC hour when trading session starts. Only bars within [start, end) are used for PDH/PDL computation in session modes.",
+                "description": "UTC hour when trading session starts.",
                 "min": 0,
                 "max": 23,
                 "step": 1,
@@ -591,30 +604,39 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "session_end_hour": {
                 "type": "int",
                 "default": 21,
-                "description": "UTC hour when trading session ends. Only bars within [start, end) are used for PDH/PDL computation in session modes.",
+                "description": "UTC hour when trading session ends.",
                 "min": 1,
                 "max": 24,
                 "step": 1,
             },
-            "range_modes": {
-                "type": "list[string]",
-                "default": ["hl_session"],
+            "candle_span": {
+                "type": "choice",
+                "default": "hl",
                 "description": (
-                    "Range computation modes to precompute. Each mode produces a full "
-                    "feature set with a prefix: hl_session (default, no prefix), "
-                    "hl_all (ha_ prefix), close_session (cs_ prefix), close_all (ca_ prefix). "
-                    "Use model_hyperparameters_grid to grid-search across modes."
+                    "Vertical extent of candles used for range. "
+                    "'hl': full candle including wicks (H/L). "
+                    "'body': candle body only (max/min of O/C, ignoring wicks)."
                 ),
-                "options": ["hl_session", "hl_all", "close_session", "close_all"],
+                "choices": ["hl", "body"],
+            },
+            "range_scope": {
+                "type": "list[string]",
+                "default": ["session"],
+                "description": (
+                    "Which bars to include for range computation. "
+                    "'session' (default, no prefix): only bars within session hours. "
+                    "'all' (a_ prefix): all 24h bars. "
+                    "Pass a list to precompute both for grid search."
+                ),
+                "options": ["session", "all"],
             },
             "break_modes": {
                 "type": "list[string]",
                 "default": ["all_hours"],
                 "description": (
                     "Break detection timing modes. all_hours (default, no prefix): "
-                    "breakouts detected 24/7 including pre-session gaps. "
-                    "session_only (sb_ prefix): only session bars trigger breakouts. "
-                    "Use model_hyperparameters_grid to grid-search across modes."
+                    "breakouts detected 24/7. "
+                    "session_only (sb_ prefix): only session bars trigger breakouts."
                 ),
                 "options": ["all_hours", "session_only"],
             },
@@ -622,10 +644,9 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "type": "list[string]",
                 "default": ["all_hours"],
                 "description": (
-                    "Retest signal timing modes (independently grid-searchable). "
+                    "Retest signal timing modes. "
                     "all_hours (default, no prefix): retest signals fire 24/7. "
-                    "session_only (sr_ prefix): retest signals only during session hours. "
-                    "Use model_hyperparameters_grid to grid-search across modes."
+                    "session_only (sr_ prefix): retest signals only during session hours."
                 ),
                 "options": ["all_hours", "session_only"],
             },
@@ -641,9 +662,8 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "type": "float",
                 "default": 0.0,
                 "description": (
-                    "Minimum SL distance as a multiple of ATR. When the previous day "
-                    "range is very small (low volatility), this floor prevents the SL "
-                    "from being unreasonably tight. 0 = no floor (pure range-based). "
+                    "Minimum SL distance as a multiple of ATR. "
+                    "0 = no floor (pure range-based). "
                     "E.g., 1.0 means SL is at least 1x ATR."
                 ),
                 "min": 0.0,
@@ -654,10 +674,9 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "type": "string",
                 "default": None,
                 "description": (
-                    "Resample timeframe for Close-based range computation and breakout "
-                    "detection. Uses resampled Close for range and resampled Open/Close "
-                    "for breakout confirmation (no spikes). "
-                    "None = use native bar resolution."
+                    "Resample timeframe for body range computation and breakout "
+                    "detection. Uses resampled O/C for body range and breakout "
+                    "confirmation (no spikes). None = use native bar resolution."
                 ),
                 "options": [None, "1h", "4h"],
             },
@@ -666,13 +685,34 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "default": 0.3,
                 "description": (
                     "Minimum retracement of previous day range (checked via H/L) before "
-                    "retest signal fires. 0.3 = price must retrace at least 30% from "
-                    "breakout boundary. A bar's Low (bull) or High (bear) touching the "
-                    "threshold is sufficient."
+                    "retest signal fires. 0.3 = at least 30% retracement. 0 = disabled."
                 ),
                 "min": 0.0,
                 "max": 0.9,
                 "step": 0.1,
+            },
+            "breakout_threshold": {
+                "type": "float",
+                "default": 0.0,
+                "description": (
+                    "Minimum distance as fraction of range for breakout. "
+                    "E.g. 0.05 = close must be at least 5% of range beyond boundary. "
+                    "0 = disabled."
+                ),
+                "min": 0.0,
+                "max": 0.5,
+                "step": 0.01,
+            },
+            "breakout_threshold_abs": {
+                "type": "float",
+                "default": 0.0,
+                "description": (
+                    "Minimum distance in absolute terms (pips/points) for breakout. "
+                    "Effective threshold = max(pct * range, abs). 0 = disabled."
+                ),
+                "min": 0.0,
+                "max": 100.0,
+                "step": 1.0,
             },
         }
 
