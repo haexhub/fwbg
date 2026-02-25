@@ -1035,6 +1035,87 @@ class TestORBRetestEntry:
             f"retest_bear should be 1 when at midpoint after downside breakout, got {val}"
         )
 
+    def test_retest_bull_not_triggered_by_intra_range_close(self):
+        """retest_bull must NOT fire when an intermediate range bar closed above or_high.
+
+        or_high = max(O[first range bar], C[last range bar]).  With rb=2, the first
+        range bar may close *above* or_high (which equals its own open).  Before the
+        fix, above_cummax was computed across ALL bars including range bars, so
+        post_bull would be True from the very first valid bar — without any real
+        post-range breakout.
+        """
+        ind = _get_indicator()
+        n_pre = 32
+        n_total = n_pre + 10
+        idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
+        open_ = np.full(n_total, 100.0)
+        close = np.full(n_total, 100.0)
+        high = close + 0.5
+        low = close - 0.5
+        b = n_pre
+        # rb=2: range bars are b and b+1
+        # or_open = O[b] = 100, or_close = C[b+1] = 95 → or_high = 100, or_low = 95
+        # But C[b] = 105 > or_high = 100  ← intra-range close above body-high
+        open_[b] = 100.0
+        close[b] = 105.0    # intra-range bar exceeds or_high (100) — must NOT trigger post_bull
+        open_[b + 1] = 105.0
+        close[b + 1] = 95.0  # last range bar: or_close = 95 → or_high = max(100, 95) = 100
+        # First valid bar (b+2): price stays inside range (98), never breaks above 100
+        close[b + 2] = 98.0
+        close[b + 3] = 100.0
+        high = np.maximum(high, np.maximum(open_, close))
+        low = np.minimum(low, np.minimum(open_, close))
+        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
+                             range_bars=2, retest_zone_width=1.0)
+        # With rb=2: range = bars b,b+1; first valid = b+2.
+        # Features are shifted by 1, so b+2 data appears at b+3 in the result.
+        # post_bull must be 0 because no close > 100 happened in the valid period.
+        post_bull_b2 = result["orb_s08_post_bull"].iloc[b + 3]
+        assert post_bull_b2 == 0.0, (
+            f"post_bull should be 0 when only an intra-range bar exceeded or_high, got {post_bull_b2}"
+        )
+        # retest_bull must not fire either (b+3 raw → b+4 shifted)
+        val = result["orb_s08_retest_bull"].iloc[b + 4]
+        assert val == 0.0, (
+            f"retest_bull should be 0 when post_bull was caused by intra-range bar only, got {val}"
+        )
+
+    def test_retest_bull_does_not_refire_after_zone_exit_and_reentry(self):
+        """retest_bull fires at most once per session (session-level lock).
+
+        After the signal fires on the first midpoint touch, price may temporarily
+        leave the zone and re-enter.  The signal must NOT fire a second time.
+        """
+        ind = _get_indicator()
+        n_pre = 32
+        n_total = n_pre + 12
+        idx = pd.date_range("2024-01-02 00:00", periods=n_total, freq="15min")
+        open_ = np.full(n_total, 100.0)
+        close = np.full(n_total, 100.0)
+        high = close + 0.5
+        low = close - 0.5
+        b = n_pre
+        open_[b] = 97.0
+        close[b] = 103.0   # or_high=103, or_low=97, midpoint=100
+        high[b] = 104.0
+        low[b] = 96.0
+        close[b + 1] = 104.0  # bull breakout
+        close[b + 2] = 100.0  # first touch — signal fires here
+        close[b + 3] = 104.0  # exits zone (above)
+        close[b + 4] = 100.0  # re-enters zone — must NOT fire again
+        high = np.maximum(high, np.maximum(open_, close))
+        low = np.minimum(low, np.minimum(open_, close))
+        df = pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=idx)
+        result = ind.compute(df, sessions=[8], enable_rolling=False, enable_stats=False,
+                             retest_zone_width=1.0)
+        val_first = result["orb_s08_retest_bull"].iloc[b + 3]   # signal at b+2, shifted
+        val_reentry = result["orb_s08_retest_bull"].iloc[b + 5]  # signal at b+4, shifted
+        assert val_first == 1.0, f"first touch should fire (=1), got {val_first}"
+        assert val_reentry == 0.0, (
+            f"re-entry into zone after exit must NOT fire again (expected 0), got {val_reentry}"
+        )
+
     def test_retest_bull_bear_in_get_signal_columns(self):
         """retest_bull and retest_bear must appear in get_signal_columns() for all pipeline sessions."""
         ind = _get_indicator()

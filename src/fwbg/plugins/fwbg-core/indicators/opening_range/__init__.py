@@ -245,9 +245,17 @@ def _session_orb_features(
         features[f"{prefix}_sl_dist"] = sl_dist
 
         # Post-breakout STATE: 1 for all bars after first breakout in this session.
-        # Resets at each new session start via groupby(session_id).cummax().
-        above_cummax = sess_above_int.groupby(session_id).cummax()
-        below_cummax = sess_below_int.groupby(session_id).cummax()
+        # Only count breakouts that happen AFTER the range period (valid bars only).
+        # This prevents intra-range intermediate closes from falsely triggering post_bull/bear
+        # when or_high/or_low are body-based (max/min of or_open, or_close).
+        above_cummax = (
+            (df["C"] > or_high).where(valid, False).astype(np.int8)
+            .groupby(session_id).cummax()
+        )
+        below_cummax = (
+            (df["C"] < or_low).where(valid, False).astype(np.int8)
+            .groupby(session_id).cummax()
+        )
         features[f"{prefix}_post_bull"] = above_cummax.where(valid, np.nan)
         features[f"{prefix}_post_bear"] = below_cummax.where(valid, np.nan)
 
@@ -260,8 +268,8 @@ def _session_orb_features(
             features[f"{prefix}_retest_zone_up"] = near_high.astype(int).where(valid, np.nan)
             features[f"{prefix}_retest_zone_down"] = near_low.astype(int).where(valid, np.nan)
 
-            # Retest (reload) entry signal — fires on the FIRST bar price enters the midpoint
-            # zone after a breakout (event signal, not sustained state).
+            # Retest (reload) entry signal — fires ONCE per session on the first bar price
+            # enters the midpoint zone after a breakout (session-locked event signal).
             # Bull: broke above OR High AND retraced to midpoint AND no subsequent bear breakout
             # Bear: broke below OR Low AND retraced to midpoint AND no subsequent bull breakout
             #
@@ -284,17 +292,22 @@ def _session_orb_features(
             bull_cond = post_bull_flag & near_poc & still_valid_bull
             bear_cond = post_bear_flag & near_poc & still_valid_bear
 
-            # First-touch: fire only when condition transitions False → True within the session
-            bull_int  = bull_cond.astype(np.int8)
-            bear_int  = bear_cond.astype(np.int8)
-            prev_bull = bull_int.groupby(session_id).shift(1).fillna(0).astype(np.int8)
-            prev_bear = bear_int.groupby(session_id).shift(1).fillna(0).astype(np.int8)
+            # Session-level lock: once the signal fires, it never fires again in the same session.
+            # cummax() on the condition ensures re-entry into the zone does not re-trigger.
+            session_bull_fired = bull_cond.astype(np.int8).groupby(session_id).cummax()
+            session_bear_fired = bear_cond.astype(np.int8).groupby(session_id).cummax()
+            prev_bull_fired = (
+                session_bull_fired.groupby(session_id).shift(1).fillna(0).astype(np.int8)
+            )
+            prev_bear_fired = (
+                session_bear_fired.groupby(session_id).shift(1).fillna(0).astype(np.int8)
+            )
 
             features[f"{prefix}_retest_bull"] = (
-                (bull_int - prev_bull).clip(lower=0).astype(float).where(valid, np.nan)
+                (session_bull_fired - prev_bull_fired).clip(lower=0).astype(float).where(valid, np.nan)
             )
             features[f"{prefix}_retest_bear"] = (
-                (bear_int - prev_bear).clip(lower=0).astype(float).where(valid, np.nan)
+                (session_bear_fired - prev_bear_fired).clip(lower=0).astype(float).where(valid, np.nan)
             )
 
     return features
