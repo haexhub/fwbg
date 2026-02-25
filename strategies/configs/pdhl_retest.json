@@ -57,80 +57,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }
@@ -174,80 +174,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }
@@ -291,80 +291,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }
@@ -408,80 +408,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }
@@ -525,80 +525,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }
@@ -642,80 +642,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }
@@ -759,80 +759,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }
@@ -876,80 +876,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }
@@ -993,80 +993,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }
@@ -1110,80 +1110,80 @@
           }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl0_pdl_retest_bull",
-          "signal_column_short": "rl0_pdl_retest_bear",
-          "sl_dist_column": "rl0_pdl_sl_dist",
+          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
           {
-            "signal_column_long": "rl0_pdl_retest_bull",
-            "signal_column_short": "rl0_pdl_retest_bear",
-            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl38_pdl_retest_bull",
-            "signal_column_short": "rl38_pdl_retest_bear",
-            "sl_dist_column": "rl38_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl61_pdl_retest_bull",
-            "signal_column_short": "rl61_pdl_retest_bear",
-            "sl_dist_column": "rl61_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "rl70_pdl_retest_bull",
-            "signal_column_short": "rl70_pdl_retest_bear",
-            "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl0_pdl_retest_bull",
-            "signal_column_short": "a_rl0_pdl_retest_bear",
-            "sl_dist_column": "a_rl0_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl38_pdl_retest_bull",
-            "signal_column_short": "a_rl38_pdl_retest_bear",
-            "sl_dist_column": "a_rl38_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
-            "signal_column_short": "a_rl50_pdl_retest_bear",
-            "sl_dist_column": "a_rl50_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl61_pdl_retest_bull",
-            "signal_column_short": "a_rl61_pdl_retest_bear",
-            "sl_dist_column": "a_rl61_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
           {
-            "signal_column_long": "a_rl70_pdl_retest_bull",
-            "signal_column_short": "a_rl70_pdl_retest_bear",
-            "sl_dist_column": "a_rl70_pdl_sl_dist",
+            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
+            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
+            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           }

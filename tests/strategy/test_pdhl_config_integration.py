@@ -68,9 +68,9 @@ def _minimal_ctx(**overrides) -> SimulationContext:
         exit_params={"atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12},
         model_type="signal",
         model_hyperparameters={
-            "signal_column_long": "rl50_pdl_retest_bull",
-            "signal_column_short": "rl50_pdl_retest_bear",
-            "sl_dist_column": "rl50_pdl_sl_dist",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
         },
     )
     defaults.update(overrides)
@@ -304,7 +304,7 @@ class TestSignalHoursAre24h:
     def test_setdefault_does_not_override_explicit_null(self):
         """Simulate context.py setdefault behavior with explicit null."""
         model_hp = {
-            "signal_column_long": "rl50_pdl_retest_bull",
+            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
             "signal_start_hour": None,
             "signal_end_hour": None,
         }
@@ -320,16 +320,16 @@ class TestGridVariantCoverage:
     """All required grid variants are present (rl0/38/50/61/70 × session/all scope)."""
 
     EXPECTED_VARIANTS = [
-        ("rl0_pdl_retest_bull", "rl0_pdl_retest_bear", "rl0_pdl_sl_dist"),
-        ("rl38_pdl_retest_bull", "rl38_pdl_retest_bear", "rl38_pdl_sl_dist"),
-        ("rl50_pdl_retest_bull", "rl50_pdl_retest_bear", "rl50_pdl_sl_dist"),
-        ("rl61_pdl_retest_bull", "rl61_pdl_retest_bear", "rl61_pdl_sl_dist"),
-        ("rl70_pdl_retest_bull", "rl70_pdl_retest_bear", "rl70_pdl_sl_dist"),
-        ("a_rl0_pdl_retest_bull", "a_rl0_pdl_retest_bear", "a_rl0_pdl_sl_dist"),
-        ("a_rl38_pdl_retest_bull", "a_rl38_pdl_retest_bear", "a_rl38_pdl_sl_dist"),
-        ("a_rl50_pdl_retest_bull", "a_rl50_pdl_retest_bear", "a_rl50_pdl_sl_dist"),
-        ("a_rl61_pdl_retest_bull", "a_rl61_pdl_retest_bear", "a_rl61_pdl_sl_dist"),
-        ("a_rl70_pdl_retest_bull", "a_rl70_pdl_retest_bear", "a_rl70_pdl_sl_dist"),
+        ("hl_ses_rl0_pdl_retest_bull", "hl_ses_rl0_pdl_retest_bear", "hl_ses_rl0_pdl_sl_dist"),
+        ("hl_ses_rl38_pdl_retest_bull", "hl_ses_rl38_pdl_retest_bear", "hl_ses_rl38_pdl_sl_dist"),
+        ("hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear", "hl_ses_rl50_pdl_sl_dist"),
+        ("hl_ses_rl61_pdl_retest_bull", "hl_ses_rl61_pdl_retest_bear", "hl_ses_rl61_pdl_sl_dist"),
+        ("hl_ses_rl70_pdl_retest_bull", "hl_ses_rl70_pdl_retest_bear", "hl_ses_rl70_pdl_sl_dist"),
+        ("hl_all_rl0_pdl_retest_bull", "hl_all_rl0_pdl_retest_bear", "hl_all_rl0_pdl_sl_dist"),
+        ("hl_all_rl38_pdl_retest_bull", "hl_all_rl38_pdl_retest_bear", "hl_all_rl38_pdl_sl_dist"),
+        ("hl_all_rl50_pdl_retest_bull", "hl_all_rl50_pdl_retest_bear", "hl_all_rl50_pdl_sl_dist"),
+        ("hl_all_rl61_pdl_retest_bull", "hl_all_rl61_pdl_retest_bear", "hl_all_rl61_pdl_sl_dist"),
+        ("hl_all_rl70_pdl_retest_bull", "hl_all_rl70_pdl_retest_bear", "hl_all_rl70_pdl_sl_dist"),
     ]
 
     def test_all_assets_have_10_grid_variants(self, pdhl_config):
@@ -449,7 +449,7 @@ class TestNativeBarBreakout:
 
         # Day 1 (Jan 2): breakout at 09:15
         day1 = result.loc["2024-01-02"]
-        breakout_col = "pdl_broke_high"
+        breakout_col = "hl_ses_pdl_broke_high"
         if breakout_col in day1.columns:
             # After the breakout bar, broke_high should be True
             after_breakout = day1.loc[day1.index.hour >= 10, breakout_col]
@@ -480,7 +480,7 @@ class TestNativeBarBreakout:
         day1_native = result_native.loc["2024-01-02"]
         day1_resamp = result_resampled.loc["2024-01-02"]
 
-        col = "rl50_pdl_retest_bull"
+        col = "hl_ses_rl50_pdl_retest_bull"
         native_signals = day1_native[col].dropna().sum() if col in day1_native.columns else 0
         resamp_signals = day1_resamp[col].dropna().sum() if col in day1_resamp.columns else 0
 
@@ -516,7 +516,7 @@ class TestOvernightSignals:
 
         day1 = result.loc["2024-01-02"]
         # a_ prefix = all scope
-        for col in ["a_rl50_pdl_retest_bull", "rl50_pdl_retest_bull"]:
+        for col in ["hl_all_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bull"]:
             if col in day1.columns:
                 count = day1[col].dropna().sum()
                 if count > 0:
@@ -544,12 +544,12 @@ class TestOvernightSignals:
             retest_modes=["all_hours"],
         )
 
-        feature_cols = [c for c in result.columns if c.startswith(("pdl_", "rl", "a_"))]
+        feature_cols = [c for c in result.columns if c.startswith(("hl_ses_", "hl_all_"))]
         features = result[feature_cols].fillna(0)
 
         model = _signal_mod.SignalModel()
         hp = {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
             "signal_start_hour": None,
             "signal_end_hour": None,
         }
@@ -571,8 +571,8 @@ class TestOvernightSignals:
                     off_session_signals.append(t)
 
         # We should have at least one off-session signal
-        if "a_rl50_pdl_retest_bull" in features.columns:
-            day1_raw = features.loc["2024-01-02", "a_rl50_pdl_retest_bull"]
+        if "hl_all_rl50_pdl_retest_bull" in features.columns:
+            day1_raw = features.loc["2024-01-02", "hl_all_rl50_pdl_retest_bull"]
             raw_signals = day1_raw[day1_raw > 0]
             if len(raw_signals) > 0:
                 # Raw signals exist → they should not be filtered
@@ -600,12 +600,12 @@ class TestOvernightSignals:
             retest_modes=["all_hours"],
         )
 
-        feature_cols = [c for c in result.columns if c.startswith(("pdl_", "rl", "a_"))]
+        feature_cols = [c for c in result.columns if c.startswith(("hl_ses_", "hl_all_"))]
         features = result[feature_cols].fillna(0)
 
         model = _signal_mod.SignalModel()
         hp = {
-            "signal_column_long": "a_rl50_pdl_retest_bull",
+            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
             "signal_start_hour": 8,
             "signal_end_hour": 17,
         }
@@ -648,7 +648,7 @@ class TestOrbBasedTrailingDispatch:
 
         # Add minimal indicator columns
         df["vol_atr"] = 5.0
-        df["rl50_pdl_sl_dist"] = 10.0
+        df["hl_ses_rl50_pdl_sl_dist"] = 10.0
 
         ctx = _minimal_ctx(
             exit_modifier="trailing_stop",
@@ -667,7 +667,7 @@ class TestOrbBasedTrailingDispatch:
         strategy = self._get_orb_strategy()
         df = _make_pdhl_bull_15min()
         df["vol_atr"] = 5.0
-        df["rl50_pdl_sl_dist"] = 10.0
+        df["hl_ses_rl50_pdl_sl_dist"] = 10.0
 
         ctx = _minimal_ctx(exit_modifier=None, exit_modifier_params={})
         targets_long, targets_short = strategy.compute_targets(
@@ -680,7 +680,7 @@ class TestOrbBasedTrailingDispatch:
         strategy = self._get_orb_strategy()
         df = _make_pdhl_bull_15min()
         df["vol_atr"] = 5.0
-        df["rl50_pdl_sl_dist"] = 10.0
+        df["hl_ses_rl50_pdl_sl_dist"] = 10.0
 
         ctx_tight = _minimal_ctx(
             exit_modifier="trailing_stop",
@@ -710,21 +710,21 @@ class TestSlDistColumnFlow:
         strategy = self._get_orb_strategy()
         df = _make_pdhl_bull_15min()
         df["vol_atr"] = 5.0
-        df["rl50_pdl_sl_dist"] = 10.0
-        df["rl38_pdl_sl_dist"] = 15.0  # Different SL distance
+        df["hl_ses_rl50_pdl_sl_dist"] = 10.0
+        df["hl_ses_rl38_pdl_sl_dist"] = 15.0  # Different SL distance
 
         ctx_rl50 = _minimal_ctx(
             model_hyperparameters={
-                "signal_column_long": "rl50_pdl_retest_bull",
-                "signal_column_short": "rl50_pdl_retest_bear",
-                "sl_dist_column": "rl50_pdl_sl_dist",
+                "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
+                "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+                "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             },
         )
         ctx_rl38 = _minimal_ctx(
             model_hyperparameters={
-                "signal_column_long": "rl38_pdl_retest_bull",
-                "signal_column_short": "rl38_pdl_retest_bear",
-                "sl_dist_column": "rl38_pdl_sl_dist",
+                "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+                "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+                "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             },
         )
 
@@ -758,14 +758,14 @@ class TestGridComboCreation:
         ctx = _minimal_ctx(
             grid_model_hyperparameters=[
                 {
-                    "signal_column_long": "rl38_pdl_retest_bull",
-                    "signal_column_short": "rl38_pdl_retest_bear",
-                    "sl_dist_column": "rl38_pdl_sl_dist",
+                    "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
+                    "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+                    "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
                 },
                 {
-                    "signal_column_long": "a_rl50_pdl_retest_bull",
-                    "signal_column_short": "a_rl50_pdl_retest_bear",
-                    "sl_dist_column": "a_rl50_pdl_sl_dist",
+                    "signal_column_long": "hl_all_rl50_pdl_retest_bull",
+                    "signal_column_short": "hl_all_rl50_pdl_retest_bear",
+                    "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
                 },
             ],
         )
@@ -875,9 +875,9 @@ class TestFullPipelineIntegration:
         df = _make_pdhl_bull_15min()
         trades = self._run_pipeline(
             df,
-            signal_col_long="rl50_pdl_retest_bull",
-            signal_col_short="rl50_pdl_retest_bear",
-            sl_dist_col="rl50_pdl_sl_dist",
+            signal_col_long="hl_ses_rl50_pdl_retest_bull",
+            signal_col_short="hl_ses_rl50_pdl_retest_bear",
+            sl_dist_col="hl_ses_rl50_pdl_sl_dist",
         )
 
         long_trades = [t for t in trades if t["direction"] == "LONG"]
@@ -891,9 +891,9 @@ class TestFullPipelineIntegration:
         df = _make_overnight_breakout()
         trades = self._run_pipeline(
             df,
-            signal_col_long="a_rl50_pdl_retest_bull",
-            signal_col_short="a_rl50_pdl_retest_bear",
-            sl_dist_col="a_rl50_pdl_sl_dist",
+            signal_col_long="hl_all_rl50_pdl_retest_bull",
+            signal_col_short="hl_all_rl50_pdl_retest_bear",
+            sl_dist_col="hl_all_rl50_pdl_sl_dist",
             signal_start_hour=None,
             signal_end_hour=None,
         )
@@ -912,9 +912,9 @@ class TestFullPipelineIntegration:
         df = _make_overnight_breakout()
         trades = self._run_pipeline(
             df,
-            signal_col_long="a_rl50_pdl_retest_bull",
-            signal_col_short="a_rl50_pdl_retest_bear",
-            sl_dist_col="a_rl50_pdl_sl_dist",
+            signal_col_long="hl_all_rl50_pdl_retest_bull",
+            signal_col_short="hl_all_rl50_pdl_retest_bear",
+            sl_dist_col="hl_all_rl50_pdl_sl_dist",
             signal_start_hour=8,
             signal_end_hour=17,
         )
@@ -936,17 +936,17 @@ class TestFullPipelineIntegration:
 
         trades_fixed = self._run_pipeline(
             df,
-            signal_col_long="rl50_pdl_retest_bull",
-            signal_col_short="rl50_pdl_retest_bear",
-            sl_dist_col="rl50_pdl_sl_dist",
+            signal_col_long="hl_ses_rl50_pdl_retest_bull",
+            signal_col_short="hl_ses_rl50_pdl_retest_bear",
+            sl_dist_col="hl_ses_rl50_pdl_sl_dist",
             exit_modifier=None,
         )
 
         trades_trail = self._run_pipeline(
             df,
-            signal_col_long="rl50_pdl_retest_bull",
-            signal_col_short="rl50_pdl_retest_bear",
-            sl_dist_col="rl50_pdl_sl_dist",
+            signal_col_long="hl_ses_rl50_pdl_retest_bull",
+            signal_col_short="hl_ses_rl50_pdl_retest_bear",
+            sl_dist_col="hl_ses_rl50_pdl_sl_dist",
             exit_modifier="trailing_stop",
             exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
         )

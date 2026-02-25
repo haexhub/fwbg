@@ -112,7 +112,7 @@ class TestMergeUnifiedSettings:
 
     def test_model_hyperparameters_from_first_fold(self):
         """model_hyperparameters taken from first consistent fold."""
-        hp = {"signal_column_long": "rl50_pdl_retest_bull"}
+        hp = {"signal_column_long": "hl_ses_rl50_pdl_retest_bull"}
         folds = [
             _make_fold_result(0, tp=5.0, sl=2.0, ct=0.5, model_hyperparameters=hp),
             _make_fold_result(1, tp=5.0, sl=2.0, ct=0.5, model_hyperparameters=hp),
