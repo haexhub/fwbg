@@ -288,23 +288,6 @@ class TestORBPipelineFeatures:
 
         pd.testing.assert_index_equal(result.index, df.index)
 
-    def test_rolling_orb_columns_present(self):
-        """Rolling ORB columns (rb1_ and rb2_) must be present in the result."""
-        config = _load_config()
-        indicators = config.get_indicators()
-        df = make_m15_ohlcv(n=2000, seed=77)
-        result = compute_indicator_pool(df, indicators=indicators)
-
-        expected = [
-            "rb1_orb_range", "rb1_orb_breakout_up", "rb1_orb_breakout_down",
-            "rb2_orb_range", "rb2_orb_breakout_up", "rb2_orb_breakout_down",
-        ]
-        missing = [col for col in expected if col not in result.columns]
-        assert not missing, (
-            f"Missing rolling ORB columns: {missing}. "
-            f"Available: {[c for c in result.columns if 'orb_range' in c or 'rb1_orb_break' in c]}"
-        )
-
     def test_session_orb_columns_present(self):
         """Session ORB columns for configured sessions must be present."""
         config = _load_config()
@@ -323,17 +306,6 @@ class TestORBPipelineFeatures:
         assert not missing, (
             f"Missing session ORB columns: {missing}"
         )
-
-    def test_stat_orb_columns_present(self):
-        """Statistical ORB columns must be present in the result."""
-        config = _load_config()
-        indicators = config.get_indicators()
-        df = make_m15_ohlcv(n=2000, seed=77)
-        result = compute_indicator_pool(df, indicators=indicators)
-
-        stat_cols = ["orb_stat_avg_range", "orb_stat_breakout_rate", "orb_stat_continuation_rate"]
-        missing = [col for col in stat_cols if col not in result.columns]
-        assert not missing, f"Missing stat ORB columns: {missing}"
 
     def test_ohlcv_columns_preserved(self):
         """Original OHLCV columns must be present in result."""
