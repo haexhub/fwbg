@@ -382,7 +382,10 @@ class TestPDLParameters:
         assert params["enable_retest"] is True
         assert params["retest_atr_width"] == 0.3
         assert params["retracement_levels"] == 0.5
-        assert params["range_modes"] == ["hl_session"]
+        assert params["candle_span"] == "hl"
+        assert params["range_scope"] == ["session"]
+        assert params["breakout_threshold"] == 0.0
+        assert params["breakout_threshold_abs"] == 0.0
 
     def test_get_param_schema(self):
         schema = _pdl.PreviousDayLevelsIndicator.get_param_schema()
@@ -391,7 +394,10 @@ class TestPDLParameters:
         assert "enable_retest" in schema
         assert "retest_atr_width" in schema
         assert "retracement_levels" in schema
-        assert "range_modes" in schema
+        assert "candle_span" in schema
+        assert "range_scope" in schema
+        assert "breakout_threshold" in schema
+        assert "breakout_threshold_abs" in schema
 
     def test_custom_atr_period(self):
         ind = _get_indicator()
@@ -740,54 +746,61 @@ class TestPDLSessionFilteredBreaks:
                 )
 
 
-class TestPDLRangeModes:
-    """Tests for range_modes parameter (hl_session, hl_all, close_session, close_all)."""
+class TestPDLRangeParams:
+    """Tests for candle_span and range_scope parameters."""
 
     def test_default_mode_no_prefix(self):
-        """Default range_modes=['hl_session'] produces standard features without extra prefix."""
+        """Default candle_span='hl', range_scope=['session'] produces standard features."""
         ind = _get_indicator()
         result = ind.compute(_make_ohlc_15min())
         assert "pdl_high_dist" in result.columns
         assert "rl50_pdl_retest_bull" in result.columns
-        # No mode-prefixed columns
-        for pfx in ("ha_", "cs_", "ca_"):
+        # No scope/span prefixed columns
+        for pfx in ("a_", "b_", "ba_"):
             assert not any(c.startswith(pfx) for c in result.columns), (
                 f"Found {pfx} columns with default mode"
             )
 
-    def test_all_modes_generate_prefixed_columns(self):
-        """All 4 modes produce separate prefixed feature sets."""
+    def test_all_scopes_generate_prefixed_columns(self):
+        """range_scope=['session', 'all'] produces unprefixed + a_ prefixed sets."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=5000)
-        result = ind.compute(df, range_modes=["hl_session", "hl_all", "close_session", "close_all"])
+        result = ind.compute(df, range_scope=["session", "all"])
 
-        # hl_session (no prefix)
+        # session (no prefix)
         assert "pdl_high_dist" in result.columns
         assert "rl50_pdl_retest_bull" in result.columns
 
-        # hl_all (ha_ prefix)
-        assert "ha_pdl_high_dist" in result.columns
-        assert "ha_rl50_pdl_retest_bull" in result.columns
+        # all (a_ prefix)
+        assert "a_pdl_high_dist" in result.columns
+        assert "a_rl50_pdl_retest_bull" in result.columns
 
-        # close_session (cs_ prefix)
-        assert "cs_pdl_high_dist" in result.columns
-        assert "cs_rl50_pdl_retest_bull" in result.columns
+    def test_body_span_generates_prefixed_columns(self):
+        """candle_span='body' produces b_ prefixed feature sets."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=5000)
+        result = ind.compute(df, candle_span="body")
 
-        # close_all (ca_ prefix)
-        assert "ca_pdl_high_dist" in result.columns
-        assert "ca_rl50_pdl_retest_bull" in result.columns
+        assert "b_pdl_high_dist" in result.columns
+        assert "b_rl50_pdl_retest_bull" in result.columns
 
-    def test_hl_all_range_wider_than_session(self):
+    def test_body_all_scope_combined_prefix(self):
+        """candle_span='body' + range_scope=['all'] produces ba_ prefix."""
+        ind = _get_indicator()
+        df = _make_ohlc_15min(n=5000)
+        result = ind.compute(df, candle_span="body", range_scope=["all"])
+
+        assert "b_a_pdl_high_dist" in result.columns
+        assert "b_a_rl50_pdl_retest_bull" in result.columns
+
+    def test_all_range_wider_than_session(self):
         """With off-session H/L extremes, all-hours range should be >= session range."""
-        # Build data where off-session has extreme H/L
         idx = pd.date_range("2024-01-01", periods=48, freq="h")
         close = np.full(48, 100.0)
         high = np.full(48, 100.5)
         low = np.full(48, 99.5)
         opn = np.full(48, 100.0)
 
-        # Day 0: session (7-21) has H=105, L=95
-        # Off-session has H=115, L=85 (wider extremes)
         for i in range(24):
             h = idx[i].hour
             if h == 3:  # off-session
@@ -799,43 +812,75 @@ class TestPDLRangeModes:
 
         df = pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
         ind = _get_indicator()
-        result = ind.compute(df, range_modes=["hl_session", "hl_all"])
+        result = ind.compute(df, range_scope=["session", "all"])
 
-        # Day 1: check range_vs_atr
         day1 = result.loc["2024-01-02"]
         session_range = day1["pdl_range_vs_atr"].dropna()
-        all_range = day1["ha_pdl_range_vs_atr"].dropna()
+        all_range = day1["a_pdl_range_vs_atr"].dropna()
 
         if len(session_range) > 0 and len(all_range) > 0:
             assert all_range.iloc[0] >= session_range.iloc[0], (
                 "All-hours range should be >= session range"
             )
 
-    def test_close_range_narrower_than_hl(self):
-        """Close-based mode gives narrower or equal range vs H/L mode."""
+    def test_body_range_narrower_than_hl(self):
+        """Body-based (max/min of O/C) gives narrower or equal range vs H/L."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=5000)
-        result = ind.compute(df, range_modes=["hl_session", "close_session"])
+        result_hl = ind.compute(df.copy(), candle_span="hl")
+        result_body = ind.compute(df.copy(), candle_span="body")
 
-        # Compare range_vs_atr: Close-based should be <= H/L-based
-        hl_range = result["pdl_range_vs_atr"].dropna()
-        cl_range = result["cs_pdl_range_vs_atr"].dropna()
+        hl_range = result_hl["pdl_range_vs_atr"].dropna()
+        body_range = result_body["b_pdl_range_vs_atr"].dropna()
 
-        if len(hl_range) > 0 and len(cl_range) > 0:
-            # Close range should be <= H/L range for most bars
-            ratio = (cl_range <= hl_range + 1e-10).mean()
+        if len(hl_range) > 0 and len(body_range) > 0:
+            ratio = (body_range <= hl_range + 1e-10).mean()
             assert ratio > 0.9, (
-                f"Close range should be <= H/L range for most bars, "
+                f"Body range should be <= H/L range for most bars, "
                 f"but only {ratio:.1%} are"
             )
 
-    def test_default_matches_explicit_hl_session(self):
-        """Default params produce identical features to explicit hl_session."""
+    def test_body_uses_oc_not_hl(self):
+        """Body mode uses max(O,C)/min(O,C), not H/L."""
+        idx = pd.date_range("2024-01-01", periods=48, freq="h")
+        close = np.full(48, 100.0)
+        opn = np.full(48, 100.0)
+        high = np.full(48, 100.5)
+        low = np.full(48, 99.5)
+
+        # Day 0: session (7-21) — set O/C tight, H/L wide
+        for i in range(24):
+            h = idx[i].hour
+            if 7 <= h < 21:
+                opn[i] = 99.0
+                close[i] = 101.0  # body: 99-101 (range=2)
+                high[i] = 110.0   # wick: 90-110 (range=20)
+                low[i] = 90.0
+
+        df = pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
+        ind = _get_indicator()
+        result_hl = ind.compute(df.copy(), candle_span="hl")
+        result_body = ind.compute(df.copy(), candle_span="body")
+
+        day1 = result_hl.loc["2024-01-02"]
+        hl_r = day1["pdl_range_vs_atr"].dropna()
+        day1_b = result_body.loc["2024-01-02"]
+        body_r = day1_b["b_pdl_range_vs_atr"].dropna()
+
+        if len(hl_r) > 0 and len(body_r) > 0:
+            assert body_r.iloc[0] < hl_r.iloc[0] * 0.5, (
+                "Body range should be much smaller than H/L range when wicks are wide"
+            )
+
+    def test_default_matches_explicit(self):
+        """Default params produce identical features to explicit candle_span/range_scope."""
         ind = _get_indicator()
         df = _make_ohlc_15min()
 
         result_default = ind.compute(df.copy())
-        result_explicit = ind.compute(df.copy(), range_modes=["hl_session"])
+        result_explicit = ind.compute(
+            df.copy(), candle_span="hl", range_scope=["session"],
+        )
 
         for col in ind.get_feature_columns():
             assert col in result_default.columns
@@ -961,7 +1006,6 @@ class TestPDLMidnightCrossing:
         df = _make_midnight_crossing_data()
         result = ind.compute(
             df, session_start_hour=23, session_end_hour=6,
-            range_modes=["hl_session"],
         )
 
         # Day 2 bars (23:00 Jan 2 - 05:00 Jan 3) should see PDH=110
@@ -1391,45 +1435,86 @@ class TestMinRetracement:
         )
 
 
-class TestResampledRange:
-    """Tests for resample_tf Close-based range computation."""
+class TestBreakoutThreshold:
+    """Tests for breakout_threshold in PDHL."""
 
-    def test_resampled_close_range_differs_from_native(self):
+    def test_threshold_filters_marginal_breakout(self):
+        """A close barely above PDH should NOT trigger breakout with threshold."""
+        ind = _get_indicator()
+        df = _make_deterministic_retest_data()
+        # Default data: Day 1 PDH=110, Day 2 C=112 at 09:00 → just 2pts above
+        # With threshold=0.2 → need 0.2 * 20 = 4pts above → 114 needed
+        result = ind.compute(df, breakout_threshold=0.2, min_retracement=0.0)
+
+        day2 = result.loc["2024-01-02"]
+        break_vals = day2["pdl_high_break"].dropna()
+        assert break_vals.sum() == 0, (
+            "Marginal breakout (2pts) should be filtered with threshold=0.2 (needs 4pts)"
+        )
+
+    def test_zero_threshold_allows_breakout(self):
+        """With threshold=0.0, same breakout should fire."""
+        ind = _get_indicator()
+        df = _make_deterministic_retest_data()
+        result = ind.compute(df, breakout_threshold=0.0, min_retracement=0.0)
+
+        day2 = result.loc["2024-01-02"]
+        break_vals = day2["pdl_high_break"].dropna()
+        assert break_vals.sum() >= 1.0, "Breakout should fire with zero threshold"
+
+    def test_abs_threshold_filters(self):
+        """breakout_threshold_abs provides an absolute floor."""
+        ind = _get_indicator()
+        df = _make_deterministic_retest_data()
+        # Day 1: range=20, breakout at +2. abs=5 means need 5pts above PDH
+        result = ind.compute(df, breakout_threshold_abs=5.0, min_retracement=0.0)
+
+        day2 = result.loc["2024-01-02"]
+        break_vals = day2["pdl_high_break"].dropna()
+        assert break_vals.sum() == 0, (
+            "Breakout (+2pts) should be filtered with abs threshold=5"
+        )
+
+
+class TestResampledRange:
+    """Tests for resample_tf body-based range computation."""
+
+    def test_resampled_body_range_differs_from_native(self):
         """With 15-min data where sub-hourly Close spikes exist,
-        resample_tf='1h' range should differ from native."""
+        resample_tf='1h' body range should differ from native."""
         ind = _get_indicator()
         df = _make_hourly_breakout_spike_data()
 
-        # close_session with resample
+        # body + session with resample
         result_r = ind.compute(
-            df.copy(), range_modes=["close_session"],
+            df.copy(), candle_span="body",
             resample_tf="1h", min_retracement=0.0,
         )
-        # close_session without resample
+        # body + session without resample
         result_n = ind.compute(
-            df.copy(), range_modes=["close_session"],
+            df.copy(), candle_span="body",
             resample_tf=None, min_retracement=0.0,
         )
 
         # Day 1 range_vs_atr should differ because the 09:15 spike (C=112)
-        # inflates the native Close-based day 0 range but not the resampled one
-        day0_r = result_r.loc["2024-01-02"]["cs_pdl_range_vs_atr"].dropna()
-        day0_n = result_n.loc["2024-01-02"]["cs_pdl_range_vs_atr"].dropna()
+        # inflates the native body-based day 0 range but not the resampled one
+        day0_r = result_r.loc["2024-01-02"]["b_pdl_range_vs_atr"].dropna()
+        day0_n = result_n.loc["2024-01-02"]["b_pdl_range_vs_atr"].dropna()
 
         # Both should have values
         assert len(day0_r) > 0 and len(day0_n) > 0
 
     def test_hl_mode_unaffected_by_resample(self):
-        """hl_session range is unchanged by resample_tf (max of max = max)."""
+        """hl range is unchanged by resample_tf (max of max = max)."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
 
         result_r = ind.compute(
-            df.copy(), range_modes=["hl_session"],
+            df.copy(), candle_span="hl",
             resample_tf="1h", min_retracement=0.0,
         )
         result_n = ind.compute(
-            df.copy(), range_modes=["hl_session"],
+            df.copy(), candle_span="hl",
             resample_tf=None, min_retracement=0.0,
         )
 

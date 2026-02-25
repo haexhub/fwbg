@@ -26,10 +26,6 @@
           14,
           22
         ],
-        "stat_window": 20,
-        "enable_rolling": true,
-        "enable_session": true,
-        "enable_stats": true,
         "enable_retracement": true,
         "retest_atr_width": 0.3,
         "carry_forward_days": [0, 1, 2],
