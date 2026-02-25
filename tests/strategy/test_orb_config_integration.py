@@ -34,7 +34,7 @@ EXPECTED_SESSION_HOURS = {
     "DAX": 7, "EU50": 7, "CAC40": 7,
     "FTSE100": 8, "FOREX": 8, "COMMODITY": 8,
     "NAS100": 14, "SPX500": 14, "DOW30": 14,
-    "JP225": 0, "ASX200": 0, "CRYPTO": 0,
+    "JP225": 0, "ASX200": 22, "CRYPTO": 0,
     "HK50": 1,
 }
 
@@ -228,9 +228,14 @@ class TestSessionHourConsistency:
 class TestGridVariantCoverage:
     """All assets must have the full combinatorial grid of variants."""
 
-    def test_all_assets_have_12_variants(self, orb_config):
-        """Each asset should have 12 variants: rb{1,2} × cf{0,1,2} × prb{0,1}."""
+    # ASX200 uses a custom grid (rb4 × cf{0,1,2} × prb{0} = 3 variants)
+    CUSTOM_GRID_ASSETS = {"ASX200"}
+
+    def test_standard_assets_have_12_variants(self, orb_config):
+        """Standard assets should have 12 variants: rb{1,2} × cf{0,1,2} × prb{0,1}."""
         for asset, grid in orb_config.grids.items():
+            if asset in self.CUSTOM_GRID_ASSETS:
+                continue
             non_none = [v for v in grid.model_hyperparameters_grid if v is not None]
             assert len(non_none) == 12, (
                 f"{asset}: expected 12 grid variants (2×3×2), got {len(non_none)}"
@@ -245,6 +250,8 @@ class TestGridVariantCoverage:
                     expected_prefixes.add(f"rb{rb}_cf{cf}_prb{prb}_orb_")
 
         for asset, grid in orb_config.grids.items():
+            if asset in self.CUSTOM_GRID_ASSETS:
+                continue
             actual_prefixes = set()
             for v in grid.model_hyperparameters_grid:
                 if v is None:
@@ -273,12 +280,12 @@ class TestOrbPipelineConfig:
         assert "opening_range" in ind_names
 
     def test_range_bars_config(self, orb_config):
-        """range_bars should be [1, 2] for rb1_ and rb2_ variants."""
+        """range_bars should cover all rb variants (rb1, rb2, and rb4 for ASX200)."""
         orb_ind = next(
             i for i in orb_config.pipeline["indicators"]
             if i["name"] == "opening_range"
         )
-        assert orb_ind["params"]["range_bars"] == [1, 2]
+        assert orb_ind["params"]["range_bars"] == [1, 2, 4]
 
     def test_sessions_include_all_needed(self, orb_config):
         """All session hours referenced in signal columns must be in pipeline."""
