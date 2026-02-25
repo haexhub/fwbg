@@ -8,8 +8,8 @@
     {
       "name": "opening_range",
       "params": {
-        "range_bars": [2, 3],
-        "sessions": [0, 1, 7, 8, 14],
+        "range_bars": [2, 3, 4],
+        "sessions": [0, 1, 7, 8, 14, 22],
         "enable_rolling": false,
         "enable_session": true,
         "enable_stats": false,
