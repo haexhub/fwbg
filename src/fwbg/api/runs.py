@@ -51,6 +51,8 @@ def start_run(body: RunStartRequest) -> dict:
         cmd.extend(["--days-limit", str(body.days_limit)])
 
     job_id = str(uuid.uuid4())[:8]
+    # Pass job_id as the CLI run_id so results land in test_results/{job_id}/
+    cmd.extend(["--run-id", job_id])
 
     try:
         process = subprocess.Popen(

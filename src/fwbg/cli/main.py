@@ -65,6 +65,7 @@ def run_optimizer(
     strategy_metadata=None,
     asset_filter=None,
     days_limit=None,
+    run_id=None,
 ):
     """
     Führt die Walk-Forward Optimierung aus.
@@ -138,7 +139,8 @@ def run_optimizer(
         return None
 
     # Run-ID und Verzeichnis erstellen
-    run_id = generate_run_id(description)
+    if not run_id:
+        run_id = generate_run_id(description)
     if save_results:
         run_path, plots_path = create_run_directory(run_id, description, strategy_metadata)
         print(f"\nRun ID: {run_id}")
@@ -763,6 +765,8 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                         help="Datenpfad (überschreibt DATA_PATH, z.B. data/dukascopy/datasource)")
     parser.add_argument("--days-limit", type=int, metavar="N",
                         help="Daten auf die ersten N Kalendertage begrenzen (Preview-Modus)")
+    parser.add_argument("--run-id", type=str, metavar="ID",
+                        help="Feste Run-ID verwenden (statt automatisch generierter ID)")
 
     args = parser.parse_args()
 
@@ -829,6 +833,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             strategy_metadata=strategy_metadata if strategy_metadata else None,
             asset_filter=asset_filter,
             days_limit=args.days_limit,
+            run_id=args.run_id,
         )
 
 
