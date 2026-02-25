@@ -1073,7 +1073,7 @@
         ],
         "indicator_overrides": {
           "previous_day_levels": {
-            "session_start_hour": 23,
+            "session_start_hour": 22,
             "session_end_hour": 6
           }
         }
