@@ -524,9 +524,6 @@ class StrategyConfig:
     # Timeframe override (None = use TIMEFRAME env var)
     timeframe: Optional[str] = None
 
-    # Preview mode: limit data to first N calendar days (None = no limit)
-    days_limit: Optional[int] = None
-
     # Metadata
     hypothesis: str = ""
     expected_outcome: str = ""
@@ -569,7 +566,6 @@ class StrategyConfig:
             regime_filter=RegimeFilterConfig.from_dict(data.get("regime_filter")),
             datasource=data.get("datasource"),
             timeframe=data.get("timeframe"),
-            days_limit=data.get("days_limit"),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
         )

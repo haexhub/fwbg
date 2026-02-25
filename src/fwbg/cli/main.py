@@ -64,7 +64,6 @@ def run_optimizer(
     save_results=True,
     strategy_metadata=None,
     asset_filter=None,
-    days_limit=None,
     run_id=None,
 ):
     """
@@ -81,9 +80,6 @@ def run_optimizer(
         strategy = StrategyConfig.from_dict(strategy_metadata)
     else:
         strategy = StrategyConfig()
-
-    if days_limit:
-        strategy.days_limit = days_limit
 
     # Timeframe aus Strategy übernehmen (überschreibt Modul-Globals)
     if strategy.timeframe:
@@ -763,8 +759,6 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
     parser.add_argument("--timeframe", type=str, help="Timeframe (überschreibt TIMEFRAME env)")
     parser.add_argument("--data-path", type=str, metavar="DIR",
                         help="Datenpfad (überschreibt DATA_PATH, z.B. data/dukascopy/datasource)")
-    parser.add_argument("--days-limit", type=int, metavar="N",
-                        help="Daten auf die ersten N Kalendertage begrenzen (Preview-Modus)")
     parser.add_argument("--run-id", type=str, metavar="ID",
                         help="Feste Run-ID verwenden (statt automatisch generierter ID)")
 
@@ -832,7 +826,6 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             save_results=not args.no_save,
             strategy_metadata=strategy_metadata if strategy_metadata else None,
             asset_filter=asset_filter,
-            days_limit=args.days_limit,
             run_id=args.run_id,
         )
 
