@@ -137,7 +137,7 @@
         ],
         "indicator_overrides": {
           "previous_day_levels": {
-            "session_start_hour": 8,
+            "session_start_hour": 7,
             "session_end_hour": 17
           }
         }
@@ -254,7 +254,7 @@
         ],
         "indicator_overrides": {
           "previous_day_levels": {
-            "session_start_hour": 8,
+            "session_start_hour": 7,
             "session_end_hour": 17
           }
         }
@@ -371,7 +371,7 @@
         ],
         "indicator_overrides": {
           "previous_day_levels": {
-            "session_start_hour": 14,
+            "session_start_hour": 13,
             "session_end_hour": 21
           }
         }
@@ -488,7 +488,7 @@
         ],
         "indicator_overrides": {
           "previous_day_levels": {
-            "session_start_hour": 14,
+            "session_start_hour": 13,
             "session_end_hour": 21
           }
         }
@@ -605,7 +605,7 @@
         ],
         "indicator_overrides": {
           "previous_day_levels": {
-            "session_start_hour": 14,
+            "session_start_hour": 13,
             "session_end_hour": 21
           }
         }
@@ -839,7 +839,7 @@
         ],
         "indicator_overrides": {
           "previous_day_levels": {
-            "session_start_hour": 8,
+            "session_start_hour": 7,
             "session_end_hour": 17
           }
         }
@@ -956,7 +956,7 @@
         ],
         "indicator_overrides": {
           "previous_day_levels": {
-            "session_start_hour": 0,
+            "session_start_hour": 23,
             "session_end_hour": 7
           }
         }
