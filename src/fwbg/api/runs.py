@@ -25,6 +25,8 @@ class RunStartRequest(BaseModel):
     assets: Optional[list[str]] = None
     asset_classes: Optional[list[str]] = None
     description: Optional[str] = None
+    preview: Optional[bool] = None
+    days_limit: Optional[int] = None
 
 
 @router.post("/start")
@@ -45,6 +47,8 @@ def start_run(body: RunStartRequest) -> dict:
         cmd.extend(["--asset-classes", ",".join(body.asset_classes)])
     if body.description:
         cmd.extend(["-d", body.description])
+    if body.days_limit:
+        cmd.extend(["--days-limit", str(body.days_limit)])
 
     job_id = str(uuid.uuid4())[:8]
 
