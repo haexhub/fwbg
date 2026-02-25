@@ -42,12 +42,12 @@
         "ma_period": 20,
         "enable_retest": true,
         "retest_atr_width": 0.3,
-        "retracement_levels": [0.382, 0.5, 0.618, 0.7],
+        "retracement_levels": [0.0, 0.382, 0.5, 0.618, 0.7],
         "range_modes": ["hl_session", "hl_all"],
         "break_modes": ["all_hours"],
         "retest_modes": ["all_hours"],
         "min_sl_atr_mult": 1.5,
-        "min_retracement": 0.3,
+        "min_retracement": 0,
         "resample_tf": null
       }
     },

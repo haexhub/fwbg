@@ -160,7 +160,8 @@ def _compute_retest_features(
         entry_bull = pdh - rl * pd_range
         entry_bear = pdl_low + rl * pd_range
 
-        half_band = retest_atr_width * np.nan_to_num(pd_range, nan=0.0) / 2
+        band_basis = np.maximum(np.nan_to_num(pd_range, nan=0.0), atr)
+        half_band = retest_atr_width * band_basis / 2
         near_entry_bull = (close >= entry_bull - half_band) & (close <= entry_bull + half_band)
         near_entry_bear = (close >= entry_bear - half_band) & (close <= entry_bear + half_band)
 

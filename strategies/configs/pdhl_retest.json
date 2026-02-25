@@ -27,23 +27,50 @@
     "assignments": {
       "DAX": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -69,6 +96,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
@@ -110,23 +144,50 @@
       },
       "FTSE100": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -152,6 +213,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
@@ -193,23 +261,50 @@
       },
       "DOW30": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -235,6 +330,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
@@ -276,23 +378,50 @@
       },
       "NAS100": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -318,6 +447,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
@@ -359,23 +495,50 @@
       },
       "SPX500": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -401,6 +564,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
@@ -442,23 +612,50 @@
       },
       "EU50": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -484,6 +681,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
@@ -525,23 +729,50 @@
       },
       "CAC40": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -567,6 +798,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
@@ -608,23 +846,50 @@
       },
       "JP225": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -650,6 +915,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
@@ -691,23 +963,50 @@
       },
       "ASX200": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -733,6 +1032,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
@@ -774,23 +1080,50 @@
       },
       "HK50": {
         "preset": "orb_scalping_index_v1",
-        "ct": [0.5],
-        "sl": [1.0],
-        "tp": [3.0, 4.0, 6.0, 8.0],
-        "timeout_bars": [null],
+        "ct": [
+          0.5
+        ],
+        "sl": [
+          1.0
+        ],
+        "tp": [
+          3.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "timeout_bars": [
+          null
+        ],
         "exit_modifier_params_grid": [
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-          {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-          {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5}
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.3
+          },
+          {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5
+          },
+          {
+            "breakeven_trigger": 0.3,
+            "trail_atr_mult": 0.5
+          }
         ],
         "model_hyperparameters": {
-          "signal_column_long": "rl50_pdl_retest_bull",
-          "signal_column_short": "rl50_pdl_retest_bear",
-          "sl_dist_column": "rl50_pdl_sl_dist",
+          "signal_column_long": "rl0_pdl_retest_bull",
+          "signal_column_short": "rl0_pdl_retest_bear",
+          "sl_dist_column": "rl0_pdl_sl_dist",
           "signal_start_hour": null,
           "signal_end_hour": null
         },
         "model_hyperparameters_grid": [
+          {
+            "signal_column_long": "rl0_pdl_retest_bull",
+            "signal_column_short": "rl0_pdl_retest_bear",
+            "sl_dist_column": "rl0_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
           {
             "signal_column_long": "rl38_pdl_retest_bull",
             "signal_column_short": "rl38_pdl_retest_bear",
@@ -816,6 +1149,13 @@
             "signal_column_long": "rl70_pdl_retest_bull",
             "signal_column_short": "rl70_pdl_retest_bear",
             "sl_dist_column": "rl70_pdl_sl_dist",
+            "signal_start_hour": null,
+            "signal_end_hour": null
+          },
+          {
+            "signal_column_long": "ha_rl0_pdl_retest_bull",
+            "signal_column_short": "ha_rl0_pdl_retest_bear",
+            "sl_dist_column": "ha_rl0_pdl_sl_dist",
             "signal_start_hour": null,
             "signal_end_hour": null
           },
