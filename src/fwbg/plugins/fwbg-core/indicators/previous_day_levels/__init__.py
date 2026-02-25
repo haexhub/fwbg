@@ -177,6 +177,10 @@ def _compute_retest_features(
         retested_bear = False
         retracement_ok_bull = False
         retracement_ok_bear = False
+        # Price must leave the entry zone before it can re-enter as retest.
+        # This ensures an actual breakout-away-return pattern.
+        departed_bull = False
+        departed_bear = False
 
         for i in range(n):
             if day_ids[i] != prev_day_id:
@@ -185,6 +189,8 @@ def _compute_retest_features(
                 retested_bear = False
                 retracement_ok_bull = False
                 retracement_ok_bear = False
+                departed_bull = False
+                departed_bear = False
 
             if np.isnan(pdh[i]):
                 continue
@@ -201,16 +207,27 @@ def _compute_retest_features(
                 retracement_ok_bull = True
                 retracement_ok_bear = True
 
+            # After breakout, price must first move ABOVE (bull) / BELOW
+            # (bear) the near-entry band before a retest can fire.  This
+            # prevents the breakout bar or subsequent continuation bars
+            # from triggering a false retest signal.
+            if broke_high_arr[i] and not departed_bull:
+                if close[i] > entry_bull[i] + half_band[i]:
+                    departed_bull = True
+            if broke_low_arr[i] and not departed_bear:
+                if close[i] < entry_bear[i] - half_band[i]:
+                    departed_bear = True
+
             # Only fire retest signals during trading session
             in_session = session_mask[i] if session_mask is not None else True
             if not in_session:
                 continue
 
-            if broke_high_arr[i] and retracement_ok_bull and not retested_bull \
+            if departed_bull and retracement_ok_bull and not retested_bull \
                     and near_entry_bull[i] and close[i] > pdl_low[i]:
                 retest_bull[i] = 1.0
                 retested_bull = True
-            if broke_low_arr[i] and retracement_ok_bear and not retested_bear \
+            if departed_bear and retracement_ok_bear and not retested_bear \
                     and near_entry_bear[i] and close[i] < pdh[i]:
                 retest_bear[i] = 1.0
                 retested_bear = True
