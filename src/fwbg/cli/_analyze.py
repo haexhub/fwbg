@@ -5,7 +5,7 @@ import json
 import os
 
 from fwbg.exploration.exit_analyzer import analyze_asset, format_terminal_output, write_json
-from fwbg.data.config import DATA_PATH, TIMEFRAME
+from fwbg.data import config as data_config
 
 
 def run_analyze(argv):
@@ -64,16 +64,20 @@ Examples:
 def _resolve_files(asset, asset_class):
     """Resolve data file paths from asset name or asset class."""
     if asset:
-        # Try direct path first, then under DATA_PATH
+        # Try direct/absolute path first (no DATA_PATH needed)
         if os.path.isabs(asset) and os.path.exists(asset):
             return [asset]
-        path = os.path.join(DATA_PATH, asset)
-        if os.path.exists(path):
-            return [path]
-        # Try as-is (relative path from cwd)
         if os.path.exists(asset):
             return [asset]
-        raise FileNotFoundError(f"Data file not found: {asset} (checked {path})")
+        # Try under DATA_PATH
+        if data_config.DATA_PATH:
+            path = os.path.join(data_config.DATA_PATH, asset)
+            if os.path.exists(path):
+                return [path]
+        raise FileNotFoundError(f"Data file not found: {asset}")
+
+    if not data_config.DATA_PATH:
+        raise FileNotFoundError("DATA_PATH not configured — set 'datasource' in strategy or use --data-path")
 
     from fwbg.data.assets import AssetRegistry
 
@@ -81,7 +85,7 @@ def _resolve_files(asset, asset_class):
     symbols = registry.symbols_by_class(asset_class.upper())
     files = []
     for sym in symbols:
-        path = os.path.join(DATA_PATH, f"{sym}_{TIMEFRAME}.csv")
+        path = os.path.join(data_config.DATA_PATH, f"{sym}_{data_config.TIMEFRAME}.csv")
         if os.path.exists(path):
             files.append(path)
     if not files:

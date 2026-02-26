@@ -24,1177 +24,189 @@
   "resources": "standard_v1",
   "grids": {
     "presets_dir": "../grids",
+    "regime_filters_dir": "../regime_filters",
     "assignments": {
       "DAX": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 7,
-            "session_end_hour": 17
-          }
-        }
+        ]
       },
       "FTSE100": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 7,
-            "session_end_hour": 17
-          }
-        }
+        ]
       },
       "DOW30": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 13,
-            "session_end_hour": 21
-          }
-        }
+        ]
       },
       "NAS100": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 13,
-            "session_end_hour": 21
-          }
-        }
+        ]
       },
       "SPX500": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 13,
-            "session_end_hour": 21
-          }
-        }
+        ]
       },
       "EU50": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 7,
-            "session_end_hour": 17
-          }
-        }
+        ]
       },
       "CAC40": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 7,
-            "session_end_hour": 17
-          }
-        }
+        ]
       },
       "JP225": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 23,
-            "session_end_hour": 7
-          }
-        }
+        ]
       },
       "ASX200": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 22,
-            "session_end_hour": 6
-          }
-        }
+        ]
       },
       "HK50": {
         "preset": "orb_scalping_index_v1",
+        "tp": [
+          3,
+          4,
+          6,
+          8
+        ],
+        "sl": [
+          1
+        ],
         "ct": [
           0.5
         ],
-        "sl": [
-          1.0
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          6.0,
-          8.0
-        ],
         "timeout_bars": [
           null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-          "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-          "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-          "signal_start_hour": null,
-          "signal_end_hour": null
-        },
-        "model_hyperparameters_grid": [
-          {
-            "signal_column_long": "hl_ses_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_ses_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_ses_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl0_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl0_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl0_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl38_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl38_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl38_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl61_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl61_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl61_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          },
-          {
-            "signal_column_long": "hl_all_rl70_pdl_retest_bull",
-            "signal_column_short": "hl_all_rl70_pdl_retest_bear",
-            "sl_dist_column": "hl_all_rl70_pdl_sl_dist",
-            "signal_start_hour": null,
-            "signal_end_hour": null
-          }
-        ],
-        "indicator_overrides": {
-          "previous_day_levels": {
-            "session_start_hour": 1,
-            "session_end_hour": 8
-          }
-        }
+        ]
       }
     }
-  }
+  },
+  "datasource": "dukascopy"
 }
