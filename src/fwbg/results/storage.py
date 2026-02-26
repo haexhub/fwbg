@@ -248,13 +248,11 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
         ├── results.json     # Optimierungs-Ergebnisse
         ├── summary.txt      # Menschenlesbare Zusammenfassung
         ├── assets.json      # Export für den Bot
-        └── plots/           # Equity-Kurven
+        └── grid_details/    # Pro-Asset Ergebnisse + Plots
     """
     run_path = os.path.join(RESULTS_BASE_PATH, run_id)
-    plots_path = os.path.join(run_path, "plots")
 
     os.makedirs(run_path, exist_ok=True)
-    os.makedirs(plots_path, exist_ok=True)
 
     # Git-Info für Reproduzierbarkeit
     git_info = get_git_info()
@@ -282,7 +280,7 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
         with open(strategy_path, "w") as f:
             json.dump(strategy_metadata, f, indent=2)
 
-    return run_path, plots_path
+    return run_path
 
 
 def save_run_results(run_path, raw_results, filtered_results, elite_results,

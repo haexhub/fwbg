@@ -56,15 +56,13 @@ def _setup_log_yaxis(ax, eq):
     ax.yaxis.set_minor_formatter(NullFormatter())
 
 
-def create_asset_plot(result, plots_path, trade_directions=None):
+def create_asset_plot(result, output_dir, trade_directions=None):
     """
     Erstellt Equity-Plot für ein Asset.
 
-    Einheitliche Plot-Funktion für alle Assets.
-
     Args:
         result: Dict mit symbol, config, tr_trace, win_rate, rrr, sharpe, etc.
-        plots_path: Pfad zum Speichern des Plots
+        output_dir: Verzeichnis zum Speichern (grid_details/{SYMBOL}/)
         trade_directions: Optional Liste der Trade-Richtungen (LONG/SHORT) für
                           farbliche Unterscheidung
     """
@@ -201,25 +199,9 @@ def create_asset_plot(result, plots_path, trade_directions=None):
     ax3.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(f"{plots_path}/{sym}.png", dpi=100)
+    plt.savefig(f"{output_dir}/equity.png", dpi=100)
     plt.close()
 
     if trade_directions:
         return n_long, n_short, long_wr, short_wr
     return None
-
-
-# Wrapper für Abwärtskompatibilität
-def create_incremental_plot(result, plots_path):
-    """Wrapper für create_asset_plot (ohne Trade-Richtungen)."""
-    return create_asset_plot(result, plots_path, trade_directions=None)
-
-
-def create_elite_plot(e, plots_path, trade_directions, profit_per_trade, eq, drawdowns, max_dd, rrr):
-    """
-    Wrapper für create_asset_plot mit Trade-Richtungen.
-
-    Hinweis: Die übergebenen profit_per_trade, eq, drawdowns, max_dd, rrr werden ignoriert
-    und intern neu berechnet für Konsistenz.
-    """
-    return create_asset_plot(e, plots_path, trade_directions=trade_directions)
