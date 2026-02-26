@@ -15,7 +15,7 @@ from fwbg_sdk.contexts import PipelineContext, AssetInfo
 from fwbg_sdk.enums import Timeframe, AssetClass, Symbol, Direction, SignalType
 
 # Plugin base classes
-from fwbg_sdk.indicators import BaseIndicator, shift_features, safe_divide, EPSILON
+from fwbg_sdk.indicators import BaseIndicator, shift_features, safe_divide, EPSILON, rl_tag
 from fwbg_sdk.preprocessors import BasePreprocessor
 from fwbg_sdk.feature_selectors import BaseFeatureSelector
 from fwbg_sdk.exit_strategies import BaseExitStrategy
@@ -86,6 +86,7 @@ __all__ = [
     "shift_features",
     "safe_divide",
     "EPSILON",
+    "rl_tag",
     # Registration decorators
     "register_indicator",
     "register_exit_strategy",

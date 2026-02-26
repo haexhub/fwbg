@@ -565,8 +565,8 @@ class TestPDLRetracementLevels:
         df = _make_ohlc_15min()
         result = ind.compute(df, retracement_levels=0.382)
 
-        assert "hl_ses_rl38_pdl_retest_bull" in result.columns
-        assert "hl_ses_rl38_pdl_sl_dist" in result.columns
+        assert "hl_ses_rl382_pdl_retest_bull" in result.columns
+        assert "hl_ses_rl382_pdl_sl_dist" in result.columns
 
     def test_non_rl_features_not_duplicated(self):
         """Break detection, distance features etc. are computed once (not per rl)."""

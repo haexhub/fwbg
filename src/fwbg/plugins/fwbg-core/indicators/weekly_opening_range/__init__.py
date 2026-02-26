@@ -28,6 +28,17 @@ import ta
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide
 
 
+# ── Naming helpers ──────────────────────────────────────────────────────────
+
+
+def wor_col(rb: int, feature: str) -> str:
+    """Build WOR column name: wor_rb{N}_{feature}."""
+    return f"wor_rb{rb}_{feature}"
+
+
+WOR_SIGNAL_SUFFIXES = ("_breakout_up", "_breakout_down", "_retest_zone_up", "_retest_zone_down")
+
+
 def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
     return ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=period)
 
@@ -216,18 +227,15 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
                 return df
 
         rb_list = [range_bars] if isinstance(range_bars, int) else list(range_bars)
-        use_prefix = len(rb_list) > 1
 
         atr = _compute_atr(df, atr_period)
         week_id = _get_week_id(df)
         features: Dict[str, pd.Series] = {}
 
         for rb in rb_list:
-            pfx = f"wor_rb{rb}_" if use_prefix else ""
             wor = _weekly_orb_features(df, rb, atr, enable_retracement, retest_atr_width)
-            # Rename keys with prefix (replace leading "wor_" to avoid double prefix)
-            if use_prefix:
-                wor = {pfx + k[4:]: v for k, v in wor.items()}
+            # Always use wor_rb{N}_ prefix (replace leading "wor_")
+            wor = {f"wor_rb{rb}_{k[4:]}": v for k, v in wor.items()}
             features.update(wor)
 
         if enable_stats:
@@ -237,24 +245,35 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
         if not features:
             return df
 
+        self._feature_columns = list(features.keys())
+        self._signal_columns = [
+            k for k in features if any(k.endswith(s) for s in WOR_SIGNAL_SUFFIXES)
+        ]
+
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
     def get_feature_columns(self) -> List[str]:
-        base = [
-            "wor_range", "wor_position",
-            "wor_breakout_up", "wor_breakout_down",
-            "wor_range_vs_atr",
-            "wor_dist_to_high", "wor_dist_to_low",
-            "wor_retest_zone_up", "wor_retest_zone_down",
-            "wor_sl_dist",
+        if self._feature_columns:
+            return self._feature_columns
+        rb = self.get_default_params()["range_bars"]
+        base_feats = [
+            "range", "position", "breakout_up", "breakout_down",
+            "range_vs_atr", "dist_to_high", "dist_to_low",
+            "retest_zone_up", "retest_zone_down", "sl_dist",
         ]
-        stats = [
-            "wor_stat_avg_range",
-            "wor_stat_range_vs_avg",
-            "wor_stat_breakout_rate",
+        return [wor_col(rb, f) for f in base_feats] + [
+            "wor_stat_avg_range", "wor_stat_range_vs_avg", "wor_stat_breakout_rate",
         ]
-        return base + stats
+
+    def get_signal_columns(self) -> List[str]:
+        if self._signal_columns:
+            return self._signal_columns
+        rb = self.get_default_params()["range_bars"]
+        return [
+            wor_col(rb, "breakout_up"), wor_col(rb, "breakout_down"),
+            wor_col(rb, "retest_zone_up"), wor_col(rb, "retest_zone_down"),
+        ]
 
     @classmethod
     def get_default_params(cls) -> dict:

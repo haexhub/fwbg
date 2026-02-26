@@ -7,9 +7,16 @@ Berechnet Features basierend auf dem Opening Range Konzept:
 
 Timeframe-Kompatibilität: Intraday (M1-H4). Auf DAY-Bars → NaN.
 
-range_bars akzeptiert int oder List[int]. Bei einer Liste werden für jeden
-Wert eigene Feature-Spalten mit Präfix rb{n}_ generiert, z.B. rb1_orb_range
-und rb2_orb_range. Das erlaubt dem ML-Modell, beide Varianten zu vergleichen.
+Spalten-Namensformat (via orb_col()):
+  rb{N}_[cf{N}_][prb{N}_]orb_s{HH}_{feature}
+
+Prefix-Abkürzungen:
+  rb  = range bars      — Anzahl Bars für die Opening Range
+  cf  = carry forward    — Tage ohne Breakout, Range weiter tragen (nur wenn aktiv)
+  prb = pre-range bars   — Bars vor Session-Start in Range einbeziehen (nur wenn aktiv)
+  rl  = retracement level — Retracement-Level für Retest-Signale (z.B. rl50, rl382)
+
+cf/prb erscheinen nur im Prefix wenn sie konfiguriert sind (Wert != 0 oder Liste).
 """
 from typing import Dict, List, Union
 
@@ -17,8 +24,43 @@ import numpy as np
 import pandas as pd
 import ta
 
-from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide
+from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide, rl_tag
 from fwbg_sdk.retest import apply_breakout_threshold, compute_break_state, compute_retest_signals
+
+
+# ── Naming helpers ──────────────────────────────────────────────────────────
+
+
+def orb_col(rb: int, cf, prb, session: int, feature: str) -> str:
+    """Build ORB column name.
+
+    Prefix segments:
+      rb  = range bars      — number of bars defining the opening range
+      cf  = carry forward    — days to carry range when no breakout (optional)
+      prb = pre-range bars   — bars before session start included in range (optional)
+
+    cf/prb are optional — pass None to omit from the prefix:
+      orb_col(1, None, None, 8, "range") -> rb1_orb_s08_range
+      orb_col(1, 0, None, 8, "range")    -> rb1_cf0_orb_s08_range
+      orb_col(1, 0, 2, 8, "range")       -> rb1_cf0_prb2_orb_s08_range
+    """
+    parts = [f"rb{rb}"]
+    if cf is not None:
+        parts.append(f"cf{cf}")
+    if prb is not None:
+        parts.append(f"prb{prb}")
+    parts.append(f"orb_s{session:02d}_{feature}")
+    return "_".join(parts)
+
+
+ORB_BASE_FEATURES = [
+    "range", "position", "breakout_up", "breakout_down",
+    "range_vs_atr", "poc_dist", "sl_dist",
+    "post_bull", "post_bear",
+    "retest_zone_up", "retest_zone_down",
+]
+
+ORB_SIGNAL_SUFFIXES = ("_breakout_up", "_breakout_down", "_retest_bull", "_retest_bear")
 
 
 def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
@@ -253,7 +295,7 @@ def _session_orb_features(
             retest_half_band = retest_zone_width / 2 * or_range_vals
 
             for rl in rl_list:
-                rl_pfx = f"rl{int(rl * 100)}_"
+                rl_pfx = f"{rl_tag(rl)}_"
                 entry_bull = or_high_vals - rl * or_range_vals
                 entry_bear = or_low_vals + rl * or_range_vals
 
@@ -330,34 +372,41 @@ class OpeningRangeIndicator(BaseIndicator):
         if sessions is None:
             sessions = [8, 9, 14, 15]
 
-        # Normalisiere range_bars zu einer Liste
+        # Normalisiere Parameter zu Listen
         rb_list = [range_bars] if isinstance(range_bars, int) else list(range_bars)
-        use_rb_prefix = len(rb_list) > 1
-
-        # Normalisiere carry_forward_days / pre_range_bars zu Listen
         cf_list = [carry_forward_days] if isinstance(carry_forward_days, int) else list(carry_forward_days)
         prb_list = [pre_range_bars] if isinstance(pre_range_bars, int) else list(pre_range_bars)
-        use_cf_prb_prefix = len(cf_list) > 1 or len(prb_list) > 1
 
         features: Dict[str, Union[pd.Series, np.ndarray]] = {}
         atr = _compute_atr(df, atr_period)
 
-        for rb in rb_list:
-            rb_pfx = f"rb{rb}_" if use_rb_prefix else ""
+        # cf/prb only in prefix when active (non-zero or multiple values)
+        include_cf = len(cf_list) > 1 or any(v != 0 for v in cf_list)
+        include_prb = len(prb_list) > 1 or any(v != 0 for v in prb_list)
 
+        for rb in rb_list:
             for cf in cf_list:
                 for prb in prb_list:
-                    cf_prb_pfx = f"cf{cf}_prb{prb}_" if use_cf_prb_prefix else ""
+                    pfx = f"rb{rb}_"
+                    if include_cf:
+                        pfx += f"cf{cf}_"
+                    if include_prb:
+                        pfx += f"prb{prb}_"
                     session = _session_orb_features(
                         df, sessions, rb, atr, enable_retracement, retest_atr_width,
                         retest_zone_width, cf, prb, candle_span,
                         breakout_threshold, breakout_threshold_abs,
                         retracement_levels, min_retracement,
                     )
-                    features.update({f"{rb_pfx}{cf_prb_pfx}{k}": v for k, v in session.items()})
+                    features.update({f"{pfx}{k}": v for k, v in session.items()})
 
         if not features:
             return df
+
+        self._feature_columns = list(features.keys())
+        self._signal_columns = [
+            k for k in features if any(k.endswith(s) for s in ORB_SIGNAL_SUFFIXES)
+        ]
 
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
@@ -368,30 +417,50 @@ class OpeningRangeIndicator(BaseIndicator):
     # 8=London open, 12=NY pre-dawn, 13=NY pre-market, 14=approaching NYSE open
     _PIPELINE_SESSIONS = [0, 1, 2, 5, 6, 7, 8, 12, 13, 14]
 
+    @staticmethod
+    def _rl_prefixes(retracement_levels) -> List[str]:
+        """Build rl{N}_ prefixes from retracement_levels param."""
+        rl_list = [retracement_levels] if isinstance(retracement_levels, (int, float)) else list(retracement_levels)
+        return [f"{rl_tag(rl)}_" for rl in rl_list]
+
     def get_feature_columns(self) -> List[str]:
-        session = []
+        if self._feature_columns:
+            return self._feature_columns
+        d = self.get_default_params()
+        rb = d["range_bars"]
+        # cf/prb default to 0 → omit from prefix (None)
+        cf = d["carry_forward_days"] or None
+        prb = d["pre_range_bars"] or None
+        rl_pfxs = self._rl_prefixes(d["retracement_levels"])
+        cols = []
         for h in self._PIPELINE_SESSIONS:
-            pfx = f"orb_s{h:02d}"
-            session.extend([
-                f"{pfx}_range", f"{pfx}_position",
-                f"{pfx}_breakout_up", f"{pfx}_breakout_down",
-                f"{pfx}_range_vs_atr",
-                f"{pfx}_poc_dist", f"{pfx}_sl_dist",
-                f"{pfx}_post_bull", f"{pfx}_post_bear",
-                f"{pfx}_retest_zone_up", f"{pfx}_retest_zone_down",
-                f"{pfx}_rl50_retest_bull", f"{pfx}_rl50_retest_bear",
-                f"{pfx}_rl50_sl_dist",
-            ])
-        return session
+            for feat in ORB_BASE_FEATURES:
+                cols.append(orb_col(rb, cf, prb, h, feat))
+            for rl_pfx in rl_pfxs:
+                cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bull"))
+                cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bear"))
+                cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}sl_dist"))
+        return cols
 
     def get_signal_columns(self) -> List[str]:
+        if self._signal_columns:
+            return self._signal_columns
+        d = self.get_default_params()
+        rb = d["range_bars"]
+        cf = d["carry_forward_days"] or None
+        prb = d["pre_range_bars"] or None
+        rl_pfxs = self._rl_prefixes(d["retracement_levels"])
         signals = []
         for h in self._PIPELINE_SESSIONS:
-            pfx = f"orb_s{h:02d}"
             signals.extend([
-                f"{pfx}_breakout_up", f"{pfx}_breakout_down",
-                f"{pfx}_rl50_retest_bull", f"{pfx}_rl50_retest_bear",
+                orb_col(rb, cf, prb, h, "breakout_up"),
+                orb_col(rb, cf, prb, h, "breakout_down"),
             ])
+            for rl_pfx in rl_pfxs:
+                signals.extend([
+                    orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bull"),
+                    orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bear"),
+                ])
         return signals
 
     @classmethod
@@ -418,7 +487,7 @@ class OpeningRangeIndicator(BaseIndicator):
             "range_bars": {
                 "type": "list[int]",
                 "default": 1,
-                "description": "Number of bars defining the opening range after each hour boundary. At M15: 1 bar = 15min range, 2 bars = 30min range. At M5: 1 bar = 5min range. Can be a list (e.g. [1, 2]) to compute features for multiple range sizes simultaneously — each size gets its own prefixed columns (rb1_orb_*, rb2_orb_*) so the ML model can select the better variant.",
+                "description": "Number of bars defining the opening range (rb = range bars). At M15: 1 bar = 15min range, 2 bars = 30min range. Column format: rb{N}_[cf{N}_][prb{N}_]orb_s{HH}_{feature}. Can be a list (e.g. [1, 2]) to compute features for multiple range sizes.",
                 "min": 1,
                 "max": 12,
                 "step": 1,
@@ -462,7 +531,7 @@ class OpeningRangeIndicator(BaseIndicator):
             "carry_forward_days": {
                 "type": "list[int]",
                 "default": 0,
-                "description": "If no breakout occurs during a session, carry the ORB range forward to the next N session occurrences. 0 = disabled.",
+                "description": "Carry forward days (cf): if no breakout occurs during a session, carry the ORB range to the next N sessions. 0 = disabled. Only adds cf{N}_ prefix when active.",
                 "min": 0,
                 "max": 5,
                 "step": 1,
@@ -470,7 +539,7 @@ class OpeningRangeIndicator(BaseIndicator):
             "pre_range_bars": {
                 "type": "list[int]",
                 "default": 0,
-                "description": "Number of bars before the session start to include in the range calculation. Expands the opening range window backward.",
+                "description": "Pre-range bars (prb): number of bars before session start to include in range calculation. 0 = disabled. Only adds prb{N}_ prefix when active.",
                 "min": 0,
                 "max": 8,
                 "step": 1,

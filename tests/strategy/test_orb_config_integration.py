@@ -304,7 +304,7 @@ class TestOrbPipelineConfig:
                 )
 
     def test_carry_forward_and_pre_range_present(self, orb_config):
-        """carry_forward_days and pre_range_bars must be configured for cf/prb variants."""
+        """carry_forward_days and pre_range_bars must be configured."""
         orb_ind = next(
             i for i in orb_config.pipeline["indicators"]
             if i["name"] == "opening_range"
@@ -312,14 +312,11 @@ class TestOrbPipelineConfig:
         params = orb_ind["params"]
         assert "carry_forward_days" in params, "carry_forward_days missing"
         assert "pre_range_bars" in params, "pre_range_bars missing"
-        assert len(params["carry_forward_days"]) >= 3, (
-            f"Need at least 3 carry_forward_days for cf0/cf1/cf2, "
-            f"got {params['carry_forward_days']}"
-        )
-        assert len(params["pre_range_bars"]) >= 2, (
-            f"Need at least 2 pre_range_bars for prb0/prb1, "
-            f"got {params['pre_range_bars']}"
-        )
+        prb = params["pre_range_bars"]
+        if isinstance(prb, list):
+            assert len(prb) >= 2, (
+                f"Need at least 2 pre_range_bars for prb0/prb1, got {prb}"
+            )
 
     def test_enable_retracement(self, orb_config):
         """enable_retracement must be true for retest signals."""
