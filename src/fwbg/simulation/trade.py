@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from numba import njit
 
-from fwbg.data.config import DATA_PATH
+from fwbg.data import config as data_config
 
 # Import shared numba function from numba_core to avoid duplication
 from fwbg.simulation.numba_core import _simulate_trade_numba
@@ -301,10 +301,13 @@ def load_sub_hourly_data(symbol):
 
     Returns: (DataFrame, resolution) oder (None, None)
     """
+    if not data_config.DATA_PATH:
+        return None, None
+
     with _cache_lock:
         # Versuche 15-Min-Daten
         if symbol not in _m15_cache:
-            m15_path = f"{DATA_PATH}/{symbol}_MINUTE_15.csv"
+            m15_path = f"{data_config.DATA_PATH}/{symbol}_MINUTE_15.csv"
             _m15_cache[symbol] = _load_ohlc_csv(m15_path)
 
         if _m15_cache[symbol] is not None:
@@ -312,7 +315,7 @@ def load_sub_hourly_data(symbol):
 
         # Fallback: 30-Min-Daten
         if symbol not in _m30_cache:
-            m30_path = f"{DATA_PATH}/{symbol}_MINUTE_30.csv"
+            m30_path = f"{data_config.DATA_PATH}/{symbol}_MINUTE_30.csv"
             _m30_cache[symbol] = _load_ohlc_csv(m30_path)
 
         if _m30_cache[symbol] is not None:

@@ -1,13 +1,13 @@
 {
   "name": "Screen: Momentum",
-  "description": "Konzept-Screening: Technische Momentum-Indikatoren (RSI, ADX, ROC) auf HOUR-Daten. Testet ob Trend-St\u00e4rke und Overbought/Oversold-Signale pr\u00e4diktiv sind.",
+  "description": "Konzept-Screening: Technische Momentum-Indikatoren (RSI, ADX, ROC) auf HOUR-Daten. Testet ob Trend-Stärke und Overbought/Oversold-Signale prädiktiv sind.",
   "tags": [
     "screening",
     "step1",
     "momentum",
     "technical"
   ],
-  "hypothesis": "Momentum-Signale (ADX Trend-St\u00e4rke, RSI, ROC) haben pr\u00e4diktiven Edge f\u00fcr Trend-Fortsetzung auf st\u00fcndlichen Daten.",
+  "hypothesis": "Momentum-Signale (ADX Trend-Stärke, RSI, ROC) haben prädiktiven Edge für Trend-Fortsetzung auf stündlichen Daten.",
   "expected_outcome": "ADX und RSI werden selektiert. Edge nur in Trending-Phasen.",
   "pipeline": {
     "indicators": [
@@ -149,5 +149,6 @@
         ]
       }
     }
-  }
+  },
+  "datasource": "forexsb"
 }

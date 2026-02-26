@@ -1,13 +1,13 @@
 {
   "name": "Screen: Volatility Regime",
-  "description": "Konzept-Screening: Volatilit\u00e4ts-Regime (ATR, Hurst, Variance Ratio, Entropy) als Signalquelle auf HOUR-Daten. Testet ob Regime-Zustand Richtung vorhersagt.",
+  "description": "Konzept-Screening: Volatilitäts-Regime (ATR, Hurst, Variance Ratio, Entropy) als Signalquelle auf HOUR-Daten. Testet ob Regime-Zustand Richtung vorhersagt.",
   "tags": [
     "screening",
     "step1",
     "volatility",
     "regime"
   ],
-  "hypothesis": "Der aktuelle Volatilit\u00e4ts-Regime (trending vs ranging, hohe vs niedrige Vol) ist pr\u00e4diktiv f\u00fcr zuk\u00fcnftige Preisbewegungen - unabh\u00e4ngig von konkreten technischen Signalen.",
+  "hypothesis": "Der aktuelle Volatilitäts-Regime (trending vs ranging, hohe vs niedrige Vol) ist prädiktiv für zukünftige Preisbewegungen - unabhängig von konkreten technischen Signalen.",
   "expected_outcome": "Hurst-Exponent, Variance Ratio und ATR-Niveau werden selektiert. Regime-Zustand bestimmt ob Long oder Short Edge hat.",
   "pipeline": {
     "indicators": [
@@ -158,5 +158,6 @@
         ]
       }
     }
-  }
+  },
+  "datasource": "forexsb"
 }

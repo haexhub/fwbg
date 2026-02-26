@@ -178,5 +178,6 @@
         ]
       }
     }
-  }
+  },
+  "datasource": "forexsb"
 }

@@ -1,6 +1,6 @@
 {
   "name": "Screen: Session & Time Effects",
-  "description": "Konzept-Screening: Reine Zeit- und Sessionseffekte (Tageszeit, Wochentag, Kalender) auf M15-Daten. Kein technisches Signal - nur Zeit als Pr\u00e4diktor.",
+  "description": "Konzept-Screening: Reine Zeit- und Sessionseffekte (Tageszeit, Wochentag, Kalender) auf M15-Daten. Kein technisches Signal - nur Zeit als Prädiktor.",
   "tags": [
     "screening",
     "step1",
@@ -9,8 +9,8 @@
     "intraday"
   ],
   "timeframe": "MINUTE_15",
-  "hypothesis": "Systematische Zeit-Asymmetrien (bestimmte Stunden/Wochentage bevorzugen Long oder Short) existieren unabh\u00e4ngig von technischen Signalen. Kalendereffekte und Session-Transitions haben pr\u00e4diktiven Wert.",
-  "expected_outcome": "Stunden-Encoding und Wochentag werden selektiert. Unterschiedliche Win-Rates f\u00fcr Long/Short je nach Tageszeit.",
+  "hypothesis": "Systematische Zeit-Asymmetrien (bestimmte Stunden/Wochentage bevorzugen Long oder Short) existieren unabhängig von technischen Signalen. Kalendereffekte und Session-Transitions haben prädiktiven Wert.",
+  "expected_outcome": "Stunden-Encoding und Wochentag werden selektiert. Unterschiedliche Win-Rates für Long/Short je nach Tageszeit.",
   "pipeline": {
     "indicators": [
       {
@@ -119,5 +119,6 @@
         ]
       }
     }
-  }
+  },
+  "datasource": "forexsb"
 }

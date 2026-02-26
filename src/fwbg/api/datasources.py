@@ -1,6 +1,8 @@
 """REST API for data source management."""
+import threading
+import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
@@ -15,6 +17,9 @@ from fwbg.core.data_sources import (
 )
 
 router = APIRouter()
+
+# In-memory store for async prepare tasks
+_prepare_tasks: Dict[str, dict] = {}
 
 
 def _raw_dir(name: str) -> Path:
@@ -110,6 +115,29 @@ def remove_source(name: str):
     delete_data_source(name)
 
 
+@router.put("/datasources/{name}")
+def update_source(name: str, body: dict):
+    """Merge-update an existing source config."""
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+
+    current = _DATA_SOURCES[name].to_dict()
+    # Merge: body overwrites current, but keep name/type immutable
+    body.pop("name", None)
+    body.pop("type", None)
+    current.update(body)
+    current["name"] = name
+
+    try:
+        source = source_from_dict(current)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    _DATA_SOURCES[name] = source
+    save_source_config(source)
+    return _source_to_response(name)
+
+
 # ── Raw files ─────────────────────────────────────────────────────────────────
 
 @router.get("/datasources/{name}/raw")
@@ -198,6 +226,8 @@ class ProcessRequest(BaseModel):
     low_col: str
     close_col: str
     volume_col: Optional[str] = None
+    timestamp_format: str = ""  # "", "unix_s", "unix_ms"
+    timezone: str = ""          # IANA timezone
 
 
 @router.post("/datasources/{name}/process")
@@ -231,7 +261,17 @@ def process_raw_file(name: str, req: ProcessRequest):
             raise HTTPException(status_code=400, detail=f"Column not found in file: {col!r}")
 
     df = df[list(col_map.keys())].rename(columns=col_map)
-    df["DATE"] = pd.to_datetime(df["DATE"])
+
+    # Timestamp conversion
+    if req.timestamp_format in ("unix_s", "unix_ms"):
+        unit = "s" if req.timestamp_format == "unix_s" else "ms"
+        ts = pd.to_datetime(df["DATE"], unit=unit, utc=True)
+        if req.timezone:
+            ts = ts.dt.tz_convert(req.timezone)
+        df["DATE"] = ts.dt.strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        df["DATE"] = pd.to_datetime(df["DATE"])
+
     df = df.set_index("DATE").sort_index()
 
     ds_path = _datasource_dir(name)
@@ -241,3 +281,45 @@ def process_raw_file(name: str, req: ProcessRequest):
     df.to_csv(ds_path / out_filename)
 
     return {"output": out_filename, "rows": len(df)}
+
+
+# ── Batch prepare (async) ────────────────────────────────────────────────────
+
+class PrepareRequest(BaseModel):
+    glob_pattern: str = ""       # Optional override for raw_pattern
+    excludes: List[str] = []     # Filenames to exclude from processing
+
+
+@router.post("/datasources/{name}/prepare", status_code=202)
+def start_prepare(name: str, req: PrepareRequest):
+    """Launch batch prepare as a background task."""
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+    source = _DATA_SOURCES[name]
+    if not isinstance(source, CSVSourceConfig):
+        raise HTTPException(status_code=400, detail="prepare is only supported for CSV sources")
+
+    task_id = uuid.uuid4().hex[:12]
+    _prepare_tasks[task_id] = {"status": "running", "result": None, "error": None}
+
+    def run():
+        try:
+            converted = source.prepare(glob_override=req.glob_pattern, excludes=req.excludes)
+            _prepare_tasks[task_id]["result"] = converted
+            _prepare_tasks[task_id]["status"] = "done"
+        except Exception as e:
+            _prepare_tasks[task_id]["error"] = str(e)
+            _prepare_tasks[task_id]["status"] = "error"
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+
+    return {"task_id": task_id}
+
+
+@router.get("/datasources/{name}/prepare/{task_id}")
+def prepare_status(name: str, task_id: str):
+    """Poll status of a prepare task."""
+    if task_id not in _prepare_tasks:
+        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+    return _prepare_tasks[task_id]

@@ -26,5 +26,6 @@
     "folds": 8
   },
   "filters": {},
-  "resources": {}
+  "resources": {},
+  "datasource": "forexsb"
 }

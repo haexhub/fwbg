@@ -76,9 +76,16 @@ class CSVSourceConfig(DataSourceConfig):
     # ETL: raw → datasource conversion
     raw_path: Path = field(default=None)
     raw_pattern: str = "{raw_symbol}_m15.csv"
-    timestamp_unit: str = ""          # "ms" for Unix milliseconds, "" for auto-detect
+    timestamp_unit: str = ""          # "s", "ms", or "" for ISO/auto
     symbol_map: Dict[str, str] = field(default_factory=dict)  # raw_prefix → symbol
-    timezone: str = ""                # IANA timezone for UTC→local conversion, e.g. "Europe/Berlin"
+    timezone: str = ""                # IANA timezone, e.g. "Europe/Berlin"
+    # Column mapping (raw CSV column names → standard TOHLCV)
+    date_col: str = "timestamp"
+    open_col: str = "open"
+    high_col: str = "high"
+    low_col: str = "low"
+    close_col: str = "close"
+    volume_col: str = ""              # empty = no volume column, fill with 0
 
     def __post_init__(self):
         self.source_type = SourceType.CSV
@@ -105,14 +112,49 @@ class CSVSourceConfig(DataSourceConfig):
             d["symbol_map"] = self.symbol_map
         if self.timezone:
             d["timezone"] = self.timezone
+        # Column mapping — only persist non-defaults
+        col_defaults = {"date_col": "timestamp", "open_col": "open", "high_col": "high",
+                        "low_col": "low", "close_col": "close", "volume_col": ""}
+        for attr, default in col_defaults.items():
+            val = getattr(self, attr)
+            if val != default:
+                d[attr] = val
         return d
 
-    def prepare(self) -> List[str]:
+    def _build_glob_and_prefix_splitter(self):
+        """Derive a glob pattern and a prefix-extraction function from raw_pattern.
+
+        raw_pattern uses ``{raw_symbol}`` as placeholder, e.g.
+        ``{raw_symbol}_m15.csv``.  The glob replaces the placeholder with ``*``
+        and the splitter strips the suffix so we get the raw symbol prefix.
+        """
+        placeholder = "{raw_symbol}"
+        if placeholder not in self.raw_pattern:
+            # Treat the whole pattern as literal glob (user-defined)
+            return self.raw_pattern, lambda stem: stem
+
+        idx = self.raw_pattern.index(placeholder)
+        suffix = self.raw_pattern[idx + len(placeholder):]  # e.g. "_m15.csv"
+        suffix_no_ext = suffix.removesuffix(".csv")          # e.g. "_m15"
+        glob_pat = self.raw_pattern.replace(placeholder, "*")
+
+        def extract_prefix(stem: str) -> str:
+            if suffix_no_ext and stem.endswith(suffix_no_ext):
+                return stem[: -len(suffix_no_ext)]
+            return stem
+
+        return glob_pat, extract_prefix
+
+    def prepare(self, glob_override: str = "", excludes: List[str] | None = None) -> List[str]:
         """ETL: Konvertiert Rohdaten (raw_path) ins Standard-Format (path).
 
-        Liest jede Datei aus raw_path, mappt den Dateinamen via symbol_map auf
-        ein bekanntes Symbol, konvertiert Timestamps (z.B. Unix ms → ISO datetime)
-        und schreibt das Ergebnis nach path/{symbol}_{timeframe}.csv.
+        Uses raw_pattern (or glob_override) for file discovery, symbol_map for
+        symbol assignment, and the date_col / open_col / … fields for column mapping.
+
+        Args:
+            glob_override: Optional glob pattern that overrides raw_pattern for
+                file discovery. Passed directly to Path.glob().
+            excludes: Optional list of filenames to exclude from processing.
 
         Returns:
             Liste der erfolgreich konvertierten Symbole.
@@ -130,13 +172,26 @@ class CSVSourceConfig(DataSourceConfig):
         out_dir = Path(self.path)
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        if glob_override:
+            raw_files = sorted(raw_dir.glob(glob_override))
+            # With a custom glob, prefix = full stem (user manages symbol_map accordingly)
+            extract_prefix = lambda stem: stem
+        else:
+            glob_pat, extract_prefix = self._build_glob_and_prefix_splitter()
+            raw_files = sorted(raw_dir.glob(glob_pat))
+        if not raw_files:
+            log.warning(f"prepare(): keine Dateien gefunden in {raw_dir}")
+            return []
+
+        # Apply excludes
+        exclude_set = set(excludes or [])
+        if exclude_set:
+            raw_files = [f for f in raw_files if f.name not in exclude_set]
+
         converted = []
-        _suffix = "_m15.csv"  # Bestimmt aus raw_pattern
-        raw_files = sorted(raw_dir.glob("*_m15.csv"))
 
         for raw_file in raw_files:
-            stem = raw_file.stem                      # z.B. DE40_DAX_m15
-            prefix = stem.rsplit("_m15", 1)[0]        # z.B. DE40_DAX
+            prefix = extract_prefix(raw_file.stem)
             symbol = self.symbol_map.get(prefix)
             if not symbol:
                 log.debug(f"prepare(): kein Mapping für '{prefix}', übersprungen")
@@ -145,19 +200,17 @@ class CSVSourceConfig(DataSourceConfig):
             try:
                 df = pd.read_csv(raw_file)
 
-                if "timestamp" not in df.columns:
-                    log.warning(f"prepare(): Keine 'timestamp'-Spalte in {raw_file.name}")
+                # --- Timestamp ---
+                if self.date_col not in df.columns:
+                    log.warning(f"prepare(): Spalte '{self.date_col}' nicht in {raw_file.name}")
                     continue
 
-                if self.timestamp_unit == "ms":
-                    ts = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+                if self.timestamp_unit in ("s", "ms"):
+                    ts = pd.to_datetime(df[self.date_col], unit=self.timestamp_unit, utc=True)
                     if self.timezone:
                         ts = ts.dt.tz_convert(self.timezone)
                     df["T"] = ts.dt.strftime("%Y-%m-%d %H:%M:%S")
                     if self.timezone:
-                        # DST fall-back creates duplicate naive strings; keep earliest UTC bar.
-                        # Affects ~4 M15 bars (02:00-02:45 local) on 1 Sunday/year in Oct.
-                        # For exchange-traded indices these bars fall outside trading hours.
                         before = len(df)
                         df = df.drop_duplicates(subset=["T"], keep="first")
                         dropped = before - len(df)
@@ -165,18 +218,28 @@ class CSVSourceConfig(DataSourceConfig):
                             log.warning(
                                 f"prepare(): {symbol}: {dropped} Bars durch DST-Rückfall "
                                 f"entfernt (doppelte naive Timestamps nach {self.timezone}-"
-                                f"Konvertierung). Betrifft nur Sonntag 02:00-03:00 Uhr."
+                                f"Konvertierung)."
                             )
                 else:
-                    df["T"] = df["timestamp"].astype(str)
+                    df["T"] = df[self.date_col].astype(str)
 
-                cols = [c for c in ["open", "high", "low", "close"] if c in df.columns]
-                out = df[["T"] + cols].copy()
+                # --- OHLC columns ---
+                ohlc_cols = [self.open_col, self.high_col, self.low_col, self.close_col]
+                missing = [c for c in ohlc_cols if c not in df.columns]
+                if missing:
+                    log.warning(f"prepare(): {raw_file.name}: fehlende Spalten {missing}")
+                    continue
+
+                out = df[["T"] + ohlc_cols].copy()
                 out.columns = ["T", "O", "H", "L", "C"]
-                out["V"] = 0
 
-                # Timeframe-Suffix aus file_pattern bestimmen
-                # file_pattern: "{symbol}_MINUTE_15.csv" → Suffix = "MINUTE_15"
+                # --- Volume ---
+                if self.volume_col and self.volume_col in df.columns:
+                    out["V"] = df[self.volume_col].values
+                else:
+                    out["V"] = 0
+
+                # --- Write output ---
                 tf_part = self.file_pattern.replace("{symbol}_", "").replace(".csv", "")
                 dst = out_dir / f"{symbol}_{tf_part}.csv"
                 out.to_csv(dst, index=False)
@@ -427,6 +490,12 @@ def source_from_dict(d: dict) -> DataSource:
             timestamp_unit=d.get("timestamp_unit", ""),
             symbol_map=d.get("symbol_map", {}),
             timezone=d.get("timezone", ""),
+            date_col=d.get("date_col", "timestamp"),
+            open_col=d.get("open_col", "open"),
+            high_col=d.get("high_col", "high"),
+            low_col=d.get("low_col", "low"),
+            close_col=d.get("close_col", "close"),
+            volume_col=d.get("volume_col", ""),
         )
     elif t == "rest":
         return RESTSourceConfig(

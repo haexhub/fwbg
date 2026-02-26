@@ -1,13 +1,13 @@
 {
   "name": "Screen: Mean Reversion",
-  "description": "Konzept-Screening: Mean-Reversion-Signale (RSI-Extreme, Bollinger Bands, Hurst) auf HOUR-Daten. Testet ob R\u00fcckkehr zum Mittelwert in ranging M\u00e4rkten pr\u00e4diktiv ist.",
+  "description": "Konzept-Screening: Mean-Reversion-Signale (RSI-Extreme, Bollinger Bands, Hurst) auf HOUR-Daten. Testet ob Rückkehr zum Mittelwert in ranging Märkten prädiktiv ist.",
   "tags": [
     "screening",
     "step1",
     "mean_reversion",
     "technical"
   ],
-  "hypothesis": "\u00dcberverkaufte/\u00fcberkaufte Situationen (RSI-Extreme, Preis au\u00dferhalb BB) haben in ranging M\u00e4rkten (Hurst < 0.5) Edge f\u00fcr R\u00fcckkehr zum Mittelwert.",
+  "hypothesis": "Überverkaufte/überkaufte Situationen (RSI-Extreme, Preis außerhalb BB) haben in ranging Märkten (Hurst < 0.5) Edge für Rückkehr zum Mittelwert.",
   "expected_outcome": "RSI-Extreme und BB-Abweichung werden selektiert. Hurst-Exponent als Regime-Kontext wichtig.",
   "pipeline": {
     "indicators": [
@@ -156,5 +156,6 @@
         ]
       }
     }
-  }
+  },
+  "datasource": "forexsb"
 }

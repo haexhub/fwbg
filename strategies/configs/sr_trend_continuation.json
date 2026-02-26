@@ -1,14 +1,14 @@
 {
   "name": "S/R Trend Continuation",
-  "description": "Isolierter Test der Support/Resistance Features: Long an Support im Uptrend, Short an Resistance im Downtrend, Range-Trading in Seitw\u00e4rtsm\u00e4rkten.",
+  "description": "Isolierter Test der Support/Resistance Features: Long an Support im Uptrend, Short an Resistance im Downtrend, Range-Trading in Seitwärtsmärkten.",
   "tags": [
     "support_resistance",
     "trend_continuation",
     "price_action",
     "isolated_test"
   ],
-  "hypothesis": "S/R-Zonen mit Trend-Kontext liefern allein ausreichend Edge f\u00fcr profitable Entries \u2014 ohne klassische technische Indikatoren.",
-  "expected_outcome": "Nachweis, dass die 31 S/R-Features pr\u00e4diktiven Wert haben, bevor sie mit dem vollen Feature-Set kombiniert werden.",
+  "hypothesis": "S/R-Zonen mit Trend-Kontext liefern allein ausreichend Edge für profitable Entries — ohne klassische technische Indikatoren.",
+  "expected_outcome": "Nachweis, dass die 31 S/R-Features prädiktiven Wert haben, bevor sie mit dem vollen Feature-Set kombiniert werden.",
   "pipeline": "sr_trend_v1",
   "exit_strategy": "atr_based",
   "exit_params": "atr_intraday_v1",
@@ -26,5 +26,6 @@
       "COMMODITY": "sr_commodity_v1",
       "CRYPTO": "sr_crypto_v1"
     }
-  }
+  },
+  "datasource": "forexsb"
 }

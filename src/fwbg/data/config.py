@@ -4,7 +4,7 @@ Konfiguration für den Optimizer
 import os
 import numpy as np
 
-DATA_PATH = "./data/forexsb"
+DATA_PATH = None
 
 CORR_THRESHOLD = 0.75  # Für Asset-Währungskorrelation (Portfolio-Diversifikation)
 TARGET_TZ = "Europe/Berlin"
