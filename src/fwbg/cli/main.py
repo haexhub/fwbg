@@ -3,6 +3,7 @@ Hauptprogramm für den Walk-Forward Optimizer
 """
 
 import os
+import sys
 import glob
 import json
 import math
@@ -81,6 +82,21 @@ def run_optimizer(
     else:
         strategy = StrategyConfig()
 
+    # Datasource aus Strategy übernehmen (via Data-Source-Registry)
+    if strategy.datasource:
+        from fwbg.core.data_sources import get_data_source, CSVSourceConfig
+        try:
+            ds = get_data_source(strategy.datasource)
+            if isinstance(ds, CSVSourceConfig) and ds.exists():
+                data_config.DATA_PATH = str(ds.path)
+        except ValueError:
+            print(f"Warnung: Datasource '{strategy.datasource}' nicht gefunden")
+
+    # CLI --data-path hat höchste Priorität
+    cli_data_path = (strategy_metadata or {}).get("_cli_data_path")
+    if cli_data_path:
+        data_config.DATA_PATH = cli_data_path
+
     # Timeframe aus Strategy übernehmen (überschreibt Modul-Globals)
     if strategy.timeframe:
         tf = strategy.timeframe
@@ -89,6 +105,12 @@ def run_optimizer(
         data_config.tf_cfg = tf_cfg
         data_config.OOS_SIZE = tf_cfg["oos_size"]
         data_config.WINDOW_SIZE = tf_cfg["window_size"]
+
+    # Prüfe ob DATA_PATH gesetzt ist
+    if not data_config.DATA_PATH:
+        print("Fehler: Kein Datenpfad konfiguriert!")
+        print("Bitte 'datasource' in der Strategy setzen oder --data-path übergeben.")
+        return None
 
     # Lade nur Dateien für das gewählte Timeframe
     files = sorted(glob.glob(f"{data_config.DATA_PATH}/*_{data_config.TIMEFRAME}.csv"))
@@ -272,25 +294,6 @@ def run_optimizer(
 
         if status == "ok":
             config_data["selected_config"] = result.get("config", {})
-
-            _trades = result.get("tr_trace", [])
-            _risk = result.get("config", {}).get("risk_per_trade", 0.01)
-            _years = result.get("test_period_years", 1)
-
-            _eq_result = simulate_equity_from_pnl(_trades, fk=_risk)
-            _final_eq = _eq_result["final_equity"]
-            _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
-
-            config_data["holdout_metrics"] = {
-                "pnl": result.get("pnl", 0),
-                "win_rate": result.get("win_rate", 0),
-                "rrr": result.get("rrr", 0),
-                "sharpe": result.get("sharpe", 0),
-                "calmar": result.get("calmar", 0),
-                "trades": len(_trades),
-                "annual_return": round(_annual_return, 1),
-                "test_period_years": round(_years, 2),
-            }
             config_data["nested_cv"] = result.get("nested_cv", {})
             config_data["monte_carlo"] = result.get("monte_carlo", {})
             config_data["smoothness"] = result.get("smoothness", {})
@@ -337,6 +340,31 @@ def run_optimizer(
             }
             with open(os.path.join(sym_dir, "trades.json"), "w") as f:
                 json.dump(trades_data, f, indent=2, cls=_SafeJsonEncoder)
+
+        # --- unified_metrics.json: Metriken der Unified Simulation ---
+        if status == "ok" and result.get("tr_trace"):
+            _trades = result["tr_trace"]
+            _risk = result.get("config", {}).get("risk_per_trade", 0.01)
+            _years = result.get("test_period_years", 1)
+            _eq_result = simulate_equity_from_pnl(_trades, fk=_risk)
+            _final_eq = _eq_result["final_equity"]
+            _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
+
+            unified_metrics = {
+                "pnl": result.get("pnl", 0),
+                "win_rate": result.get("win_rate", 0),
+                "rrr": result.get("rrr", 0),
+                "sharpe": result.get("sharpe", 0),
+                "calmar": result.get("calmar", 0),
+                "trades": len(_trades),
+                "annual_return": round(_annual_return, 1),
+                "test_period_years": round(_years, 2),
+                "max_drawdown": round(_eq_result["max_drawdown"], 4),
+                "final_equity": round(_final_eq, 2),
+                "risk_per_trade": _risk,
+            }
+            with open(os.path.join(sym_dir, "unified_metrics.json"), "w") as f:
+                json.dump(unified_metrics, f, indent=2)
 
         # --- grid_results.json: Alle Grid-Kombinationen ---
         if result.get("grid_results"):
@@ -495,36 +523,43 @@ def run_optimizer(
     # Top 10 auswählen
     elite = filtered[:10]
 
-    # Portfolio-Shield
-    shield = 1.0 / (len(elite) ** 0.5) if elite else 1.0
     final_assets = {}
     table_data = []
 
     for e in elite:
-        e["config"]["risk_per_trade"] *= shield
+        sym = e["symbol"]
 
-        # Equity-Simulation
-        risk = e["config"]["risk_per_trade"]
-        sim = simulate_equity_from_pnl(e["tr_trace"], fk=risk)
+        # Metriken aus unified_metrics.json lesen
+        sym_dir = os.path.join(run_path, "grid_details", sym) if run_path else None
+        um = {}
+        if sym_dir:
+            um_path = os.path.join(sym_dir, "unified_metrics.json")
+            if os.path.isfile(um_path):
+                with open(um_path) as f:
+                    um = json.load(f)
 
-        eq = sim["equity_curve"]
-        final_equity = sim["final_equity"]
-        max_dd = sim["max_drawdown"]
+        wr = um.get("win_rate", 0)
+        rrr = um.get("rrr", 0)
+        sharpe = um.get("sharpe", 0)
+        max_dd = um.get("max_drawdown", 0)
         max_dd_pct = max_dd * 100
+        risk = um.get("risk_per_trade", e["config"].get("risk_per_trade", 0.01))
 
-        # Gewinn pro Trade berechnen
-        profit_per_trade = []
-        for i in range(1, len(eq)):
-            profit_per_trade.append(eq[i] - eq[i - 1])
+        # Jahresrendite aus unified_metrics berechnen
+        final_equity = um.get("final_equity", 100.0)
+        years = um.get("test_period_years", 1)
+        if final_equity > 0 and years > 0:
+            annual_return = ((final_equity / 100.0) ** (1 / years) - 1) * 100
+        else:
+            annual_return = -100
 
         # Trade-Richtungen extrahieren
         trades_detailed = e.get("trades_detailed", [])
         trade_directions = [td.get("direction", "LONG") for td in trades_detailed]
 
         # Elite-Plot im Asset-Verzeichnis speichern
-        elite_sym_dir = os.path.join(run_path, "grid_details", e["symbol"]) if run_path else None
-        if elite_sym_dir and os.path.isdir(elite_sym_dir):
-            plot_stats = create_asset_plot(e, elite_sym_dir, trade_directions=trade_directions)
+        if sym_dir and os.path.isdir(sym_dir):
+            plot_stats = create_asset_plot(e, sym_dir, trade_directions=trade_directions, unified_metrics=um)
             if plot_stats:
                 n_long, n_short, _, _ = plot_stats
             else:
@@ -532,19 +567,6 @@ def run_optimizer(
         else:
             n_long = sum(1 for d in trade_directions if d == "LONG")
             n_short = sum(1 for d in trade_directions if d == "SHORT")
-
-        # Profitabilitätsprüfung
-        sharpe = e.get("sharpe", 0)
-        wr = e["win_rate"]
-        rrr = e.get("rrr", 0)
-
-        # Jahresrendite berechnen (test_period_years aus unified simulation)
-        years = e.get("test_period_years", 1)
-
-        if final_equity > 0 and years > 0:
-            annual_return = ((final_equity / 100.0) ** (1 / years) - 1) * 100
-        else:
-            annual_return = -100
 
         # Monte Carlo Statistiken
         mc_stats = e.get("monte_carlo", {})
@@ -567,7 +589,7 @@ def run_optimizer(
 
         if is_profitable:
             export_config = {k: v for k, v in e["config"].items()}
-            final_assets[e["symbol"]] = export_config
+            final_assets[sym] = export_config
             status = "OK"
         else:
             status = "SKIP"
@@ -577,13 +599,13 @@ def run_optimizer(
 
         table_data.append(
             [
-                e["symbol"],
-                f"{e['config']['risk_per_trade'] * 100:.2f}%",
+                sym,
+                f"{risk * 100:.2f}%",
                 f"{wr:.1%}",
                 f"{rrr:.2f}",
                 f"{sharpe:.2f}",
-                f"{e.get('calmar', 0):.2f}",
-                len(e["tr_trace"]),
+                f"{um.get('calmar', 0):.2f}",
+                um.get("trades", len(e["tr_trace"])),
                 long_short_str,
                 f"{annual_return:+.0f}%/y",
                 f"{max_dd_pct:.0f}%",
@@ -805,9 +827,12 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         if args.timeframe:
             strategy_metadata["timeframe"] = args.timeframe
 
-        # CLI --data-path überschreibt DATA_PATH
+        # CLI --data-path hat höchste Priorität → wird in strategy_metadata injiziert
+        # damit run_optimizer es nach der Strategy-Datasource nochmal überschreibt
         if args.data_path:
-            data_config.DATA_PATH = args.data_path
+            if strategy_metadata is None:
+                strategy_metadata = {}
+            strategy_metadata["_cli_data_path"] = args.data_path
 
         # Parse asset filter
         asset_filter = None
@@ -830,13 +855,15 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 print(f"Keine Assets für Klassen {classes} gefunden!")
                 return
 
-        run_optimizer(
+        result = run_optimizer(
             description=args.description,
             save_results=not args.no_save,
             strategy_metadata=strategy_metadata if strategy_metadata else None,
             asset_filter=asset_filter,
             run_id=args.run_id,
         )
+        if result is None:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

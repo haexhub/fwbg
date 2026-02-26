@@ -2,12 +2,14 @@
 import json
 import os
 import signal
+import statistics
 import subprocess
 import sys
 import uuid
 from datetime import datetime
 from typing import Optional
 
+import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -26,6 +28,16 @@ class RunStartRequest(BaseModel):
     asset_classes: Optional[list[str]] = None
     description: Optional[str] = None
     preview: Optional[bool] = None
+
+
+class PreviewRequest(BaseModel):
+    """Request body for signal preview (no optimization)."""
+    strategy_name: str
+    symbol: str
+    datasource: Optional[str] = None
+    tp: Optional[float] = None
+    sl: Optional[float] = None
+    last_n_bars: Optional[int] = None
 
 
 @router.post("/start")
@@ -76,6 +88,257 @@ def start_run(body: RunStartRequest) -> dict:
         "strategy_name": body.strategy_name,
         "pid": process.pid,
     }
+
+
+@router.post("/preview")
+def preview_signals(body: PreviewRequest) -> dict:
+    """Preview entry/exit signals without running full optimization.
+
+    Returns trades in the same format as /runs/{id}/trades/{symbol}
+    so the frontend can display them without format conversion.
+    """
+    from fwbg.core.config import StrategyConfig
+    from fwbg.core.data_sources import get_data_source, CSVSourceConfig
+    from fwbg.data.loader import load_data_aligned
+    from fwbg.data.assets import get_asset
+    from fwbg.data.config import convert_numpy
+    from fwbg.pipeline.features import compute_indicator_pool
+
+    strategies_dir = get_strategies_dir()
+    strategy_file = strategies_dir / f"{body.strategy_name}.json"
+    if not strategy_file.exists():
+        raise HTTPException(404, f"Strategy not found: {body.strategy_name}")
+
+    strategy = StrategyConfig.from_json_file(str(strategy_file))
+    timeframe = strategy.timeframe or "HOUR"
+
+    # Resolve datasource → CSV path
+    ds_name = body.datasource or strategy.datasource
+    if not ds_name:
+        raise HTTPException(400, "No datasource configured (set in strategy or request)")
+
+    try:
+        ds = get_data_source(ds_name)
+    except ValueError:
+        raise HTTPException(404, f"Datasource not found: {ds_name}")
+
+    if not isinstance(ds, CSVSourceConfig) or not ds.exists():
+        raise HTTPException(400, f"Datasource '{ds_name}' is not a CSV source or path missing")
+
+    symbol = body.symbol
+    csv_path = ds.get_file_path(symbol, timeframe)
+    if not csv_path.exists():
+        available = [f.stem.rsplit(f"_{timeframe}", 1)[0]
+                     for f in ds.list_files(f"*_{timeframe}.csv")]
+        raise HTTPException(404, f"No data for {symbol}/{timeframe}. "
+                          f"Available symbols: {sorted(available)}")
+
+    # Load data
+    df = load_data_aligned(str(csv_path))
+    if df is None:
+        raise HTTPException(500, f"Failed to load data from {csv_path}")
+
+    if body.last_n_bars and len(df) > body.last_n_bars:
+        df = df.tail(body.last_n_bars)
+
+    # Compute indicators
+    indicators = strategy.get_indicators()
+    if not indicators:
+        raise HTTPException(400, "Strategy has no indicators configured")
+
+    df_ind = compute_indicator_pool(df, indicators=indicators)
+
+    # Collect signal columns: explicit from model config + grid variants
+    long_signals, short_signals = _collect_signal_columns(strategy, symbol)
+
+    # Filter to columns that actually exist in the computed DataFrame
+    all_configured = long_signals | short_signals
+    long_signals = {c for c in long_signals if c in df_ind.columns}
+    short_signals = {c for c in short_signals if c in df_ind.columns}
+
+    # Fallback: auto-discover signal columns from indicator plugins
+    if not long_signals and not short_signals:
+        long_signals, short_signals = _discover_signal_columns(indicators, df_ind)
+
+    existing_signals = long_signals | short_signals
+    if not existing_signals:
+        raise HTTPException(400, f"No signal columns found. "
+                          f"Configured: {all_configured or 'none'}")
+
+    # Build trades list (frontend-compatible format)
+    trades = _extract_entry_signals(df_ind, long_signals, short_signals)
+
+    result = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "total_bars": len(df_ind),
+        "trades": convert_numpy(trades),
+    }
+
+    # Simulate trades with TP/SL if possible
+    asset = get_asset(symbol)
+    grid = strategy.get_grid(symbol, asset.asset_class)
+    tp_val = body.tp or (float(statistics.median(grid.tp)) if grid.tp else None)
+    sl_val = body.sl or (float(statistics.median(grid.sl)) if grid.sl else None)
+
+    if tp_val is not None and sl_val is not None:
+        sim_trades = _simulate_preview_trades(
+            df_ind, long_signals, short_signals, tp_val, sl_val, asset, strategy,
+        )
+        if sim_trades:
+            result["trades"] = convert_numpy(sim_trades)
+            result["tp_used"] = tp_val
+            result["sl_used"] = sl_val
+
+    return result
+
+
+def _collect_signal_columns(
+    strategy, symbol: str,
+) -> tuple[set[str], set[str]]:
+    """Collect signal columns from model hyperparameters + grid variants."""
+    long_signals: set[str] = set()
+    short_signals: set[str] = set()
+
+    # Base model hyperparameters
+    hp = strategy.model.hyperparameters
+    if hp.get("signal_column_long"):
+        long_signals.add(hp["signal_column_long"])
+    if hp.get("signal_column_short"):
+        short_signals.add(hp["signal_column_short"])
+
+    # Per-asset grid overrides + model_hyperparameters_grid
+    from fwbg.data.assets import get_asset
+    asset = get_asset(symbol)
+    grid = strategy.get_grid(symbol, asset.asset_class)
+
+    if grid.model_hyperparameters:
+        if grid.model_hyperparameters.get("signal_column_long"):
+            long_signals.add(grid.model_hyperparameters["signal_column_long"])
+        if grid.model_hyperparameters.get("signal_column_short"):
+            short_signals.add(grid.model_hyperparameters["signal_column_short"])
+
+    for hp_variant in grid.model_hyperparameters_grid:
+        if hp_variant and isinstance(hp_variant, dict):
+            if hp_variant.get("signal_column_long"):
+                long_signals.add(hp_variant["signal_column_long"])
+            if hp_variant.get("signal_column_short"):
+                short_signals.add(hp_variant["signal_column_short"])
+
+    return long_signals, short_signals
+
+
+def _discover_signal_columns(
+    indicators: list, df_ind,
+) -> tuple[set[str], set[str]]:
+    """Auto-discover signal columns from DataFrame by suffix heuristic.
+
+    Signal columns have known suffixes (e.g. _retest_bull, _breakout_up).
+    Columns may have parameter prefixes (rb1_cf0_prb0_orb_s08_breakout_up).
+    """
+    _LONG_SUFFIXES = ("_bull", "_breakout_up", "_retest_up")
+    _SHORT_SUFFIXES = ("_bear", "_breakout_down", "_retest_down")
+    base_cols = {"O", "H", "L", "C", "V"}
+
+    long_signals: set[str] = set()
+    short_signals: set[str] = set()
+
+    for col in df_ind.columns:
+        if col in base_cols or col.startswith("_"):
+            continue
+        if any(col.endswith(s) for s in _LONG_SUFFIXES):
+            long_signals.add(col)
+        elif any(col.endswith(s) for s in _SHORT_SUFFIXES):
+            short_signals.add(col)
+
+    return long_signals, short_signals
+
+
+def _extract_entry_signals(
+    df_ind, long_signals: set[str], short_signals: set[str],
+) -> list[dict]:
+    """Extract entry signal bars as frontend-compatible trade entries."""
+    trades = []
+    for col in sorted(long_signals | short_signals):
+        mask = df_ind[col] > 0.5
+        signal_bars = df_ind.index[mask]
+        direction = "LONG" if col in long_signals else "SHORT"
+
+        for ts in signal_bars:
+            bar_idx = df_ind.index.get_loc(ts)
+            if bar_idx + 1 < len(df_ind):
+                price = float(df_ind["O"].iloc[bar_idx + 1])
+                entry_time = str(df_ind.index[bar_idx + 1])
+            else:
+                continue  # No next bar for entry
+
+            trades.append({
+                "entry_time": entry_time,
+                "entry_price": price,
+                "direction": direction,
+                "signal": col,
+            })
+
+    trades.sort(key=lambda t: t["entry_time"])
+    return trades
+
+
+def _simulate_preview_trades(
+    df_ind, long_signals: set[str], short_signals: set[str],
+    tp: float, sl: float, asset, strategy,
+) -> list[dict]:
+    """Simulate trades with fixed TP/SL for preview."""
+    from fwbg.core.context import SimulationContext
+    from fwbg.optimization.targets import _simulate_trades_core
+
+    # Use first long/short signal column for simulation
+    sig_long = next(iter(sorted(long_signals)), "")
+    sig_short = next(iter(sorted(short_signals)), "")
+    if not sig_long and not sig_short:
+        return []
+
+    ctx = SimulationContext.create(asset, strategy)
+    n = len(df_ind)
+
+    probs_long = None
+    probs_short = None
+    if sig_long and sig_long in df_ind.columns:
+        probs_long = np.zeros((n, 2), dtype=np.float64)
+        probs_long[:, 1] = df_ind[sig_long].fillna(0).clip(0, 1).values
+        probs_long[:, 0] = 1.0 - probs_long[:, 1]
+
+    if sig_short and sig_short in df_ind.columns:
+        probs_short = np.zeros((n, 2), dtype=np.float64)
+        probs_short[:, 1] = df_ind[sig_short].fillna(0).clip(0, 1).values
+        probs_short[:, 0] = 1.0 - probs_short[:, 1]
+
+    sim_result = _simulate_trades_core(
+        df_ind,
+        probs_long=probs_long,
+        probs_short=probs_short,
+        long_win_idx=1 if probs_long is not None else None,
+        short_win_idx=1 if probs_short is not None else None,
+        ct_long=0.5,
+        ct_short=0.5,
+        tp=int(tp),
+        sl=int(sl),
+        ctx=ctx,
+        return_detailed=True,
+    )
+
+    # Convert to frontend-compatible format
+    trades = []
+    for t in sim_result.get("trades_detailed", []):
+        trades.append({
+            "entry_time": str(t.get("entry_time", "")),
+            "exit_time": str(t.get("exit_time", "")),
+            "entry_price": t.get("entry_price"),
+            "exit_price": t.get("exit_price"),
+            "direction": "LONG" if t.get("direction") == 1 else "SHORT",
+            "result": t.get("result"),
+            "pnl_raw": t.get("pnl_raw"),
+        })
+    return trades
 
 
 @router.get("")
@@ -143,7 +406,19 @@ def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
     for job_id, job in _active_jobs.items():
         proc = job.get("process")
         if proc and proc.poll() is not None:
-            job["status"] = "completed" if proc.returncode == 0 else "failed"
+            if proc.returncode == 0:
+                job["status"] = "completed"
+            else:
+                job["status"] = "failed"
+                # Capture error output for user feedback
+                if "error_message" not in job:
+                    try:
+                        stdout = proc.stdout.read() if proc.stdout else ""
+                        stderr = proc.stderr.read() if proc.stderr else ""
+                        output = (stderr or stdout).strip()
+                        job["error_message"] = output[:500] if output else f"Process exited with code {proc.returncode}"
+                    except Exception:
+                        job["error_message"] = f"Process exited with code {proc.returncode}"
 
         runs.insert(0, {
             "run_id": job_id,
@@ -204,10 +479,12 @@ def get_run(run_id: str) -> dict:
             try:
                 cfg_data = json.loads((sd / "config.json").read_text()) if (sd / "config.json").exists() else {}
                 fold_data = json.loads((sd / "fold_results.json").read_text()) if (sd / "fold_results.json").exists() else {}
+                um_data = json.loads((sd / "unified_metrics.json").read_text()) if (sd / "unified_metrics.json").exists() else {}
                 assets[symbol] = {
                     "symbol": symbol,
                     "status": cfg_data.get("status", "unknown"),
                     "total_combinations": cfg_data.get("total_combinations", 0),
+                    "unified_metrics": um_data,
                     "walk_forward": _summarize_walk_forward(fold_data.get("walk_forward", {})),
                 }
             except (json.JSONDecodeError, IOError):
@@ -252,7 +529,7 @@ def get_grid_detail(run_id: str, symbol: str) -> dict:
         raise HTTPException(404, f"Grid detail not found: {run_id}/{symbol}")
 
     merged = {}
-    for fname in ("config.json", "fold_results.json", "grid_results.json"):
+    for fname in ("config.json", "fold_results.json", "grid_results.json", "unified_metrics.json"):
         fpath = sym_dir / fname
         if fpath.exists():
             try:
@@ -335,14 +612,28 @@ def get_run_progress(run_id: str) -> dict:
         job = _active_jobs[run_id]
         proc = job.get("process")
         if proc and proc.poll() is not None:
-            job["status"] = "completed" if proc.returncode == 0 else "failed"
-        return {
+            if proc.returncode == 0:
+                job["status"] = "completed"
+            else:
+                job["status"] = "failed"
+                if "error_message" not in job:
+                    try:
+                        stdout = proc.stdout.read() if proc.stdout else ""
+                        stderr = proc.stderr.read() if proc.stderr else ""
+                        output = (stderr or stdout).strip()
+                        job["error_message"] = output[:500] if output else f"Process exited with code {proc.returncode}"
+                    except Exception:
+                        job["error_message"] = f"Process exited with code {proc.returncode}"
+        result = {
             "job_id": run_id,
             "status": job["status"],
             "strategy_name": job.get("strategy_name"),
             "started_at": job.get("started_at"),
             "pid": job.get("pid"),
         }
+        if job.get("error_message"):
+            result["message"] = job["error_message"]
+        return result
 
     raise HTTPException(404, f"No progress data for run: {run_id}")
 
