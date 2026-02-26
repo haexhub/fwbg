@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter, NullFormatter
 import numpy as np
 
-from fwbg.data.config import WALK_FORWARD_FOLDS, OOS_SIZE, TIMEFRAME
 from fwbg.simulation.equity import simulate_equity_from_pnl
 
 
@@ -108,16 +107,9 @@ def create_asset_plot(result, output_dir, trade_directions=None):
     ax1.fill_between(range(len(eq)), eq, alpha=0.3)
     _setup_log_yaxis(ax1, eq)
 
-    # Jahresrendite berechnen
+    # Jahresrendite berechnen (test_period_years aus unified simulation)
     final_equity = eq[-1] if eq else 100.0
-    bars_per_year = 24 * 250 if TIMEFRAME == "HOUR" else 96 * 250
-    wf = result.get("walk_forward", {})
-    fold_details = wf.get("fold_details", [])
-    if fold_details:
-        total_test_bars = sum(f.get("test_size", OOS_SIZE) for f in fold_details)
-    else:
-        total_test_bars = WALK_FORWARD_FOLDS * OOS_SIZE
-    years = total_test_bars / bars_per_year if bars_per_year > 0 else 1
+    years = result.get("test_period_years", 1)
     if final_equity > 0 and years > 0:
         annual_return = ((final_equity / 100.0) ** (1 / years) - 1) * 100
     else:
