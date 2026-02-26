@@ -38,30 +38,22 @@ def main():
     print(f"Checking results in: {results_dir}")
     print("=" * 80)
 
-    # Support both new (subdirectory) and old (flat JSON) layout
     sym_dirs = [d for d in results_dir.iterdir() if d.is_dir()]
-    if sym_dirs:
-        print(f"Found {len(sym_dirs)} asset results\n")
-        all_results = []
-        for sym_dir in sorted(sym_dirs):
-            merged = {}
-            for fname in ("config.json", "fold_results.json"):
-                fpath = sym_dir / fname
-                if fpath.exists():
-                    with open(fpath) as f:
-                        merged.update(json.load(f))
-            if merged:
-                all_results.append(merged)
-    else:
-        json_files = list(results_dir.glob("*.json"))
-        if not json_files:
-            print("No JSON files found")
-            return
-        print(f"Found {len(json_files)} asset results\n")
-        all_results = []
-        for json_file in sorted(json_files):
-            with open(json_file) as f:
-                all_results.append(json.load(f))
+    if not sym_dirs:
+        print("No asset directories found")
+        return
+
+    print(f"Found {len(sym_dirs)} asset results\n")
+    all_results = []
+    for sym_dir in sorted(sym_dirs):
+        merged = {}
+        for fname in ("config.json", "fold_results.json"):
+            fpath = sym_dir / fname
+            if fpath.exists():
+                with open(fpath) as f:
+                    merged.update(json.load(f))
+        if merged:
+            all_results.append(merged)
 
     # Run bias check per asset (will print output)
     for result in all_results:
