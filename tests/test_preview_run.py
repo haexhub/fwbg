@@ -209,7 +209,7 @@ class TestTradesEndpoint:
         client, _ = client_with_strategy
         resp = client.get("/api/runs/nonexistent123/trades/DAX")
         assert resp.status_code == 404
-        assert "nonexistent123" in resp.json()["detail"]
+        assert "DAX" in resp.json()["detail"]
 
     def test_trades_with_grid_details_returns_data(self, client_with_strategy):
         """Mit vorhandener grid_details-Datei werden Trades zurückgegeben."""
@@ -221,12 +221,10 @@ class TestTradesEndpoint:
 
         results_dir = runs_api.get_test_results_dir()
         run_id = "fakejob1"
-        grid_dir = results_dir / run_id / "grid_details"
-        grid_dir.mkdir(parents=True)
+        sym_dir = results_dir / run_id / "grid_details" / "DAX"
+        sym_dir.mkdir(parents=True, exist_ok=True)
 
-        trade = {
-            "symbol": "DAX",
-            "status": "ok",
+        fold_data = {
             "walk_forward": {
                 "fold_details": [{
                     "fold_id": 0,
@@ -241,7 +239,7 @@ class TestTradesEndpoint:
                 }],
             },
         }
-        (grid_dir / "DAX.json").write_text(json.dumps(trade))
+        (sym_dir / "fold_results.json").write_text(json.dumps(fold_data))
 
         resp = client.get(f"/api/runs/{run_id}/trades/DAX")
         assert resp.status_code == 200

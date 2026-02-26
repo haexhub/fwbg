@@ -92,6 +92,7 @@ class RunProgressWriter:
 
     def __init__(self, run_directory: Path, run_id: str, asset_symbols: List[str],
                  strategy_name: str = ""):
+        self._run_dir = run_directory
         self._file_path = run_directory / "progress.json"
         self._lock = threading.Lock()
         self._dirty = False
@@ -167,6 +168,7 @@ class RunProgressWriter:
                     start = datetime.fromisoformat(asset.started_at)
                     end = datetime.fromisoformat(asset.completed_at)
                     asset.duration_seconds = (end - start).total_seconds()
+                self._write_asset_progress(asset)
             self._recalculate_totals()
             self._estimate_remaining_time()
             self._flush_to_disk()
@@ -178,6 +180,7 @@ class RunProgressWriter:
                 asset.status = "failed"
                 asset.completed_at = _iso_now()
                 asset.result_summary = f"FAILED: {error}"
+                self._write_asset_progress(asset)
             self._recalculate_totals()
             self._flush_to_disk()
 
@@ -261,6 +264,39 @@ class RunProgressWriter:
         active = max(1, self._progress.active_assets)
         self._progress.estimated_remaining_seconds = (avg_duration * remaining) / active
 
+    def _write_asset_progress(self, asset: AssetProgress) -> None:
+        """Write per-asset progress to grid_details/{symbol}/progress.json."""
+        sym_dir = self._run_dir / "grid_details" / asset.symbol
+        if not sym_dir.exists():
+            return  # grid_details dir not created yet — on_result_ready handles it
+        stages = []
+        for s in asset.stages:
+            stages.append({
+                "stage_name": s.stage_name,
+                "status": s.status.value if isinstance(s.status, Enum) else s.status,
+                "description": s.description,
+                "progress_fraction": round(s.progress_fraction, 3),
+                "started_at": s.started_at,
+                "completed_at": s.completed_at,
+                "duration_seconds": round(s.duration_seconds, 2),
+                "details": s.details,
+            })
+        data = {
+            "symbol": asset.symbol,
+            "status": asset.status,
+            "started_at": asset.started_at,
+            "completed_at": asset.completed_at,
+            "duration_seconds": round(asset.duration_seconds, 2),
+            "result_summary": asset.result_summary,
+            "stages": stages,
+        }
+        try:
+            progress_file = sym_dir / "progress.json"
+            with open(progress_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, default=str)
+        except Exception:
+            pass  # Best-effort
+
     def _maybe_flush(self) -> None:
         now = time.monotonic()
         if now - self._last_write_time >= self.WRITE_INTERVAL_SECONDS:
@@ -286,31 +322,40 @@ class RunProgressWriter:
             pass  # Best-effort — don't crash the run for progress I/O
 
     def _serialize(self) -> dict:
-        """Convert RunProgress to a JSON-safe dict."""
+        """Convert RunProgress to a JSON-safe dict.
+
+        Per-asset detail (stages) lives in grid_details/{symbol}/progress.json.
+        The global file only keeps lightweight status per asset.
+        """
         p = self._progress
         assets = {}
         for sym, asset in p.assets.items():
-            stages = []
-            for s in asset.stages:
-                stages.append({
-                    "stage_name": s.stage_name,
-                    "status": s.status.value if isinstance(s.status, Enum) else s.status,
-                    "description": s.description,
-                    "progress_fraction": round(s.progress_fraction, 3),
-                    "started_at": s.started_at,
-                    "completed_at": s.completed_at,
-                    "duration_seconds": round(s.duration_seconds, 2),
-                    "details": s.details,
-                })
-            assets[sym] = {
+            asset_data: dict = {
                 "symbol": asset.symbol,
                 "status": asset.status,
                 "started_at": asset.started_at,
                 "completed_at": asset.completed_at,
                 "duration_seconds": round(asset.duration_seconds, 2),
                 "result_summary": asset.result_summary,
-                "stages": stages,
             }
+            # Include stages only for running/pending assets (live monitoring).
+            # Completed/failed assets have their stages in grid_details/{sym}/progress.json.
+            if asset.status in ("running", "pending"):
+                stages = []
+                for s in asset.stages:
+                    stages.append({
+                        "stage_name": s.stage_name,
+                        "status": s.status.value if isinstance(s.status, Enum) else s.status,
+                        "description": s.description,
+                        "progress_fraction": round(s.progress_fraction, 3),
+                        "started_at": s.started_at,
+                        "completed_at": s.completed_at,
+                        "duration_seconds": round(s.duration_seconds, 2),
+                        "details": s.details,
+                    })
+                asset_data["stages"] = stages
+
+            assets[sym] = asset_data
 
         return {
             "run_id": p.run_id,

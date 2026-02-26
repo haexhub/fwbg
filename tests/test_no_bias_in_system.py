@@ -267,8 +267,8 @@ class TestSystematicBiasInResults:
         """
         import json
 
-        json_files = list(latest_results_dir.glob("*.json"))
-        if len(json_files) < 3:
+        sym_dirs = [d for d in latest_results_dir.iterdir() if d.is_dir()]
+        if len(sym_dirs) < 3:
             pytest.skip("Not enough results to test (need at least 3 assets)")
 
         biased_assets = []
@@ -281,15 +281,26 @@ class TestSystematicBiasInResults:
             'insufficient_data_for_folds', 'macro_asset', 'error',
         }
 
-        for json_file in json_files:
-            with open(json_file) as f:
+        for sym_dir in sym_dirs:
+            cfg_file = sym_dir / "config.json"
+            fold_file = sym_dir / "fold_results.json"
+            if not cfg_file.exists():
+                continue
+
+            with open(cfg_file) as f:
                 data = json.load(f)
 
             # Assets with no successful folds are valid optimizer outcomes, not legacy format
             if data.get('status') in _SKIP_STATUSES:
                 continue
 
-            wf_results = data.get('walk_forward', {})
+            if fold_file.exists():
+                with open(fold_file) as f:
+                    fold_data = json.load(f)
+                wf_results = fold_data.get('walk_forward', {})
+            else:
+                wf_results = {}
+
             if not wf_results or 'mean_bias_ratio' not in wf_results:
                 # Results müssen walk-forward sein!
                 non_walk_forward.append(data['symbol'])
@@ -350,15 +361,18 @@ class TestSystematicBiasInResults:
         """
         import json
 
-        json_files = list(latest_results_dir.glob("*.json"))
-        if len(json_files) < 3:
+        sym_dirs = [d for d in latest_results_dir.iterdir() if d.is_dir()]
+        if len(sym_dirs) < 3:
             pytest.skip("Not enough results to test")
 
         unrealistic_assets = []
         total_assets = 0
 
-        for json_file in json_files:
-            with open(json_file) as f:
+        for sym_dir in sym_dirs:
+            cfg_file = sym_dir / "config.json"
+            if not cfg_file.exists():
+                continue
+            with open(cfg_file) as f:
                 data = json.load(f)
 
             holdout_metrics = data.get('holdout_metrics', {})
@@ -421,16 +435,20 @@ class TestSystematicBiasInResults:
         """
         import json
 
-        json_files = list(latest_results_dir.glob("*.json"))
-        if len(json_files) == 0:
+        sym_dirs = [d for d in latest_results_dir.iterdir() if d.is_dir()]
+        if len(sym_dirs) == 0:
             pytest.skip("No results found")
 
         walk_forward_assets = []
         non_walk_forward = []
         skipped_assets = []  # Assets with no_candidates or error status
 
-        for json_file in json_files:
-            with open(json_file) as f:
+        for sym_dir in sym_dirs:
+            cfg_file = sym_dir / "config.json"
+            fold_file = sym_dir / "fold_results.json"
+            if not cfg_file.exists():
+                continue
+            with open(cfg_file) as f:
                 data = json.load(f)
 
             # Skip assets that had no candidates or errors - they can't have walk-forward data
@@ -444,7 +462,13 @@ class TestSystematicBiasInResults:
                 skipped_assets.append(data['symbol'])
                 continue
 
-            wf_results = data.get('walk_forward', {})
+            if fold_file.exists():
+                with open(fold_file) as f:
+                    fold_data = json.load(f)
+                wf_results = fold_data.get('walk_forward', {})
+            else:
+                wf_results = {}
+
             if wf_results and 'n_folds' in wf_results:
                 walk_forward_assets.append({
                     'symbol': data['symbol'],

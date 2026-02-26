@@ -118,21 +118,23 @@ def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
                 except (json.JSONDecodeError, IOError):
                     pass
 
-            # Count assets from grid_details
+            # Count assets from grid_details (subdirectories per symbol)
             grid_dir = run_dir / "grid_details"
             if grid_dir.exists():
-                asset_files = list(grid_dir.glob("*.json"))
-                run_info["asset_count"] = len(asset_files)
+                sym_dirs = [d for d in grid_dir.iterdir() if d.is_dir()]
+                run_info["asset_count"] = len(sym_dirs)
 
                 # Summarize asset results
                 profitable = 0
-                for af in asset_files:
-                    try:
-                        data = json.loads(af.read_text())
-                        if data.get("status") == "ok":
-                            profitable += 1
-                    except (json.JSONDecodeError, IOError):
-                        pass
+                for sd in sym_dirs:
+                    cfg_file = sd / "config.json"
+                    if cfg_file.exists():
+                        try:
+                            data = json.loads(cfg_file.read_text())
+                            if data.get("status") == "ok":
+                                profitable += 1
+                        except (json.JSONDecodeError, IOError):
+                            pass
                 run_info["profitable_count"] = profitable
 
             runs.append(run_info)
@@ -193,19 +195,20 @@ def get_run(run_id: str) -> dict:
         except (json.JSONDecodeError, IOError):
             pass
 
-    # Load per-asset results
+    # Load per-asset results (subdirectories per symbol)
     grid_dir = run_dir / "grid_details"
     if grid_dir.exists():
         assets = {}
-        for af in sorted(grid_dir.glob("*.json")):
+        for sd in sorted(d for d in grid_dir.iterdir() if d.is_dir()):
+            symbol = sd.name
             try:
-                data = json.loads(af.read_text())
-                symbol = af.stem
+                cfg_data = json.loads((sd / "config.json").read_text()) if (sd / "config.json").exists() else {}
+                fold_data = json.loads((sd / "fold_results.json").read_text()) if (sd / "fold_results.json").exists() else {}
                 assets[symbol] = {
                     "symbol": symbol,
-                    "status": data.get("status", "unknown"),
-                    "total_combinations": data.get("total_combinations", 0),
-                    "walk_forward": _summarize_walk_forward(data.get("walk_forward", {})),
+                    "status": cfg_data.get("status", "unknown"),
+                    "total_combinations": cfg_data.get("total_combinations", 0),
+                    "walk_forward": _summarize_walk_forward(fold_data.get("walk_forward", {})),
                 }
             except (json.JSONDecodeError, IOError):
                 pass
@@ -229,75 +232,81 @@ def _summarize_walk_forward(wf: dict) -> dict:
 
 @router.get("/{run_id}/grid_details")
 def list_grid_details(run_id: str) -> list[str]:
-    """List grid detail filenames for a completed run."""
+    """List asset symbols with grid details for a completed run."""
     results_dir = get_test_results_dir()
     grid_dir = results_dir / run_id / "grid_details"
 
     if not grid_dir.exists():
         raise HTTPException(404, f"No grid details for run: {run_id}")
 
-    return sorted(f.name for f in grid_dir.glob("*.json"))
+    return sorted(d.name for d in grid_dir.iterdir() if d.is_dir())
 
 
-@router.get("/{run_id}/grid_details/{filename}")
-def get_grid_detail(run_id: str, filename: str) -> dict:
-    """Get a single grid detail file for a completed run."""
+@router.get("/{run_id}/grid_details/{symbol}")
+def get_grid_detail(run_id: str, symbol: str) -> dict:
+    """Get merged grid detail for a symbol (config + fold_results + grid_results)."""
     results_dir = get_test_results_dir()
-    filepath = results_dir / run_id / "grid_details" / filename
+    sym_dir = results_dir / run_id / "grid_details" / symbol
 
-    if not filepath.exists():
-        raise HTTPException(404, f"Grid detail not found: {run_id}/{filename}")
+    if not sym_dir.exists() or not sym_dir.is_dir():
+        raise HTTPException(404, f"Grid detail not found: {run_id}/{symbol}")
 
-    try:
-        return json.loads(filepath.read_text())
-    except (json.JSONDecodeError, IOError) as e:
-        raise HTTPException(500, f"Failed to read grid detail: {e}")
+    merged = {}
+    for fname in ("config.json", "fold_results.json", "grid_results.json"):
+        fpath = sym_dir / fname
+        if fpath.exists():
+            try:
+                merged.update(json.loads(fpath.read_text()))
+            except (json.JSONDecodeError, IOError):
+                pass
+    if not merged:
+        raise HTTPException(500, f"Failed to read grid detail: {run_id}/{symbol}")
+    return merged
 
 
 @router.get("/{run_id}/trades/{symbol}")
 def get_run_symbol_trades(run_id: str, symbol: str) -> dict:
-    """Return all detailed trades for a specific symbol across all walk-forward folds.
+    """Return all detailed trades for a specific symbol.
 
-    Reads the stored grid-detail file and extracts full trade records (entry/exit
-    timestamps, prices, direction, TP/SL levels) from each fold's test_trades_detail.
-    Falls back to test_trades_trace for older runs that don't have test_trades_detail.
+    Returns unified simulation trades from trades.json if available,
+    otherwise extracts fold-level trades from fold_results.json.
     """
     results_dir = get_test_results_dir()
-    grid_dir = results_dir / run_id / "grid_details"
+    sym_dir = results_dir / run_id / "grid_details" / symbol
 
-    if not grid_dir.exists():
-        raise HTTPException(404, f"No grid details for run: {run_id}")
-
-    # Find the grid-detail file for this symbol (matched by the "symbol" field inside)
-    trades: list[dict] = []
-    found = False
-    for filepath in sorted(grid_dir.glob("*.json")):
-        try:
-            data = json.loads(filepath.read_text())
-        except (json.JSONDecodeError, IOError):
-            continue
-
-        if data.get("symbol", "").upper() != symbol.upper():
-            continue
-
-        found = True
-        for fold in data.get("walk_forward", {}).get("fold_details", []):
-            fold_id = fold.get("fold_id")
-            # Prefer test_trades_detail (full trade info with timing/prices)
-            detail_trades = fold.get("test_trades_detail", [])
-            if detail_trades:
-                for trade in detail_trades:
-                    if isinstance(trade, dict) and "entry_time" in trade:
-                        trades.append({**trade, "fold_id": fold_id})
-            else:
-                # Fallback: test_trades_trace (older format, may have entry_time)
-                for trade in fold.get("test_trades_trace", []):
-                    if isinstance(trade, dict) and "entry_time" in trade:
-                        trades.append({**trade, "fold_id": fold_id})
-        break
-
-    if not found:
+    if not sym_dir.exists() or not sym_dir.is_dir():
         raise HTTPException(404, f"No grid detail found for symbol: {symbol}")
+
+    trades: list[dict] = []
+
+    # Prefer unified simulation trades
+    trades_file = sym_dir / "trades.json"
+    if trades_file.exists():
+        try:
+            tdata = json.loads(trades_file.read_text())
+            trades = tdata.get("trades_detailed", tdata.get("tr_trace", []))
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    # Fallback: fold-level trades from fold_results.json
+    if not trades:
+        fold_file = sym_dir / "fold_results.json"
+        if fold_file.exists():
+            try:
+                fdata = json.loads(fold_file.read_text())
+                for fold in fdata.get("walk_forward", {}).get("fold_details", []):
+                    fold_id = fold.get("fold_id")
+                    detail_trades = fold.get("test_trades_detail", [])
+                    if detail_trades:
+                        for trade in detail_trades:
+                            if isinstance(trade, dict) and "entry_time" in trade:
+                                trades.append({**trade, "fold_id": fold_id})
+                    else:
+                        for trade in fold.get("test_trades_trace", []):
+                            if isinstance(trade, dict) and "entry_time" in trade:
+                                trades.append({**trade, "fold_id": fold_id})
+            except (json.JSONDecodeError, IOError):
+                pass
 
     return {"symbol": symbol, "run_id": run_id, "trades": trades}
 
