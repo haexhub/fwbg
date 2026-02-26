@@ -55,7 +55,7 @@ def _setup_log_yaxis(ax, eq):
     ax.yaxis.set_minor_formatter(NullFormatter())
 
 
-def create_asset_plot(result, output_dir, trade_directions=None):
+def create_asset_plot(result, output_dir, trade_directions=None, unified_metrics=None):
     """
     Erstellt Equity-Plot für ein Asset.
 
@@ -64,6 +64,8 @@ def create_asset_plot(result, output_dir, trade_directions=None):
         output_dir: Verzeichnis zum Speichern (grid_details/{SYMBOL}/)
         trade_directions: Optional Liste der Trade-Richtungen (LONG/SHORT) für
                           farbliche Unterscheidung
+        unified_metrics: Optional Dict aus unified_metrics.json — wenn vorhanden,
+                         werden Titel-Metriken daraus gelesen statt aus result.
     """
     sym = result.get("symbol", "?")
     config = result.get("config") or result.get("best_config", {})
@@ -80,7 +82,6 @@ def create_asset_plot(result, output_dir, trade_directions=None):
     eq_result = simulate_equity_from_pnl(trades, fk=risk)
     eq = eq_result["equity_curve"]
     drawdowns = eq_result["drawdowns"]
-    max_dd = eq_result["max_drawdown"]
 
     # Gewinn pro Trade berechnen (aus Equity-Kurve)
     profit_per_trade = []
@@ -107,18 +108,20 @@ def create_asset_plot(result, output_dir, trade_directions=None):
     ax1.fill_between(range(len(eq)), eq, alpha=0.3)
     _setup_log_yaxis(ax1, eq)
 
-    # Jahresrendite berechnen (test_period_years aus unified simulation)
-    final_equity = eq[-1] if eq else 100.0
-    years = result.get("test_period_years", 1)
-    if final_equity > 0 and years > 0:
-        annual_return = ((final_equity / 100.0) ** (1 / years) - 1) * 100
+    # Titel-Metriken aus unified_metrics (Single Source of Truth)
+    um = unified_metrics or {}
+    win_rate = um.get("win_rate", result.get("win_rate", 0))
+    rrr = um.get("rrr", result.get("rrr", 0))
+    sharpe = um.get("sharpe", result.get("sharpe", 0))
+    max_dd = um.get("max_drawdown", eq_result["max_drawdown"])
+    years = um.get("test_period_years", result.get("test_period_years", 1))
+
+    # Jahresrendite aus unified_metrics berechnen
+    um_final = um.get("final_equity", eq[-1] if eq else 100.0)
+    if um_final > 0 and years > 0:
+        annual_return = ((um_final / 100.0) ** (1 / years) - 1) * 100
     else:
         annual_return = -100
-
-    # Titel zusammenbauen
-    win_rate = result.get('win_rate', 0)
-    rrr = result.get('rrr', 0)
-    sharpe = result.get('sharpe', 0)
 
     # CT-Werte für Titel
     if config.get("separate_long_short") and config.get("ct_long") != config.get("ct_short"):

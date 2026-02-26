@@ -327,11 +327,11 @@ class TestDataConfig:
     def test_config_values_exist(self):
         """Test: Alle wichtigen Config-Werte existieren."""
         from fwbg.data.config import (
-            DATA_PATH, TIMEFRAME, OOS_SIZE,
+            TIMEFRAME, OOS_SIZE,
             WALK_FORWARD_FOLDS, CORR_THRESHOLD, MIN_TRADES
         )
 
-        assert DATA_PATH is not None
+        # DATA_PATH is None by default (set via strategy.datasource or --data-path)
         assert TIMEFRAME is not None
         assert OOS_SIZE > 0
         assert WALK_FORWARD_FOLDS > 0
