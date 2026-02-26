@@ -255,49 +255,38 @@ def run_optimizer(
         if not save_results or not run_path:
             return
 
-        # Grid-Details sofort speichern
-        grid_details_path = os.path.join(run_path, "grid_details")
-        os.makedirs(grid_details_path, exist_ok=True)
-        grid_file = os.path.join(grid_details_path, f"{sym}.json")
+        # Grid-Details pro Symbol in Unterverzeichnis speichern
+        sym_dir = os.path.join(run_path, "grid_details", sym)
+        os.makedirs(sym_dir, exist_ok=True)
 
-        grid_data = {
+        # --- config.json: Konfiguration, Metriken, Status ---
+        config_data = {
             "symbol": sym,
             "status": status,
             "total_combinations": len(result.get("grid_results", [])),
             "model_hyperparameters": cfg.get("model_hyperparameters"),
-            "grid_results": result.get("grid_results", []),
+            "signal_meta": cfg.get("signal_meta"),
         }
 
         if result.get("error"):
-            grid_data["error"] = result["error"]
+            config_data["error"] = result["error"]
 
-        # Walk-Forward und Bias-Check für ALLE Assets speichern (nicht nur ok)
-        if result.get("walk_forward"):
-            grid_data["walk_forward"] = result["walk_forward"]
-        if result.get("bias_check"):
-            grid_data["bias_check"] = result["bias_check"]
-
-        # Bei erfolgreichen Assets: Holdout-Ergebnisse und Best-Config sofort speichern
         if status == "ok":
-            selected_cfg = result.get("config", {})
-            grid_data["selected_config"] = selected_cfg
+            config_data["selected_config"] = result.get("config", {})
 
-            # Jahresrendite berechnen
             _trades = result.get("tr_trace", [])
             _risk = result.get("config", {}).get("risk_per_trade", 0.01)
-            _rrr = result.get("rrr", 1.0)
             _wf = result.get("walk_forward", {})
             _fold_details = _wf.get("fold_details", [])
             _total_test_bars = sum(f.get("test_size", data_config.OOS_SIZE) for f in _fold_details) if _fold_details else data_config.WALK_FORWARD_FOLDS * data_config.OOS_SIZE
             _bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
             _years = _total_test_bars / _bars_per_year if _bars_per_year > 0 else 1
 
-            # Equity simulieren für annual_return
             _eq_result = simulate_equity_from_pnl(_trades, fk=_risk)
             _final_eq = _eq_result["final_equity"]
             _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
 
-            grid_data["holdout_metrics"] = {
+            config_data["holdout_metrics"] = {
                 "pnl": result.get("pnl", 0),
                 "win_rate": result.get("win_rate", 0),
                 "rrr": result.get("rrr", 0),
@@ -307,16 +296,15 @@ def run_optimizer(
                 "annual_return": round(_annual_return, 1),
                 "test_period_years": round(_years, 2),
             }
-            grid_data["nested_cv"] = result.get("nested_cv", {})
-            grid_data["monte_carlo"] = result.get("monte_carlo", {})
-            grid_data["smoothness"] = result.get("smoothness", {})
+            config_data["nested_cv"] = result.get("nested_cv", {})
+            config_data["monte_carlo"] = result.get("monte_carlo", {})
+            config_data["smoothness"] = result.get("smoothness", {})
 
-        # Für nicht-erfolgreiche Assets: Volle Auswertung speichern
         if status in ["no_edge", "not_significant"]:
             if result.get("best_config"):
-                grid_data["best_config"] = result["best_config"]
+                config_data["best_config"] = result["best_config"]
             if result.get("pnl") is not None:
-                grid_data["metrics"] = {
+                config_data["metrics"] = {
                     "pnl": result.get("pnl", 0),
                     "win_rate": result.get("win_rate", 0),
                     "rrr": result.get("rrr", 0),
@@ -324,18 +312,45 @@ def run_optimizer(
                     "calmar": result.get("calmar", 0),
                 }
             if result.get("monte_carlo"):
-                grid_data["monte_carlo"] = result["monte_carlo"]
+                config_data["monte_carlo"] = result["monte_carlo"]
             if result.get("reason"):
-                grid_data["reason"] = result["reason"]
+                config_data["reason"] = result["reason"]
 
-        # Für nicht-erfolgreiche Assets mit Holdout-Daten (z.B. no_edge)
         if result.get("holdout_result"):
-            grid_data["holdout_result"] = result["holdout_result"]
+            config_data["holdout_result"] = result["holdout_result"]
         if result.get("best_candidate"):
-            grid_data["best_candidate"] = result["best_candidate"]
+            config_data["best_candidate"] = result["best_candidate"]
 
-        with open(grid_file, "w") as f:
-            json.dump(grid_data, f, indent=2, cls=_SafeJsonEncoder)
+        with open(os.path.join(sym_dir, "config.json"), "w") as f:
+            json.dump(config_data, f, indent=2, cls=_SafeJsonEncoder)
+
+        # --- fold_results.json: Walk-Forward Folds + Bias-Check ---
+        fold_data = {}
+        if result.get("walk_forward"):
+            fold_data["walk_forward"] = result["walk_forward"]
+        if result.get("bias_check"):
+            fold_data["bias_check"] = result["bias_check"]
+        if fold_data:
+            with open(os.path.join(sym_dir, "fold_results.json"), "w") as f:
+                json.dump(fold_data, f, indent=2, cls=_SafeJsonEncoder)
+
+        # --- trades.json: Unified-Simulation Trades ---
+        if status == "ok" and result.get("tr_trace"):
+            trades_data = {
+                "tr_trace": result["tr_trace"],
+                "trades_detailed": result.get("trades_detailed", []),
+            }
+            with open(os.path.join(sym_dir, "trades.json"), "w") as f:
+                json.dump(trades_data, f, indent=2, cls=_SafeJsonEncoder)
+
+        # --- grid_results.json: Alle Grid-Kombinationen ---
+        if result.get("grid_results"):
+            grid_results_data = {
+                "total_combinations": len(result["grid_results"]),
+                "grid_results": result["grid_results"],
+            }
+            with open(os.path.join(sym_dir, "grid_results.json"), "w") as f:
+                json.dump(grid_results_data, f, indent=2, cls=_SafeJsonEncoder)
 
         # Zusammenfassung für später sammeln (wird nach Progress-UI ausgegeben)
         output_lines = []

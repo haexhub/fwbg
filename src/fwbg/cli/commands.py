@@ -197,13 +197,14 @@ def analyze_reversed_strategies(run_id, top_n=10):
     results_path = f"test_results/{run_id}/results.json"
 
     if os.path.exists(grid_details_path):
-        for filename in os.listdir(grid_details_path):
-            if filename.endswith(".json"):
-                with open(os.path.join(grid_details_path, filename)) as f:
+        for entry in os.listdir(grid_details_path):
+            sym_dir = os.path.join(grid_details_path, entry)
+            grid_file = os.path.join(sym_dir, "grid_results.json")
+            if os.path.isdir(sym_dir) and os.path.exists(grid_file):
+                with open(grid_file) as f:
                     data = json.load(f)
-                    sym = data.get("symbol", filename.replace(".json", ""))
                     for gr in data.get("grid_results", []):
-                        gr["symbol"] = sym
+                        gr["symbol"] = entry
                         all_grids.append(gr)
     elif os.path.exists(results_path):
         with open(results_path) as f:
