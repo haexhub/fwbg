@@ -138,14 +138,13 @@ def run_optimizer(
     if not run_id:
         run_id = generate_run_id(description)
     if save_results:
-        run_path, plots_path = create_run_directory(run_id, description, strategy_metadata)
+        run_path = create_run_directory(run_id, description, strategy_metadata)
         print(f"\nRun ID: {run_id}")
         print(f"Results: {run_path}/")
         if strategy_metadata:
             print(f"Strategy: {strategy_metadata.get('name', '-')}")
     else:
         run_path = None
-        plots_path = None  # Keine Plots ohne save
 
     print(f"\nFWBG Strategy Backtester 2.0 | Timeframe: {data_config.TIMEFRAME}")
     if description:
@@ -417,11 +416,11 @@ def run_optimizer(
                 fold_id = wf.get("best_fold_id", "?")
                 output_lines.append(f"  ⚠ Fold configs INCONSISTENT - using best fold {fold_id} only")
 
-            # Plot für ALLE Assets mit Trades erstellen
-            if result.get("tr_trace") and plots_path:
+            # Plot im Asset-Verzeichnis speichern
+            if result.get("tr_trace") and run_path:
                 try:
-                    create_asset_plot(result, plots_path)
-                    output_lines.append(f"  Plot: {plots_path}/{sym}.png")
+                    create_asset_plot(result, sym_dir)
+                    output_lines.append(f"  Plot: {sym_dir}/equity.png")
                 except Exception as e:
                     output_lines.append(f"  Plot-Fehler: {e}")
 
@@ -526,9 +525,10 @@ def run_optimizer(
         trades_detailed = e.get("trades_detailed", [])
         trade_directions = [td.get("direction", "LONG") for td in trades_detailed]
 
-        # Elite-Plot erstellen (mit Long/Short Unterscheidung)
-        if plots_path:
-            plot_stats = create_asset_plot(e, plots_path, trade_directions=trade_directions)
+        # Elite-Plot im Asset-Verzeichnis speichern
+        elite_sym_dir = os.path.join(run_path, "grid_details", e["symbol"]) if run_path else None
+        if elite_sym_dir and os.path.isdir(elite_sym_dir):
+            plot_stats = create_asset_plot(e, elite_sym_dir, trade_directions=trade_directions)
             if plot_stats:
                 n_long, n_short, _, _ = plot_stats
             else:
