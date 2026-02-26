@@ -253,7 +253,7 @@ class TestORBFeatureComputation:
         result = _add_orb_features(df, sessions=sessions)
 
         for h in sessions:
-            col = f"orb_s{h:02d}_range"
+            col = f"rb1_orb_s{h:02d}_range"
             assert col in result.columns, (
                 f"Session {h} UTC: Spalte '{col}' fehlt im Ergebnis. "
                 f"Vorhandene orb_s*_range: {[c for c in result.columns if 'orb_s' in c and '_range' in c]}"
@@ -266,7 +266,7 @@ class TestORBFeatureComputation:
         result = _add_orb_features(df, sessions=sessions)
 
         for h in sessions:
-            col = f"orb_s{h:02d}_range"
+            col = f"rb1_orb_s{h:02d}_range"
             if col not in result.columns:
                 continue
             non_nan_ratio = result[col].notna().mean()
@@ -283,7 +283,7 @@ class TestORBFeatureComputation:
         df = _make_m15_df(n=6000)
         result = _add_orb_features(df, sessions=[8])
 
-        for col in ["orb_s08_breakout_up", "orb_s08_breakout_down"]:
+        for col in ["rb1_orb_s08_breakout_up", "rb1_orb_s08_breakout_down"]:
             if col not in result.columns:
                 continue
             vals = result[col].dropna()
@@ -329,7 +329,7 @@ class TestGridSearchCoverage:
 
         # Nur ORB-Features als Feature-Pool
         all_cols = get_feature_columns(feature_df)
-        orb_cols = [c for c in all_cols if c.startswith("orb_")]
+        orb_cols = [c for c in all_cols if "_orb_s" in c]
         assert orb_cols, "Keine ORB-Features im Feature-Pool — ORB-Plugin nicht geladen?"
 
         # Feature-DF bereinigen: NaN-Warmup entfernen
@@ -519,7 +519,7 @@ class TestORBOptimizationEndToEnd:
         df = _make_m15_df(n=8000)
         feature_df = _add_orb_features(df, sessions=[8, 14])
         all_cols = get_feature_columns(feature_df)
-        orb_cols = [c for c in all_cols if c.startswith("orb_")]
+        orb_cols = [c for c in all_cols if "_orb_s" in c]
         clean_df = feature_df.dropna(subset=orb_cols[:3])
 
         ctx = _make_ctx(
@@ -553,7 +553,7 @@ class TestORBOptimizationEndToEnd:
             )
 
         if captured.get("selected_long"):
-            orb_in_selection = [f for f in captured["selected_long"] if f.startswith("orb_")]
+            orb_in_selection = [f for f in captured["selected_long"] if "_orb_s" in f]
             assert len(orb_in_selection) > 0, (
                 "Feature Selection hat ALLE ORB-Features entfernt — "
                 "ORB-Features tragen keinen Prediction-Wert auf den Testdaten."
@@ -569,7 +569,7 @@ class TestORBOptimizationEndToEnd:
         df = _make_m15_df(n=8000)
         feature_df = _add_orb_features(df, sessions=[8, 14])
         all_cols = get_feature_columns(feature_df)
-        orb_cols = [c for c in all_cols if c.startswith("orb_")]
+        orb_cols = [c for c in all_cols if "_orb_s" in c]
         clean_df = feature_df.dropna(subset=orb_cols[:3])
 
         ctx = _make_ctx(

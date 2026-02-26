@@ -68,6 +68,22 @@ def shift_features(
     return features_df
 
 
+def rl_tag(value: float) -> str:
+    """Build collision-free retracement level tag: rl{N}.
+
+    Uses the minimum number of decimal digits needed:
+      0.5   -> rl50
+      0.382 -> rl382
+      0.35  -> rl35
+      0.123 -> rl123
+    """
+    for exp in (100, 1000, 10000):
+        scaled = round(value * exp)
+        if abs(scaled - value * exp) < 1e-9:
+            return f"rl{scaled}"
+    return f"rl{round(value * 10000)}"
+
+
 class BaseIndicator(BasePlugin, ABC):
     """
     Basisklasse für Indicator-Plugins.
@@ -126,6 +142,7 @@ class BaseIndicator(BasePlugin, ABC):
         """Initialize indicator plugin."""
         super().__init__()
         self._feature_columns: List[str] = []
+        self._signal_columns: List[str] = []
 
     def execute(self, ctx: "PipelineContext", **params) -> "PipelineContext":
         """
@@ -188,7 +205,7 @@ class BaseIndicator(BasePlugin, ABC):
         Returns:
             Liste der Signal-Spaltennamen, oder leere Liste
         """
-        return []
+        return self._signal_columns
 
     def get_plot_columns(self) -> List[str]:
         """

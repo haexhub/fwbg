@@ -24,7 +24,7 @@ from typing import Dict, List, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from fwbg_sdk import BaseIndicator, register_indicator, shift_features, EPSILON
+from fwbg_sdk import BaseIndicator, register_indicator, shift_features, EPSILON, rl_tag
 from fwbg_sdk.retest import apply_breakout_threshold, compute_break_state, compute_retest_signals
 
 _CANDLE_SPAN_PREFIX = {
@@ -330,7 +330,7 @@ def _compute_range_variant(
     low_arr = df["L"].values
 
     for rl in rl_list:
-        rl_pfx = f"rl{int(rl * 100)}_"
+        rl_pfx = f"{rl_tag(rl)}_"
         for retest_mode in retest_modes:
             retest_pfx = _RETEST_MODE_PREFIX[retest_mode]
             retest_mask = session_mask_arr if retest_mode == "session_only" else None
@@ -447,25 +447,27 @@ class PreviousDayLevelsIndicator(BaseIndicator):
     benefits_from_stationary = False
     group = "session"
 
-    # Representative feature list for default hl/session mode, rl=50 (0.5)
-    _FEATURES = [
-        "hl_ses_pdl_high_dist",
-        "hl_ses_pdl_low_dist",
-        "hl_ses_pdl_position",
-        "hl_ses_pdl_range_vs_atr",
-        "hl_ses_pdl_above_high",
-        "hl_ses_pdl_below_low",
-        "hl_ses_pdl_midpoint_dist",
-        "hl_ses_pdl_high_break",
-        "hl_ses_pdl_low_break",
-        "hl_ses_pdl_post_bull",
-        "hl_ses_pdl_post_bear",
-        "hl_ses_rl50_pdl_retest_bull",
-        "hl_ses_rl50_pdl_retest_bear",
-        "hl_ses_rl50_pdl_sl_dist",
-        "hl_ses_pdl_range_position_ma",
-        "hl_ses_pdl_day_range_expanding",
+    PDL_SIGNAL_SUFFIXES = (
+        "_above_high", "_below_low", "_high_break", "_low_break",
+        "_post_bull", "_post_bear", "_retest_bull", "_retest_bear",
+        "_day_range_expanding",
+    )
+
+    # Base features per (candle_span, range_scope, break/retest_mode) variant — no rl prefix
+    _BASE_FEATURES = [
+        "pdl_high_dist", "pdl_low_dist", "pdl_position", "pdl_range_vs_atr",
+        "pdl_above_high", "pdl_below_low", "pdl_midpoint_dist",
+        "pdl_high_break", "pdl_low_break", "pdl_post_bull", "pdl_post_bear",
+        "pdl_range_position_ma", "pdl_day_range_expanding",
     ]
+    # rl-dependent features (appended per retracement level)
+    _RL_FEATURES = ["pdl_retest_bull", "pdl_retest_bear", "pdl_sl_dist"]
+    # Signals (subset of base + rl features)
+    _BASE_SIGNAL_SUFFIXES = (
+        "pdl_above_high", "pdl_below_low", "pdl_high_break", "pdl_low_break",
+        "pdl_post_bull", "pdl_post_bear", "pdl_day_range_expanding",
+    )
+    _RL_SIGNAL_SUFFIXES = ("pdl_retest_bull", "pdl_retest_bear")
 
     def compute(
         self,
@@ -511,20 +513,43 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         if not features:
             return df
 
+        self._feature_columns = list(features.keys())
+        self._signal_columns = [
+            k for k in features if any(k.endswith(s) for s in self.PDL_SIGNAL_SUFFIXES)
+        ]
+
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
+    @classmethod
+    def _default_fallback_columns(cls) -> Tuple[List[str], List[str]]:
+        """Build default feature/signal column lists from default params."""
+        d = cls.get_default_params()
+        rl_vals = d["retracement_levels"]
+        rl_list = [rl_vals] if isinstance(rl_vals, (int, float)) else list(rl_vals)
+
+        # Default prefixes: hl_ + ses_ + "" (all_hours break) = "hl_ses_"
+        pfx = "hl_ses_"
+        features = [f"{pfx}{f}" for f in cls._BASE_FEATURES]
+        signals = [f"{pfx}{f}" for f in cls._BASE_SIGNAL_SUFFIXES]
+
+        for rl in rl_list:
+            rl_pfx = f"{pfx}{rl_tag(rl)}_"
+            for f in cls._RL_FEATURES:
+                features.append(f"{rl_pfx}{f}")
+            for f in cls._RL_SIGNAL_SUFFIXES:
+                signals.append(f"{rl_pfx}{f}")
+        return features, signals
+
     def get_feature_columns(self) -> List[str]:
-        return self._FEATURES
+        if self._feature_columns:
+            return self._feature_columns
+        return self._default_fallback_columns()[0]
 
     def get_signal_columns(self) -> List[str]:
-        return [
-            "hl_ses_pdl_above_high", "hl_ses_pdl_below_low",
-            "hl_ses_pdl_high_break", "hl_ses_pdl_low_break",
-            "hl_ses_pdl_post_bull", "hl_ses_pdl_post_bear",
-            "hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear",
-            "hl_ses_pdl_day_range_expanding",
-        ]
+        if self._signal_columns:
+            return self._signal_columns
+        return self._default_fallback_columns()[1]
 
     @classmethod
     def get_default_params(cls) -> dict:
