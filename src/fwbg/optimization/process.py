@@ -432,7 +432,14 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             sample_bias_detected, bias_ratios, mean_bias_ratio,
             config_inconsistent=config_inconsistent,
         )
+        # Override total_trades with unified simulation count
+        wf_summary["total_trades"] = total_trades
         features_list = (unified_candidate.get("selected_features_long") or []) + (unified_candidate.get("selected_features_short") or [])
+
+        # Test period duration (used for annual return, sharpe, etc.)
+        bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
+        total_test_bars = sum(r["test_size"] for r in all_fold_results)
+        test_period_years = total_test_bars / bars_per_year if bars_per_year > 0 else 1
 
         # === NO EDGE ===
         if fk <= 0:
@@ -447,6 +454,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "sharpe": 0,
                 "calmar": 0,
                 "tr_trace": all_trades_pnl,
+                "test_period_years": test_period_years,
                 "best_config": {
                     "tp_mult": b_config["tp"],
                     "sl_mult": b_config["sl"],
@@ -494,8 +502,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         }
 
         # Sharpe/Calmar (needed for both not_significant and ok paths)
-        bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
-        total_test_bars = sum(r["test_size"] for r in all_fold_results)
         actual_trades_per_year = total_trades * bars_per_year / total_test_bars if total_test_bars > 0 else total_trades
         sharpe = calculate_sharpe_ratio(pnl_returns, trades_per_year=actual_trades_per_year)
         calmar = calculate_calmar_from_returns(pnl_returns)
@@ -516,6 +522,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "calmar": calmar,
                 "risk_per_trade": fk,
                 "tr_trace": all_trades_pnl,
+                "test_period_years": test_period_years,
                 "best_config": {
                     "risk_per_trade": fk,
                     "tp_mult": b_config["tp"],
@@ -579,6 +586,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 ),
             },
             "tr_trace": all_trades_pnl,
+            "test_period_years": test_period_years,
             "rrr": rrr,
             "win_rate": mean_wr,
             "sharpe": sharpe,

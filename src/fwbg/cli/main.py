@@ -275,11 +275,7 @@ def run_optimizer(
 
             _trades = result.get("tr_trace", [])
             _risk = result.get("config", {}).get("risk_per_trade", 0.01)
-            _wf = result.get("walk_forward", {})
-            _fold_details = _wf.get("fold_details", [])
-            _total_test_bars = sum(f.get("test_size", data_config.OOS_SIZE) for f in _fold_details) if _fold_details else data_config.WALK_FORWARD_FOLDS * data_config.OOS_SIZE
-            _bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
-            _years = _total_test_bars / _bars_per_year if _bars_per_year > 0 else 1
+            _years = result.get("test_period_years", 1)
 
             _eq_result = simulate_equity_from_pnl(_trades, fk=_risk)
             _final_eq = _eq_result["final_equity"]
@@ -542,10 +538,8 @@ def run_optimizer(
         wr = e["win_rate"]
         rrr = e.get("rrr", 0)
 
-        # Jahresrendite berechnen
-        bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
-        total_oos_bars = data_config.WALK_FORWARD_FOLDS * data_config.OOS_SIZE
-        years = total_oos_bars / bars_per_year if bars_per_year > 0 else 1
+        # Jahresrendite berechnen (test_period_years aus unified simulation)
+        years = e.get("test_period_years", 1)
 
         if final_equity > 0 and years > 0:
             annual_return = ((final_equity / 100.0) ** (1 / years) - 1) * 100

@@ -259,8 +259,10 @@ def get_grid_detail(run_id: str, symbol: str) -> dict:
                 merged.update(json.loads(fpath.read_text()))
             except (json.JSONDecodeError, IOError):
                 pass
+
     if not merged:
-        raise HTTPException(500, f"Failed to read grid detail: {run_id}/{symbol}")
+        raise HTTPException(404, f"Grid detail not found: {run_id}/{symbol}")
+
     return merged
 
 
