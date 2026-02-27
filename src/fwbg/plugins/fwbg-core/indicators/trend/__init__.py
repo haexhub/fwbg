@@ -267,5 +267,17 @@ class TrendIndicators(BaseIndicator):
             },
         }
 
+    def get_column_group_labels(self) -> dict:
+        return {
+            "adx": "ADX (Average Directional Index)",
+            "ema": "EMA Distance",
+            "sma": "SMA Distance",
+            "macd": "MACD",
+            "cci": "CCI (Commodity Channel Index)",
+            "aroon": "Aroon",
+            "er": "Efficiency Ratio",
+            "supertrend": "Supertrend",
+        }
+
 
 __all__ = ["TrendIndicators"]
