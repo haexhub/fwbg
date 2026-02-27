@@ -149,5 +149,14 @@ class MomentumIndicators(BaseIndicator):
             },
         }
 
+    def get_column_group_labels(self) -> dict:
+        return {
+            "rsi": "RSI (Relative Strength Index)",
+            "stoch": "Stochastic Oscillator",
+            "williams": "Williams %R",
+            "uo": "Ultimate Oscillator",
+            "roc": "Rate of Change",
+        }
+
 
 __all__ = ["MomentumIndicators"]
