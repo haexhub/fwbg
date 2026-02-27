@@ -593,5 +593,21 @@ class OpeningRangeIndicator(BaseIndicator):
             },
         }
 
+    def get_column_group_labels(self) -> dict:
+        return {
+            "s00": "Nikkei / ASX200 Open — 00:00 UTC",
+            "s01": "Nikkei / HK50 Morning — 01:00 UTC",
+            "s02": "All Asia Morning — 02:00 UTC",
+            "s05": "Nikkei / HK50 Afternoon — 05:00 UTC",
+            "s06": "DAX Pre-Market — 06:00 UTC",
+            "s07": "Xetra / DAX Open — 07:00 UTC",
+            "s08": "London Open — 08:00 UTC",
+            "s09": "London Morning — 09:00 UTC",
+            "s12": "NY Pre-Dawn — 12:00 UTC",
+            "s13": "NY Pre-Market — 13:00 UTC",
+            "s14": "NYSE Pre-Open — 14:00 UTC",
+            "s15": "NYSE Open — 15:00 UTC",
+        }
+
 
 __all__ = ["OpeningRangeIndicator"]
