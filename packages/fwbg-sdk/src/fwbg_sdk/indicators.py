@@ -218,3 +218,16 @@ class BaseIndicator(BasePlugin, ABC):
         """
         signal_cols = set(self.get_signal_columns())
         return [c for c in self.get_feature_columns() if c not in signal_cols]
+
+    def get_column_group_labels(self) -> dict:
+        """
+        Optionale menschenlesbare Labels für Feature-Gruppen.
+
+        Gibt ein Mapping von Gruppen-Key (erster Token nach Prefix-Stripping)
+        zu lesbarem Label zurück. Plugins die dies nicht implementieren
+        bekommen automatisch den Key in Großbuchstaben als Fallback.
+
+        Returns:
+            Dict[str, str] z.B. {"adx": "ADX (Average Directional Index)"}
+        """
+        return {}
