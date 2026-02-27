@@ -468,7 +468,7 @@ class OpeningRangeIndicator(BaseIndicator):
         return {
             "range_bars": 1,
             "atr_period": 14,
-            "sessions": [8, 9, 14, 15],
+            "sessions": [0, 1, 2, 5, 6, 7, 8, 12, 13, 14],
             "enable_retracement": True,
             "retest_atr_width": 0.3,
             "retest_zone_width": 0.5,
