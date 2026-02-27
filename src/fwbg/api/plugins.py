@@ -61,6 +61,16 @@ def _plugin_to_dict(fqn: str) -> dict:
             except Exception:
                 plot_columns = [c for c in feature_columns if c not in signal_columns]
 
+    column_group_labels: dict[str, str] = {}
+    if hasattr(plugin_cls, "get_column_group_labels"):
+        try:
+            column_group_labels = plugin_cls.get_column_group_labels()
+        except TypeError:
+            try:
+                column_group_labels = plugin_cls().get_column_group_labels()
+            except Exception:
+                pass
+
     return {
         "fqn": fqn,
         "name": plugin_cls.name,
@@ -76,6 +86,7 @@ def _plugin_to_dict(fqn: str) -> dict:
         "feature_columns": feature_columns,
         "signal_columns": signal_columns,
         "plot_columns": plot_columns,
+        "column_group_labels": column_group_labels,
     }
 
 
