@@ -24,7 +24,6 @@ SECTION_DIRS = {
     "validations": "validations",
     "filters": "filters",
     "resources": "resources",
-    "grids": "grids",
     "regime_filters": "regime_filters",
     "risk_params": "risk_params",
 }
@@ -237,31 +236,6 @@ def migrate_strategy_refs() -> None:
                 if new_id:
                     data[field] = new_id
                     modified = True
-
-        # Grid assignments
-        grids_data = data.get("grids", {})
-        if isinstance(grids_data, dict) and "assignments" in grids_data:
-            grids_dir = base / "grids"
-            regime_filters_dir = base / "regime_filters"
-
-            rfg = grids_data.get("regime_filter_grid")
-            if isinstance(rfg, str):
-                new_id = _versioned_id(rfg, regime_filters_dir)
-                if new_id:
-                    grids_data["regime_filter_grid"] = new_id
-                    modified = True
-
-            for asset_class, assignment in grids_data["assignments"].items():
-                if isinstance(assignment, str):
-                    new_id = _versioned_id(assignment, grids_dir)
-                    if new_id:
-                        grids_data["assignments"][asset_class] = new_id
-                        modified = True
-                elif isinstance(assignment, dict) and "preset" in assignment:
-                    new_id = _versioned_id(assignment["preset"], grids_dir)
-                    if new_id:
-                        assignment["preset"] = new_id
-                        modified = True
 
         if modified:
             strategy_file.write_text(json.dumps(data, indent=2))
