@@ -153,7 +153,7 @@ class TestSimulationContextCombinations:
     """Tests für Grid-Kombinationen Berechnung (exit_strategies × model_hp)."""
 
     def test_total_grid_combinations_single_exit_strategy(self):
-        """Einzelne Exit-Strategie mit mehreren CT-Werten."""
+        """Einzelne Exit-Strategie: CT values are inner CV, not grid combos."""
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
@@ -163,11 +163,11 @@ class TestSimulationContextCombinations:
                 ExitStrategyConfig(name="fixed", params={}, ct=[0.5, 0.55, 0.6]),
             ],
         )
-        # 3 CT values × 1 model HP = 3
-        assert ctx.total_grid_combinations() == 3
+        # 1 exit_strategy × 1 model HP = 1
+        assert ctx.total_grid_combinations() == 1
 
     def test_total_grid_combinations_multiple_exit_strategies(self):
-        """Mehrere Exit-Strategien: CT-Werte werden summiert."""
+        """Mehrere Exit-Strategien: eine Combo pro Strategie."""
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
@@ -179,8 +179,8 @@ class TestSimulationContextCombinations:
                 ExitStrategyConfig(name="atr_based", params={}, ct=[0.5, 0.6]),
             ],
         )
-        # (2 + 1 + 2) CT values × 1 model HP = 5
-        assert ctx.total_grid_combinations() == 5
+        # 3 exit_strategies × 1 model HP = 3
+        assert ctx.total_grid_combinations() == 3
 
     def test_total_grid_combinations_with_model_hp(self):
         """Exit-Strategien × Model-Hyperparameters."""
@@ -198,8 +198,8 @@ class TestSimulationContextCombinations:
                 {"n_estimators": 300},
             ],
         )
-        # 2 CT × 3 model HP = 6
-        assert ctx.total_grid_combinations() == 6
+        # 1 exit_strategy × 3 model HP = 3
+        assert ctx.total_grid_combinations() == 3
 
     def test_total_grid_combinations_no_exit_strategies(self):
         """Ohne Exit-Strategien: n_exit = 1 (default)."""
@@ -241,8 +241,8 @@ class TestSimulationContextCombinations:
                 {"n_estimators": 200},
             ],
         )
-        # (1 + 2 + 1 + 3) CT × 2 model HP = 14
-        assert ctx.total_grid_combinations() == 14
+        # 4 exit_strategies × 2 model HP = 8
+        assert ctx.total_grid_combinations() == 8
 
 
 # --- Edge Cases ---

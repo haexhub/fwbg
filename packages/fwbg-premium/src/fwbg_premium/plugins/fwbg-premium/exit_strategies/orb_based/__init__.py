@@ -237,6 +237,7 @@ class OrbExitStrategy(BaseExitStrategy):
     @classmethod
     def get_default_params(cls) -> dict:
         return {
+            "tp_mode": "atr",
             "tp_mult": 2.0,
             "sl_mult": 1.0,
             "atr_period": 14,

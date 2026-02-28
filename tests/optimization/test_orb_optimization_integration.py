@@ -198,10 +198,10 @@ def _make_inner_folds(feature_df: pd.DataFrame, n_folds: int = 3, fold_size: int
 
 class TestGridCombinationsCount:
     """
-    total_grid_combinations() = sum(len(es.ct) for es in exit_strategies) × model_hp.
+    total_grid_combinations() = len(exit_strategies) × model_hp.
 
-    Each ExitStrategyConfig is one combo (per CT value). The total is the sum of
-    CT values across all exit strategies, multiplied by model HP variants.
+    Each ExitStrategyConfig is one grid combo. CT values are evaluated inside
+    inner CV (run_inner_cv), not as separate grid combos.
     """
 
     def test_basic_tp_sl_timeout(self):
@@ -255,12 +255,12 @@ class TestGridCombinationsCount:
         ctx = _make_ctx(tp=[2.0, 3.0], sl=[1.5], ct=[0.5], timeout_bars=[None])
         assert ctx.total_grid_combinations() == 2  # 2 × 1 × 1 × 1
 
-    def test_ct_multiplies_combinations(self):
-        """CT values are part of each ExitStrategyConfig — more CT = more combos."""
+    def test_ct_does_not_multiply_combinations(self):
+        """CT values are evaluated inside inner CV, not as separate grid combos."""
         ctx_1ct = _make_ctx(tp=[2.0], sl=[1.5], ct=[0.5])
         ctx_4ct = _make_ctx(tp=[2.0], sl=[1.5], ct=[0.5, 0.55, 0.6, 0.65])
-        assert ctx_1ct.total_grid_combinations() == 1  # 1 exit_strategy × 1 ct
-        assert ctx_4ct.total_grid_combinations() == 4  # 1 exit_strategy × 4 ct
+        assert ctx_1ct.total_grid_combinations() == 1  # 1 exit_strategy
+        assert ctx_4ct.total_grid_combinations() == 1  # still 1 exit_strategy
 
     def test_orb_scalping_index_preset_formula(self):
         """
@@ -268,7 +268,7 @@ class TestGridCombinationsCount:
 
         DAX (deep_orb_index): tp=5 → 5 × 6 = 30.
         SL override=3 für DAX → 3 × 3 × 2 = 18 pro TP → 5 × 18 = 90 exit_strategies.
-        Each exit_strategy has 4 CT values → 90 × 4 = 360.
+        CT values are inner CV parameters, not grid combos.
         """
         # Preset-Werte aus orb_scalping_index_v1.json, mit DAX override für sl
         ctx = _make_ctx(
@@ -281,11 +281,9 @@ class TestGridCombinationsCount:
                 {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
             ],
         )
-        # n_exit_strategies × n_ct_per_strategy × n_model_hp
+        # n_exit_strategies × n_model_hp (CT is inner CV, not grid)
         n_exit_strategies = 5 * 3 * 3 * 2  # tp × sl × timeout × modifier = 90
-        n_ct = 4
-        expected = n_exit_strategies * n_ct
-        assert ctx.total_grid_combinations() == expected
+        assert ctx.total_grid_combinations() == n_exit_strategies
 
 
 # ─────────────────────────────────────────────────────────────────────────────
