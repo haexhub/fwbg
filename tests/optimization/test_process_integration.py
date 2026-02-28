@@ -12,7 +12,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, MagicMock
 
-from fwbg.core.config import StrategyConfig, GridConfig
+from fwbg.core.config import StrategyConfig
 
 
 def create_test_df(n_rows: int = 1000, seed: int = 42) -> pd.DataFrame:
@@ -250,28 +250,24 @@ class TestStrategyConfigIntegration:
 
             assert strategy.name == "Exploration"
             assert strategy.exit_strategy == "atr_based"
-            assert "FOREX" in strategy.grids
+            assert "tp_mult" in strategy.exit_params
 
-    def test_grid_config_parsing(self):
-        """Test: Grid-Config wird korrekt geparsed."""
+    def test_exit_params_parsing(self):
+        """Test: exit_params werden korrekt normalisiert."""
         data = {
-            "grids": {
-                "FOREX": {
-                    "tp": [1.0, 1.5, 2.0],
-                    "sl": [1.0, 1.5],
-                    "ct": [0.5, 0.55, 0.60],
-                    "timeout_bars": [None, 24, 48]
-                }
+            "exit_params": {
+                "tp_mult": [1.0, 1.5, 2.0],
+                "sl_mult": [1.0, 1.5],
+                "timeout_bars": [None, 24, 48]
             }
         }
 
         strategy = StrategyConfig.from_dict(data)
-        grid = strategy.get_grid("EURUSD", "FOREX")
 
-        assert grid.tp == [1.0, 1.5, 2.0]
-        assert grid.sl == [1.0, 1.5]
-        assert len(grid.timeout_bars) == 3
-        assert None in grid.timeout_bars
+        assert strategy.exit_params["tp_mult"] == [1.0, 1.5, 2.0]
+        assert strategy.exit_params["sl_mult"] == [1.0, 1.5]
+        assert len(strategy.exit_params["timeout_bars"]) == 3
+        assert None in strategy.exit_params["timeout_bars"]
 
 
 class TestRunGridSearch:
@@ -284,21 +280,24 @@ class TestRunGridSearch:
     def test_grid_search_with_few_features(self):
         """Test: Grid-Search mit 1 Feature funktioniert."""
         from fwbg.optimization.grid_search import run_grid_search
-        from fwbg.core.config import GridConfig
         import pandas as pd
         import numpy as np
 
         # Mock-Context mit minimalen Attributen
         ctx = Mock()
         ctx.symbol = "TEST"
+        ctx.grid_tp = [1.0]
+        ctx.grid_sl = [1.0]
+        ctx.grid_ct = [0.5]
+        ctx.grid_timeout_bars = [None]
+        ctx.grid_exit_modifier_params = [None]
+        ctx.grid_model_hyperparameters = [None]
         ctx.grid_combinations_per_run = Mock(return_value=1)
         ctx.total_grid_combinations = Mock(return_value=1)
         ctx.min_rrr = 0
         ctx.exit_strategy = "fixed"
         ctx.exit_params = {}
         ctx.required_features = []
-
-        grid = GridConfig(tp=[1.0], sl=[1.0], ct=[0.5])
 
         # Nur 1 Feature
         full_pool = ["trend_rsi_14"]
@@ -311,7 +310,6 @@ class TestRunGridSearch:
         candidates, grid_results = run_grid_search(
             full_pool=full_pool,
             inner_folds=[],
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TEST",

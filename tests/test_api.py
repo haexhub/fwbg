@@ -166,7 +166,7 @@ class TestStrategyEndpoints:
         assert "pipeline" in data
         assert "exit_strategy" in data
         assert "model" in data
-        assert "grids" in data
+        assert "exit_params" in data or "optimization" in data
         assert "validation" in data
         # Verify pipeline has plugin arrays
         pipeline = data["pipeline"]

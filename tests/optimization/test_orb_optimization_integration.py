@@ -18,7 +18,6 @@ import pytest
 from unittest.mock import patch
 
 from fwbg.core.context import SimulationContext
-from fwbg.core.config import GridConfig
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -362,7 +361,6 @@ class TestGridSearchCoverage:
         candidates, grid_results = run_grid_search(
             full_pool=orb_cols,
             inner_folds=folds,
-            grid=GridConfig(tp=tp, sl=sl, ct=effective_ct, timeout_bars=timeout_bars),
             ctx=ctx,
             regime_config={},
             sym="TEST",
@@ -545,7 +543,6 @@ class TestORBOptimizationEndToEnd:
             candidates, grid_results = run_grid_search(
                 full_pool=orb_cols,
                 inner_folds=folds,
-                grid=GridConfig(tp=[2.0, 3.0], sl=[1.5], ct=[0.3, 0.4, 0.5]),
                 ctx=ctx,
                 regime_config={},
                 sym="TEST",
@@ -581,7 +578,6 @@ class TestORBOptimizationEndToEnd:
         candidates, grid_results = run_grid_search(
             full_pool=orb_cols,
             inner_folds=folds,
-            grid=GridConfig(tp=[2.0, 3.0, 4.0], sl=[1.5, 2.0], ct=[0.3, 0.4, 0.5]),
             ctx=ctx,
             regime_config={},
             sym="TEST",

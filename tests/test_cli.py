@@ -52,7 +52,7 @@ class TestStrategyLoading:
     """Tests für Strategy-Loading aus JSON."""
 
     def test_load_valid_strategy(self):
-        """Test: Gültige Strategy-Datei laden."""
+        """Test: Gueltige Strategy-Datei laden."""
         from fwbg.core.config import StrategyConfig
 
         strategy_data = {
@@ -63,12 +63,13 @@ class TestStrategyLoading:
                     {"name": "momentum", "params": {}},
                 ]
             },
-            "grids": {
-                "FOREX": {
-                    "tp": [1.5, 2.0],
-                    "sl": [1.0],
-                    "ct": [0.55]
-                }
+            "exit_params": {
+                "tp_mult": [1.5, 2.0],
+                "sl_mult": [1.0],
+                "timeout_bars": [None],
+            },
+            "optimization": {
+                "ct": [0.55]
             }
         }
 
@@ -78,9 +79,8 @@ class TestStrategyLoading:
         assert len(indicators) == 2
         assert indicators[0]["name"] == "trend"
         assert indicators[1]["name"] == "momentum"
-        forex_grid = config.get_grid("EURUSD", "FOREX")
-        assert 1.5 in forex_grid.tp
-        assert 2.0 in forex_grid.tp
+        assert 1.5 in config.exit_params["tp_mult"]
+        assert 2.0 in config.exit_params["tp_mult"]
 
     def test_load_strategy_with_account(self):
         """Test: Strategy mit Account-Konfiguration."""

@@ -236,26 +236,20 @@ class TestGridSearchErrorPropagation:
     def test_import_error_propagates_from_grid_search(self, monkeypatch):
         """An ImportError in target computation must raise, not return 0 candidates."""
         from fwbg.optimization import grid_search as gs
-        from fwbg.core.config import GridConfig
 
         inner_folds, inner_df = self._make_minimal_folds()
         ctx = self._make_ctx()
 
         # Patch _compute_cached_targets to raise ImportError
-        original_cct = gs._compute_cached_targets
-
         def _broken_compute(*args, **kwargs):
             raise ImportError("No module named 'fwbg.plugins.fwbg_premium'")
 
         monkeypatch.setattr(gs, "_compute_cached_targets", _broken_compute)
 
-        grid = GridConfig(tp=[2.0], sl=[1.0], ct=[0.55])
-
         with pytest.raises(ImportError):
             gs.run_grid_search(
                 full_pool=["feat_a", "feat_b", "feat_c"],
                 inner_folds=inner_folds,
-                grid=grid,
                 ctx=ctx,
                 regime_config={},
                 sym="TEST",
@@ -265,7 +259,6 @@ class TestGridSearchErrorPropagation:
     def test_other_exceptions_are_logged_not_raised(self, monkeypatch, capsys):
         """Non-ImportError exceptions are caught but printed to stderr."""
         from fwbg.optimization import grid_search as gs
-        from fwbg.core.config import GridConfig
 
         inner_folds, inner_df = self._make_minimal_folds()
         ctx = self._make_ctx()
@@ -275,13 +268,10 @@ class TestGridSearchErrorPropagation:
 
         monkeypatch.setattr(gs, "_compute_cached_targets", _broken_compute)
 
-        grid = GridConfig(tp=[2.0], sl=[1.0], ct=[0.55])
-
         # Should NOT raise — but should print error to stderr
         candidates, grid_results = gs.run_grid_search(
             full_pool=["feat_a", "feat_b", "feat_c"],
             inner_folds=inner_folds,
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TEST",

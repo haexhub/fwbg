@@ -160,7 +160,7 @@ def _make_large_bull_data():
 def _compute_indicator(df):
     """Compute previous_day_levels indicator on df, return augmented df."""
     ind = _pdl_mod.PreviousDayLevelsIndicator()
-    return ind.compute(df.copy(), retest_atr_width=0.5, enable_retest=True, skip_weekends=False)
+    return ind.compute(df.copy(), enable_retest=True, skip_weekends=False)
 
 
 def _train_signal_model(features_df, ctx, direction="long"):
@@ -620,13 +620,9 @@ class TestFullGridSearch:
             early_pruning_enabled=False,
         )
 
-        from fwbg.core.config import GridConfig
-        grid = GridConfig(tp=[2, 4], sl=[4], ct=[0.5])
-
         candidates, grid_results = run_grid_search(
             full_pool=feature_cols,
             inner_folds=inner_folds,
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TEST",
@@ -648,13 +644,9 @@ class TestFullGridSearch:
             early_pruning_enabled=False,
         )
 
-        from fwbg.core.config import GridConfig
-        grid = GridConfig(tp=[2, 4, 8], sl=[4], ct=[0.5])
-
         candidates, _ = run_grid_search(
             full_pool=feature_cols,
             inner_folds=inner_folds,
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TEST",
@@ -678,13 +670,9 @@ class TestFullGridSearch:
             early_pruning_enabled=False,
         )
 
-        from fwbg.core.config import GridConfig
-        grid = GridConfig(tp=[3], sl=[4], ct=[0.5])
-
         candidates, _ = run_grid_search(
             full_pool=feature_cols,
             inner_folds=inner_folds,
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TEST",
@@ -719,13 +707,9 @@ class TestFullGridSearch:
             early_pruning_enabled=False,
         )
 
-        from fwbg.core.config import GridConfig
-        grid = GridConfig(tp=[4], sl=[4], ct=[0.5])
-
         candidates, _ = run_grid_search(
             full_pool=feature_cols,
             inner_folds=inner_folds,
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TEST",
@@ -746,13 +730,11 @@ class TestComboBuilding:
     """Verify _build_combo_tuples builds correct number of combos."""
 
     def test_combo_count_matches_grid_dimensions(self):
-        """Number of combos should be TP × SL × timeout × modifiers × model_hp."""
-        from fwbg.core.config import GridConfig
-        grid = GridConfig(tp=[2, 4, 6], sl=[2, 4], ct=[0.5])
+        """Number of combos should be TP x SL x timeout x modifiers x model_hp."""
         ctx = _ctx(grid_tp=[2, 4, 6], grid_sl=[2, 4])
 
         combos, skipped = _build_combo_tuples(
-            grid, ctx,
+            ctx,
             timeout_values=[None],
             features=["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"],
             inner_folds=[],
@@ -768,12 +750,10 @@ class TestComboBuilding:
 
     def test_rrr_filter_skips_combos(self):
         """Combos with RRR < min_rrr should be skipped."""
-        from fwbg.core.config import GridConfig
-        grid = GridConfig(tp=[2, 4], sl=[4], ct=[0.5])
         ctx = _ctx(grid_tp=[2, 4], grid_sl=[4], min_rrr=1.0)
 
         combos, skipped = _build_combo_tuples(
-            grid, ctx,
+            ctx,
             timeout_values=[None],
             features=["hl_ses_rl50_pdl_retest_bull"],
             inner_folds=[],
@@ -907,14 +887,10 @@ class TestGridSearchTimingBreakdown:
             early_pruning_min_survivors=4,
         )
 
-        from fwbg.core.config import GridConfig
-        grid = GridConfig(tp=[2, 4, 6, 8], sl=[2, 4, 6], ct=[0.5])
-
         t0 = time.monotonic()
         candidates, grid_results = run_grid_search(
             full_pool=feature_cols,
             inner_folds=inner_folds,
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TIMING_TEST",
@@ -976,13 +952,9 @@ class TestGridSearchTimingBreakdown:
             early_pruning_min_survivors=4,
         )
 
-        from fwbg.core.config import GridConfig
-        grid = GridConfig(tp=[2, 3, 4, 5, 6, 8], sl=[2, 3, 4, 6], ct=[0.5])
-
         candidates_sh, grid_results_sh = run_grid_search(
             full_pool=feature_cols,
             inner_folds=inner_folds,
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="SH_TEST",
@@ -1010,13 +982,9 @@ class TestGridSearchTimingBreakdown:
             min_fold_stability=0.0,
         )
 
-        from fwbg.core.config import GridConfig
-        grid = GridConfig(tp=[2, 4, 8], sl=[2, 4], ct=[0.5])
-
         _, grid_results = run_grid_search(
             full_pool=feature_cols,
             inner_folds=inner_folds,
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="DIFF_TEST",

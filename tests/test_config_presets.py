@@ -165,8 +165,9 @@ class TestStrategyWithPresets:
             "_strategy_dir": strategy_dir,
         })
 
-        assert config.exit_params == exit_params_data
-        assert config.exit_params["atr_period"] == 14
+        # exit_params values are normalized to arrays
+        assert config.exit_params == {"atr_period": [14], "atr_multiplier": [2.0]}
+        assert config.exit_params["atr_period"] == [14]
 
     def test_filters_string_ref(self, tmp_path):
         """filters: "permissive" loads filters/permissive.json."""
@@ -289,7 +290,7 @@ class TestBackwardCompatibility:
 
         assert config.name == "InlineTest"
         assert config.pipeline == {"indicators": [{"name": "trend", "params": {}}]}
-        assert config.exit_params == {"atr_period": 14}
+        assert config.exit_params == {"atr_period": [14]}
         assert config.model.hyperparameters["max_depth"] == 5
         assert config.validation.folds == 8
         assert config.filters.min_rrr == 0.5

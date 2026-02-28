@@ -600,46 +600,54 @@ class TestStrategyJsonEndToEnd:
 
             strategy_name = os.path.basename(path)
             exit_strategy_name = strategy.exit_strategy
-            exit_params = strategy.exit_params
+            exit_params_raw = strategy.exit_params
 
-            # Irgendein Grid-Set nehmen (alle sollten funktionieren)
-            for asset_class, grid_config in strategy.grids.items():
-                tp_values = grid_config.tp or [1.0]
-                sl_values = grid_config.sl or [1.0]
+            # Use exit_params for TP/SL (values are arrays after normalization)
+            tp_values = exit_params_raw.get("tp_mult", [1.0])
+            sl_values = exit_params_raw.get("sl_mult", [1.0])
+            if not isinstance(tp_values, list):
+                tp_values = [tp_values]
+            if not isinstance(sl_values, list):
+                sl_values = [sl_values]
 
-                # Ersten TP/SL aus dem Grid testen
-                tp = tp_values[0]
-                sl = sl_values[0]
+            tp = tp_values[0]
+            sl = sl_values[0]
 
-                try:
-                    exit_strategy_class = get_exit_strategy(exit_strategy_name)
-                    exit_strategy = exit_strategy_class()
+            # Build scalar exit_params for SimulationContext (take first value from each array)
+            scalar_exit_params = {}
+            for k, v in exit_params_raw.items():
+                if k in ("tp_mult", "sl_mult", "timeout_bars"):
+                    continue  # these are grid params, not exit_params for the plugin
+                scalar_exit_params[k] = v[0] if isinstance(v, list) else v
 
-                    ctx = SimulationContext(
-                        symbol="TEST",
-                        asset_class=asset_class,
-                        spread=0.05,
-                        point=0.01,
-                        exit_params=exit_params,
-                    )
+            try:
+                exit_strategy_class = get_exit_strategy(exit_strategy_name)
+                exit_strategy_inst = exit_strategy_class()
 
-                    grid_params = GridParams(
-                        tp_value=float(tp),
-                        sl_value=float(sl),
-                        extra=exit_params,
-                    )
+                ctx = SimulationContext(
+                    symbol="TEST",
+                    asset_class="FOREX",
+                    spread=0.05,
+                    point=0.01,
+                    exit_params=scalar_exit_params,
+                )
 
-                    result = exit_strategy.compute_targets(
-                        df, ctx, params=grid_params,
-                    )
-                    targets_l, targets_s = result[0], result[1]
+                grid_params = GridParams(
+                    tp_value=float(tp),
+                    sl_value=float(sl),
+                    extra=scalar_exit_params,
+                )
 
-                    assert len(targets_l) == len(df), (
-                        f"{strategy_name}/{asset_class}: targets_long hat falsche Länge"
-                    )
-                except Exception as e:
-                    failures.append(f"{strategy_name}/{asset_class} (tp={tp}, sl={sl}): {e}")
-                break  # Ein Grid pro Strategy reicht
+                result = exit_strategy_inst.compute_targets(
+                    df, ctx, params=grid_params,
+                )
+                targets_l, targets_s = result[0], result[1]
+
+                assert len(targets_l) == len(df), (
+                    f"{strategy_name}: targets_long hat falsche Länge"
+                )
+            except Exception as e:
+                failures.append(f"{strategy_name} (tp={tp}, sl={sl}): {e}")
 
         assert not failures, (
             f"Exit-Strategy-Fehler in Strategy-JSONs:\n" +

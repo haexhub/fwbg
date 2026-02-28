@@ -1,35 +1,26 @@
 """
-Tests for grid preset loading system.
+Tests for preset loading and OptimizationConfig.
 
 Verifies:
 1. _load_json_preset loads JSON files and raises on missing
-2. String/dict assignments resolve to correct GridConfig
-3. Preset cache prevents cross-contamination between overrides
-4. Regime filter resolution (string ref, inline dict, shared, per-asset)
-5. Backward compatibility with legacy inline grid format
-6. from_json_file resolves presets_dir relative to strategy file
+2. _normalize_exit_params converts scalars to arrays
+3. OptimizationConfig.from_dict parses ct, regime, exit_modifier_params_grid
+4. StrategyConfig.from_dict integrates optimization section
 """
 import json
 import os
 import pytest
 
 from fwbg.core.config import (
-    GridConfig,
+    OptimizationConfig,
+    RegimeFilterGridConfig,
     StrategyConfig,
     _load_json_preset,
-    _parse_grids,
-    _resolve_regime_filter,
+    _normalize_exit_params,
 )
 
 
 # -- Fixtures --
-
-SAMPLE_GRID = {
-    "tp": [1.5, 2.0],
-    "sl": [3.0, 4.0],
-    "ct": [0.5, 0.55],
-    "timeout_bars": [None, 24],
-}
 
 SAMPLE_REGIME_FILTER = {
     "condition_grids": [
@@ -51,12 +42,12 @@ def _write_json(path, data):
 
 
 # ============================================================
-# TestGridPresetLoading
+# TestPresetLoading
 # ============================================================
 
 
-class TestGridPresetLoading:
-    """Tests for _load_json_preset and basic preset assignment resolution."""
+class TestPresetLoading:
+    """Tests for _load_json_preset."""
 
     def test_load_preset_file(self, tmp_path):
         """Basic JSON load returns correct dict."""
@@ -76,409 +67,191 @@ class TestGridPresetLoading:
         with pytest.raises(FileNotFoundError, match="nonexistent"):
             _load_json_preset("nonexistent", str(presets_dir))
 
-    def test_string_assignment_loads_preset(self, tmp_path):
-        """String assignment loads and returns GridConfig from preset file."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "forex_wide.json"), SAMPLE_GRID)
+    def test_meta_stripped_from_preset(self, tmp_path):
+        """_meta key should be stripped from loaded presets."""
+        presets_dir = tmp_path / "test_presets"
+        presets_dir.mkdir()
+        preset_data = {"key": "value", "_meta": {"author": "test"}}
+        _write_json(str(presets_dir / "with_meta.json"), preset_data)
 
-        grids_data = {
-            "assignments": {
-                "FOREX": "forex_wide",
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        assert "FOREX" in result
-        assert isinstance(result["FOREX"], GridConfig)
-        assert result["FOREX"].tp == [1.5, 2.0]
-        assert result["FOREX"].sl == [3.0, 4.0]
-
-    def test_dict_with_preset_key_overrides(self, tmp_path):
-        """Dict with "preset" key loads preset and applies overrides."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-
-        grids_data = {
-            "assignments": {
-                "FOREX": {"preset": "base", "tp": [3.0, 4.0]},
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        assert result["FOREX"].tp == [3.0, 4.0]  # overridden
-        assert result["FOREX"].sl == [3.0, 4.0]  # from preset
-
-    def test_override_does_not_mutate_cache(self, tmp_path):
-        """Same preset used twice with different overrides — no bleed."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-
-        grids_data = {
-            "assignments": {
-                "FOREX": {"preset": "base", "tp": [10.0]},
-                "INDEX": {"preset": "base", "tp": [20.0]},
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        assert result["FOREX"].tp == [10.0]
-        assert result["INDEX"].tp == [20.0]
-        # Original preset values unchanged in each
-        assert result["FOREX"].sl == [3.0, 4.0]
-        assert result["INDEX"].sl == [3.0, 4.0]
+        result = _load_json_preset("with_meta", str(presets_dir))
+        assert "_meta" not in result
+        assert result == {"key": "value"}
 
 
 # ============================================================
-# TestRegimeFilterPresets
+# TestNormalizeExitParams
 # ============================================================
 
 
-class TestGridConfigExitModifierParamsGrid:
-    """Tests für exit_modifier_params_grid in GridConfig."""
+class TestNormalizeExitParams:
+    """Tests for _normalize_exit_params."""
 
-    def test_absent_exit_modifier_params_grid_defaults_to_none_list(self):
-        """Ohne exit_modifier_params_grid soll Default [None] verwendet werden."""
-        cfg = GridConfig.from_dict({"tp": [1.0], "sl": [1.0], "ct": [0.5]})
-        assert cfg.exit_modifier_params_grid == [None]
+    def test_scalar_values_wrapped_in_list(self):
+        """Scalar values should be converted to single-element lists."""
+        params = {"tp_mult": 2.0, "sl_mult": 1.5, "atr_period": 14}
+        result = _normalize_exit_params(params)
+        assert result == {"tp_mult": [2.0], "sl_mult": [1.5], "atr_period": [14]}
+
+    def test_list_values_unchanged(self):
+        """List values should pass through unchanged."""
+        params = {"tp_mult": [1.0, 2.0], "sl_mult": [1.5]}
+        result = _normalize_exit_params(params)
+        assert result == params
+
+    def test_mixed_scalar_and_list(self):
+        """Mix of scalars and lists."""
+        params = {"tp_mult": [1.0, 2.0], "sl_mult": 1.5, "timeout_bars": [None, 24]}
+        result = _normalize_exit_params(params)
+        assert result == {
+            "tp_mult": [1.0, 2.0],
+            "sl_mult": [1.5],
+            "timeout_bars": [None, 24],
+        }
+
+    def test_empty_dict(self):
+        """Empty dict returns empty dict."""
+        assert _normalize_exit_params({}) == {}
+
+
+# ============================================================
+# TestOptimizationConfig
+# ============================================================
+
+
+class TestOptimizationConfig:
+    """Tests for OptimizationConfig.from_dict."""
+
+    def test_default_ct(self):
+        """Default ct should be [0.5]."""
+        cfg = OptimizationConfig()
+        assert cfg.ct == [0.5]
+
+    def test_from_dict_none_returns_default(self):
+        """None input returns default config."""
+        cfg = OptimizationConfig.from_dict(None)
+        assert cfg.ct == [0.5]
+        assert cfg.regime_filter_grid.total_combinations() == 1
+
+    def test_ct_scalar_wrapped(self):
+        """Scalar ct value should be wrapped in a list."""
+        cfg = OptimizationConfig.from_dict({"ct": 0.6})
+        assert cfg.ct == [0.6]
+
+    def test_ct_list_preserved(self):
+        """List ct value should pass through."""
+        cfg = OptimizationConfig.from_dict({"ct": [0.5, 0.55, 0.6]})
+        assert cfg.ct == [0.5, 0.55, 0.6]
+
+    def test_long_short_ct(self):
+        """long_ct and short_ct parsed from dict."""
+        cfg = OptimizationConfig.from_dict({
+            "ct": [0.5],
+            "long_ct": [0.6, 0.65],
+            "short_ct": 0.55,
+        })
+        assert cfg.long_ct == [0.6, 0.65]
+        assert cfg.short_ct == [0.55]
+
+    def test_regime_filter_grid_parsed(self):
+        """regime_filter_grid dict should be parsed into RegimeFilterGridConfig."""
+        cfg = OptimizationConfig.from_dict({
+            "regime_filter_grid": SAMPLE_REGIME_FILTER,
+        })
+        assert cfg.regime_filter_grid.total_combinations() == 2
+
+    def test_no_regime_filter_grid(self):
+        """Without regime_filter_grid, default (1 combo) is used."""
+        cfg = OptimizationConfig.from_dict({"ct": [0.5]})
+        assert cfg.regime_filter_grid.total_combinations() == 1
+
+    def test_absent_exit_modifier_params_grid_defaults_to_none(self):
+        """Without exit_modifier_params_grid, default is None."""
+        cfg = OptimizationConfig.from_dict({"ct": [0.5]})
+        assert cfg.exit_modifier_params_grid is None
 
     def test_list_exit_modifier_params_grid_parsed_as_is(self):
-        """Liste wird unverändert übernommen."""
-        cfg = GridConfig.from_dict({
-            "tp": [1.0], "sl": [1.0], "ct": [0.5],
+        """List is preserved unchanged."""
+        cfg = OptimizationConfig.from_dict({
             "exit_modifier_params_grid": [
                 {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
                 {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
             ],
         })
         assert len(cfg.exit_modifier_params_grid) == 2
-        assert cfg.exit_modifier_params_grid[0] == {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0}
-        assert cfg.exit_modifier_params_grid[1] == {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
+        assert cfg.exit_modifier_params_grid[0] == {
+            "breakeven_trigger": 0.0, "trail_atr_mult": 0.0
+        }
+        assert cfg.exit_modifier_params_grid[1] == {
+            "breakeven_trigger": 0.5, "trail_atr_mult": 0.5
+        }
 
     def test_single_dict_exit_modifier_params_grid_wrapped_in_list(self):
-        """Einzelnes Dict wird in Liste gepackt."""
-        cfg = GridConfig.from_dict({
-            "tp": [1.0], "sl": [1.0], "ct": [0.5],
-            "exit_modifier_params_grid": {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+        """Single dict is wrapped in a list."""
+        cfg = OptimizationConfig.from_dict({
+            "exit_modifier_params_grid": {
+                "breakeven_trigger": 0.5, "trail_atr_mult": 0.5
+            },
         })
-        assert cfg.exit_modifier_params_grid == [{"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}]
+        assert cfg.exit_modifier_params_grid == [
+            {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
+        ]
 
-    def test_exit_modifier_params_grid_with_none_in_list(self):
-        """Liste mit None-Eintrag (=kein Modifier) ist erlaubt."""
-        cfg = GridConfig.from_dict({
-            "tp": [1.0], "sl": [1.0], "ct": [0.5],
-            "exit_modifier_params_grid": [
-                None,
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+    def test_model_hyperparameters_grid_list(self):
+        """model_hyperparameters_grid list is preserved."""
+        cfg = OptimizationConfig.from_dict({
+            "model_hyperparameters_grid": [
+                {"signal_column_long": "col_a"},
+                {"signal_column_long": "col_b"},
             ],
         })
-        assert len(cfg.exit_modifier_params_grid) == 2
-        assert cfg.exit_modifier_params_grid[0] is None
-        assert cfg.exit_modifier_params_grid[1] == {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
+        assert len(cfg.model_hyperparameters_grid) == 2
 
-    def test_exit_modifier_params_grid_preserved_through_preset_override(self, tmp_path):
-        """exit_modifier_params_grid aus Assignment-Override wird genutzt."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-
-        grids_data = {
-            "assignments": {
-                "FOREX": {
-                    "preset": "base",
-                    "exit_modifier_params_grid": [
-                        {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
-                        {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-                    ],
-                },
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        assert len(result["FOREX"].exit_modifier_params_grid) == 2
-
-    def test_indicator_overrides_preserved_through_preset_override(self, tmp_path):
-        """indicator_overrides from assignment-level override reach GridConfig."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-
-        grids_data = {
-            "assignments": {
-                "ASX200": {
-                    "preset": "base",
-                    "indicator_overrides": {
-                        "previous_day_levels": {
-                            "session_start_hour": 23,
-                            "session_end_hour": 6,
-                        }
-                    },
-                },
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        overrides = result["ASX200"].indicator_overrides
-        assert overrides == {
-            "previous_day_levels": {
-                "session_start_hour": 23,
-                "session_end_hour": 6,
-            }
-        }
-
-
-class TestRegimeFilterPresets:
-    """Tests for regime filter resolution in preset system."""
-
-    def test_regime_filter_string_loads_file(self, tmp_path):
-        """String regime_filter_grid loads from regime_filters/ directory."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        regime_dir = tmp_path / "regime_filters"
-        regime_dir.mkdir()
-
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-        _write_json(str(regime_dir / "adx_filter.json"), SAMPLE_REGIME_FILTER)
-
-        grids_data = {
-            "assignments": {
-                "FOREX": {
-                    "preset": "base",
-                    "regime_filter_grid": "adx_filter",
-                },
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        rfg = result["FOREX"].regime_filter_grid
-        assert rfg.total_combinations() == 2
-        assert len(rfg.condition_grids) == 1
-        assert rfg.condition_grids[0]["column"] == "trend_adx_14"
-
-    def test_regime_filter_inline_dict(self, tmp_path):
-        """Inline dict regime_filter_grid used as-is."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-
-        grids_data = {
-            "assignments": {
-                "FOREX": {
-                    "preset": "base",
-                    "regime_filter_grid": SAMPLE_REGIME_FILTER,
-                },
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        rfg = result["FOREX"].regime_filter_grid
-        assert rfg.total_combinations() == 2
-
-    def test_regime_filter_from_shared(self, tmp_path):
-        """Shared strategy-level regime injected when assignment has none."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-
-        grids_data = {
-            "regime_filter_grid": SAMPLE_REGIME_FILTER,
-            "assignments": {
-                "FOREX": "base",
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        rfg = result["FOREX"].regime_filter_grid
-        assert rfg.total_combinations() == 2
-
-    def test_regime_filter_per_asset_override_string(self, tmp_path):
-        """Per-asset string ref takes precedence over shared."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        regime_dir = tmp_path / "regime_filters"
-        regime_dir.mkdir()
-
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-
-        shared_regime = {
-            "condition_grids": [
-                {"column": "macro_vix", "operator": "<=", "values": [None, 30],
-                 "directions": 6, "else_directions": 0},
-            ]
-        }
-        asset_regime = {
-            "condition_grids": [
-                {"column": "trend_adx_14", "operator": ">=", "values": [None, 20, 25],
-                 "directions": 6, "else_directions": 0},
-            ]
-        }
-        _write_json(str(regime_dir / "adx_strict.json"), asset_regime)
-
-        grids_data = {
-            "regime_filter_grid": shared_regime,
-            "assignments": {
-                "FOREX": {
-                    "preset": "base",
-                    "regime_filter_grid": "adx_strict",
-                },
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        rfg = result["FOREX"].regime_filter_grid
-        # Asset-level has 3 values → 3 combos (not 2 from shared)
-        assert rfg.total_combinations() == 3
-
-    def test_regime_filter_per_asset_override_dict(self, tmp_path):
-        """Per-asset inline dict takes precedence over shared."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-
-        shared_regime = {
-            "condition_grids": [
-                {"column": "macro_vix", "operator": "<=", "values": [None, 30],
-                 "directions": 6, "else_directions": 0},
-            ]
-        }
-        asset_regime = {
-            "condition_grids": [
-                {"column": "trend_adx_14", "operator": ">=", "values": [None, 20, 25, 30],
-                 "directions": 6, "else_directions": 0},
-            ]
-        }
-
-        grids_data = {
-            "regime_filter_grid": shared_regime,
-            "assignments": {
-                "FOREX": {
-                    "preset": "base",
-                    "regime_filter_grid": asset_regime,
-                },
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        rfg = result["FOREX"].regime_filter_grid
-        # Asset-level has 4 values → 4 combos (not 2 from shared)
-        assert rfg.total_combinations() == 4
-
-    def test_no_regime_filter(self, tmp_path):
-        """Neither assignment nor shared → no regime filter (default empty)."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "base.json"), SAMPLE_GRID)
-
-        grids_data = {
-            "assignments": {
-                "FOREX": "base",
-            },
-        }
-        result = _parse_grids(grids_data, str(tmp_path))
-        rfg = result["FOREX"].regime_filter_grid
-        assert rfg.total_combinations() == 1  # default: no conditions
+    def test_model_hyperparameters_grid_single_dict_wrapped(self):
+        """Single dict model_hyperparameters_grid is wrapped in a list."""
+        cfg = OptimizationConfig.from_dict({
+            "model_hyperparameters_grid": {"signal_column_long": "col_a"},
+        })
+        assert cfg.model_hyperparameters_grid == [{"signal_column_long": "col_a"}]
 
 
 # ============================================================
-# TestBackwardCompatibility
+# TestStrategyOptimizationIntegration
 # ============================================================
 
 
-class TestBackwardCompatibility:
-    """Tests ensuring legacy inline grid format works identically."""
+class TestStrategyOptimizationIntegration:
+    """Tests that StrategyConfig.from_dict integrates optimization correctly."""
 
-    def test_legacy_inline_grids_unchanged(self):
-        """Old dict format (tp/sl/ct inline) works identically."""
-        grids_data = {
-            "FOREX": {
-                "tp": [1.5, 2.0],
-                "sl": [1.0],
-                "ct": [0.55],
-            },
-            "INDEX": {
-                "tp": [2.0, 3.0],
-                "sl": [2.0],
-                "ct": [0.60],
-            },
-        }
-        result = _parse_grids(grids_data)
-        assert "FOREX" in result
-        assert "INDEX" in result
-        assert isinstance(result["FOREX"], GridConfig)
-        assert result["FOREX"].tp == [1.5, 2.0]
-        assert result["INDEX"].tp == [2.0, 3.0]
-
-    def test_empty_grids(self):
-        """Empty grids dict returns empty dict."""
-        assert _parse_grids({}) == {}
-
-    def test_get_grid_resolution_with_presets(self, tmp_path):
-        """symbol → asset_class → FOREX fallback still works with preset-loaded grids."""
-        grids_dir = tmp_path / "grids"
-        grids_dir.mkdir()
-        _write_json(str(grids_dir / "forex_grid.json"), {
-            "tp": [1.5], "sl": [3.0], "ct": [0.5],
-        })
-        _write_json(str(grids_dir / "index_grid.json"), {
-            "tp": [2.5], "sl": [4.0], "ct": [0.6],
-        })
-        _write_json(str(grids_dir / "eurusd_special.json"), {
-            "tp": [5.0], "sl": [1.0], "ct": [0.7],
-        })
-
-        strategy_data = {
+    def test_optimization_parsed(self):
+        """optimization section parsed into OptimizationConfig."""
+        config = StrategyConfig.from_dict({
             "name": "Test",
-            "grids": {
-                "assignments": {
-                    "FOREX": "forex_grid",
-                    "INDEX": "index_grid",
-                    "EURUSD": "eurusd_special",
-                },
+            "optimization": {
+                "ct": [0.5, 0.55],
+                "regime_filter_grid": SAMPLE_REGIME_FILTER,
             },
-            "_strategy_dir": str(tmp_path),
-        }
-        config = StrategyConfig.from_dict(strategy_data)
-
-        # Symbol-level match
-        eurusd_grid = config.get_grid("EURUSD", "FOREX")
-        assert eurusd_grid.tp == [5.0]
-
-        # Asset class match
-        dax_grid = config.get_grid("DAX", "INDEX")
-        assert dax_grid.tp == [2.5]
-
-        # FOREX fallback
-        unknown_grid = config.get_grid("UNKNOWN", "UNKNOWN_CLASS")
-        assert unknown_grid.tp == [1.5]
-
-
-# ============================================================
-# TestFromJsonFile
-# ============================================================
-
-
-class TestFromJsonFile:
-    """Tests for from_json_file with preset resolution."""
-
-    def test_from_json_file_resolves_presets_dir(self, tmp_path):
-        """presets_dir resolved relative to strategy file directory."""
-        # Create strategy dir structure
-        strategy_dir = tmp_path / "strategies"
-        strategy_dir.mkdir()
-        grids_dir = strategy_dir / "grids"
-        grids_dir.mkdir()
-
-        _write_json(str(grids_dir / "my_grid.json"), {
-            "tp": [1.0, 1.5],
-            "sl": [2.0],
-            "ct": [0.5],
         })
+        assert isinstance(config.optimization, OptimizationConfig)
+        assert config.optimization.ct == [0.5, 0.55]
+        assert config.optimization.regime_filter_grid.total_combinations() == 2
 
-        strategy = {
-            "name": "PresetTest",
-            "grids": {
-                "assignments": {
-                    "FOREX": "my_grid",
-                },
+    def test_no_optimization_uses_defaults(self):
+        """Without optimization key, defaults are used."""
+        config = StrategyConfig.from_dict({"name": "NoOpt"})
+        assert config.optimization.ct == [0.5]
+        assert config.optimization.regime_filter_grid.total_combinations() == 1
+
+    def test_exit_params_normalized_to_arrays(self):
+        """exit_params values are normalized to arrays."""
+        config = StrategyConfig.from_dict({
+            "name": "Test",
+            "exit_params": {
+                "tp_mult": [1.5, 2.0],
+                "sl_mult": 1.0,
+                "timeout_bars": [None, 24],
             },
-        }
-        strategy_path = str(strategy_dir / "test_strategy.json")
-        _write_json(strategy_path, strategy)
-
-        config = StrategyConfig.from_json_file(strategy_path)
-        assert config.name == "PresetTest"
-        grid = config.get_grid("EURUSD", "FOREX")
-        assert grid.tp == [1.0, 1.5]
-        assert grid.sl == [2.0]
+        })
+        assert config.exit_params["tp_mult"] == [1.5, 2.0]
+        assert config.exit_params["sl_mult"] == [1.0]
+        assert config.exit_params["timeout_bars"] == [None, 24]

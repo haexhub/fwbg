@@ -32,12 +32,11 @@ class TestGridProgressCallback:
         ctx.grid_exit_modifier_params = [None]
         ctx.grid_model_hyperparameters = [None]
 
-        # Minimaler grid mit 2x2 = 4 Kombinationen
-        grid = MagicMock()
-        grid.tp = [10, 20]
-        grid.sl = [20, 30]
-        grid.ct = [0.6]
-        grid.timeout_bars = None
+        # Grid values on ctx (no separate grid object after refactor)
+        ctx.grid_tp = [10, 20]
+        ctx.grid_sl = [20, 30]
+        ctx.grid_ct = [0.6]
+        ctx.grid_timeout_bars = [None]
 
         # Dummy inner_df mit genug Daten
         np.random.seed(42)
@@ -72,7 +71,6 @@ class TestGridProgressCallback:
                 candidates, grid_results = run_grid_search(
                     full_pool=full_pool,
                     inner_folds=inner_folds,
-                    grid=grid,
                     ctx=ctx,
                     regime_config={},
                     sym="EURUSD",
@@ -108,11 +106,10 @@ class TestGridProgressCallback:
         ctx.grid_exit_modifier_params = [None]
         ctx.grid_model_hyperparameters = [None]
 
-        grid = MagicMock()
-        grid.tp = [10, 20]
-        grid.sl = [20, 30]
-        grid.ct = [0.6]
-        grid.timeout_bars = None
+        ctx.grid_tp = [10, 20]
+        ctx.grid_sl = [20, 30]
+        ctx.grid_ct = [0.6]
+        ctx.grid_timeout_bars = [None]
 
         # Leerer inner_df - wird zu Early-Exit führen (keine Features)
         inner_df = pd.DataFrame({
@@ -125,7 +122,6 @@ class TestGridProgressCallback:
         candidates, grid_results = run_grid_search(
             full_pool=full_pool,
             inner_folds=inner_folds,
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="EURUSD",
@@ -154,11 +150,10 @@ class TestGridProgressCallback:
         ctx.grid_exit_modifier_params = [None]
         ctx.grid_model_hyperparameters = [None]
 
-        grid = MagicMock()
-        grid.tp = [10, 20]
-        grid.sl = [20, 30]
-        grid.ct = [0.6]
-        grid.timeout_bars = None
+        ctx.grid_tp = [10, 20]
+        ctx.grid_sl = [20, 30]
+        ctx.grid_ct = [0.6]
+        ctx.grid_timeout_bars = [None]
 
         # inner_df mit genug Features
         inner_df = pd.DataFrame({
@@ -178,7 +173,6 @@ class TestGridProgressCallback:
             candidates, grid_results = run_grid_search(
                 full_pool=full_pool,
                 inner_folds=inner_folds,
-                grid=grid,
                 ctx=ctx,
                 regime_config={},
                 sym="EURUSD",
@@ -217,11 +211,10 @@ class TestProgressCallbackSequence:
         ctx.grid_exit_modifier_params = [None]
         ctx.grid_model_hyperparameters = [None]
 
-        grid = MagicMock()
-        grid.tp = [10, 20]
-        grid.sl = [20, 30]
-        grid.ct = [0.6]
-        grid.timeout_bars = None
+        ctx.grid_tp = [10, 20]
+        ctx.grid_sl = [20, 30]
+        ctx.grid_ct = [0.6]
+        ctx.grid_timeout_bars = [None]
 
         np.random.seed(42)
         inner_df = pd.DataFrame({
@@ -246,7 +239,6 @@ class TestProgressCallbackSequence:
                 run_grid_search(
                     full_pool=full_pool,
                     inner_folds=inner_folds,
-                    grid=grid,
                     ctx=ctx,
                     regime_config={},
                     sym="TEST",
@@ -284,15 +276,14 @@ class TestProgressCallbackSequence:
         ctx.grid_exit_modifier_params = [None]
         ctx.grid_model_hyperparameters = [None]
 
-        grid = MagicMock()
         # TP=10, SL=30 -> RRR=0.33 < 0.5 -> SKIP
         # TP=10, SL=20 -> RRR=0.5 >= 0.5 -> OK
         # TP=20, SL=30 -> RRR=0.67 >= 0.5 -> OK
         # TP=20, SL=20 -> RRR=1.0 >= 0.5 -> OK
-        grid.tp = [10, 20]
-        grid.sl = [20, 30]
-        grid.ct = [0.6]
-        grid.timeout_bars = None
+        ctx.grid_tp = [10, 20]
+        ctx.grid_sl = [20, 30]
+        ctx.grid_ct = [0.6]
+        ctx.grid_timeout_bars = [None]
 
         np.random.seed(42)
         inner_df = pd.DataFrame({
@@ -317,7 +308,6 @@ class TestProgressCallbackSequence:
                 run_grid_search(
                     full_pool=full_pool,
                     inner_folds=inner_folds,
-                    grid=grid,
                     ctx=ctx,
                     regime_config={},
                     sym="TEST",
@@ -464,10 +454,9 @@ class TestSuccessiveHalving:
         ctx.grid_exit_modifier_params = [None]
         ctx.grid_model_hyperparameters = [None]
 
-        grid = MagicMock()
-        grid.tp = [10, 20]
-        grid.sl = [20, 30]
-        grid.timeout_bars = None
+        ctx.grid_tp = [10, 20]
+        ctx.grid_sl = [20, 30]
+        ctx.grid_timeout_bars = [None]
 
         inner_df = pd.DataFrame({"feat1": np.random.randn(100)})
         inner_folds = [(MagicMock(), MagicMock())]  # Single fold!
@@ -476,7 +465,7 @@ class TestSuccessiveHalving:
              patch("fwbg.optimization.grid_search._run_with_successive_halving") as mock_sh, \
              patch("fwbg.optimization.grid_search._process_tp_sl_combo_wrapper",
                    return_value=({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {}, 0)):
-            run_grid_search(["feat1"], inner_folds, grid, ctx, {}, "TEST", inner_df=inner_df)
+            run_grid_search(["feat1"], inner_folds, ctx, {}, "TEST", inner_df=inner_df)
             mock_sh.assert_not_called()
 
     def test_pruning_skipped_few_combos(self):
@@ -495,10 +484,9 @@ class TestSuccessiveHalving:
         ctx.grid_exit_modifier_params = [None]
         ctx.grid_model_hyperparameters = [None]
 
-        grid = MagicMock()
-        grid.tp = [10]
-        grid.sl = [20, 30]
-        grid.timeout_bars = None
+        ctx.grid_tp = [10]
+        ctx.grid_sl = [20, 30]
+        ctx.grid_timeout_bars = [None]
 
         inner_df = pd.DataFrame({"feat1": np.random.randn(100)})
         inner_folds = [(MagicMock(), MagicMock()), (MagicMock(), MagicMock())]
@@ -507,7 +495,7 @@ class TestSuccessiveHalving:
              patch("fwbg.optimization.grid_search._run_with_successive_halving") as mock_sh, \
              patch("fwbg.optimization.grid_search._process_tp_sl_combo_wrapper",
                    return_value=({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {}, 0)):
-            run_grid_search(["feat1"], inner_folds, grid, ctx, {}, "TEST", inner_df=inner_df)
+            run_grid_search(["feat1"], inner_folds, ctx, {}, "TEST", inner_df=inner_df)
             mock_sh.assert_not_called()
 
     def test_progress_reports_all_combos(self):
@@ -672,7 +660,8 @@ class TestProbabilityCalibration:
                 "probability_calibration": True,
                 "calibration_method": "sigmoid",
             },
-            "grids": {"FOREX": {"tp": [10], "sl": [20], "ct": [0.5]}},
+            "exit_params": {"tp_mult": [10], "sl_mult": [20], "timeout_bars": [None]},
+            "optimization": {"ct": [0.5]},
         })
 
         from fwbg.data.assets import AssetConfig

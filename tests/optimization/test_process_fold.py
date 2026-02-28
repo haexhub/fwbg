@@ -11,7 +11,7 @@ import pandas as pd
 from unittest.mock import MagicMock, patch, call
 from dataclasses import dataclass
 
-from fwbg.core.config import GridConfig, RegimeFilterGridConfig
+from fwbg.core.config import RegimeFilterGridConfig
 from fwbg.core.context import SimulationContext
 from fwbg.optimization.robust_validation import WalkForwardFold
 
@@ -52,8 +52,11 @@ def _make_fold(df, fold_id=0, train_ratio=0.7):
     )
 
 
-def _make_ctx(**overrides):
+def _make_ctx(regime_conditions=None, **overrides):
     """Create a minimal SimulationContext for testing."""
+    regime_grid = RegimeFilterGridConfig(
+        condition_grids=regime_conditions or []
+    )
     defaults = dict(
         symbol="TESTUSD",
         asset_class="FOREX",
@@ -72,36 +75,22 @@ def _make_ctx(**overrides):
         exit_strategy="fixed",
         exit_params={},
         model_hyperparameters={"n_estimators": 10, "max_depth": 2, "random_state": 42},
+        regime_filter_grid=regime_grid,
     )
     defaults.update(overrides)
     return SimulationContext(**defaults)
 
 
-def _make_grid(regime_conditions=None):
-    """Create a GridConfig with optional regime filter conditions."""
-    regime_grid = RegimeFilterGridConfig(
-        condition_grids=regime_conditions or []
-    )
-    return GridConfig(
-        tp=[10, 20],
-        sl=[20, 30],
-        ct=[0.5, 0.55],
-        timeout_bars=[None],
-        regime_filter_grid=regime_grid,
-    )
-
-
 class TestProcessSingleFoldIntegration:
     """Integration tests that actually call process_single_fold."""
 
-    def _run_fold(self, fold_idx=0, grid=None, ctx=None, regime_conditions=None):
+    def _run_fold(self, fold_idx=0, ctx=None, regime_conditions=None):
         """Run process_single_fold with mocked XGB/feature selection internals."""
         from fwbg.optimization.process_fold import process_single_fold
 
         df = _make_ohlc_df()
         fold = _make_fold(df, fold_id=fold_idx)
-        grid = grid or _make_grid(regime_conditions=regime_conditions)
-        ctx = ctx or _make_ctx()
+        ctx = ctx or _make_ctx(regime_conditions=regime_conditions)
         features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
 
         # Mock select_features to return immediately
@@ -110,7 +99,7 @@ class TestProcessSingleFoldIntegration:
             return_value=(features, features),
         )
         # Mock run_grid_search to return dummy candidates
-        def fake_grid_search(full_pool, inner_folds, grid, ctx, regime_config,
+        def fake_grid_search(full_pool, inner_folds, ctx, regime_config,
                              sym, progress_callback=None, inner_df=None,
                              preselected_features_long=None,
                              preselected_features_short=None):
@@ -183,7 +172,6 @@ class TestProcessSingleFoldIntegration:
                 fold_indicators=[],
                 precomputed_raw_df=None,
                 preprocessing_configs=None,
-                grid=grid,
                 ctx=ctx,
                 sym="TESTUSD",
                 total_indicators=6,
@@ -273,16 +261,14 @@ class TestProcessSingleFoldIntegration:
 
     def test_grid_total_includes_regime_multiplier(self):
         """grid_total in progress reports should include regime combo count."""
-        ctx = _make_ctx()
+        regime_conditions = [
+            {"column": "feat1", "operator": ">=", "values": [None, 0.5],
+             "directions": 6, "else_directions": 0},
+        ]
+        ctx = _make_ctx(regime_conditions=regime_conditions)
         base_combos = ctx.total_grid_combinations()  # 2 TP * 2 SL = 4
 
-        _, _, _, _, _, m_progress = self._run_fold(
-            ctx=ctx,
-            regime_conditions=[
-                {"column": "feat1", "operator": ">=", "values": [None, 0.5],
-                 "directions": 6, "else_directions": 0},
-            ],
-        )
+        _, _, _, _, _, m_progress = self._run_fold(ctx=ctx)
 
         if m_progress.call_count > 0:
             grid_totals = [
@@ -302,7 +288,6 @@ class TestProcessSingleFoldIntegration:
 
         df = _make_ohlc_df()
         fold = _make_fold(df, fold_id=0)
-        grid = _make_grid()
         ctx = _make_ctx()
 
         with patch("fwbg.optimization.process_fold.select_features", return_value=(None, None)), \
@@ -314,7 +299,7 @@ class TestProcessSingleFoldIntegration:
                 fold=fold, fold_idx=0, n_folds=8,
                 fold_indicators=[], precomputed_raw_df=None,
                 preprocessing_configs=None,
-                grid=grid, ctx=ctx, sym="TEST", total_indicators=6,
+                ctx=ctx, sym="TEST", total_indicators=6,
             )
 
         assert result is None
@@ -356,11 +341,10 @@ class TestHoldoutUsesWinningCandidateParams:
 
         df = _make_ohlc_df()
         fold = _make_fold(df, fold_id=0)
-        grid = _make_grid()
         ctx = _make_ctx(model_hyperparameters=base_hp)
         features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
 
-        def fake_grid_search(full_pool, inner_folds, grid, ctx, regime_config,
+        def fake_grid_search(full_pool, inner_folds, ctx, regime_config,
                              sym, progress_callback=None, inner_df=None,
                              preselected_features_long=None,
                              preselected_features_short=None):
@@ -408,7 +392,7 @@ class TestHoldoutUsesWinningCandidateParams:
                 fold=fold, fold_idx=0, n_folds=8,
                 fold_indicators=[], precomputed_raw_df=None,
                 preprocessing_configs=None,
-                grid=grid, ctx=ctx, sym="TEST", total_indicators=6,
+                ctx=ctx, sym="TEST", total_indicators=6,
             )
 
         # evaluate_on_holdout must have been called with ctx containing variant HP
@@ -426,11 +410,10 @@ class TestHoldoutUsesWinningCandidateParams:
 
         df = _make_ohlc_df()
         fold = _make_fold(df, fold_id=0)
-        grid = _make_grid()
         ctx = _make_ctx(model_hyperparameters=base_hp)
         features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
 
-        def fake_grid_search(full_pool, inner_folds, grid, ctx, regime_config,
+        def fake_grid_search(full_pool, inner_folds, ctx, regime_config,
                              sym, progress_callback=None, inner_df=None,
                              preselected_features_long=None,
                              preselected_features_short=None):
@@ -477,7 +460,7 @@ class TestHoldoutUsesWinningCandidateParams:
                 fold=fold, fold_idx=0, n_folds=8,
                 fold_indicators=[], precomputed_raw_df=None,
                 preprocessing_configs=None,
-                grid=grid, ctx=ctx, sym="TEST", total_indicators=6,
+                ctx=ctx, sym="TEST", total_indicators=6,
             )
 
         # With no variant, holdout ctx should have base HP
@@ -493,11 +476,10 @@ class TestHoldoutUsesWinningCandidateParams:
 
         df = _make_ohlc_df()
         fold = _make_fold(df, fold_id=0)
-        grid = _make_grid()
         ctx = _make_ctx()
         features = ["feat1", "feat2", "feat3", "feat4", "feat5", "feat6"]
 
-        def fake_grid_search(full_pool, inner_folds, grid, ctx, regime_config,
+        def fake_grid_search(full_pool, inner_folds, ctx, regime_config,
                              sym, progress_callback=None, inner_df=None,
                              preselected_features_long=None,
                              preselected_features_short=None):
@@ -545,7 +527,7 @@ class TestHoldoutUsesWinningCandidateParams:
                 fold=fold, fold_idx=0, n_folds=8,
                 fold_indicators=[], precomputed_raw_df=None,
                 preprocessing_configs=None,
-                grid=grid, ctx=ctx, sym="TEST", total_indicators=6,
+                ctx=ctx, sym="TEST", total_indicators=6,
             )
 
         assert result is not None

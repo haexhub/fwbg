@@ -7,7 +7,6 @@ Stellt sicher, dass:
 - Early-Exit in run_grid_search genau total_grid_combinations() Callbacks sendet
 """
 import pytest
-from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 
@@ -32,12 +31,6 @@ def _make_ctx(modifier_params_grid=None, timeout_bars=None):
     )
 
 
-def _make_grid():
-    """Minimales grid-Mock mit tp=[10, 20], sl=[20, 30]."""
-    grid = MagicMock()
-    grid.tp = [10.0, 20.0]
-    grid.sl = [20.0, 30.0]
-    return grid
 
 
 class TestBuildComboTuples:
@@ -48,11 +41,10 @@ class TestBuildComboTuples:
         from fwbg.optimization.grid_search import _build_combo_tuples
 
         ctx = _make_ctx(modifier_params_grid=[None], timeout_bars=[32, 96])
-        grid = _make_grid()
         timeout_values = [32, 96]
 
         combos, skipped = _build_combo_tuples(
-            grid, ctx, timeout_values, ["feat1"], [], {}, 8, None, None, None, "TEST"
+            ctx, timeout_values, ["feat1"], [], {}, 8, None, None, None, "TEST"
         )
 
         assert skipped == 0
@@ -71,14 +63,13 @@ class TestBuildComboTuples:
             ],
             timeout_bars=[32, 96],
         )
-        grid = _make_grid()
         timeout_values = [32, 96]
 
         combos_single, _ = _build_combo_tuples(
-            grid, ctx_single, timeout_values, ["feat1"], [], {}, 8, None, None, None, "TEST"
+            ctx_single, timeout_values, ["feat1"], [], {}, 8, None, None, None, "TEST"
         )
         combos_double, _ = _build_combo_tuples(
-            grid, ctx_double, timeout_values, ["feat1"], [], {}, 16, None, None, None, "TEST"
+            ctx_double, timeout_values, ["feat1"], [], {}, 16, None, None, None, "TEST"
         )
 
         assert len(combos_double) == 2 * len(combos_single)
@@ -94,11 +85,10 @@ class TestBuildComboTuples:
             ],
             timeout_bars=[32, 96],
         )
-        grid = _make_grid()
         timeout_values = [32, 96]
 
         combos, skipped = _build_combo_tuples(
-            grid, ctx, timeout_values, ["feat1"], [], {},
+            ctx, timeout_values, ["feat1"], [], {},
             ctx.total_grid_combinations(), None, None, None, "TEST"
         )
 
@@ -112,11 +102,10 @@ class TestBuildComboTuples:
         modifier_no_trail = {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0}
         modifier_trail = {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
         ctx = _make_ctx(modifier_params_grid=[modifier_no_trail, modifier_trail])
-        grid = _make_grid()
         timeout_values = [32]  # 1 timeout für übersichtliche Prüfung
 
         combos, _ = _build_combo_tuples(
-            grid, ctx, timeout_values, ["feat1"], [], {}, 8, None, None, None, "TEST"
+            ctx, timeout_values, ["feat1"], [], {}, 8, None, None, None, "TEST"
         )
 
         # 2 tp × 2 sl × 1 timeout × 2 modifier = 8 Combos
@@ -146,11 +135,10 @@ class TestBuildComboTuples:
             exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
             grid_exit_modifier_params=[None],
         )
-        grid = _make_grid()
         timeout_values = [32]
 
         combos, _ = _build_combo_tuples(
-            grid, ctx_with_default, timeout_values, ["feat1"], [], {}, 4, None, None, None, "TEST"
+            ctx_with_default, timeout_values, ["feat1"], [], {}, 4, None, None, None, "TEST"
         )
 
         # Alle Combos müssen den Default-exit_modifier_params aus ctx tragen
@@ -177,13 +165,12 @@ class TestBuildComboTuples:
             ],
             exit_modifier_params={},
         )
-        grid = _make_grid()
         timeout_values = [32, 96]  # 2 timeouts
 
         # tp=10, sl=30 → RRR=0.33 < 0.5 → SKIP; fails for BOTH modifier iterations
         # Expected: skipped = 2 modifier × 2 timeout = 4
         combos, skipped = _build_combo_tuples(
-            grid, ctx, timeout_values, ["feat1"], [], {}, 12, None, None, None, "TEST"
+            ctx, timeout_values, ["feat1"], [], {}, 12, None, None, None, "TEST"
         )
 
         assert skipped == 4  # 1 tp/sl pair × 2 timeout × 2 modifiers
@@ -284,16 +271,9 @@ class TestEarlyExitProgressCallbacks:
         # inner_df mit nur inf-Werten → alle Features werden herausgefiltert
         inner_df = pd.DataFrame({"feat1": [np.inf] * 50, "feat2": [np.inf] * 50})
 
-        grid = MagicMock()
-        grid.tp = [10.0, 20.0]
-        grid.sl = [20.0, 30.0]
-        grid.timeout_bars = None
-        grid.ct = [0.5]
-
         gs_cands, gs_grid = run_grid_search(
             full_pool=["feat1", "feat2"],
             inner_folds=[],
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TEST",
@@ -336,17 +316,10 @@ class TestEarlyExitProgressCallbacks:
 
         inner_df = pd.DataFrame({"feat1": np.random.randn(50)})
 
-        grid = MagicMock()
-        grid.tp = [10.0, 20.0]
-        grid.sl = [20.0, 30.0]
-        grid.timeout_bars = None
-        grid.ct = [0.5]
-
         # run_grid_search mit preselected_features=[](leer) → sofortiger Early-Exit nach Feature-Selection
         gs_cands, gs_grid = run_grid_search(
             full_pool=["feat1"],
             inner_folds=[],
-            grid=grid,
             ctx=ctx,
             regime_config={},
             sym="TEST",
@@ -369,11 +342,11 @@ class TestEarlyExitProgressCallbacks:
 class TestModelHyperparametersGrid:
     """Tests for model_hyperparameters_grid integration."""
 
-    def test_gridconfig_parses_model_hyperparameters_grid(self):
-        """GridConfig.from_dict parses model_hyperparameters_grid list."""
-        from fwbg.core.config import GridConfig
+    def test_optimization_config_parses_model_hyperparameters_grid(self):
+        """OptimizationConfig.from_dict parses model_hyperparameters_grid list."""
+        from fwbg.core.config import OptimizationConfig
         data = {
-            "tp": [2.0], "sl": [1.0], "ct": [0.5],
+            "ct": [0.5],
             "model_hyperparameters_grid": [
                 {"signal_column_long": "cf0_prb0_orb_s08_retest_bull",
                  "signal_column_short": "cf0_prb0_orb_s08_retest_bear"},
@@ -381,29 +354,29 @@ class TestModelHyperparametersGrid:
                  "signal_column_short": "cf1_prb0_orb_s08_retest_bear"},
             ]
         }
-        grid = GridConfig.from_dict(data)
-        assert len(grid.model_hyperparameters_grid) == 2
-        assert grid.model_hyperparameters_grid[0]["signal_column_long"] == "cf0_prb0_orb_s08_retest_bull"
+        opt = OptimizationConfig.from_dict(data)
+        assert len(opt.model_hyperparameters_grid) == 2
+        assert opt.model_hyperparameters_grid[0]["signal_column_long"] == "cf0_prb0_orb_s08_retest_bull"
 
-    def test_gridconfig_default_model_hyperparameters_grid_is_none_list(self):
-        """Without model_hyperparameters_grid: defaults to [None]."""
-        from fwbg.core.config import GridConfig
-        grid = GridConfig.from_dict({"tp": [2.0], "sl": [1.0], "ct": [0.5]})
-        assert grid.model_hyperparameters_grid == [None]
+    def test_optimization_config_default_model_hyperparameters_grid_is_none(self):
+        """Without model_hyperparameters_grid: defaults to None."""
+        from fwbg.core.config import OptimizationConfig
+        opt = OptimizationConfig.from_dict({"ct": [0.5]})
+        assert opt.model_hyperparameters_grid is None
 
-    def test_gridconfig_single_dict_wrapped_in_list(self):
+    def test_optimization_config_single_dict_wrapped_in_list(self):
         """A single dict is wrapped in a list."""
-        from fwbg.core.config import GridConfig
+        from fwbg.core.config import OptimizationConfig
         data = {
-            "tp": [2.0], "sl": [1.0], "ct": [0.5],
+            "ct": [0.5],
             "model_hyperparameters_grid": {
                 "signal_column_long": "test_col",
                 "signal_column_short": "test_col2",
             }
         }
-        grid = GridConfig.from_dict(data)
-        assert len(grid.model_hyperparameters_grid) == 1
-        assert isinstance(grid.model_hyperparameters_grid[0], dict)
+        opt = OptimizationConfig.from_dict(data)
+        assert len(opt.model_hyperparameters_grid) == 1
+        assert isinstance(opt.model_hyperparameters_grid[0], dict)
 
     def test_context_grid_model_hyperparameters_default(self):
         """SimulationContext default grid_model_hyperparameters is [None]."""
@@ -456,15 +429,11 @@ class TestModelHyperparametersGrid:
             model_hyperparameters={"signal_column_long": "base_long", "signal_column_short": "base_short"},
         )
 
-        grid = MagicMock()
-        grid.tp = [10.0, 20.0]
-        grid.sl = [20.0]
-
         combos_no, _ = _build_combo_tuples(
-            grid, ctx_no_grid, [32], ["feat1"], [], {}, 2, None, None, None, "TEST"
+            ctx_no_grid, [32], ["feat1"], [], {}, 2, None, None, None, "TEST"
         )
         combos_with, _ = _build_combo_tuples(
-            grid, ctx_with_grid, [32], ["feat1"], [], {}, 4, None, None, None, "TEST"
+            ctx_with_grid, [32], ["feat1"], [], {}, 4, None, None, None, "TEST"
         )
 
         assert len(combos_with) == 2 * len(combos_no)
@@ -485,12 +454,8 @@ class TestModelHyperparametersGrid:
             model_hyperparameters={"signal_column_long": "base_long", "signal_column_short": "base_short", "extra_param": 42},
         )
 
-        grid = MagicMock()
-        grid.tp = [10.0]
-        grid.sl = [20.0]
-
         combos, _ = _build_combo_tuples(
-            grid, ctx, [None], ["feat1"], [], {}, 2, None, None, None, "TEST"
+            ctx, [None], ["feat1"], [], {}, 2, None, None, None, "TEST"
         )
 
         assert len(combos) == 2
@@ -520,12 +485,8 @@ class TestModelHyperparametersGrid:
             model_hyperparameters={"signal_column_long": "base_long", "signal_column_short": "base_short"},
         )
 
-        grid = MagicMock()
-        grid.tp = [10.0]
-        grid.sl = [20.0]
-
         combos, _ = _build_combo_tuples(
-            grid, ctx, [None], ["feat1"], [], {}, 1, None, None, None, "TEST"
+            ctx, [None], ["feat1"], [], {}, 1, None, None, None, "TEST"
         )
 
         assert len(combos) == 1
@@ -551,12 +512,8 @@ class TestModelHyperparametersGrid:
             model_hyperparameters={},
         )
 
-        grid = MagicMock()
-        grid.tp = [10.0]
-        grid.sl = [20.0]
-
         combos, _ = _build_combo_tuples(
-            grid, ctx, [None], ["feat1"], [], {}, 4, None, None, None, "TEST"
+            ctx, [None], ["feat1"], [], {}, 4, None, None, None, "TEST"
         )
 
         # 2 model_hp x 2 modifier x 1 tp x 1 sl x 1 timeout = 4
@@ -584,12 +541,8 @@ class TestModelHyperparametersGrid:
             model_hyperparameters={},
         )
 
-        grid = MagicMock()
-        grid.tp = [10.0, 20.0]
-        grid.sl = [20.0, 30.0]
-
         combos, _ = _build_combo_tuples(
-            grid, ctx, [32, 96], ["feat1"], [], {},
+            ctx, [32, 96], ["feat1"], [], {},
             ctx.total_grid_combinations(), None, None, None, "TEST"
         )
 
@@ -686,12 +639,8 @@ class TestCandidateStoresModelHyperparameters:
             model_hyperparameters=base_hp,
         )
 
-        grid = MagicMock()
-        grid.tp = [10.0]
-        grid.sl = [20.0]
-
         combos, _ = _build_combo_tuples(
-            grid, ctx, [None], ["feat1"], [], {}, 1, None, None, None, "TEST"
+            ctx, [None], ["feat1"], [], {}, 1, None, None, None, "TEST"
         )
         assert len(combos) == 1
 
@@ -723,8 +672,6 @@ class TestAutoCollectRequiredFeatures:
 
     def test_base_model_hp_signal_columns_auto_added(self):
         """Signal columns from base model_hyperparameters auto-added to required_features."""
-        from fwbg.core.config import GridConfig
-
         # Minimal mock of strategy and asset to test SimulationContext.create()
         # We test the auto-collect directly by checking ctx after construction
         ctx = SimulationContext(
