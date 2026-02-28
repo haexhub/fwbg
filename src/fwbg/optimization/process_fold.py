@@ -17,16 +17,13 @@ from .nested_cv import nested_cv_split, evaluate_on_holdout
 from .grid_search import run_grid_search, select_features
 
 
-def precompute_indicators(df, strategy, sym, indicator_overrides=None):
+def precompute_indicators(df, strategy, sym):
     """Split indicators by stationarity and precompute raw ones.
-
-    Args:
-        indicator_overrides: Per-asset indicator param overrides from GridConfig.
 
     Returns:
         (fold_indicators, precomputed_raw_df, total_indicators)
     """
-    indicators = strategy.get_indicators(indicator_overrides=indicator_overrides)
+    indicators = strategy.get_indicators()
     preprocessing_configs = strategy.get_preprocessing()
     has_preprocessing = bool(preprocessing_configs)
 
@@ -202,7 +199,7 @@ def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
 def process_single_fold(
     fold, fold_idx, n_folds,
     fold_indicators, precomputed_raw_df, preprocessing_configs,
-    grid, ctx, sym, total_indicators,
+    ctx, sym, total_indicators,
 ):
     """Process a single walk-forward fold.
 
@@ -230,7 +227,7 @@ def process_single_fold(
     log(2, f"  Fold {fold.fold_id + 1}: Data prepared ({time.time()-t0:.1f}s)", sym)
 
     # Regime-Filter Kombinationen aus Grid (falls definiert)
-    regime_filter_combinations = grid.regime_filter_grid.get_combinations()
+    regime_filter_combinations = ctx.regime_filter_grid.get_combinations() if ctx.regime_filter_grid else [{"conditions": []}]
     n_regime_combos = len(regime_filter_combinations)
     base_combos = ctx.total_grid_combinations()
     total_combos = base_combos * n_regime_combos
@@ -245,9 +242,9 @@ def process_single_fold(
     all_grid_results = []
 
     if fold.fold_id == 0:  # Only log once
-        n_timeout = len(grid.timeout_bars) if grid.timeout_bars else 1
+        n_timeout = len(ctx.grid_timeout_bars) if ctx.grid_timeout_bars else 1
         n_modifier = len(ctx.grid_exit_modifier_params) if ctx.grid_exit_modifier_params else 1
-        log(1, f"Grid-Search: {len(grid.tp)}×{len(grid.sl)}×{n_timeout}×{n_modifier} modifier × {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
+        log(1, f"Grid-Search: {len(ctx.grid_tp)}×{len(ctx.grid_sl)}×{n_timeout}×{n_modifier} modifier × {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
         if ctx.min_rrr > 0:
             log(1, f"Min RRR Filter: {ctx.min_rrr}", sym)
 
@@ -310,7 +307,7 @@ def process_single_fold(
             report_phase(sym, f"Fold {fold_idx_1based}/{n_folds}: Grid-Search...")
         gs_candidates, gs_grid_results = run_grid_search(
             full_pool, inner_folds,
-            grid, ctx, regime_config, sym,
+            ctx, regime_config, sym,
             inner_df=train_df,
             progress_callback=grid_progress_callback,
             preselected_features_long=selected_long,
@@ -333,8 +330,8 @@ def process_single_fold(
     for c in candidates:
         c["score"] = c["inner_val_pnl"]
 
-    candidates = calculate_param_plateau_score(candidates, grid.tp, grid.sl, grid.ct)
-    b = select_best_plateau_candidate(candidates, grid.tp, grid.sl, grid.ct, min_neighbors=2)
+    candidates = calculate_param_plateau_score(candidates, ctx.grid_tp, ctx.grid_sl, ctx.grid_ct)
+    b = select_best_plateau_candidate(candidates, ctx.grid_tp, ctx.grid_sl, ctx.grid_ct, min_neighbors=2)
 
     if not b:
         candidates.sort(key=lambda x: x["inner_val_pnl"], reverse=True)
