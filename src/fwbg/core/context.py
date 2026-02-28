@@ -160,16 +160,15 @@ class SimulationContext:
         # Grid values from exit_params (all values are arrays after normalization)
         ep = strategy.exit_params
 
-        # TP/SL: use tp_mult/sl_mult keys, fall back to tp/sl for backward compat
-        grid_tp = ep.get("tp_mult", ep.get("tp", [1.0, 1.5, 2.0, 2.5]))
-        grid_sl = ep.get("sl_mult", ep.get("sl", [1.0, 1.5, 2.0]))
+        grid_tp = ep.get("tp_mult", [1.0, 1.5, 2.0, 2.5])
+        grid_sl = ep.get("sl_mult", [1.0, 1.5, 2.0])
         grid_timeout = ep.get("timeout_bars", [None])
 
         # Long/Short overrides from exit_params prefixes
-        long_tp = ep.get("long_tp_mult", ep.get("long_tp"))
-        long_sl = ep.get("long_sl_mult", ep.get("long_sl"))
-        short_tp = ep.get("short_tp_mult", ep.get("short_tp"))
-        short_sl = ep.get("short_sl_mult", ep.get("short_sl"))
+        long_tp = ep.get("long_tp_mult")
+        long_sl = ep.get("long_sl_mult")
+        short_tp = ep.get("short_tp_mult")
+        short_sl = ep.get("short_sl_mult")
         separate = any([long_tp, long_sl, short_tp, short_sl])
 
         # CT, regime from optimization
