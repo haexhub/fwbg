@@ -149,7 +149,7 @@ def preview_signals(body: PreviewRequest) -> dict:
     df_ind = compute_indicator_pool(df, indicators=indicators)
 
     # Collect signal columns: explicit from model config + grid variants
-    long_signals, short_signals = _collect_signal_columns(strategy, symbol)
+    long_signals, short_signals = _collect_signal_columns(strategy)
 
     # Filter to columns that actually exist in the computed DataFrame
     all_configured = long_signals | short_signals
@@ -177,9 +177,11 @@ def preview_signals(body: PreviewRequest) -> dict:
 
     # Simulate trades with TP/SL if possible
     asset = get_asset(symbol)
-    grid = strategy.get_grid(symbol, asset.asset_class)
-    tp_val = body.tp or (float(statistics.median(grid.tp)) if grid.tp else None)
-    sl_val = body.sl or (float(statistics.median(grid.sl)) if grid.sl else None)
+    ep = strategy.exit_params
+    tp_list = ep.get("tp_mult", [])
+    sl_list = ep.get("sl_mult", [])
+    tp_val = body.tp or (float(statistics.median(tp_list)) if tp_list else None)
+    sl_val = body.sl or (float(statistics.median(sl_list)) if sl_list else None)
 
     if tp_val is not None and sl_val is not None:
         sim_trades = _simulate_preview_trades(
@@ -194,9 +196,9 @@ def preview_signals(body: PreviewRequest) -> dict:
 
 
 def _collect_signal_columns(
-    strategy, symbol: str,
+    strategy,
 ) -> tuple[set[str], set[str]]:
-    """Collect signal columns from model hyperparameters + grid variants."""
+    """Collect signal columns from model hyperparameters + optimization variants."""
     long_signals: set[str] = set()
     short_signals: set[str] = set()
 
@@ -207,18 +209,8 @@ def _collect_signal_columns(
     if hp.get("signal_column_short"):
         short_signals.add(hp["signal_column_short"])
 
-    # Per-asset grid overrides + model_hyperparameters_grid
-    from fwbg.data.assets import get_asset
-    asset = get_asset(symbol)
-    grid = strategy.get_grid(symbol, asset.asset_class)
-
-    if grid.model_hyperparameters:
-        if grid.model_hyperparameters.get("signal_column_long"):
-            long_signals.add(grid.model_hyperparameters["signal_column_long"])
-        if grid.model_hyperparameters.get("signal_column_short"):
-            short_signals.add(grid.model_hyperparameters["signal_column_short"])
-
-    for hp_variant in grid.model_hyperparameters_grid:
+    # Model hyperparameters grid variants
+    for hp_variant in strategy.optimization.model_hyperparameters_grid:
         if hp_variant and isinstance(hp_variant, dict):
             if hp_variant.get("signal_column_long"):
                 long_signals.add(hp_variant["signal_column_long"])
