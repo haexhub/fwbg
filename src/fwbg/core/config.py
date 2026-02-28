@@ -131,127 +131,6 @@ class OptimizationConfig:
 
 
 @dataclass
-class GridConfig:
-    """Konfiguration für TP/SL/CT Grid-Search (ATR-Multiplikatoren)."""
-    tp: List[float] = field(default_factory=lambda: [1.0, 1.5, 2.0, 2.5])
-    sl: List[float] = field(default_factory=lambda: [1.0, 1.5, 2.0])
-    ct: List[float] = field(default_factory=lambda: [0.50, 0.52, 0.55, 0.60])
-    timeout_bars: List[Optional[int]] = field(default_factory=lambda: [None])
-
-    # Regime-Filter Grid
-    regime_filter_grid: RegimeFilterGridConfig = field(
-        default_factory=RegimeFilterGridConfig
-    )
-
-    # Separate Long/Short Grids
-    long_tp: List[float] = None
-    long_sl: List[float] = None
-    long_ct: List[float] = None
-    short_tp: List[float] = None
-    short_sl: List[float] = None
-    short_ct: List[float] = None
-    separate_long_short: bool = False
-
-    # Exit-Modifier-Params Grid: Liste von Modifier-Param-Dicts zum Vergleichen
-    # [None] = nur ctx-Default verwenden (kein Grid), [dict1, dict2] = Grid über Modifier-Params
-    exit_modifier_params_grid: List[Optional[dict]] = field(default_factory=lambda: [None])
-
-    # Per-asset model hyperparameters override (merged into base model config)
-    model_hyperparameters: Dict[str, Any] = field(default_factory=dict)
-
-    # Per-asset required features (always included in feature selection)
-    required_features: List[str] = field(default_factory=list)
-
-    # Model-Hyperparameters Grid: Liste von HP-Dicts zum Vergleichen
-    # [None] = nur ctx-Default verwenden (kein Grid), [dict1, dict2] = Grid über Model-HPs
-    model_hyperparameters_grid: List[Optional[Dict[str, Any]]] = field(default_factory=lambda: [None])
-
-    # Per-asset indicator param overrides (merged into pipeline indicator params).
-    # Keys are indicator names, values are param dicts.
-    # Example: {"previous_day_levels": {"session_start_hour": 8, "session_end_hour": 17}}
-    indicator_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "GridConfig":
-        """Erstellt GridConfig aus Dictionary."""
-        timeout_raw = data.get("timeout_bars", [None])
-        if timeout_raw is None:
-            timeout_bars = [None]
-        elif isinstance(timeout_raw, (int, float)):
-            timeout_bars = [int(timeout_raw)]
-        else:
-            timeout_bars = [int(t) if t is not None else None for t in timeout_raw]
-
-        has_separate = any(
-            k in data for k in ["long_tp", "long_sl", "short_tp", "short_sl"]
-        )
-        regime_grid = RegimeFilterGridConfig.from_dict(
-            data.get("regime_filter_grid")
-        )
-
-        emp_raw = data.get("exit_modifier_params_grid")
-        if emp_raw is None:
-            exit_modifier_params_grid = [None]
-        elif isinstance(emp_raw, dict):
-            exit_modifier_params_grid = [emp_raw]
-        else:
-            exit_modifier_params_grid = list(emp_raw)
-
-        mhp_raw = data.get("model_hyperparameters_grid")
-        if mhp_raw is None:
-            model_hyperparameters_grid = [None]
-        elif isinstance(mhp_raw, dict):
-            model_hyperparameters_grid = [mhp_raw]
-        else:
-            model_hyperparameters_grid = list(mhp_raw)
-
-        return cls(
-            tp=data.get("tp", [1.0, 1.5, 2.0, 2.5]),
-            sl=data.get("sl", [1.0, 1.5, 2.0]),
-            ct=data.get("ct", [0.50, 0.52, 0.55, 0.60]),
-            timeout_bars=timeout_bars,
-            regime_filter_grid=regime_grid,
-            long_tp=data.get("long_tp"),
-            long_sl=data.get("long_sl"),
-            long_ct=data.get("long_ct"),
-            short_tp=data.get("short_tp"),
-            short_sl=data.get("short_sl"),
-            short_ct=data.get("short_ct"),
-            separate_long_short=data.get("separate_long_short", has_separate),
-            exit_modifier_params_grid=exit_modifier_params_grid,
-            model_hyperparameters=data.get("model_hyperparameters", {}),
-            required_features=data.get("required_features", []),
-            model_hyperparameters_grid=model_hyperparameters_grid,
-            indicator_overrides=data.get("indicator_overrides", {}),
-        )
-
-    def get_long_grid(self) -> tuple:
-        return (
-            self.long_tp if self.long_tp is not None else self.tp,
-            self.long_sl if self.long_sl is not None else self.sl,
-            self.long_ct if self.long_ct is not None else self.ct,
-        )
-
-    def get_short_grid(self) -> tuple:
-        return (
-            self.short_tp if self.short_tp is not None else self.tp,
-            self.short_sl if self.short_sl is not None else self.sl,
-            self.short_ct if self.short_ct is not None else self.ct,
-        )
-
-    def total_combinations(self) -> int:
-        """Berechnet Gesamtzahl der Grid-Kombinationen."""
-        if self.separate_long_short:
-            long_tp, long_sl, long_ct = self.get_long_grid()
-            short_tp, short_sl, short_ct = self.get_short_grid()
-            return (
-                len(long_tp) * len(long_sl) * len(long_ct) +
-                len(short_tp) * len(short_sl) * len(short_ct)
-            )
-        return len(self.tp) * len(self.sl) * len(self.ct)
-
-
-@dataclass
 class ModelConfig:
     """Konfiguration für das ML-Modell."""
     type: str = "xgboost"
@@ -439,17 +318,6 @@ def _load_json_preset(name: str, presets_dir: str) -> dict:
     return data
 
 
-def _resolve_regime_filter(
-    value: "Optional[Union[str, Dict[str, Any]]]", regime_filters_dir: str
-):
-    """Resolve a regime filter reference: string loads file, dict passes through, None stays None."""
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return _load_json_preset(value, regime_filters_dir)
-    return value
-
-
 def _resolve_section(
     value: "Optional[Union[str, Dict[str, Any]]]",
     section_dir: str,
@@ -464,68 +332,14 @@ def _resolve_section(
     return value
 
 
-def _parse_grids(grids_data: dict, strategy_dir: Optional[str] = None) -> Dict[str, GridConfig]:
-    """Parse grids from strategy data, supporting both legacy inline and preset formats."""
-    if not grids_data:
-        return {}
-
-    # Legacy format: no "assignments" key → all values are inline grid dicts
-    if "assignments" not in grids_data:
-        return {
-            asset_class: GridConfig.from_dict(grid_data)
-            for asset_class, grid_data in grids_data.items()
-        }
-
-    # New preset format
-    base_dir = strategy_dir if strategy_dir else os.getcwd()
-    presets_dir = os.path.join(base_dir, grids_data.get("presets_dir", "grids"))
-    regime_filters_dir = os.path.join(
-        base_dir, grids_data.get("regime_filters_dir", "regime_filters")
-    )
-
-    # Shared regime_filter_grid (strategy-level)
-    shared_regime = _resolve_regime_filter(
-        grids_data.get("regime_filter_grid"), regime_filters_dir
-    )
-
-    # Cache for loaded preset files
-    preset_cache: Dict[str, dict] = {}
-    assignments = grids_data["assignments"]
-    result: Dict[str, GridConfig] = {}
-
-    for asset_class, assignment in assignments.items():
-        if isinstance(assignment, str):
-            # String → load preset by name
-            preset_name = assignment
-            if preset_name not in preset_cache:
-                preset_cache[preset_name] = _load_json_preset(preset_name, presets_dir)
-            resolved_data = dict(preset_cache[preset_name])
-        elif isinstance(assignment, dict) and "preset" in assignment:
-            # Dict with "preset" → load + override with all assignment keys
-            preset_name = assignment["preset"]
-            if preset_name not in preset_cache:
-                preset_cache[preset_name] = _load_json_preset(preset_name, presets_dir)
-            resolved_data = dict(preset_cache[preset_name])
-            for key, value in assignment.items():
-                if key != "preset":
-                    resolved_data[key] = value
-        elif isinstance(assignment, dict):
-            # Inline legacy dict (no "preset" key)
-            resolved_data = assignment
+def _normalize_exit_params(params: dict) -> dict:
+    """Convert all exit_params values to lists. Scalar -> [scalar]."""
+    result = {}
+    for key, value in params.items():
+        if isinstance(value, list):
+            result[key] = value
         else:
-            raise ValueError(f"Invalid assignment for '{asset_class}': {assignment}")
-
-        # Resolve regime_filter_grid: assignment-level > shared > none
-        asset_regime = assignment.get("regime_filter_grid") if isinstance(assignment, dict) else None
-        if asset_regime is not None:
-            resolved_data["regime_filter_grid"] = _resolve_regime_filter(
-                asset_regime, regime_filters_dir
-            )
-        elif shared_regime is not None and "regime_filter_grid" not in resolved_data:
-            resolved_data["regime_filter_grid"] = shared_regime
-
-        result[asset_class] = GridConfig.from_dict(resolved_data)
-
+            result[key] = [value]
     return result
 
 
@@ -560,8 +374,8 @@ class StrategyConfig:
     risk_management: str = "kelly"
     risk_params: Dict[str, Any] = field(default_factory=dict)
 
-    # Grid-Konfiguration
-    grids: Dict[str, GridConfig] = field(default_factory=dict)
+    # Optimization (grid search parameters)
+    optimization: OptimizationConfig = field(default_factory=OptimizationConfig)
 
     # Assets-Filter
     assets: Dict[str, Any] = field(default_factory=dict)
@@ -587,11 +401,11 @@ class StrategyConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "StrategyConfig":
         """Erstellt StrategyConfig aus Dictionary (z.B. aus JSON-Datei)."""
         strategy_dir = data.get("_strategy_dir")
-        grids = _parse_grids(data.get("grids", {}), strategy_dir)
 
         # Resolve sections: string loads preset file, dict/None passes through
         pipeline = _resolve_section(data.get("pipeline", {}), "pipelines", strategy_dir)
-        exit_params = _resolve_section(data.get("exit_params", {}), "exit_params", strategy_dir)
+        exit_params_raw = _resolve_section(data.get("exit_params", {}), "exit_params", strategy_dir)
+        exit_params = _normalize_exit_params(exit_params_raw or {})
         exit_modifier_params = _resolve_section(
             data.get("exit_modifier_params", {}), "exit_modifier_params", strategy_dir
         )
@@ -600,6 +414,7 @@ class StrategyConfig:
         filters_data = _resolve_section(data.get("filters", {}), "filters", strategy_dir)
         resources_data = _resolve_section(data.get("resources"), "resources", strategy_dir)
         risk_params = _resolve_section(data.get("risk_params", {}), "risk_params", strategy_dir)
+        optimization = OptimizationConfig.from_dict(data.get("optimization"))
 
         return cls(
             name=data.get("name", "Default Strategy"),
@@ -612,7 +427,7 @@ class StrategyConfig:
             exit_modifier_params=exit_modifier_params or {},
             risk_management=data.get("risk_management", "kelly"),
             risk_params=risk_params,
-            grids=grids,
+            optimization=optimization,
             assets=data.get("assets", {}),
             model=ModelConfig.from_dict(model_data),
             validation=ValidationConfig.from_dict(validation_data),
@@ -633,19 +448,6 @@ class StrategyConfig:
         data["_strategy_dir"] = os.path.dirname(os.path.abspath(path))
         return cls.from_dict(data)
 
-    def get_grid(self, symbol: str, asset_class: str) -> GridConfig:
-        """Gibt das Grid für ein Symbol oder eine Asset-Klasse zurück.
-
-        Resolution order: symbol → asset_class → FOREX → default.
-        """
-        if self.grids:
-            if symbol in self.grids:
-                return self.grids[symbol]
-            return self.grids.get(
-                asset_class, self.grids.get("FOREX", GridConfig())
-            )
-        return GridConfig()
-
     def get_data_loading(self) -> List[Dict[str, Any]]:
         """Returns configured data loading plugins from pipeline.
 
@@ -661,29 +463,9 @@ class StrategyConfig:
             result.append(entry)
         return result
 
-    def get_indicators(self, indicator_overrides: Dict[str, Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Returns configured indicator plugins from pipeline.
-
-        If indicator_overrides is provided (from GridConfig per asset class),
-        merge them into the indicator params. This allows per-asset session
-        hours, etc.
-        """
-        indicators = self.pipeline.get("indicators", [])
-        if not indicator_overrides:
-            return indicators
-
-        import copy
-        result = []
-        for ind in indicators:
-            name = ind.get("name", "")
-            overrides = indicator_overrides.get(name)
-            if overrides:
-                ind = copy.deepcopy(ind)
-                params = ind.get("params", {})
-                params.update(overrides)
-                ind["params"] = params
-            result.append(ind)
-        return result
+    def get_indicators(self) -> List[Dict[str, Any]]:
+        """Returns configured indicator plugins from pipeline."""
+        return self.pipeline.get("indicators", [])
 
     def get_preprocessing(self) -> List[Dict[str, Any]]:
         """Returns configured preprocessing plugins from pipeline."""
@@ -704,15 +486,6 @@ class StrategyConfig:
             "exit_params": self.exit_params,
             "risk_management": self.risk_management,
             "risk_params": self.risk_params,
-            "grids": {
-                k: {
-                    "tp": v.tp, "sl": v.sl, "ct": v.ct,
-                    "timeout_bars": v.timeout_bars,
-                    **({"regime_filter_grid": {"condition_grids": v.regime_filter_grid.condition_grids}}
-                       if v.regime_filter_grid.condition_grids else {}),
-                }
-                for k, v in self.grids.items()
-            },
             "assets": self.assets,
             "model": {
                 "type": self.model.type,
