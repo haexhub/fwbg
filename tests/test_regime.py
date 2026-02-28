@@ -15,7 +15,7 @@ from fwbg.core.config import (
     RegimeFilterGridConfig,
     RegimeFilterConfig,
     RegimeCondition,
-    GridConfig,
+    OptimizationConfig,
     StrategyConfig,
 )
 
@@ -204,11 +204,9 @@ class TestRegimeFilterGridConfig:
         config = RegimeFilterGridConfig.from_dict(None)
         assert config.total_combinations() == 1
 
-    def test_grid_config_includes_regime_filter(self):
-        """GridConfig.from_dict parsed regime_filter_grid."""
+    def test_optimization_config_includes_regime_filter(self):
+        """OptimizationConfig.from_dict parses regime_filter_grid."""
         data = {
-            "tp": [10, 20],
-            "sl": [20, 30],
             "ct": [0.6],
             "regime_filter_grid": {
                 "condition_grids": [
@@ -218,14 +216,13 @@ class TestRegimeFilterGridConfig:
                 ]
             },
         }
-        grid = GridConfig.from_dict(data)
-        assert grid.regime_filter_grid.total_combinations() == 8
+        opt = OptimizationConfig.from_dict(data)
+        assert opt.regime_filter_grid.total_combinations() == 8
 
-    def test_grid_config_without_regime_filter(self):
-        """GridConfig ohne regime_filter_grid hat Default (1 Kombi)."""
-        data = {"tp": [10], "sl": [20], "ct": [0.6]}
-        grid = GridConfig.from_dict(data)
-        assert grid.regime_filter_grid.total_combinations() == 1
+    def test_optimization_config_without_regime_filter(self):
+        """OptimizationConfig without regime_filter_grid has default (1 combo)."""
+        opt = OptimizationConfig.from_dict({"ct": [0.6]})
+        assert opt.regime_filter_grid.total_combinations() == 1
 
 
 # === TESTS FÜR RegimeFilterConfig ===
@@ -275,32 +272,20 @@ class TestStrategyRegimeConfig:
 
     def test_exploration_json_has_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/configs/exploration.json")
-        grid = config.get_grid("EURUSD", "FOREX")
-        assert grid.regime_filter_grid.total_combinations() == 24
+        assert config.optimization.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_atr_has_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/configs/exploration_atr.json")
-        grid = config.get_grid("EURUSD", "FOREX")
-        assert grid.regime_filter_grid.total_combinations() == 24
+        assert config.optimization.regime_filter_grid.total_combinations() == 24
 
     def test_exploration_fast_has_regime_grid(self):
         config = StrategyConfig.from_json_file("strategies/configs/exploration_fast.json")
-        grid = config.get_grid("EURUSD", "FOREX")
-        assert grid.regime_filter_grid.total_combinations() == 24
-
-    def test_all_asset_classes_have_regime_grid(self):
-        config = StrategyConfig.from_json_file("strategies/configs/exploration.json")
-        for asset_class in ["FOREX", "INDEX", "COMMODITY", "CRYPTO"]:
-            grid = config.get_grid("TEST", asset_class)
-            assert grid.regime_filter_grid.total_combinations() == 24, (
-                f"{asset_class} sollte 8 Regime-Kombinationen haben"
-            )
+        assert config.optimization.regime_filter_grid.total_combinations() == 24
 
     def test_regime_combos_include_no_filter_baseline(self):
         """Jede Strategie hat eine 'kein Filter' Baseline."""
         config = StrategyConfig.from_json_file("strategies/configs/exploration.json")
-        grid = config.get_grid("EURUSD", "FOREX")
-        combos = grid.regime_filter_grid.get_combinations()
+        combos = config.optimization.regime_filter_grid.get_combinations()
 
         no_filter = [c for c in combos if len(c["conditions"]) == 0]
         assert len(no_filter) == 1

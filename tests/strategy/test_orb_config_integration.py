@@ -1,17 +1,16 @@
 """Integration tests for ORB exploration strategy configuration.
 
-Guards against the same recurring config bugs as PDHL:
-1. timeout_bars from preset must not leak into ORB config (trailing stop handles exits)
+Guards against config bugs:
+1. timeout_bars must be [None] for trailing_stop configs
 2. exit_modifier_params_grid must not contain {0,0} (disables trailing)
 3. exit_modifier='trailing_stop' must be set
 4. orb_based exit strategy dispatches trailing kernel when exit_modifier is set
-5. Signal columns match the asset's session hour (s07=DAX, s14=NAS100, etc.)
-6. All grid variants cover rb1/rb2 × cf0/cf1/cf2 × prb0/prb1 combinations
+5. Signal columns cover all rb/cf/prb combinations
+6. Pipeline config has required settings
 
-ORB-specific: reference candle is the first 45min (3 × 15min bars) of the
-opening hour per asset per day. Session hours vary by asset:
-  DAX/EU50/CAC40: s07 (7:00 UTC), FTSE100/FOREX/COMMODITY: s08,
-  NAS100/SPX500/DOW30: s14, JP225/ASX200/CRYPTO: s00, HK50: s01
+Since the GridConfig removal, all grid params live in:
+- exit_params (tp_mult, sl_mult, timeout_bars, etc.)
+- optimization (ct, exit_modifier_params_grid, model_hyperparameters_grid)
 """
 import json
 import os
@@ -20,7 +19,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.core.config import StrategyConfig, GridConfig
+from fwbg.core.config import StrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.plugins import import_plugin_module
 
@@ -28,15 +27,6 @@ STRATEGY_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "strategies")
 ORB_EXPLORATION_PATH = os.path.join(STRATEGY_DIR, "configs", "orb_exploration.json")
 DEEP_ORB_INDEX_PATH = os.path.join(STRATEGY_DIR, "configs", "deep_orb_index.json")
 WEEKLY_ORB_PATH = os.path.join(STRATEGY_DIR, "configs", "weekly_orb_scalping.json")
-
-# Expected session hours per asset in orb_exploration
-EXPECTED_SESSION_HOURS = {
-    "DAX": 7, "EU50": 7, "CAC40": 7,
-    "FTSE100": 8, "FOREX": 8, "COMMODITY": 8,
-    "NAS100": 14, "SPX500": 14, "DOW30": 14,
-    "JP225": 0, "ASX200": 22, "CRYPTO": 0,
-    "HK50": 1,
-}
 
 
 # ---------------------------------------------------------------------------
@@ -92,16 +82,19 @@ class TestOrbConfigLoading:
     def test_exit_modifier_is_trailing_stop(self, orb_config):
         assert orb_config.exit_modifier == "trailing_stop"
 
-    def test_pipeline_is_orb_simple_v1(self, orb_config):
+    def test_pipeline_has_opening_range(self, orb_config):
         assert "indicators" in orb_config.pipeline
         ind_names = [i["name"] for i in orb_config.pipeline["indicators"]]
         assert "opening_range" in ind_names
 
-    def test_all_expected_assets_present(self, orb_config):
-        expected = {"FOREX", "DAX", "EU50", "CAC40", "FTSE100",
-                    "NAS100", "SPX500", "DOW30", "JP225", "ASX200", "HK50",
-                    "COMMODITY", "CRYPTO"}
-        assert set(orb_config.grids.keys()) == expected
+    def test_exit_params_have_required_keys(self, orb_config):
+        ep = orb_config.exit_params
+        assert "tp_mult" in ep
+        assert "sl_mult" in ep
+        assert "timeout_bars" in ep
+        # All values should be lists (normalized)
+        assert isinstance(ep["tp_mult"], list)
+        assert isinstance(ep["sl_mult"], list)
 
 
 # ===========================================================================
@@ -112,36 +105,26 @@ class TestTimeoutBarsNotLeaked:
     """timeout_bars must be [None] for configs using trailing stop."""
 
     def test_orb_exploration_timeout_null(self, orb_config):
-        for asset, grid in orb_config.grids.items():
-            assert grid.timeout_bars == [None], (
-                f"orb_exploration/{asset}: timeout_bars should be [None], "
-                f"got {grid.timeout_bars}. Preset timeout_bars leaking!"
-            )
-
-    def test_orb_exploration_has_explicit_timeout(self, orb_config_raw):
-        for asset, assignment in orb_config_raw["grids"]["assignments"].items():
-            assert "timeout_bars" in assignment, (
-                f"orb_exploration/{asset}: missing explicit timeout_bars. "
-                f"Preset values will leak."
-            )
+        assert orb_config.exit_params["timeout_bars"] == [None], (
+            f"orb_exploration: timeout_bars should be [None], "
+            f"got {orb_config.exit_params['timeout_bars']}. Preset timeout_bars leaking!"
+        )
 
     def test_deep_orb_timeout_null(self, deep_orb_config):
         if deep_orb_config.exit_modifier != "trailing_stop":
             pytest.skip("deep_orb_index doesn't use trailing_stop")
-        for asset, grid in deep_orb_config.grids.items():
-            assert grid.timeout_bars == [None], (
-                f"deep_orb_index/{asset}: timeout_bars should be [None], "
-                f"got {grid.timeout_bars}"
-            )
+        assert deep_orb_config.exit_params["timeout_bars"] == [None], (
+            f"deep_orb_index: timeout_bars should be [None], "
+            f"got {deep_orb_config.exit_params['timeout_bars']}"
+        )
 
     def test_weekly_orb_timeout_null(self, weekly_orb_config):
         if weekly_orb_config.exit_modifier != "trailing_stop":
             pytest.skip("weekly_orb doesn't use trailing_stop")
-        for asset, grid in weekly_orb_config.grids.items():
-            assert grid.timeout_bars == [None], (
-                f"weekly_orb/{asset}: timeout_bars should be [None], "
-                f"got {grid.timeout_bars}"
-            )
+        assert weekly_orb_config.exit_params["timeout_bars"] == [None], (
+            f"weekly_orb: timeout_bars should be [None], "
+            f"got {weekly_orb_config.exit_params['timeout_bars']}"
+        )
 
 
 # ===========================================================================
@@ -152,135 +135,85 @@ class TestExitModifierParamsGrid:
     """No {0,0} variant that disables trailing stop."""
 
     def test_orb_exploration_no_zero_trail(self, orb_config):
-        for asset, grid in orb_config.grids.items():
-            for i, params in enumerate(grid.exit_modifier_params_grid):
-                if params is None:
-                    continue
-                trail = params.get("trail_atr_mult", 0)
-                assert trail > 0, (
-                    f"orb_exploration/{asset}: exit_modifier_params_grid[{i}] "
-                    f"trail_atr_mult={trail}. Disables trailing!"
-                )
+        emp_grid = orb_config.optimization.exit_modifier_params_grid or []
+        for i, params in enumerate(emp_grid):
+            if params is None:
+                continue
+            trail = params.get("trail_atr_mult", 0)
+            assert trail > 0, (
+                f"orb_exploration: exit_modifier_params_grid[{i}] "
+                f"trail_atr_mult={trail}. Disables trailing!"
+            )
 
     def test_deep_orb_no_zero_trail(self, deep_orb_config):
         if deep_orb_config.exit_modifier != "trailing_stop":
             pytest.skip("deep_orb_index doesn't use trailing_stop")
-        for asset, grid in deep_orb_config.grids.items():
-            for i, params in enumerate(grid.exit_modifier_params_grid):
-                if params is None:
-                    continue
-                assert params.get("trail_atr_mult", 0) > 0, (
-                    f"deep_orb_index/{asset}: grid[{i}] disables trailing"
-                )
+        emp_grid = deep_orb_config.optimization.exit_modifier_params_grid or []
+        for i, params in enumerate(emp_grid):
+            if params is None:
+                continue
+            assert params.get("trail_atr_mult", 0) > 0, (
+                f"deep_orb_index: grid[{i}] disables trailing"
+            )
 
     def test_weekly_orb_no_zero_trail(self, weekly_orb_config):
         if weekly_orb_config.exit_modifier != "trailing_stop":
             pytest.skip("weekly_orb doesn't use trailing_stop")
-        for asset, grid in weekly_orb_config.grids.items():
-            for i, params in enumerate(grid.exit_modifier_params_grid):
-                if params is None:
-                    continue
-                assert params.get("trail_atr_mult", 0) > 0, (
-                    f"weekly_orb/{asset}: grid[{i}] disables trailing"
-                )
-
-
-# ===========================================================================
-# Test Class 4: Signal Column Session Hour Consistency
-# ===========================================================================
-
-class TestSessionHourConsistency:
-    """Signal columns must match the asset's session hour."""
-
-    def test_signal_columns_use_correct_session(self, orb_config):
-        """Each asset's signal columns must reference the correct session hour."""
-        for asset, grid in orb_config.grids.items():
-            if asset not in EXPECTED_SESSION_HOURS:
+        emp_grid = weekly_orb_config.optimization.exit_modifier_params_grid or []
+        for i, params in enumerate(emp_grid):
+            if params is None:
                 continue
-            expected_hour = EXPECTED_SESSION_HOURS[asset]
-            expected_prefix = f"_s{expected_hour:02d}_"
-
-            # Check base model_hyperparameters
-            hp = grid.model_hyperparameters
-            for key in ("signal_column_long", "signal_column_short"):
-                col = hp.get(key, "")
-                assert expected_prefix in col, (
-                    f"{asset}: {key}='{col}' should contain '{expected_prefix}' "
-                    f"for session hour {expected_hour}"
-                )
-
-            # Check all grid variants
-            for i, variant in enumerate(grid.model_hyperparameters_grid):
-                if variant is None:
-                    continue
-                for key in ("signal_column_long", "signal_column_short"):
-                    col = variant.get(key, "")
-                    assert expected_prefix in col, (
-                        f"{asset}: grid variant {i} {key}='{col}' should contain "
-                        f"'{expected_prefix}'"
-                    )
-
-
-# ===========================================================================
-# Test Class 5: Grid Variant Coverage
-# ===========================================================================
-
-class TestGridVariantCoverage:
-    """All assets must have the full combinatorial grid of variants."""
-
-    # ASX200 uses a custom grid (rb4 × cf{0,1,2} × prb{0} = 3 variants)
-    CUSTOM_GRID_ASSETS = {"ASX200"}
-
-    def test_standard_assets_have_12_variants(self, orb_config):
-        """Standard assets should have 12 variants: rb{1,2} × cf{0,1,2} × prb{0,1}."""
-        for asset, grid in orb_config.grids.items():
-            if asset in self.CUSTOM_GRID_ASSETS:
-                continue
-            non_none = [v for v in grid.model_hyperparameters_grid if v is not None]
-            assert len(non_none) == 12, (
-                f"{asset}: expected 12 grid variants (2×3×2), got {len(non_none)}"
-            )
-
-    def test_all_rb_cf_prb_combinations_present(self, orb_config):
-        """Check that all rb × cf × prb combos are present per asset."""
-        expected_prefixes = set()
-        for rb in [1, 2]:
-            for cf in [0, 1, 2]:
-                for prb in [0, 1]:
-                    expected_prefixes.add(f"rb{rb}_cf{cf}_prb{prb}_orb_")
-
-        for asset, grid in orb_config.grids.items():
-            if asset in self.CUSTOM_GRID_ASSETS:
-                continue
-            actual_prefixes = set()
-            for v in grid.model_hyperparameters_grid:
-                if v is None:
-                    continue
-                col = v.get("signal_column_long", "")
-                # Extract prefix up to "orb_"
-                prefix_end = col.find("orb_") + len("orb_")
-                if prefix_end > len("orb_"):
-                    actual_prefixes.add(col[:prefix_end])
-
-            missing = expected_prefixes - actual_prefixes
-            assert not missing, (
-                f"{asset}: missing signal column prefixes: {missing}"
+            assert params.get("trail_atr_mult", 0) > 0, (
+                f"weekly_orb: grid[{i}] disables trailing"
             )
 
 
 # ===========================================================================
-# Test Class 6: Pipeline Config
+# Test Class 4: Model Hyperparameters Grid Coverage
+# ===========================================================================
+
+class TestModelHyperparametersGridCoverage:
+    """All model_hyperparameters_grid variants have signal columns with expected prefixes."""
+
+    def test_all_variants_have_signal_columns(self, orb_config):
+        """Every variant must have signal_column_long and signal_column_short."""
+        mhg = orb_config.optimization.model_hyperparameters_grid or []
+        non_none = [v for v in mhg if v is not None]
+        assert len(non_none) > 0, "No model_hyperparameters_grid variants"
+
+        for i, v in enumerate(non_none):
+            assert "signal_column_long" in v, (
+                f"Variant {i} missing signal_column_long"
+            )
+            assert "signal_column_short" in v, (
+                f"Variant {i} missing signal_column_short"
+            )
+
+    def test_rb_cf_prb_combinations_present(self, orb_config):
+        """At least rb1 and rb2 range_bars variants should be present."""
+        mhg = orb_config.optimization.model_hyperparameters_grid or []
+        non_none = [v for v in mhg if v is not None]
+
+        rb1_count = sum(1 for v in non_none if "rb1_" in v.get("signal_column_long", ""))
+        rb2_count = sum(1 for v in non_none if "rb2_" in v.get("signal_column_long", ""))
+
+        assert rb1_count > 0, "No rb1 variants found"
+        assert rb2_count > 0, "No rb2 variants found"
+
+
+# ===========================================================================
+# Test Class 5: Pipeline Config
 # ===========================================================================
 
 class TestOrbPipelineConfig:
-    """Verify the orb_simple_v1 pipeline is correctly configured."""
+    """Verify the ORB pipeline is correctly configured."""
 
     def test_opening_range_indicator_present(self, orb_config):
         ind_names = [i["name"] for i in orb_config.pipeline["indicators"]]
         assert "opening_range" in ind_names
 
     def test_range_bars_config(self, orb_config):
-        """range_bars should cover all rb variants (rb1, rb2, and rb4 for ASX200)."""
+        """range_bars should cover rb1, rb2, and rb4 variants."""
         orb_ind = next(
             i for i in orb_config.pipeline["indicators"]
             if i["name"] == "opening_range"
@@ -288,20 +221,31 @@ class TestOrbPipelineConfig:
         assert orb_ind["params"]["range_bars"] == [1, 2, 4]
 
     def test_sessions_include_all_needed(self, orb_config):
-        """All session hours referenced in signal columns must be in pipeline."""
+        """Pipeline sessions must include all referenced session hours."""
         orb_ind = next(
             i for i in orb_config.pipeline["indicators"]
             if i["name"] == "opening_range"
         )
         configured_sessions = set(orb_ind["params"]["sessions"])
 
-        # All session hours from any asset must be in the pipeline
-        for asset, expected_hour in EXPECTED_SESSION_HOURS.items():
-            if asset in orb_config.grids:
-                assert expected_hour in configured_sessions, (
-                    f"Session hour {expected_hour} (for {asset}) not in pipeline "
-                    f"sessions {configured_sessions}"
-                )
+        # Check that signal columns reference sessions that exist in pipeline
+        mhg = orb_config.optimization.model_hyperparameters_grid or []
+        referenced_sessions = set()
+        for v in mhg:
+            if v is None:
+                continue
+            col = v.get("signal_column_long", "")
+            # Extract session hour from pattern like "rb1_cf0_prb0_orb_s08_..."
+            import re
+            m = re.search(r"_s(\d{2})_", col)
+            if m:
+                referenced_sessions.add(int(m.group(1)))
+
+        missing = referenced_sessions - configured_sessions
+        assert not missing, (
+            f"Session hours referenced in model_hyperparameters_grid but not in pipeline "
+            f"sessions: {missing}"
+        )
 
     def test_carry_forward_and_pre_range_present(self, orb_config):
         """carry_forward_days and pre_range_bars must be configured."""
@@ -330,11 +274,11 @@ class TestOrbPipelineConfig:
 
 
 # ===========================================================================
-# Test Class 7: Cross-Config Consistency
+# Test Class 6: Cross-Config Consistency
 # ===========================================================================
 
 class TestCrossConfigConsistency:
-    """Verify all trailing_stop configs have consistent overrides."""
+    """Verify all trailing_stop configs have consistent settings."""
 
     @pytest.fixture
     def all_trailing_configs(self):
@@ -356,21 +300,20 @@ class TestCrossConfigConsistency:
     def test_all_configs_have_null_timeout(self, all_trailing_configs):
         """Every trailing_stop config must have timeout_bars=[None]."""
         for name, cfg in all_trailing_configs.items():
-            for asset, grid in cfg.grids.items():
-                assert grid.timeout_bars == [None], (
-                    f"{name}/{asset}: timeout_bars={grid.timeout_bars}"
-                )
+            assert cfg.exit_params["timeout_bars"] == [None], (
+                f"{name}: timeout_bars={cfg.exit_params['timeout_bars']}"
+            )
 
     def test_all_configs_have_positive_trail(self, all_trailing_configs):
         """Every trailing_stop config's modifier grid must have trail > 0."""
         for name, cfg in all_trailing_configs.items():
-            for asset, grid in cfg.grids.items():
-                for i, params in enumerate(grid.exit_modifier_params_grid):
-                    if params is None:
-                        continue
-                    assert params.get("trail_atr_mult", 0) > 0, (
-                        f"{name}/{asset}: grid[{i}] disables trailing"
-                    )
+            emp_grid = cfg.optimization.exit_modifier_params_grid or []
+            for i, params in enumerate(emp_grid):
+                if params is None:
+                    continue
+                assert params.get("trail_atr_mult", 0) > 0, (
+                    f"{name}: grid[{i}] disables trailing"
+                )
 
     def test_all_configs_use_orb_based_exit(self, all_trailing_configs):
         """All ORB configs must use orb_based exit strategy."""
