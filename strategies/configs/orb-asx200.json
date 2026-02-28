@@ -1,0 +1,84 @@
+{
+  "datasource": "dukascopy",
+  "assets": {
+    "filter": [
+      "ASX200"
+    ]
+  },
+  "pipeline": {
+    "data_loading": [],
+    "preprocessing": [],
+    "indicators": [
+      {
+        "name": "opening_range",
+        "params": {
+          "range_bars": [
+            12
+          ],
+          "atr_period": 14,
+          "sessions": [
+            0
+          ],
+          "enable_retracement": true,
+          "carry_forward_days": 0,
+          "pre_range_bars": [
+            6
+          ],
+          "candle_span": "body",
+          "breakout_threshold": 0,
+          "breakout_threshold_abs": 5,
+          "retracement_levels": [
+            0.5
+          ],
+          "min_retracement": 0,
+          "min_range_height": 45,
+          "min_range_height_atr": 0
+        }
+      }
+    ],
+    "feature_selection": []
+  },
+  "exit_strategy": "orb_based",
+  "exit_params": {
+    "tp_mult": 2,
+    "sl_mult": 1,
+    "atr_period": 14,
+    "min_tp_pips": 8,
+    "min_sl_pips": 5,
+    "timeout_bars": null
+  },
+  "model": {
+    "type": "signal",
+    "architecture": "long_short_separate",
+    "trade_directions": [
+      "long",
+      "short"
+    ],
+    "hyperparameters": {}
+  },
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8
+  },
+  "filters": {},
+  "resources": {},
+  "name": "orb-asx200",
+  "risk_management": "vol_targeted_kelly",
+  "risk_params": {
+    "kelly_fraction": 0.25,
+    "max_risk": 0.05,
+    "target_max_dd": 0.3,
+    "circuit_breaker_loss_range": [
+      3,
+      8
+    ],
+    "circuit_breaker_pause_range": [
+      5,
+      30
+    ],
+    "target_vol": 15,
+    "min_scale": 0.25,
+    "max_scale": 2
+  },
+  "timeframe": "MINUTE_15"
+}

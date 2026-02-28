@@ -4,7 +4,13 @@
     "description": "",
     "version": 1
   },
-  "atr_period": 14,
-  "min_tp_pips": 8,
-  "min_sl_pips": 12
+  "atr_period": [
+    14
+  ],
+  "min_tp_pips": [
+    8
+  ],
+  "min_sl_pips": [
+    12
+  ]
 }

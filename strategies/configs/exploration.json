@@ -1,6 +1,6 @@
 {
   "name": "Exploration",
-  "description": "Maximale Feature-Exploration mit allen verf\u00fcgbaren Indicator-Plugins - ML lernt optimale Marktbedingungen",
+  "description": "Maximale Feature-Exploration mit allen verfügbaren Indicator-Plugins - ML lernt optimale Marktbedingungen",
   "tags": [
     "exploration",
     "parameter_search",
@@ -12,157 +12,96 @@
   "expected_outcome": "Identifikation der wichtigsten Features und profitablen Parameter-Bereiche durch Boruta Feature-Selektion",
   "pipeline": "exploration_full_v1",
   "exit_strategy": "atr_based",
-  "exit_params": "atr_standard_v1",
+  "exit_params": {
+    "atr_period": [
+      14
+    ],
+    "min_tp_pips": [
+      10
+    ],
+    "min_sl_pips": [
+      15
+    ],
+    "tp_mult": [
+      1.5,
+      2,
+      2.5,
+      3,
+      3.5,
+      4,
+      4.5,
+      5,
+      6
+    ],
+    "sl_mult": [
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "timeout_bars": [
+      null,
+      24,
+      48
+    ]
+  },
   "model": "xgboost_depth4_v1",
   "validation": "walk_forward_exploration_v1",
   "filters": "permissive_v1",
   "resources": "exploration_heavy_v1",
-  "grids": {
-    "presets_dir": "../grids",
-    "regime_filters_dir": "../regime_filters",
-    "regime_filter_grid": "exploration_regime_v1",
-    "assignments": {
-      "FOREX": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          1.5,
-          2,
-          2.5,
-          3,
-          3.5
-        ]
-      },
-      "INDEX": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          2,
-          2.5,
-          3,
-          3.5,
-          4
-        ]
-      },
-      "COMMODITY": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          2,
-          2.5,
-          3,
-          3.5,
-          4
-        ]
-      },
-      "CRYPTO": {
-        "preset": "exploration_crypto_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          5,
-          6
-        ]
-      },
-      "BRENT": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          1.5,
-          2,
-          2.5,
-          3,
-          3.5
-        ]
-      },
-      "GOLD": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          2.5,
-          3,
-          3.5,
-          4,
-          4.5
-        ]
-      },
-      "XAUUSD": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          2.5,
-          3,
-          3.5,
-          4,
-          4.5
-        ]
-      },
-      "SILVER": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          1.5,
-          2,
-          2.5,
-          3,
-          3.5
-        ]
-      },
-      "XAGUSD": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          1.5,
-          2,
-          2.5,
-          3,
-          3.5
-        ]
-      },
-      "DAX": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          2,
-          2.5,
-          3,
-          3.5,
-          4
-        ]
-      },
-      "DOW30": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          2,
-          2.5,
-          3,
-          3.5,
-          4
-        ]
-      },
-      "FTSE100": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          1.5,
-          2,
-          2.5,
-          3,
-          3.5
-        ]
-      },
-      "NAS100": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          2.5,
-          3,
-          3.5,
-          4,
-          4.5
-        ]
-      },
-      "SPX500": {
-        "preset": "exploration_base_v1",
-        "tp": [
-          2,
-          2.5,
-          3,
-          3.5,
-          4
-        ]
-      }
+  "datasource": "forexsb",
+  "optimization": {
+    "ct": [
+      0.5,
+      0.55,
+      0.6,
+      0.65
+    ],
+    "regime_filter_grid": {
+      "condition_grids": [
+        {
+          "column": "trend_adx_14",
+          "operator": ">=",
+          "values": [
+            null,
+            25
+          ],
+          "directions": 6,
+          "else_directions": 0
+        },
+        {
+          "column": "macro_vix",
+          "operator": "<=",
+          "values": [
+            null,
+            30
+          ],
+          "directions": 6,
+          "else_directions": 0
+        },
+        {
+          "column": "regime_hurst_100",
+          "operator": ">=",
+          "values": [
+            null,
+            0.45
+          ],
+          "directions": 6,
+          "else_directions": 0
+        },
+        {
+          "column": "regime_cluster_label",
+          "operator": ">=",
+          "values": [
+            null,
+            1,
+            2
+          ],
+          "directions": 6,
+          "else_directions": 0
+        }
+      ]
     }
-  },
-  "datasource": "forexsb"
+  }
 }

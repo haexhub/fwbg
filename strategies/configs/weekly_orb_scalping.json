@@ -13,7 +13,40 @@
   "expected_outcome": "WOR retest signals dominate entries. Stronger edge than daily ORB on weekly basis.",
   "pipeline": "weekly_orb_v1",
   "exit_strategy": "orb_based",
-  "exit_params": "orb_wor_v1",
+  "exit_params": {
+    "atr_period": [
+      14
+    ],
+    "min_tp_pips": [
+      8
+    ],
+    "min_sl_pips": [
+      12
+    ],
+    "sl_dist_column": [
+      "wor_rb2_sl_dist"
+    ],
+    "tp_mult": [
+      2.0,
+      2.5,
+      3.0,
+      4.0,
+      5.0,
+      6.0,
+      8.0,
+      10.0
+    ],
+    "sl_mult": [
+      1.5,
+      2.0,
+      2.5,
+      3.0,
+      4.0
+    ],
+    "timeout_bars": [
+      null
+    ]
+  },
   "exit_modifier": "trailing_stop",
   "exit_modifier_params": {
     "breakeven_trigger": 0.5,
@@ -23,161 +56,24 @@
   "validation": "walk_forward_intraday_v1",
   "filters": "weekly_orb_v1",
   "resources": "standard_v1",
-  "grids": {
-    "presets_dir": "../grids",
-    "assignments": {
-      "FOREX": {
-        "preset": "weekly_orb_forex_v1",
-        "ct": [
-          0.5
-        ],
-        "tp": [
-          2.0,
-          2.5,
-          3.0,
-          4.0,
-          5.0
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "wor_rb2_retest_zone_up",
-          "signal_column_short": "wor_rb2_retest_zone_down"
-        },
-        "required_features": [
-          "wor_rb2_retest_zone_up",
-          "wor_rb2_retest_zone_down"
-        ],
-        "timeout_bars": [
-          null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ]
+  "datasource": "forexsb",
+  "optimization": {
+    "ct": [
+      0.5
+    ],
+    "exit_modifier_params_grid": [
+      {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.3
       },
-      "INDEX": {
-        "preset": "weekly_orb_index_v1",
-        "ct": [
-          0.5
-        ],
-        "tp": [
-          4.0,
-          5.0,
-          6.0,
-          8.0,
-          10.0
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "wor_rb2_retest_zone_up",
-          "signal_column_short": "wor_rb2_retest_zone_down"
-        },
-        "required_features": [
-          "wor_rb2_retest_zone_up",
-          "wor_rb2_retest_zone_down"
-        ],
-        "timeout_bars": [
-          null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ]
+      {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
       },
-      "COMMODITY": {
-        "preset": "weekly_orb_base_v1",
-        "ct": [
-          0.5
-        ],
-        "tp": [
-          2.5,
-          3.0,
-          4.0,
-          5.0
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "wor_rb2_retest_zone_up",
-          "signal_column_short": "wor_rb2_retest_zone_down"
-        },
-        "required_features": [
-          "wor_rb2_retest_zone_up",
-          "wor_rb2_retest_zone_down"
-        ],
-        "timeout_bars": [
-          null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ]
-      },
-      "CRYPTO": {
-        "preset": "weekly_orb_crypto_v1",
-        "ct": [
-          0.5
-        ],
-        "tp": [
-          3.0,
-          4.0,
-          5.0,
-          6.0,
-          8.0
-        ],
-        "model_hyperparameters": {
-          "signal_column_long": "wor_rb2_retest_zone_up",
-          "signal_column_short": "wor_rb2_retest_zone_down"
-        },
-        "required_features": [
-          "wor_rb2_retest_zone_up",
-          "wor_rb2_retest_zone_down"
-        ],
-        "timeout_bars": [
-          null
-        ],
-        "exit_modifier_params_grid": [
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.3
-          },
-          {
-            "breakeven_trigger": 0.5,
-            "trail_atr_mult": 0.5
-          },
-          {
-            "breakeven_trigger": 0.3,
-            "trail_atr_mult": 0.5
-          }
-        ]
+      {
+        "breakeven_trigger": 0.3,
+        "trail_atr_mult": 0.5
       }
-    }
-  },
-  "datasource": "forexsb"
+    ]
+  }
 }

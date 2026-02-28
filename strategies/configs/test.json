@@ -20,7 +20,6 @@
     ],
     "hyperparameters": {}
   },
-  "grids": {},
   "validation": {
     "method": "walk_forward",
     "folds": 8

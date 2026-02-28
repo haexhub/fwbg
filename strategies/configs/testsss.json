@@ -1,0 +1,52 @@
+{
+  "datasource": "dukascopy",
+  "pipeline": {
+    "indicators": [
+      {
+        "name": "opening_range",
+        "params": {
+          "range_bars": 1,
+          "atr_period": 14,
+          "sessions": [
+            8,
+            9,
+            14,
+            15
+          ],
+          "enable_retracement": true,
+          "carry_forward_days": 0,
+          "pre_range_bars": 0,
+          "candle_span": "hl",
+          "breakout_threshold": 0,
+          "breakout_threshold_abs": 0,
+          "retracement_levels": 0.5,
+          "min_retracement": 0
+        }
+      }
+    ],
+    "preprocessing": [],
+    "feature_selection": [],
+    "data_loading": []
+  },
+  "exit_strategy": "fixed",
+  "exit_params": {
+    "tp": 50,
+    "sl": 50
+  },
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "trade_directions": [
+      "long",
+      "short"
+    ],
+    "hyperparameters": {}
+  },
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8
+  },
+  "filters": {},
+  "resources": {},
+  "name": "testsss"
+}
