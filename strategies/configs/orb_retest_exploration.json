@@ -1,6 +1,6 @@
 {
   "name": "ORB Retest Exploration",
-  "description": "Rule-based ORB Midpoint Retest strategy: Einstieg beim ersten Retracement zum Midpoint (50%) der Opening Range nach Ausbruch. Kein ML-Training, reiner Signalfilter. Kein Timeout \u2014 Trades via TP/SL geschlossen. EU-Assets: s08 = 8:00 UTC (Winter/CET), s07 = 7:00 UTC (Sommer/CEST) \u2014 Default ist Winter.",
+  "description": "Rule-based ORB Midpoint Retest strategy: Einstieg beim ersten Retracement zum Midpoint (50%) der Opening Range nach Ausbruch. Kein ML-Training, reiner Signalfilter. Kein Timeout — Trades via TP/SL geschlossen. EU-Assets: s08 = 8:00 UTC (Winter/CET), s07 = 7:00 UTC (Sommer/CEST) — Default ist Winter.",
   "tags": [
     "orb",
     "retest",
@@ -14,106 +14,41 @@
   "expected_outcome": "Session-spezifische Signals (s08 fuer EU-Winter, s07 fuer EU-Sommer, s14 fuer US) produzieren konzentrierte High-Quality-Einstiege.",
   "pipeline": "orb_retest_v1",
   "exit_strategy": "orb_based",
-  "exit_params": "atr_intraday_v1",
+  "exit_params": {
+    "atr_period": [
+      14
+    ],
+    "min_tp_pips": [
+      8
+    ],
+    "min_sl_pips": [
+      12
+    ],
+    "tp_mult": [
+      2,
+      3,
+      4,
+      6
+    ],
+    "sl_mult": [
+      1.5,
+      2.0,
+      2.5
+    ],
+    "timeout_bars": [
+      null
+    ]
+  },
   "model": "signal_orb_v1",
   "validation": "walk_forward_intraday_v1",
   "filters": "orb_scalping_v1",
   "resources": "standard_v1",
-  "grids": {
-    "presets_dir": "../grids",
-    "regime_filters_dir": "../regime_filters",
-    "assignments": {
-      "DAX": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      },
-      "EU50": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      },
-      "CAC40": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      },
-      "FTSE100": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      },
-      "NAS100": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      },
-      "SPX500": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      },
-      "DOW30": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      },
-      "JP225": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      },
-      "HK50": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      },
-      "ASX200": {
-        "preset": "orb_retest_base_v1",
-        "tp": [
-          2,
-          3,
-          4,
-          6
-        ]
-      }
-    }
-  },
-  "datasource": "dukascopy"
+  "datasource": "dukascopy",
+  "optimization": {
+    "ct": [
+      0.5,
+      0.55,
+      0.6
+    ]
+  }
 }

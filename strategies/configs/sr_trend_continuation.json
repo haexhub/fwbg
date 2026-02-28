@@ -11,21 +11,74 @@
   "expected_outcome": "Nachweis, dass die 31 S/R-Features prädiktiven Wert haben, bevor sie mit dem vollen Feature-Set kombiniert werden.",
   "pipeline": "sr_trend_v1",
   "exit_strategy": "atr_based",
-  "exit_params": "atr_intraday_v1",
+  "exit_params": {
+    "atr_period": [
+      14
+    ],
+    "min_tp_pips": [
+      8
+    ],
+    "min_sl_pips": [
+      12
+    ],
+    "tp_mult": [
+      0.5,
+      0.8,
+      1.0,
+      1.2,
+      1.5,
+      2.0
+    ],
+    "sl_mult": [
+      0.5,
+      0.8,
+      1.0,
+      1.5,
+      2.0,
+      2.5
+    ],
+    "timeout_bars": [
+      null,
+      24,
+      48
+    ]
+  },
   "model": "xgboost_depth3_v1",
   "validation": "walk_forward_sr_trend_v1",
   "filters": "sr_strict_v1",
   "resources": "standard_v1",
-  "grids": {
-    "presets_dir": "../grids",
-    "regime_filters_dir": "../regime_filters",
-    "regime_filter_grid": "sr_trend_class_v1",
-    "assignments": {
-      "FOREX": "sr_forex_index_v1",
-      "INDEX": "sr_forex_index_v1",
-      "COMMODITY": "sr_commodity_v1",
-      "CRYPTO": "sr_crypto_v1"
+  "datasource": "forexsb",
+  "optimization": {
+    "ct": [
+      0.52,
+      0.55,
+      0.6
+    ],
+    "regime_filter_grid": {
+      "condition_grids": [
+        {
+          "column": "sr_trend_class",
+          "operator": ">=",
+          "values": [
+            null,
+            1,
+            2
+          ],
+          "directions": 4,
+          "else_directions": 0
+        },
+        {
+          "column": "sr_trend_class",
+          "operator": "<=",
+          "values": [
+            null,
+            -1,
+            -2
+          ],
+          "directions": 2,
+          "else_directions": 0
+        }
+      ]
     }
-  },
-  "datasource": "forexsb"
+  }
 }

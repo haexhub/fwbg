@@ -14,67 +14,73 @@
   "expected_outcome": "VWAP Z-Score und Regime-Features werden selektiert. Beste Performance in Low-Trend-Phasen (ADX < 25, Hurst < 0.5).",
   "pipeline": "mr_vwap_intraday_v1",
   "exit_strategy": "atr_based",
-  "exit_params": "atr_intraday_at_v1",
+  "exit_params": {
+    "atr_period": [
+      14
+    ],
+    "min_tp_pips": [
+      8
+    ],
+    "min_sl_pips": [
+      12
+    ],
+    "adaptive_timeout": [
+      false
+    ],
+    "breakeven_trigger": [
+      0.5
+    ],
+    "trail_atr_mult": [
+      0.5
+    ],
+    "tp_mult": [
+      1.0,
+      1.5,
+      2.0,
+      2.5
+    ],
+    "sl_mult": [
+      1.5,
+      2.0,
+      2.5,
+      3.0
+    ],
+    "timeout_bars": [
+      16,
+      32
+    ]
+  },
   "model": "xgboost_screen_v1",
   "validation": "walk_forward_screening_v1",
   "filters": "screening_v1",
   "resources": "exploration_heavy_v1",
-  "grids": {
-    "presets_dir": "../grids",
-    "assignments": {
-      "NAS100": {
-        "preset": "mr_vwap_index_v1",
-        "tp": [
-          1.0,
-          1.5,
-          2.0
-        ],
-        "sl": [
-          1.5,
-          2.0,
-          2.5
-        ]
-      },
-      "SPX500": {
-        "preset": "mr_vwap_index_v1",
-        "tp": [
-          1.0,
-          1.5,
-          2.0
-        ],
-        "sl": [
-          1.5,
-          2.0,
-          2.5
-        ]
-      },
-      "DAX": {
-        "preset": "mr_vwap_index_v1",
-        "tp": [
-          1.5,
-          2.0,
-          2.5
-        ],
-        "sl": [
-          2.0,
-          2.5,
-          3.0
-        ]
-      },
-      "DOW30": {
-        "preset": "mr_vwap_index_v1",
-        "tp": [
-          1.0,
-          1.5,
-          2.0
-        ],
-        "sl": [
-          1.5,
-          2.0,
-          2.5
-        ]
-      }
+  "datasource": "forexsb",
+  "optimization": {
+    "ct": [
+      0.5,
+      0.55,
+      0.6
+    ],
+    "regime_filter_grid": {
+      "condition_grids": [
+        {
+          "column": "regime_hurst_100",
+          "operator": "<",
+          "values": [
+            null,
+            0.5,
+            0.45
+          ]
+        },
+        {
+          "column": "trend_adx_14",
+          "operator": "<",
+          "values": [
+            null,
+            25
+          ]
+        }
+      ]
     }
-  },
-  "datasource": "forexsb"
+  }
 }

@@ -4,7 +4,13 @@
     "description": "Exit params for PDH/PDL retest strategy v2: SL from per-combo sl_dist_column (grid search), TP ATR-based. No hardcoded sl_dist_column — each model_hyperparameters_grid entry provides its own.",
     "version": 2
   },
-  "atr_period": 14,
-  "min_tp_pips": 8,
-  "min_sl_pips": 12
+  "atr_period": [
+    14
+  ],
+  "min_tp_pips": [
+    8
+  ],
+  "min_sl_pips": [
+    12
+  ]
 }

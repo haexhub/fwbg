@@ -12,7 +12,29 @@
   "expected_outcome": "Significantly more trades than v1 (removed hourly delay + 24h signals). Trailing stop should improve risk-adjusted returns vs fixed TP.",
   "pipeline": "pdhl_v1",
   "exit_strategy": "orb_based",
-  "exit_params": "orb_pdhl_v2",
+  "exit_params": {
+    "atr_period": [
+      14
+    ],
+    "min_tp_pips": [
+      8
+    ],
+    "min_sl_pips": [
+      12
+    ],
+    "tp_mult": [
+      3,
+      4,
+      6,
+      8
+    ],
+    "sl_mult": [
+      1
+    ],
+    "timeout_bars": [
+      null
+    ]
+  },
   "exit_modifier": "trailing_stop",
   "exit_modifier_params": {
     "breakeven_trigger": 0.5,
@@ -22,191 +44,20 @@
   "validation": "walk_forward_intraday_v1",
   "filters": "orb_scalping_v1",
   "resources": "standard_v1",
-  "grids": {
-    "presets_dir": "../grids",
-    "regime_filters_dir": "../regime_filters",
-    "assignments": {
-      "DAX": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
+  "datasource": "dukascopy",
+  "optimization": {
+    "ct": [
+      0.5
+    ],
+    "exit_modifier_params_grid": [
+      {
+        "breakeven_trigger": 0.0,
+        "trail_atr_mult": 0.0
       },
-      "FTSE100": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
-      },
-      "DOW30": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
-      },
-      "NAS100": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
-      },
-      "SPX500": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
-      },
-      "EU50": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
-      },
-      "CAC40": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
-      },
-      "JP225": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
-      },
-      "ASX200": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
-      },
-      "HK50": {
-        "preset": "orb_scalping_index_v1",
-        "tp": [
-          3,
-          4,
-          6,
-          8
-        ],
-        "sl": [
-          1
-        ],
-        "ct": [
-          0.5
-        ],
-        "timeout_bars": [
-          null
-        ]
+      {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
       }
-    }
-  },
-  "datasource": "dukascopy"
+    ]
+  }
 }

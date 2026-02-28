@@ -4,8 +4,16 @@
     "description": "Exit params for Weekly ORB strategy: SL from wor_rb2_sl_dist (WOR range boundary), TP ATR-based.",
     "version": 1
   },
-  "atr_period": 14,
-  "min_tp_pips": 8,
-  "min_sl_pips": 12,
-  "sl_dist_column": "wor_rb2_sl_dist"
+  "atr_period": [
+    14
+  ],
+  "min_tp_pips": [
+    8
+  ],
+  "min_sl_pips": [
+    12
+  ],
+  "sl_dist_column": [
+    "wor_rb2_sl_dist"
+  ]
 }
