@@ -394,7 +394,8 @@ def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
 
             runs.append(run_info)
 
-    # Active jobs
+    # Active jobs — reap finished processes, only show jobs not yet on filesystem
+    finished_ids = []
     for job_id, job in _active_jobs.items():
         proc = job.get("process")
         if proc and proc.poll() is not None:
@@ -402,7 +403,6 @@ def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
                 job["status"] = "completed"
             else:
                 job["status"] = "failed"
-                # Capture error output for user feedback
                 if "error_message" not in job:
                     try:
                         stdout = proc.stdout.read() if proc.stdout else ""
@@ -412,13 +412,22 @@ def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
                     except Exception:
                         job["error_message"] = f"Process exited with code {proc.returncode}"
 
+            # Process finished and results dir exists → reap
+            if (results_dir / job_id).exists():
+                finished_ids.append(job_id)
+                continue
+
         runs.insert(0, {
             "run_id": job_id,
             "status": job["status"],
             "strategy_name": job.get("strategy_name"),
             "started_at": job.get("started_at"),
             "is_active": job["status"] == "running",
+            "error_message": job.get("error_message"),
         })
+
+    for jid in finished_ids:
+        del _active_jobs[jid]
 
     return runs
 

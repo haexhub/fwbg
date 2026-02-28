@@ -90,9 +90,8 @@ class TestBuildComboTuples:
         ]
         ctx = _make_ctx(exit_strategies=exit_strategies)
 
-        # total = sum(len(ct)) * model_hp = (3 + 1) * 1 = 4
-        # But _build_combo_tuples creates one combo per exit_strategy (not per CT),
-        # so combos = 2, and total_grid_combinations = 4
+        # total = len(exit_strategies) * model_hp = 2 * 1 = 2
+        # CT values are used inside inner CV, not as separate grid combos
         combos, skipped = _build_combo_tuples(
             ctx, ["feat1"], [], {}, ctx.total_grid_combinations(),
             None, None, None, "TEST",
@@ -100,7 +99,7 @@ class TestBuildComboTuples:
 
         assert skipped == 0
         assert len(combos) == 2  # one per exit_strategy
-        assert ctx.total_grid_combinations() == 4  # CT expansion is in inner CV
+        assert ctx.total_grid_combinations() == 2  # matches combo count
 
     def test_combo_doubles_with_two_exit_strategies(self):
         """With 2× more exit strategies, combo count doubles."""

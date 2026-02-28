@@ -223,7 +223,7 @@ class SimulationContext:
     def total_grid_combinations(self) -> int:
         """Berechnet Gesamtzahl der Grid-Kombinationen."""
         n_model_hp = len(self.grid_model_hyperparameters) if self.grid_model_hyperparameters else 1
-        n_exit = sum(len(es.ct) for es in self.exit_strategies) if self.exit_strategies else 1
+        n_exit = len(self.exit_strategies) if self.exit_strategies else 1
         return n_exit * n_model_hp
 
 
