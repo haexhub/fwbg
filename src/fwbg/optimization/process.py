@@ -145,9 +145,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # SimulationContext erstellen (wird durch alle Funktionen gereicht)
         ctx = SimulationContext.create(asset, strategy)
 
-        # Kurzreferenzen für lokale Verwendung
-        grid = strategy.get_grid(sym, asset.asset_class)
-
         # === WALK-FORWARD FOLDS ERSTELLEN ===
         report_phase(sym, f"Creating {data_config.WALK_FORWARD_FOLDS} walk-forward folds...")
         try:
@@ -178,7 +175,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         accumulated_grid_results = []
 
         fold_indicators, precomputed_raw_df, total_indicators = precompute_indicators(
-            df, strategy, sym, indicator_overrides=grid.indicator_overrides,
+            df, strategy, sym,
         )
         preprocessing_configs = strategy.get_preprocessing()
 
@@ -186,7 +183,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             fold_result, grid_results = process_single_fold(
                 fold, fold_idx, len(wf_folds),
                 fold_indicators, precomputed_raw_df, preprocessing_configs,
-                grid, ctx, sym, total_indicators,
+                ctx, sym, total_indicators,
             )
             accumulated_grid_results.extend(grid_results)
             if fold_result:

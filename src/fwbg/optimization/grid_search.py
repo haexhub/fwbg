@@ -242,7 +242,7 @@ def _process_tp_sl_combo_wrapper(args):
 
 
 def _build_combo_tuples(
-    grid, ctx, timeout_values, features, inner_folds, regime_config,
+    ctx, timeout_values, features, inner_folds, regime_config,
     total_grid_combos, inner_df,
     selected_features_long, selected_features_short, sym,
 ):
@@ -261,8 +261,8 @@ def _build_combo_tuples(
             if modifier_params is not None:
                 combo_ctx = dataclasses.replace(combo_ctx, exit_modifier_params=modifier_params)
 
-            for tp in grid.tp:
-                for sl in grid.sl:
+            for tp in ctx.grid_tp:
+                for sl in ctx.grid_sl:
                     rrr = tp / sl
                     if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
                         skipped_count += len(timeout_values)
@@ -466,7 +466,6 @@ def _run_with_successive_halving(
 def run_grid_search(
     full_pool: list,
     inner_folds: list,
-    grid,
     ctx,
     regime_config: dict,
     sym: str,
@@ -486,7 +485,6 @@ def run_grid_search(
     Args:
         full_pool: Alle verfügbaren Feature-Spalten
         inner_folds: Liste von (train_df, val_df) Tuples
-        grid: GridConfig mit TP/SL/CT Werten
         ctx: SimulationContext
         regime_config: Regime-Filter Konfiguration
         sym: Symbol für Logging
@@ -562,11 +560,11 @@ def run_grid_search(
     if adaptive_timeout:
         timeout_values = [None]
     else:
-        timeout_values = grid.timeout_bars if grid.timeout_bars else [None]
+        timeout_values = ctx.grid_timeout_bars if ctx.grid_timeout_bars else [None]
 
     # Erstelle alle Kombinationen
     combos, skipped_count = _build_combo_tuples(
-        grid, ctx, timeout_values, features, inner_folds, regime_config,
+        ctx, timeout_values, features, inner_folds, regime_config,
         total_grid_combos, inner_df,
         selected_features_long, selected_features_short, sym,
     )
