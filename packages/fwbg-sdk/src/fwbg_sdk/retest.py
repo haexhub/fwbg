@@ -3,9 +3,8 @@
 Both strategies trade the same pattern:
 1. Define a reference range (ORB: first N bars, PDHL: previous day)
 2. Detect breakout beyond range boundary
-3. Wait for price to depart from entry zone
-4. Wait for price to return to entry zone (retest)
-5. Fire signal once per group (session/day)
+3. Wait for price to return to entry zone (retest)
+4. Fire signal once per group (session/day)
 
 This module provides the shared computation so both indicators use
 identical signal logic, just with different reference ranges.
@@ -116,19 +115,14 @@ def compute_retest_signals(
     broke_low_arr: np.ndarray,
     entry_bull: np.ndarray,
     entry_bear: np.ndarray,
-    half_band: np.ndarray,
     n: int,
     min_retracement: float = 0.0,
     session_mask: np.ndarray = None,
 ) -> Dict[str, np.ndarray]:
     """Compute retest signals using shared logic.
 
-    Callers pre-compute entry levels and zone widths:
-    - entry_bull / entry_bear: center of the retest zone per bar
-    - half_band: half-width of the zone around entry
-
-    ORB computes: entry = midpoint, half_band = zone_width/2 * range
-    PDHL computes: entry = boundary - rl * range, half_band = atr_width * max(range, atr) / 2
+    Callers pre-compute entry levels:
+    - entry_bull / entry_bear: retest target level per bar
 
     min_retracement: minimum fraction of range that must be retraced
     (checked via High/Low) before retest fires.  0 = disabled.
@@ -137,8 +131,11 @@ def compute_retest_signals(
 
     Returns dict with 'retest_bull' and 'retest_bear' arrays.
     """
-    near_entry_bull = (close >= entry_bull - half_band) & (close <= entry_bull + half_band)
-    near_entry_bear = (close >= entry_bear - half_band) & (close <= entry_bear + half_band)
+    # Zone proximity: price must reach the entry level via H/L.
+    # Bull retest: price retraces DOWN — low must reach the entry level.
+    # Bear retest: price retraces UP — high must reach the entry level.
+    near_entry_bull = low <= entry_bull if low is not None else close <= entry_bull
+    near_entry_bear = high >= entry_bear if high is not None else close >= entry_bear
 
     range_size = range_high - range_low
     retrace_bull_threshold = range_high - min_retracement * range_size
@@ -152,8 +149,6 @@ def compute_retest_signals(
     retested_bear = False
     retracement_ok_bull = False
     retracement_ok_bear = False
-    departed_bull = False
-    departed_bear = False
 
     for i in range(n):
         if group_ids[i] != prev_group_id:
@@ -162,8 +157,6 @@ def compute_retest_signals(
             retested_bear = False
             retracement_ok_bull = False
             retracement_ok_bear = False
-            departed_bull = False
-            departed_bear = False
 
         if np.isnan(range_high[i]):
             continue
@@ -180,27 +173,18 @@ def compute_retest_signals(
             retracement_ok_bull = True
             retracement_ok_bear = True
 
-        # Departure: price must move ABOVE (bull) / BELOW (bear) the
-        # entry band before a retest can fire.
-        if broke_high_arr[i] and not departed_bull:
-            if close[i] > entry_bull[i] + half_band[i]:
-                departed_bull = True
-        if broke_low_arr[i] and not departed_bear:
-            if close[i] < entry_bear[i] - half_band[i]:
-                departed_bear = True
-
         # Session filter for signal firing
         in_session = session_mask[i] if session_mask is not None else True
         if not in_session:
             continue
 
-        # Bull retest: departed + retraced + in zone + price above range low
-        if departed_bull and retracement_ok_bull and not retested_bull \
+        # Bull retest: broke high + retraced + in zone + price above range low
+        if broke_high_arr[i] and retracement_ok_bull and not retested_bull \
                 and near_entry_bull[i] and close[i] > range_low[i]:
             retest_bull[i] = 1.0
             retested_bull = True
-        # Bear retest: departed + retraced + in zone + price below range high
-        if departed_bear and retracement_ok_bear and not retested_bear \
+        # Bear retest: broke low + retraced + in zone + price below range high
+        if broke_low_arr[i] and retracement_ok_bear and not retested_bear \
                 and near_entry_bear[i] and close[i] < range_high[i]:
             retest_bear[i] = 1.0
             retested_bear = True

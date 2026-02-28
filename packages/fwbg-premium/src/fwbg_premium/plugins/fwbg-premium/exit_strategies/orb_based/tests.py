@@ -388,6 +388,155 @@ class TestOrbExitStrategySLDistColumn:
         )
 
 
+# --- tp_mode="range" tests ---
+
+class TestOrbExitStrategyRangeMode:
+    """tp_mode='range' uses the *_range column for TP instead of ATR."""
+
+    def test_tp_uses_range_column(self, ohlc_df):
+        """With tp_mode='range', TP must be derived from the range column, not ATR."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_range"] = 200.0  # large, unmistakeable
+        df["orb_sl_dist"] = 100.0  # range/2
+
+        ctx_range = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"tp_mode": "range", "min_tp_pips": 1, "min_sl_pips": 1},
+        )
+        tp_dists, _ = strategy.resolve_distances(df, tp=1.0, sl=1.0, ctx=ctx_range)
+        # TP = range * tp_mult = 200 * 1.0 = 200
+        np.testing.assert_allclose(tp_dists, 200.0,
+            err_msg="tp_mode='range' must use range column for TP")
+
+    def test_tp_mode_atr_ignores_range_column(self, ohlc_df):
+        """Default tp_mode='atr' must ignore the range column."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_range"] = 9999.0  # should be ignored
+
+        ctx_atr = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"min_tp_pips": 1, "min_sl_pips": 1},
+        )
+        tp_dists, _ = strategy.resolve_distances(df, tp=2.0, sl=1.0, ctx=ctx_atr)
+        # TP should NOT be 9999 — it should be ATR-based
+        assert tp_dists.mean() < 1000, (
+            f"tp_mode='atr' should not use range column, got mean={tp_dists.mean():.2f}"
+        )
+
+    def test_range_mode_tp_scales_with_tp_mult(self, ohlc_df):
+        """TP must scale linearly with tp_mult in range mode."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_range"] = 100.0
+        df["orb_sl_dist"] = 50.0
+
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"tp_mode": "range", "min_tp_pips": 1, "min_sl_pips": 1},
+        )
+        tp_1x, _ = strategy.resolve_distances(df, tp=1.0, sl=1.0, ctx=ctx)
+        tp_2x, _ = strategy.resolve_distances(df, tp=2.0, sl=1.0, ctx=ctx)
+        np.testing.assert_allclose(tp_1x, 100.0)
+        np.testing.assert_allclose(tp_2x, 200.0)
+
+    def test_range_mode_compute_targets_smoke(self, ohlc_df):
+        """compute_targets must work with tp_mode='range'."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_range"] = df["C"] * 0.002
+        df["orb_sl_dist"] = df["C"] * 0.001
+
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"tp_mode": "range", "min_tp_pips": 1, "min_sl_pips": 1},
+        )
+        tl, ts = strategy.compute_targets(df, ctx, tp_mult=1.0, sl_mult=1.4)
+        assert len(tl) == len(df)
+        assert len(ts) == len(df)
+        assert set(np.unique(tl)).issubset({0.0, 1.0})
+
+    def test_range_column_override(self, ohlc_df):
+        """range_column in exit_params must override auto-detection."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_range"] = 100.0  # auto-detect would find this
+        df["custom_range"] = 500.0  # explicit override
+
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={
+                "tp_mode": "range",
+                "range_column": "custom_range",
+                "min_tp_pips": 1, "min_sl_pips": 1,
+            },
+        )
+        tp_dists, _ = strategy.resolve_distances(df, tp=1.0, sl=1.0, ctx=ctx)
+        np.testing.assert_allclose(tp_dists, 500.0,
+            err_msg="range_column override must be used for TP")
+
+    def test_range_auto_detect_finds_prefixed_column(self, ohlc_df):
+        """Auto-detect must find rb1_orb_range style columns."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["rb1_orb_range"] = 300.0
+
+        range_v = strategy._get_range(df, {"tp_mode": "range"})
+        np.testing.assert_allclose(range_v, 300.0)
+
+    def test_range_fallback_to_zeros(self, ohlc_df):
+        """Without any range column, _get_range must return zeros."""
+        strategy = OrbExitStrategy()
+        range_v = strategy._get_range(ohlc_df, {})
+        assert (range_v == 0.0).all()
+
+    def test_range_mode_sl_unchanged(self, ohlc_df):
+        """tp_mode='range' must NOT affect SL calculation."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["orb_range"] = 200.0
+        df["orb_sl_dist"] = 100.0
+
+        ctx_atr = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"min_tp_pips": 1, "min_sl_pips": 1},
+        )
+        ctx_range = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"tp_mode": "range", "min_tp_pips": 1, "min_sl_pips": 1},
+        )
+        _, sl_atr = strategy.resolve_distances(df, tp=2.0, sl=1.4, ctx=ctx_atr)
+        _, sl_range = strategy.resolve_distances(df, tp=1.0, sl=1.4, ctx=ctx_range)
+        np.testing.assert_allclose(sl_atr, sl_range,
+            err_msg="tp_mode must not affect SL distances")
+
+    def test_range_mode_sl_mult_140_gives_70pct_range(self, ohlc_df):
+        """sl_mult=1.4 on orb_sl_dist (=range/2) gives SL at 70% of range from entry."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        orb_range = 200.0
+        df["orb_range"] = orb_range
+        df["orb_sl_dist"] = orb_range / 2  # entry at midpoint
+
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"tp_mode": "range", "min_tp_pips": 1, "min_sl_pips": 1},
+        )
+        _, sl_dists = strategy.resolve_distances(df, tp=1.0, sl=1.4, ctx=ctx)
+        # SL = orb_sl_dist * sl_mult = 100 * 1.4 = 140 = 70% of range (200)
+        np.testing.assert_allclose(sl_dists, 140.0,
+            err_msg="sl_mult=1.4 on range/2 must give 70% of range as SL")
+
+
 # --- Default params ---
 
 class TestOrbExitStrategyDefaults:

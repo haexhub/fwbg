@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 from unittest.mock import patch
 
+from fwbg.core.config import ExitStrategyConfig
 from fwbg.core.context import SimulationContext
 
 
@@ -71,6 +72,52 @@ def _add_orb_features(df: pd.DataFrame, sessions: list = None) -> pd.DataFrame:
     return ind.compute(df, range_bars=1, **kw)
 
 
+def _build_exit_strategies(
+    tp: list,
+    sl: list,
+    ct: list,
+    timeout_bars: list = None,
+    modifier_params_grid: list = None,
+) -> list:
+    """Build ExitStrategyConfig list from grid dimensions.
+
+    Creates one ExitStrategyConfig per (tp, sl, timeout, modifier) combination,
+    each with the given ct list.
+    """
+    effective_timeout = timeout_bars if timeout_bars is not None else [None]
+    effective_modifiers = modifier_params_grid if modifier_params_grid is not None else [None]
+
+    strategies = []
+    for tp_val in tp:
+        for sl_val in sl:
+            for timeout_val in effective_timeout:
+                for mod_params in effective_modifiers:
+                    params = {
+                        "atr_period": 14,
+                        "min_tp_pips": 0,
+                        "min_sl_pips": 0,
+                        "tp_mult": tp_val,
+                        "sl_mult": sl_val,
+                    }
+                    if timeout_val is not None:
+                        params["timeout_bars"] = timeout_val
+
+                    exit_modifier = None
+                    exit_modifier_params = {}
+                    if mod_params is not None:
+                        exit_modifier = "trailing_stop"
+                        exit_modifier_params = mod_params
+
+                    strategies.append(ExitStrategyConfig(
+                        name="atr_based",
+                        params=params,
+                        ct=ct,
+                        exit_modifier=exit_modifier,
+                        exit_modifier_params=exit_modifier_params,
+                    ))
+    return strategies
+
+
 def _make_ctx(
     tp: list,
     sl: list,
@@ -94,16 +141,18 @@ def _make_ctx(
 
     Coverage-Tests prüfen OB etwas evaluiert wird, nicht OB die Ergebnisse gut sind.
     """
+    exit_strategies = _build_exit_strategies(
+        tp, sl, ct,
+        timeout_bars=timeout_bars,
+        modifier_params_grid=modifier_params_grid,
+    )
+
     return SimulationContext(
         symbol="TEST",
         asset_class="INDEX",
         spread=1.0,
         point=1.0,
-        grid_tp=tp,
-        grid_sl=sl,
-        grid_ct=ct,
-        grid_timeout_bars=timeout_bars if timeout_bars is not None else [None],
-        grid_exit_modifier_params=modifier_params_grid if modifier_params_grid is not None else [None],
+        exit_strategies=exit_strategies,
         exit_strategy="atr_based",
         exit_params={"atr_period": 14, "min_tp_pips": 0, "min_sl_pips": 0},
         model_type="xgboost",
@@ -149,10 +198,10 @@ def _make_inner_folds(feature_df: pd.DataFrame, n_folds: int = 3, fold_size: int
 
 class TestGridCombinationsCount:
     """
-    total_grid_combinations() muss tp × sl × timeout × modifier entsprechen.
+    total_grid_combinations() = sum(len(es.ct) for es in exit_strategies) × model_hp.
 
-    CT ist KEIN eigener Grid-Loop — CT wird innerhalb jeder Combo per
-    optimal-threshold-suche in targets.py gefunden.
+    Each ExitStrategyConfig is one combo (per CT value). The total is the sum of
+    CT values across all exit strategies, multiplied by model HP variants.
     """
 
     def test_basic_tp_sl_timeout(self):
@@ -206,18 +255,20 @@ class TestGridCombinationsCount:
         ctx = _make_ctx(tp=[2.0, 3.0], sl=[1.5], ct=[0.5], timeout_bars=[None])
         assert ctx.total_grid_combinations() == 2  # 2 × 1 × 1 × 1
 
-    def test_ct_does_not_multiply_combinations(self):
-        """CT ist kein Combo-Loop — mehr CT-Werte ändern die Gesamtzahl NICHT."""
+    def test_ct_multiplies_combinations(self):
+        """CT values are part of each ExitStrategyConfig — more CT = more combos."""
         ctx_1ct = _make_ctx(tp=[2.0], sl=[1.5], ct=[0.5])
         ctx_4ct = _make_ctx(tp=[2.0], sl=[1.5], ct=[0.5, 0.55, 0.6, 0.65])
-        assert ctx_1ct.total_grid_combinations() == ctx_4ct.total_grid_combinations()
+        assert ctx_1ct.total_grid_combinations() == 1  # 1 exit_strategy × 1 ct
+        assert ctx_4ct.total_grid_combinations() == 4  # 1 exit_strategy × 4 ct
 
     def test_orb_scalping_index_preset_formula(self):
         """
         Preset orb_scalping_index: sl=4 × timeout=3 × modifier=2 = 6 pro TP-Wert.
 
         DAX (deep_orb_index): tp=5 → 5 × 6 = 30.
-        SL override=3 für DAX → 3 × 3 × 2 = 18 pro TP → 5 × 18 = 90.
+        SL override=3 für DAX → 3 × 3 × 2 = 18 pro TP → 5 × 18 = 90 exit_strategies.
+        Each exit_strategy has 4 CT values → 90 × 4 = 360.
         """
         # Preset-Werte aus orb_scalping_index_v1.json, mit DAX override für sl
         ctx = _make_ctx(
@@ -230,8 +281,10 @@ class TestGridCombinationsCount:
                 {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
             ],
         )
-        # tp × sl × timeout × modifier (CT zählt nicht)
-        expected = 5 * 3 * 3 * 2
+        # n_exit_strategies × n_ct_per_strategy × n_model_hp
+        n_exit_strategies = 5 * 3 * 3 * 2  # tp × sl × timeout × modifier = 90
+        n_ct = 4
+        expected = n_exit_strategies * n_ct
         assert ctx.total_grid_combinations() == expected
 
 
@@ -367,7 +420,8 @@ class TestGridSearchCoverage:
             inner_df=inner_df,
         )
 
-        n_combos = ctx.total_grid_combinations()
+        # n_combos = number of exit_strategies (one grid_result per strategy)
+        n_combos = len(ctx.exit_strategies)
         return candidates, grid_results, n_combos
 
     def test_grid_search_returns_nonempty_results(self):

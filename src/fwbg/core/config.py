@@ -76,17 +76,51 @@ class RegimeFilterGridConfig:
 
 
 @dataclass
+class ExitStrategyConfig:
+    """Configuration for a single exit strategy instance.
+
+    Each instance is an independent grid element with fixed params.
+    The optimizer iterates over the list of instances.
+    """
+    name: str = "fixed"
+    params: Dict[str, Any] = field(default_factory=dict)
+    ct: List[float] = field(default_factory=lambda: [0.5])
+    long_ct: List[float] | None = None
+    short_ct: List[float] | None = None
+    min_rrr: float = 0
+    exit_modifier: Optional[str] = None
+    exit_modifier_params: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ExitStrategyConfig":
+        ct = data.get("ct", [0.5])
+        if isinstance(ct, (int, float)):
+            ct = [ct]
+        long_ct = data.get("long_ct")
+        if isinstance(long_ct, (int, float)):
+            long_ct = [long_ct]
+        short_ct = data.get("short_ct")
+        if isinstance(short_ct, (int, float)):
+            short_ct = [short_ct]
+        return cls(
+            name=data.get("name", "fixed"),
+            params=data.get("params", {}),
+            ct=ct,
+            long_ct=long_ct,
+            short_ct=short_ct,
+            min_rrr=data.get("min_rrr", 0),
+            exit_modifier=data.get("exit_modifier"),
+            exit_modifier_params=data.get("exit_modifier_params", {}),
+        )
+
+
+@dataclass
 class OptimizationConfig:
     """Global optimization parameters for grid search."""
 
-    ct: list[float] = field(default_factory=lambda: [0.5])
-    long_ct: list[float] | None = None
-    short_ct: list[float] | None = None
-    min_rrr: float | None = None
     regime_filter_grid: RegimeFilterGridConfig = field(
         default_factory=RegimeFilterGridConfig
     )
-    exit_modifier_params_grid: list[dict] | None = None
     model_hyperparameters_grid: list[dict] | None = None
 
     @classmethod
@@ -99,33 +133,13 @@ class OptimizationConfig:
             if rfg
             else RegimeFilterGridConfig()
         )
-        ct = data.get("ct", [0.5])
-        if isinstance(ct, (int, float)):
-            ct = [ct]
-
-        long_ct = data.get("long_ct")
-        if isinstance(long_ct, (int, float)):
-            long_ct = [long_ct]
-
-        short_ct = data.get("short_ct")
-        if isinstance(short_ct, (int, float)):
-            short_ct = [short_ct]
-
-        emp = data.get("exit_modifier_params_grid")
-        if isinstance(emp, dict):
-            emp = [emp]
 
         mhg = data.get("model_hyperparameters_grid")
         if isinstance(mhg, dict):
             mhg = [mhg]
 
         return cls(
-            ct=ct,
-            long_ct=long_ct,
-            short_ct=short_ct,
-            min_rrr=data.get("min_rrr"),
             regime_filter_grid=regime,
-            exit_modifier_params_grid=emp,
             model_hyperparameters_grid=mhg,
         )
 
@@ -332,17 +346,6 @@ def _resolve_section(
     return value
 
 
-def _normalize_exit_params(params: dict) -> dict:
-    """Convert all exit_params values to lists. Scalar -> [scalar]."""
-    result = {}
-    for key, value in params.items():
-        if isinstance(value, list):
-            result[key] = value
-        else:
-            result[key] = [value]
-    return result
-
-
 @dataclass
 class StrategyConfig:
     """
@@ -362,13 +365,8 @@ class StrategyConfig:
     # Pipeline configuration
     pipeline: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
-    # Exit strategy
-    exit_strategy: str = "fixed"
-    exit_params: Dict[str, Any] = field(default_factory=dict)
-
-    # Exit modifier (optional add-on replacing the simulation kernel)
-    exit_modifier: Optional[str] = None
-    exit_modifier_params: Dict[str, Any] = field(default_factory=dict)
+    # Exit strategies (each instance is an independent grid element)
+    exit_strategies: List[ExitStrategyConfig] = field(default_factory=list)
 
     # Risk management
     risk_management: str = "kelly"
@@ -404,11 +402,6 @@ class StrategyConfig:
 
         # Resolve sections: string loads preset file, dict/None passes through
         pipeline = _resolve_section(data.get("pipeline", {}), "pipelines", strategy_dir)
-        exit_params_raw = _resolve_section(data.get("exit_params", {}), "exit_params", strategy_dir)
-        exit_params = _normalize_exit_params(exit_params_raw or {})
-        exit_modifier_params = _resolve_section(
-            data.get("exit_modifier_params", {}), "exit_modifier_params", strategy_dir
-        )
         model_data = _resolve_section(data.get("model", {}), "models", strategy_dir)
         validation_data = _resolve_section(data.get("validation", {}), "validations", strategy_dir)
         filters_data = _resolve_section(data.get("filters", {}), "filters", strategy_dir)
@@ -416,15 +409,16 @@ class StrategyConfig:
         risk_params = _resolve_section(data.get("risk_params", {}), "risk_params", strategy_dir)
         optimization = OptimizationConfig.from_dict(data.get("optimization"))
 
+        # Parse exit_strategies array
+        raw_exits = data.get("exit_strategies", [])
+        exit_strategies = [ExitStrategyConfig.from_dict(e) for e in raw_exits]
+
         return cls(
             name=data.get("name", "Default Strategy"),
             description=data.get("description", ""),
             tags=data.get("tags", []),
             pipeline=pipeline,
-            exit_strategy=data.get("exit_strategy", "fixed"),
-            exit_params=exit_params,
-            exit_modifier=data.get("exit_modifier"),
-            exit_modifier_params=exit_modifier_params or {},
+            exit_strategies=exit_strategies,
             risk_management=data.get("risk_management", "kelly"),
             risk_params=risk_params,
             optimization=optimization,
@@ -477,13 +471,26 @@ class StrategyConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         """Konvertiert zu Dictionary für JSON-Serialisierung."""
+        exit_strats = []
+        for es in self.exit_strategies:
+            d: Dict[str, Any] = {"name": es.name, "params": es.params, "ct": es.ct}
+            if es.long_ct:
+                d["long_ct"] = es.long_ct
+            if es.short_ct:
+                d["short_ct"] = es.short_ct
+            if es.min_rrr:
+                d["min_rrr"] = es.min_rrr
+            if es.exit_modifier:
+                d["exit_modifier"] = es.exit_modifier
+                d["exit_modifier_params"] = es.exit_modifier_params
+            exit_strats.append(d)
+
         return {
             "name": self.name,
             "description": self.description,
             "tags": self.tags,
             "pipeline": self.pipeline,
-            "exit_strategy": self.exit_strategy,
-            "exit_params": self.exit_params,
+            "exit_strategies": exit_strats,
             "risk_management": self.risk_management,
             "risk_params": self.risk_params,
             "assets": self.assets,
@@ -512,8 +519,9 @@ class StrategyConfig:
     def log_summary(self, log_func=print):
         """Gibt eine Zusammenfassung der Konfiguration aus."""
         log_func(f"Strategy: {self.name}")
-        log_func(f"  Exit Strategy: {self.exit_strategy}")
-        log_func(f"  Min RRR: {self.filters.min_rrr}")
+        log_func(f"  Exit Strategies: {len(self.exit_strategies)} instances")
+        for es in self.exit_strategies:
+            log_func(f"    - {es.name}: {es.params}")
         log_func(f"  Min Trades: {self.filters.min_trades}")
         indicators = self.get_indicators()
         log_func(

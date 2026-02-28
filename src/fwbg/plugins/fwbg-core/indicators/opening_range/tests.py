@@ -552,11 +552,10 @@ class TestORBRetestEntry:
         """M15 data with a planted post-breakout retrace scenario.
 
         candle_span='hl' (default): or_high=104, or_low=96, midpoint=100, range=8.
-        With retest_zone_width=1.0: half_band=4, zone=[96,104].
-        Departure requires C > 104 (bull) / C < 96 (bear).
+        entry_bull (rl=0.5) = 104 - 0.5*8 = 100. Retest fires when low <= 100.
 
           b+0: range bar (H=104, L=96)
-          b+1: C=106 (upside breakout + departure)
+          b+1: C=106 (upside breakout, L=105 stays above entry)
           b+2: C=100 (retrace to midpoint — rl50_retest_bull SHOULD fire)
           b+3: C=95  (below or_low — thesis invalidated)
         """
@@ -568,11 +567,13 @@ class TestORBRetestEntry:
         b = n_pre_hour_bars
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 106.0   # upside breakout + departure (C > or_high=104)
+        close[b + 1] = 106.0   # upside breakout
         close[b + 2] = 100.0   # retrace to midpoint
         close[b + 3] = 95.0    # below or_low (invalidated)
         high = np.maximum(high, close)
         low = np.minimum(low, close)
+        # Breakout bar: L must stay above entry level (100) so retest fires on retrace bar, not breakout bar
+        low[b + 1] = 105.0
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         return df, b
 
@@ -592,12 +593,12 @@ class TestORBRetestEntry:
         """rl50_retest_bull = 0 when there is no prior upside breakout (post_bull = 0)."""
         ind = _get_indicator()
         df, b = self._make_retest_df()
-        # Override b+1 to stay inside range (no breakout, no departure)
+        # Override b+1 to stay inside range (no breakout)
         df = df.copy()
         df.loc[df.index[b + 1], "C"] = 100.0
         df.loc[df.index[b + 1], "H"] = 103.0
         result = ind.compute(df, sessions=[8],
-                             retest_zone_width=1.0)
+)
         # Bar b+2 is at midpoint (C=100) but no breakout -> rl50_retest_bull must be 0
         # After shift: result.iloc[b+3]
         val = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 3]
@@ -609,9 +610,7 @@ class TestORBRetestEntry:
         """rl50_retest_bull = 1 when post_bull=1 AND price retraces to the ORB midpoint (first touch)."""
         ind = _get_indicator()
         df, b = self._make_retest_df()
-        # Use wide retest_zone_width to ensure the zone always qualifies
-        result = ind.compute(df, sessions=[8],
-                             retest_zone_width=1.0)
+        result = ind.compute(df, sessions=[8])
         # Bar b+1 (C=104, breakout): post_bull becomes 1
         # Bar b+2 (C=100 = midpoint): post_bull=1, near_poc=True, still_valid_bull=True -> fires
         # After shift: result.iloc[b+3]
@@ -632,14 +631,14 @@ class TestORBRetestEntry:
         b = n_pre
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 106.0  # upside breakout + departure
+        close[b + 1] = 106.0  # upside breakout
         close[b + 2] = 100.0  # first touch of midpoint -> fires
         close[b + 3] = 100.0  # second bar at midpoint -> must NOT fire again
         high = np.maximum(high, close)
         low = np.minimum(low, close)
+        low[b + 1] = 105.0  # breakout bar: L stays above entry level
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
-        result = ind.compute(df, sessions=[8],
-                             retest_zone_width=1.0)
+        result = ind.compute(df, sessions=[8])
         # b+2 (first touch): result.iloc[b+3] = 1
         val_first = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 3]
         assert val_first == 1.0, f"rl50_retest_bull first touch should be 1, got {val_first}"
@@ -654,8 +653,8 @@ class TestORBRetestEntry:
 
         This differs from the old ORB-specific logic which invalidated the first
         breakout direction.  The shared retest logic (used by both ORB and PDHL)
-        treats each direction independently: if price departed and returned to
-        the zone while still above range_low / below range_high, the signal fires.
+        treats each direction independently: if price broke out and returned to
+        the entry level while still above range_low / below range_high, the signal fires.
         """
         ind = _get_indicator()
         n_pre = 32
@@ -667,22 +666,23 @@ class TestORBRetestEntry:
         b = n_pre
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 106.0  # bull breakout + departure
-        close[b + 2] = 94.0   # bear breakout + departure
+        close[b + 1] = 106.0  # bull breakout
+        close[b + 2] = 94.0   # bear breakout
         close[b + 3] = 100.0  # midpoint — both retests fire
         high = np.maximum(high, close)
         low = np.minimum(low, close)
+        low[b + 1] = 105.0   # bull breakout bar: L stays above entry
+        high[b + 2] = 95.0   # bear breakout bar: H stays below entry
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
-        result = ind.compute(df, sessions=[8],
-                             retest_zone_width=1.0)
+        result = ind.compute(df, sessions=[8])
         # Both bull and bear retests fire at b+3 (shifted to b+4)
         val_bull = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 4]
         val_bear = result["rb1_orb_s08_rl50_retest_bear"].iloc[b + 4]
         assert val_bull == 1.0, (
-            f"rl50_retest_bull should fire at midpoint after bull departure, got {val_bull}"
+            f"rl50_retest_bull should fire at midpoint after bull breakout, got {val_bull}"
         )
         assert val_bear == 1.0, (
-            f"rl50_retest_bear should fire at midpoint after bear departure, got {val_bear}"
+            f"rl50_retest_bear should fire at midpoint after bear breakout, got {val_bear}"
         )
 
     def test_retest_bull_fires_only_once_per_session(self):
@@ -690,7 +690,7 @@ class TestORBRetestEntry:
         ind = _get_indicator()
         df, b = self._make_retest_df()
         result = ind.compute(df, sessions=[8],
-                             retest_zone_width=1.0)
+)
         # rl50_retest_bull fires at b+2 (C=100, midpoint). At b+3 (C=95), already retested -> 0.
         # After shift: result.iloc[b+4]
         val = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 4]
@@ -710,15 +710,15 @@ class TestORBRetestEntry:
         # H/L range: or_high=104, or_low=96, midpoint=100, range=8
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 94.0   # downside breakout + departure (C < or_low=96)
+        close[b + 1] = 94.0   # downside breakout
         close[b + 2] = 100.0  # retrace to midpoint — rl50_retest_bear SHOULD fire
         high = np.maximum(high, close)
         low = np.minimum(low, close)
+        high[b + 1] = 95.0   # breakout bar: H stays below entry level
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
-        result = ind.compute(df, sessions=[8],
-                             retest_zone_width=1.0)
+        result = ind.compute(df, sessions=[8])
         assert "rb1_orb_s08_rl50_retest_bear" in result.columns
-        # Bar b+2 (C=100, post_bear=1, departed, near midpoint) -> rl50_retest_bear = 1
+        # Bar b+2 (C=100, post_bear=1, near midpoint) -> rl50_retest_bear = 1
         # After shift: result.iloc[b+3]
         val = result["rb1_orb_s08_rl50_retest_bear"].iloc[b + 3]
         assert val == 1.0, (
@@ -752,7 +752,7 @@ class TestORBRetestEntry:
         low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8],
-                             range_bars=2, retest_zone_width=1.0)
+                             range_bars=2)
         # With rb=2: range = bars b,b+1; first valid = b+2.
         # Features are shifted by 1, so b+2 data appears at b+3 in the result.
         post_bull_b2 = result["rb2_orb_s08_post_bull"].iloc[b + 3]
@@ -780,15 +780,16 @@ class TestORBRetestEntry:
         b = n_pre
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 106.0  # bull breakout + departure
+        close[b + 1] = 106.0  # bull breakout
         close[b + 2] = 100.0  # first touch — signal fires here
         close[b + 3] = 106.0  # exits zone (above)
         close[b + 4] = 100.0  # re-enters zone — must NOT fire again
         high = np.maximum(high, close)
         low = np.minimum(low, close)
+        low[b + 1] = 105.0  # breakout bar: L stays above entry level
+        low[b + 3] = 105.0  # exit bar: L stays above entry level
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
-        result = ind.compute(df, sessions=[8],
-                             retest_zone_width=1.0)
+        result = ind.compute(df, sessions=[8])
         val_first = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 3]   # signal at b+2, shifted
         val_reentry = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 5]  # signal at b+4, shifted
         assert val_first == 1.0, f"first touch should fire (=1), got {val_first}"
@@ -1342,7 +1343,7 @@ class TestStrategyConfigSignalColumnIntegration:
         df = _make_ohlc_15min(n=3000)
         result = ind.compute(
             df, range_bars=[1, 2], sessions=[8],
-            enable_retracement=True, retest_atr_width=0.3,
+            enable_retracement=True,
             carry_forward_days=[0, 1, 2], pre_range_bars=[0, 1],
         )
 
@@ -1662,7 +1663,7 @@ class TestMinRetracement:
         o[b] = 100.0
         c[b] = 100.0
 
-        # Bull breakout + departure: C > or_high (104)
+        # Bull breakout: C > or_high (104)
         # L stays high (106) -> no deep retracement
         o[b + 1] = 105.0
         c[b + 1] = 106.0
@@ -1678,7 +1679,7 @@ class TestMinRetracement:
 
         df = pd.DataFrame({"O": o, "H": h, "L": lo, "C": c}, index=idx)
         result = ind.compute(df, sessions=[8],
-                             retest_zone_width=1.0, min_retracement=0.3)
+                             min_retracement=0.3)
 
         # The shallow retrace at b+2 should NOT trigger (after shift: b+3)
         val = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 3]
@@ -1698,13 +1699,14 @@ class TestMinRetracement:
         b = n_pre
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 106.0  # bull breakout + departure
+        close[b + 1] = 106.0  # bull breakout
         close[b + 2] = 100.0  # retrace to midpoint
         high = np.maximum(high, close)
         low = np.minimum(low, close)
+        low[b + 1] = 105.0  # breakout bar: L stays above entry level
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8],
-                             retest_zone_width=1.0, min_retracement=0.0)
+                             min_retracement=0.0)
 
         val = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 3]
         assert val == 1.0, (
@@ -1722,3 +1724,422 @@ class TestMinRetracement:
         schema = _orb.OpeningRangeIndicator.get_param_schema()
         assert "min_retracement" in schema
         assert schema["min_retracement"]["default"] == 0.0
+
+
+class TestCrossHourRangeBars:
+    """range_bars > bars_per_hour must span across hour boundaries."""
+
+    def _make_controlled_15m(self, n_hours=4, session_hour=0):
+        """Build a 15-min OHLCV DataFrame with controlled prices.
+
+        Session starts at session_hour. Within the opening range, bars have
+        ascending highs so we can verify which bars are included.
+        """
+        bars_per_hour = 4
+        n = n_hours * bars_per_hour
+        idx = pd.date_range(f"2024-01-01 {session_hour:02d}:00", periods=n, freq="15min")
+
+        # Ascending H: bar 0 → H=101, bar 1 → H=102, ... bar 5 → H=106
+        # Descending L: bar 0 → L=99, bar 1 → L=98, ... bar 5 → L=94
+        h_vals = 101 + np.arange(n, dtype=float)
+        l_vals = 99 - np.arange(n, dtype=float)
+        c_vals = np.full(n, 100.0)
+        o_vals = np.full(n, 100.0)
+
+        return pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+
+    def test_range_bars_6_includes_bars_across_hour_boundary(self):
+        """With range_bars=6 on 15m data, or_high must include bar 5 (hour+1)."""
+        df = self._make_controlled_15m(n_hours=4, session_hour=0)
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="hl",
+        )
+        col = "rb6_orb_s00_range"
+        assert col in result.columns, f"Expected column {col} not found"
+
+        # Bar 5 (index 5) is at 01:15 — across hour boundary from session 00:00.
+        # H at bar 5 = 101 + 5 = 106. So or_high must be 106.
+        # L at bar 0 = 99. So or_low must be 94 (99 - 5 = 94 at bar 5).
+        # Verify on a bar AFTER the range (bar 6 onward).
+        after_range = result.iloc[6:]
+        range_vals = after_range[col].dropna()
+        assert len(range_vals) > 0, "No valid range values after range period"
+        # or_range = (or_high - or_low) / C = (106 - 94) / 100 = 0.12
+        expected_range = (106 - 94) / 100.0
+        actual = range_vals.iloc[0]
+        assert abs(actual - expected_range) < 1e-6, (
+            f"or_range should be {expected_range} but got {actual}. "
+            "range_bars=6 likely not spanning across hour boundary."
+        )
+
+    def test_range_bars_4_stays_within_one_hour(self):
+        """With range_bars=4 on 15m data, or_high uses only bars 0-3 (one hour)."""
+        df = self._make_controlled_15m(n_hours=4, session_hour=0)
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=4, sessions=[0],
+            enable_retracement=False, candle_span="hl",
+        )
+        col = "rb4_orb_s00_range"
+        after_range = result.iloc[4:]
+        range_vals = after_range[col].dropna()
+        assert len(range_vals) > 0
+        # Bars 0-3: H max = 104, L min = 96. Range = (104-96)/100 = 0.08
+        expected = (104 - 96) / 100.0
+        actual = range_vals.iloc[0]
+        assert abs(actual - expected) < 1e-6
+
+    def test_breakout_respects_cross_hour_range(self):
+        """Breakout should only fire when close exceeds the full range (not just 1-hour range)."""
+        df = self._make_controlled_15m(n_hours=4, session_hour=0)
+        # Set close of bar 7 to 105 — above 4-bar range (104) but below 6-bar range (106)
+        df.iloc[7, df.columns.get_loc("C")] = 105.0
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="hl",
+        )
+        bu_col = "rb6_orb_s00_breakout_up"
+        # Bar 7 close=105 < or_high=106 → no breakout
+        assert result[bu_col].iloc[7] != 1, (
+            "Breakout fired at close=105 which is below 6-bar range high=106. "
+            "Range computation likely limited to one hour."
+        )
+
+    def test_breakout_fires_when_exceeding_cross_hour_range(self):
+        """Breakout should fire when close exceeds the full cross-hour range."""
+        df = self._make_controlled_15m(n_hours=4, session_hour=0)
+        # Set close of bar 7 to 107 — above 6-bar or_high (106)
+        df.iloc[7, df.columns.get_loc("C")] = 107.0
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="hl",
+        )
+        bu_col = "rb6_orb_s00_breakout_up"
+        # shift_features shifts by 1 bar → breakout at bar 7 appears at bar 8
+        assert result[bu_col].iloc[8] == 1, (
+            "Breakout should fire at close=107 which exceeds 6-bar range high=106."
+        )
+
+    def test_in_range_period_masks_all_range_bars(self):
+        """Bars within the range period (0 to range_bars-1) must be NaN/masked.
+
+        shift_features shifts by 1 bar, so bars 0-6 are NaN and bar 7 is first valid.
+        """
+        df = self._make_controlled_15m(n_hours=4, session_hour=0)
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="hl",
+        )
+        col = "rb6_orb_s00_position"
+        # Bars 0-6 should be NaN (range period 0-5 + 1 bar shift)
+        for i in range(7):
+            assert pd.isna(result[col].iloc[i]), (
+                f"Bar {i} should be masked but has value {result[col].iloc[i]}"
+            )
+        # Bar 7 should have a valid value (first bar after range + shift)
+        assert pd.notna(result[col].iloc[7]), "Bar 7 should be valid (first bar after range period + shift)"
+
+    def test_body_candle_span_cross_hour(self):
+        """candle_span='body' with range_bars=6 must use O/C of ALL range bars."""
+        bars_per_hour = 4
+        n = 4 * bars_per_hour
+        idx = pd.date_range("2024-01-01 00:00", periods=n, freq="15min")
+        o_vals = np.full(n, 100.0)
+        c_vals = np.full(n, 100.0)
+        h_vals = np.full(n, 110.0)  # wicks should be ignored
+        l_vals = np.full(n, 90.0)
+        # Bar 0: O=98, bar 3: C=107 (highest body in range), bar 5: C=95 (lowest)
+        o_vals[0] = 98.0
+        c_vals[3] = 107.0  # intermediate bar — must be included!
+        c_vals[5] = 95.0   # across hour boundary — must be included!
+        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="body",
+        )
+        col = "rb6_orb_s00_range"
+        after_range = result.iloc[7:]  # +1 for shift_features
+        range_vals = after_range[col].dropna()
+        assert len(range_vals) > 0
+        # body across all 6 bars: or_high = max(O,C) = 107 (bar 3), or_low = min(O,C) = 95 (bar 5)
+        # range = (107-95) / 100 = 0.12
+        expected = (107 - 95) / 100.0
+        actual = range_vals.iloc[0]
+        assert abs(actual - expected) < 1e-6, (
+            f"Body range should be {expected} but got {actual}. "
+            "candle_span='body' must use max/min of O/C across ALL range bars."
+        )
+
+    def test_body_ignores_wicks(self):
+        """candle_span='body' must ignore H/L wicks entirely."""
+        df = self._make_controlled_15m(n_hours=4, session_hour=0)
+        # Controlled data has ascending H and descending L (wicks).
+        # All O/C are 100.0, so body range should be 0.
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=4, sessions=[0],
+            enable_retracement=False, candle_span="body",
+        )
+        col = "rb4_orb_s00_range"
+        after_range = result.iloc[5:]  # 4 range bars + 1 shift
+        range_vals = after_range[col].dropna()
+        assert len(range_vals) > 0
+        assert range_vals.iloc[0] == 0.0, (
+            f"Body range should be 0 (all O=C=100) but got {range_vals.iloc[0]}. "
+            "Wicks (H/L) are leaking into body computation."
+        )
+
+    def test_zone_height_matches_breakout_threshold(self):
+        """Zone rectangle high/low must equal or_high/or_low (breakout thresholds)."""
+        df = self._make_controlled_15m(n_hours=4, session_hour=0)
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="hl",
+        )
+        zones = ind._range_zones
+        assert len(zones) > 0, "No range zones produced"
+        zone = zones[0]
+
+        # or_high = max(H) of bars 0-5 = 101+5 = 106
+        # or_low = min(L) of bars 0-5 = 99-5 = 94
+        assert zone["high"] == 106.0, f"Zone high should be 106, got {zone['high']}"
+        assert zone["low"] == 94.0, f"Zone low should be 94, got {zone['low']}"
+
+        # Breakout fires only when close > zone high (106)
+        bu_col = "rb6_orb_s00_breakout_up"
+        # All bars after range have close=100 < 106, so no breakout
+        post_range = result[bu_col].iloc[7:]  # +1 shift
+        assert (post_range.dropna() == 0).all(), (
+            "No breakout should fire when all closes (100) are below or_high (106)"
+        )
+
+    def test_zone_height_matches_breakout_body_mode(self):
+        """Zone and breakout must use body (O/C) not wicks when candle_span='body'."""
+        n = 4 * 4
+        idx = pd.date_range("2024-01-01 00:00", periods=n, freq="15min")
+        o_vals = np.full(n, 100.0)
+        c_vals = np.full(n, 100.0)
+        h_vals = np.full(n, 110.0)  # wicks extend to 110
+        l_vals = np.full(n, 90.0)   # wicks extend to 90
+        # Range bars: all bodies at 100, wicks at 90-110
+        # Body range: or_high = 100, or_low = 100, range = 0
+        # Set bar 2 O=97, bar 4 C=103 (body range becomes 97-103)
+        o_vals[2] = 97.0
+        c_vals[4] = 103.0
+        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="body",
+        )
+        zones = ind._range_zones
+        assert len(zones) > 0
+        zone = zones[0]
+
+        # Body mode: or_high = max(max(O,C)) = 103, or_low = min(min(O,C)) = 97
+        # Zone must use body values, NOT wick values (110/90)
+        assert zone["high"] == 103.0, (
+            f"Zone high should be 103 (body), got {zone['high']}. "
+            f"If 110, zone is using wicks (H/L) instead of body (O/C)."
+        )
+        assert zone["low"] == 97.0, (
+            f"Zone low should be 97 (body), got {zone['low']}. "
+            f"If 90, zone is using wicks."
+        )
+
+        # Breakout: bar 7 close=100, which is inside body range (97-103) → no breakout
+        bu_col = "rb6_orb_s00_breakout_up"
+        post_range = result[bu_col].iloc[7:]  # +1 shift
+        no_breakout = post_range.dropna()
+        assert (no_breakout == 0).all(), (
+            "Close=100 is inside body range (97-103), no breakout should fire"
+        )
+
+    def test_breakout_fires_only_once_per_session(self):
+        """Breakout must fire only ONCE per session per direction, on the first crossing."""
+        n = 4 * 8  # 8 hours at 15min
+        idx = pd.date_range("2024-01-01 00:00", periods=n, freq="15min")
+        o_vals = np.full(n, 100.0)
+        c_vals = np.full(n, 100.0)
+        h_vals = np.full(n, 110.0)
+        l_vals = np.full(n, 90.0)
+        # Range bars 0-5: body = 100 (flat), so or_high=100, or_low=100
+        # Set one range bar slightly higher to create a range
+        c_vals[0] = 102.0  # or_high = 102
+        o_vals[1] = 98.0   # or_low = 98
+
+        # Post-range bars: simulate oscillation around the upper boundary
+        # Bar 7: close=103 → above or_high=102 → breakout_up should fire
+        c_vals[7] = 103.0
+        # Bar 8: close=101 → back inside range
+        c_vals[8] = 101.0
+        # Bar 9: close=104 → above again → breakout_up should NOT fire again
+        c_vals[9] = 104.0
+        # Bar 10: close=99 → back inside
+        c_vals[10] = 99.0
+        # Bar 11: close=105 → above again → still should NOT fire
+        c_vals[11] = 105.0
+
+        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="body",
+        )
+        bu_col = "rb6_orb_s00_breakout_up"
+        # shift_features: breakout at bar 7 appears at bar 8
+        breakout_vals = result[bu_col].iloc[7:].dropna()
+        fires = breakout_vals[breakout_vals > 0]
+        assert len(fires) == 1, (
+            f"Breakout should fire exactly once, but fired {len(fires)} times. "
+            f"Values: {breakout_vals.tolist()}"
+        )
+        # Must fire at shifted position of bar 7 (= bar 8)
+        assert result[bu_col].iloc[8] == 1.0, "First breakout should fire at bar 7 (shifted to 8)"
+
+    def test_breakout_down_fires_only_once_per_session(self):
+        """breakout_down must also fire only once per session."""
+        n = 4 * 8
+        idx = pd.date_range("2024-01-01 00:00", periods=n, freq="15min")
+        o_vals = np.full(n, 100.0)
+        c_vals = np.full(n, 100.0)
+        h_vals = np.full(n, 110.0)
+        l_vals = np.full(n, 90.0)
+        c_vals[0] = 102.0  # or_high = 102
+        o_vals[1] = 98.0   # or_low = 98
+
+        # Bar 7: close=97 → below or_low=98 → breakout_down
+        c_vals[7] = 97.0
+        # Bar 8: close=99 → back inside
+        c_vals[8] = 99.0
+        # Bar 9: close=96 → below again → should NOT re-fire
+        c_vals[9] = 96.0
+
+        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="body",
+        )
+        bd_col = "rb6_orb_s00_breakout_down"
+        breakout_vals = result[bd_col].iloc[7:].dropna()
+        fires = breakout_vals[breakout_vals > 0]
+        assert len(fires) == 1, (
+            f"breakout_down should fire exactly once, fired {len(fires)} times"
+        )
+
+    def test_breakout_respects_pct_threshold(self):
+        """breakout_threshold (pct of range) must be added to or_high/or_low."""
+        n = 4 * 8
+        idx = pd.date_range("2024-01-01 00:00", periods=n, freq="15min")
+        o_vals = np.full(n, 100.0)
+        c_vals = np.full(n, 100.0)
+        h_vals = np.full(n, 110.0)
+        l_vals = np.full(n, 90.0)
+        # Range: or_high=105, or_low=95 → or_range=10
+        c_vals[0] = 105.0
+        o_vals[1] = 95.0
+        # breakout_threshold=0.1 → threshold = 0.1 * 10 = 1.0
+        # So breakout_up requires C > 105 + 1 = 106
+
+        # Bar 7: close=105.5 → above or_high(105) but below threshold(106) → NO breakout
+        c_vals[7] = 105.5
+        # Bar 8: close=106.5 → above threshold(106) → breakout
+        c_vals[8] = 106.5
+
+        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="body",
+            breakout_threshold=0.1,
+        )
+        bu_col = "rb6_orb_s00_breakout_up"
+        # Bar 7 close=105.5 < 106 threshold → no breakout (shifted to bar 8)
+        assert result[bu_col].iloc[8] != 1.0, (
+            "C=105.5 is below threshold (or_high + 10% of range = 106), should not fire"
+        )
+        # Bar 8 close=106.5 > 106 threshold → breakout (shifted to bar 9)
+        assert result[bu_col].iloc[9] == 1.0, (
+            "C=106.5 is above threshold (106), should fire"
+        )
+
+    def test_breakout_respects_abs_threshold(self):
+        """breakout_threshold_abs must be added when it exceeds pct threshold."""
+        n = 4 * 8
+        idx = pd.date_range("2024-01-01 00:00", periods=n, freq="15min")
+        o_vals = np.full(n, 100.0)
+        c_vals = np.full(n, 100.0)
+        h_vals = np.full(n, 110.0)
+        l_vals = np.full(n, 90.0)
+        # Range: or_high=105, or_low=95 → or_range=10
+        c_vals[0] = 105.0
+        o_vals[1] = 95.0
+        # breakout_threshold=0.1 → pct_dist = 1.0
+        # breakout_threshold_abs=2.0 → abs wins (max(1.0, 2.0) = 2.0)
+        # So breakout_up requires C > 105 + 2 = 107
+
+        # Bar 7: close=106.5 → above pct threshold(106) but below abs threshold(107)
+        c_vals[7] = 106.5
+        # Bar 8: close=107.5 → above abs threshold(107) → breakout
+        c_vals[8] = 107.5
+
+        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="body",
+            breakout_threshold=0.1,
+            breakout_threshold_abs=2.0,
+        )
+        bu_col = "rb6_orb_s00_breakout_up"
+        # Bar 7: C=106.5 < 107 → no breakout (shifted to bar 8)
+        assert result[bu_col].iloc[8] != 1.0, (
+            "C=106.5 below abs threshold (107), should not fire"
+        )
+        # Bar 8: C=107.5 > 107 → breakout (shifted to bar 9)
+        assert result[bu_col].iloc[9] == 1.0, (
+            "C=107.5 above abs threshold (107), should fire"
+        )
+
+    def test_breakout_down_respects_threshold(self):
+        """breakout_down must also respect threshold (or_low - threshold)."""
+        n = 4 * 8
+        idx = pd.date_range("2024-01-01 00:00", periods=n, freq="15min")
+        o_vals = np.full(n, 100.0)
+        c_vals = np.full(n, 100.0)
+        h_vals = np.full(n, 110.0)
+        l_vals = np.full(n, 90.0)
+        c_vals[0] = 105.0
+        o_vals[1] = 95.0
+        # threshold = max(0.1*10, 0) = 1.0
+        # breakout_down requires C < 95 - 1 = 94
+
+        # Bar 7: close=94.5 → below or_low(95) but above threshold(94) → NO
+        c_vals[7] = 94.5
+        # Bar 8: close=93.5 → below threshold(94) → breakout_down
+        c_vals[8] = 93.5
+
+        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        ind = _get_indicator()
+        result = ind.compute(
+            df, range_bars=6, sessions=[0],
+            enable_retracement=False, candle_span="body",
+            breakout_threshold=0.1,
+        )
+        bd_col = "rb6_orb_s00_breakout_down"
+        assert result[bd_col].iloc[8] != 1.0, (
+            "C=94.5 above threshold (or_low - 1 = 94), should not fire"
+        )
+        assert result[bd_col].iloc[9] == 1.0, (
+            "C=93.5 below threshold (94), should fire"
+        )

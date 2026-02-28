@@ -10,7 +10,7 @@ Bei hoher Volatilität wird der Timeout verkürzt (schnellere Preisbewegungen),
 bei niedriger Volatilität verlängert.
 """
 import pathlib
-from typing import Dict, Any, Iterator, Tuple, Union, TYPE_CHECKING
+from typing import Dict, Any, Tuple, Union, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 from numba import njit
@@ -520,78 +520,6 @@ class AtrExitStrategy(BaseExitStrategy):
         tp_dists = np.maximum(atr_v * tp, min_tp_distance)
         sl_dists = np.maximum(atr_v * sl, min_sl_distance)
         return tp_dists, sl_dists
-
-    def iterate_grid(
-        self,
-        grid_config: Dict[str, Any],
-        ctx: "SimulationContext",
-    ) -> Iterator[dict]:
-        """
-        Iteriert über alle TP-Mult x SL-Mult x Timeout Kombinationen.
-
-        Bei adaptive_timeout=True wird timeout_bars aus dem Grid ignoriert,
-        da der Timeout pro Trade dynamisch berechnet wird.
-        Das reduziert die Grid-Größe erheblich.
-
-        Unterstützt:
-        - tp/sl: Interpretiert als ATR-Multiplikatoren
-        - atr_tp_mult/atr_sl_mult: Explizite Benennung
-        """
-        # Grid-Werte extrahieren (beide Namenskonventionen)
-        tp_mults = grid_config.get("atr_tp_mult",
-                    grid_config.get("tp_mult",
-                    grid_config.get("tp", [1.0, 1.5, 2.0, 2.5])))
-        sl_mults = grid_config.get("atr_sl_mult",
-                    grid_config.get("sl_mult",
-                    grid_config.get("sl", [1.0, 1.5, 2.0])))
-        min_rrr = grid_config.get("min_rrr", 0)
-
-        # Exit-Parameter aus Context oder Defaults
-        exit_params = ctx.exit_params if ctx.exit_params else {}
-        atr_period = exit_params.get("atr_period", 14)
-        min_tp_pips = exit_params.get("min_tp_pips", 10)
-        min_sl_pips = exit_params.get("min_sl_pips", 15)
-
-        # Adaptive Timeout Parameter
-        adaptive_timeout = exit_params.get("adaptive_timeout", False)
-        base_timeout = exit_params.get("base_timeout", 48)
-        min_timeout = exit_params.get("min_timeout", 12)
-        max_timeout = exit_params.get("max_timeout", 96)
-        atr_ma_period = exit_params.get("atr_ma_period", 200)
-
-        # Bei adaptivem Timeout: Nur [None] als Timeout-Wert (wird dynamisch berechnet)
-        # Sonst: Grid-Werte verwenden
-        if adaptive_timeout:
-            timeout_values = [None]  # Timeout wird pro Trade berechnet
-        else:
-            timeout_values = grid_config.get("timeout_bars", [None])
-            if timeout_values is None:
-                timeout_values = [None]
-
-        for tp_mult in tp_mults:
-            for sl_mult in sl_mults:
-                # RRR-Filter
-                rrr = tp_mult / sl_mult if sl_mult > 0 else 0
-                if min_rrr > 0 and rrr < min_rrr:
-                    continue
-
-                for timeout in timeout_values:
-                    result = {
-                        "tp_mult": float(tp_mult),
-                        "sl_mult": float(sl_mult),
-                        "timeout_bars": timeout,
-                        "atr_period": atr_period,
-                        "min_tp_pips": min_tp_pips,
-                        "min_sl_pips": min_sl_pips,
-                    }
-                    # Adaptive Timeout Parameter hinzufügen
-                    if adaptive_timeout:
-                        result["adaptive_timeout"] = True
-                        result["base_timeout"] = base_timeout
-                        result["min_timeout"] = min_timeout
-                        result["max_timeout"] = max_timeout
-                        result["atr_ma_period"] = atr_ma_period
-                    yield result
 
     def get_cache_key(self, params: dict) -> str:
         """

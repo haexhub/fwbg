@@ -14,9 +14,7 @@
         ],
         "atr_period": 14,
         "stat_window": 12,
-        "enable_stats": true,
-        "enable_retracement": true,
-        "retest_atr_width": 0.3
+        "enable_stats": true
       }
     },
     {
@@ -38,8 +36,7 @@
           13,
           14
         ],
-        "enable_retracement": true,
-        "retest_atr_width": 0.3
+        "enable_retracement": true
       }
     },
     {

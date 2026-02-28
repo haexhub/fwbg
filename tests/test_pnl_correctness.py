@@ -34,8 +34,6 @@ def _make_ctx(spread=0.0001):
         short_enabled=True,
         exit_strategy="fixed",
         grid_ct=[0.5],
-        grid_tp=[10],
-        grid_sl=[10],
     )
 
 

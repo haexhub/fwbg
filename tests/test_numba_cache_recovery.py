@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from fwbg.core.config import ExitStrategyConfig
 from fwbg.plugins import import_plugin_module
 
 _atr = import_plugin_module("fwbg-premium", "exit_strategies", "atr_based")
@@ -224,11 +225,18 @@ class TestGridSearchErrorPropagation:
             symbol="TEST", asset_class="FOREX",
             spread=0.0001, point=0.00001,
             long_enabled=True, short_enabled=True,
-            min_trades=10, exit_strategy="atr_based",
+            min_trades=10,
+            exit_strategy="atr_based",
             exit_params={"atr_period": 14, "min_tp_pips": 5, "min_sl_pips": 5},
-            grid_tp=[2.0], grid_sl=[1.0], grid_ct=[0.55],
+            exit_strategies=[
+                ExitStrategyConfig(
+                    name="atr_based",
+                    params={"tp_mult": 2.0, "sl_mult": 1.0, "atr_period": 14,
+                            "min_tp_pips": 5, "min_sl_pips": 5},
+                    ct=[0.55],
+                ),
+            ],
             early_pruning_enabled=False,
-            grid_exit_modifier_params=[None],
         )
         defaults.update(overrides)
         return SimulationContext(**defaults)

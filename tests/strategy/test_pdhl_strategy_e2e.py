@@ -61,7 +61,7 @@ def _run_strategy(df: pd.DataFrame, ctx: SimulationContext, tp: float = 6, sl: f
     """
     # 1) Compute indicator
     ind = _pdl_mod.PreviousDayLevelsIndicator()
-    df_feat = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
+    df_feat = ind.compute(df.copy(), skip_weekends=False)
 
     # 2) Train SignalModel for long and short
     model_long = _signal_mod.SignalModel()
@@ -414,7 +414,7 @@ class TestSignalProperties:
         """hl_ses_pdl_retest_bull fires at most once per calendar day."""
         df = _make_pdhl_bull_retest()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
-        result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
+        result = ind.compute(df.copy(), skip_weekends=False)
 
         for day_str in ["2024-01-01", "2024-01-02", "2024-01-03"]:
             try:
@@ -429,7 +429,7 @@ class TestSignalProperties:
     def test_retest_bear_fires_once_per_day(self):
         df = _make_pdhl_bear_retest()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
-        result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
+        result = ind.compute(df.copy(), skip_weekends=False)
 
         for day_str in ["2024-01-01", "2024-01-02", "2024-01-03"]:
             try:
@@ -445,7 +445,7 @@ class TestSignalProperties:
         """First day has no previous day data → all signals NaN."""
         df = _make_pdhl_bull_retest()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
-        result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
+        result = ind.compute(df.copy(), skip_weekends=False)
 
         day0 = result.loc["2024-01-01"]
         for col in ["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"]:
@@ -458,7 +458,7 @@ class TestSignalProperties:
         """Before the breakout bar, retest signal must be 0."""
         df = _make_pdhl_bull_retest()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
-        result = ind.compute(df.copy(), retest_atr_width=0.5, skip_weekends=False)
+        result = ind.compute(df.copy(), skip_weekends=False)
 
         day1 = result.loc["2024-01-02"]
         # Breakout at 09:00, shifted to 10:00. Before that, retest_bull must be 0.

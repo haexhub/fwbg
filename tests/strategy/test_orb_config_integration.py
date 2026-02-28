@@ -1,19 +1,19 @@
 """Integration tests for ORB exploration strategy configuration.
 
 Guards against config bugs:
-1. timeout_bars must be [None] for trailing_stop configs
-2. exit_modifier_params_grid must not contain {0,0} (disables trailing)
-3. exit_modifier='trailing_stop' must be set
+1. timeout_bars must be None for trailing_stop configs
+2. exit_modifier_params must not disable trailing (zero trail)
+3. exit_modifier='trailing_stop' must be set on exit strategy instances
 4. orb_based exit strategy dispatches trailing kernel when exit_modifier is set
 5. Signal columns cover all rb/cf/prb combinations
 6. Pipeline config has required settings
 
-Since the GridConfig removal, all grid params live in:
-- exit_params (tp_mult, sl_mult, timeout_bars, etc.)
-- optimization (ct, exit_modifier_params_grid, model_hyperparameters_grid)
+Exit strategy instances live in exit_strategies[] array, each with:
+- name, params (fixed scalars), ct, exit_modifier, exit_modifier_params
 """
 import json
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -66,6 +66,20 @@ def weekly_orb_config():
     return StrategyConfig.from_json_file(WEEKLY_ORB_PATH)
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _get_orb_instances(config):
+    """Return all exit_strategies instances using orb_based."""
+    return [es for es in config.exit_strategies if es.name == "orb_based"]
+
+
+def _get_trailing_instances(config):
+    """Return all exit_strategies instances using trailing_stop modifier."""
+    return [es for es in config.exit_strategies if es.exit_modifier == "trailing_stop"]
+
+
 # ===========================================================================
 # Test Class 1: Config Loading & Basic Structure
 # ===========================================================================
@@ -76,25 +90,23 @@ class TestOrbConfigLoading:
     def test_config_loads_without_error(self, orb_config):
         assert orb_config.name is not None
 
-    def test_exit_strategy_is_orb_based(self, orb_config):
-        assert orb_config.exit_strategy == "orb_based"
+    def test_has_orb_based_exit_strategies(self, orb_config):
+        orb_instances = _get_orb_instances(orb_config)
+        assert len(orb_instances) > 0, "No orb_based exit strategy instances found"
 
-    def test_exit_modifier_is_trailing_stop(self, orb_config):
-        assert orb_config.exit_modifier == "trailing_stop"
+    def test_exit_strategies_have_trailing_stop(self, orb_config):
+        trailing = _get_trailing_instances(orb_config)
+        assert len(trailing) > 0, "No exit strategies with trailing_stop modifier"
 
     def test_pipeline_has_opening_range(self, orb_config):
         assert "indicators" in orb_config.pipeline
         ind_names = [i["name"] for i in orb_config.pipeline["indicators"]]
         assert "opening_range" in ind_names
 
-    def test_exit_params_have_required_keys(self, orb_config):
-        ep = orb_config.exit_params
-        assert "tp_mult" in ep
-        assert "sl_mult" in ep
-        assert "timeout_bars" in ep
-        # All values should be lists (normalized)
-        assert isinstance(ep["tp_mult"], list)
-        assert isinstance(ep["sl_mult"], list)
+    def test_exit_strategy_params_have_required_keys(self, orb_config):
+        for es in orb_config.exit_strategies:
+            assert "tp_mult" in es.params, f"{es.name} missing tp_mult"
+            assert "sl_mult" in es.params, f"{es.name} missing sl_mult"
 
 
 # ===========================================================================
@@ -102,69 +114,71 @@ class TestOrbConfigLoading:
 # ===========================================================================
 
 class TestTimeoutBarsNotLeaked:
-    """timeout_bars must be [None] for configs using trailing stop."""
+    """timeout_bars must be None for instances using trailing stop."""
 
     def test_orb_exploration_timeout_null(self, orb_config):
-        assert orb_config.exit_params["timeout_bars"] == [None], (
-            f"orb_exploration: timeout_bars should be [None], "
-            f"got {orb_config.exit_params['timeout_bars']}. Preset timeout_bars leaking!"
-        )
+        for es in _get_trailing_instances(orb_config):
+            timeout = es.params.get("timeout_bars")
+            assert timeout is None, (
+                f"orb_exploration: timeout_bars should be None, "
+                f"got {timeout}. Preset timeout_bars leaking!"
+            )
 
     def test_deep_orb_timeout_null(self, deep_orb_config):
-        if deep_orb_config.exit_modifier != "trailing_stop":
+        trailing = _get_trailing_instances(deep_orb_config)
+        if not trailing:
             pytest.skip("deep_orb_index doesn't use trailing_stop")
-        assert deep_orb_config.exit_params["timeout_bars"] == [None], (
-            f"deep_orb_index: timeout_bars should be [None], "
-            f"got {deep_orb_config.exit_params['timeout_bars']}"
-        )
+        for es in trailing:
+            timeout = es.params.get("timeout_bars")
+            assert timeout is None, (
+                f"deep_orb_index: timeout_bars should be None, got {timeout}"
+            )
 
     def test_weekly_orb_timeout_null(self, weekly_orb_config):
-        if weekly_orb_config.exit_modifier != "trailing_stop":
+        trailing = _get_trailing_instances(weekly_orb_config)
+        if not trailing:
             pytest.skip("weekly_orb doesn't use trailing_stop")
-        assert weekly_orb_config.exit_params["timeout_bars"] == [None], (
-            f"weekly_orb: timeout_bars should be [None], "
-            f"got {weekly_orb_config.exit_params['timeout_bars']}"
-        )
+        for es in trailing:
+            timeout = es.params.get("timeout_bars")
+            assert timeout is None, (
+                f"weekly_orb: timeout_bars should be None, got {timeout}"
+            )
 
 
 # ===========================================================================
-# Test Class 3: Exit Modifier Params Grid
+# Test Class 3: Exit Modifier Params — No Zero Trail
 # ===========================================================================
 
-class TestExitModifierParamsGrid:
-    """No {0,0} variant that disables trailing stop."""
+class TestExitModifierParams:
+    """No exit strategy instance should have trail_atr_mult=0 (disables trailing)."""
 
     def test_orb_exploration_no_zero_trail(self, orb_config):
-        emp_grid = orb_config.optimization.exit_modifier_params_grid or []
-        for i, params in enumerate(emp_grid):
-            if params is None:
-                continue
-            trail = params.get("trail_atr_mult", 0)
+        for i, es in enumerate(_get_trailing_instances(orb_config)):
+            emp = es.exit_modifier_params or {}
+            trail = emp.get("trail_atr_mult", 0)
             assert trail > 0, (
-                f"orb_exploration: exit_modifier_params_grid[{i}] "
+                f"orb_exploration: exit_strategies[{i}] "
                 f"trail_atr_mult={trail}. Disables trailing!"
             )
 
     def test_deep_orb_no_zero_trail(self, deep_orb_config):
-        if deep_orb_config.exit_modifier != "trailing_stop":
+        trailing = _get_trailing_instances(deep_orb_config)
+        if not trailing:
             pytest.skip("deep_orb_index doesn't use trailing_stop")
-        emp_grid = deep_orb_config.optimization.exit_modifier_params_grid or []
-        for i, params in enumerate(emp_grid):
-            if params is None:
-                continue
-            assert params.get("trail_atr_mult", 0) > 0, (
-                f"deep_orb_index: grid[{i}] disables trailing"
+        for i, es in enumerate(trailing):
+            emp = es.exit_modifier_params or {}
+            assert emp.get("trail_atr_mult", 0) > 0, (
+                f"deep_orb_index: instance[{i}] disables trailing"
             )
 
     def test_weekly_orb_no_zero_trail(self, weekly_orb_config):
-        if weekly_orb_config.exit_modifier != "trailing_stop":
+        trailing = _get_trailing_instances(weekly_orb_config)
+        if not trailing:
             pytest.skip("weekly_orb doesn't use trailing_stop")
-        emp_grid = weekly_orb_config.optimization.exit_modifier_params_grid or []
-        for i, params in enumerate(emp_grid):
-            if params is None:
-                continue
-            assert params.get("trail_atr_mult", 0) > 0, (
-                f"weekly_orb: grid[{i}] disables trailing"
+        for i, es in enumerate(trailing):
+            emp = es.exit_modifier_params or {}
+            assert emp.get("trail_atr_mult", 0) > 0, (
+                f"weekly_orb: instance[{i}] disables trailing"
             )
 
 
@@ -235,8 +249,6 @@ class TestOrbPipelineConfig:
             if v is None:
                 continue
             col = v.get("signal_column_long", "")
-            # Extract session hour from pattern like "rb1_cf0_prb0_orb_s08_..."
-            import re
             m = re.search(r"_s(\d{2})_", col)
             if m:
                 referenced_sessions.add(int(m.group(1)))
@@ -282,7 +294,7 @@ class TestCrossConfigConsistency:
 
     @pytest.fixture
     def all_trailing_configs(self):
-        """Load all configs that use trailing_stop."""
+        """Load all configs that use trailing_stop exit modifier."""
         configs = {}
         for name, path in [
             ("orb_exploration", ORB_EXPLORATION_PATH),
@@ -291,33 +303,35 @@ class TestCrossConfigConsistency:
         ]:
             if os.path.isfile(path):
                 cfg = StrategyConfig.from_json_file(path)
-                if cfg.exit_modifier == "trailing_stop":
+                trailing = _get_trailing_instances(cfg)
+                if trailing:
                     configs[name] = cfg
         if not configs:
             pytest.skip("No trailing_stop configs found")
         return configs
 
     def test_all_configs_have_null_timeout(self, all_trailing_configs):
-        """Every trailing_stop config must have timeout_bars=[None]."""
+        """Every trailing_stop instance must have timeout_bars=None."""
         for name, cfg in all_trailing_configs.items():
-            assert cfg.exit_params["timeout_bars"] == [None], (
-                f"{name}: timeout_bars={cfg.exit_params['timeout_bars']}"
-            )
+            for es in _get_trailing_instances(cfg):
+                timeout = es.params.get("timeout_bars")
+                assert timeout is None, (
+                    f"{name}: timeout_bars={timeout}"
+                )
 
     def test_all_configs_have_positive_trail(self, all_trailing_configs):
-        """Every trailing_stop config's modifier grid must have trail > 0."""
+        """Every trailing_stop instance must have trail_atr_mult > 0."""
         for name, cfg in all_trailing_configs.items():
-            emp_grid = cfg.optimization.exit_modifier_params_grid or []
-            for i, params in enumerate(emp_grid):
-                if params is None:
-                    continue
-                assert params.get("trail_atr_mult", 0) > 0, (
-                    f"{name}: grid[{i}] disables trailing"
+            for i, es in enumerate(_get_trailing_instances(cfg)):
+                emp = es.exit_modifier_params or {}
+                assert emp.get("trail_atr_mult", 0) > 0, (
+                    f"{name}: instance[{i}] disables trailing"
                 )
 
     def test_all_configs_use_orb_based_exit(self, all_trailing_configs):
         """All ORB configs must use orb_based exit strategy."""
         for name, cfg in all_trailing_configs.items():
-            assert cfg.exit_strategy == "orb_based", (
-                f"{name}: exit_strategy={cfg.exit_strategy}, expected orb_based"
+            orb_instances = _get_orb_instances(cfg)
+            assert len(orb_instances) > 0, (
+                f"{name}: no orb_based exit strategy instances found"
             )

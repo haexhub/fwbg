@@ -239,12 +239,14 @@ class TestComputeRetestSignals:
 
     def test_retracement_check(self):
         """With min_retracement > 0, low must reach threshold before signal fires."""
-        n = 5
-        # range: [96, 104], range_size=8. min_retracement=0.5
-        # retrace_bull_threshold = 104 - 0.5*8 = 100. Low must touch 100.
-        close = np.array([106.0, 103.0, 103.0, 100.0, 100.0])
-        low_arr = np.array([105.0, 102.0, 100.0, 99.0, 99.0])
-        high_arr = np.array([107.0, 104.0, 104.0, 101.0, 101.0])
+        n = 6
+        # range: [96, 104], range_size=8. entry_bull=100, half_band=2.
+        # Departure: C > entry+half_band = 102.
+        # near_entry_bull: low <= entry_bull = 100.
+        # min_retracement=0.8 → retrace_bull_threshold = 104 - 0.8*8 = 97.6.
+        close = np.array([106.0, 103.0, 100.0, 103.0, 97.0, 100.0])
+        low_arr = np.array([105.0, 102.0, 99.0, 102.0, 96.0, 99.0])
+        high_arr = np.array([107.0, 104.0, 101.0, 104.0, 98.0, 101.0])
         rh = np.full(n, 104.0)
         rl = np.full(n, 96.0)
         gids = np.zeros(n, dtype=int)
@@ -254,7 +256,10 @@ class TestComputeRetestSignals:
         entry_bear = np.full(n, 100.0)
         half_band = np.full(n, 2.0)
 
-        # Without retracement check
+        # Without retracement check:
+        # bar0: C=106 departure (> 102), L=105 > 100 → no
+        # bar1: L=102 > 100 → no
+        # bar2: L=99 <= 100 → fires at bar2
         r1 = compute_retest_signals(
             close=close, high=high_arr, low=low_arr,
             range_high=rh, range_low=rl,
@@ -262,22 +267,20 @@ class TestComputeRetestSignals:
             entry_bull=entry_bull, entry_bear=entry_bear,
             half_band=half_band, n=n,
         )
-        # With departure at bar0 (C=106 > 102), bar3/4 at midpoint
-        assert r1["retest_bull"][3] == 1.0
+        assert r1["retest_bull"][2] == 1.0
 
-        # With retracement check: low must reach 100
-        # bar0: low=105 > 100 → not retraced
-        # bar1: low=102 > 100 → not retraced
-        # bar2: low=100 <= 100 → retraced! Now signal can fire.
-        # bar3: C=100 in zone → fires
+        # With min_retracement=0.8: low must reach 97.6 before signal fires
+        # bar2: L=99 <= 100 (near entry) but L=99 > 97.6 → not retraced enough
+        # bar4: L=96 <= 97.6 → retraced! L=96 <= 100 → near entry. Fires.
         r2 = compute_retest_signals(
             close=close, high=high_arr, low=low_arr,
             range_high=rh, range_low=rl,
             group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
             entry_bull=entry_bull, entry_bear=entry_bear,
-            half_band=half_band, n=n, min_retracement=0.5,
+            half_band=half_band, n=n, min_retracement=0.8,
         )
-        assert r2["retest_bull"][3] == 1.0
+        assert r2["retest_bull"][2] == 0.0  # not retraced enough yet
+        assert r2["retest_bull"][4] == 1.0  # retracement met, fires
 
     def test_session_mask_blocks_signal(self):
         """Signal only fires during session bars."""

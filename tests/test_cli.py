@@ -63,14 +63,10 @@ class TestStrategyLoading:
                     {"name": "momentum", "params": {}},
                 ]
             },
-            "exit_params": {
-                "tp_mult": [1.5, 2.0],
-                "sl_mult": [1.0],
-                "timeout_bars": [None],
-            },
-            "optimization": {
-                "ct": [0.55]
-            }
+            "exit_strategies": [
+                {"name": "fixed", "params": {"tp_mult": 1.5, "sl_mult": 1.0}, "ct": [0.55]},
+                {"name": "fixed", "params": {"tp_mult": 2.0, "sl_mult": 1.0}, "ct": [0.55]},
+            ],
         }
 
         config = StrategyConfig.from_dict(strategy_data)
@@ -79,8 +75,9 @@ class TestStrategyLoading:
         assert len(indicators) == 2
         assert indicators[0]["name"] == "trend"
         assert indicators[1]["name"] == "momentum"
-        assert 1.5 in config.exit_params["tp_mult"]
-        assert 2.0 in config.exit_params["tp_mult"]
+        assert len(config.exit_strategies) == 2
+        assert config.exit_strategies[0].params["tp_mult"] == 1.5
+        assert config.exit_strategies[1].params["tp_mult"] == 2.0
 
     def test_load_strategy_with_account(self):
         """Test: Strategy mit Account-Konfiguration."""
@@ -138,7 +135,7 @@ class TestStrategyLoading:
         # Sollte mit Defaults funktionieren
         config = StrategyConfig.from_dict({})
         assert config.name == "Default Strategy"
-        assert config.exit_strategy == "fixed"
+        assert config.exit_strategies == []
         assert config.get_preprocessing() == []
 
 

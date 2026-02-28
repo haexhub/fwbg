@@ -569,7 +569,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "conf_thresh": ct_display,
                 "ct_long": ct_long,
                 "ct_short": ct_short,
-                "separate_long_short": ctx.separate_long_short,
+                "separate_long_short": bool(ct_long or ct_short),
                 "features": features_list,
                 "circuit_breaker": circuit_breaker,
                 "risk_adjustment": risk_adjustment,

@@ -36,7 +36,7 @@ def wor_col(rb: int, feature: str) -> str:
     return f"wor_rb{rb}_{feature}"
 
 
-WOR_SIGNAL_SUFFIXES = ("_breakout_up", "_breakout_down", "_retest_zone_up", "_retest_zone_down")
+WOR_SIGNAL_SUFFIXES = ("_breakout_up", "_breakout_down")
 
 
 def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
@@ -57,8 +57,6 @@ def _weekly_orb_features(
     df: pd.DataFrame,
     range_bars: int,
     atr: pd.Series,
-    enable_retracement: bool,
-    retest_atr_width: float,
 ) -> Dict[str, pd.Series]:
     """
     Compute weekly opening range features.
@@ -90,14 +88,6 @@ def _weekly_orb_features(
     # Distance from WOR High/Low (signed, ATR-normalized)
     features["wor_dist_to_high"] = safe_divide(or_high - df["C"], atr).where(valid, np.nan)
     features["wor_dist_to_low"] = safe_divide(df["C"] - or_low, atr).where(valid, np.nan)
-
-    if enable_retracement:
-        # Reload zone: is price within retest_atr_width * ATR of WOR boundary?
-        half_band = retest_atr_width * atr
-        near_high = (df["C"] >= or_high - half_band) & (df["C"] <= or_high + half_band)
-        near_low = (df["C"] >= or_low - half_band) & (df["C"] <= or_low + half_band)
-        features["wor_retest_zone_up"] = near_high.astype(int).where(valid, np.nan)
-        features["wor_retest_zone_down"] = near_low.astype(int).where(valid, np.nan)
 
     # SL distance for orb_based exit strategy.
     # Entry near WOR boundary (retest zone), SL at opposite boundary.
@@ -200,8 +190,6 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
         atr_period: int = 14,
         stat_window: int = 12,
         enable_stats: bool = True,
-        enable_retracement: bool = True,
-        retest_atr_width: float = 0.3,
         **params,
     ) -> pd.DataFrame:
         """
@@ -214,8 +202,6 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
             atr_period: ATR-Periode für Normalisierung
             stat_window: Rollendes Fenster (Wochen) für Statistik-Features
             enable_stats: Statistik-Features aktivieren
-            enable_retracement: Reload-Zone-Features aktivieren
-            retest_atr_width: Breite der Reload-Zone in ATR-Einheiten
         """
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("DataFrame muss einen DatetimeIndex haben")
@@ -233,7 +219,7 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
         features: Dict[str, pd.Series] = {}
 
         for rb in rb_list:
-            wor = _weekly_orb_features(df, rb, atr, enable_retracement, retest_atr_width)
+            wor = _weekly_orb_features(df, rb, atr)
             # Always use wor_rb{N}_ prefix (replace leading "wor_")
             wor = {f"wor_rb{rb}_{k[4:]}": v for k, v in wor.items()}
             features.update(wor)
@@ -259,8 +245,7 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
         rb = self.get_default_params()["range_bars"]
         base_feats = [
             "range", "position", "breakout_up", "breakout_down",
-            "range_vs_atr", "dist_to_high", "dist_to_low",
-            "retest_zone_up", "retest_zone_down", "sl_dist",
+            "range_vs_atr", "dist_to_high", "dist_to_low", "sl_dist",
         ]
         return [wor_col(rb, f) for f in base_feats] + [
             "wor_stat_avg_range", "wor_stat_range_vs_avg", "wor_stat_breakout_rate",
@@ -272,7 +257,6 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
         rb = self.get_default_params()["range_bars"]
         return [
             wor_col(rb, "breakout_up"), wor_col(rb, "breakout_down"),
-            wor_col(rb, "retest_zone_up"), wor_col(rb, "retest_zone_down"),
         ]
 
     @classmethod
@@ -282,8 +266,6 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
             "atr_period": 14,
             "stat_window": 12,
             "enable_stats": True,
-            "enable_retracement": True,
-            "retest_atr_width": 0.3,
         }
 
     @classmethod
@@ -326,22 +308,6 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
                 "type": "bool",
                 "default": True,
                 "description": "Statistik-Features aktivieren: durchschnittliche Wochenrange, Breakout-Rate.",
-            },
-            "enable_retracement": {
-                "type": "bool",
-                "default": True,
-                "description": (
-                    "Reload-Zone-Features aktivieren: wor_retest_zone_up/down signalisiert "
-                    "wenn Preis nach Breakout zur WOR-Grenze zurückkehrt."
-                ),
-            },
-            "retest_atr_width": {
-                "type": "float",
-                "default": 0.3,
-                "description": "Breite der Reload-Zone in ATR-Einheiten (beidseitig um WOR High/Low).",
-                "min": 0.1,
-                "max": 1.0,
-                "step": 0.1,
             },
         }
 

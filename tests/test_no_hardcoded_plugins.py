@@ -9,10 +9,10 @@ class TestDefaultPluginsResolvable:
     """Default plugin names must resolve to actual registered plugins."""
 
     def test_default_exit_strategy_exists_in_registry(self):
-        from fwbg.core.config import StrategyConfig
+        from fwbg.core.config import ExitStrategyConfig
         from fwbg.core import get_exit_strategy
-        config = StrategyConfig()
-        cls = get_exit_strategy(config.exit_strategy)
+        es_cfg = ExitStrategyConfig()
+        cls = get_exit_strategy(es_cfg.name)
         assert cls is not None
 
     def test_default_risk_management_exists_in_registry(self):

@@ -78,6 +78,7 @@ def _plugin_to_dict(fqn: str) -> dict:
         "phase": plugin_cls.phase.value if isinstance(plugin_cls.phase, PluginPhase) else str(plugin_cls.phase),
         "version": plugin_cls.version,
         "description": manifest.get("description", ""),
+        "group": getattr(plugin_cls, "group", "custom"),
         "stateful": plugin_cls.stateful,
         "cacheable": plugin_cls.cacheable,
         "has_docs": plugin_cls.get_docs_dir() is not None,

@@ -11,58 +11,536 @@
   "hypothesis": "PDH/PDL breakouts with retracement produce high-probability intraday setups. Optimizer finds best retracement level (0.3-0.7), trading hour window, and TP via grid search.",
   "expected_outcome": "Trades only on retest signals after confirmed breakout above PDH or below PDL. Max 1 entry per direction per day.",
   "pipeline": "orb_scalping_v1",
-  "exit_strategy": "orb_based",
-  "exit_params": {
-    "atr_period": [
-      14
-    ],
-    "min_tp_pips": [
-      8
-    ],
-    "min_sl_pips": [
-      12
-    ],
-    "sl_dist_column": [
-      "hl_ses_rl50_pdl_sl_dist"
-    ],
-    "tp_mult": [
-      1.5,
-      2,
-      3,
-      4,
-      6,
-      8,
-      10
-    ],
-    "sl_mult": [
-      1
-    ],
-    "timeout_bars": [
-      null,
-      8,
-      16,
-      32,
-      48
-    ]
-  },
   "model": "signal_orb_v1",
   "validation": "walk_forward_intraday_v1",
   "filters": "orb_scalping_v1",
   "resources": "standard_v1",
   "datasource": "dukascopy",
-  "optimization": {
-    "ct": [
-      0.5
-    ],
-    "exit_modifier_params_grid": [
-      {
-        "breakeven_trigger": 0.0,
-        "trail_atr_mult": 0.0
+  "exit_strategies": [
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 1.5,
+        "sl_mult": 1,
+        "timeout_bars": null
       },
-      {
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5
-      }
-    ]
-  }
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 1.5,
+        "sl_mult": 1,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 1.5,
+        "sl_mult": 1,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 1.5,
+        "sl_mult": 1,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 1.5,
+        "sl_mult": 1,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 2,
+        "sl_mult": 1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 2,
+        "sl_mult": 1,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 2,
+        "sl_mult": 1,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 2,
+        "sl_mult": 1,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 2,
+        "sl_mult": 1,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 3,
+        "sl_mult": 1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 3,
+        "sl_mult": 1,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 3,
+        "sl_mult": 1,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 3,
+        "sl_mult": 1,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 3,
+        "sl_mult": 1,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 4,
+        "sl_mult": 1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 4,
+        "sl_mult": 1,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 4,
+        "sl_mult": 1,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 4,
+        "sl_mult": 1,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 4,
+        "sl_mult": 1,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 6,
+        "sl_mult": 1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 6,
+        "sl_mult": 1,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 6,
+        "sl_mult": 1,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 6,
+        "sl_mult": 1,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 6,
+        "sl_mult": 1,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 8,
+        "sl_mult": 1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 8,
+        "sl_mult": 1,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 8,
+        "sl_mult": 1,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 8,
+        "sl_mult": 1,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 8,
+        "sl_mult": 1,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 10,
+        "sl_mult": 1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 10,
+        "sl_mult": 1,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 10,
+        "sl_mult": 1,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 10,
+        "sl_mult": 1,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
+        "tp_mult": 10,
+        "sl_mult": 1,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5
+      ]
+    }
+  ]
 }

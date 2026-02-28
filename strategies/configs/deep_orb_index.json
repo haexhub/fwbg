@@ -12,63 +12,12 @@
   "hypothesis": "ORB edge in indices is stronger than initial exploration showed. Rule-based entries with wider TP/SL grid to find optimal parameters.",
   "expected_outcome": "Higher TP values optimal due to index volatility. ORB-range SL provides natural risk level.",
   "pipeline": "orb_simple_v1",
-  "exit_strategy": "orb_based",
-  "exit_params": {
-    "atr_period": [
-      14
-    ],
-    "min_tp_pips": [
-      8
-    ],
-    "min_sl_pips": [
-      12
-    ],
-    "tp_mult": [
-      5.0,
-      6.0,
-      7.0,
-      8.0,
-      9.0,
-      10.0,
-      12.0
-    ],
-    "sl_mult": [
-      0.9,
-      1.0,
-      1.1
-    ],
-    "timeout_bars": [
-      null
-    ]
-  },
-  "exit_modifier": "trailing_stop",
-  "exit_modifier_params": {
-    "breakeven_trigger": 0.5,
-    "trail_atr_mult": 0.5
-  },
   "model": "signal_orb_v1",
   "validation": "walk_forward_intraday_v1",
   "filters": "orb_scalping_v1",
   "resources": "standard_v1",
   "datasource": "forexsb",
   "optimization": {
-    "ct": [
-      0.5
-    ],
-    "exit_modifier_params_grid": [
-      {
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.3
-      },
-      {
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5
-      },
-      {
-        "breakeven_trigger": 0.3,
-        "trail_atr_mult": 0.5
-      }
-    ],
     "model_hyperparameters_grid": [
       {
         "signal_column_long": "rb1_cf0_prb0_orb_s07_rl50_retest_bull",
@@ -311,5 +260,406 @@
         "signal_column_short": "rb2_cf2_prb1_orb_s01_rl50_retest_bear"
       }
     ]
-  }
+  },
+  "exit_strategies": [
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 0.9,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 1.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 1.1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 0.9,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 1.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 1.1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 7.0,
+        "sl_mult": 0.9,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 7.0,
+        "sl_mult": 1.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 7.0,
+        "sl_mult": 1.1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 8.0,
+        "sl_mult": 0.9,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 8.0,
+        "sl_mult": 1.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 8.0,
+        "sl_mult": 1.1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 9.0,
+        "sl_mult": 0.9,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 9.0,
+        "sl_mult": 1.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 9.0,
+        "sl_mult": 1.1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 10.0,
+        "sl_mult": 0.9,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 10.0,
+        "sl_mult": 1.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 10.0,
+        "sl_mult": 1.1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 12.0,
+        "sl_mult": 0.9,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 12.0,
+        "sl_mult": 1.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 12.0,
+        "sl_mult": 1.1,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    }
+  ]
 }

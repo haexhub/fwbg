@@ -6,11 +6,6 @@
     "feature_selection": [],
     "data_loading": []
   },
-  "exit_strategy": "fixed",
-  "exit_params": {
-    "tp": 50,
-    "sl": 50
-  },
   "model": {
     "type": "xgboost",
     "architecture": "long_short_separate",
@@ -26,5 +21,17 @@
   },
   "filters": {},
   "resources": {},
-  "datasource": "forexsb"
+  "datasource": "forexsb",
+  "exit_strategies": [
+    {
+      "name": "fixed",
+      "params": {
+        "tp": 50,
+        "sl": 50
+      },
+      "ct": [
+        0.5
+      ]
+    }
+  ]
 }

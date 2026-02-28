@@ -48,10 +48,15 @@ def select_features(
     # Verwende ersten Inner Fold für Feature Selection
     train_df, _ = inner_folds[0]
 
-    # Berechne Targets mit Default TP/SL (Median der Grid-Werte)
+    # Berechne Targets mit Default TP/SL from first exit strategy
     # Feature Selection ist unabhängig von TP/SL!
-    default_tp = ctx.grid_tp[len(ctx.grid_tp) // 2] if ctx.grid_tp else 20
-    default_sl = ctx.grid_sl[len(ctx.grid_sl) // 2] if ctx.grid_sl else 30
+    if ctx.exit_strategies:
+        first_ep = ctx.exit_strategies[0].params
+        default_tp = first_ep.get("tp_mult", 1.5)
+        default_sl = first_ep.get("sl_mult", 1.0)
+    else:
+        default_tp = 1.5
+        default_sl = 1.0
 
     # Use compute_targets_cached which dispatches to the exit strategy plugin.
     # This ensures ATR-based exits compute targets with ATR distances,
@@ -144,7 +149,7 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
     if not inner_result["success"]:
         return None, None
 
-    rrr = tp / sl
+    rrr = tp / sl if sl > 0 else 0
     candidate = {
         "inner_val_pnl": inner_result["avg_val_pnl"],
         "params": (tp, sl, inner_result["best_ct"]),
@@ -155,6 +160,8 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "selected_features_short": inner_result["selected_features_short"],
         "fold_stability": inner_result.get("fold_stability", 0),
         "regime_filter": regime_config,
+        "exit_strategy": ctx.exit_strategy,
+        "exit_params": ctx.exit_params,
         "exit_modifier_params": ctx.exit_modifier_params,
         "model_hyperparameters": ctx.model_hyperparameters,
     }
@@ -165,6 +172,8 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
 
     conf_thresh = inner_result["best_ct"]
     grid_result = {
+        "exit_strategy": ctx.exit_strategy,
+        "exit_params": ctx.exit_params,
         "tp_mult": tp,
         "sl_mult": sl,
         "timeout_bars": timeout_bars,
@@ -242,41 +251,62 @@ def _process_tp_sl_combo_wrapper(args):
 
 
 def _build_combo_tuples(
-    ctx, timeout_values, features, inner_folds, regime_config,
+    ctx, features, inner_folds, regime_config,
     total_grid_combos, inner_df,
     selected_features_long, selected_features_short, sym,
 ):
-    """Build combo tuples for grid search. Returns (combos, skipped_count)."""
+    """Build combo tuples for grid search.
+
+    Iterates over exit_strategies × model_hp_variants.
+    Each exit_cfg has fixed params (tp, sl, timeout) — no TP×SL grid.
+
+    Returns (combos, skipped_count).
+    """
     combos = []
     combo_idx = 0
     skipped_count = 0
 
-    for model_hp_variant in ctx.grid_model_hyperparameters:
-        for modifier_params in ctx.grid_exit_modifier_params:
-            # Create a per-variant ctx with the right model HPs and exit_modifier_params
-            combo_ctx = ctx
+    for exit_cfg in ctx.exit_strategies:
+        tp = exit_cfg.params.get("tp_mult", 1.0)
+        sl = exit_cfg.params.get("sl_mult", 1.0)
+        timeout_bars = exit_cfg.params.get("timeout_bars", None)
+
+        # RRR filter per exit strategy instance
+        if sl > 0:
+            rrr = tp / sl
+        else:
+            rrr = 0
+        if exit_cfg.min_rrr > 0 and rrr < exit_cfg.min_rrr:
+            n_hp = len(ctx.grid_model_hyperparameters) if ctx.grid_model_hyperparameters else 1
+            skipped_count += n_hp
+            log(2, f"  Exit {exit_cfg.name} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {exit_cfg.min_rrr})", sym)
+            continue
+
+        for model_hp_variant in ctx.grid_model_hyperparameters:
+            # Create combo_ctx with exit_cfg fields + model HP variant
+            combo_ctx = dataclasses.replace(
+                ctx,
+                exit_strategy=exit_cfg.name,
+                exit_params=exit_cfg.params,
+                exit_modifier=exit_cfg.exit_modifier,
+                exit_modifier_params=exit_cfg.exit_modifier_params,
+                grid_ct=exit_cfg.ct,
+                long_grid_ct=exit_cfg.long_ct,
+                short_grid_ct=exit_cfg.short_ct,
+                separate_long_short=bool(exit_cfg.long_ct or exit_cfg.short_ct),
+                min_rrr=exit_cfg.min_rrr,
+            )
             if model_hp_variant is not None:
                 merged_hp = {**ctx.model_hyperparameters, **model_hp_variant}
                 combo_ctx = dataclasses.replace(combo_ctx, model_hyperparameters=merged_hp)
-            if modifier_params is not None:
-                combo_ctx = dataclasses.replace(combo_ctx, exit_modifier_params=modifier_params)
 
-            for tp in ctx.grid_tp:
-                for sl in ctx.grid_sl:
-                    rrr = tp / sl
-                    if ctx.min_rrr > 0 and rrr < ctx.min_rrr:
-                        skipped_count += len(timeout_values)
-                        log(2, f"  Grid (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {ctx.min_rrr})", sym)
-                        continue
-
-                    for timeout_bars in timeout_values:
-                        combos.append((
-                            tp, sl, timeout_bars, combo_idx,
-                            features, inner_folds, combo_ctx, regime_config,
-                            0, total_grid_combos, inner_df,
-                            selected_features_long, selected_features_short
-                        ))
-                        combo_idx += 1
+            combos.append((
+                tp, sl, timeout_bars, combo_idx,
+                features, inner_folds, combo_ctx, regime_config,
+                0, total_grid_combos, inner_df,
+                selected_features_long, selected_features_short
+            ))
+            combo_idx += 1
 
     return combos, skipped_count
 
@@ -290,7 +320,8 @@ def _target_cache_key(tp, sl, timeout_bars, ctx):
     sl_dist_col = ctx.model_hyperparameters.get("sl_dist_column", "")
     exit_mod = ctx.exit_modifier_params or {}
     return (
-        tp, sl, timeout_bars,
+        ctx.exit_strategy, tp, sl, timeout_bars,
+        tuple(sorted(ctx.exit_params.items())) if ctx.exit_params else (),
         sl_dist_col,
         tuple(sorted(exit_mod.items())) if exit_mod else (),
     )
@@ -555,16 +586,9 @@ def run_grid_search(
     effective_features = selected_features_long or selected_features_short or features
     log(2, f"  {len(effective_features)} selektierte Features für Grid-Search", sym)
 
-    # Timeout-Werte: Bei adaptive_timeout nur [None], sonst Grid-Werte
-    adaptive_timeout = ctx.exit_params.get("adaptive_timeout", False)
-    if adaptive_timeout:
-        timeout_values = [None]
-    else:
-        timeout_values = ctx.grid_timeout_bars if ctx.grid_timeout_bars else [None]
-
-    # Erstelle alle Kombinationen
+    # Erstelle alle Kombinationen (exit_strategies × model_hp)
     combos, skipped_count = _build_combo_tuples(
-        ctx, timeout_values, features, inner_folds, regime_config,
+        ctx, features, inner_folds, regime_config,
         total_grid_combos, inner_df,
         selected_features_long, selected_features_short, sym,
     )

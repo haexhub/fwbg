@@ -13,42 +13,203 @@
   "hypothesis": "Nach einem Ausbruch aus der Opening Range (erste 30-45 min) kehrt der Kurs haeufig zum Midpoint zurueck. Einstieg beim ersten Beruehren des Midpoints in Richtung des Ausbruchs erzeugt positive Erwartungswerte.",
   "expected_outcome": "Session-spezifische Signals (s08 fuer EU-Winter, s07 fuer EU-Sommer, s14 fuer US) produzieren konzentrierte High-Quality-Einstiege.",
   "pipeline": "orb_retest_v1",
-  "exit_strategy": "orb_based",
-  "exit_params": {
-    "atr_period": [
-      14
-    ],
-    "min_tp_pips": [
-      8
-    ],
-    "min_sl_pips": [
-      12
-    ],
-    "tp_mult": [
-      2,
-      3,
-      4,
-      6
-    ],
-    "sl_mult": [
-      1.5,
-      2.0,
-      2.5
-    ],
-    "timeout_bars": [
-      null
-    ]
-  },
   "model": "signal_orb_v1",
   "validation": "walk_forward_intraday_v1",
   "filters": "orb_scalping_v1",
   "resources": "standard_v1",
   "datasource": "dukascopy",
-  "optimization": {
-    "ct": [
-      0.5,
-      0.55,
-      0.6
-    ]
-  }
+  "exit_strategies": [
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6
+      ]
+    }
+  ]
 }

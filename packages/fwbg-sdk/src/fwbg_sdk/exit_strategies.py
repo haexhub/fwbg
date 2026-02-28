@@ -2,7 +2,7 @@
 BaseExitStrategy - Abstrakte Basisklasse für Exit-Strategy-Plugins.
 """
 from abc import ABC, abstractmethod
-from typing import Tuple, Iterator
+from typing import Tuple
 import numpy as np
 import pandas as pd
 
@@ -14,8 +14,9 @@ class BaseExitStrategy(BasePlugin, ABC):
     """
     Basisklasse für Exit-Strategy-Plugins.
 
-    Exit-Strategien definieren wie TP/SL berechnet werden und
-    wie über Parameter-Kombinationen iteriert wird.
+    Exit-Strategien definieren wie TP/SL berechnet werden.
+    Each strategy instance has fixed params — the optimizer iterates
+    over instances, not over parameter grids.
     """
 
     phase = PluginPhase.EXIT_STRATEGIES
@@ -65,24 +66,6 @@ class BaseExitStrategy(BasePlugin, ABC):
 
         Returns:
             (tp_distances, sl_distances) — Arrays der Länge len(df) in Preiseinheiten
-        """
-        pass
-
-    @abstractmethod
-    def iterate_grid(
-        self,
-        grid_config: dict,
-        ctx: "AssetInfo"
-    ) -> Iterator[dict]:
-        """
-        Iteriert über alle Parameter-Kombinationen aus der Grid-Config.
-
-        Args:
-            grid_config: Grid-Konfiguration aus Strategy-JSON
-            ctx: AssetInfo
-
-        Yields:
-            Dict mit Parameter-Kombination für compute_targets
         """
         pass
 

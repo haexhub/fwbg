@@ -3,7 +3,7 @@ Fixed Exit Strategy Plugin.
 
 Verwendet fixe TP/SL-Werte basierend auf Spread-Multiplikatoren.
 """
-from typing import Dict, Any, Iterator, Tuple, TYPE_CHECKING
+from typing import Dict, Any, Tuple, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
@@ -88,43 +88,6 @@ class FixedExitStrategy(BaseExitStrategy):
         """Fixe Distanzen: spread * Multiplikator, konstant für alle Bars."""
         n = len(df)
         return np.full(n, ctx.spread * tp), np.full(n, ctx.spread * sl)
-
-    def iterate_grid(
-        self,
-        grid_config: Dict[str, Any],
-        ctx: "SimulationContext",
-    ) -> Iterator[dict]:
-        """
-        Iteriert über alle TP x SL x Timeout Kombinationen.
-
-        Args:
-            grid_config: Grid-Konfiguration mit tp, sl, timeout_bars Listen
-            ctx: SimulationContext
-
-        Yields:
-            Dict mit Parameter-Kombination für compute_targets
-        """
-        tp_values = grid_config.get("tp", [15, 20, 25, 30, 40, 50])
-        sl_values = grid_config.get("sl", [15, 20, 25, 30, 40, 50])
-        timeout_values = grid_config.get("timeout_bars", [None])
-        min_rrr = grid_config.get("min_rrr", 0)
-
-        if timeout_values is None:
-            timeout_values = [None]
-
-        for tp in tp_values:
-            for sl in sl_values:
-                # RRR-Filter
-                rrr = tp / sl if sl > 0 else 0
-                if min_rrr > 0 and rrr < min_rrr:
-                    continue
-
-                for timeout in timeout_values:
-                    yield {
-                        "tp": float(tp),
-                        "sl": float(sl),
-                        "timeout_bars": timeout,
-                    }
 
     def get_cache_key(self, params: dict) -> str:
         """

@@ -18,7 +18,7 @@ Both can be combined or used independently:
   - breakeven_trigger=0.5, trail_atr_mult=0.0  (breakeven only)
   - breakeven_trigger=0.0, trail_atr_mult=0.5  (trailing from entry)
 """
-from typing import Dict, Any, Iterator, Tuple, Union, TYPE_CHECKING
+from typing import Dict, Any, Tuple, Union, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 from numba import njit
@@ -386,39 +386,6 @@ class AtrTrailingExitStrategy(BaseExitStrategy):
         tp_dists = np.maximum(atr_v * tp, min_tp_distance)
         sl_dists = np.maximum(atr_v * sl, min_sl_distance)
         return tp_dists, sl_dists
-
-    def iterate_grid(
-        self,
-        grid_config: Dict[str, Any],
-        ctx: "SimulationContext",
-    ) -> Iterator[dict]:
-        tp_mults = grid_config.get("tp", [2.0, 3.0, 4.0])
-        sl_mults = grid_config.get("sl", [1.0, 1.5, 2.0])
-        timeout_values = grid_config.get("timeout_bars", [None])
-        min_rrr = grid_config.get("min_rrr", 0)
-
-        exit_params = ctx.exit_params if ctx.exit_params else {}
-        atr_period = exit_params.get("atr_period", 14)
-        min_tp_pips = exit_params.get("min_tp_pips", 8)
-        min_sl_pips = exit_params.get("min_sl_pips", 12)
-        breakeven_trigger = exit_params.get("breakeven_trigger", 0.5)
-        trail_atr_mult = exit_params.get("trail_atr_mult", 0.5)
-
-        for tp_mult in tp_mults:
-            for sl_mult in sl_mults:
-                if min_rrr > 0 and (tp_mult / sl_mult if sl_mult > 0 else 0) < min_rrr:
-                    continue
-                for timeout in timeout_values:
-                    yield {
-                        "tp_mult": float(tp_mult),
-                        "sl_mult": float(sl_mult),
-                        "timeout_bars": timeout,
-                        "atr_period": atr_period,
-                        "min_tp_pips": min_tp_pips,
-                        "min_sl_pips": min_sl_pips,
-                        "breakeven_trigger": breakeven_trigger,
-                        "trail_atr_mult": trail_atr_mult,
-                    }
 
     def get_cache_key(self, params: dict) -> str:
         tp = params.get("tp_mult", 0)

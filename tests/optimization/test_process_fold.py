@@ -11,7 +11,7 @@ import pandas as pd
 from unittest.mock import MagicMock, patch, call
 from dataclasses import dataclass
 
-from fwbg.core.config import RegimeFilterGridConfig
+from fwbg.core.config import ExitStrategyConfig, RegimeFilterGridConfig
 from fwbg.core.context import SimulationContext
 from fwbg.optimization.robust_validation import WalkForwardFold
 
@@ -63,17 +63,18 @@ def _make_ctx(regime_conditions=None, **overrides):
         spread=0.0002,
         point=0.0001,
         min_trades=5,
-        grid_tp=[10, 20],
-        grid_sl=[20, 30],
-        grid_ct=[0.5, 0.55],
+        exit_strategies=[
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.5, 0.55]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.5, 0.55]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.5, 0.55]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.5, 0.55]),
+        ],
         long_enabled=True,
         short_enabled=True,
         n_inner_folds=2,
         embargo_bars=0,
         sample_weights=False,
         early_pruning_enabled=False,
-        exit_strategy="fixed",
-        exit_params={},
         model_hyperparameters={"n_estimators": 10, "max_depth": 2, "random_state": 42},
         regime_filter_grid=regime_grid,
     )
@@ -137,15 +138,6 @@ class TestProcessSingleFoldIntegration:
                 "trades": [],
             },
         )
-        # Mock plateau functions (just pass through)
-        mock_plateau = patch(
-            "fwbg.optimization.process_fold.calculate_param_plateau_score",
-            side_effect=lambda candidates, *args, **kwargs: candidates,
-        )
-        mock_select_plateau = patch(
-            "fwbg.optimization.process_fold.select_best_plateau_candidate",
-            side_effect=lambda candidates, *args, **kwargs: candidates[0] if candidates else None,
-        )
         # Mock nested_cv_split
         train_df = fold.train_df
         split = len(train_df) // 2
@@ -162,8 +154,8 @@ class TestProcessSingleFoldIntegration:
         mock_meta = patch("fwbg.optimization.process_fold.report_meta")
         mock_progress = patch("fwbg.optimization.process_fold.report_progress")
 
-        with mock_select, mock_grid as m_grid, mock_holdout, mock_plateau, \
-             mock_select_plateau, mock_cv, mock_phase as m_phase, \
+        with mock_select, mock_grid as m_grid, mock_holdout, \
+             mock_cv, mock_phase as m_phase, \
              mock_meta as m_meta, mock_progress as m_progress:
             result, grid_results = process_single_fold(
                 fold=fold,
@@ -377,10 +369,6 @@ class TestHoldoutUsesWinningCandidateParams:
              patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value={
                  "pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": [],
              }) as mock_holdout, \
-             patch("fwbg.optimization.process_fold.calculate_param_plateau_score",
-                   side_effect=lambda cands, *a, **k: cands), \
-             patch("fwbg.optimization.process_fold.select_best_plateau_candidate",
-                   side_effect=lambda cands, *a, **k: cands[0] if cands else None), \
              patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
                  "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
              }), \
@@ -445,10 +433,6 @@ class TestHoldoutUsesWinningCandidateParams:
              patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value={
                  "pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": [],
              }) as mock_holdout, \
-             patch("fwbg.optimization.process_fold.calculate_param_plateau_score",
-                   side_effect=lambda cands, *a, **k: cands), \
-             patch("fwbg.optimization.process_fold.select_best_plateau_candidate",
-                   side_effect=lambda cands, *a, **k: cands[0] if cands else None), \
              patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
                  "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
              }), \
@@ -512,10 +496,6 @@ class TestHoldoutUsesWinningCandidateParams:
              patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value={
                  "pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": [],
              }), \
-             patch("fwbg.optimization.process_fold.calculate_param_plateau_score",
-                   side_effect=lambda cands, *a, **k: cands), \
-             patch("fwbg.optimization.process_fold.select_best_plateau_candidate",
-                   side_effect=lambda cands, *a, **k: cands[0] if cands else None), \
              patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
                  "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
              }), \

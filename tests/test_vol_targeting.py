@@ -33,7 +33,7 @@ def _make_df_with_rv(n=500):
 def _make_ctx():
     return SimulationContext(
         symbol="TEST", asset_class="forex", spread=0.0001, point=0.0001,
-        grid_tp=[1], grid_sl=[1], grid_ct=[0.5],
+        grid_ct=[0.5],
         long_enabled=True, short_enabled=False,
         max_trade_bars=100, separate_long_short=False,
     )

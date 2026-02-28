@@ -38,15 +38,6 @@
     ],
     "feature_selection": []
   },
-  "exit_strategy": "orb_based",
-  "exit_params": {
-    "tp_mult": 2,
-    "sl_mult": 1,
-    "atr_period": 14,
-    "min_tp_pips": 8,
-    "min_sl_pips": 5,
-    "timeout_bars": null
-  },
   "model": {
     "type": "signal",
     "architecture": "long_short_separate",
@@ -80,5 +71,21 @@
     "min_scale": 0.25,
     "max_scale": 2
   },
-  "timeframe": "MINUTE_15"
+  "timeframe": "MINUTE_15",
+  "exit_strategies": [
+    {
+      "name": "orb_based",
+      "params": {
+        "tp_mult": 2,
+        "sl_mult": 1,
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ]
+    }
+  ]
 }

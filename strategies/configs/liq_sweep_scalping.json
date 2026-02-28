@@ -13,68 +13,4411 @@
   "hypothesis": "Liquidity sweeps (fake-outs beyond swing highs/lows that close back inside) leave behind high-probability rejection zones. Price re-testing these zones with EMA trend alignment and FVG/S/D confluence produces reliable scalping entries. ML learns which combinations of sweep recency, zone proximity, trend alignment, and displacement are most predictive.",
   "expected_outcome": "Edge on liquid index and FX markets during active sessions. lsw_bull_active / lsw_bear_active and recency features selected as important. Higher win rate when EMA 50/200 trend aligns with sweep direction.",
   "pipeline": "liq_sweep_scalping_v1",
-  "exit_strategy": "atr_based",
-  "exit_params": {
-    "atr_period": [
-      14
-    ],
-    "min_tp_pips": [
-      8
-    ],
-    "min_sl_pips": [
-      12
-    ],
-    "tp_mult": [
-      1.5,
-      2.0,
-      2.5,
-      3.0,
-      3.5,
-      4.0,
-      5.0,
-      6.0
-    ],
-    "sl_mult": [
-      1.5,
-      2.0,
-      2.5,
-      3.0,
-      4.0
-    ],
-    "timeout_bars": [
-      null,
-      8,
-      16,
-      32,
-      48
-    ]
-  },
-  "exit_modifier": "trailing_stop",
-  "exit_modifier_params": {
-    "breakeven_trigger": 0.5,
-    "trail_atr_mult": 0.5
-  },
   "model": "xgboost_depth6_v1",
   "validation": "walk_forward_intraday_v1",
   "filters": "orb_scalping_v1",
   "resources": "standard_v1",
   "datasource": "forexsb",
-  "optimization": {
-    "ct": [
-      0.5,
-      0.55,
-      0.6,
-      0.65
-    ],
-    "exit_modifier_params_grid": [
-      {
-        "breakeven_trigger": 0.0,
-        "trail_atr_mult": 0.0
+  "exit_strategies": [
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 1.5,
+        "timeout_bars": null
       },
-      {
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
         "breakeven_trigger": 0.5,
         "trail_atr_mult": 0.5
       }
-    ]
-  }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 1.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 2.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 2.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 3.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 4.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 5.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 2.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 8
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 16
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 32
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "tp_mult": 6.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.55,
+        0.6,
+        0.65
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    }
+  ]
 }

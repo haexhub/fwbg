@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .config import StrategyConfig, RegimeFilterGridConfig
+    from .config import StrategyConfig, RegimeFilterGridConfig, ExitStrategyConfig
 
 
 
@@ -49,18 +49,16 @@ class SimulationContext:
     min_trades: int = 50
     min_rrr: float = 0.0
 
-    # Grid-Parameter (ATR-Multiplikatoren)
-    grid_tp: List[float] = field(default_factory=list)
-    grid_sl: List[float] = field(default_factory=list)
-    grid_ct: List[float] = field(default_factory=list)
-    grid_timeout_bars: List[Optional[int]] = None
+    # Exit strategies (each instance is an independent grid element)
+    exit_strategies: List["ExitStrategyConfig"] = field(default_factory=list)
 
-    # Separate Long/Short Grids
-    long_grid_tp: List[float] = None
-    long_grid_sl: List[float] = None
+    # Per-combo fields (set by grid_search for each combo iteration)
+    exit_strategy: str = "fixed"
+    exit_params: dict = field(default_factory=dict)
+    exit_modifier: Optional[str] = None
+    exit_modifier_params: dict = field(default_factory=dict)
+    grid_ct: List[float] = field(default_factory=list)
     long_grid_ct: List[float] = None
-    short_grid_tp: List[float] = None
-    short_grid_sl: List[float] = None
     short_grid_ct: List[float] = None
     separate_long_short: bool = False
 
@@ -103,19 +101,6 @@ class SimulationContext:
     calibration_method: str = "isotonic"
     meta_labeling: bool = False
 
-    # Exit-Strategy (Plugin)
-    exit_strategy: str = "fixed"
-    exit_params: dict = field(default_factory=dict)
-
-    # Exit-Modifier: optionales Plugin das die Simulation der Exit-Strategie erweitert
-    # (z.B. trailing_stop, breakeven_stop) — kann unabhängig von der Exit-Strategie getestet werden
-    exit_modifier: Optional[str] = None
-    exit_modifier_params: dict = field(default_factory=dict)
-
-    # Grid über Exit-Modifier-Params: Liste von Dicts zum Durchsuchen
-    # [None] = nur ctx-Default verwenden; [dict1, dict2] = Grid über Modifier-Params
-    grid_exit_modifier_params: List[Optional[dict]] = field(default_factory=lambda: [None])
-
     # Model Hyperparameters (from StrategyConfig, merged with per-asset grid overrides)
     model_hyperparameters: dict = field(default_factory=dict)
 
@@ -157,29 +142,8 @@ class SimulationContext:
             asset: AssetConfig für das zu optimierende Asset
             strategy: StrategyConfig mit allen Strategie-Parametern
         """
-        # Grid values from exit_params (all values are arrays after normalization)
-        ep = strategy.exit_params
-
-        grid_tp = ep.get("tp_mult", [1.0, 1.5, 2.0, 2.5])
-        grid_sl = ep.get("sl_mult", [1.0, 1.5, 2.0])
-        grid_timeout = ep.get("timeout_bars", [None])
-
-        # Long/Short overrides from exit_params prefixes
-        long_tp = ep.get("long_tp_mult")
-        long_sl = ep.get("long_sl_mult")
-        short_tp = ep.get("short_tp_mult")
-        short_sl = ep.get("short_sl_mult")
-        separate = any([long_tp, long_sl, short_tp, short_sl])
-
-        # CT, regime from optimization
         opt = strategy.optimization
-        grid_ct = opt.ct
-        long_ct = opt.long_ct
-        short_ct = opt.short_ct
         regime = opt.regime_filter_grid
-
-        # Exit modifier params grid and model hyperparameters grid from optimization
-        grid_exit_modifier_params = opt.exit_modifier_params_grid or [None]
         grid_model_hyperparameters = opt.model_hyperparameters_grid
 
         # Model hyperparameters from base model config
@@ -217,18 +181,9 @@ class SimulationContext:
             min_trades=strategy.filters.min_trades,
             min_eval_trades=strategy.filters.min_eval_trades,
             min_rrr=strategy.filters.min_rrr,
-            max_trade_bars=None,  # Kein globales Limit, timeout_bars pro Kombination
-            grid_tp=grid_tp,
-            grid_sl=grid_sl,
-            grid_ct=grid_ct,
-            grid_timeout_bars=grid_timeout,
-            long_grid_tp=long_tp,
-            long_grid_sl=long_sl,
-            long_grid_ct=long_ct,
-            short_grid_tp=short_tp,
-            short_grid_sl=short_sl,
-            short_grid_ct=short_ct,
-            separate_long_short=separate,
+            max_trade_bars=None,
+            # Exit strategies list (grid_search iterates over these)
+            exit_strategies=strategy.exit_strategies,
             long_enabled=strategy.model.long_enabled,
             short_enabled=strategy.model.short_enabled,
             # Pipeline: Indicators
@@ -237,14 +192,6 @@ class SimulationContext:
             feature_selection_plugins=strategy.get_feature_selection() or None,
             # Model type
             model_type=strategy.model.type,
-            # Exit-Strategy Plugin
-            exit_strategy=strategy.exit_strategy,
-            exit_params=strategy.exit_params,
-            # Exit-Modifier Plugin (optional)
-            exit_modifier=strategy.exit_modifier,
-            exit_modifier_params=strategy.exit_modifier_params,
-            # Grid über Exit-Modifier-Params (from optimization)
-            grid_exit_modifier_params=grid_exit_modifier_params,
             # Grid über Model-Hyperparameters (from optimization)
             grid_model_hyperparameters=grid_model_hyperparameters or [None],
             # Model Hyperparameters
@@ -273,47 +220,11 @@ class SimulationContext:
             meta_labeling=strategy.validation.meta_labeling,
         )
 
-    def get_long_grid(self) -> tuple:
-        """Gibt (tp, sl, ct) Grid für Long Trades zurück."""
-        if self.separate_long_short and self.long_grid_tp is not None:
-            return (self.long_grid_tp, self.long_grid_sl, self.long_grid_ct)
-        return (self.grid_tp, self.grid_sl, self.grid_ct)
-
-    def get_short_grid(self) -> tuple:
-        """Gibt (tp, sl, ct) Grid für Short Trades zurück."""
-        if self.separate_long_short and self.short_grid_tp is not None:
-            return (self.short_grid_tp, self.short_grid_sl, self.short_grid_ct)
-        return (self.grid_tp, self.grid_sl, self.grid_ct)
-
-    def _effective_timeout_grid_size(self) -> int:
-        """
-        Berechnet effektive Timeout-Grid-Größe.
-
-        Bei adaptive_timeout=True wird das Timeout pro Trade dynamisch berechnet,
-        daher ist die Grid-Größe 1 (kein Timeout-Grid-Loop).
-        """
-        # Prüfe ob adaptive_timeout aktiviert ist
-        adaptive_timeout = self.exit_params.get("adaptive_timeout", False)
-        if adaptive_timeout:
-            return 1  # Timeout wird dynamisch berechnet, kein Grid
-        return len(self.grid_timeout_bars) if self.grid_timeout_bars else 1
-
     def total_grid_combinations(self) -> int:
         """Berechnet Gesamtzahl der Grid-Kombinationen."""
-        n_timeout = self._effective_timeout_grid_size()
-        n_modifier = len(self.grid_exit_modifier_params) if self.grid_exit_modifier_params else 1
         n_model_hp = len(self.grid_model_hyperparameters) if self.grid_model_hyperparameters else 1
-        # With pipeline, we don't iterate over feature groups anymore
-        # All indicator plugins are applied together
-
-        if self.separate_long_short:
-            long_tp, long_sl, _ = self.get_long_grid()
-            short_tp, short_sl, _ = self.get_short_grid()
-            long_combos = len(long_tp) * len(long_sl) * n_timeout
-            short_combos = len(short_tp) * len(short_sl) * n_timeout
-            return (long_combos + short_combos) * n_modifier * n_model_hp
-
-        return len(self.grid_tp) * len(self.grid_sl) * n_timeout * n_modifier * n_model_hp
+        n_exit = sum(len(es.ct) for es in self.exit_strategies) if self.exit_strategies else 1
+        return n_exit * n_model_hp
 
 
 # Type hint import für AssetConfig

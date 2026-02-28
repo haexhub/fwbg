@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.core.config import StrategyConfig
+from fwbg.core.config import ExitStrategyConfig, StrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.plugins import import_plugin_module
 
@@ -199,10 +199,12 @@ class TestConfigLoading:
         assert pdhl_config.name is not None
 
     def test_exit_strategy_is_orb_based(self, pdhl_config):
-        assert pdhl_config.exit_strategy == "orb_based"
+        assert len(pdhl_config.exit_strategies) > 0
+        assert pdhl_config.exit_strategies[0].name == "orb_based"
 
     def test_exit_modifier_is_trailing_stop(self, pdhl_config):
-        assert pdhl_config.exit_modifier == "trailing_stop"
+        assert len(pdhl_config.exit_strategies) > 0
+        assert pdhl_config.exit_strategies[0].exit_modifier == "trailing_stop"
 
     def test_pipeline_is_pdhl_v1(self, pdhl_config):
         # Pipeline should have been resolved from the "pdhl_v1" reference
@@ -211,7 +213,8 @@ class TestConfigLoading:
         assert "previous_day_levels" in ind_names
 
     def test_exit_params_have_required_keys(self, pdhl_config):
-        ep = pdhl_config.exit_params
+        assert len(pdhl_config.exit_strategies) > 0
+        ep = pdhl_config.exit_strategies[0].params
         assert "tp_mult" in ep
         assert "sl_mult" in ep
         assert "timeout_bars" in ep
@@ -221,10 +224,14 @@ class TestTimeoutBarsNotLeaked:
     """timeout_bars must be [None] for PDHL (trailing stop handles exits)."""
 
     def test_timeout_bars_is_null(self, pdhl_config):
-        assert pdhl_config.exit_params["timeout_bars"] == [None], (
-            f"timeout_bars should be [None], got {pdhl_config.exit_params['timeout_bars']}. "
-            f"Preset timeout_bars are leaking through!"
-        )
+        assert len(pdhl_config.exit_strategies) > 0
+        # All exit strategy instances should have timeout_bars=None (trailing stop handles exits)
+        for es in pdhl_config.exit_strategies:
+            timeout = es.params.get("timeout_bars")
+            assert timeout is None or timeout == [None], (
+                f"timeout_bars should be None or [None], got {timeout}. "
+                f"Preset timeout_bars are leaking through!"
+            )
 
 
 class TestSignalHoursAre24h:
@@ -666,29 +673,46 @@ class TestGridComboCreation:
                 assert merged["sl_dist_column"] == variant["sl_dist_column"]
 
     def test_combo_merges_modifier_params(self):
-        """exit_modifier_params_grid entries replace base modifier_params."""
-        ctx = _minimal_ctx(
-            exit_modifier="trailing_stop",
-            exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-            grid_exit_modifier_params=[
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-                {"breakeven_trigger": 0.3, "trail_atr_mult": 0.5},
-            ],
-        )
+        """Each ExitStrategyConfig carries its own exit_modifier_params."""
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="orb_based",
+                params={"tp_mult": 4.0, "sl_mult": 1.0},
+                exit_modifier="trailing_stop",
+                exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
+            ),
+            ExitStrategyConfig(
+                name="orb_based",
+                params={"tp_mult": 4.0, "sl_mult": 1.0},
+                exit_modifier="trailing_stop",
+                exit_modifier_params={"breakeven_trigger": 0.3, "trail_atr_mult": 0.5},
+            ),
+        ]
+        ctx = _minimal_ctx(exit_strategies=exit_strategies)
 
-        for params in ctx.grid_exit_modifier_params:
-            combo_ctx = dataclasses.replace(ctx, exit_modifier_params=params)
-            assert combo_ctx.exit_modifier_params == params
+        for es in ctx.exit_strategies:
+            # Simulate what _build_combo_tuples does: set per-combo modifier_params
+            combo_ctx = dataclasses.replace(
+                ctx,
+                exit_modifier=es.exit_modifier,
+                exit_modifier_params=es.exit_modifier_params,
+            )
+            assert combo_ctx.exit_modifier_params == es.exit_modifier_params
             assert combo_ctx.exit_modifier_params["trail_atr_mult"] > 0
 
     def test_timeout_null_means_no_timeout(self):
-        """timeout_bars=[None] means trades run until TP/SL/trailing stop."""
-        ctx = _minimal_ctx(grid_timeout_bars=[None])
-        timeout_values = ctx.grid_timeout_bars if ctx.grid_timeout_bars else [None]
-        assert timeout_values == [None]
-        # When passed to simulation, None -> timeout_val=0 -> no timeout
-        for t in timeout_values:
-            timeout_val = t if t else 0
+        """timeout_bars=None in exit strategy params means trades run until TP/SL/trailing stop."""
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="orb_based",
+                params={"tp_mult": 4.0, "sl_mult": 1.0, "timeout_bars": None},
+            ),
+        ]
+        ctx = _minimal_ctx(exit_strategies=exit_strategies)
+        for es in ctx.exit_strategies:
+            timeout = es.params.get("timeout_bars")
+            # When passed to simulation, None -> timeout_val=0 -> no timeout
+            timeout_val = timeout if timeout else 0
             assert timeout_val == 0
 
 
