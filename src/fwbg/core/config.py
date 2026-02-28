@@ -76,6 +76,61 @@ class RegimeFilterGridConfig:
 
 
 @dataclass
+class OptimizationConfig:
+    """Global optimization parameters for grid search."""
+
+    ct: list[float] = field(default_factory=lambda: [0.5])
+    long_ct: list[float] | None = None
+    short_ct: list[float] | None = None
+    min_rrr: float | None = None
+    regime_filter_grid: RegimeFilterGridConfig = field(
+        default_factory=RegimeFilterGridConfig
+    )
+    exit_modifier_params_grid: list[dict] | None = None
+    model_hyperparameters_grid: list[dict] | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "OptimizationConfig":
+        if not data:
+            return cls()
+        rfg = data.get("regime_filter_grid")
+        regime = (
+            RegimeFilterGridConfig.from_dict(rfg)
+            if rfg
+            else RegimeFilterGridConfig()
+        )
+        ct = data.get("ct", [0.5])
+        if isinstance(ct, (int, float)):
+            ct = [ct]
+
+        long_ct = data.get("long_ct")
+        if isinstance(long_ct, (int, float)):
+            long_ct = [long_ct]
+
+        short_ct = data.get("short_ct")
+        if isinstance(short_ct, (int, float)):
+            short_ct = [short_ct]
+
+        emp = data.get("exit_modifier_params_grid")
+        if isinstance(emp, dict):
+            emp = [emp]
+
+        mhg = data.get("model_hyperparameters_grid")
+        if isinstance(mhg, dict):
+            mhg = [mhg]
+
+        return cls(
+            ct=ct,
+            long_ct=long_ct,
+            short_ct=short_ct,
+            min_rrr=data.get("min_rrr"),
+            regime_filter_grid=regime,
+            exit_modifier_params_grid=emp,
+            model_hyperparameters_grid=mhg,
+        )
+
+
+@dataclass
 class GridConfig:
     """Konfiguration für TP/SL/CT Grid-Search (ATR-Multiplikatoren)."""
     tp: List[float] = field(default_factory=lambda: [1.0, 1.5, 2.0, 2.5])
