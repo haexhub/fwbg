@@ -257,16 +257,6 @@ class TestWORStatistics:
         stat_cols = [c for c in result.columns if c.startswith("wor_stat_")]
         assert len(stat_cols) == 0, f"wor_stat_* columns present despite enable_stats=False: {stat_cols}"
 
-    def test_retracement_disabled(self):
-        """With enable_retracement=False, no wor_retest_zone_* columns should appear."""
-        df = _make_m15_df(n_weeks=4)
-        ind = _get_ind()
-        result = ind.compute(df, enable_retracement=False)
-        zone_cols = [c for c in result.columns if "retest_zone" in c]
-        assert len(zone_cols) == 0, (
-            f"wor_retest_zone_* present despite enable_retracement=False: {zone_cols}"
-        )
-
     def test_daily_data_not_processed(self):
         """Daily timeframe data should be returned unchanged (no wor_* columns added)."""
         n = 100

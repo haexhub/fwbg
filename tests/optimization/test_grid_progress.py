@@ -7,6 +7,27 @@ from unittest.mock import MagicMock, patch, call
 import pandas as pd
 import numpy as np
 
+from fwbg.core.config import ExitStrategyConfig
+from fwbg.core.context import SimulationContext
+
+
+def _make_grid_ctx(exit_strategies, **overrides):
+    """Create a real SimulationContext for grid search tests."""
+    defaults = dict(
+        symbol="TEST",
+        asset_class="FOREX",
+        spread=0.0002,
+        point=0.0001,
+        min_trades=5,
+        exit_strategies=exit_strategies,
+        long_enabled=True,
+        short_enabled=True,
+        early_pruning_enabled=False,
+        model_hyperparameters={"n_estimators": 10, "max_depth": 2},
+    )
+    defaults.update(overrides)
+    return SimulationContext(**defaults)
+
 
 class TestGridProgressCallback:
     """Tests für run_grid_search progress_callback Aufrufe."""
@@ -18,25 +39,13 @@ class TestGridProgressCallback:
         # Setup: Mock-Objekte für die notwendigen Parameter
         progress_callback = MagicMock()
 
-        # Minimaler ctx mit 2 TP, 2 SL = 4 Kombinationen
-        ctx = MagicMock()
-        ctx.total_grid_combinations.return_value = 4
-        ctx.min_rrr = 0
-        ctx.early_pruning_enabled = False  # Kein RRR-Filter
-        ctx.exit_strategy = "fixed"
-        ctx.exit_params = {}
-        ctx.model_type = "xgboost"
-        ctx.model_arch = "long_short_separate"
-        ctx.trade_directions = ["long", "short"]
-        ctx.model_hyperparams = {"n_estimators": 10, "max_depth": 2}
-        ctx.grid_exit_modifier_params = [None]
-        ctx.grid_model_hyperparameters = [None]
-
-        # Grid values on ctx (no separate grid object after refactor)
-        ctx.grid_tp = [10, 20]
-        ctx.grid_sl = [20, 30]
-        ctx.grid_ct = [0.6]
-        ctx.grid_timeout_bars = [None]
+        # 4 exit_strategies = 4 Kombinationen
+        ctx = _make_grid_ctx([
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
+        ])
 
         # Dummy inner_df mit genug Daten
         np.random.seed(42)
@@ -98,18 +107,21 @@ class TestGridProgressCallback:
 
         progress_callback = MagicMock()
 
-        # ctx mit 4 Grid-Kombinationen
+        # ctx mit 4 Grid-Kombinationen (uses MagicMock since early-exit path
+        # never reaches _build_combo_tuples / dataclasses.replace)
         ctx = MagicMock()
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False
-        ctx.grid_exit_modifier_params = [None]
         ctx.grid_model_hyperparameters = [None]
+        ctx.required_features = []
 
-        ctx.grid_tp = [10, 20]
-        ctx.grid_sl = [20, 30]
-        ctx.grid_ct = [0.6]
-        ctx.grid_timeout_bars = [None]
+        ctx.exit_strategies = [
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
+        ]
 
         # Leerer inner_df - wird zu Early-Exit führen (keine Features)
         inner_df = pd.DataFrame({
@@ -143,17 +155,20 @@ class TestGridProgressCallback:
 
         progress_callback = MagicMock()
 
+        # Uses MagicMock since boruta-no-selection exits before _build_combo_tuples
         ctx = MagicMock()
         ctx.total_grid_combinations.return_value = 4
         ctx.min_rrr = 0
         ctx.early_pruning_enabled = False
-        ctx.grid_exit_modifier_params = [None]
         ctx.grid_model_hyperparameters = [None]
+        ctx.required_features = []
 
-        ctx.grid_tp = [10, 20]
-        ctx.grid_sl = [20, 30]
-        ctx.grid_ct = [0.6]
-        ctx.grid_timeout_bars = [None]
+        ctx.exit_strategies = [
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
+        ]
 
         # inner_df mit genug Features
         inner_df = pd.DataFrame({
@@ -197,24 +212,13 @@ class TestProgressCallbackSequence:
 
         progress_callback = MagicMock()
 
-        # ctx mit 4 Grid-Kombinationen (2 TP x 2 SL)
-        ctx = MagicMock()
-        ctx.total_grid_combinations.return_value = 4
-        ctx.min_rrr = 0
-        ctx.early_pruning_enabled = False  # Kein RRR-Filter - alle Combos werden verarbeitet
-        ctx.exit_strategy = "fixed"
-        ctx.exit_params = {}
-        ctx.model_type = "xgboost"
-        ctx.model_arch = "long_short_separate"
-        ctx.trade_directions = ["long", "short"]
-        ctx.model_hyperparams = {"n_estimators": 10, "max_depth": 2}
-        ctx.grid_exit_modifier_params = [None]
-        ctx.grid_model_hyperparameters = [None]
-
-        ctx.grid_tp = [10, 20]
-        ctx.grid_sl = [20, 30]
-        ctx.grid_ct = [0.6]
-        ctx.grid_timeout_bars = [None]
+        # 4 exit_strategies = 4 Kombinationen
+        ctx = _make_grid_ctx([
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
+        ])
 
         np.random.seed(42)
         inner_df = pd.DataFrame({
@@ -262,28 +266,16 @@ class TestProgressCallbackSequence:
 
         progress_callback = MagicMock()
 
-        # ctx mit min_rrr Filter - einige Combos werden übersprungen
-        ctx = MagicMock()
-        ctx.total_grid_combinations.return_value = 4
-        ctx.min_rrr = 0.5  # RRR-Filter: TP/SL muss >= 0.5 sein
-        ctx.early_pruning_enabled = False
-        ctx.exit_strategy = "fixed"
-        ctx.exit_params = {}
-        ctx.model_type = "xgboost"
-        ctx.model_arch = "long_short_separate"
-        ctx.trade_directions = ["long", "short"]
-        ctx.model_hyperparams = {"n_estimators": 10, "max_depth": 2}
-        ctx.grid_exit_modifier_params = [None]
-        ctx.grid_model_hyperparameters = [None]
-
-        # TP=10, SL=30 -> RRR=0.33 < 0.5 -> SKIP
+        # TP=10, SL=30 -> RRR=0.33 < 0.5 -> SKIP (min_rrr on ExitStrategyConfig)
         # TP=10, SL=20 -> RRR=0.5 >= 0.5 -> OK
         # TP=20, SL=30 -> RRR=0.67 >= 0.5 -> OK
         # TP=20, SL=20 -> RRR=1.0 >= 0.5 -> OK
-        ctx.grid_tp = [10, 20]
-        ctx.grid_sl = [20, 30]
-        ctx.grid_ct = [0.6]
-        ctx.grid_timeout_bars = [None]
+        ctx = _make_grid_ctx([
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6], min_rrr=0.5),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6], min_rrr=0.5),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6], min_rrr=0.5),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6], min_rrr=0.5),
+        ])
 
         np.random.seed(42)
         inner_df = pd.DataFrame({
@@ -375,11 +367,11 @@ class TestSuccessiveHalving:
         inner_folds = [(MagicMock(), MagicMock()) for _ in range(3)]
         ctx = self._make_ctx(keep_ratio=0.5, min_survivors=2)
 
-        eval_calls = []
+        call_list = []
 
         def tracking_eval(fold_idx, train_df, val_df, features, tp, sl, ctx,
                           timeout_bars=None, **kwargs):
-            eval_calls.append(fold_idx)
+            call_list.append(fold_idx)
             return self._mock_eval(fold_idx, train_df, val_df, features, tp, sl,
                                    ctx, timeout_bars, **kwargs)
 
@@ -393,7 +385,7 @@ class TestSuccessiveHalving:
             )
 
         fold_counts = {}
-        for f in eval_calls:
+        for f in call_list:
             fold_counts[f] = fold_counts.get(f, 0) + 1
 
         # Fold 0: all 10
@@ -415,10 +407,10 @@ class TestSuccessiveHalving:
         # keep_ratio=0.1 would want 0 combos, but min_survivors=3 overrides
         ctx = self._make_ctx(keep_ratio=0.1, min_survivors=3)
 
-        eval_calls = []
+        call_list = []
 
         def tracking_eval(fold_idx, *args, **kwargs):
-            eval_calls.append(fold_idx)
+            call_list.append(fold_idx)
             return self._mock_eval(fold_idx, *args, **kwargs)
 
         with patch("fwbg.optimization.grid_search._evaluate_single_fold", side_effect=tracking_eval), \
@@ -431,7 +423,7 @@ class TestSuccessiveHalving:
             )
 
         fold_counts = {}
-        for f in eval_calls:
+        for f in call_list:
             fold_counts[f] = fold_counts.get(f, 0) + 1
 
         assert fold_counts[0] == 4
@@ -442,21 +434,17 @@ class TestSuccessiveHalving:
         """With 1 inner fold, pruning should not activate."""
         from fwbg.optimization.grid_search import run_grid_search
 
-        ctx = MagicMock()
-        ctx.total_grid_combinations.return_value = 4
-        ctx.min_rrr = 0
-        ctx.early_pruning_enabled = False
-        ctx.exit_strategy = "fixed"
-        ctx.exit_params = {}
-        ctx.early_pruning_enabled = True
-        ctx.early_pruning_keep_ratio = 0.5
-        ctx.early_pruning_min_survivors = 2
-        ctx.grid_exit_modifier_params = [None]
-        ctx.grid_model_hyperparameters = [None]
-
-        ctx.grid_tp = [10, 20]
-        ctx.grid_sl = [20, 30]
-        ctx.grid_timeout_bars = [None]
+        ctx = _make_grid_ctx(
+            [
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.6]),
+            ],
+            early_pruning_enabled=True,
+            early_pruning_keep_ratio=0.5,
+            early_pruning_min_survivors=2,
+        )
 
         inner_df = pd.DataFrame({"feat1": np.random.randn(100)})
         inner_folds = [(MagicMock(), MagicMock())]  # Single fold!
@@ -472,21 +460,15 @@ class TestSuccessiveHalving:
         """With fewer combos than min_survivors, pruning should not activate."""
         from fwbg.optimization.grid_search import run_grid_search
 
-        ctx = MagicMock()
-        ctx.total_grid_combinations.return_value = 2
-        ctx.min_rrr = 0
-        ctx.early_pruning_enabled = False
-        ctx.exit_strategy = "fixed"
-        ctx.exit_params = {}
-        ctx.early_pruning_enabled = True
-        ctx.early_pruning_keep_ratio = 0.5
-        ctx.early_pruning_min_survivors = 10  # More than available combos
-        ctx.grid_exit_modifier_params = [None]
-        ctx.grid_model_hyperparameters = [None]
-
-        ctx.grid_tp = [10]
-        ctx.grid_sl = [20, 30]
-        ctx.grid_timeout_bars = [None]
+        ctx = _make_grid_ctx(
+            [
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.6]),
+            ],
+            early_pruning_enabled=True,
+            early_pruning_keep_ratio=0.5,
+            early_pruning_min_survivors=10,  # More than available combos
+        )
 
         inner_df = pd.DataFrame({"feat1": np.random.randn(100)})
         inner_folds = [(MagicMock(), MagicMock()), (MagicMock(), MagicMock())]
@@ -553,7 +535,7 @@ class TestSuccessiveHalving:
             )
 
         # Only successful combos should produce candidates
-        # After fold 0: 6 combos, top 3 kept. Failed combos have -inf PnL → pruned.
+        # After fold 0: 6 combos, top 3 kept. Failed combos have -inf PnL -> pruned.
         # After fold 1: last fold, 3 survivors aggregated.
         assert len(candidates) == 3
         # All candidates should have tp >= 13
@@ -581,7 +563,7 @@ class TestGridResultsInProcessSymbolOutput:
         assert len(matches) >= 1, (
             "process_symbol sollte 'grid_results' im result Dictionary enthalten.\n"
             "Erwartet: \"grid_results\": <variable>\n"
-            "Dies ist notwendig, damit grid_details Dateien gespeichert werden können."
+            "Dies ist notwendig, damit grid_details Dateien gespeichert werden koennen."
         )
 
 
@@ -596,7 +578,6 @@ class TestProbabilityCalibration:
     def _make_ctx(probability_calibration=False, calibration_method="isotonic",
                   separate_long_short=False):
         """Create a real SimulationContext for calibration tests."""
-        from fwbg.core.context import SimulationContext
         return SimulationContext(
             symbol="TESTUSD",
             asset_class="FOREX",
@@ -604,8 +585,12 @@ class TestProbabilityCalibration:
             point=0.0001,
             min_trades=10,
             grid_ct=[0.50, 0.55, 0.60],
-            grid_tp=[10, 20],
-            grid_sl=[20, 30],
+            exit_strategies=[
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.50, 0.55, 0.60]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 10, "sl_mult": 30}, ct=[0.50, 0.55, 0.60]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.50, 0.55, 0.60]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 20, "sl_mult": 30}, ct=[0.50, 0.55, 0.60]),
+            ],
             long_enabled=True,
             short_enabled=True,
             separate_long_short=separate_long_short,
@@ -787,7 +772,7 @@ class TestProbabilityCalibration:
         mod_short = train_model(train_df, targets_short[:350], features, 10, ctx)
 
         tp, sl = 15, 30
-        expected_ct = sl / (tp + sl)  # 30/45 ≈ 0.667
+        expected_ct = sl / (tp + sl)  # 30/45 = 0.667
 
         best_ct, _, _ = evaluate_on_validation(
             val_df, mod_long, mod_short, features, features, tp, sl, ctx,
@@ -813,14 +798,14 @@ class TestProbabilityCalibration:
 
         mod = train_model(train_df, targets[:350], features, 10, ctx)
 
-        # TP=10, SL=40 → ct = 40/50 = 0.80
+        # TP=10, SL=40 -> ct = 40/50 = 0.80
         ct1, _, _ = evaluate_on_validation(val_df, mod, mod, features, features, 10, 40, ctx)
         assert ct1 == pytest.approx(0.80)
 
-        # TP=30, SL=20 → ct = 20/50 = 0.40
+        # TP=30, SL=20 -> ct = 20/50 = 0.40
         ct2, _, _ = evaluate_on_validation(val_df, mod, mod, features, features, 30, 20, ctx)
         assert ct2 == pytest.approx(0.40)
 
-        # TP=20, SL=20 → ct = 0.50
+        # TP=20, SL=20 -> ct = 0.50
         ct3, _, _ = evaluate_on_validation(val_df, mod, mod, features, features, 20, 20, ctx)
         assert ct3 == pytest.approx(0.50)

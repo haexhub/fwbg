@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from fwbg.core.config import ExitStrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.optimization.targets import (
     _simulate_trades_core,
@@ -43,6 +44,26 @@ from fwbg_sdk.models import TrainingContext
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _make_exit_strategies(tp_list=None, sl_list=None, ct=None, min_rrr=0):
+    """Build ExitStrategyConfig list from TP/SL grid values."""
+    if tp_list is None:
+        tp_list = [2, 4, 6]
+    if sl_list is None:
+        sl_list = [2, 4]
+    if ct is None:
+        ct = [0.5]
+    return [
+        ExitStrategyConfig(
+            name="fixed",
+            params={"tp_mult": tp, "sl_mult": sl},
+            ct=ct,
+            min_rrr=min_rrr,
+        )
+        for tp in tp_list
+        for sl in sl_list
+    ]
+
+
 def _ctx(**overrides) -> SimulationContext:
     """SimulationContext for grid search testing with fixed exit strategy."""
     defaults = dict(
@@ -59,9 +80,7 @@ def _ctx(**overrides) -> SimulationContext:
             "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
             "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
         },
-        grid_ct=[0.5],
-        grid_tp=[2, 4, 6],
-        grid_sl=[2, 4],
+        exit_strategies=_make_exit_strategies(),
         required_features=["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"],
         early_pruning_enabled=False,
     )
@@ -615,8 +634,8 @@ class TestFullGridSearch:
         df_feat, inner_folds = self._setup_grid_data()
         feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
-            spread=1.0, grid_ct=[0.5], min_trades=1,
-            grid_tp=[2, 4], grid_sl=[4],
+            spread=1.0, min_trades=1,
+            exit_strategies=_make_exit_strategies(tp_list=[2, 4], sl_list=[4]),
             early_pruning_enabled=False,
         )
 
@@ -639,8 +658,8 @@ class TestFullGridSearch:
         df_feat, inner_folds = self._setup_grid_data()
         feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
-            spread=1.0, grid_ct=[0.5], min_trades=1,
-            grid_tp=[2, 4, 8], grid_sl=[4],
+            spread=1.0, min_trades=1,
+            exit_strategies=_make_exit_strategies(tp_list=[2, 4, 8], sl_list=[4]),
             early_pruning_enabled=False,
         )
 
@@ -665,8 +684,8 @@ class TestFullGridSearch:
         df_feat, inner_folds = self._setup_grid_data()
         feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
-            spread=1.0, grid_ct=[0.5], min_trades=1,
-            grid_tp=[3], grid_sl=[4],
+            spread=1.0, min_trades=1,
+            exit_strategies=_make_exit_strategies(tp_list=[3], sl_list=[4]),
             early_pruning_enabled=False,
         )
 
@@ -702,8 +721,8 @@ class TestFullGridSearch:
         inner_folds = [(train, val)]
 
         ctx = _ctx(
-            spread=0.5, grid_ct=[0.5], min_trades=1,
-            grid_tp=[4], grid_sl=[4],
+            spread=0.5, min_trades=1,
+            exit_strategies=_make_exit_strategies(tp_list=[4], sl_list=[4]),
             early_pruning_enabled=False,
         )
 
@@ -730,12 +749,11 @@ class TestComboBuilding:
     """Verify _build_combo_tuples builds correct number of combos."""
 
     def test_combo_count_matches_grid_dimensions(self):
-        """Number of combos should be TP x SL x timeout x modifiers x model_hp."""
-        ctx = _ctx(grid_tp=[2, 4, 6], grid_sl=[2, 4])
+        """Number of combos should be number of exit_strategies x model_hp."""
+        ctx = _ctx(exit_strategies=_make_exit_strategies(tp_list=[2, 4, 6], sl_list=[2, 4]))
 
         combos, skipped = _build_combo_tuples(
             ctx,
-            timeout_values=[None],
             features=["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"],
             inner_folds=[],
             regime_config={},
@@ -750,11 +768,12 @@ class TestComboBuilding:
 
     def test_rrr_filter_skips_combos(self):
         """Combos with RRR < min_rrr should be skipped."""
-        ctx = _ctx(grid_tp=[2, 4], grid_sl=[4], min_rrr=1.0)
+        ctx = _ctx(
+            exit_strategies=_make_exit_strategies(tp_list=[2, 4], sl_list=[4], min_rrr=1.0),
+        )
 
         combos, skipped = _build_combo_tuples(
             ctx,
-            timeout_values=[None],
             features=["hl_ses_rl50_pdl_retest_bull"],
             inner_folds=[],
             regime_config={},
@@ -880,8 +899,8 @@ class TestGridSearchTimingBreakdown:
         df_feat, inner_folds = self._setup_large_grid_data()
         feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
-            spread=1.0, grid_ct=[0.5], min_trades=1,
-            grid_tp=[2, 4, 6, 8], grid_sl=[2, 4, 6],
+            spread=1.0, min_trades=1,
+            exit_strategies=_make_exit_strategies(tp_list=[2, 4, 6, 8], sl_list=[2, 4, 6]),
             early_pruning_enabled=True,
             early_pruning_keep_ratio=0.5,
             early_pruning_min_survivors=4,
@@ -945,8 +964,8 @@ class TestGridSearchTimingBreakdown:
         df_feat, inner_folds = self._setup_large_grid_data()
         feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         ctx = _ctx(
-            spread=1.0, grid_ct=[0.5], min_trades=1,
-            grid_tp=[2, 3, 4, 5, 6, 8], grid_sl=[2, 3, 4, 6],
+            spread=1.0, min_trades=1,
+            exit_strategies=_make_exit_strategies(tp_list=[2, 3, 4, 5, 6, 8], sl_list=[2, 3, 4, 6]),
             early_pruning_enabled=True,
             early_pruning_keep_ratio=0.5,
             early_pruning_min_survivors=4,
@@ -974,8 +993,8 @@ class TestGridSearchTimingBreakdown:
         feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
         # Disable early termination/first-fold checks so combos survive
         ctx = _ctx(
-            spread=1.0, grid_ct=[0.5], min_trades=1,
-            grid_tp=[2, 4, 8], grid_sl=[2, 4],
+            spread=1.0, min_trades=1,
+            exit_strategies=_make_exit_strategies(tp_list=[2, 4, 8], sl_list=[2, 4]),
             early_pruning_enabled=False,
             first_fold_sanity_check=False,
             early_termination=False,

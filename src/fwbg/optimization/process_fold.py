@@ -8,7 +8,6 @@ from fwbg.data.config import MIN_TRADES
 from fwbg.core.config import RegimeFilterConfig
 from fwbg.pipeline import (
     compute_indicator_pool, get_feature_columns, compute_regime_bitmask,
-    calculate_param_plateau_score, select_best_plateau_candidate,
 )
 from fwbg.pipeline.features import split_indicators_by_stationarity
 from fwbg.utils.progress import report_phase, report_meta, report_progress
@@ -242,11 +241,9 @@ def process_single_fold(
     all_grid_results = []
 
     if fold.fold_id == 0:  # Only log once
-        n_timeout = len(ctx.grid_timeout_bars) if ctx.grid_timeout_bars else 1
-        n_modifier = len(ctx.grid_exit_modifier_params) if ctx.grid_exit_modifier_params else 1
-        log(1, f"Grid-Search: {len(ctx.grid_tp)}×{len(ctx.grid_sl)}×{n_timeout}×{n_modifier} modifier × {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
-        if ctx.min_rrr > 0:
-            log(1, f"Min RRR Filter: {ctx.min_rrr}", sym)
+        n_exit = len(ctx.exit_strategies) if ctx.exit_strategies else 0
+        n_model_hp = len(ctx.grid_model_hyperparameters) if ctx.grid_model_hyperparameters else 1
+        log(1, f"Grid-Search: {n_exit} exit strategies × {n_model_hp} model HP × {n_regime_combos} Regime = {total_combos} Kombinationen", sym)
 
     # === NESTED CV: Inner Folds erstellen (auf Train-Daten dieses Folds) ===
     report_phase(sym, f"Fold {fold.fold_id + 1}/{n_folds}: Grid-Search...")
@@ -326,16 +323,11 @@ def process_single_fold(
         log(2, f"  Fold {fold.fold_id + 1}: No profitable candidates, skipping", sym)
         return None, all_grid_results
 
-    # === PLATEAU-BASIERTE AUSWAHL ===
-    for c in candidates:
-        c["score"] = c["inner_val_pnl"]
-
-    candidates = calculate_param_plateau_score(candidates, ctx.grid_tp, ctx.grid_sl, ctx.grid_ct)
-    b = select_best_plateau_candidate(candidates, ctx.grid_tp, ctx.grid_sl, ctx.grid_ct, min_neighbors=2)
-
-    if not b:
-        candidates.sort(key=lambda x: x["inner_val_pnl"], reverse=True)
-        b = candidates[0] if candidates else None
+    # === BEST CANDIDATE SELECTION ===
+    # With independent exit strategy instances there is no TP/SL grid
+    # neighborhood for plateau scoring — select by inner_val_pnl directly.
+    candidates.sort(key=lambda x: x["inner_val_pnl"], reverse=True)
+    b = candidates[0] if candidates else None
 
     if not b:
         log(2, f"  Fold {fold.fold_id + 1}: No plateau candidate found", sym)

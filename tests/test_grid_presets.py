@@ -1,22 +1,22 @@
 """
-Tests for preset loading and OptimizationConfig.
+Tests for preset loading, OptimizationConfig, and ExitStrategyConfig.
 
 Verifies:
 1. _load_json_preset loads JSON files and raises on missing
-2. _normalize_exit_params converts scalars to arrays
-3. OptimizationConfig.from_dict parses ct, regime, exit_modifier_params_grid
-4. StrategyConfig.from_dict integrates optimization section
+2. ExitStrategyConfig.from_dict parses ct, params, modifier
+3. OptimizationConfig.from_dict parses regime_filter_grid, model_hyperparameters_grid
+4. StrategyConfig.from_dict integrates optimization + exit_strategies
 """
 import json
 import os
 import pytest
 
 from fwbg.core.config import (
+    ExitStrategyConfig,
     OptimizationConfig,
     RegimeFilterGridConfig,
     StrategyConfig,
     _load_json_preset,
-    _normalize_exit_params,
 )
 
 
@@ -80,38 +80,80 @@ class TestPresetLoading:
 
 
 # ============================================================
-# TestNormalizeExitParams
+# TestExitStrategyConfig
 # ============================================================
 
 
-class TestNormalizeExitParams:
-    """Tests for _normalize_exit_params."""
+class TestExitStrategyConfig:
+    """Tests for ExitStrategyConfig.from_dict."""
 
-    def test_scalar_values_wrapped_in_list(self):
-        """Scalar values should be converted to single-element lists."""
-        params = {"tp_mult": 2.0, "sl_mult": 1.5, "atr_period": 14}
-        result = _normalize_exit_params(params)
-        assert result == {"tp_mult": [2.0], "sl_mult": [1.5], "atr_period": [14]}
+    def test_default_values(self):
+        """Default ExitStrategyConfig has sensible defaults."""
+        cfg = ExitStrategyConfig()
+        assert cfg.name == "fixed"
+        assert cfg.params == {}
+        assert cfg.ct == [0.5]
+        assert cfg.long_ct is None
+        assert cfg.short_ct is None
+        assert cfg.min_rrr == 0
+        assert cfg.exit_modifier is None
+        assert cfg.exit_modifier_params == {}
 
-    def test_list_values_unchanged(self):
-        """List values should pass through unchanged."""
-        params = {"tp_mult": [1.0, 2.0], "sl_mult": [1.5]}
-        result = _normalize_exit_params(params)
-        assert result == params
+    def test_from_dict_minimal(self):
+        """Minimal dict creates config with defaults."""
+        cfg = ExitStrategyConfig.from_dict({"name": "fixed"})
+        assert cfg.name == "fixed"
+        assert cfg.ct == [0.5]
 
-    def test_mixed_scalar_and_list(self):
-        """Mix of scalars and lists."""
-        params = {"tp_mult": [1.0, 2.0], "sl_mult": 1.5, "timeout_bars": [None, 24]}
-        result = _normalize_exit_params(params)
-        assert result == {
-            "tp_mult": [1.0, 2.0],
-            "sl_mult": [1.5],
-            "timeout_bars": [None, 24],
-        }
+    def test_scalar_ct_wrapped(self):
+        """Scalar ct value should be wrapped in a list."""
+        cfg = ExitStrategyConfig.from_dict({"name": "fixed", "ct": 0.6})
+        assert cfg.ct == [0.6]
 
-    def test_empty_dict(self):
-        """Empty dict returns empty dict."""
-        assert _normalize_exit_params({}) == {}
+    def test_ct_list_preserved(self):
+        """List ct value should pass through."""
+        cfg = ExitStrategyConfig.from_dict({"name": "fixed", "ct": [0.5, 0.55, 0.6]})
+        assert cfg.ct == [0.5, 0.55, 0.6]
+
+    def test_long_short_ct(self):
+        """long_ct and short_ct parsed from dict."""
+        cfg = ExitStrategyConfig.from_dict({
+            "name": "fixed",
+            "ct": [0.5],
+            "long_ct": [0.6, 0.65],
+            "short_ct": 0.55,
+        })
+        assert cfg.long_ct == [0.6, 0.65]
+        assert cfg.short_ct == [0.55]
+
+    def test_params_preserved(self):
+        """params dict passed through."""
+        cfg = ExitStrategyConfig.from_dict({
+            "name": "atr_based",
+            "params": {"atr_period": 14, "tp_mult": 2.0, "sl_mult": 1.5},
+        })
+        assert cfg.params["atr_period"] == 14
+        assert cfg.params["tp_mult"] == 2.0
+
+    def test_exit_modifier(self):
+        """exit_modifier and exit_modifier_params parsed."""
+        cfg = ExitStrategyConfig.from_dict({
+            "name": "atr_based",
+            "params": {},
+            "exit_modifier": "trailing_stop",
+            "exit_modifier_params": {"breakeven_trigger": 0.5},
+        })
+        assert cfg.exit_modifier == "trailing_stop"
+        assert cfg.exit_modifier_params == {"breakeven_trigger": 0.5}
+
+    def test_min_rrr(self):
+        """min_rrr parsed from dict."""
+        cfg = ExitStrategyConfig.from_dict({
+            "name": "fixed",
+            "params": {},
+            "min_rrr": 1.5,
+        })
+        assert cfg.min_rrr == 1.5
 
 
 # ============================================================
@@ -122,36 +164,11 @@ class TestNormalizeExitParams:
 class TestOptimizationConfig:
     """Tests for OptimizationConfig.from_dict."""
 
-    def test_default_ct(self):
-        """Default ct should be [0.5]."""
-        cfg = OptimizationConfig()
-        assert cfg.ct == [0.5]
-
     def test_from_dict_none_returns_default(self):
         """None input returns default config."""
         cfg = OptimizationConfig.from_dict(None)
-        assert cfg.ct == [0.5]
         assert cfg.regime_filter_grid.total_combinations() == 1
-
-    def test_ct_scalar_wrapped(self):
-        """Scalar ct value should be wrapped in a list."""
-        cfg = OptimizationConfig.from_dict({"ct": 0.6})
-        assert cfg.ct == [0.6]
-
-    def test_ct_list_preserved(self):
-        """List ct value should pass through."""
-        cfg = OptimizationConfig.from_dict({"ct": [0.5, 0.55, 0.6]})
-        assert cfg.ct == [0.5, 0.55, 0.6]
-
-    def test_long_short_ct(self):
-        """long_ct and short_ct parsed from dict."""
-        cfg = OptimizationConfig.from_dict({
-            "ct": [0.5],
-            "long_ct": [0.6, 0.65],
-            "short_ct": 0.55,
-        })
-        assert cfg.long_ct == [0.6, 0.65]
-        assert cfg.short_ct == [0.55]
+        assert cfg.model_hyperparameters_grid is None
 
     def test_regime_filter_grid_parsed(self):
         """regime_filter_grid dict should be parsed into RegimeFilterGridConfig."""
@@ -162,40 +179,8 @@ class TestOptimizationConfig:
 
     def test_no_regime_filter_grid(self):
         """Without regime_filter_grid, default (1 combo) is used."""
-        cfg = OptimizationConfig.from_dict({"ct": [0.5]})
+        cfg = OptimizationConfig.from_dict({})
         assert cfg.regime_filter_grid.total_combinations() == 1
-
-    def test_absent_exit_modifier_params_grid_defaults_to_none(self):
-        """Without exit_modifier_params_grid, default is None."""
-        cfg = OptimizationConfig.from_dict({"ct": [0.5]})
-        assert cfg.exit_modifier_params_grid is None
-
-    def test_list_exit_modifier_params_grid_parsed_as_is(self):
-        """List is preserved unchanged."""
-        cfg = OptimizationConfig.from_dict({
-            "exit_modifier_params_grid": [
-                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-            ],
-        })
-        assert len(cfg.exit_modifier_params_grid) == 2
-        assert cfg.exit_modifier_params_grid[0] == {
-            "breakeven_trigger": 0.0, "trail_atr_mult": 0.0
-        }
-        assert cfg.exit_modifier_params_grid[1] == {
-            "breakeven_trigger": 0.5, "trail_atr_mult": 0.5
-        }
-
-    def test_single_dict_exit_modifier_params_grid_wrapped_in_list(self):
-        """Single dict is wrapped in a list."""
-        cfg = OptimizationConfig.from_dict({
-            "exit_modifier_params_grid": {
-                "breakeven_trigger": 0.5, "trail_atr_mult": 0.5
-            },
-        })
-        assert cfg.exit_modifier_params_grid == [
-            {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
-        ]
 
     def test_model_hyperparameters_grid_list(self):
         """model_hyperparameters_grid list is preserved."""
@@ -221,37 +206,41 @@ class TestOptimizationConfig:
 
 
 class TestStrategyOptimizationIntegration:
-    """Tests that StrategyConfig.from_dict integrates optimization correctly."""
+    """Tests that StrategyConfig.from_dict integrates optimization + exit_strategies."""
 
     def test_optimization_parsed(self):
         """optimization section parsed into OptimizationConfig."""
         config = StrategyConfig.from_dict({
             "name": "Test",
             "optimization": {
-                "ct": [0.5, 0.55],
                 "regime_filter_grid": SAMPLE_REGIME_FILTER,
             },
         })
         assert isinstance(config.optimization, OptimizationConfig)
-        assert config.optimization.ct == [0.5, 0.55]
         assert config.optimization.regime_filter_grid.total_combinations() == 2
 
     def test_no_optimization_uses_defaults(self):
         """Without optimization key, defaults are used."""
         config = StrategyConfig.from_dict({"name": "NoOpt"})
-        assert config.optimization.ct == [0.5]
         assert config.optimization.regime_filter_grid.total_combinations() == 1
 
-    def test_exit_params_normalized_to_arrays(self):
-        """exit_params values are normalized to arrays."""
+    def test_exit_strategies_parsed(self):
+        """exit_strategies array parsed into ExitStrategyConfig list."""
         config = StrategyConfig.from_dict({
             "name": "Test",
-            "exit_params": {
-                "tp_mult": [1.5, 2.0],
-                "sl_mult": 1.0,
-                "timeout_bars": [None, 24],
-            },
+            "exit_strategies": [
+                {"name": "fixed", "params": {"tp_mult": 2.0, "sl_mult": 1.0}, "ct": [0.5, 0.55]},
+                {"name": "atr_based", "params": {"atr_period": 14}, "ct": [0.5]},
+            ],
         })
-        assert config.exit_params["tp_mult"] == [1.5, 2.0]
-        assert config.exit_params["sl_mult"] == [1.0]
-        assert config.exit_params["timeout_bars"] == [None, 24]
+        assert len(config.exit_strategies) == 2
+        assert config.exit_strategies[0].name == "fixed"
+        assert config.exit_strategies[0].params["tp_mult"] == 2.0
+        assert config.exit_strategies[0].ct == [0.5, 0.55]
+        assert config.exit_strategies[1].name == "atr_based"
+        assert config.exit_strategies[1].ct == [0.5]
+
+    def test_no_exit_strategies_defaults_to_empty(self):
+        """Without exit_strategies, defaults to empty list."""
+        config = StrategyConfig.from_dict({"name": "NoExit"})
+        assert config.exit_strategies == []

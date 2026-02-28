@@ -148,27 +148,6 @@ class TestStrategyWithPresets:
         assert config.validation.oos_size == 5000
         assert config.validation.min_trades == 100
 
-    def test_exit_params_string_ref(self, tmp_path):
-        """exit_params: "atr_standard" loads exit_params/atr_standard.json."""
-        exit_params_dir = tmp_path / "exit_params"
-        exit_params_dir.mkdir()
-        exit_params_data = {
-            "atr_period": 14,
-            "atr_multiplier": 2.0,
-        }
-        _write_json(str(exit_params_dir / "atr_standard.json"), exit_params_data)
-
-        strategy_dir = str(tmp_path / "strategies")
-        config = StrategyConfig.from_dict({
-            "name": "ExitParamsPresetTest",
-            "exit_params": "atr_standard",
-            "_strategy_dir": strategy_dir,
-        })
-
-        # exit_params values are normalized to arrays
-        assert config.exit_params == {"atr_period": [14], "atr_multiplier": [2.0]}
-        assert config.exit_params["atr_period"] == [14]
-
     def test_filters_string_ref(self, tmp_path):
         """filters: "permissive" loads filters/permissive.json."""
         filters_dir = tmp_path / "filters"
@@ -279,8 +258,9 @@ class TestBackwardCompatibility:
         config = StrategyConfig.from_dict({
             "name": "InlineTest",
             "pipeline": {"indicators": [{"name": "trend", "params": {}}]},
-            "exit_strategy": "atr_based",
-            "exit_params": {"atr_period": 14},
+            "exit_strategies": [
+                {"name": "atr_based", "params": {"atr_period": 14}, "ct": [0.5]},
+            ],
             "model": {"type": "xgboost", "hyperparameters": {"max_depth": 5}},
             "validation": {"folds": 8, "oos_size": 4000},
             "filters": {"min_rrr": 0.5, "min_trades": 50},
@@ -290,7 +270,9 @@ class TestBackwardCompatibility:
 
         assert config.name == "InlineTest"
         assert config.pipeline == {"indicators": [{"name": "trend", "params": {}}]}
-        assert config.exit_params == {"atr_period": [14]}
+        assert len(config.exit_strategies) == 1
+        assert config.exit_strategies[0].name == "atr_based"
+        assert config.exit_strategies[0].params == {"atr_period": 14}
         assert config.model.hyperparameters["max_depth"] == 5
         assert config.validation.folds == 8
         assert config.filters.min_rrr == 0.5

@@ -164,9 +164,8 @@ class TestStrategyEndpoints:
         data = resp.json()
         # Verify it has the expected strategy sections
         assert "pipeline" in data
-        assert "exit_strategy" in data
+        assert "exit_strategies" in data
         assert "model" in data
-        assert "exit_params" in data or "optimization" in data
         assert "validation" in data
         # Verify pipeline has plugin arrays
         pipeline = data["pipeline"]
@@ -186,8 +185,7 @@ class TestStrategyEndpoints:
             "name": "Test Strategy",
             "data": {
                 "pipeline": {"indicators": [{"name": "trend", "params": {}}]},
-                "exit_strategy": "fixed",
-                "exit_params": {"tp": 50, "sl": 50},
+                "exit_strategies": [{"name": "fixed", "params": {"tp_mult": 1.0, "sl_mult": 1.0}, "ct": [0.5]}],
                 "model": {"type": "xgboost"},
                 "grids": {},
                 "validation": {"method": "walk_forward", "folds": 4},

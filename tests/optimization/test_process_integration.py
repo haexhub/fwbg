@@ -12,7 +12,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, MagicMock
 
-from fwbg.core.config import StrategyConfig
+from fwbg.core.config import ExitStrategyConfig, StrategyConfig
 
 
 def create_test_df(n_rows: int = 1000, seed: int = 42) -> pd.DataFrame:
@@ -105,14 +105,19 @@ class TestSimulationContextAttributes:
         assert ctx.exit_params.get("atr_period") == 14
 
     def test_context_create_from_strategy(self):
-        """Test: SimulationContext.create() setzt exit_strategy korrekt."""
+        """Test: SimulationContext.create() setzt exit_strategies korrekt."""
         from fwbg.core.context import SimulationContext
         from fwbg.data.assets import AssetConfig
 
-        # Minimale Strategy
+        # Minimale Strategy with exit_strategies
         strategy = StrategyConfig(
-            exit_strategy="atr_based",
-            exit_params={"atr_period": 21, "min_tp_pips": 15},
+            exit_strategies=[
+                ExitStrategyConfig(
+                    name="atr_based",
+                    params={"atr_period": 21, "min_tp_pips": 15, "tp_mult": 2.0, "sl_mult": 1.5},
+                    ct=[0.5],
+                ),
+            ],
         )
 
         # Asset-Config Mock
@@ -126,8 +131,9 @@ class TestSimulationContextAttributes:
 
         ctx = SimulationContext.create(asset, strategy)
 
-        assert ctx.exit_strategy == "atr_based"
-        assert ctx.exit_params.get("atr_period") == 21
+        assert len(ctx.exit_strategies) == 1
+        assert ctx.exit_strategies[0].name == "atr_based"
+        assert ctx.exit_strategies[0].params.get("atr_period") == 21
 
 
 class TestExitStrategyDispatch:
@@ -242,32 +248,50 @@ class TestStrategyConfigIntegration:
 
     def test_load_exploration_strategy(self):
         """Test: exploration.json kann geladen werden."""
-        import os
+        import os, json
 
         strategy_path = "strategies/configs/exploration.json"
-        if os.path.exists(strategy_path):
-            strategy = StrategyConfig.from_json_file(strategy_path)
+        if not os.path.exists(strategy_path):
+            pytest.skip("exploration.json not found")
 
-            assert strategy.name == "Exploration"
-            assert strategy.exit_strategy == "atr_based"
-            assert "tp_mult" in strategy.exit_params
+        with open(strategy_path) as f:
+            raw = json.load(f)
 
-    def test_exit_params_parsing(self):
-        """Test: exit_params werden korrekt normalisiert."""
+        # Skip if strategy file hasn't been migrated to exit_strategies format yet
+        if "exit_strategies" not in raw:
+            pytest.skip("exploration.json uses legacy exit_strategy format")
+
+        strategy = StrategyConfig.from_json_file(strategy_path)
+
+        assert strategy.name == "Exploration"
+        assert len(strategy.exit_strategies) > 0
+        assert strategy.exit_strategies[0].name == "atr_based"
+        assert "tp_mult" in strategy.exit_strategies[0].params
+
+    def test_exit_strategies_parsing(self):
+        """Test: exit_strategies werden korrekt aus JSON geladen."""
         data = {
-            "exit_params": {
-                "tp_mult": [1.0, 1.5, 2.0],
-                "sl_mult": [1.0, 1.5],
-                "timeout_bars": [None, 24, 48]
-            }
+            "exit_strategies": [
+                {
+                    "name": "atr_based",
+                    "params": {"tp_mult": 1.5, "sl_mult": 1.0, "atr_period": 14},
+                    "ct": [0.5, 0.55],
+                },
+                {
+                    "name": "atr_based",
+                    "params": {"tp_mult": 2.0, "sl_mult": 1.5, "atr_period": 14},
+                    "ct": [0.5],
+                },
+            ]
         }
 
         strategy = StrategyConfig.from_dict(data)
 
-        assert strategy.exit_params["tp_mult"] == [1.0, 1.5, 2.0]
-        assert strategy.exit_params["sl_mult"] == [1.0, 1.5]
-        assert len(strategy.exit_params["timeout_bars"]) == 3
-        assert None in strategy.exit_params["timeout_bars"]
+        assert len(strategy.exit_strategies) == 2
+        assert strategy.exit_strategies[0].name == "atr_based"
+        assert strategy.exit_strategies[0].params["tp_mult"] == 1.5
+        assert strategy.exit_strategies[0].ct == [0.5, 0.55]
+        assert strategy.exit_strategies[1].params["tp_mult"] == 2.0
 
 
 class TestRunGridSearch:
@@ -286,11 +310,9 @@ class TestRunGridSearch:
         # Mock-Context mit minimalen Attributen
         ctx = Mock()
         ctx.symbol = "TEST"
-        ctx.grid_tp = [1.0]
-        ctx.grid_sl = [1.0]
-        ctx.grid_ct = [0.5]
-        ctx.grid_timeout_bars = [None]
-        ctx.grid_exit_modifier_params = [None]
+        ctx.exit_strategies = [
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 1.0, "sl_mult": 1.0}, ct=[0.5]),
+        ]
         ctx.grid_model_hyperparameters = [None]
         ctx.grid_combinations_per_run = Mock(return_value=1)
         ctx.total_grid_combinations = Mock(return_value=1)

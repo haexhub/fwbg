@@ -1,187 +1,341 @@
-"""Tests für _build_combo_tuples und Combo-Zählung.
+"""Tests for _build_combo_tuples and combo counting with exit strategy architecture.
 
-Stellt sicher, dass:
-- Die Anzahl gebauter Combos exakt ctx.total_grid_combinations() entspricht
-- Das exit_modifier_params_grid die Combo-Anzahl korrekt multipliziert
-- Die Modifier-Params pro Combo-Ctx korrekt gesetzt werden
-- Early-Exit in run_grid_search genau total_grid_combinations() Callbacks sendet
+Ensures that:
+- The number of built combos matches ctx.total_grid_combinations()
+- ExitStrategyConfig instances correctly drive combo generation
+- Exit modifier params from ExitStrategyConfig are applied per combo
+- Model hyperparameters grid multiplies combo count correctly
+- RRR filter skips correct number of combos
+- Early-exit in run_grid_search sends correct callback count
 """
 import pytest
 import numpy as np
 import pandas as pd
 
 from fwbg.core.context import SimulationContext
+from fwbg.core.config import ExitStrategyConfig
 
 
-def _make_ctx(modifier_params_grid=None, timeout_bars=None):
-    """Erstellt einen minimalen SimulationContext für Combo-Tests."""
-    if modifier_params_grid is None:
-        modifier_params_grid = [None]
-    return SimulationContext(
+def _make_ctx(exit_strategies=None, model_hp_grid=None, model_hp=None):
+    """Create a minimal SimulationContext for combo tests."""
+    if exit_strategies is None:
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 20.0},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 30.0},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 30.0},
+                ct=[0.5],
+            ),
+        ]
+    kwargs = dict(
         symbol="TEST",
         asset_class="FOREX",
         spread=0.0001,
         point=0.0001,
-        grid_tp=[10.0, 20.0],
-        grid_sl=[20.0, 30.0],
-        grid_ct=[0.5],
-        grid_timeout_bars=timeout_bars,
-        grid_exit_modifier_params=modifier_params_grid,
-        exit_modifier_params={},
+        exit_strategies=exit_strategies,
     )
-
-
+    if model_hp_grid is not None:
+        kwargs["grid_model_hyperparameters"] = model_hp_grid
+    if model_hp is not None:
+        kwargs["model_hyperparameters"] = model_hp
+    return SimulationContext(**kwargs)
 
 
 class TestBuildComboTuples:
-    """Unit-Tests für _build_combo_tuples."""
+    """Unit tests for _build_combo_tuples with exit strategy architecture."""
 
-    def test_combo_count_matches_total_grid_combinations_single_modifier(self):
-        """Ohne Modifier-Grid: Combo-Anzahl = tp×sl×timeout = 2×2×2 = 8."""
+    def test_combo_count_matches_total_grid_combinations(self):
+        """Basic: combo count = number of exit_strategies × model_hp = 4×1 = 4."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
-        ctx = _make_ctx(modifier_params_grid=[None], timeout_bars=[32, 96])
-        timeout_values = [32, 96]
-
+        ctx = _make_ctx()
         combos, skipped = _build_combo_tuples(
-            ctx, timeout_values, ["feat1"], [], {}, 8, None, None, None, "TEST"
+            ctx, ["feat1"], [], {}, ctx.total_grid_combinations(),
+            None, None, None, "TEST",
         )
 
         assert skipped == 0
-        assert len(combos) == 8
+        assert len(combos) == 4
         assert len(combos) == ctx.total_grid_combinations()
 
-    def test_combo_count_doubles_with_two_modifier_params(self):
-        """Mit 2 Modifier-Params: Combo-Anzahl verdoppelt sich."""
+    def test_combo_count_with_multiple_ct_values(self):
+        """Exit strategies with multiple CT values expand combo count."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
-        ctx_single = _make_ctx(modifier_params_grid=[None], timeout_bars=[32, 96])
-        ctx_double = _make_ctx(
-            modifier_params_grid=[
-                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-            ],
-            timeout_bars=[32, 96],
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.4, 0.5, 0.6],  # 3 CT values
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 30.0},
+                ct=[0.5],  # 1 CT value
+            ),
+        ]
+        ctx = _make_ctx(exit_strategies=exit_strategies)
+
+        # total = sum(len(ct)) * model_hp = (3 + 1) * 1 = 4
+        # But _build_combo_tuples creates one combo per exit_strategy (not per CT),
+        # so combos = 2, and total_grid_combinations = 4
+        combos, skipped = _build_combo_tuples(
+            ctx, ["feat1"], [], {}, ctx.total_grid_combinations(),
+            None, None, None, "TEST",
         )
-        timeout_values = [32, 96]
+
+        assert skipped == 0
+        assert len(combos) == 2  # one per exit_strategy
+        assert ctx.total_grid_combinations() == 4  # CT expansion is in inner CV
+
+    def test_combo_doubles_with_two_exit_strategies(self):
+        """With 2× more exit strategies, combo count doubles."""
+        from fwbg.optimization.grid_search import _build_combo_tuples
+
+        single = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.5],
+            ),
+        ]
+        double = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 30.0},
+                ct=[0.5],
+            ),
+        ]
+        ctx_single = _make_ctx(exit_strategies=single)
+        ctx_double = _make_ctx(exit_strategies=double)
 
         combos_single, _ = _build_combo_tuples(
-            ctx_single, timeout_values, ["feat1"], [], {}, 8, None, None, None, "TEST"
+            ctx_single, ["feat1"], [], {}, 1, None, None, None, "TEST",
         )
         combos_double, _ = _build_combo_tuples(
-            ctx_double, timeout_values, ["feat1"], [], {}, 16, None, None, None, "TEST"
+            ctx_double, ["feat1"], [], {}, 2, None, None, None, "TEST",
         )
 
         assert len(combos_double) == 2 * len(combos_single)
 
-    def test_combo_count_with_modifier_matches_total_grid_combinations(self):
-        """Combo-Anzahl mit Modifier-Grid = ctx.total_grid_combinations()."""
+    def test_exit_strategy_fields_applied_to_combo_ctx(self):
+        """Each combo_ctx carries the correct exit_strategy fields from ExitStrategyConfig."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="atr_based",
+                params={"tp_mult": 2.0, "sl_mult": 1.0, "timeout_bars": 32},
+                ct=[0.5],
+                exit_modifier="trailing",
+                exit_modifier_params={"trail_atr_mult": 0.5},
+                min_rrr=0.5,
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.4, 0.6],
+                min_rrr=0.0,
+            ),
+        ]
+        ctx = _make_ctx(exit_strategies=exit_strategies)
+
+        combos, _ = _build_combo_tuples(
+            ctx, ["feat1"], [], {}, ctx.total_grid_combinations(),
+            None, None, None, "TEST",
+        )
+
+        assert len(combos) == 2
+
+        # First combo: atr_based exit strategy
+        combo_ctx_0 = combos[0][6]
+        assert combo_ctx_0.exit_strategy == "atr_based"
+        assert combo_ctx_0.exit_params == {"tp_mult": 2.0, "sl_mult": 1.0, "timeout_bars": 32}
+        assert combo_ctx_0.exit_modifier == "trailing"
+        assert combo_ctx_0.exit_modifier_params == {"trail_atr_mult": 0.5}
+        assert combo_ctx_0.grid_ct == [0.5]
+        assert combo_ctx_0.min_rrr == 0.5
+
+        # Second combo: fixed exit strategy
+        combo_ctx_1 = combos[1][6]
+        assert combo_ctx_1.exit_strategy == "fixed"
+        assert combo_ctx_1.exit_params == {"tp_mult": 10.0, "sl_mult": 20.0}
+        assert combo_ctx_1.exit_modifier is None
+        assert combo_ctx_1.exit_modifier_params == {}
+        assert combo_ctx_1.grid_ct == [0.4, 0.6]
+        assert combo_ctx_1.min_rrr == 0.0
+
+    def test_separate_long_short_set_from_exit_cfg(self):
+        """separate_long_short is set True when exit_cfg has long_ct or short_ct."""
+        from fwbg.optimization.grid_search import _build_combo_tuples
+
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.5],
+                long_ct=[0.4, 0.5],
+                short_ct=[0.6],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 30.0},
+                ct=[0.5],
+            ),
+        ]
+        ctx = _make_ctx(exit_strategies=exit_strategies)
+
+        combos, _ = _build_combo_tuples(
+            ctx, ["feat1"], [], {}, ctx.total_grid_combinations(),
+            None, None, None, "TEST",
+        )
+
+        # First has long_ct/short_ct -> separate_long_short=True
+        assert combos[0][6].separate_long_short is True
+        assert combos[0][6].long_grid_ct == [0.4, 0.5]
+        assert combos[0][6].short_grid_ct == [0.6]
+
+        # Second has neither -> separate_long_short=False
+        assert combos[1][6].separate_long_short is False
+
+    def test_rrr_filter_skips_correct_count(self):
+        """RRR filter skips exit strategies where tp/sl < min_rrr."""
+        from fwbg.optimization.grid_search import _build_combo_tuples
+
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 30.0},  # RRR=0.33
+                ct=[0.5],
+                min_rrr=0.5,  # SKIP: 0.33 < 0.5
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 20.0},  # RRR=1.0
+                ct=[0.5],
+                min_rrr=0.5,  # PASS: 1.0 >= 0.5
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},  # RRR=0.5
+                ct=[0.5],
+                min_rrr=0.5,  # PASS: 0.5 >= 0.5
+            ),
+        ]
+        ctx = _make_ctx(exit_strategies=exit_strategies)
+
+        combos, skipped = _build_combo_tuples(
+            ctx, ["feat1"], [], {}, ctx.total_grid_combinations(),
+            None, None, None, "TEST",
+        )
+
+        assert skipped == 1  # 1 exit strategy skipped × 1 model_hp
+        assert len(combos) == 2  # 2 passing exit strategies
+
+    def test_rrr_filter_skip_count_multiplied_by_model_hp(self):
+        """RRR filter skip count is multiplied by number of model HP variants."""
+        from fwbg.optimization.grid_search import _build_combo_tuples
+
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 30.0},  # RRR=0.33 -> SKIP
+                ct=[0.5],
+                min_rrr=0.5,
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 20.0},  # RRR=1.0 -> PASS
+                ct=[0.5],
+                min_rrr=0.5,
+            ),
+        ]
         ctx = _make_ctx(
-            modifier_params_grid=[
-                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+            exit_strategies=exit_strategies,
+            model_hp_grid=[
+                {"signal_column_long": "a"},
+                {"signal_column_long": "b"},
             ],
-            timeout_bars=[32, 96],
+            model_hp={},
         )
-        timeout_values = [32, 96]
 
         combos, skipped = _build_combo_tuples(
-            ctx, timeout_values, ["feat1"], [], {},
-            ctx.total_grid_combinations(), None, None, None, "TEST"
+            ctx, ["feat1"], [], {}, ctx.total_grid_combinations(),
+            None, None, None, "TEST",
         )
 
-        assert skipped == 0
-        assert len(combos) == ctx.total_grid_combinations()  # 2×2×2×2 = 16
+        # 1 skipped exit × 2 model_hp = 2 skipped
+        assert skipped == 2
+        # 1 passing exit × 2 model_hp = 2 combos
+        assert len(combos) == 2
 
-    def test_modifier_params_applied_to_combo_ctx(self):
-        """Jeder Combo-Ctx trägt die richtigen exit_modifier_params."""
+    def test_combo_tp_sl_timeout_extracted_from_exit_params(self):
+        """tp, sl, timeout_bars in combo tuple come from ExitStrategyConfig.params."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
-        modifier_no_trail = {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0}
-        modifier_trail = {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
-        ctx = _make_ctx(modifier_params_grid=[modifier_no_trail, modifier_trail])
-        timeout_values = [32]  # 1 timeout für übersichtliche Prüfung
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 15.0, "sl_mult": 25.0, "timeout_bars": 64},
+                ct=[0.5],
+            ),
+        ]
+        ctx = _make_ctx(exit_strategies=exit_strategies)
 
         combos, _ = _build_combo_tuples(
-            ctx, timeout_values, ["feat1"], [], {}, 8, None, None, None, "TEST"
+            ctx, ["feat1"], [], {}, 1, None, None, None, "TEST",
         )
 
-        # 2 tp × 2 sl × 1 timeout × 2 modifier = 8 Combos
-        assert len(combos) == 8
+        assert len(combos) == 1
+        tp, sl, timeout_bars = combos[0][0], combos[0][1], combos[0][2]
+        assert tp == 15.0
+        assert sl == 25.0
+        assert timeout_bars == 64
 
-        combo_ctxs = [combo[6] for combo in combos]
-        params_in_first_half = {str(sorted(c.exit_modifier_params.items())) for c in combo_ctxs[:4]}
-        params_in_second_half = {str(sorted(c.exit_modifier_params.items())) for c in combo_ctxs[4:]}
-
-        assert len(params_in_first_half) == 1, "Erste Hälfte: alle Combos haben gleiche Modifier-Params"
-        assert len(params_in_second_half) == 1, "Zweite Hälfte: alle Combos haben gleiche Modifier-Params"
-        assert params_in_first_half != params_in_second_half, "Erste und zweite Hälfte müssen unterschiedliche Params haben"
-
-    def test_no_modifier_combo_ctx_uses_default_exit_modifier_params(self):
-        """Ohne Modifier-Grid (None-Eintrag): Combo-Ctx entspricht dem Original-Ctx."""
+    def test_timeout_bars_none_when_not_in_params(self):
+        """timeout_bars defaults to None when not in exit_params."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
-        ctx = _make_ctx(modifier_params_grid=[None])
-        ctx_with_default = SimulationContext(
-            symbol="TEST",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.0001,
-            grid_tp=[10.0, 20.0],
-            grid_sl=[20.0, 30.0],
-            grid_ct=[0.5],
-            exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-            grid_exit_modifier_params=[None],
-        )
-        timeout_values = [32]
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.5],
+            ),
+        ]
+        ctx = _make_ctx(exit_strategies=exit_strategies)
 
         combos, _ = _build_combo_tuples(
-            ctx_with_default, timeout_values, ["feat1"], [], {}, 4, None, None, None, "TEST"
+            ctx, ["feat1"], [], {}, 1, None, None, None, "TEST",
         )
 
-        # Alle Combos müssen den Default-exit_modifier_params aus ctx tragen
-        for combo in combos:
-            combo_ctx = combo[6]
-            assert combo_ctx.exit_modifier_params == {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5}
-
-    def test_rrr_filter_skips_correct_count_with_modifier_grid(self):
-        """RRR-Filter überspringt korrekte Anzahl auch mit Modifier-Grid."""
-        from fwbg.optimization.grid_search import _build_combo_tuples
-
-        ctx = SimulationContext(
-            symbol="TEST",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.0001,
-            grid_tp=[10.0, 20.0],
-            grid_sl=[20.0, 30.0],
-            grid_ct=[0.5],
-            min_rrr=0.5,  # tp=10, sl=30 → RRR=0.33 → SKIP
-            grid_exit_modifier_params=[
-                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-            ],
-            exit_modifier_params={},
-        )
-        timeout_values = [32, 96]  # 2 timeouts
-
-        # tp=10, sl=30 → RRR=0.33 < 0.5 → SKIP; fails for BOTH modifier iterations
-        # Expected: skipped = 2 modifier × 2 timeout = 4
-        combos, skipped = _build_combo_tuples(
-            ctx, timeout_values, ["feat1"], [], {}, 12, None, None, None, "TEST"
-        )
-
-        assert skipped == 4  # 1 tp/sl pair × 2 timeout × 2 modifiers
-        assert len(combos) == 12  # (4-1) valid pairs × 2 timeout × 2 modifiers
+        assert combos[0][2] is None  # timeout_bars
 
 
 class TestMinFoldsBeforePruning:
-    """Tests für min_folds_before_pruning_ratio in EarlyPruningConfig."""
+    """Tests for min_folds_before_pruning_ratio in EarlyPruningConfig."""
 
     def test_early_pruning_config_parses_min_folds_before_pruning_ratio(self):
-        """EarlyPruningConfig.from_dict liest min_folds_before_pruning_ratio."""
+        """EarlyPruningConfig.from_dict reads min_folds_before_pruning_ratio."""
         from fwbg.core.config import EarlyPruningConfig
         config = EarlyPruningConfig.from_dict({
             "enabled": True, "keep_ratio": 0.5, "min_survivors": 10,
@@ -190,34 +344,32 @@ class TestMinFoldsBeforePruning:
         assert config.min_folds_before_pruning_ratio == pytest.approx(0.4)
 
     def test_early_pruning_config_defaults_min_folds_before_pruning_ratio_to_0_3(self):
-        """Ohne Angabe von min_folds_before_pruning_ratio: Default ist 0.3."""
+        """Without min_folds_before_pruning_ratio: default is 0.3."""
         from fwbg.core.config import EarlyPruningConfig
         config = EarlyPruningConfig.from_dict({"enabled": True})
         assert config.min_folds_before_pruning_ratio == pytest.approx(0.3)
 
     def test_early_pruning_config_from_empty_dict_defaults_ratio_to_0_3(self):
-        """Leeres Dict → min_folds_before_pruning_ratio == 0.3."""
+        """Empty dict -> min_folds_before_pruning_ratio == 0.3."""
         from fwbg.core.config import EarlyPruningConfig
         config = EarlyPruningConfig()
         assert config.min_folds_before_pruning_ratio == pytest.approx(0.3)
 
     def test_simulation_context_exposes_early_pruning_min_folds_ratio(self):
-        """SimulationContext hat early_pruning_min_folds_before_pruning_ratio."""
+        """SimulationContext has early_pruning_min_folds_before_pruning_ratio."""
         ctx = SimulationContext(
             symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0], grid_sl=[10.0], grid_ct=[0.5],
             early_pruning_min_folds_before_pruning_ratio=0.4,
         )
         assert ctx.early_pruning_min_folds_before_pruning_ratio == pytest.approx(0.4)
 
     def test_pruning_skipped_for_early_folds_respects_ratio_setting(self):
-        """Mit min_folds_before_pruning_ratio=0.3: 30% der Folds abwarten.
+        """With min_folds_before_pruning_ratio=0.3: wait for 30% of folds.
 
-        Prüft, dass das Feld im Context korrekt propagiert wird.
+        Verifies the field propagates correctly in the context.
         """
         ctx = SimulationContext(
             symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0], grid_sl=[20.0], grid_ct=[0.5],
             early_pruning_enabled=True,
             early_pruning_keep_ratio=0.5,
             early_pruning_min_survivors=5,
@@ -227,7 +379,7 @@ class TestMinFoldsBeforePruning:
         assert 0.0 <= ctx.early_pruning_min_folds_before_pruning_ratio <= 1.0
 
     def test_validation_config_propagates_min_folds_ratio_to_context(self):
-        """ValidationConfig.from_dict propagiert min_folds_before_pruning_ratio korrekt."""
+        """ValidationConfig.from_dict propagates min_folds_before_pruning_ratio correctly."""
         from fwbg.core.config import ValidationConfig
         val_cfg = ValidationConfig.from_dict({
             "early_pruning": {
@@ -241,10 +393,10 @@ class TestMinFoldsBeforePruning:
 
 
 class TestEarlyExitProgressCallbacks:
-    """Tests für Early-Exit Progress-Callback-Anzahl in run_grid_search."""
+    """Tests for early-exit progress callback count in run_grid_search."""
 
     def test_no_features_reports_total_grid_combinations_callbacks(self):
-        """Bei leeren Features: genau total_grid_combinations() Callbacks."""
+        """With empty features: exactly total_grid_combinations() callbacks."""
         from fwbg.optimization.grid_search import run_grid_search
 
         progress_calls = []
@@ -252,23 +404,26 @@ class TestEarlyExitProgressCallbacks:
         def progress_cb(pos, total):
             progress_calls.append((pos, total))
 
-        ctx = SimulationContext(
-            symbol="TEST",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.0001,
-            grid_tp=[10.0, 20.0],
-            grid_sl=[20.0, 30.0],
-            grid_ct=[0.5],
-            grid_exit_modifier_params=[
-                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-            ],
-            exit_modifier_params={},
-        )
-        # total_grid_combinations() = 2×2×1×2 = 8 (no timeout, 2 modifiers)
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.5],
+                exit_modifier="trailing",
+                exit_modifier_params={"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 30.0},
+                ct=[0.5],
+                exit_modifier="trailing",
+                exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+            ),
+        ]
+        ctx = _make_ctx(exit_strategies=exit_strategies)
+        # total_grid_combinations() = (1 + 1) * 1 = 2
 
-        # inner_df mit nur inf-Werten → alle Features werden herausgefiltert
+        # inner_df with only inf values -> all features get filtered out
         inner_df = pd.DataFrame({"feat1": [np.inf] * 50, "feat2": [np.inf] * 50})
 
         gs_cands, gs_grid = run_grid_search(
@@ -283,7 +438,6 @@ class TestEarlyExitProgressCallbacks:
 
         assert gs_cands == []
         assert gs_grid == []
-        # Muss genau total_grid_combinations() Callbacks senden (nicht grid_combinations_per_run())
         expected = ctx.total_grid_combinations()
         assert len(progress_calls) == expected, (
             f"Expected {expected} callbacks (=total_grid_combinations()), "
@@ -291,7 +445,7 @@ class TestEarlyExitProgressCallbacks:
         )
 
     def test_no_selected_features_reports_total_grid_combinations_callbacks(self):
-        """Bei fehlgeschlagener Feature-Selection: genau total_grid_combinations() Callbacks."""
+        """With failed feature selection: exactly total_grid_combinations() callbacks."""
         from fwbg.optimization.grid_search import run_grid_search
 
         progress_calls = []
@@ -299,24 +453,26 @@ class TestEarlyExitProgressCallbacks:
         def progress_cb(pos, total):
             progress_calls.append((pos, total))
 
-        ctx = SimulationContext(
-            symbol="TEST",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.0001,
-            grid_tp=[10.0, 20.0],
-            grid_sl=[20.0, 30.0],
-            grid_ct=[0.5],
-            grid_exit_modifier_params=[
-                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-            ],
-            exit_modifier_params={},
-        )
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.5],
+                exit_modifier="trailing",
+                exit_modifier_params={"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 30.0},
+                ct=[0.5],
+                exit_modifier="trailing",
+                exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
+            ),
+        ]
+        ctx = _make_ctx(exit_strategies=exit_strategies)
 
         inner_df = pd.DataFrame({"feat1": np.random.randn(50)})
 
-        # run_grid_search mit preselected_features=[](leer) → sofortiger Early-Exit nach Feature-Selection
         gs_cands, gs_grid = run_grid_search(
             full_pool=["feat1"],
             inner_folds=[],
@@ -336,7 +492,6 @@ class TestEarlyExitProgressCallbacks:
             f"Expected {expected} callbacks (=total_grid_combinations()), "
             f"got {len(progress_calls)}"
         )
-
 
 
 class TestModelHyperparametersGrid:
@@ -387,21 +542,21 @@ class TestModelHyperparametersGrid:
 
     def test_total_grid_combinations_multiplied_by_model_hp_grid(self):
         """total_grid_combinations includes model_hp_grid factor."""
-        ctx_no_grid = SimulationContext(
-            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0, 20.0], grid_sl=[20.0], grid_ct=[0.5],
-            grid_model_hyperparameters=[None],
-            grid_exit_modifier_params=[None],
+        exit_strategies_base = [
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10.0, "sl_mult": 20.0}, ct=[0.5]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20.0, "sl_mult": 20.0}, ct=[0.5]),
+        ]
+        ctx_no_grid = _make_ctx(
+            exit_strategies=exit_strategies_base,
+            model_hp_grid=[None],
         )
-        ctx_with_grid = SimulationContext(
-            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0, 20.0], grid_sl=[20.0], grid_ct=[0.5],
-            grid_model_hyperparameters=[
+        ctx_with_grid = _make_ctx(
+            exit_strategies=exit_strategies_base,
+            model_hp_grid=[
                 {"signal_column_long": "a", "signal_column_short": "b"},
                 {"signal_column_long": "c", "signal_column_short": "d"},
                 {"signal_column_long": "e", "signal_column_short": "f"},
             ],
-            grid_exit_modifier_params=[None],
         )
         assert ctx_with_grid.total_grid_combinations() == 3 * ctx_no_grid.total_grid_combinations()
 
@@ -409,31 +564,30 @@ class TestModelHyperparametersGrid:
         """_build_combo_tuples produces N x more combos with N model_hp variants."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
-        ctx_no_grid = SimulationContext(
-            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0, 20.0], grid_sl=[20.0], grid_ct=[0.5],
-            grid_model_hyperparameters=[None],
-            grid_exit_modifier_params=[None],
-            exit_modifier_params={},
-            model_hyperparameters={"signal_column_long": "base_long", "signal_column_short": "base_short"},
+        exit_strategies = [
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10.0, "sl_mult": 20.0}, ct=[0.5]),
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 20.0, "sl_mult": 20.0}, ct=[0.5]),
+        ]
+
+        ctx_no_grid = _make_ctx(
+            exit_strategies=exit_strategies,
+            model_hp_grid=[None],
+            model_hp={"signal_column_long": "base_long", "signal_column_short": "base_short"},
         )
-        ctx_with_grid = SimulationContext(
-            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0, 20.0], grid_sl=[20.0], grid_ct=[0.5],
-            grid_model_hyperparameters=[
+        ctx_with_grid = _make_ctx(
+            exit_strategies=exit_strategies,
+            model_hp_grid=[
                 {"signal_column_long": "variant_a_long"},
                 {"signal_column_long": "variant_b_long"},
             ],
-            grid_exit_modifier_params=[None],
-            exit_modifier_params={},
-            model_hyperparameters={"signal_column_long": "base_long", "signal_column_short": "base_short"},
+            model_hp={"signal_column_long": "base_long", "signal_column_short": "base_short"},
         )
 
         combos_no, _ = _build_combo_tuples(
-            ctx_no_grid, [32], ["feat1"], [], {}, 2, None, None, None, "TEST"
+            ctx_no_grid, ["feat1"], [], {}, 2, None, None, None, "TEST",
         )
         combos_with, _ = _build_combo_tuples(
-            ctx_with_grid, [32], ["feat1"], [], {}, 4, None, None, None, "TEST"
+            ctx_with_grid, ["feat1"], [], {}, 4, None, None, None, "TEST",
         )
 
         assert len(combos_with) == 2 * len(combos_no)
@@ -442,20 +596,20 @@ class TestModelHyperparametersGrid:
         """Each combo ctx has model_hyperparameters merged with variant."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
-        ctx = SimulationContext(
-            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0], grid_sl=[20.0], grid_ct=[0.5],
-            grid_model_hyperparameters=[
+        exit_strategies = [
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10.0, "sl_mult": 20.0}, ct=[0.5]),
+        ]
+        ctx = _make_ctx(
+            exit_strategies=exit_strategies,
+            model_hp_grid=[
                 {"signal_column_long": "variant_a_long", "signal_column_short": "variant_a_short"},
                 {"signal_column_long": "variant_b_long", "signal_column_short": "variant_b_short"},
             ],
-            grid_exit_modifier_params=[None],
-            exit_modifier_params={},
-            model_hyperparameters={"signal_column_long": "base_long", "signal_column_short": "base_short", "extra_param": 42},
+            model_hp={"signal_column_long": "base_long", "signal_column_short": "base_short", "extra_param": 42},
         )
 
         combos, _ = _build_combo_tuples(
-            ctx, [None], ["feat1"], [], {}, 2, None, None, None, "TEST"
+            ctx, ["feat1"], [], {}, 2, None, None, None, "TEST",
         )
 
         assert len(combos) == 2
@@ -476,79 +630,120 @@ class TestModelHyperparametersGrid:
         """model_hp_variant=None: combo ctx keeps base model_hyperparameters."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
-        ctx = SimulationContext(
-            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0], grid_sl=[20.0], grid_ct=[0.5],
-            grid_model_hyperparameters=[None],
-            grid_exit_modifier_params=[None],
-            exit_modifier_params={},
-            model_hyperparameters={"signal_column_long": "base_long", "signal_column_short": "base_short"},
+        exit_strategies = [
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10.0, "sl_mult": 20.0}, ct=[0.5]),
+        ]
+        ctx = _make_ctx(
+            exit_strategies=exit_strategies,
+            model_hp_grid=[None],
+            model_hp={"signal_column_long": "base_long", "signal_column_short": "base_short"},
         )
 
         combos, _ = _build_combo_tuples(
-            ctx, [None], ["feat1"], [], {}, 1, None, None, None, "TEST"
+            ctx, ["feat1"], [], {}, 1, None, None, None, "TEST",
         )
 
         assert len(combos) == 1
         combo_ctx = combos[0][6]
         assert combo_ctx.model_hyperparameters["signal_column_long"] == "base_long"
 
-    def test_model_hp_grid_combined_with_modifier_grid(self):
-        """model_hp_grid x modifier_grid: both dimensions multiply."""
+    def test_model_hp_grid_combined_with_multiple_exit_strategies(self):
+        """model_hp_grid × exit_strategies: both dimensions multiply."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
-        ctx = SimulationContext(
-            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0], grid_sl=[20.0], grid_ct=[0.5],
-            grid_model_hyperparameters=[
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="atr_based",
+                params={"tp_mult": 2.0, "sl_mult": 1.0},
+                ct=[0.5],
+            ),
+        ]
+        ctx = _make_ctx(
+            exit_strategies=exit_strategies,
+            model_hp_grid=[
                 {"signal_column_long": "a"},
                 {"signal_column_long": "b"},
             ],
-            grid_exit_modifier_params=[
-                {"breakeven_trigger": 0.0},
-                {"breakeven_trigger": 0.5},
-            ],
-            exit_modifier_params={},
-            model_hyperparameters={},
+            model_hp={},
         )
 
         combos, _ = _build_combo_tuples(
-            ctx, [None], ["feat1"], [], {}, 4, None, None, None, "TEST"
+            ctx, ["feat1"], [], {}, 4, None, None, None, "TEST",
         )
 
-        # 2 model_hp x 2 modifier x 1 tp x 1 sl x 1 timeout = 4
+        # 2 exit_strategies × 2 model_hp = 4
         assert len(combos) == 4
         assert len(combos) == ctx.total_grid_combinations()
 
-    def test_combo_count_matches_total_grid_combinations(self):
+    def test_combo_count_matches_total_grid_combinations_all_dimensions(self):
         """Combo count with all dimensions matches total_grid_combinations()."""
         from fwbg.optimization.grid_search import _build_combo_tuples
 
-        ctx = SimulationContext(
-            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0, 20.0], grid_sl=[20.0, 30.0], grid_ct=[0.5],
-            grid_timeout_bars=[32, 96],
-            grid_model_hyperparameters=[
+        exit_strategies = [
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0, "timeout_bars": 32},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 20.0, "timeout_bars": 96},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 20.0, "timeout_bars": 32},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 20.0, "timeout_bars": 96},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 30.0, "timeout_bars": 32},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 10.0, "sl_mult": 30.0, "timeout_bars": 96},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 30.0, "timeout_bars": 32},
+                ct=[0.5],
+            ),
+            ExitStrategyConfig(
+                name="fixed",
+                params={"tp_mult": 20.0, "sl_mult": 30.0, "timeout_bars": 96},
+                ct=[0.5],
+            ),
+        ]
+        ctx = _make_ctx(
+            exit_strategies=exit_strategies,
+            model_hp_grid=[
                 {"signal_column_long": "a"},
                 {"signal_column_long": "b"},
                 {"signal_column_long": "c"},
             ],
-            grid_exit_modifier_params=[
-                {"breakeven_trigger": 0.0},
-                {"breakeven_trigger": 0.5},
-            ],
-            exit_modifier_params={},
-            model_hyperparameters={},
+            model_hp={},
         )
 
         combos, _ = _build_combo_tuples(
-            ctx, [32, 96], ["feat1"], [], {},
-            ctx.total_grid_combinations(), None, None, None, "TEST"
+            ctx, ["feat1"], [], {},
+            ctx.total_grid_combinations(), None, None, None, "TEST",
         )
 
-        # 3 model_hp x 2 modifier x 2 tp x 2 sl x 2 timeout = 48
+        # 8 exit_strategies × 3 model_hp = 24
         assert len(combos) == ctx.total_grid_combinations()
-        assert len(combos) == 48
+        assert len(combos) == 24
 
 
 class TestCandidateStoresModelHyperparameters:
@@ -616,7 +811,7 @@ class TestCandidateStoresModelHyperparameters:
 
     def test_candidate_model_hp_reflects_combo_ctx_variant(self):
         """When _build_combo_tuples creates combo_ctx with merged HP variant,
-        the candidate should carry that variant — not the base HP."""
+        the candidate should carry that variant -- not the base HP."""
         from fwbg.optimization.grid_search import (
             _build_combo_tuples, _build_candidate_and_grid_result,
         )
@@ -630,17 +825,17 @@ class TestCandidateStoresModelHyperparameters:
             "signal_column_long": "variant_long",
             "signal_column_short": "variant_short",
         }
-        ctx = SimulationContext(
-            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
-            grid_tp=[10.0], grid_sl=[20.0], grid_ct=[0.5],
-            grid_model_hyperparameters=[variant_hp],
-            grid_exit_modifier_params=[None],
-            exit_modifier_params={},
-            model_hyperparameters=base_hp,
+        exit_strategies = [
+            ExitStrategyConfig(name="fixed", params={"tp_mult": 10.0, "sl_mult": 20.0}, ct=[0.5]),
+        ]
+        ctx = _make_ctx(
+            exit_strategies=exit_strategies,
+            model_hp_grid=[variant_hp],
+            model_hp=base_hp,
         )
 
         combos, _ = _build_combo_tuples(
-            ctx, [None], ["feat1"], [], {}, 1, None, None, None, "TEST"
+            ctx, ["feat1"], [], {}, 1, None, None, None, "TEST",
         )
         assert len(combos) == 1
 
@@ -666,14 +861,44 @@ class TestCandidateStoresModelHyperparameters:
         assert candidate["model_hyperparameters"]["signal_column_long"] == "variant_long"
         assert candidate["model_hyperparameters"]["signal_column_short"] == "variant_short"
 
+    def test_candidate_contains_exit_strategy_fields(self):
+        """Candidate dict includes exit_strategy and exit_params from combo_ctx."""
+        from fwbg.optimization.grid_search import _build_candidate_and_grid_result
+
+        inner_result = {
+            "success": True,
+            "avg_val_pnl": 42.0,
+            "best_ct": 0.5,
+            "selected_features": ["feat1"],
+            "selected_features_long": ["feat1"],
+            "selected_features_short": ["feat1"],
+            "fold_stability": 0.75,
+        }
+        ctx = SimulationContext(
+            symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
+            exit_strategy="atr_based",
+            exit_params={"tp_mult": 2.0, "sl_mult": 1.0, "atr_period": 14},
+            exit_modifier="trailing",
+            exit_modifier_params={"trail_atr_mult": 0.5},
+        )
+
+        candidate, grid_result = _build_candidate_and_grid_result(
+            inner_result, tp=2.0, sl=1.0, timeout_bars=32,
+            regime_config={}, ctx=ctx,
+        )
+
+        assert candidate["exit_strategy"] == "atr_based"
+        assert candidate["exit_params"] == {"tp_mult": 2.0, "sl_mult": 1.0, "atr_period": 14}
+        assert candidate["exit_modifier_params"] == {"trail_atr_mult": 0.5}
+        assert grid_result["exit_strategy"] == "atr_based"
+        assert grid_result["exit_params"] == {"tp_mult": 2.0, "sl_mult": 1.0, "atr_period": 14}
+
 
 class TestAutoCollectRequiredFeatures:
     """Tests for auto-collecting signal columns into required_features."""
 
     def test_base_model_hp_signal_columns_auto_added(self):
         """Signal columns from base model_hyperparameters auto-added to required_features."""
-        # Minimal mock of strategy and asset to test SimulationContext.create()
-        # We test the auto-collect directly by checking ctx after construction
         ctx = SimulationContext(
             symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
             model_hyperparameters={

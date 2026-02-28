@@ -532,7 +532,7 @@ class TestRegistryIntegration:
         # Exit Strategies
         for name in list_exit_strategies():
             cls = get_exit_strategy(name)
-            assert hasattr(cls, "compute_targets") or hasattr(cls, "iterate_grid")
+            assert hasattr(cls, "compute_targets")
 
         # Preprocessors müssen execute() haben (neues Plugin-System)
         for name in list_preprocessors():

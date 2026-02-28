@@ -2,14 +2,14 @@
 Tests für SimulationContext.
 
 Fokus auf Edge Cases:
-- Grid-Kombinationen Berechnung
-- Separate Long/Short Grids
+- Grid-Kombinationen Berechnung (exit_strategies × model_hp)
 - Grenzwerte für Parameter
-- Leere Grids
+- Per-combo Felder
 """
 import pytest
 
 from fwbg.core.context import SimulationContext, TradeParams
+from fwbg.core.config import ExitStrategyConfig
 
 
 # --- TradeParams Tests ---
@@ -96,6 +96,7 @@ class TestSimulationContextBasic:
         assert ctx.early_termination is True
         assert ctx.exit_modifier is None
         assert ctx.exit_modifier_params == {}
+        assert ctx.exit_strategies == []
 
     def test_exit_modifier_can_be_set(self):
         """exit_modifier und exit_modifier_params sollten setzbar sein."""
@@ -128,212 +129,127 @@ class TestSimulationContextBasic:
         assert ctx.min_rrr == 1.5
         assert ctx.short_enabled is False
 
-
-# --- Grid Functions Tests ---
-
-
-class TestSimulationContextGrids:
-    """Tests für Grid-Funktionen."""
-
-    def test_get_long_grid_default(self):
-        """get_long_grid sollte Standard-Grid zurückgeben."""
+    def test_exit_strategies_list(self):
+        """exit_strategies Liste sollte setzbar sein."""
+        es1 = ExitStrategyConfig(name="fixed", params={"tp_mult": 2.0, "sl_mult": 1.0})
+        es2 = ExitStrategyConfig(name="atr_based", params={"atr_period": 14}, ct=[0.5, 0.55])
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
             spread=0.0001,
             point=0.00001,
-            grid_tp=[15, 20, 25],
-            grid_sl=[10, 15, 20],
-            grid_ct=[0.5, 0.55],
+            exit_strategies=[es1, es2],
         )
 
-        tp, sl, ct = ctx.get_long_grid()
+        assert len(ctx.exit_strategies) == 2
+        assert ctx.exit_strategies[0].name == "fixed"
+        assert ctx.exit_strategies[1].name == "atr_based"
 
-        assert tp == [15, 20, 25]
-        assert sl == [10, 15, 20]
-        assert ct == [0.5, 0.55]
 
-    def test_get_short_grid_default(self):
-        """get_short_grid sollte Standard-Grid zurückgeben."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15, 20, 25],
-            grid_sl=[10, 15, 20],
-            grid_ct=[0.5, 0.55],
-        )
-
-        tp, sl, ct = ctx.get_short_grid()
-
-        assert tp == [15, 20, 25]
-        assert sl == [10, 15, 20]
-        assert ct == [0.5, 0.55]
-
-    def test_separate_long_short_grids(self):
-        """Separate Long/Short Grids sollten funktionieren."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15, 20],
-            grid_sl=[10, 15],
-            grid_ct=[0.5],
-            separate_long_short=True,
-            long_grid_tp=[20, 25, 30],
-            long_grid_sl=[15, 20],
-            long_grid_ct=[0.52, 0.55],
-            short_grid_tp=[10, 15],
-            short_grid_sl=[20, 25],
-            short_grid_ct=[0.5, 0.6],
-        )
-
-        long_tp, long_sl, long_ct = ctx.get_long_grid()
-        short_tp, short_sl, short_ct = ctx.get_short_grid()
-
-        # Long sollte separate Grids nutzen
-        assert long_tp == [20, 25, 30]
-        assert long_sl == [15, 20]
-        assert long_ct == [0.52, 0.55]
-
-        # Short sollte separate Grids nutzen
-        assert short_tp == [10, 15]
-        assert short_sl == [20, 25]
-        assert short_ct == [0.5, 0.6]
-
-    def test_separate_without_long_grid_fallback(self):
-        """Ohne separate Grids sollte Fallback auf Standard erfolgen."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15, 20],
-            grid_sl=[10, 15],
-            grid_ct=[0.5],
-            separate_long_short=True,
-            # long_grid_* nicht gesetzt -> Fallback
-        )
-
-        long_tp, long_sl, long_ct = ctx.get_long_grid()
-
-        # Sollte auf Standard fallen
-        assert long_tp == [15, 20]
-        assert long_sl == [10, 15]
+# --- Grid Combinations Tests ---
 
 
 class TestSimulationContextCombinations:
-    """Tests für Grid-Kombinationen Berechnung."""
+    """Tests für Grid-Kombinationen Berechnung (exit_strategies × model_hp)."""
 
-    def test_total_grid_combinations_simple(self):
-        """Einfache Grid-Kombinationen sollten korrekt berechnet werden."""
+    def test_total_grid_combinations_single_exit_strategy(self):
+        """Einzelne Exit-Strategie mit mehreren CT-Werten."""
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
             spread=0.0001,
             point=0.00001,
-            grid_tp=[15, 20, 25],  # 3
-            grid_sl=[10, 15],  # 2
-            grid_ct=[0.5],  # Nicht in Kombinationen
-        )
-
-        # 3 TP × 2 SL × 1 Timeout = 6
-        assert ctx.total_grid_combinations() == 6
-
-    def test_total_grid_combinations_with_timeout(self):
-        """Timeout-Bars sollten in Kombinationen eingehen."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15, 20],  # 2
-            grid_sl=[10, 15],  # 2
-            grid_ct=[0.5],
-            grid_timeout_bars=[None, 10, 20],  # 3
-        )
-
-        # 2 × 2 × 3 = 12
-        assert ctx.total_grid_combinations() == 12
-
-    def test_total_grid_combinations_with_indicators(self):
-        """Indicator plugins are used together (not multiplied)."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15, 20],  # 2
-            grid_sl=[10],  # 1
-            grid_ct=[0.5],
-            indicator_plugins=[
-                {"name": "trend", "params": {}},
-                {"name": "momentum", "params": {}},
+            exit_strategies=[
+                ExitStrategyConfig(name="fixed", params={}, ct=[0.5, 0.55, 0.6]),
             ],
         )
+        # 3 CT values × 1 model HP = 3
+        assert ctx.total_grid_combinations() == 3
 
-        # With pipeline, all indicators are applied together
-        # So grid combinations = 2 × 1 × 1 = 2 (not multiplied by indicators)
-        assert ctx.total_grid_combinations() == 2
-
-    def test_total_grid_combinations_separate_long_short(self):
-        """Separate Long/Short sollten korrekt addiert werden."""
+    def test_total_grid_combinations_multiple_exit_strategies(self):
+        """Mehrere Exit-Strategien: CT-Werte werden summiert."""
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
             spread=0.0001,
             point=0.00001,
-            grid_tp=[15, 20],
-            grid_sl=[10, 15],
-            grid_ct=[0.5],
-            separate_long_short=True,
-            long_grid_tp=[20, 25, 30],  # 3
-            long_grid_sl=[15, 20],  # 2
-            long_grid_ct=[0.5],
-            short_grid_tp=[10, 15],  # 2
-            short_grid_sl=[20],  # 1
-            short_grid_ct=[0.5],
+            exit_strategies=[
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 2.0}, ct=[0.5, 0.55]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 3.0}, ct=[0.5]),
+                ExitStrategyConfig(name="atr_based", params={}, ct=[0.5, 0.6]),
+            ],
         )
+        # (2 + 1 + 2) CT values × 1 model HP = 5
+        assert ctx.total_grid_combinations() == 5
 
-        # Long: 3 × 2 × 1 = 6
-        # Short: 2 × 1 × 1 = 2
-        # Total: 6 + 2 = 8
-        assert ctx.total_grid_combinations() == 8
+    def test_total_grid_combinations_with_model_hp(self):
+        """Exit-Strategien × Model-Hyperparameters."""
+        ctx = SimulationContext(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            exit_strategies=[
+                ExitStrategyConfig(name="fixed", params={}, ct=[0.5, 0.55]),
+            ],
+            grid_model_hyperparameters=[
+                {"n_estimators": 100},
+                {"n_estimators": 200},
+                {"n_estimators": 300},
+            ],
+        )
+        # 2 CT × 3 model HP = 6
+        assert ctx.total_grid_combinations() == 6
 
+    def test_total_grid_combinations_no_exit_strategies(self):
+        """Ohne Exit-Strategien: n_exit = 1 (default)."""
+        ctx = SimulationContext(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+        )
+        # 1 (default) × 1 model HP = 1
+        assert ctx.total_grid_combinations() == 1
+
+    def test_total_grid_combinations_empty_exit_strategies(self):
+        """Leere exit_strategies Liste: n_exit = 1 (default)."""
+        ctx = SimulationContext(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            exit_strategies=[],
+        )
+        assert ctx.total_grid_combinations() == 1
+
+    def test_total_grid_combinations_complex(self):
+        """Komplexes Grid mit vielen Strategien und Model-HPs."""
+        ctx = SimulationContext(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0001,
+            point=0.00001,
+            exit_strategies=[
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 1.5}, ct=[0.5]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 2.0}, ct=[0.5, 0.55]),
+                ExitStrategyConfig(name="fixed", params={"tp_mult": 2.5}, ct=[0.5]),
+                ExitStrategyConfig(name="atr_based", params={"atr_period": 14}, ct=[0.5, 0.55, 0.6]),
+            ],
+            grid_model_hyperparameters=[
+                {"n_estimators": 100},
+                {"n_estimators": 200},
+            ],
+        )
+        # (1 + 2 + 1 + 3) CT × 2 model HP = 14
+        assert ctx.total_grid_combinations() == 14
+
+
+# --- Edge Cases ---
 
 
 class TestSimulationContextEdgeCases:
     """Edge Cases für SimulationContext."""
-
-    def test_empty_grid_tp(self):
-        """Leeres grid_tp sollte funktionieren."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[],
-            grid_sl=[10],
-            grid_ct=[0.5],
-        )
-
-        assert ctx.total_grid_combinations() == 0
-
-    def test_empty_grid_sl(self):
-        """Leeres grid_sl sollte funktionieren."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15, 20],
-            grid_sl=[],
-            grid_ct=[0.5],
-        )
-
-        assert ctx.total_grid_combinations() == 0
 
     def test_none_indicator_plugins(self):
         """None indicator_plugins sollte funktionieren."""
@@ -342,66 +258,16 @@ class TestSimulationContextEdgeCases:
             asset_class="FOREX",
             spread=0.0001,
             point=0.00001,
-            grid_tp=[15],
-            grid_sl=[10],
-            grid_ct=[0.5],
             indicator_plugins=None,
         )
-
-        # 1 × 1 × 1 = 1
-        assert ctx.total_grid_combinations() == 1
-
-    def test_none_timeout_bars(self):
-        """None grid_timeout_bars sollte als 1 gezählt werden."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15],
-            grid_sl=[10],
-            grid_ct=[0.5],
-            grid_timeout_bars=None,
-        )
-
-        assert ctx.total_grid_combinations() == 1
-
-    def test_single_element_grids(self):
-        """Grids mit einem Element sollten funktionieren."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[15],
-            grid_sl=[10],
-            grid_ct=[0.5],
-        )
-
-        assert ctx.total_grid_combinations() == 1
-
-    def test_very_large_grids(self):
-        """Sehr große Grids sollten korrekt berechnet werden."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=list(range(10, 60, 5)),  # 10 Werte
-            grid_sl=list(range(10, 60, 5)),  # 10 Werte
-            grid_ct=[0.5],
-            grid_timeout_bars=[None, 10, 20, 30, 40],  # 5 Werte
-        )
-
-        # 10 × 10 × 5 = 500 (no feature group multiplier in pipeline)
-        assert ctx.total_grid_combinations() == 500
+        assert ctx.indicator_plugins is None
 
     def test_float_spread_point(self):
         """Float-Werte für spread und point sollten funktionieren."""
         ctx = SimulationContext(
             symbol="USDJPY",
             asset_class="FOREX",
-            spread=0.01,  # 1 Pip für JPY
+            spread=0.01,
             point=0.001,
         )
 
@@ -432,7 +298,7 @@ class TestSimulationContextEdgeCases:
         assert ctx.currencies == ["EUR", "USD"]
 
     def test_exit_params_dict(self):
-        """exit_params dict sollte funktionieren."""
+        """exit_params dict sollte funktionieren (per-combo field)."""
         ctx = SimulationContext(
             symbol="EURUSD",
             asset_class="FOREX",
@@ -502,83 +368,6 @@ class TestSimulationContextTradeDirections:
 
         assert ctx.long_enabled is False
         assert ctx.short_enabled is False
-
-
-class TestSimulationContextModifierGrid:
-    """Tests für grid_exit_modifier_params Dimension."""
-
-    def test_default_grid_exit_modifier_params_is_none_list(self):
-        """grid_exit_modifier_params sollte standardmäßig [None] sein."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[1.0],
-            grid_sl=[1.0],
-            grid_ct=[0.5],
-        )
-        assert ctx.grid_exit_modifier_params == [None]
-
-    def test_total_grid_combinations_multiplies_by_modifier_grid_size(self):
-        """total_grid_combinations() soll exit_modifier_params_grid berücksichtigen."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[1.0, 2.0],  # 2
-            grid_sl=[1.0, 2.0],  # 2
-            grid_ct=[0.5],
-            grid_exit_modifier_params=[
-                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-            ],  # 2
-        )
-        # 2 × 2 × 1 (timeout) × 2 (modifier) = 8
-        assert ctx.total_grid_combinations() == 8
-
-    def test_total_grid_combinations_single_modifier_params_unchanged(self):
-        """total_grid_combinations() soll mit 1 modifier_params wie bisher funktionieren."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[1.0, 2.0],  # 2
-            grid_sl=[1.0, 2.0],  # 2
-            grid_ct=[0.5],
-            grid_exit_modifier_params=[None],  # 1 (default)
-        )
-        # 2 × 2 × 1 × 1 = 4 (unchanged from before)
-        assert ctx.total_grid_combinations() == 4
-
-    def test_total_grid_combinations_separate_long_short_with_modifier_grid(self):
-        """Separate long/short + modifier grid soll korrekt multipliziert werden."""
-        ctx = SimulationContext(
-            symbol="EURUSD",
-            asset_class="FOREX",
-            spread=0.0001,
-            point=0.00001,
-            grid_tp=[1.0, 2.0],
-            grid_sl=[1.0],
-            grid_ct=[0.5],
-            separate_long_short=True,
-            long_grid_tp=[1.0, 2.0, 3.0],  # 3
-            long_grid_sl=[1.0, 2.0],  # 2
-            long_grid_ct=[0.5],
-            short_grid_tp=[1.0, 2.0],  # 2
-            short_grid_sl=[1.0],  # 1
-            short_grid_ct=[0.5],
-            grid_exit_modifier_params=[
-                {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
-                {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-            ],  # 2
-        )
-        # Long: 3 × 2 × 1 = 6
-        # Short: 2 × 1 × 1 = 2
-        # Total: (6 + 2) × 2 modifier = 16
-        assert ctx.total_grid_combinations() == 16
 
 
 class TestSimulationContextEarlyTermination:

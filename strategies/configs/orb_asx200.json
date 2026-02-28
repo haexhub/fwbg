@@ -41,11 +41,6 @@
     ],
     "feature_selection": []
   },
-  "exit_strategy": "fixed",
-  "exit_params": {
-    "tp": 50,
-    "sl": 50
-  },
   "model": {
     "type": "signal",
     "architecture": "long_short_separate",
@@ -83,5 +78,17 @@
     "filter": [
       "ASX200"
     ]
-  }
+  },
+  "exit_strategies": [
+    {
+      "name": "fixed",
+      "params": {
+        "tp": 50,
+        "sl": 50
+      },
+      "ct": [
+        0.5
+      ]
+    }
+  ]
 }

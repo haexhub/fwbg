@@ -7,11 +7,8 @@ import hashlib
 import subprocess
 from datetime import datetime
 
-from fwbg.data.config import (
-    TIMEFRAME, WALK_FORWARD_FOLDS, OOS_SIZE,
-    CORR_THRESHOLD, MIN_TRADES,
-    convert_numpy
-)
+from fwbg.data import config as data_config
+from fwbg.data.config import convert_numpy
 
 RESULTS_BASE_PATH = "test_results"
 
@@ -210,8 +207,8 @@ def create_strategy_metadata(
         },
         "validation": {
             "method": validation_method,
-            "folds": WALK_FORWARD_FOLDS,
-            "oos_size": OOS_SIZE,
+            "folds": data_config.WALK_FORWARD_FOLDS,
+            "oos_size": data_config.OOS_SIZE,
         },
         "assets": {
             "filter": assets_filter,      # z.B. ["EURUSD", "GBPUSD"]
@@ -231,7 +228,7 @@ def generate_run_id(description=None):
     Format: YYYYMMDD_HHMMSS_[short_hash]
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    config_str = f"{TIMEFRAME}_{WALK_FORWARD_FOLDS}"
+    config_str = f"{data_config.TIMEFRAME}_{data_config.WALK_FORWARD_FOLDS}"
     short_hash = hashlib.md5(f"{timestamp}_{config_str}".encode()).hexdigest()[:6]
     return f"{timestamp}_{short_hash}"
 
@@ -262,11 +259,11 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
         "run_id": run_id,
         "timestamp": datetime.now().isoformat(),
         "description": description,
-        "timeframe": TIMEFRAME,
-        "walk_forward_folds": WALK_FORWARD_FOLDS,
-        "oos_size": OOS_SIZE,
-        "corr_threshold": CORR_THRESHOLD,
-        "min_trades": MIN_TRADES,
+        "timeframe": data_config.TIMEFRAME,
+        "walk_forward_folds": data_config.WALK_FORWARD_FOLDS,
+        "oos_size": data_config.OOS_SIZE,
+        "corr_threshold": data_config.CORR_THRESHOLD,
+        "min_trades": data_config.MIN_TRADES,
         "git": git_info,
     }
 
@@ -398,7 +395,7 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
 
         f.write(f"Run ID:      {os.path.basename(run_path)}\n")
         f.write(f"Timestamp:   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"Timeframe:   {TIMEFRAME}\n")
+        f.write(f"Timeframe:   {data_config.TIMEFRAME}\n")
 
         if description:
             f.write(f"Description: {description}\n")
@@ -480,10 +477,10 @@ def _write_summary(summary_path, run_path, description, strategy_metadata,
         f.write(f"{'='*70}\n")
         f.write("TECHNISCHE KONFIGURATION\n")
         f.write(f"{'='*70}\n\n")
-        f.write(f"Walk-Forward Folds: {WALK_FORWARD_FOLDS}\n")
-        f.write(f"OOS Size:           {OOS_SIZE}\n")
-        f.write(f"Min Trades:         {MIN_TRADES}\n")
-        f.write(f"Corr Threshold:     {CORR_THRESHOLD}\n")
+        f.write(f"Walk-Forward Folds: {data_config.WALK_FORWARD_FOLDS}\n")
+        f.write(f"OOS Size:           {data_config.OOS_SIZE}\n")
+        f.write(f"Min Trades:         {data_config.MIN_TRADES}\n")
+        f.write(f"Corr Threshold:     {data_config.CORR_THRESHOLD}\n")
         f.write("\n")
 
         # Ergebnisse

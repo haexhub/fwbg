@@ -149,7 +149,7 @@ def _feature_selector_template(class_name: str, plugin_name: str) -> str:
 def _exit_strategy_template(class_name: str, plugin_name: str) -> str:
     return textwrap.dedent(f'''\
         """Exit strategy plugin: {plugin_name}."""
-        from typing import Tuple, Iterator
+        from typing import Tuple
         import numpy as np
         import pandas as pd
         from fwbg_sdk import BaseExitStrategy, AssetInfo, register_exit_strategy
@@ -173,14 +173,6 @@ def _exit_strategy_template(class_name: str, plugin_name: str) -> str:
                 targets_long = np.zeros(n)
                 targets_short = np.zeros(n)
                 return targets_long, targets_short
-
-            def iterate_grid(
-                self,
-                grid_config: dict,
-                ctx: "AssetInfo",
-            ) -> Iterator[dict]:
-                # TODO: yield parameter combinations
-                yield {{}}
 
             def get_cache_key(self, params: dict) -> str:
                 return "{plugin_name}_" + "_".join(f"{{k}}={{v}}" for k, v in sorted(params.items()))

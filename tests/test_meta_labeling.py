@@ -23,8 +23,6 @@ def _make_ctx(meta_labeling=False, probability_calibration=False):
         point=0.0001,
         min_trades=10,
         grid_ct=[0.50, 0.55, 0.60],
-        grid_tp=[10, 20],
-        grid_sl=[20, 30],
         long_enabled=True,
         short_enabled=True,
         model_hyperparameters={"n_estimators": 20, "max_depth": 3, "random_state": 42},

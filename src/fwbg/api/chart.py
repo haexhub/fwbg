@@ -405,6 +405,17 @@ def compute_indicator(body: IndicatorRequest) -> dict:
 
     plugin = plugin_cls()
     params = body.params or plugin.get_default_params()
+
+    # Convert point-based params from points (user input) to raw price.
+    # Users enter e.g. "6" meaning 6 points; multiply by the asset's point size.
+    point_params = ["breakout_threshold_abs", "min_range_height"]
+    if any(params.get(p, 0) > 0 for p in point_params):
+        from fwbg.data.assets import AssetRegistry
+        asset = AssetRegistry().get(body.symbol)
+        for p in point_params:
+            if params.get(p, 0) > 0:
+                params[p] = params[p] * asset.point
+
     result_df = plugin.compute(df, **params)
 
     # --- Extract feature columns ---
@@ -455,7 +466,7 @@ def compute_indicator(body: IndicatorRequest) -> dict:
 
     timestamps = [int(ts.timestamp() * 1000) for ts in result_slice.index]
 
-    return {
+    response = {
         "fqn": body.fqn,
         "columns": available_cols,
         "plot_columns": plot_columns,
@@ -463,3 +474,15 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         "timestamps": timestamps,
         "data": columns_data,
     }
+
+    # Include range zones if the indicator provides them (e.g. Opening Range)
+    raw_zones = getattr(plugin, "_range_zones", None)
+    if raw_zones:
+        ts_start = timestamps[0] if timestamps else 0
+        ts_end = timestamps[-1] if timestamps else 0
+        response["range_zones"] = [
+            z for z in raw_zones
+            if z["end_ts"] >= ts_start and z["start_ts"] <= ts_end
+        ]
+
+    return response

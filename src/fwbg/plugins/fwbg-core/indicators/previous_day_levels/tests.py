@@ -261,7 +261,7 @@ class TestPDLRetestSignals:
         when price returns to the midpoint (rl=0.5)."""
         ind = _get_indicator()
         df = _make_deterministic_retest_data()
-        result = ind.compute(df, retest_atr_width=0.3)
+        result = ind.compute(df)
 
         # retest_bull is shifted by 1 bar (shift_features), so the signal
         # computed at 12:00 appears at 13:00
@@ -282,7 +282,7 @@ class TestPDLRetestSignals:
         when price returns to the midpoint (rl=0.5)."""
         ind = _get_indicator()
         df = _make_deterministic_retest_data()
-        result = ind.compute(df, retest_atr_width=0.3)
+        result = ind.compute(df)
 
         day2 = result.loc["2024-01-03"]
         retest_vals = day2["hl_ses_rl50_pdl_retest_bear"].dropna()
@@ -300,7 +300,7 @@ class TestPDLRetestSignals:
         """Retest signals fire at most once per day per direction."""
         ind = _get_indicator()
         df = _make_deterministic_retest_data()
-        result = ind.compute(df, retest_atr_width=0.3)
+        result = ind.compute(df)
 
         for day in ["2024-01-02", "2024-01-03"]:
             day_data = result.loc[day]
@@ -328,7 +328,7 @@ class TestPDLRetestSignals:
         }, index=idx)
 
         ind = _get_indicator()
-        result = ind.compute(df, retest_atr_width=0.3)
+        result = ind.compute(df)
 
         for day in ["2024-01-02", "2024-01-03", "2024-01-04"]:
             try:
@@ -345,7 +345,7 @@ class TestPDLRetestSignals:
         """hl_ses_pdl_post_bull is 1 for all bars after the PDH breakout."""
         ind = _get_indicator()
         df = _make_deterministic_retest_data()
-        result = ind.compute(df, retest_atr_width=0.3)
+        result = ind.compute(df)
 
         day1 = result.loc["2024-01-02"]
         post = day1["hl_ses_pdl_post_bull"].dropna()
@@ -380,7 +380,6 @@ class TestPDLParameters:
         assert params["atr_period"] == 14
         assert params["ma_period"] == 20
         assert params["enable_retest"] is True
-        assert params["retest_atr_width"] == 0.3
         assert params["retracement_levels"] == 0.5
         assert params["candle_span"] == "hl"
         assert params["range_scope"] == ["session"]
@@ -392,7 +391,6 @@ class TestPDLParameters:
         assert "atr_period" in schema
         assert "ma_period" in schema
         assert "enable_retest" in schema
-        assert "retest_atr_width" in schema
         assert "retracement_levels" in schema
         assert "candle_span" in schema
         assert "range_scope" in schema
@@ -426,21 +424,19 @@ class TestPDLSLDist:
         assert (vals > 0).all(), "hl_ses_rl50_pdl_sl_dist should be strictly positive"
 
     def test_sl_dist_reaches_beyond_boundary(self):
-        """hl_ses_rl50_pdl_sl_dist = (1-rl)*R + buffer, ensuring SL clears PDL/PDH."""
+        """hl_ses_rl50_pdl_sl_dist = (1-rl)*R: entry to opposite boundary."""
         ind = _get_indicator()
         df = _make_deterministic_retest_data()
         result = ind.compute(df)
 
         # Day 1: PDH=110, PDL=90 -> range=20
-        # sl_dist = (1-0.5)*20 + 0.3*20/2 = 10 + 3 = 13
-        # (0.3 = default retest_atr_width, buffer = half retest band)
+        # sl_dist = (1-0.5)*20 = 10
         day1 = result.loc["2024-01-02"]
         sl_vals = day1["hl_ses_rl50_pdl_sl_dist"].dropna()
         assert len(sl_vals) > 0
         pd_range = 110.0 - 90.0
         rl = 0.5
-        retest_atr_width = 0.3  # default
-        expected = (1 - rl) * pd_range + retest_atr_width * pd_range / 2  # 13.0
+        expected = (1 - rl) * pd_range  # 10.0
         np.testing.assert_allclose(
             sl_vals.iloc[0], expected, rtol=1e-10,
             err_msg=f"hl_ses_rl50_pdl_sl_dist should be {expected}"
@@ -544,18 +540,17 @@ class TestPDLRetracementLevels:
         df = _make_deterministic_retest_data()
         result = ind.compute(df, retracement_levels=[0.3, 0.5, 0.7])
 
-        # Day 1: PDH=110, PDL=90 -> range=20, retest_atr_width=0.3 (default)
-        # buffer = 0.3 * 20 / 2 = 3.0
+        # Day 1: PDH=110, PDL=90 -> range=20
+        # sl_dist = (1 - rl) * range
         day1 = result.loc["2024-01-02"]
-        buffer = 0.3 * 20 / 2  # 3.0
 
         sl30 = day1["hl_ses_rl30_pdl_sl_dist"].dropna().iloc[0]
         sl50 = day1["hl_ses_rl50_pdl_sl_dist"].dropna().iloc[0]
         sl70 = day1["hl_ses_rl70_pdl_sl_dist"].dropna().iloc[0]
 
-        np.testing.assert_allclose(sl30, 0.7 * 20 + buffer, rtol=1e-10)  # 17.0
-        np.testing.assert_allclose(sl50, 0.5 * 20 + buffer, rtol=1e-10)  # 13.0
-        np.testing.assert_allclose(sl70, 0.3 * 20 + buffer, rtol=1e-10)  # 9.0
+        np.testing.assert_allclose(sl30, 0.7 * 20, rtol=1e-10)  # 14.0
+        np.testing.assert_allclose(sl50, 0.5 * 20, rtol=1e-10)  # 10.0
+        np.testing.assert_allclose(sl70, 0.3 * 20, rtol=1e-10)  # 6.0
 
         assert sl30 > sl50 > sl70, "Deeper retrace = smaller SL distance"
 
@@ -587,15 +582,11 @@ class TestPDLRetracementLevels:
         because entry is closer to breakout boundary."""
         ind = _get_indicator()
         df = _make_deterministic_retest_data()
-        result = ind.compute(df, retracement_levels=[0.3, 0.7], retest_atr_width=0.3)
+        result = ind.compute(df, retracement_levels=[0.3, 0.7])
 
         # Day 1: PDH=110, PDL=90, range=20
-        # rl=0.3: bull entry = 110 - 0.3*20 = 104 (shallow)
-        # rl=0.7: bull entry = 110 - 0.7*20 = 96 (deep — below PDL=90?)
-        #   Actually 96 > 90, and close[12:00]=100 is within zone of 96.
-        #   But half_band = 0.3 * 20 / 2 = 3, so zone is [93, 99]. close=100 is outside.
-        # Let's check: rl=0.5: entry = 100, zone [97, 103]. close=100 -> fires.
-        # rl=0.3: entry = 104, zone [101, 107]. close=100 is outside. close=107 (h10-11) is in zone!
+        # rl=0.3: bull entry = 110 - 0.3*20 = 104 (shallow) — low must reach 104
+        # rl=0.7: bull entry = 110 - 0.7*20 = 96 (deep) — low must reach 96
         day1 = result.loc["2024-01-02"]
 
         # rl=0.3 should fire (close=107 at 10:00 is within [101, 107])
@@ -701,8 +692,7 @@ class TestPDLSessionFilteredBreaks:
         fires during session hours when price retraces to entry level."""
         ind = _get_indicator()
         df = _make_off_session_breakout_data()
-        result = ind.compute(df, session_start_hour=8, session_end_hour=17,
-                             retest_atr_width=0.3)
+        result = ind.compute(df, session_start_hour=8, session_end_hour=17)
 
         day1 = result.loc["2024-01-02"]
         bull_vals = day1["hl_ses_rl50_pdl_retest_bull"].dropna()
@@ -720,8 +710,7 @@ class TestPDLSessionFilteredBreaks:
         retest_bear when price retraces."""
         ind = _get_indicator()
         df = _make_off_session_breakout_data()
-        result = ind.compute(df, session_start_hour=8, session_end_hour=17,
-                             retest_atr_width=0.3)
+        result = ind.compute(df, session_start_hour=8, session_end_hour=17)
 
         day1 = result.loc["2024-01-02"]
         bear_vals = day1["hl_ses_rl50_pdl_retest_bear"].dropna()
@@ -734,8 +723,7 @@ class TestPDLSessionFilteredBreaks:
         """Even when breakout is 24/7, retest signals only fire during session."""
         ind = _get_indicator()
         df = _make_off_session_breakout_data()
-        result = ind.compute(df, session_start_hour=8, session_end_hour=17,
-                             retest_atr_width=0.3)
+        result = ind.compute(df, session_start_hour=8, session_end_hour=17)
 
         day1 = result.loc["2024-01-02"]
         for col in ["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"]:
@@ -1029,7 +1017,6 @@ class TestPDLMidnightCrossing:
         df = _make_midnight_crossing_data()
         result = ind.compute(
             df, session_start_hour=23, session_end_hour=6,
-            retest_atr_width=0.3,
         )
 
         # Check high_break fires on Day 2
@@ -1046,7 +1033,6 @@ class TestPDLMidnightCrossing:
         df = _make_midnight_crossing_data()
         result = ind.compute(
             df, session_start_hour=23, session_end_hour=6,
-            retest_atr_width=0.3,
             retest_modes=["all_hours"],
         )
 
@@ -1065,7 +1051,6 @@ class TestPDLMidnightCrossing:
         df = _make_midnight_crossing_data()
         result = ind.compute(
             df, session_start_hour=23, session_end_hour=6,
-            retest_atr_width=0.3,
             retest_modes=["session_only"],
         )
 

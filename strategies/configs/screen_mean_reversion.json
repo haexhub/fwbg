@@ -94,54 +94,551 @@
       }
     ]
   },
-  "exit_strategy": "atr_based",
-  "exit_params": {
-    "atr_period": [
-      14
-    ],
-    "min_tp_pips": [
-      8
-    ],
-    "min_sl_pips": [
-      12
-    ],
-    "adaptive_timeout": [
-      false
-    ],
-    "breakeven_trigger": [
-      0.5
-    ],
-    "trail_atr_mult": [
-      0.5
-    ],
-    "tp_mult": [
-      1.0,
-      1.5,
-      2.0,
-      2.5,
-      3.0,
-      4.0
-    ],
-    "sl_mult": [
-      1.5,
-      2.0,
-      3.0,
-      4.0,
-      5.0
-    ],
-    "timeout_bars": [
-      48
-    ]
-  },
   "model": "xgboost_screen_v1",
   "validation": "walk_forward_screening_v1",
   "filters": "screening_v1",
   "resources": "exploration_heavy_v1",
   "datasource": "forexsb",
-  "optimization": {
-    "ct": [
-      0.5,
-      0.6
-    ]
-  }
+  "exit_strategies": [
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.0,
+        "sl_mult": 5.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 1.5,
+        "sl_mult": 5.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.0,
+        "sl_mult": 5.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.5,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.5,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.5,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.5,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 2.5,
+        "sl_mult": 5.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 3.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 3.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 3.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 3.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 3.0,
+        "sl_mult": 5.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 4.0,
+        "sl_mult": 1.5,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 4.0,
+        "sl_mult": 2.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 4.0,
+        "sl_mult": 3.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 4.0,
+        "sl_mult": 4.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    },
+    {
+      "name": "atr_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "adaptive_timeout": false,
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "tp_mult": 4.0,
+        "sl_mult": 5.0,
+        "timeout_bars": 48
+      },
+      "ct": [
+        0.5,
+        0.6
+      ]
+    }
+  ]
 }

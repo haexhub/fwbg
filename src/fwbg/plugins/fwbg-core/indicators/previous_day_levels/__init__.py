@@ -69,7 +69,6 @@ def _compute_retest_features(
     close: np.ndarray,
     atr: np.ndarray,
     day_ids: np.ndarray,
-    retest_atr_width: float,
     rl: float,
     enable_retest: bool,
     broke_high_arr: np.ndarray,
@@ -88,11 +87,9 @@ def _compute_retest_features(
     """
     features: Dict[str, np.ndarray] = {}
 
-    # Pre-compute entry levels and zone width (PDHL: ATR-based zone)
+    # Pre-compute entry levels
     entry_bull = pdh - rl * pd_range
     entry_bear = pdl_low + rl * pd_range
-    band_basis = np.maximum(np.nan_to_num(pd_range, nan=0.0), atr)
-    half_band = retest_atr_width * band_basis / 2
 
     if enable_retest:
         retest_result = compute_retest_signals(
@@ -106,7 +103,6 @@ def _compute_retest_features(
             broke_low_arr=broke_low_arr,
             entry_bull=entry_bull,
             entry_bear=entry_bear,
-            half_band=half_band,
             n=n,
             min_retracement=min_retracement,
             session_mask=session_mask,
@@ -114,9 +110,8 @@ def _compute_retest_features(
         features["pdl_retest_bull"] = retest_result["retest_bull"]
         features["pdl_retest_bear"] = retest_result["retest_bear"]
 
-    # SL distance: reach at least PDL (long) / PDH (short) + buffer for entry deviation.
-    entry_buffer = retest_atr_width * np.nan_to_num(pd_range, nan=0.0) / 2
-    range_based_sl = (1 - rl) * pd_range + entry_buffer
+    # SL distance: entry to opposite boundary
+    range_based_sl = (1 - rl) * pd_range
     if min_sl_atr_mult > 0:
         atr_floor = min_sl_atr_mult * atr
         features["pdl_sl_dist"] = np.maximum(range_based_sl, atr_floor)
@@ -151,7 +146,6 @@ def _compute_range_variant(
     scope: str,
     ma_period: int,
     enable_retest: bool,
-    retest_atr_width: float,
     retracement_levels: Union[float, List[float]],
     skip_weekends: bool = True,
     session_break: bool = False,
@@ -336,7 +330,7 @@ def _compute_range_variant(
             retest_mask = session_mask_arr if retest_mode == "session_only" else None
             retest_feats = _compute_retest_features(
                 pdh, pdl_low, pd_range, close, atr, day_ids,
-                retest_atr_width, rl, enable_retest,
+                rl, enable_retest,
                 broke_high_arr, broke_low_arr, n,
                 min_sl_atr_mult=min_sl_atr_mult,
                 session_mask=retest_mask,
@@ -376,7 +370,6 @@ def _compute_pdl_features(
     atr: np.ndarray,
     ma_period: int,
     enable_retest: bool = True,
-    retest_atr_width: float = 0.3,
     retracement_levels: Union[float, List[float]] = 0.5,
     session_start_hour: int = 7,
     session_end_hour: int = 21,
@@ -421,7 +414,7 @@ def _compute_pdl_features(
             mode_feats = _compute_range_variant(
                 df, atr, session_mask, session_mask_arr, day_group, day_ids,
                 candle_span, scope,
-                ma_period, enable_retest, retest_atr_width, retracement_levels,
+                ma_period, enable_retest, retracement_levels,
                 skip_weekends, session_break=(break_mode == "session_only"),
                 min_sl_atr_mult=min_sl_atr_mult,
                 retest_modes=retest_modes,
@@ -475,7 +468,6 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         atr_period: int = 14,
         ma_period: int = 20,
         enable_retest: bool = True,
-        retest_atr_width: float = 0.3,
         retracement_levels: Union[float, List[float]] = 0.5,
         session_start_hour: int = 7,
         session_end_hour: int = 21,
@@ -502,7 +494,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
 
         atr = _compute_atr(df, atr_period)
         features = _compute_pdl_features(
-            df, atr, ma_period, enable_retest, retest_atr_width, retracement_levels,
+            df, atr, ma_period, enable_retest, retracement_levels,
             session_start_hour, session_end_hour, candle_span, range_scope,
             break_modes, retest_modes, skip_weekends, min_sl_atr_mult,
             resample_tf=resample_tf, min_retracement=min_retracement,
@@ -557,7 +549,6 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "atr_period": 14,
             "ma_period": 20,
             "enable_retest": True,
-            "retest_atr_width": 0.3,
             "retracement_levels": 0.5,
             "session_start_hour": 7,
             "session_end_hour": 21,
@@ -596,14 +587,6 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                 "type": "bool",
                 "default": True,
                 "description": "Enable PDH/PDL retest signals at the configured retracement level(s).",
-            },
-            "retest_atr_width": {
-                "type": "float",
-                "default": 0.3,
-                "description": "Retest zone width as fraction of half-range around entry level.",
-                "min": 0.1,
-                "max": 0.8,
-                "step": 0.1,
             },
             "retracement_levels": {
                 "type": "list[float]",
