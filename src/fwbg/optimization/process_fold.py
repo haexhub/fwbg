@@ -67,7 +67,6 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
     Returns:
         dict with keys: train_df, test_df, full_pool, drop_cols,
         orig_train_ohlc, orig_test_ohlc, excluded_inf, excluded_nan.
-        Returns None if no features remain.
     """
     pp_train_raw = fold.train_df
     pp_test_raw = fold.test_df
@@ -215,8 +214,6 @@ def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
         fold, fold_indicators, precomputed_raw_df,
         preprocessing_configs, ctx, sym, indicator_progress_callback,
     )
-    if common is None:
-        return None
 
     train_df = common["train_df"]
     test_df = common["test_df"]
