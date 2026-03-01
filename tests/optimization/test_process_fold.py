@@ -595,3 +595,177 @@ class TestRequiredFeaturesProtectedFromNanFilter:
         assert "dirty_feat" not in clean_pool
         assert "dirty_feat" in drop_cols
         assert "protected_signal" in clean_pool
+
+
+class TestSignalModelSkipsDropna:
+    """Signal models must keep all bars (fillna instead of dropna)."""
+
+    def test_signal_model_preserves_all_rows(self):
+        """Signal path must not drop rows and must preserve auxiliary columns."""
+        from fwbg.optimization.signal_fold import prepare_signal_fold_data
+        from fwbg.optimization.robust_validation import WalkForwardFold
+
+        n = 400
+        rng = np.random.default_rng(42)
+        price = 1.1 + np.cumsum(rng.normal(0, 0.0005, n))
+
+        signal_long = np.full(n, np.nan)
+        signal_short = np.full(n, np.nan)
+        range_col = np.full(n, np.nan)
+        session_mask = rng.random(n) < 0.2
+        signal_long[session_mask] = rng.choice([0.0, 1.0], size=session_mask.sum(), p=[0.9, 0.1])
+        signal_short[session_mask] = rng.choice([0.0, 1.0], size=session_mask.sum(), p=[0.9, 0.1])
+        range_col[session_mask] = rng.uniform(10, 50, size=session_mask.sum())
+
+        df = pd.DataFrame({
+            "O": price, "H": price + 0.001, "L": price - 0.001, "C": price,
+            "_atr": np.full(n, 0.001),
+            "_regime": np.full(n, 7, dtype=np.int8),
+            "orb_signal_long": signal_long,
+            "orb_signal_short": signal_short,
+            "orb_range": range_col,
+        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+
+        split = int(n * 0.7)
+        fold = WalkForwardFold(
+            fold_id=0, train_start=0, train_end=split,
+            test_start=split, test_end=n,
+            train_df=df.iloc[:split].copy(), test_df=df.iloc[split:].copy(),
+        )
+        ctx = _make_ctx(
+            model_type="signal",
+            required_features=["orb_signal_long", "orb_signal_short"],
+            min_trades=5,
+        )
+
+        result = prepare_signal_fold_data(
+            fold, fold_indicators=[], precomputed_raw_df=None,
+            preprocessing_configs=None, ctx=ctx, sym="TEST",
+        )
+        assert result is not None
+        train_df, test_df, full_pool = result
+
+        # All rows preserved (no dropna)
+        assert len(train_df) == split
+        assert len(test_df) == n - split
+
+        # Signal columns filled with 0
+        assert train_df["orb_signal_long"].isna().sum() == 0
+        assert test_df["orb_signal_short"].isna().sum() == 0
+
+        # Feature pool restricted to required_features
+        assert set(full_pool) == {"orb_signal_long", "orb_signal_short"}
+
+        # Auxiliary columns preserved (not dropped)
+        assert "orb_range" in train_df.columns
+        assert "orb_range" in test_df.columns
+
+    def test_signal_model_preserves_auxiliary_columns_for_exit_strategy(self):
+        """Exit strategy auxiliary columns (range, sl_dist) must survive
+        even though they have >10% NaN. ML path drops them, signal keeps them."""
+        from fwbg.optimization.signal_fold import prepare_signal_fold_data
+        from fwbg.optimization.process_fold import prepare_fold_data
+        from fwbg.optimization.robust_validation import WalkForwardFold
+
+        n = 400
+        rng = np.random.default_rng(42)
+        price = 1.1 + np.cumsum(rng.normal(0, 0.0005, n))
+
+        # 80% NaN auxiliary columns (typical for session-based indicators)
+        range_col = np.full(n, np.nan)
+        sl_dist_col = np.full(n, np.nan)
+        session_mask = rng.random(n) < 0.2
+        range_col[session_mask] = rng.uniform(10, 50, size=session_mask.sum())
+        sl_dist_col[session_mask] = rng.uniform(5, 25, size=session_mask.sum())
+
+        df = pd.DataFrame({
+            "O": price, "H": price + 0.001, "L": price - 0.001, "C": price,
+            "_atr": np.full(n, 0.001),
+            "_regime": np.full(n, 7, dtype=np.int8),
+            "orb_signal_long": np.where(session_mask, 1.0, np.nan),
+            "orb_range": range_col,
+            "orb_sl_dist": sl_dist_col,
+            # Clean features so ML path has something to work with
+            "feat1": rng.standard_normal(n),
+            "feat2": rng.standard_normal(n),
+        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+
+        split = int(n * 0.7)
+        fold = WalkForwardFold(
+            fold_id=0, train_start=0, train_end=split,
+            test_start=split, test_end=n,
+            train_df=df.iloc[:split].copy(), test_df=df.iloc[split:].copy(),
+        )
+
+        # Signal path: auxiliary columns preserved
+        ctx_signal = _make_ctx(
+            model_type="signal",
+            required_features=["orb_signal_long"],
+            min_trades=5,
+        )
+        result = prepare_signal_fold_data(
+            fold, fold_indicators=[], precomputed_raw_df=None,
+            preprocessing_configs=None, ctx=ctx_signal, sym="TEST",
+        )
+        assert result is not None
+        train_df, _, _ = result
+        assert "orb_range" in train_df.columns
+        assert "orb_sl_dist" in train_df.columns
+
+        # ML path: auxiliary columns dropped (>10% NaN)
+        ctx_ml = _make_ctx(model_type="xgboost", min_trades=5)
+        result_ml = prepare_fold_data(
+            _make_fold(df.copy(), fold_id=0), fold_indicators=[],
+            precomputed_raw_df=None,
+            preprocessing_configs=None, ctx=ctx_ml, sym="TEST",
+        )
+        assert result_ml is not None
+        ml_train, _, _ = result_ml
+        assert "orb_range" not in ml_train.columns
+        assert "orb_sl_dist" not in ml_train.columns
+
+    def test_xgboost_model_still_drops_na(self):
+        """With default model_type='xgboost', dropna still applies."""
+        from fwbg.optimization.process_fold import prepare_fold_data
+        from fwbg.optimization.robust_validation import WalkForwardFold
+
+        n = 200
+        rng = np.random.default_rng(42)
+        price = 1.1 + np.cumsum(rng.normal(0, 0.0005, n))
+
+        # feat1 is clean, feat2 has a few NaN (< 10% so it survives the filter)
+        feat1 = rng.standard_normal(n)
+        feat2 = rng.standard_normal(n)
+        feat2[:5] = np.nan  # 2.5% NaN — survives NaN filter but triggers dropna
+
+        df = pd.DataFrame({
+            "O": price,
+            "H": price + 0.001,
+            "L": price - 0.001,
+            "C": price,
+            "_atr": np.full(n, 0.001),
+            "_regime": np.full(n, 7, dtype=np.int8),
+            "feat1": feat1,
+            "feat2": feat2,
+        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+
+        split = int(n * 0.7)
+        fold = WalkForwardFold(
+            fold_id=0,
+            train_start=0, train_end=split,
+            test_start=split, test_end=n,
+            train_df=df.iloc[:split].copy(),
+            test_df=df.iloc[split:].copy(),
+        )
+
+        ctx = _make_ctx(model_type="xgboost", min_trades=5)
+
+        result = prepare_fold_data(
+            fold, fold_indicators=[], precomputed_raw_df=None,
+            preprocessing_configs=None, ctx=ctx, sym="TEST",
+        )
+        assert result is not None
+        train_df, test_df, full_pool = result
+
+        # NaN rows should be dropped for xgboost
+        assert len(train_df) < split
