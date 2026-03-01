@@ -236,113 +236,6 @@ def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
     )
 
 
-def _process_signal_fold(
-    fold, fold_idx, n_folds,
-    train_df, test_df, full_pool,
-    ctx, sym, total_indicators,
-):
-    """Process a walk-forward fold for signal models.
-
-    Signal models have no trainable parameters — they read pre-computed
-    signal columns directly.  This skips feature selection, inner CV,
-    and grid search, evaluating each exit strategy combo directly on the
-    out-of-sample test set.
-
-    Returns:
-        (fold_result dict or None, grid_results list)
-    """
-    import dataclasses
-    fold_idx_1based = fold.fold_id + 1
-    features = list(ctx.required_features)
-
-    best_result = None
-    best_pnl = float("-inf")
-    best_config = None
-    all_grid_results = []
-
-    for exit_cfg in ctx.exit_strategies:
-        tp = exit_cfg.params.get("tp_mult", 1.0)
-        sl = exit_cfg.params.get("sl_mult", 1.0)
-        timeout_bars = exit_cfg.params.get("timeout_bars", None)
-
-        combo_ctx = dataclasses.replace(
-            ctx,
-            exit_strategy=exit_cfg.name,
-            exit_params=exit_cfg.params,
-            exit_modifier=exit_cfg.exit_modifier,
-            exit_modifier_params=exit_cfg.exit_modifier_params,
-            separate_long_short=bool(exit_cfg.long_ct or exit_cfg.short_ct),
-        )
-
-        for model_hp_variant in ctx.grid_model_hyperparameters:
-            hp_ctx = combo_ctx
-            merged_hp = combo_ctx.model_hyperparameters
-            if model_hp_variant is not None:
-                merged_hp = {**combo_ctx.model_hyperparameters, **model_hp_variant}
-                hp_ctx = dataclasses.replace(combo_ctx, model_hyperparameters=merged_hp)
-
-            ct_list = exit_cfg.ct or [0.5]
-            for ct in ct_list:
-                candidate = {
-                    "params": (tp, sl, ct),
-                    "timeout_bars": timeout_bars,
-                    "selected_features_long": features,
-                    "selected_features_short": features,
-                    "model_hyperparameters": merged_hp,
-                    "exit_modifier_params": exit_cfg.exit_modifier_params,
-                }
-
-                test_result = evaluate_on_holdout(test_df, train_df, candidate, hp_ctx)
-
-                grid_entry = {
-                    "fold_id": fold.fold_id,
-                    "tp_mult": tp, "sl_mult": sl, "ct": ct,
-                    "n_trades": test_result["n_trades"],
-                    "pnl": test_result["pnl"],
-                    "win_rate": test_result["win_rate"],
-                }
-                all_grid_results.append(grid_entry)
-
-                if test_result["n_trades"] >= 1 and test_result["pnl"] > best_pnl:
-                    best_pnl = test_result["pnl"]
-                    best_result = test_result
-                    best_config = {
-                        "tp": tp, "sl": sl, "ct": ct,
-                        "rrr": tp / sl if sl > 0 else 0,
-                        "timeout_bars": timeout_bars,
-                        "model_hyperparameters": merged_hp,
-                        "exit_modifier_params": exit_cfg.exit_modifier_params,
-                        "exit_strategy": exit_cfg.name,
-                        "exit_params": exit_cfg.params,
-                    }
-
-    if not best_result or best_result["n_trades"] < 1:
-        log(2, f"  Fold {fold_idx_1based}: No trades from signal model", sym)
-        return None, all_grid_results
-
-    fold_result = {
-        "fold_id": fold.fold_id,
-        "train_size": len(train_df),
-        "test_size": len(test_df),
-        "test_start": str(fold.test_df.index[0]),
-        "test_end": str(fold.test_df.index[-1]),
-        "inner_val_pnl": best_pnl,
-        "test_pnl": best_result["pnl"],
-        "test_win_rate": best_result["win_rate"],
-        "test_trades": best_result["n_trades"],
-        "test_trades_trace": best_result["trades"],
-        "test_trades_detail": best_result.get("trades_detailed", []),
-        "best_config": best_config,
-        "selected_features_long": features,
-        "selected_features_short": features,
-    }
-
-    log(1, f"  Fold {fold_idx_1based}: WR={best_result['win_rate']:.1%} "
-           f"PnL={best_result['pnl']:.1f} Trades={best_result['n_trades']}", sym)
-
-    return fold_result, all_grid_results
-
-
 def process_single_fold(
     fold, fold_idx, n_folds,
     fold_indicators, precomputed_raw_df, preprocessing_configs,
@@ -350,10 +243,7 @@ def process_single_fold(
 ):
     """Process a single walk-forward fold.
 
-    Handles grid search, plateau selection, and test evaluation.
-
-    Returns:
-        (fold_result dict or None, grid_results list)
+    Dispatches to signal_fold or ML path based on model type.
     """
     log(1, f"=== Processing Fold {fold.fold_id + 1}/{n_folds} ===", sym)
     report_phase(sym, f"Fold {fold.fold_id + 1}/{n_folds}: Computing indicators...")
@@ -362,6 +252,24 @@ def process_single_fold(
         report_phase(sym, f"Fold {fold.fold_id + 1}: Indicators {name} ({idx}/{total})")
 
     t0 = time.time()
+
+    # --- Signal models: separate data prep + fold processing ---
+    if ctx.model_type == "signal":
+        from .signal_fold import prepare_signal_fold_data, process_signal_fold
+        fold_data = prepare_signal_fold_data(
+            fold, fold_indicators, precomputed_raw_df,
+            preprocessing_configs, ctx, sym,
+            indicator_progress_callback=indicator_progress,
+        )
+        if fold_data is None:
+            return None, []
+        train_df, test_df, full_pool = fold_data
+        log(2, f"  Fold {fold.fold_id + 1}: Data prepared ({time.time()-t0:.1f}s)", sym)
+        return process_signal_fold(
+            fold, train_df, test_df, full_pool, ctx, sym,
+        )
+
+    # --- ML models: standard data prep + grid search ---
     fold_data = prepare_fold_data(
         fold, fold_indicators, precomputed_raw_df,
         preprocessing_configs, ctx, sym,
@@ -372,14 +280,6 @@ def process_single_fold(
     train_df, test_df, full_pool = fold_data
 
     log(2, f"  Fold {fold.fold_id + 1}: Data prepared ({time.time()-t0:.1f}s)", sym)
-
-    # Signal models: skip inner CV / feature selection / grid search
-    if ctx.model_type == "signal":
-        return _process_signal_fold(
-            fold, fold_idx, n_folds,
-            train_df, test_df, full_pool,
-            ctx, sym, total_indicators,
-        )
 
     # Regime-Filter Kombinationen aus Grid (falls definiert)
     regime_filter_combinations = ctx.regime_filter_grid.get_combinations() if ctx.regime_filter_grid else [{"conditions": []}]
