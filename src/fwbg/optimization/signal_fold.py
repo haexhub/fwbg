@@ -6,13 +6,8 @@ fill NaN with 0, preserve auxiliary columns for exit strategies)
 and direct evaluation (no inner CV needed).
 """
 import dataclasses
-import time
-
-import numpy as np
-import pandas as pd
 
 from fwbg.utils.logging import log
-from fwbg.utils.progress import report_phase
 from .nested_cv import evaluate_on_holdout
 from .process_fold import _prepare_fold_common, _finalize_fold_data
 
@@ -72,7 +67,7 @@ def process_signal_fold(fold, train_df, test_df, full_pool, ctx, sym):
         (fold_result dict or None, grid_results list)
     """
     fold_idx_1based = fold.fold_id + 1
-    features = list(ctx.required_features)
+    features = list(full_pool)
 
     best_result = None
     best_pnl = float("-inf")
@@ -137,7 +132,7 @@ def process_signal_fold(fold, train_df, test_df, full_pool, ctx, sym):
                         "exit_params": exit_cfg.params,
                     }
 
-    if not best_result or best_result["n_trades"] < 1:
+    if not best_result:
         log(2, f"  Fold {fold_idx_1based}: No trades from signal model", sym)
         return None, all_grid_results
 
