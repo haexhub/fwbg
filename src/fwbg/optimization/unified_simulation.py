@@ -82,6 +82,11 @@ def merge_unified_settings(
         if count / n_successful_folds >= 0.5
     ]
 
+    # exit_strategy / exit_params: all consistent folds should agree
+    # (they were selected by the same exit strategy combo).
+    exit_strategy = configs[0].get("exit_strategy")
+    exit_params = configs[0].get("exit_params")
+
     return {
         "params": (tp_median, sl_median, ct_median),
         "timeout_bars": timeout_median,
@@ -89,6 +94,8 @@ def merge_unified_settings(
         "selected_features_short": stable_features_short,
         "model_hyperparameters": model_hyperparameters,
         "exit_modifier_params": exit_modifier_params,
+        "exit_strategy": exit_strategy,
+        "exit_params": exit_params,
     }
 
 
@@ -117,6 +124,7 @@ def run_unified_simulation(
     preprocessing_configs,
     ctx,
     sym: str,
+    prepare_data_fn=None,  # caller passes the right prepare function
 ) -> List[Dict[str, Any]]:
     """Re-simulate all folds with the unified setting.
 
@@ -157,13 +165,25 @@ def run_unified_simulation(
             holdout_context, exit_modifier_params=exit_mod,
         )
 
+    # Propagate exit strategy from unified candidate (critical for non-fixed
+    # strategies like orb_based that need specific exit_params for TP/SL).
+    exit_strategy_name = unified_candidate.get("exit_strategy")
+    exit_params = unified_candidate.get("exit_params")
+    if exit_strategy_name and exit_strategy_name != ctx.exit_strategy:
+        holdout_context = dataclasses.replace(
+            holdout_context,
+            exit_strategy=exit_strategy_name,
+            exit_params=exit_params or {},
+        )
+
     unified_fold_results = []
     total_trades = 0
 
     for fold_index, fold in enumerate(wf_folds):
         report_phase(sym, f"Unified sim fold {fold_index + 1}/{len(wf_folds)}...")
 
-        fold_data = prepare_fold_data(
+        _prepare = prepare_data_fn or prepare_fold_data
+        fold_data = _prepare(
             fold, fold_indicators, precomputed_raw_df,
             preprocessing_configs, ctx, sym,
         )
