@@ -304,10 +304,18 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         from .unified_simulation import merge_unified_settings, run_unified_simulation
 
         unified_candidate = merge_unified_settings(consistent_folds, all_fold_results)
+
+        # Pass signal data prep for signal models
+        if ctx.model_type == "signal":
+            from .signal_fold import prepare_signal_fold_data
+            prepare_fn = prepare_signal_fold_data
+        else:
+            prepare_fn = None  # uses default (prepare_fold_data)
+
         unified_fold_results = run_unified_simulation(
             wf_folds, unified_candidate,
             fold_indicators, precomputed_raw_df, preprocessing_configs,
-            ctx, sym,
+            ctx, sym, prepare_data_fn=prepare_fn,
         )
 
         tp_unified, sl_unified, ct_unified = unified_candidate["params"]
