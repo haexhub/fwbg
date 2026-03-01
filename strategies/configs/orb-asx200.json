@@ -45,7 +45,10 @@
       "long",
       "short"
     ],
-    "hyperparameters": {}
+    "hyperparameters": {
+      "signal_column_long": "rb12_prb6_orb_s00_rl50_retest_bull",
+      "signal_column_short": "rb12_prb6_orb_s00_rl50_retest_bear"
+    }
   },
   "validation": {
     "method": "walk_forward",
@@ -76,8 +79,9 @@
     {
       "name": "orb_based",
       "params": {
-        "tp_mult": 2,
-        "sl_mult": 1,
+        "tp_mode": "range",
+        "tp_mult": 1,
+        "sl_mult": 0.7,
         "atr_period": 14,
         "min_tp_pips": 8,
         "min_sl_pips": 5,
@@ -85,7 +89,8 @@
       },
       "ct": [
         0.5
-      ]
+      ],
+      "min_rrr": 0
     }
   ]
 }

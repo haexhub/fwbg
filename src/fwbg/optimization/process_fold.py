@@ -188,8 +188,8 @@ def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
         log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Test-Daten ({len(test_df)})", sym)
         return None
 
-    if len(full_pool) < 5:
-        log(1, f"  Fold {fold.fold_id + 1}: SKIP - Zu wenig Features ({len(full_pool)})", sym)
+    if len(full_pool) < 1:
+        log(1, f"  Fold {fold.fold_id + 1}: SKIP - Keine Features", sym)
         return None
 
     return train_df, test_df, full_pool
@@ -260,7 +260,7 @@ def process_single_fold(
         inner_folds, full_pool, ctx, sym
     )
 
-    if not selected_long and not selected_short:
+    if not selected_long and not selected_short and not ctx.required_features:
         log(2, f"  Fold {fold_idx_1based}: No features selected, skipping", sym)
         return None, []
 
