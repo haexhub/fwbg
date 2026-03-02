@@ -3,6 +3,7 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from fwbg.api.deps import get_strategies_dir, get_plugin_registry
 from fwbg.core.config import _resolve_section
@@ -161,3 +162,108 @@ def get_available_columns(strategy_name: str) -> dict[str, Any]:
         })
 
     return {"groups": groups}
+
+
+# ---------------------------------------------------------------------------
+# POST /signal-composer/preview — evaluate rules against live data
+# ---------------------------------------------------------------------------
+
+class SignalPreviewRequest(BaseModel):
+    strategy_name: str
+    symbol: str
+    timeframe: str = "HOUR"
+    source: str = "forexsb"
+    rules: dict  # {operator, conditions}
+    direction: str = "long"
+    limit: int = 5000
+
+
+@router.post("/preview")
+def preview_signal(req: SignalPreviewRequest) -> dict:
+    """Evaluate composed signal rules against OHLCV data with indicators.
+
+    Loads the strategy's indicator pipeline, computes all indicators on the
+    requested symbol/timeframe data, then evaluates the rule tree.  Returns
+    match count, total bars, and the matching timestamps.
+    """
+    from fwbg.api.chart import _best_native_file, _resample_ohlcv
+    from fwbg.core.data_sources import get_data_source, CSVSourceConfig
+    from fwbg.data.loader import load_data_aligned
+    from fwbg.pipeline.features import compute_indicator_pool
+    from fwbg.signals.evaluator import evaluate_rules
+
+    # --- Load strategy & resolve indicator configs ---
+    strategies_dir = get_strategies_dir()
+    filepath = strategies_dir / f"{req.strategy_name}.json"
+
+    if not filepath.exists():
+        raise HTTPException(404, f"Strategy not found: {req.strategy_name}")
+
+    try:
+        data = json.loads(filepath.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(500, f"Invalid JSON in strategy file: {e}")
+
+    pipeline = _resolve_section(
+        data.get("pipeline"),
+        "pipelines",
+        str(filepath.parent.resolve()),
+    )
+
+    if not pipeline:
+        raise HTTPException(400, "Strategy has no pipeline configured")
+
+    indicator_configs = pipeline.get("indicators", [])
+    if not indicator_configs:
+        raise HTTPException(400, "Pipeline has no indicators configured")
+
+    # --- Load OHLCV data (same pattern as chart.py GET /ohlcv) ---
+    try:
+        ds = get_data_source(req.source)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+    if not isinstance(ds, CSVSourceConfig):
+        raise HTTPException(400, f"Source '{req.source}' is not a CSV source")
+
+    path = ds.get_file_path(req.symbol, req.timeframe)
+    native_tf = req.timeframe
+    if not path.exists():
+        path, native_tf = _best_native_file(ds, req.symbol, req.timeframe)
+        if not path:
+            raise HTTPException(
+                404,
+                f"Data not found: {req.symbol}_{req.timeframe} in {req.source}",
+            )
+
+    df = load_data_aligned(str(path))
+    if df is None or df.empty:
+        raise HTTPException(500, f"Failed to load data: {req.symbol}_{req.timeframe}")
+
+    if native_tf != req.timeframe:
+        df = _resample_ohlcv(df, req.timeframe)
+
+    # Apply limit (take the most recent bars)
+    if req.limit and len(df) > req.limit:
+        df = df.iloc[-req.limit:]
+
+    # --- Compute indicators ---
+    df = compute_indicator_pool(df, indicator_configs)
+
+    # --- Evaluate rules ---
+    try:
+        mask = evaluate_rules(req.rules, df)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(400, f"Rule evaluation error: {e}")
+
+    match_count = int(mask.sum())
+    total_bars = len(df)
+    timestamps = [
+        int(ts.timestamp() * 1000) for ts in df.index[mask]
+    ]
+
+    return {
+        "match_count": match_count,
+        "total_bars": total_bars,
+        "timestamps": timestamps,
+    }
