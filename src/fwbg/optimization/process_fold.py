@@ -161,6 +161,18 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
             drop_cols.append(col)
             excluded_nan += 1
 
+    # Compose signal rules into _composed_signal_long/short columns
+    signal_rules = getattr(ctx, "signal_rules", None)
+    if signal_rules:
+        from fwbg.signals.evaluator import evaluate_rules
+        for direction in ("long", "short"):
+            rules = signal_rules.get(direction)
+            if rules and rules.get("conditions"):
+                col_name = f"_composed_signal_{direction}"
+                for target_df in (train_df, test_df):
+                    mask = evaluate_rules(rules, target_df)
+                    target_df[col_name] = mask.astype(float)
+
     return {
         "train_df": train_df,
         "test_df": test_df,

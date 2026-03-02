@@ -54,6 +54,12 @@ class SignalModel(BaseModel):
         else:
             self._signal_col = hyperparameters.get("signal_column_short", "")
 
+        # Fallback: use composed signal columns from signal_rules evaluator
+        if not self._signal_col:
+            composed = f"_composed_signal_{training_context.direction}"
+            if composed in features.columns:
+                self._signal_col = composed
+
         # Session hour filter (injected from indicator_overrides per asset class)
         self._start_hour = hyperparameters.get("signal_start_hour")
         self._end_hour = hyperparameters.get("signal_end_hour")
