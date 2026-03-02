@@ -46,8 +46,8 @@
       "short"
     ],
     "hyperparameters": {
-      "signal_column_long": "rb12_prb6_orb_s00_rl50_retest_bull",
-      "signal_column_short": "rb12_prb6_orb_s00_rl50_retest_bear"
+      "signal_column_long": "rb12_prb6_orb_s00_breakout_up",
+      "signal_column_short": "rb12_prb6_orb_s00_breakout_down"
     }
   },
   "validation": {
@@ -81,16 +81,20 @@
       "params": {
         "tp_mode": "range",
         "tp_mult": 1,
-        "sl_mult": 0.7,
+        "sl_mult": 1,
         "atr_period": 14,
         "min_tp_pips": 8,
         "min_sl_pips": 5,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_level_column": "rb12_prb6_orb_s00_or_midpoint",
+        "entry_delay": 0,
+        "max_trades_per_signal": 1
       },
       "ct": [
         0.5
       ],
       "min_rrr": 0
     }
-  ]
+  ],
+  "optimization": {}
 }
