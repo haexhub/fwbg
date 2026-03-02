@@ -121,6 +121,9 @@ class SimulationContext:
     # Required features: always included in feature selection, bypass selection plugins
     required_features: List[str] = field(default_factory=list)
 
+    # Signal rules for composed entry signals (from strategy config)
+    signal_rules: Optional[dict] = None
+
     # Grid über Model-Hyperparameters: Liste von HP-Dicts zum Durchsuchen
     # [None] = nur ctx-Default verwenden; [dict1, dict2] = Grid über Model-HPs
     grid_model_hyperparameters: List[Optional[dict]] = field(default_factory=lambda: [None])
@@ -205,6 +208,8 @@ class SimulationContext:
             exit_session_start_hour=exit_session_start,
             exit_session_end_hour=exit_session_end,
             required_features=req_feats,
+            # Signal rules for composed entry signals
+            signal_rules=getattr(strategy, 'signal_rules', None),
             # Regime-Filter Grid (from optimization)
             regime_filter_grid=regime,
             # Pipeline: Preprocessing
