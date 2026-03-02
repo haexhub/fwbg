@@ -15,6 +15,8 @@ from typing import Tuple
 
 import numpy as np
 
+from fwbg_sdk.base import _infer_param_type
+
 
 class BaseExitModifier(ABC):
     """
@@ -85,3 +87,21 @@ class BaseExitModifier(ABC):
             Wenn return_durations=True: (targets_long, targets_short, durations_long, durations_short)
         """
         pass
+
+    @classmethod
+    def get_default_params(cls) -> dict:
+        """Default parameters for this exit modifier."""
+        return {}
+
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        """Parameter schema for UI rendering. Auto-inferred from defaults if not overridden."""
+        defaults = cls.get_default_params()
+        schema = {}
+        for key, value in defaults.items():
+            schema[key] = {
+                "type": _infer_param_type(value),
+                "default": value,
+                "description": "",
+            }
+        return schema
