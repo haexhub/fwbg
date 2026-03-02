@@ -10,8 +10,10 @@ from fastapi.responses import Response
 
 from fwbg.api.deps import get_plugin_registry
 from fwbg_sdk import PluginPhase
+from fwbg_sdk.registry import EXIT_MODIFIER_REGISTRY
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
+exit_modifiers_router = APIRouter(prefix="/exit-modifiers", tags=["exit-modifiers"])
 
 
 def _plugin_to_dict(fqn: str) -> dict:
@@ -274,3 +276,41 @@ def get_plugin(fqn: str) -> dict:
         return _plugin_to_dict(fqn)
     except Exception:
         raise HTTPException(404, f"Plugin not found: {fqn}")
+
+
+# --- Exit Modifiers ---
+
+
+@exit_modifiers_router.get("")
+def list_exit_modifiers_endpoint() -> list[dict]:
+    """List all registered exit modifiers with their param schemas."""
+    registry = get_plugin_registry()
+
+    result = []
+    for name, cls in EXIT_MODIFIER_REGISTRY.items():
+        # Find manifest from plugin registry (stored during package discovery)
+        manifest = {}
+        for fqn, m in registry._plugin_manifests.items():
+            if m.get("name") == name and m.get("phase") == "exit_modifiers":
+                manifest = m
+                break
+
+        try:
+            defaults = cls.get_default_params()
+        except TypeError:
+            defaults = cls().get_default_params()
+
+        try:
+            param_schema = cls.get_param_schema()
+        except TypeError:
+            param_schema = cls().get_param_schema()
+
+        result.append({
+            "name": name,
+            "description": manifest.get("description", ""),
+            "version": manifest.get("version", "0.1.0"),
+            "param_schema": param_schema,
+            "defaults": defaults,
+        })
+
+    return result

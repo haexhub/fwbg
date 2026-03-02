@@ -228,5 +228,42 @@ class TrailingStopModifier(BaseExitModifier):
             breakeven_trigger, trail_atr_mult, trail_tp_atr_mult,
         )
 
+    @classmethod
+    def get_default_params(cls) -> dict:
+        return {
+            "breakeven_trigger": 0.5,
+            "trail_atr_mult": 0.5,
+            "trail_tp_atr_mult": 0.0,
+        }
+
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "breakeven_trigger": {
+                "type": "float",
+                "default": 0.5,
+                "description": "Bruchteil der TP-Distanz, ab dem SL auf Entry gezogen wird. 0 = kein Breakeven.",
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.05,
+            },
+            "trail_atr_mult": {
+                "type": "float",
+                "default": 0.5,
+                "description": "ATR-Multiplikator für den Trailing-Stop-Abstand. 0 = kein Trailing.",
+                "min": 0.0,
+                "max": 5.0,
+                "step": 0.1,
+            },
+            "trail_tp_atr_mult": {
+                "type": "float",
+                "default": 0.0,
+                "description": "ATR-Multiplikator für Trailing-TP. 0 = kein Trailing-TP.",
+                "min": 0.0,
+                "max": 5.0,
+                "step": 0.1,
+            },
+        }
+
 
 __all__ = ["TrailingStopModifier"]
