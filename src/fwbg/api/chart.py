@@ -422,20 +422,27 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     feature_cols = plugin.get_feature_columns()
     available_cols = [c for c in feature_cols if c in result_df.columns and not c.startswith("_")]
 
-    # --- Undo shift_features() for chart display ---
-    # Indicators shift by +1 for ML lookahead prevention.
-    # For charting, we want the value at the bar it belongs to.
+    # --- Classify columns via plugin methods (needed before undo-shift) ---
+    plugin_signal_cols = set(plugin.get_signal_columns()) if hasattr(plugin, "get_signal_columns") else set()
+
+    # --- Adjust shift for chart display ---
+    # Non-signal columns: undo shift_features (+1) so values appear at the
+    # bar where they were computed.
+    # Signal columns: shift +1 so signal markers align with trade entries
+    # (signal fires at bar N close, entry at bar N+1 open → show at N+1).
+    # Signal columns are NOT shifted by the indicator (no lookahead shift
+    # needed since simulate_pro_trade already enters at idx+1).
     for col in available_cols:
-        result_df[col] = result_df[col].shift(-1)
+        if col in plugin_signal_cols:
+            result_df[col] = result_df[col].shift(1)
+        else:
+            result_df[col] = result_df[col].shift(-1)
 
     # --- Slice ---
     total = len(result_df)
     end_idx = total - body.offset
     start_idx = max(0, end_idx - body.limit)
     result_slice = result_df.iloc[start_idx:end_idx]
-
-    # --- Classify columns via plugin methods ---
-    plugin_signal_cols = set(plugin.get_signal_columns()) if hasattr(plugin, "get_signal_columns") else set()
     plugin_plot_cols = set(plugin.get_plot_columns()) if hasattr(plugin, "get_plot_columns") else set()
 
     # --- Build response ---

@@ -274,13 +274,15 @@ def _session_orb_features(
             range_too_small = or_range < effective_min
             signal_valid = signal_valid & ~range_too_small
 
-        features[f"{prefix}_range"] = safe_divide(or_range, df["C"]).where(valid, np.nan)
+        features[f"{prefix}_range"] = or_range.where(valid, np.nan)
         features[f"{prefix}_position"] = safe_divide(
             df["C"] - or_low, or_range
         ).where(valid, np.nan)
 
-        # Event feature: 1 only on the FIRST bar closing above/below per session.
-        # Once a breakout fires in a direction, it never re-fires in that session.
+        # Breakout signal: persistent 1 from the first bar closing above/below
+        # the range until end of session.  This allows the simulation to enter
+        # a trade even when an earlier trade blocked the initial breakout bar
+        # (e.g. previous day's trade still open at breakout time).
         # Applies breakout_threshold / breakout_threshold_abs: effective = max(pct*range, abs).
         if breakout_threshold > 0 or breakout_threshold_abs > 0:
             pct_dist = breakout_threshold * or_range
@@ -292,13 +294,11 @@ def _session_orb_features(
             below_valid = ((df["C"] < or_low) & signal_valid).astype(np.int8)
         ever_above = above_valid.groupby(session_id).cummax()
         ever_below = below_valid.groupby(session_id).cummax()
-        was_ever_above = ever_above.groupby(session_id).shift(1).fillna(0).astype(np.int8)
-        was_ever_below = ever_below.groupby(session_id).shift(1).fillna(0).astype(np.int8)
         features[f"{prefix}_breakout_up"] = (
-            (above_valid - was_ever_above).clip(lower=0).where(signal_valid, np.nan)
+            ever_above.astype(float).where(signal_valid, np.nan)
         )
         features[f"{prefix}_breakout_down"] = (
-            (below_valid - was_ever_below).clip(lower=0).where(signal_valid, np.nan)
+            ever_below.astype(float).where(signal_valid, np.nan)
         )
 
         features[f"{prefix}_range_vs_atr"] = safe_divide(or_range, atr).where(
@@ -314,6 +314,14 @@ def _session_orb_features(
         # When body range is 0 (O==C doji), sl_dist is invalid → NaN
         sl_dist = (or_range / 2).where(valid & (or_range > 0), np.nan)
         features[f"{prefix}_sl_dist"] = sl_dist
+
+        # OR structural levels: absolute price levels for anchoring SL/TP.
+        # The exit strategy can reference these via sl_level_column to place
+        # SL at a fixed structural level regardless of entry price.
+        range_valid = valid & (or_range > 0)
+        features[f"{prefix}_or_high"] = or_high.where(range_valid, np.nan)
+        features[f"{prefix}_or_low"] = or_low.where(range_valid, np.nan)
+        features[f"{prefix}_or_midpoint"] = or_midpoint.where(range_valid, np.nan)
 
         # Post-breakout state via shared break detection (with threshold).
         # Only count breakouts on signal-valid bars (after range + pre-range period).
@@ -466,7 +474,15 @@ class OpeningRangeIndicator(BaseIndicator):
             k for k in features if any(k.endswith(s) for s in ORB_SIGNAL_SUFFIXES)
         ]
 
-        features_df = shift_features(features, df.index)
+        # Signal columns are NOT shifted: they are event-based (fire at bar
+        # close) and simulate_pro_trade already enters at idx+1 which provides
+        # the correct 1-bar delay.  Shifting them would add a redundant second
+        # bar of delay.
+        signal_keys = set(self._signal_columns)
+        non_signal = {k: v for k, v in features.items() if k not in signal_keys}
+        features_df = shift_features(non_signal, df.index)
+        for k in signal_keys:
+            features_df[k] = features[k]
         return pd.concat([df, features_df], axis=1)
 
     # UTC sessions covered by the orb_scalping pipeline:
