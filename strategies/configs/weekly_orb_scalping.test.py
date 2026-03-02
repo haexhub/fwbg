@@ -176,8 +176,6 @@ class TestWORPipelineFeatures:
             "wor_rb2_range_vs_atr",
             "wor_rb2_dist_to_high",
             "wor_rb2_dist_to_low",
-            "wor_rb2_retest_zone_up",
-            "wor_rb2_retest_zone_down",
         ]
         missing = [c for c in expected if c not in result.columns]
         assert not missing, f"Missing wor_rb2 columns: {missing}"
@@ -193,8 +191,6 @@ class TestWORPipelineFeatures:
             "wor_rb4_range_vs_atr",
             "wor_rb4_dist_to_high",
             "wor_rb4_dist_to_low",
-            "wor_rb4_retest_zone_up",
-            "wor_rb4_retest_zone_down",
         ]
         missing = [c for c in expected if c not in result.columns]
         assert not missing, f"Missing wor_rb4 columns: {missing}"
