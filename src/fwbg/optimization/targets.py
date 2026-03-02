@@ -24,6 +24,34 @@ def _resolve_distances(df: pd.DataFrame, tp: float, sl: float, ctx: SimulationCo
     return exit_strategy.resolve_distances(df, tp, sl, ctx)
 
 
+def _compute_signal_events(
+    probs: Optional[np.ndarray], win_idx: Optional[int], ct: float
+) -> Optional[np.ndarray]:
+    """Assign event IDs to contiguous runs of signal >= ct.
+
+    Each contiguous block of bars where the model probability exceeds the
+    confidence threshold is one "signal event".  When the probability drops
+    below ct and rises again, a new event begins.
+
+    Returns int32 array where 0 = no signal, >0 = event ID.
+    """
+    if probs is None or win_idx is None:
+        return None
+    n = len(probs)
+    events = np.zeros(n, dtype=np.int32)
+    event_id = 0
+    in_event = False
+    for i in range(n):
+        if probs[i, win_idx] >= ct:
+            if not in_event:
+                event_id += 1
+                in_event = True
+            events[i] = event_id
+        else:
+            in_event = False
+    return events
+
+
 def _validate_targets(
     targets_long: np.ndarray, targets_short: np.ndarray, ctx: SimulationContext
 ) -> Tuple[bool, bool]:
@@ -98,6 +126,24 @@ def _simulate_trades_core(
     # TP/SL-Distanzen vom Exit-Strategy-Plugin berechnen lassen
     tp_dists, sl_dists = _resolve_distances(df, tp, sl, ctx)
 
+    # Absolute SL levels: when sl_level_column is set in exit_params, SL is
+    # anchored to the structural price level from that column (e.g. OR midpoint)
+    # instead of computed as entry ± sl_dist.
+    sl_levels = None
+    exit_params = ctx.exit_params if ctx.exit_params else {}
+    sl_level_col = exit_params.get("sl_level_column")
+    if sl_level_col and sl_level_col in df.columns:
+        sl_levels = df[sl_level_col].values.astype(np.float64)
+
+    # Entry delay: 0 = entry at signal bar close (breakout stop-orders),
+    # 1 = entry at next bar open (default, no look-ahead).
+    entry_delay = exit_params.get("entry_delay", 1)
+
+    # Trailing stop from exit_modifier_params (separate composable plugin).
+    modifier_params = getattr(ctx, "exit_modifier_params", None) or {}
+    breakeven_trigger = modifier_params.get("breakeven_trigger", 0.0)
+    trail_distance_mode = modifier_params.get("trail_distance", 0.0)
+
     # Session-aware exits: only exit during session hours.
     # Trades may run through off-session periods (overnight holds).
     # Prefer exit_session hours (wider CFD window), fall back to session hours.
@@ -113,6 +159,18 @@ def _simulate_trades_core(
             df.index, s_start, s_end,
             ohlc=(opn, hgh, low, cls),
         )
+
+    # Signal event limiting: prevent re-entry into the same persistent signal.
+    # A "signal event" is a contiguous run of bars where P(win) >= ct.
+    # max_trades_per_signal=1 means one trade per breakout event (ORB default).
+    max_per_signal = exit_params.get("max_trades_per_signal", 0)
+    long_event_ids = None
+    short_event_ids = None
+    long_event_trades: Dict[int, int] = {}
+    short_event_trades: Dict[int, int] = {}
+    if max_per_signal > 0:
+        long_event_ids = _compute_signal_events(probs_long, long_win_idx, ct_long)
+        short_event_ids = _compute_signal_events(probs_short, short_win_idx, ct_short)
 
     trades = []
     trades_detailed = [] if return_detailed else None
@@ -132,7 +190,13 @@ def _simulate_trades_core(
                 and probs_long is not None
                 and probs_long[i, long_win_idx] >= ct_long
             ):
-                direction = 1
+                # Check signal event limit
+                if max_per_signal > 0 and long_event_ids is not None:
+                    eid = long_event_ids[i]
+                    if eid > 0 and long_event_trades.get(eid, 0) < max_per_signal:
+                        direction = 1
+                else:
+                    direction = 1
         # Short-Check: regime bitmask must have REGIME_SHORT bit set
         if direction is None and direction_filter in (None, -1):
             if (
@@ -141,9 +205,26 @@ def _simulate_trades_core(
                 and probs_short is not None
                 and probs_short[i, short_win_idx] >= ct_short
             ):
-                direction = -1
+                if max_per_signal > 0 and short_event_ids is not None:
+                    eid = short_event_ids[i]
+                    if eid > 0 and short_event_trades.get(eid, 0) < max_per_signal:
+                        direction = -1
+                else:
+                    direction = -1
 
         if direction:
+            sl_abs = None
+            if sl_levels is not None:
+                v = sl_levels[i]
+                if not np.isnan(v):
+                    sl_abs = v
+            # Resolve trail_distance: "sl" means use the initial SL distance
+            if trail_distance_mode == "sl":
+                td = sl_dists[i]
+            elif isinstance(trail_distance_mode, (int, float)):
+                td = float(trail_distance_mode)
+            else:
+                td = 0.0
             trade = simulate_pro_trade(
                 cls,
                 hgh,
@@ -159,6 +240,10 @@ def _simulate_trades_core(
                 max_bars=ctx.max_trade_bars,
                 timeout_bars=timeout_bars,
                 in_session=in_session,
+                sl_level_abs=sl_abs,
+                entry_delay=entry_delay,
+                breakeven_trigger=breakeven_trigger,
+                trail_distance=td if breakeven_trigger > 0.0 else 0.0,
             )
             if trade:
                 t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"]}
@@ -168,6 +253,15 @@ def _simulate_trades_core(
                         t["rv_at_entry"] = rv_val
                 trades.append(t)
                 next_allowed_entry = trade["exit_idx"] + 1
+
+                # Record trade against its signal event
+                if max_per_signal > 0:
+                    if direction == 1 and long_event_ids is not None:
+                        eid = long_event_ids[i]
+                        long_event_trades[eid] = long_event_trades.get(eid, 0) + 1
+                    elif direction == -1 and short_event_ids is not None:
+                        eid = short_event_ids[i]
+                        short_event_trades[eid] = short_event_trades.get(eid, 0) + 1
 
                 if return_detailed:
                     trade["ct"] = ct_long if direction == 1 else ct_short
