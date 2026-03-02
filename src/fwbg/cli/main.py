@@ -350,6 +350,20 @@ def run_optimizer(
             _final_eq = _eq_result["final_equity"]
             _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
 
+            # Profit factor, avg win/loss aus tr_trace berechnen
+            _wins = [p for p in _trades if p > 0]
+            _losses = [abs(p) for p in _trades if p < 0]
+            _gross_profit = sum(_wins)
+            _gross_loss = sum(_losses)
+            _profit_factor = round(_gross_profit / _gross_loss, 2) if _gross_loss > 0 else 0
+            _avg_win = round(sum(_wins) / len(_wins), 2) if _wins else 0
+            _avg_loss = round(sum(_losses) / len(_losses), 2) if _losses else 0
+
+            # Long/Short counts aus trades_detailed
+            _td = result.get("trades_detailed", [])
+            _n_long = sum(1 for t in _td if t.get("direction") == "LONG")
+            _n_short = sum(1 for t in _td if t.get("direction") == "SHORT")
+
             unified_metrics = {
                 "pnl": result.get("pnl", 0),
                 "win_rate": result.get("win_rate", 0),
@@ -362,6 +376,13 @@ def run_optimizer(
                 "max_drawdown": round(_eq_result["max_drawdown"], 4),
                 "final_equity": round(_final_eq, 2),
                 "risk_per_trade": _risk,
+                "profit_factor": _profit_factor,
+                "avg_win": _avg_win,
+                "avg_loss": _avg_loss,
+                "n_wins": len(_wins),
+                "n_losses": len(_losses),
+                "n_long": _n_long,
+                "n_short": _n_short,
             }
             with open(os.path.join(sym_dir, "unified_metrics.json"), "w") as f:
                 json.dump(unified_metrics, f, indent=2)
