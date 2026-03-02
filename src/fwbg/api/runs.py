@@ -5,7 +5,7 @@ import signal
 import statistics
 import subprocess
 import sys
-import uuid
+import hashlib
 from datetime import datetime
 from typing import Optional
 
@@ -58,8 +58,9 @@ def start_run(body: RunStartRequest) -> dict:
         cmd.extend(["--asset-classes", ",".join(body.asset_classes)])
     if body.description:
         cmd.extend(["-d", body.description])
-    job_id = str(uuid.uuid4())[:8]
-    # Pass job_id as the CLI run_id so results land in test_results/{job_id}/
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    short_hash = hashlib.md5(timestamp.encode()).hexdigest()[:6]
+    job_id = f"{timestamp}_{short_hash}"
     cmd.extend(["--run-id", job_id])
 
     try:

@@ -332,7 +332,7 @@ def run_optimizer(
                 json.dump(fold_data, f, indent=2, cls=_SafeJsonEncoder)
 
         # --- trades.json: Unified-Simulation Trades ---
-        if status == "ok" and result.get("tr_trace"):
+        if result.get("tr_trace"):
             trades_data = {
                 "tr_trace": result["tr_trace"],
                 "trades_detailed": result.get("trades_detailed", []),
@@ -340,16 +340,30 @@ def run_optimizer(
             with open(os.path.join(sym_dir, "trades.json"), "w") as f:
                 json.dump(trades_data, f, indent=2, cls=_SafeJsonEncoder)
 
-        # --- unified_metrics.json: Metriken der Unified Simulation ---
-        if status == "ok" and result.get("tr_trace"):
-            _trades = result["tr_trace"]
+        # --- unified_metrics.json: Metriken für alle abgeschlossenen Runs ---
+        # Quelle: tr_trace (Unified Simulation) oder Fold-Trades als Fallback
+        _trades = result.get("tr_trace")
+        _td = result.get("trades_detailed", [])
+        if not _trades:
+            # Fallback: PnL-Werte aus Fold test_trades_trace extrahieren
+            wf = result.get("walk_forward", {})
+            fold_pnls = []
+            for fold in wf.get("fold_details", []):
+                for entry in fold.get("test_trades_trace", []):
+                    if isinstance(entry, dict):
+                        fold_pnls.append(entry.get("pnl_raw", 0))
+                    elif isinstance(entry, (int, float)):
+                        fold_pnls.append(float(entry))
+            if fold_pnls:
+                _trades = fold_pnls
+
+        if _trades:
             _risk = result.get("config", {}).get("risk_per_trade", 0.01)
             _years = result.get("test_period_years", 1)
             _eq_result = simulate_equity_from_pnl(_trades, fk=_risk)
             _final_eq = _eq_result["final_equity"]
             _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
 
-            # Profit factor, avg win/loss aus tr_trace berechnen
             _wins = [p for p in _trades if p > 0]
             _losses = [abs(p) for p in _trades if p < 0]
             _gross_profit = sum(_wins)
@@ -358,14 +372,12 @@ def run_optimizer(
             _avg_win = round(sum(_wins) / len(_wins), 2) if _wins else 0
             _avg_loss = round(sum(_losses) / len(_losses), 2) if _losses else 0
 
-            # Long/Short counts aus trades_detailed
-            _td = result.get("trades_detailed", [])
             _n_long = sum(1 for t in _td if t.get("direction") == "LONG")
             _n_short = sum(1 for t in _td if t.get("direction") == "SHORT")
 
             unified_metrics = {
-                "pnl": result.get("pnl", 0),
-                "win_rate": result.get("win_rate", 0),
+                "pnl": round(sum(_trades), 4),
+                "win_rate": round(len(_wins) / len(_trades), 4) if _trades else 0,
                 "rrr": result.get("rrr", 0),
                 "sharpe": result.get("sharpe", 0),
                 "calmar": result.get("calmar", 0),
