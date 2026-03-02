@@ -290,6 +290,8 @@ def _build_combo_tuples(
                 exit_params=exit_cfg.params,
                 exit_modifier=exit_cfg.exit_modifier,
                 exit_modifier_params=exit_cfg.exit_modifier_params,
+                entry_modifier=exit_cfg.entry_modifier,
+                entry_modifier_params=exit_cfg.entry_modifier_params,
                 grid_ct=exit_cfg.ct,
                 long_grid_ct=exit_cfg.long_ct,
                 short_grid_ct=exit_cfg.short_ct,
@@ -319,11 +321,14 @@ def _target_cache_key(tp, sl, timeout_bars, ctx):
     """
     sl_dist_col = ctx.model_hyperparameters.get("sl_dist_column", "")
     exit_mod = ctx.exit_modifier_params or {}
+    entry_mod = ctx.entry_modifier_params or {}
     return (
         ctx.exit_strategy, tp, sl, timeout_bars,
         tuple(sorted(ctx.exit_params.items())) if ctx.exit_params else (),
         sl_dist_col,
         tuple(sorted(exit_mod.items())) if exit_mod else (),
+        ctx.entry_modifier or "",
+        tuple(sorted(entry_mod.items())) if entry_mod else (),
     )
 
 

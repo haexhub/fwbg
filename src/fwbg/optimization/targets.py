@@ -144,6 +144,11 @@ def _simulate_trades_core(
     breakeven_trigger = modifier_params.get("breakeven_trigger", 0.0)
     trail_distance_mode = modifier_params.get("trail_distance", 0.0)
 
+    # Entry modifier params for scale-in
+    entry_mod_params = getattr(ctx, "entry_modifier_params", None) or {}
+    scale_levels = entry_mod_params.get("levels", None)
+    scale_qty_mult = entry_mod_params.get("qty_multiplier", 1.0)
+
     # Session-aware exits: only exit during session hours.
     # Trades may run through off-session periods (overnight holds).
     # Prefer exit_session hours (wider CFD window), fall back to session hours.
@@ -244,6 +249,8 @@ def _simulate_trades_core(
                 entry_delay=entry_delay,
                 breakeven_trigger=breakeven_trigger,
                 trail_distance=td if breakeven_trigger > 0.0 else 0.0,
+                scale_levels=scale_levels,
+                scale_qty_mult=scale_qty_mult,
             )
             if trade:
                 t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"]}

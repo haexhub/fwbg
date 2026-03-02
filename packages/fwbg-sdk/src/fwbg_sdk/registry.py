@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from fwbg_sdk.indicators import BaseIndicator
     from fwbg_sdk.exit_strategies import BaseExitStrategy
     from fwbg_sdk.exit_modifiers import BaseExitModifier
+    from fwbg_sdk.entry_modifiers import BaseEntryModifier
     from fwbg_sdk.feature_selectors import BaseFeatureSelector
     from fwbg_sdk.preprocessors import BasePreprocessor
     from fwbg_sdk.risk_managers import BaseRiskManager
@@ -27,6 +28,7 @@ PREPROCESSOR_REGISTRY: Dict[str, Type["BasePreprocessor"]] = {}
 RISK_MANAGER_REGISTRY: Dict[str, Type["BaseRiskManager"]] = {}
 DATA_LOADER_REGISTRY: Dict[str, Type["BaseDataLoader"]] = {}
 MODEL_REGISTRY: Dict[str, Type["BaseModel"]] = {}
+ENTRY_MODIFIER_REGISTRY: Dict[str, Type["BaseEntryModifier"]] = {}
 
 
 def register_indicator(name: str):
@@ -77,6 +79,26 @@ def register_exit_modifier(name: str):
         EXIT_MODIFIER_REGISTRY[name] = cls
         cls.name = name
         log.debug(f"Registered exit modifier: {name}")
+        return cls
+    return decorator
+
+
+def register_entry_modifier(name: str):
+    """Decorator to register an entry modifier plugin.
+
+    Entry modifiers are optional add-ons that extend the entry behavior
+    of a strategy with additional logic such as scale-in at retracement
+    levels or pyramiding.
+
+    Example:
+        @register_entry_modifier("scale_in")
+        class ScaleInModifier(BaseEntryModifier):
+            ...
+    """
+    def decorator(cls):
+        ENTRY_MODIFIER_REGISTRY[name] = cls
+        cls.name = name
+        log.debug(f"Registered entry modifier: {name}")
         return cls
     return decorator
 

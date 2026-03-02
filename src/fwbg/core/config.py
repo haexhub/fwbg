@@ -90,6 +90,8 @@ class ExitStrategyConfig:
     min_rrr: float = 0
     exit_modifier: Optional[str] = None
     exit_modifier_params: Dict[str, Any] = field(default_factory=dict)
+    entry_modifier: Optional[str] = None
+    entry_modifier_params: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ExitStrategyConfig":
@@ -111,6 +113,8 @@ class ExitStrategyConfig:
             min_rrr=data.get("min_rrr", 0),
             exit_modifier=data.get("exit_modifier"),
             exit_modifier_params=data.get("exit_modifier_params", {}),
+            entry_modifier=data.get("entry_modifier"),
+            entry_modifier_params=data.get("entry_modifier_params", {}),
         )
 
 
@@ -483,6 +487,9 @@ class StrategyConfig:
             if es.exit_modifier:
                 d["exit_modifier"] = es.exit_modifier
                 d["exit_modifier_params"] = es.exit_modifier_params
+            if es.entry_modifier:
+                d["entry_modifier"] = es.entry_modifier
+                d["entry_modifier_params"] = es.entry_modifier_params
             exit_strats.append(d)
 
         return {

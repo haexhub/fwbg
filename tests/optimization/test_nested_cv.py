@@ -94,6 +94,8 @@ def create_mock_context(
     ctx.preprocessing_plugins = []  # No preprocessing by default
     ctx.exit_strategy = "fixed"
     ctx.exit_params = {}
+    ctx.entry_modifier = None
+    ctx.entry_modifier_params = {}
     ctx.probability_calibration = False
     ctx.calibration_method = "isotonic"
     ctx.model_type = "xgboost"

@@ -64,6 +64,49 @@ class FixedExitStrategy(BaseExitStrategy):
         max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(df)
         timeout_val = timeout_bars if timeout_bars else 0
 
+        # === ENTRY MODIFIER DISPATCH ===
+        entry_modifier_name = getattr(ctx, "entry_modifier", None)
+        if entry_modifier_name and isinstance(entry_modifier_name, str):
+            from fwbg.core.registry import get_entry_modifier
+            entry_mod_cls = get_entry_modifier(entry_modifier_name)
+            entry_mod = entry_mod_cls()
+            entry_mod_params = getattr(ctx, "entry_modifier_params", {}) or {}
+
+            # Fixed strategy uses spread-based distances, but entry modifier
+            # expects ATR arrays + multipliers. Compute ATR for the modifier.
+            if "_atr" in df.columns:
+                atr_v = df["_atr"].values.astype(np.float64)
+            elif "vol_atr" in df.columns:
+                atr_v = df["vol_atr"].values.astype(np.float64)
+            else:
+                import ta
+                atr_series = ta.volatility.average_true_range(
+                    df["H"], df["L"], df["C"], window=14
+                )
+                atr_v = atr_series.values.astype(np.float64)
+            atr_v = np.nan_to_num(atr_v, nan=0.0)
+
+            # Pass through trailing params from exit modifier
+            modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}
+            em_breakeven = modifier_params.get("breakeven_trigger", 0.0)
+            em_trail = modifier_params.get("trail_atr_mult", 0.0)
+            em_trail_tp = modifier_params.get("trail_tp_atr_mult", 0.0)
+
+            # Fixed strategy: pass tp_mult/sl_mult=0 so min distances act as
+            # the effective distances (max(atr*0, fixed_dist) = fixed_dist).
+            return entry_mod.compute_targets(
+                opn_v, cls_v, hgh_v, low_v, atr_v,
+                0.0, 0.0,
+                ctx.spread, slippage,
+                tp_distance, sl_distance,
+                max_bars, timeout_val,
+                return_durations=return_durations,
+                breakeven_trigger=em_breakeven,
+                trail_atr_mult=em_trail,
+                trail_tp_atr_mult=em_trail_tp,
+                **entry_mod_params,
+            )
+
         if return_durations:
             from fwbg.simulation.numba_core import compute_targets_with_durations_numba
             return compute_targets_with_durations_numba(

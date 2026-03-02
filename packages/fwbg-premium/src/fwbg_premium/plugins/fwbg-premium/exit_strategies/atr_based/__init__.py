@@ -421,6 +421,37 @@ class AtrExitStrategy(BaseExitStrategy):
         # max_bars: Wie weit maximal simuliert wird
         max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(df)
 
+        # === ENTRY MODIFIER DISPATCH ===
+        # When an entry modifier (e.g. scale_in) is configured, it takes priority
+        # over exit modifiers because its kernel handles both scale-in AND trailing
+        # stop internally.
+        entry_modifier_name = getattr(ctx, "entry_modifier", None)
+        if entry_modifier_name and isinstance(entry_modifier_name, str):
+            from fwbg.core.registry import get_entry_modifier
+            entry_mod_cls = get_entry_modifier(entry_modifier_name)
+            entry_mod = entry_mod_cls()
+            entry_mod_params = getattr(ctx, "entry_modifier_params", {}) or {}
+
+            # Pass through trailing params from exit modifier
+            modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}
+            em_breakeven = modifier_params.get("breakeven_trigger", 0.0)
+            em_trail = modifier_params.get("trail_atr_mult", 0.0)
+            em_trail_tp = modifier_params.get("trail_tp_atr_mult", 0.0)
+
+            timeout_val = timeout_bars if timeout_bars else 0
+            return entry_mod.compute_targets(
+                opn_v, cls_v, hgh_v, low_v, atr_v,
+                tp_mult, sl_mult,
+                ctx.spread, slippage,
+                min_tp_distance, min_sl_distance,
+                max_bars, timeout_val,
+                return_durations=return_durations,
+                breakeven_trigger=em_breakeven,
+                trail_atr_mult=em_trail,
+                trail_tp_atr_mult=em_trail_tp,
+                **entry_mod_params,
+            )
+
         # === EXIT MODIFIER DISPATCH ===
         # Wenn ein Exit-Modifier konfiguriert ist, delegiert die Simulation an diesen.
         # Der Modifier erhält dieselben Arrays und gibt (targets_long, targets_short) zurück.

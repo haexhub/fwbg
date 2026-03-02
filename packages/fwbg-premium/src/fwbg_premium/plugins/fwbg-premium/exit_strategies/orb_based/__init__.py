@@ -123,6 +123,33 @@ class OrbExitStrategy(BaseExitStrategy):
             )
         use_session = in_session is not None
 
+        # === ENTRY MODIFIER DISPATCH ===
+        entry_modifier_name = getattr(ctx, "entry_modifier", None)
+        if entry_modifier_name and isinstance(entry_modifier_name, str):
+            from fwbg.core.registry import get_entry_modifier
+            entry_mod_cls = get_entry_modifier(entry_modifier_name)
+            entry_mod = entry_mod_cls()
+            entry_mod_params = getattr(ctx, "entry_modifier_params", {}) or {}
+
+            # Pass through trailing params from exit modifier
+            modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}
+            em_breakeven = modifier_params.get("breakeven_trigger", 0.0)
+            em_trail = modifier_params.get("trail_atr_mult", 0.0)
+            em_trail_tp = modifier_params.get("trail_tp_atr_mult", 0.0)
+
+            return entry_mod.compute_targets(
+                opn_v, cls_v, hgh_v, low_v, atr_v,
+                tp_mult, sl_mult,
+                ctx.spread, slippage,
+                min_tp_distance, min_sl_distance,
+                max_bars, timeout_val,
+                return_durations=return_durations,
+                breakeven_trigger=em_breakeven,
+                trail_atr_mult=em_trail,
+                trail_tp_atr_mult=em_trail_tp,
+                **entry_mod_params,
+            )
+
         # === EXIT MODIFIER DISPATCH ===
         exit_modifier_name = getattr(ctx, "exit_modifier", None)
         modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}

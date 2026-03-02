@@ -85,6 +85,8 @@ def process_signal_fold(fold, train_df, test_df, full_pool, ctx, sym):
             exit_params=exit_cfg.params,
             exit_modifier=exit_cfg.exit_modifier,
             exit_modifier_params=exit_cfg.exit_modifier_params,
+            entry_modifier=exit_cfg.entry_modifier,
+            entry_modifier_params=exit_cfg.entry_modifier_params,
             separate_long_short=bool(exit_cfg.long_ct or exit_cfg.short_ct),
         )
 
