@@ -395,6 +395,9 @@ class StrategyConfig:
     # Timeframe override (None = use TIMEFRAME env var)
     timeframe: Optional[str] = None
 
+    # Signal rules for composed entry signals (visual rule builder)
+    signal_rules: Optional[Dict[str, Any]] = None
+
     # Metadata
     hypothesis: str = ""
     expected_outcome: str = ""
@@ -436,6 +439,7 @@ class StrategyConfig:
             timeframe=data.get("timeframe"),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
+            signal_rules=data.get("signal_rules"),
         )
 
     @classmethod
@@ -521,6 +525,7 @@ class StrategyConfig:
             },
             "hypothesis": self.hypothesis,
             "expected_outcome": self.expected_outcome,
+            **({"signal_rules": self.signal_rules} if self.signal_rules else {}),
         }
 
     def log_summary(self, log_func=print):
