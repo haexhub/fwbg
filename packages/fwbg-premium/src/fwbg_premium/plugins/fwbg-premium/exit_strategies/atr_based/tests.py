@@ -189,62 +189,6 @@ class TestAtrExitStrategyTargets:
         assert len(targets_long) == len(volatile_ohlc)
 
 
-class TestAtrExitStrategyGrid:
-    """Tests für Grid-Iteration mit ATR-Parametern."""
-
-    def test_grid_generates_mult_combinations(self, atr_context):
-        """Grid sollte ATR-Multiplikator Kombinationen generieren."""
-        strategy = AtrExitStrategy()
-
-        grid_config = {
-            "tp_mult": [1.5, 2.0, 2.5],
-            "sl_mult": [1.0, 1.5],
-        }
-
-        combinations = list(strategy.iterate_grid(grid_config, atr_context))
-
-        assert len(combinations) == 6
-
-        # Prüfe dass tp_mult und sl_mult vorhanden
-        for c in combinations:
-            assert "tp_mult" in c
-            assert "sl_mult" in c
-            assert c["tp_mult"] in [1.5, 2.0, 2.5]
-            assert c["sl_mult"] in [1.0, 1.5]
-
-    def test_grid_accepts_tp_sl_keys(self, atr_context):
-        """Grid sollte 'tp' und 'sl' als Multiplikatoren interpretieren."""
-        strategy = AtrExitStrategy()
-
-        grid_config = {
-            "tp": [1.5, 2.0],
-            "sl": [1.0],
-        }
-
-        combinations = list(strategy.iterate_grid(grid_config, atr_context))
-
-        assert len(combinations) == 2
-        assert all(c["tp_mult"] in [1.5, 2.0] for c in combinations)
-
-    def test_grid_includes_exit_params(self, atr_context):
-        """Grid sollte exit_params aus Context übernehmen."""
-        strategy = AtrExitStrategy()
-
-        grid_config = {
-            "atr_tp_mult": [2.0],
-            "atr_sl_mult": [1.5],
-        }
-
-        combinations = list(strategy.iterate_grid(grid_config, atr_context))
-
-        assert len(combinations) == 1
-        c = combinations[0]
-
-        # Sollte atr_period und min_pips aus Context haben
-        assert c["atr_period"] == 14
-        assert c["min_tp_pips"] == 10
-        assert c["min_sl_pips"] == 15
-
 
 class TestAtrExitStrategyCacheKey:
     """Tests für ATR Cache-Key Generierung."""

@@ -19,7 +19,7 @@
           "sessions": [
             0
           ],
-          "enable_retracement": true,
+          "enable_retracement": false,
           "carry_forward_days": 0,
           "pre_range_bars": [
             6
@@ -28,7 +28,7 @@
           "breakout_threshold": 0,
           "breakout_threshold_abs": 5,
           "retracement_levels": [
-            0.5
+            0
           ],
           "min_retracement": 0,
           "min_range_height": 45,
@@ -80,8 +80,8 @@
       "name": "orb_based",
       "params": {
         "tp_mode": "range",
-        "tp_mult": 1,
-        "sl_mult": 1,
+        "tp_mult": 2,
+        "sl_mult": 1.5,
         "atr_period": 14,
         "min_tp_pips": 8,
         "min_sl_pips": 5,
@@ -93,7 +93,13 @@
       "ct": [
         0.5
       ],
-      "min_rrr": 0
+      "min_rrr": 0,
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5,
+        "trail_tp_atr_mult": 0.5
+      }
     }
   ],
   "optimization": {}

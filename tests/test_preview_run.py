@@ -93,8 +93,8 @@ class TestRunIdPassthrough:
             f"CLI run_id ({captured_cmd[run_id_idx + 1]}) != job_id ({job_id})"
         )
 
-    def test_job_id_format_is_8_hex_chars(self, client_with_strategy):
-        """Die job_id hat genau 8 Hex-Zeichen (UUID[:8])."""
+    def test_job_id_format_matches_cli_pattern(self, client_with_strategy):
+        """Die job_id hat das CLI-Format: YYYYMMDD_HHMMSS_[6-hex]."""
         client, _ = client_with_strategy
 
         with patch("fwbg.api.runs.subprocess.Popen") as mock_popen:
@@ -105,9 +105,9 @@ class TestRunIdPassthrough:
             resp = client.post("/api/runs/start", json={"strategy_name": "preview_test"})
 
         job_id = resp.json()["job_id"]
-        assert len(job_id) == 8
-        assert all(c in "0123456789abcdef" for c in job_id), (
-            f"job_id '{job_id}' enthält ungültige Zeichen"
+        import re
+        assert re.match(r"^\d{8}_\d{6}_[0-9a-f]{6}$", job_id), (
+            f"job_id '{job_id}' entspricht nicht dem Format YYYYMMDD_HHMMSS_[6-hex]"
         )
 
     def test_assets_parameter_passes_assets_flag(self, client_with_strategy):

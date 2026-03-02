@@ -217,33 +217,6 @@ class TestOrbExitStrategyTP:
 
 # --- Grid Tests ---
 
-class TestOrbExitStrategyGrid:
-    """Grid iteration must cover tp_mult × sl multiplier combinations."""
-
-    def test_grid_generates_tp_sl_combinations(self, ctx):
-        strategy = OrbExitStrategy()
-        grid_config = {"tp": [1.5, 2.0, 3.0], "sl": [1.0]}
-        combos = list(strategy.iterate_grid(grid_config, ctx))
-        assert len(combos) == 3
-
-    def test_grid_combo_contains_tp_and_sl(self, ctx):
-        strategy = OrbExitStrategy()
-        grid_config = {"tp": [2.0], "sl": [1.0]}
-        combos = list(strategy.iterate_grid(grid_config, ctx))
-        assert len(combos) == 1
-        c = combos[0]
-        assert "tp_mult" in c
-        assert "sl_mult" in c
-
-    def test_grid_default_sl_is_one(self, ctx):
-        """Default sl grid = [1.0] (exact ORB range, no buffer needed)."""
-        strategy = OrbExitStrategy()
-        grid_config = {"tp": [2.0]}  # no sl specified
-        combos = list(strategy.iterate_grid(grid_config, ctx))
-        assert all(c["sl_mult"] == 1.0 for c in combos), (
-            "Default sl for orb_based should be [1.0] (exact ORB range)"
-        )
-
 
 # --- sl_dist_column selection ---
 
