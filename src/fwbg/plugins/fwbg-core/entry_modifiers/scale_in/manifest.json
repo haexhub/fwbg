@@ -1,0 +1,6 @@
+{
+  "name": "scale_in",
+  "version": "0.1.0",
+  "description": "Scale-in at configurable retracement levels toward stop-loss",
+  "phase": "entry_modifiers"
+}

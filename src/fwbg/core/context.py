@@ -57,6 +57,8 @@ class SimulationContext:
     exit_params: dict = field(default_factory=dict)
     exit_modifier: Optional[str] = None
     exit_modifier_params: dict = field(default_factory=dict)
+    entry_modifier: Optional[str] = None
+    entry_modifier_params: dict = field(default_factory=dict)
     grid_ct: List[float] = field(default_factory=list)
     long_grid_ct: List[float] = None
     short_grid_ct: List[float] = None

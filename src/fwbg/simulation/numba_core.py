@@ -10,7 +10,7 @@ import numpy as np
 from numba import njit, prange
 
 # Bump this whenever a @njit function signature/return type changes.
-_CACHE_VERSION = "4"
+_CACHE_VERSION = "5"
 
 _THIS_DIR = pathlib.Path(__file__).resolve().parent
 _STAMP_FILE = _THIS_DIR / "__pycache__" / ".numba_cache_version"
@@ -375,6 +375,199 @@ def _simulate_trade_trailing_numba(
             return 1.0, j, tp, 0
 
     return 0.0, -1, 0.0, -1
+
+
+@njit(cache=True)
+def _simulate_trade_scale_in_numba(
+    opens: np.ndarray,
+    closes: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    idx: int,
+    direction: int,
+    tp_distance: float,
+    sl_distance: float,
+    spread: float,
+    slippage: float,
+    max_bars: int,
+    timeout_bars: int,
+    scale_levels: np.ndarray,
+    n_levels: int,
+    scale_qty_mult: float,
+    breakeven_trigger: float,
+    trail_distance: float,
+    trail_tp_dist: float,
+) -> tuple:
+    """
+    Trade simulation with scale-in (multiple entries at retracement levels).
+
+    Supports additional entries at configurable retracement levels (fractions
+    of the entry-to-SL distance).  After each fill the average price is
+    recalculated and the TP is adjusted from the new average.  The SL stays
+    at the original level unless trailing tightens it.
+
+    Args:
+        scale_levels: shape (max_levels,), fractions 0-1, -1.0=unused
+        n_levels:     actual number of active levels
+        scale_qty_mult: quantity per scale-in (1.0 = same as initial)
+        breakeven_trigger: fraction of tp_distance; 0.0 = off
+        trail_distance: absolute trailing stop distance; 0.0 = off
+        trail_tp_dist:  absolute trailing TP distance; 0.0 = off
+
+    Returns:
+        (result, exit_idx, exit_price, exit_reason, avg_price, total_qty, n_fills)
+        result: 1.0=Win, -1.0=Loss, 0.0=no exit
+        exit_reason: 0=TP, 1=SL, 2=Timeout, -1=no exit
+    """
+    entry_idx = idx + 1
+    n = len(closes)
+
+    if entry_idx >= n:
+        return 0.0, -1, 0.0, -1, 0.0, 0.0, 0
+
+    entry_price = opens[entry_idx]
+
+    if direction == 1:  # Long
+        entry = entry_price + spread + slippage
+        tp = entry + tp_distance
+        sl = entry - sl_distance
+    else:  # Short
+        entry = entry_price - spread - slippage
+        tp = entry - tp_distance
+        sl = entry + sl_distance
+
+    # --- Scale-in preparation ---
+    total_qty = 1.0
+    weighted_sum = entry * 1.0
+    avg_price = entry
+    n_fills = 1
+
+    # Precompute scale-in trigger prices
+    scale_price = np.empty(n_levels, dtype=np.float64)
+    levels_filled = np.zeros(n_levels, dtype=np.int8)
+    for k in range(n_levels):
+        if direction == 1:
+            scale_price[k] = entry - scale_levels[k] * sl_distance
+        else:
+            scale_price[k] = entry + scale_levels[k] * sl_distance
+
+    # --- Trailing / breakeven state ---
+    end_idx = min(entry_idx + max_bars, n)
+
+    timeout_idx = -1
+    if timeout_bars > 0:
+        timeout_idx = min(entry_idx + timeout_bars - 1, n - 1)
+
+    best_price = entry
+    trailing_active = breakeven_trigger <= 0.0
+
+    # Breakeven trigger computed from avg_price
+    if direction == 1:
+        be_trigger_price = avg_price + tp_distance * breakeven_trigger
+    else:
+        be_trigger_price = avg_price - tp_distance * breakeven_trigger
+
+    for j in range(entry_idx, end_idx):
+        # --- Timeout check ---
+        if timeout_idx > 0 and j >= timeout_idx:
+            exit_price = closes[j]
+            if direction == 1:
+                pnl = (exit_price - avg_price) * total_qty
+            else:
+                pnl = (avg_price - exit_price) * total_qty
+            result = 1.0 if pnl > 0 else -1.0
+            return result, j, exit_price, 2, avg_price, total_qty, n_fills
+
+        # --- Scale-in trigger check ---
+        for k in range(n_levels):
+            if levels_filled[k] == 1:
+                continue
+            if direction == 1:
+                if lows[j] <= scale_price[k] and scale_price[k] > sl:
+                    fill_price = scale_price[k]
+                    weighted_sum += fill_price * scale_qty_mult
+                    total_qty += scale_qty_mult
+                    avg_price = weighted_sum / total_qty
+                    tp = avg_price + tp_distance
+                    levels_filled[k] = 1
+                    n_fills += 1
+                    # Recalculate breakeven trigger from new avg_price
+                    if breakeven_trigger > 0.0:
+                        be_trigger_price = avg_price + tp_distance * breakeven_trigger
+            else:
+                if highs[j] >= scale_price[k] and scale_price[k] < sl:
+                    fill_price = scale_price[k]
+                    weighted_sum += fill_price * scale_qty_mult
+                    total_qty += scale_qty_mult
+                    avg_price = weighted_sum / total_qty
+                    tp = avg_price - tp_distance
+                    levels_filled[k] = 1
+                    n_fills += 1
+                    # Recalculate breakeven trigger from new avg_price
+                    if breakeven_trigger > 0.0:
+                        be_trigger_price = avg_price - tp_distance * breakeven_trigger
+
+        # --- Update best price ---
+        if direction == 1:
+            if highs[j] > best_price:
+                best_price = highs[j]
+        else:
+            if lows[j] < best_price:
+                best_price = lows[j]
+
+        # --- Breakeven activation ---
+        if not trailing_active and breakeven_trigger > 0.0:
+            if direction == 1 and best_price >= be_trigger_price:
+                trailing_active = True
+                if avg_price > sl:
+                    sl = avg_price
+            elif direction == -1 and best_price <= be_trigger_price:
+                trailing_active = True
+                if avg_price < sl:
+                    sl = avg_price
+
+        # --- Trailing stop ---
+        if trailing_active and trail_distance > 0.0:
+            if direction == 1:
+                new_sl = best_price - trail_distance
+                if new_sl > sl:
+                    sl = new_sl
+            else:
+                new_sl = best_price + trail_distance
+                if new_sl < sl:
+                    sl = new_sl
+
+        # --- Trailing TP ---
+        if trailing_active and trail_tp_dist > 0.0:
+            if direction == 1:
+                new_tp = best_price + trail_tp_dist
+                if new_tp > tp:
+                    tp = new_tp
+            else:
+                new_tp = best_price - trail_tp_dist
+                if new_tp < tp:
+                    tp = new_tp
+
+        # --- TP / SL hit check ---
+        if direction == 1:
+            tp_hit = highs[j] >= tp
+            sl_hit = lows[j] <= sl
+        else:
+            tp_hit = lows[j] <= tp
+            sl_hit = highs[j] >= sl
+
+        if sl_hit:
+            if direction == 1:
+                pnl = (sl - avg_price) * total_qty
+            else:
+                pnl = (avg_price - sl) * total_qty
+            result = 1.0 if pnl > 0 else -1.0
+            return result, j, sl, 1, avg_price, total_qty, n_fills
+
+        if tp_hit:
+            return 1.0, j, tp, 0, avg_price, total_qty, n_fills
+
+    return 0.0, -1, 0.0, -1, avg_price, total_qty, n_fills
 
 
 @njit(cache=True, parallel=True)

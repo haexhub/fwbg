@@ -377,7 +377,8 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                        max_bars=None, timestamps=None, symbol=None,
                        opens=None, timeout_bars=None, in_session=None,
                        sl_level_abs=None, entry_delay=1,
-                       breakeven_trigger=0.0, trail_distance=0.0):
+                       breakeven_trigger=0.0, trail_distance=0.0,
+                       scale_levels=None, scale_qty_mult=1.0):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
@@ -398,6 +399,13 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
     - trail_distance: Absoluter Abstand für Trailing Stop. Nach Breakeven folgt
       der SL dem besten Preis mit diesem Abstand. 0.0 = kein Trailing.
 
+    Scale-In:
+    - scale_levels: Liste von Float-Werten (0-1), Retracement-Fraktionen der
+      SL-Distanz. Bei jedem Level wird eine zusätzliche Position eröffnet.
+      None = kein Scale-In (Original-Verhalten).
+    - scale_qty_mult: Quantity-Multiplikator für Scale-In-Positionen (1.0 = gleiche
+      Größe wie Initial-Position).
+
     Args:
         closes: Close-Preise Array
         highs: High-Preise Array
@@ -413,6 +421,8 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         entry_delay: Bars zwischen Signal und Entry (0=sofort, 1=nächster Bar)
         breakeven_trigger: Anteil TP-Distanz für Breakeven (0.0=aus, 0.5=50%)
         trail_distance: Trailing-Abstand vom besten Preis (0.0=aus)
+        scale_levels: Liste von Retracement-Fraktionen für Scale-In (None=aus)
+        scale_qty_mult: Quantity pro Scale-In (1.0=gleich wie Initial)
 
     Returns:
         dict mit Trade-Details oder None bei ungültigem Trade
@@ -448,17 +458,46 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         tp = entry - tp_distance  # TP-Level (Trigger)
         sl = sl_level_abs if sl_level_abs is not None else entry + sl_distance
 
+    # --- Scale-in preparation ---
+    use_scale_in = scale_levels is not None and len(scale_levels) > 0
+    if use_scale_in:
+        positions = [(entry, 1.0)]
+        avg_price = entry
+        total_qty = 1.0
+        n_fills = 1
+        # Precompute trigger prices
+        scale_trigger_prices = []
+        levels_filled = []
+        for level in scale_levels:
+            if direction == 1:
+                scale_trigger_prices.append(entry - level * sl_distance)
+            else:
+                scale_trigger_prices.append(entry + level * sl_distance)
+            levels_filled.append(False)
+    else:
+        avg_price = entry
+        total_qty = 1.0
+        n_fills = 1
+        positions = None
+
     # Hilfsfunktion für Rückgabe
+    # Captures tp, sl, avg_price, total_qty from outer scope (may be updated by scale-in)
     def make_result(result, exit_idx, exit_price):
         bars_held = exit_idx - entry_idx
 
-        # Berechne PnL in Pips/Points
-        if direction == 1:
-            pnl_raw = exit_price - entry
+        # PnL calculation: use avg_price for scale-in, entry for normal trades
+        if use_scale_in:
+            if direction == 1:
+                pnl_raw = (exit_price - avg_price) * total_qty
+            else:
+                pnl_raw = (avg_price - exit_price) * total_qty
         else:
-            pnl_raw = entry - exit_price
+            if direction == 1:
+                pnl_raw = exit_price - entry
+            else:
+                pnl_raw = entry - exit_price
 
-        return {
+        res = {
             "result": result,
             "direction": "LONG" if direction == 1 else "SHORT",
             "signal_idx": idx,
@@ -481,6 +520,16 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             "pnl_raw": float(pnl_raw),
         }
 
+        if use_scale_in:
+            res["avg_entry_price"] = float(avg_price)
+            res["total_qty"] = float(total_qty)
+            res["n_fills"] = n_fills
+            res["scale_in_fills"] = [
+                {"price": float(p), "qty": float(q)} for p, q in positions[1:]
+            ]
+
+        return res
+
     # Trailing state
     use_trailing = breakeven_trigger > 0.0 or trail_distance > 0.0
     trailing_active = breakeven_trigger <= 0.0 and trail_distance > 0.0
@@ -496,6 +545,34 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
     session_bars_elapsed = 0
 
     for j in range(entry_idx, min(entry_idx + max_bars, len(closes))):
+        # --- Scale-in trigger check (before session/TP/SL checks) ---
+        # Scale-in fills are price triggers, not time-dependent (fire on any bar).
+        if use_scale_in:
+            for k in range(len(scale_levels)):
+                if levels_filled[k]:
+                    continue
+                trigger = scale_trigger_prices[k]
+                if direction == 1:
+                    if lows[j] <= trigger and trigger > sl:
+                        positions.append((trigger, scale_qty_mult))
+                        total_qty = sum(q for _, q in positions)
+                        avg_price = sum(p * q for p, q in positions) / total_qty
+                        tp = avg_price + tp_distance
+                        levels_filled[k] = True
+                        n_fills += 1
+                        if breakeven_trigger > 0.0:
+                            be_trigger_price = avg_price + tp_distance * breakeven_trigger
+                else:
+                    if highs[j] >= trigger and trigger < sl:
+                        positions.append((trigger, scale_qty_mult))
+                        total_qty = sum(q for _, q in positions)
+                        avg_price = sum(p * q for p, q in positions) / total_qty
+                        tp = avg_price - tp_distance
+                        levels_filled[k] = True
+                        n_fills += 1
+                        if breakeven_trigger > 0.0:
+                            be_trigger_price = avg_price - tp_distance * breakeven_trigger
+
         # Skip off-session bars — no exits outside trading hours
         if in_session is not None and not in_session[j]:
             continue
@@ -505,10 +582,16 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         # Timeout check (counts only session bars when session-aware)
         if timeout_bars is not None and timeout_bars > 0 and session_bars_elapsed >= timeout_bars:
             exit_price = closes[j]
-            if direction == 1:
-                pnl = exit_price - entry
+            if use_scale_in:
+                if direction == 1:
+                    pnl = (exit_price - avg_price) * total_qty
+                else:
+                    pnl = (avg_price - exit_price) * total_qty
             else:
-                pnl = entry - exit_price
+                if direction == 1:
+                    pnl = exit_price - entry
+                else:
+                    pnl = entry - exit_price
             result = 1.0 if pnl > 0 else -1.0
             trade_result = make_result(result, j, exit_price)
             trade_result["exit_reason"] = "timeout"
@@ -529,12 +612,14 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             if not trailing_active and breakeven_trigger > 0.0:
                 if direction == 1 and best_price >= be_trigger_price:
                     trailing_active = True
-                    if entry > sl:
-                        sl = entry
+                    be_ref = avg_price if use_scale_in else entry
+                    if be_ref > sl:
+                        sl = be_ref
                 elif direction == -1 and best_price <= be_trigger_price:
                     trailing_active = True
-                    if entry < sl:
-                        sl = entry
+                    be_ref = avg_price if use_scale_in else entry
+                    if be_ref < sl:
+                        sl = be_ref
 
             # Trail SL behind best price
             if trailing_active and trail_distance > 0.0:
@@ -548,6 +633,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                         sl = new_sl
 
         # --- TP/SL hit detection ---
+        # For SL result with scale-in, compare sl vs avg_price instead of entry
+        sl_ref = avg_price if use_scale_in else entry
+
         if direction == 1:  # Long
             tp_hit = highs[j] >= tp
             sl_hit = lows[j] <= sl
@@ -558,13 +646,13 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                     if result is not None:
                         exit_price = tp if result > 0 else sl
                         return make_result(result, j, exit_price)
-                # After breakeven, SL hit is a win if SL > entry
-                sl_result = 1.0 if sl > entry else -1.0
+                # After breakeven, SL hit is a win if SL > avg_price (or entry)
+                sl_result = 1.0 if sl > sl_ref else -1.0
                 return make_result(sl_result, j, sl)
             elif tp_hit:
                 return make_result(1.0, j, tp)
             elif sl_hit:
-                sl_result = 1.0 if sl > entry else -1.0
+                sl_result = 1.0 if sl > sl_ref else -1.0
                 return make_result(sl_result, j, sl)
 
         else:  # Short
@@ -577,12 +665,12 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                     if result is not None:
                         exit_price = tp if result > 0 else sl
                         return make_result(result, j, exit_price)
-                sl_result = 1.0 if sl < entry else -1.0
+                sl_result = 1.0 if sl < sl_ref else -1.0
                 return make_result(sl_result, j, sl)
             elif tp_hit:
                 return make_result(1.0, j, tp)
             elif sl_hit:
-                sl_result = 1.0 if sl < entry else -1.0
+                sl_result = 1.0 if sl < sl_ref else -1.0
                 return make_result(sl_result, j, sl)
 
     # Kein Exit (weder TP/SL noch Timeout innerhalb max_bars)

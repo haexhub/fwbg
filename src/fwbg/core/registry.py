@@ -12,6 +12,7 @@ from fwbg_sdk.registry import (
     INDICATOR_REGISTRY,
     EXIT_STRATEGY_REGISTRY,
     EXIT_MODIFIER_REGISTRY,
+    ENTRY_MODIFIER_REGISTRY,
     FEATURE_SELECTOR_REGISTRY,
     PREPROCESSOR_REGISTRY,
     RISK_MANAGER_REGISTRY,
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
         BaseIndicator,
         BaseExitStrategy,
         BaseExitModifier,
+        BaseEntryModifier,
         BaseFeatureSelector,
         BasePreprocessor,
         BaseRiskManager,
@@ -146,6 +148,16 @@ def get_exit_modifier(name: str) -> Type["BaseExitModifier"]:
         available = list(EXIT_MODIFIER_REGISTRY.keys())
         raise ValueError(f"Unknown exit modifier: '{name}'. Available: {available}")
     return EXIT_MODIFIER_REGISTRY[name]
+
+
+def get_entry_modifier(name: str) -> Type["BaseEntryModifier"]:
+    """Get entry modifier class by name, auto-discovering if needed."""
+    if not ENTRY_MODIFIER_REGISTRY:
+        _ensure_plugins_loaded()
+    if name not in ENTRY_MODIFIER_REGISTRY:
+        available = list(ENTRY_MODIFIER_REGISTRY.keys())
+        raise ValueError(f"Unknown entry modifier: '{name}'. Available: {available}")
+    return ENTRY_MODIFIER_REGISTRY[name]
 
 
 def get_feature_selector(name: str) -> Type["BaseFeatureSelector"]:
