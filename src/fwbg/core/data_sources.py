@@ -175,7 +175,8 @@ class CSVSourceConfig(DataSourceConfig):
         if glob_override:
             raw_files = sorted(raw_dir.glob(glob_override))
             # With a custom glob, prefix = full stem (user manages symbol_map accordingly)
-            extract_prefix = lambda stem: stem
+            def extract_prefix(stem: str) -> str:
+                return stem
         else:
             glob_pat, extract_prefix = self._build_glob_and_prefix_splitter()
             raw_files = sorted(raw_dir.glob(glob_pat))
