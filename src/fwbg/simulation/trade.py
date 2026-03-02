@@ -375,17 +375,28 @@ def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
 
 def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_distance, spread,
                        max_bars=None, timestamps=None, symbol=None,
-                       opens=None, timeout_bars=None, in_session=None):
+                       opens=None, timeout_bars=None, in_session=None,
+                       sl_level_abs=None, entry_delay=1,
+                       breakeven_trigger=0.0, trail_distance=0.0):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
     Exit-Strategy-agnostisch: nimmt fertig berechnete TP/SL-Distanzen.
     Die Distanz-Berechnung (fixed, ATR-basiert, etc.) obliegt dem Exit-Strategy-Plugin.
 
-    - Signal bei Bar idx, Entry bei Open von Bar idx+1 (kein Look-Ahead!)
+    - Signal bei Bar idx, Entry bei Bar idx+entry_delay
+    - entry_delay=1 (default): Entry bei Open des nächsten Bars (kein Look-Ahead)
+    - entry_delay=0: Entry beim Close des Signal-Bars (für Breakout-Strategien
+      mit Stop-Orders am Breakout-Level)
     - Trade läuft bis TP oder SL erreicht wird
     - Bei gleichzeitigem TP/SL im selben Bar: Schaut in 15-Min-Daten (falls verfügbar)
     - Bei Timeout: Schließt zum Close-Preis und wertet als Win/Loss
+
+    Trailing Stop:
+    - breakeven_trigger: Anteil der TP-Distanz, ab dem SL auf Entry gezogen wird
+      (0.5 = 50% des TP). 0.0 = kein Breakeven.
+    - trail_distance: Absoluter Abstand für Trailing Stop. Nach Breakeven folgt
+      der SL dem besten Preis mit diesem Abstand. 0.0 = kein Trailing.
 
     Args:
         closes: Close-Preise Array
@@ -399,24 +410,14 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         opens: Optional - Open-Preise Array für realistischen Entry
         timestamps: Optional - Array von Timestamps für M15-Lookup
         symbol: Optional - Symbol-Name für M15-Lookup
+        entry_delay: Bars zwischen Signal und Entry (0=sofort, 1=nächster Bar)
+        breakeven_trigger: Anteil TP-Distanz für Breakeven (0.0=aus, 0.5=50%)
+        trail_distance: Trailing-Abstand vom besten Preis (0.0=aus)
 
     Returns:
-        dict mit Trade-Details oder None bei ungültigem Trade:
-            - result: 1.0=Win, -1.0=Loss
-            - direction: "LONG" oder "SHORT"
-            - signal_idx, entry_idx, exit_idx: Bar-Indizes
-            - signal_time, entry_time, exit_time: Zeitstempel (falls vorhanden)
-            - entry_price_raw: Preis vor Kosten
-            - entry_price: Effektiver Entry inkl. Spread+Slippage
-            - exit_price: Exit-Preis (TP, SL, oder Close bei Timeout)
-            - tp_level, sl_level: TP/SL Levels
-            - spread, slippage, total_cost: Kosten
-            - tp_distance, sl_distance: Distanzen in Preiseinheiten
-            - pnl_raw: PnL vor Positionsgrößen-Berechnung
-            - bars_held: Dauer in Bars
+        dict mit Trade-Details oder None bei ungültigem Trade
     """
-    # Entry bei idx+1 (nächster Bar nach Signal)
-    entry_idx = idx + 1
+    entry_idx = idx + entry_delay
     if entry_idx >= len(closes):
         return None
 
@@ -427,13 +428,12 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
 
     slippage = spread * 0.5
 
-    # Entry: Open des nächsten Bars (realistisch, kein Look-Ahead)
-    # WICHTIG: Kein Fallback auf closes[idx] - das wäre Lookahead Bias!
-    if opens is not None:
+    if entry_delay == 0:
+        # Sofort-Entry: Close des Signal-Bars (Breakout mit Stop-Order)
+        entry_price = closes[idx]
+    elif opens is not None:
         entry_price = opens[entry_idx]
     else:
-        # Fallback: Close des ENTRY-Bars (nicht Signal-Bar!) als Approximation
-        # Dies ist konservativ - wir nehmen an Entry passiert zum Close des Entry-Bars
         entry_price = closes[entry_idx]
 
     # WICHTIG: Slippage wirkt IMMER gegen den Trader:
@@ -442,11 +442,11 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
     if direction == 1:  # Long
         entry = entry_price + spread + slippage  # Kaufe teurer
         tp = entry + tp_distance  # TP-Level (Trigger)
-        sl = entry - sl_distance  # SL-Level (Trigger)
+        sl = sl_level_abs if sl_level_abs is not None else entry - sl_distance
     else:  # Short
         entry = entry_price - spread - slippage  # Verkaufe billiger
         tp = entry - tp_distance  # TP-Level (Trigger)
-        sl = entry + sl_distance  # SL-Level (Trigger)
+        sl = sl_level_abs if sl_level_abs is not None else entry + sl_distance
 
     # Hilfsfunktion für Rückgabe
     def make_result(result, exit_idx, exit_price):
@@ -477,9 +477,18 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             "slippage": float(slippage),
             "total_cost": float(spread + slippage),
             "tp_distance": float(tp_distance),
-            "sl_distance": float(sl_distance),
+            "sl_distance": float(abs(entry - sl)) if sl_level_abs is not None else float(sl_distance),
             "pnl_raw": float(pnl_raw),
         }
+
+    # Trailing state
+    use_trailing = breakeven_trigger > 0.0 or trail_distance > 0.0
+    trailing_active = breakeven_trigger <= 0.0 and trail_distance > 0.0
+    best_price = entry
+    if direction == 1:
+        be_trigger_price = entry + tp_distance * breakeven_trigger if breakeven_trigger > 0.0 else 0.0
+    else:
+        be_trigger_price = entry - tp_distance * breakeven_trigger if breakeven_trigger > 0.0 else 0.0
 
     # Session-aware exit: only check TP/SL/timeout on in-session bars.
     # Trades may run through off-session periods (overnight holds).
@@ -506,6 +515,39 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             trade_result["timeout_bars"] = timeout_bars
             return trade_result
 
+        # --- Trailing stop logic ---
+        if use_trailing:
+            # Track best price
+            if direction == 1:
+                if highs[j] > best_price:
+                    best_price = highs[j]
+            else:
+                if lows[j] < best_price:
+                    best_price = lows[j]
+
+            # Breakeven trigger check
+            if not trailing_active and breakeven_trigger > 0.0:
+                if direction == 1 and best_price >= be_trigger_price:
+                    trailing_active = True
+                    if entry > sl:
+                        sl = entry
+                elif direction == -1 and best_price <= be_trigger_price:
+                    trailing_active = True
+                    if entry < sl:
+                        sl = entry
+
+            # Trail SL behind best price
+            if trailing_active and trail_distance > 0.0:
+                if direction == 1:
+                    new_sl = best_price - trail_distance
+                    if new_sl > sl:
+                        sl = new_sl
+                else:
+                    new_sl = best_price + trail_distance
+                    if new_sl < sl:
+                        sl = new_sl
+
+        # --- TP/SL hit detection ---
         if direction == 1:  # Long
             tp_hit = highs[j] >= tp
             sl_hit = lows[j] <= sl
@@ -516,11 +558,14 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                     if result is not None:
                         exit_price = tp if result > 0 else sl
                         return make_result(result, j, exit_price)
-                return make_result(-1.0, j, sl)
+                # After breakeven, SL hit is a win if SL > entry
+                sl_result = 1.0 if sl > entry else -1.0
+                return make_result(sl_result, j, sl)
             elif tp_hit:
                 return make_result(1.0, j, tp)
             elif sl_hit:
-                return make_result(-1.0, j, sl)
+                sl_result = 1.0 if sl > entry else -1.0
+                return make_result(sl_result, j, sl)
 
         else:  # Short
             tp_hit = lows[j] <= tp
@@ -532,11 +577,13 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                     if result is not None:
                         exit_price = tp if result > 0 else sl
                         return make_result(result, j, exit_price)
-                return make_result(-1.0, j, sl)
+                sl_result = 1.0 if sl < entry else -1.0
+                return make_result(sl_result, j, sl)
             elif tp_hit:
                 return make_result(1.0, j, tp)
             elif sl_hit:
-                return make_result(-1.0, j, sl)
+                sl_result = 1.0 if sl < entry else -1.0
+                return make_result(sl_result, j, sl)
 
     # Kein Exit (weder TP/SL noch Timeout innerhalb max_bars)
     return None

@@ -3,7 +3,7 @@ Fixed Exit Strategy Plugin.
 
 Verwendet fixe TP/SL-Werte basierend auf Spread-Multiplikatoren.
 """
-from typing import Dict, Any, Tuple, TYPE_CHECKING
+from typing import Tuple, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 

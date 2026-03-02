@@ -12,13 +12,21 @@ Design rationale:
   - When auto-detected (no explicit sl_dist_column), sl_mult is applied as a
     buffer multiplier on the raw distance (1.0 = exact boundary, >1.0 = buffer).
 
+sl_level_column (exit_params):
+  - When set, SL is placed at the absolute price level from this column,
+    regardless of entry price.  Useful for anchoring SL to structural levels
+    (e.g. *_or_midpoint, *_or_high, *_or_low).
+  - sl_mult still applies as a buffer multiplier: the SL level is pushed
+    further from entry by (sl_mult - 1.0) * abs(level - entry).
+    sl_mult=1.0 → exact level. sl_mult=1.2 → 20% beyond the level.
+
 tp_mode (exit_params):
   - "atr" (default): TP = ATR * tp_mult. Trailing uses ATR * trail_atr_mult.
   - "range": TP = range_column * tp_mult. Trailing uses range as trail distance.
     Typical config: tp_mult=1.0 (TP = full range), sl_mult=1.4 (SL = 70% of range
     from midpoint entry = 20% beyond range boundary), breakeven_trigger=0.5.
 """
-from typing import Dict, Any, Tuple, Union, TYPE_CHECKING
+from typing import Tuple, Union, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
@@ -244,6 +252,9 @@ class OrbExitStrategy(BaseExitStrategy):
             "min_tp_pips": 8,
             "min_sl_pips": 5,
             "timeout_bars": None,
+            "sl_level_column": None,
+            "entry_delay": 1,
+            "max_trades_per_signal": 1,
         }
 
     @classmethod
@@ -264,7 +275,7 @@ class OrbExitStrategy(BaseExitStrategy):
                 ),
                 "min": 0.5,
                 "max": 10.0,
-                "step": 0.5,
+                "step": 0.1,
             },
             "sl_mult": {
                 "type": "float",
@@ -311,6 +322,40 @@ class OrbExitStrategy(BaseExitStrategy):
                 "max": 500,
                 "step": 1,
                 "required": False,
+            },
+            "sl_level_column": {
+                "type": "string",
+                "default": None,
+                "description": (
+                    "Column with absolute SL price level (e.g. *_or_midpoint, "
+                    "*_or_high, *_or_low). When set, SL is anchored at this "
+                    "structural level instead of entry ± sl_dist."
+                ),
+                "required": False,
+            },
+            "entry_delay": {
+                "type": "int",
+                "default": 1,
+                "description": (
+                    "Bars between signal and entry. "
+                    "0 = entry at signal bar close (breakout stop-orders). "
+                    "1 = entry at next bar open (default, no look-ahead)."
+                ),
+                "min": 0,
+                "max": 1,
+                "step": 1,
+            },
+            "max_trades_per_signal": {
+                "type": "int",
+                "default": 1,
+                "description": (
+                    "Max trades per signal event (contiguous run of bars where "
+                    "model confidence >= ct). 1 = one trade per breakout. "
+                    "0 = unlimited (legacy behavior)."
+                ),
+                "min": 0,
+                "max": 10,
+                "step": 1,
             },
         }
 

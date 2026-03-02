@@ -3,7 +3,6 @@ Hauptprogramm für den Walk-Forward Optimizer
 """
 
 import os
-import sys
 import glob
 import json
 import math

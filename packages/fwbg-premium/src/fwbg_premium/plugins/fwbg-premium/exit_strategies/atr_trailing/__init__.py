@@ -18,7 +18,7 @@ Both can be combined or used independently:
   - breakeven_trigger=0.5, trail_atr_mult=0.0  (breakeven only)
   - breakeven_trigger=0.0, trail_atr_mult=0.5  (trailing from entry)
 """
-from typing import Dict, Any, Tuple, Union, TYPE_CHECKING
+from typing import Tuple, Union, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 from numba import njit

@@ -10,7 +10,7 @@ Bei hoher Volatilität wird der Timeout verkürzt (schnellere Preisbewegungen),
 bei niedriger Volatilität verlängert.
 """
 import pathlib
-from typing import Dict, Any, Tuple, Union, TYPE_CHECKING
+from typing import Tuple, Union, TYPE_CHECKING
 import numpy as np
 import pandas as pd
 from numba import njit
