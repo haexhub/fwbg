@@ -341,9 +341,16 @@ def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
 
     # Completed runs from test_results/
     if results_dir.exists():
-        run_dirs = sorted(results_dir.iterdir(), reverse=True)
+        run_dirs = sorted(
+            results_dir.iterdir(),
+            key=lambda d: d.stat().st_mtime,
+            reverse=True,
+        )
         for run_dir in run_dirs[:limit]:
             if not run_dir.is_dir():
+                continue
+            # Skip dirs that belong to active jobs (dir created early for progress)
+            if run_dir.name in _active_jobs:
                 continue
 
             config_file = run_dir / "config.json"

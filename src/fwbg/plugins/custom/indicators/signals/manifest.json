@@ -1,0 +1,6 @@
+{
+  "name": "computed_signal",
+  "version": "1.0.0",
+  "description": "Rule-based computed signals from combinations of indicator columns",
+  "phase": "indicators"
+}
