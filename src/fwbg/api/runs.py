@@ -440,6 +440,33 @@ def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
     return runs
 
 
+def _resolve_strategy_refs(strategy: dict) -> None:
+    """Resolve string references in strategy data to their preset content.
+
+    Mutates the dict in-place.  For example ``"pipeline": "orb_scalping_v1"``
+    is replaced with the contents of ``strategies/pipelines/orb_scalping_v1.json``.
+    """
+    strategies_dir = get_strategies_dir()
+    for key, subdir in [
+        ("pipeline", "pipelines"),
+        ("model", "models"),
+        ("validation", "validations"),
+        ("filters", "filters"),
+        ("resources", "resources"),
+        ("risk_params", "risk_params"),
+    ]:
+        value = strategy.get(key)
+        if not isinstance(value, str):
+            continue
+        preset_dir = strategies_dir.parent / subdir
+        preset_path = preset_dir / f"{value}.json"
+        if preset_path.exists():
+            try:
+                strategy[key] = json.loads(preset_path.read_text())
+            except (json.JSONDecodeError, IOError):
+                pass
+
+
 @router.get("/{run_id}")
 def get_run(run_id: str) -> dict:
     """Get detailed results for a completed run."""
@@ -471,11 +498,13 @@ def get_run(run_id: str) -> dict:
         except (json.JSONDecodeError, IOError):
             pass
 
-    # Load strategy
+    # Load strategy (resolve string references like "pipeline": "orb_scalping_v1")
     strategy_file = run_dir / "strategy.json"
     if strategy_file.exists():
         try:
-            result["strategy"] = json.loads(strategy_file.read_text())
+            strategy = json.loads(strategy_file.read_text())
+            _resolve_strategy_refs(strategy)
+            result["strategy"] = strategy
         except (json.JSONDecodeError, IOError):
             pass
 
