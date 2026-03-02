@@ -291,6 +291,7 @@ class PluginRegistry:
             self._plugin_manifests[fqn] = manifest
 
             # Dynamically import the module
+            loaded_module = None
             try:
                 module_name = f"_plugin_{namespace}_{plugin_name}"
                 spec = importlib.util.spec_from_file_location(module_name, init_file)
@@ -300,6 +301,7 @@ class PluginRegistry:
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[module_name] = module
                 spec.loader.exec_module(module)
+                loaded_module = module
 
                 # Find and register all BasePlugin subclasses
                 for attr_name in dir(module):
@@ -335,6 +337,99 @@ class PluginRegistry:
                             )
                 except Exception as e:
                     logger.warning(f"Plugin {fqn} docs validation error: {e}")
+
+            # Discover dynamic signal definitions from definitions/ directory
+            definitions_dir = plugin_dir / "definitions"
+            if definitions_dir.is_dir() and loaded_module is not None:
+                discovered.extend(
+                    self._discover_signal_definitions(
+                        definitions_dir, namespace, loaded_module
+                    )
+                )
+
+        return discovered
+
+    def _discover_signal_definitions(
+        self,
+        definitions_dir: Path,
+        namespace: str,
+        base_module: Any,
+    ) -> List[str]:
+        """
+        Discover JSON signal definitions and register them as dynamic plugins.
+
+        Each JSON file in definitions_dir defines a custom signal that gets
+        registered as a separate plugin under the given namespace.
+
+        Args:
+            definitions_dir: Directory containing JSON signal definition files
+            namespace: Package namespace (e.g., "custom")
+            base_module: The imported module containing the base plugin class
+
+        Returns:
+            List of fully qualified plugin names discovered
+        """
+        discovered: List[str] = []
+
+        # Find the base plugin class from the module
+        base_cls = None
+        for attr_name in dir(base_module):
+            attr = getattr(base_module, attr_name)
+            if (
+                isinstance(attr, type)
+                and issubclass(attr, BasePlugin)
+                and attr is not BasePlugin
+                and not inspect.isabstract(attr)
+            ):
+                base_cls = attr
+                break
+
+        if base_cls is None:
+            logger.warning(
+                f"No base plugin class found for definitions in {definitions_dir}"
+            )
+            return discovered
+
+        for def_file in sorted(definitions_dir.glob("*.json")):
+            try:
+                with open(def_file) as f:
+                    definition = json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(
+                    f"Failed to load signal definition {def_file}: {e}"
+                )
+                continue
+
+            sig_name = definition.get("name")
+            if not sig_name:
+                logger.warning(f"Signal definition {def_file} missing 'name'")
+                continue
+
+            # Create a dynamic subclass with the specific rules
+            dyn_cls = type(
+                f"CustomSignal_{sig_name}",
+                (base_cls,),
+                {
+                    "name": sig_name,
+                    "version": definition.get("version", "1.0.0"),
+                    "_rules": definition.get("rules", []),
+                },
+            )
+
+            try:
+                registered_fqn = self.register(dyn_cls, namespace)
+                self._plugin_manifests[registered_fqn] = {
+                    "name": sig_name,
+                    "description": definition.get("description", ""),
+                    "version": definition.get("version", "1.0.0"),
+                    "phase": "indicators",
+                    "dependencies": definition.get("dependencies", []),
+                }
+                discovered.append(registered_fqn)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to register signal definition {sig_name}: {e}"
+                )
 
         return discovered
 
