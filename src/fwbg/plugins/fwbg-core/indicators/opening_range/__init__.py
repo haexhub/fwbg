@@ -55,11 +55,18 @@ def orb_col(rb: int, cf, prb, session: int, feature: str) -> str:
 
 ORB_BASE_FEATURES = [
     "range", "position", "breakout_up", "breakout_down",
+    "breakout_dist",
     "range_vs_atr", "poc_dist", "sl_dist",
     "post_bull", "post_bear",
 ]
 
 ORB_SIGNAL_SUFFIXES = ("_breakout_up", "_breakout_down", "_retest_bull", "_retest_bear")
+
+# Structural columns: computed from the completed opening range, not forward-looking.
+# These must NOT be shifted — they're available as soon as the range period ends
+# and are used by the exit strategy for SL/TP distances and structural price levels.
+# Shifting them breaks entry_delay=0 (signal fires but distances are NaN).
+ORB_STRUCTURAL_SUFFIXES = ("_sl_dist", "_or_high", "_or_low", "_or_midpoint", "_range")
 
 
 def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
@@ -301,6 +308,17 @@ def _session_orb_features(
             ever_below.astype(float).where(signal_valid, np.nan)
         )
 
+        # Breakout distance: how far price is from the range edge,
+        # normalized by range size. 0 = at edge, 0.5 = half a range away.
+        # For longs: (close - or_high) / range, for shorts: (or_low - close) / range.
+        # We take the max of both (whichever side is active).
+        dist_above = (df["C"] - or_high).clip(lower=0)
+        dist_below = (or_low - df["C"]).clip(lower=0)
+        breakout_dist = safe_divide(
+            np.maximum(dist_above, dist_below), or_range
+        )
+        features[f"{prefix}_breakout_dist"] = breakout_dist.where(signal_valid, np.nan)
+
         features[f"{prefix}_range_vs_atr"] = safe_divide(or_range, atr).where(
             valid, np.nan
         )
@@ -310,14 +328,15 @@ def _session_orb_features(
             df["C"] - or_midpoint, atr
         ).where(valid, np.nan)
 
-        # SL distance: half body range (entry at midpoint → SL at body boundary)
+        # SL distance: full range (breakout entry at boundary → SL at opposite boundary)
+        # sl_mult in exit strategy controls buffer: 1.0 = exact boundary, >1.0 = beyond
         # When body range is 0 (O==C doji), sl_dist is invalid → NaN
-        sl_dist = (or_range / 2).where(valid & (or_range > 0), np.nan)
+        sl_dist = or_range.where(valid & (or_range > 0), np.nan)
         features[f"{prefix}_sl_dist"] = sl_dist
 
         # OR structural levels: absolute price levels for anchoring SL/TP.
-        # The exit strategy can reference these via sl_level_column to place
-        # SL at a fixed structural level regardless of entry price.
+        # The exit strategy can reference these via sl_level (suffix match)
+        # to place SL at a fixed structural level regardless of entry price.
         range_valid = valid & (or_range > 0)
         features[f"{prefix}_or_high"] = or_high.where(range_valid, np.nan)
         features[f"{prefix}_or_low"] = or_low.where(range_valid, np.nan)
@@ -478,10 +497,18 @@ class OpeningRangeIndicator(BaseIndicator):
         # close) and simulate_pro_trade already enters at idx+1 which provides
         # the correct 1-bar delay.  Shifting them would add a redundant second
         # bar of delay.
+        # Structural columns are NOT shifted: they represent completed-range
+        # levels (or_high, or_low, sl_dist, etc.) needed by the exit strategy
+        # at the breakout bar itself (especially with entry_delay=0).
         signal_keys = set(self._signal_columns)
-        non_signal = {k: v for k, v in features.items() if k not in signal_keys}
-        features_df = shift_features(non_signal, df.index)
-        for k in signal_keys:
+        structural_keys = {
+            k for k in features
+            if any(k.endswith(s) for s in ORB_STRUCTURAL_SUFFIXES)
+        }
+        no_shift = signal_keys | structural_keys
+        shifted = {k: v for k, v in features.items() if k not in no_shift}
+        features_df = shift_features(shifted, df.index)
+        for k in no_shift:
             features_df[k] = features[k]
         return pd.concat([df, features_df], axis=1)
 
