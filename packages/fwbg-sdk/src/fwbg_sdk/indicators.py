@@ -185,22 +185,31 @@ class BaseIndicator(BasePlugin, ABC):
         """
         ...
 
-    def get_feature_columns(self) -> List[str]:
+    def get_feature_columns(self, params=None) -> List[str]:
         """
         Gibt Liste der berechneten Feature-Spalten zurück.
+
+        Args:
+            params: Optionale Indicator-Parameter (z.B. aus Pipeline-Config).
+                    Wenn gesetzt, werden Spalten basierend auf diesen Params
+                    generiert statt auf Defaults. Nur relevant für Indicators
+                    deren Spalten von der Konfiguration abhängen.
 
         Returns:
             Liste der Spaltennamen die vom Indicator erzeugt werden
         """
         return self._feature_columns
 
-    def get_signal_columns(self) -> List[str]:
+    def get_signal_columns(self, params=None) -> List[str]:
         """
         Gibt Liste der Signal-Spalten zurück (diskrete Werte: -1, 0, 1).
 
         Signal-Spalten repräsentieren diskrete Zustände/Events,
         keine kontinuierlichen Werte. Sie werden im Chart als
         Histogramm dargestellt statt als Linie.
+
+        Args:
+            params: Optionale Indicator-Parameter (siehe get_feature_columns).
 
         Returns:
             Liste der Signal-Spaltennamen, oder leere Liste
@@ -218,6 +227,15 @@ class BaseIndicator(BasePlugin, ABC):
         """
         signal_cols = set(self.get_signal_columns())
         return [c for c in self.get_feature_columns() if c not in signal_cols]
+
+    def get_overlay_columns(self) -> List[str]:
+        """Columns rendered on the price chart (absolute price-scale values).
+
+        These are ``_`` prefixed columns computed by the indicator but excluded
+        from ML features.  The chart API includes them despite the ``_`` prefix.
+        Default: empty list (no overlay).
+        """
+        return []
 
     def get_column_group_labels(self) -> dict:
         """

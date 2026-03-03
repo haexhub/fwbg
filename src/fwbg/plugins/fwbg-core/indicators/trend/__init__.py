@@ -12,12 +12,13 @@ from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_div
 
 
 def _supertrend(high: pd.Series, low: pd.Series, close: pd.Series,
-                period: int = 14, multiplier: float = 3.0) -> pd.Series:
+                period: int = 14, multiplier: float = 3.0
+                ) -> tuple[pd.Series, pd.Series]:
     """
     Supertrend Indikator.
 
     ATR-basierter Trend-Filter der weniger noisy ist als Parabolic SAR.
-    Gibt +1 (Uptrend) oder -1 (Downtrend) zurück.
+    Returns (direction, line) — direction is +1/-1, line is the price level.
     """
     atr = ta.volatility.average_true_range(high, low, close, window=period)
     hl2 = (high + low) / 2
@@ -55,7 +56,7 @@ def _supertrend(high: pd.Series, low: pd.Series, close: pd.Series,
                 direction[i] = -1
                 supertrend[i] = final_upper[i]
 
-    return pd.Series(direction, index=close.index)
+    return pd.Series(direction, index=close.index), pd.Series(supertrend, index=close.index)
 
 
 @register_indicator("trend")
@@ -117,15 +118,35 @@ class TrendIndicators(BaseIndicator):
                     df["H"], df["L"], df["C"], window=period
                 )
 
-            # EMA Distanz
+            # EMA Distanz + Crossings
+            emas = {}
             for period in ema_periods:
                 ema = ta.trend.ema_indicator(df["C"], window=period)
+                emas[period] = ema
                 features[f"trend_ema_dist_{period}"] = safe_divide(df["C"] - ema, df["C"])
+                features[f"_trend_ema_{period}"] = ema
 
-            # SMA Distanz
+            sorted_ema = sorted(ema_periods)
+            for i, short_p in enumerate(sorted_ema):
+                for long_p in sorted_ema[i + 1:]:
+                    features[f"trend_ema_{short_p}_above_{long_p}"] = (
+                        emas[short_p] > emas[long_p]
+                    ).astype(float)
+
+            # SMA Distanz + Crossings
+            smas = {}
             for period in sma_periods:
                 sma = ta.trend.sma_indicator(df["C"], window=period)
+                smas[period] = sma
                 features[f"trend_sma_dist_{period}"] = safe_divide(df["C"] - sma, df["C"])
+                features[f"_trend_sma_{period}"] = sma
+
+            sorted_sma = sorted(sma_periods)
+            for i, short_p in enumerate(sorted_sma):
+                for long_p in sorted_sma[i + 1:]:
+                    features[f"trend_sma_{short_p}_above_{long_p}"] = (
+                        smas[short_p] > smas[long_p]
+                    ).astype(float)
 
         # MACD
         macd_ind = ta.trend.MACD(df["C"])
@@ -168,13 +189,14 @@ class TrendIndicators(BaseIndicator):
             features["trend_er_20_chg"] = features["trend_er_20"] - features["trend_er_20"].shift(10)
 
             # Supertrend
-            st_direction = _supertrend(
+            st_direction, st_line = _supertrend(
                 df["H"], df["L"], df["C"],
                 period=supertrend_period, multiplier=supertrend_multiplier,
             )
             features["trend_supertrend"] = st_direction
             # Supertrend Flip: 1 wenn gerade gewechselt, sonst 0
             features["trend_supertrend_flip"] = (st_direction != st_direction.shift(1)).astype(float)
+            features["_trend_supertrend_line"] = st_line
 
         # CRITICAL: Shift all features by 1 to prevent lookahead bias
         features_df = shift_features(features, df.index)
@@ -186,11 +208,20 @@ class TrendIndicators(BaseIndicator):
         return [
             # ADX
             "trend_adx_7", "trend_adx_14", "trend_adx_21",
-            # EMA
+            # EMA Distance
             "trend_ema_dist_8", "trend_ema_dist_21", "trend_ema_dist_50",
             "trend_ema_dist_100", "trend_ema_dist_200",
-            # SMA
+            # EMA Crossings
+            "trend_ema_8_above_21", "trend_ema_8_above_50",
+            "trend_ema_8_above_100", "trend_ema_8_above_200",
+            "trend_ema_21_above_50", "trend_ema_21_above_100",
+            "trend_ema_21_above_200", "trend_ema_50_above_100",
+            "trend_ema_50_above_200", "trend_ema_100_above_200",
+            # SMA Distance
             "trend_sma_dist_20", "trend_sma_dist_50", "trend_sma_dist_200",
+            # SMA Crossings
+            "trend_sma_20_above_50", "trend_sma_20_above_200",
+            "trend_sma_50_above_200",
             # MACD
             "trend_macd", "trend_macd_signal",
             "trend_macd_line", "trend_macd_above_zero",
@@ -208,6 +239,14 @@ class TrendIndicators(BaseIndicator):
 
     def get_signal_columns(self) -> List[str]:
         return ["trend_supertrend", "trend_supertrend_flip"]
+
+    def get_overlay_columns(self) -> List[str]:
+        return [
+            "_trend_ema_8", "_trend_ema_21", "_trend_ema_50",
+            "_trend_ema_100", "_trend_ema_200",
+            "_trend_sma_20", "_trend_sma_50", "_trend_sma_200",
+            "_trend_supertrend_line",
+        ]
 
     @classmethod
     def get_default_params(cls) -> dict:
@@ -270,13 +309,18 @@ class TrendIndicators(BaseIndicator):
     def get_column_group_labels(self) -> dict:
         return {
             "adx": "ADX (Average Directional Index)",
-            "ema": "EMA Distance",
-            "sma": "SMA Distance",
+            "ema_dist": "EMA Distance",
+            "ema_crossing": "EMA Crossings",
+            "sma_dist": "SMA Distance",
+            "sma_crossing": "SMA Crossings",
             "macd": "MACD",
             "cci": "CCI (Commodity Channel Index)",
             "aroon": "Aroon",
             "er": "Efficiency Ratio",
             "supertrend": "Supertrend",
+            "_ema": "EMA Lines",
+            "_sma": "SMA Lines",
+            "_supertrend": "Supertrend Line",
         }
 
 

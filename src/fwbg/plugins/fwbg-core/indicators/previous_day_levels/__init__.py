@@ -514,34 +514,52 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         return pd.concat([df, features_df], axis=1)
 
     @classmethod
-    def _default_fallback_columns(cls) -> Tuple[List[str], List[str]]:
-        """Build default feature/signal column lists from default params."""
-        d = cls.get_default_params()
+    def _default_fallback_columns(cls, params=None) -> Tuple[List[str], List[str]]:
+        """Build feature/signal column lists from params (or defaults)."""
+        d = {**cls.get_default_params(), **(params or {})}
         rl_vals = d["retracement_levels"]
         rl_list = [rl_vals] if isinstance(rl_vals, (int, float)) else list(rl_vals)
 
-        # Default prefixes: hl_ + ses_ + "" (all_hours break) = "hl_ses_"
-        pfx = "hl_ses_"
-        features = [f"{pfx}{f}" for f in cls._BASE_FEATURES]
-        signals = [f"{pfx}{f}" for f in cls._BASE_SIGNAL_SUFFIXES]
+        span_pfx = _CANDLE_SPAN_PREFIX[d["candle_span"]]
+        range_scope = d["range_scope"] if isinstance(d["range_scope"], (list, tuple)) else [d["range_scope"]]
+        break_modes = d["break_modes"] if isinstance(d["break_modes"], (list, tuple)) else [d["break_modes"]]
+        retest_modes = d["retest_modes"] if isinstance(d["retest_modes"], (list, tuple)) else [d["retest_modes"]]
 
-        for rl in rl_list:
-            rl_pfx = f"{pfx}{rl_tag(rl)}_"
-            for f in cls._RL_FEATURES:
-                features.append(f"{rl_pfx}{f}")
-            for f in cls._RL_SIGNAL_SUFFIXES:
-                signals.append(f"{rl_pfx}{f}")
+        features = []
+        signals = []
+
+        for scope in range_scope:
+            scope_pfx = _RANGE_SCOPE_PREFIX[scope]
+            for break_mode in break_modes:
+                break_pfx = _BREAK_MODE_PREFIX[break_mode]
+                combined_pfx = f"{span_pfx}{scope_pfx}{break_pfx}"
+
+                for f in cls._BASE_FEATURES:
+                    features.append(f"{combined_pfx}{f}")
+                for f in cls._BASE_SIGNAL_SUFFIXES:
+                    signals.append(f"{combined_pfx}{f}")
+
+                for rl in rl_list:
+                    rl_pfx_str = f"{rl_tag(rl)}_"
+                    for retest_mode in retest_modes:
+                        retest_pfx = _RETEST_MODE_PREFIX[retest_mode]
+                        full_pfx = f"{combined_pfx}{retest_pfx}{rl_pfx_str}"
+                        for f in cls._RL_FEATURES:
+                            features.append(f"{full_pfx}{f}")
+                        for f in cls._RL_SIGNAL_SUFFIXES:
+                            signals.append(f"{full_pfx}{f}")
+
         return features, signals
 
-    def get_feature_columns(self) -> List[str]:
-        if self._feature_columns:
+    def get_feature_columns(self, params=None) -> List[str]:
+        if self._feature_columns and not params:
             return self._feature_columns
-        return self._default_fallback_columns()[0]
+        return self._default_fallback_columns(params)[0]
 
-    def get_signal_columns(self) -> List[str]:
-        if self._signal_columns:
+    def get_signal_columns(self, params=None) -> List[str]:
+        if self._signal_columns and not params:
             return self._signal_columns
-        return self._default_fallback_columns()[1]
+        return self._default_fallback_columns(params)[1]
 
     @classmethod
     def get_default_params(cls) -> dict:

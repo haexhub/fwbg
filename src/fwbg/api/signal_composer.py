@@ -59,28 +59,21 @@ def _price_columns_group() -> dict[str, Any]:
     }
 
 
-def _get_plugin_columns(plugin_cls) -> tuple[list[str], list[str], dict[str, str]]:
+def _get_plugin_columns(plugin_cls, params=None) -> tuple[list[str], list[str], dict[str, str]]:
     """Get feature columns, signal columns and group labels from a plugin class.
 
-    Handles both classmethod and instance method patterns.
+    When *params* is provided it is forwarded to the column methods so they
+    return only the columns that match the pipeline configuration (sessions,
+    retracement_levels, etc.) instead of the full default set.
     """
-    try:
-        feature_cols = plugin_cls.get_feature_columns()
-    except TypeError:
-        feature_cols = plugin_cls().get_feature_columns()
+    inst = plugin_cls()
+    feature_cols = inst.get_feature_columns(params)
+    signal_cols = inst.get_signal_columns(params)
 
     try:
-        signal_cols = plugin_cls.get_signal_columns()
-    except TypeError:
-        signal_cols = plugin_cls().get_signal_columns()
-
-    try:
-        group_labels = plugin_cls.get_column_group_labels()
-    except TypeError:
-        try:
-            group_labels = plugin_cls().get_column_group_labels()
-        except Exception:
-            group_labels = {}
+        group_labels = inst.get_column_group_labels()
+    except Exception:
+        group_labels = {}
 
     return feature_cols, signal_cols, group_labels
 
@@ -132,7 +125,8 @@ def get_available_columns(strategy_name: str) -> dict[str, Any]:
             # Skip unresolvable plugins
             continue
 
-        feature_cols, signal_cols, group_labels = _get_plugin_columns(plugin_cls)
+        ind_params = ind_cfg.get("params", {})
+        feature_cols, signal_cols, group_labels = _get_plugin_columns(plugin_cls, ind_params)
 
         if not feature_cols:
             continue

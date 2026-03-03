@@ -126,6 +126,7 @@ class OptimizationConfig:
         default_factory=RegimeFilterGridConfig
     )
     model_hyperparameters_grid: list[dict] | None = None
+    indicator_grid: dict[str, dict[str, list]] | None = None
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "OptimizationConfig":
@@ -145,6 +146,7 @@ class OptimizationConfig:
         return cls(
             regime_filter_grid=regime,
             model_hyperparameters_grid=mhg,
+            indicator_grid=data.get("indicator_grid"),
         )
 
 

@@ -126,14 +126,20 @@ def _simulate_trades_core(
     # TP/SL-Distanzen vom Exit-Strategy-Plugin berechnen lassen
     tp_dists, sl_dists = _resolve_distances(df, tp, sl, ctx)
 
-    # Absolute SL levels: when sl_level_column is set in exit_params, SL is
+    # Absolute SL levels: when sl_level is set in exit_params, SL is
     # anchored to the structural price level from that column (e.g. OR midpoint)
     # instead of computed as entry ± sl_dist.
+    # sl_level is a suffix like "or_midpoint" — auto-detect the full column name.
     sl_levels = None
     exit_params = ctx.exit_params if ctx.exit_params else {}
-    sl_level_col = exit_params.get("sl_level_column")
-    if sl_level_col and sl_level_col in df.columns:
-        sl_levels = df[sl_level_col].values.astype(np.float64)
+    sl_level_suffix = exit_params.get("sl_level")
+    if sl_level_suffix and sl_level_suffix != "none":
+        sl_col = next(
+            (c for c in df.columns if c.endswith(f"_{sl_level_suffix}")),
+            None,
+        )
+        if sl_col is not None:
+            sl_levels = df[sl_col].values.astype(np.float64)
 
     # Entry delay: 0 = entry at signal bar close (breakout stop-orders),
     # 1 = entry at next bar open (default, no look-ahead).
@@ -142,7 +148,33 @@ def _simulate_trades_core(
     # Trailing stop from exit_modifier_params (separate composable plugin).
     modifier_params = getattr(ctx, "exit_modifier_params", None) or {}
     breakeven_trigger = modifier_params.get("breakeven_trigger", 0.0)
-    trail_distance_mode = modifier_params.get("trail_distance", 0.0)
+    trail_atr_mult = modifier_params.get("trail_atr_mult", 0.0)
+
+    # Resolve per-bar trail distances: range mode uses the OR range as trail
+    # distance (structural), ATR mode uses ATR * trail_atr_mult.
+    trail_dists = np.zeros(len(df), dtype=np.float64)
+    if trail_atr_mult > 0.0:
+        tp_mode = exit_params.get("tp_mode", "atr")
+        if tp_mode == "range":
+            exit_strategy_cls = get_exit_strategy(ctx.exit_strategy)
+            es = exit_strategy_cls()
+            if hasattr(es, "_get_range"):
+                range_v = es._get_range(df, exit_params)
+                trail_dists = np.where(range_v > 0.0, range_v, 0.0).astype(np.float64)
+        else:
+            atr_col = "_atr" if "_atr" in df.columns else ("vol_atr" if "vol_atr" in df.columns else None)
+            if atr_col:
+                atr_v = np.nan_to_num(df[atr_col].values.astype(np.float64), nan=0.0)
+            else:
+                import ta
+                atr_period = exit_params.get("atr_period", 14)
+                atr_v = np.nan_to_num(
+                    ta.volatility.average_true_range(
+                        df["H"], df["L"], df["C"], window=atr_period,
+                    ).values.astype(np.float64),
+                    nan=0.0,
+                )
+            trail_dists = atr_v * trail_atr_mult
 
     # Entry modifier params for scale-in
     entry_mod_params = getattr(ctx, "entry_modifier_params", None) or {}
@@ -223,13 +255,7 @@ def _simulate_trades_core(
                 v = sl_levels[i]
                 if not np.isnan(v):
                     sl_abs = v
-            # Resolve trail_distance: "sl" means use the initial SL distance
-            if trail_distance_mode == "sl":
-                td = sl_dists[i]
-            elif isinstance(trail_distance_mode, (int, float)):
-                td = float(trail_distance_mode)
-            else:
-                td = 0.0
+            td = trail_dists[i]
             trade = simulate_pro_trade(
                 cls,
                 hgh,

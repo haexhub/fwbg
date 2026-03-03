@@ -199,24 +199,17 @@ def preview_signals(body: PreviewRequest) -> dict:
 def _collect_signal_columns(
     strategy,
 ) -> tuple[set[str], set[str]]:
-    """Collect signal columns from model hyperparameters + optimization variants."""
+    """Collect signal columns from signal_rules."""
     long_signals: set[str] = set()
     short_signals: set[str] = set()
 
-    # Base model hyperparameters
-    hp = strategy.model.hyperparameters
-    if hp.get("signal_column_long"):
-        long_signals.add(hp["signal_column_long"])
-    if hp.get("signal_column_short"):
-        short_signals.add(hp["signal_column_short"])
-
-    # Model hyperparameters grid variants
-    for hp_variant in strategy.optimization.model_hyperparameters_grid:
-        if hp_variant and isinstance(hp_variant, dict):
-            if hp_variant.get("signal_column_long"):
-                long_signals.add(hp_variant["signal_column_long"])
-            if hp_variant.get("signal_column_short"):
-                short_signals.add(hp_variant["signal_column_short"])
+    signal_rules = getattr(strategy, "signal_rules", None) or {}
+    for direction, target in (("long", long_signals), ("short", short_signals)):
+        rules = signal_rules.get(direction) or {}
+        for cond in rules.get("conditions", []):
+            col = cond.get("column") or cond.get("column_a", "")
+            if col:
+                target.add(col)
 
     return long_signals, short_signals
 
@@ -335,8 +328,11 @@ def _simulate_preview_trades(
 
 
 @router.get("")
-def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
-    """List completed and active runs."""
+def list_runs(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """List completed and active runs with pagination."""
     results_dir = get_test_results_dir()
     runs = []
 
@@ -347,7 +343,7 @@ def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
             key=lambda d: d.stat().st_mtime,
             reverse=True,
         )
-        for run_dir in run_dirs[:limit]:
+        for run_dir in run_dirs:
             if not run_dir.is_dir():
                 continue
             # Skip dirs that belong to active jobs (dir created early for progress)
@@ -437,7 +433,9 @@ def list_runs(limit: int = Query(20, ge=1, le=100)) -> list[dict]:
     for jid in finished_ids:
         del _active_jobs[jid]
 
-    return runs
+    total = len(runs)
+    paginated = runs[offset:offset + limit]
+    return {"items": paginated, "total": total}
 
 
 def _resolve_strategy_refs(strategy: dict) -> None:

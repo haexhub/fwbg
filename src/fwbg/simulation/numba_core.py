@@ -10,7 +10,7 @@ import numpy as np
 from numba import njit, prange
 
 # Bump this whenever a @njit function signature/return type changes.
-_CACHE_VERSION = "5"
+_CACHE_VERSION = "6"
 
 _THIS_DIR = pathlib.Path(__file__).resolve().parent
 _STAMP_FILE = _THIS_DIR / "__pycache__" / ".numba_cache_version"

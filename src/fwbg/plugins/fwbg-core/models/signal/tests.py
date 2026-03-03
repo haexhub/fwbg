@@ -1,4 +1,8 @@
-"""Tests for the signal model plugin."""
+"""Tests for the signal model plugin (v3.0.0).
+
+SignalModel reads _composed_signal_{direction} columns directly.
+No hyperparameters, no hour filter.
+"""
 import numpy as np
 import pandas as pd
 import pytest
@@ -12,100 +16,72 @@ if _mod is None:
 SignalModel = _mod.SignalModel
 
 
-def _make_df(n=10, signal_bull=None, signal_bear=None):
-    """Create a test DataFrame with signal columns."""
+def _make_df(n=10, long_signal=None, short_signal=None):
+    """Create a test DataFrame with composed signal columns."""
     df = pd.DataFrame({
         "feature_a": np.random.randn(n),
         "feature_b": np.random.randn(n),
     })
-    if signal_bull is not None:
-        df["orb_s0_retest_bull"] = signal_bull
-    if signal_bear is not None:
-        df["orb_s0_retest_bear"] = signal_bear
+    if long_signal is not None:
+        df["_composed_signal_long"] = long_signal
+    if short_signal is not None:
+        df["_composed_signal_short"] = short_signal
     return df
 
 
-def test_train_sets_direction_long():
+def test_train_sets_composed_signal_col_long():
     model = SignalModel()
-    df = _make_df(5, signal_bull=[0, 1, 0, 0, 1], signal_bear=[0, 0, 0, 1, 0])
-    targets = np.array([0, 1, 0, -1, 1])
-    ctx = TrainingContext(direction="long")
-    model.train(
-        df, targets, ctx,
-        signal_column_long="orb_s0_retest_bull",
-        signal_column_short="orb_s0_retest_bear",
-    )
-    assert model._signal_col == "orb_s0_retest_bull"
+    df = _make_df(5, long_signal=[0, 1, 0, 0, 1])
+    targets = np.array([0, 1, 0, 0, 1])
+    model.train(df, targets, TrainingContext(direction="long"))
+    assert model._signal_col == "_composed_signal_long"
     assert model.is_trained
 
 
-def test_train_sets_direction_short():
+def test_train_sets_composed_signal_col_short():
     model = SignalModel()
-    df = _make_df(5, signal_bull=[0, 1, 0, 0, 1], signal_bear=[0, 0, 0, 1, 0])
-    targets = np.array([0, 1, 0, -1, 1])
-    ctx = TrainingContext(direction="short")
-    model.train(
-        df, targets, ctx,
-        signal_column_long="orb_s0_retest_bull",
-        signal_column_short="orb_s0_retest_bear",
-    )
-    assert model._signal_col == "orb_s0_retest_bear"
+    df = _make_df(5, short_signal=[0, 0, 0, 1, 0])
+    targets = np.array([0, 0, 0, 1, 0])
+    model.train(df, targets, TrainingContext(direction="short"))
+    assert model._signal_col == "_composed_signal_short"
     assert model.is_trained
 
 
-def test_predict_probability_long_signal():
+def test_predict_probability_long():
     model = SignalModel()
-    bull = [0, 1, 0, 0, 1]
-    bear = [0, 0, 0, 1, 0]
-    df = _make_df(5, signal_bull=bull, signal_bear=bear)
-    targets = np.array([0, 1, 0, -1, 1])
-    model.train(
-        df, targets, TrainingContext(direction="long"),
-        signal_column_long="orb_s0_retest_bull",
-        signal_column_short="orb_s0_retest_bear",
-    )
+    long_sig = [0, 1, 0, 0, 1]
+    df = _make_df(5, long_signal=long_sig, short_signal=[0, 0, 0, 1, 0])
+    targets = np.array([0, 1, 0, 0, 1])
+    model.train(df, targets, TrainingContext(direction="long"))
     probs = model.predict_probability(df)
     assert probs.shape == (5, 2)
-    # Win class (idx 1) should match bull signal
     np.testing.assert_array_equal(probs[:, 1], [0, 1, 0, 0, 1])
     np.testing.assert_array_equal(probs[:, 0], [1, 0, 1, 1, 0])
 
 
-def test_predict_probability_short_signal():
+def test_predict_probability_short():
     model = SignalModel()
-    bull = [0, 1, 0, 0, 1]
-    bear = [0, 0, 0, 1, 0]
-    df = _make_df(5, signal_bull=bull, signal_bear=bear)
-    targets = np.array([0, 1, 0, -1, 1])
-    model.train(
-        df, targets, TrainingContext(direction="short"),
-        signal_column_long="orb_s0_retest_bull",
-        signal_column_short="orb_s0_retest_bear",
-    )
+    short_sig = [0, 0, 0, 1, 0]
+    df = _make_df(5, long_signal=[0, 1, 0, 0, 1], short_signal=short_sig)
+    targets = np.array([0, 0, 0, 1, 0])
+    model.train(df, targets, TrainingContext(direction="short"))
     probs = model.predict_probability(df)
-    # Win class (idx 1) should match bear signal
     np.testing.assert_array_equal(probs[:, 1], [0, 0, 0, 1, 0])
 
 
 def test_trained_classes():
     model = SignalModel()
-    df = _make_df(3, signal_bull=[0, 1, 0])
+    df = _make_df(3, long_signal=[0, 1, 0])
     targets = np.array([0, 1, 0])
-    model.train(
-        df, targets, TrainingContext(direction="long"),
-        signal_column_long="orb_s0_retest_bull",
-    )
+    model.train(df, targets, TrainingContext(direction="long"))
     np.testing.assert_array_equal(model.trained_classes, [0, 1])
 
 
 def test_nan_in_signal_treated_as_zero():
     model = SignalModel()
-    df = _make_df(4, signal_bull=[0, np.nan, 1, np.nan])
+    df = _make_df(4, long_signal=[0, np.nan, 1, np.nan])
     targets = np.array([0, 0, 1, 0])
-    model.train(
-        df, targets, TrainingContext(direction="long"),
-        signal_column_long="orb_s0_retest_bull",
-    )
+    model.train(df, targets, TrainingContext(direction="long"))
     probs = model.predict_probability(df)
     np.testing.assert_array_equal(probs[:, 1], [0, 0, 1, 0])
 
@@ -114,112 +90,50 @@ def test_missing_signal_column_returns_zeros():
     model = SignalModel()
     df = _make_df(3)  # No signal columns
     targets = np.array([0, 1, 0])
-    model.train(
-        df, targets, TrainingContext(direction="long"),
-        signal_column_long="orb_s0_retest_bull",
-    )
+    model.train(df, targets, TrainingContext(direction="long"))
     probs = model.predict_probability(df)
     np.testing.assert_array_equal(probs[:, 1], [0, 0, 0])
     np.testing.assert_array_equal(probs[:, 0], [1, 1, 1])
 
 
 def test_ct_threshold_mechanism():
-    """Verify that CT=0.5 correctly filters signal vs non-signal bars."""
+    """CT=0.5 correctly filters signal vs non-signal bars."""
     model = SignalModel()
-    bull = [0, 1, 0, 1, 0]
-    df = _make_df(5, signal_bull=bull)
+    df = _make_df(5, long_signal=[0, 1, 0, 1, 0])
     targets = np.array([0, 1, 0, 1, 0])
-    model.train(
-        df, targets, TrainingContext(direction="long"),
-        signal_column_long="orb_s0_retest_bull",
-    )
+    model.train(df, targets, TrainingContext(direction="long"))
     probs = model.predict_probability(df)
     ct = 0.5
     win_idx = np.where(model.trained_classes == 1)[0][0]
-    # Only signal bars should pass the threshold
     passes = probs[:, win_idx] >= ct
     np.testing.assert_array_equal(passes, [False, True, False, True, False])
 
 
-def test_reduced_hyperparameters_passthrough():
-    params = {"signal_column_long": "x", "signal_column_short": "y"}
+def test_reduced_hyperparameters_returns_empty():
+    """SignalModel has no hyperparameters — always returns empty dict."""
+    params = {"some_key": "value"}
     reduced = SignalModel.get_reduced_hyperparameters(params)
-    assert reduced == params
-    assert reduced is not params  # Should be a copy
+    assert reduced == {}
 
 
-def test_direction_none_defaults_to_short():
-    """When direction is None (legacy), default to short column."""
+def test_extra_hyperparameters_are_ignored():
+    """Any kwargs passed to train() are silently ignored."""
     model = SignalModel()
-    df = _make_df(3, signal_bull=[0, 1, 0], signal_bear=[1, 0, 0])
-    targets = np.array([1, 0, 0])
-    model.train(
-        df, targets, TrainingContext(direction=None),
-        signal_column_long="orb_s0_retest_bull",
-        signal_column_short="orb_s0_retest_bear",
-    )
-    # direction=None -> else branch -> short column
-    assert model._signal_col == "orb_s0_retest_bear"
-
-
-def _make_df_with_datetime_index(n=24, signal_col="sig"):
-    """DataFrame with DatetimeIndex and a signal column (1 signal per bar)."""
-    idx = pd.date_range("2024-06-01 00:00", periods=n, freq="h")
-    df = pd.DataFrame({
-        "feature_a": np.random.randn(n),
-        signal_col: np.ones(n),  # all bars have signal=1
-    }, index=idx)
-    return df
-
-
-def test_hour_filter_zeros_outside_window():
-    """Signals outside [7, 17) should be zeroed out."""
-    df = _make_df_with_datetime_index(24, signal_col="sig")
-    model = SignalModel()
-    targets = np.ones(24)
+    df = _make_df(3, long_signal=[0, 1, 0])
+    targets = np.array([0, 1, 0])
     model.train(
         df, targets, TrainingContext(direction="long"),
-        signal_column_long="sig",
-        signal_start_hour=7,
-        signal_end_hour=17,
+        some_unknown_param="value",
     )
-    probs = model.predict_probability(df)
-
-    # Hours 0-6 and 17-23 should have prob=0 for win class
-    hours = df.index.hour
-    for i, h in enumerate(hours):
-        if 7 <= h < 17:
-            assert probs[i, 1] == 1.0, f"Hour {h} should pass"
-        else:
-            assert probs[i, 1] == 0.0, f"Hour {h} should be filtered"
+    assert model.is_trained
+    assert model._signal_col == "_composed_signal_long"
 
 
-def test_no_hour_filter_by_default():
-    """Without start/end hour, all signals pass through."""
-    df = _make_df_with_datetime_index(24, signal_col="sig")
+def test_signal_values_clipped_to_0_1():
+    """Signal values > 1 are clipped to 1, < 0 to 0."""
     model = SignalModel()
-    targets = np.ones(24)
-    model.train(
-        df, targets, TrainingContext(direction="long"),
-        signal_column_long="sig",
-    )
+    df = _make_df(4, long_signal=[-0.5, 0.5, 1.5, 2.0])
+    targets = np.array([0, 1, 1, 1])
+    model.train(df, targets, TrainingContext(direction="long"))
     probs = model.predict_probability(df)
-    np.testing.assert_array_equal(probs[:, 1], np.ones(24))
-
-
-def test_hour_filter_with_non_datetime_index():
-    """Hour filter is silently skipped for non-DatetimeIndex."""
-    df = pd.DataFrame({
-        "feature_a": np.random.randn(5),
-        "sig": [0, 1, 1, 0, 1],
-    })
-    model = SignalModel()
-    targets = np.array([0, 1, 1, 0, 1])
-    model.train(
-        df, targets, TrainingContext(direction="long"),
-        signal_column_long="sig",
-        signal_start_hour=7,
-        signal_end_hour=17,
-    )
-    probs = model.predict_probability(df)
-    np.testing.assert_array_equal(probs[:, 1], [0, 1, 1, 0, 1])
+    np.testing.assert_array_equal(probs[:, 1], [0, 0.5, 1.0, 1.0])

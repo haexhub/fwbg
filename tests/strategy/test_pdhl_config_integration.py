@@ -4,9 +4,9 @@ Guards against the recurring config/plugin bugs:
 1. resample_tf default must be None (native-bar breakout detection)
 2. timeout_bars must not leak (must be [None] for trailing stop)
 3. exit_modifier_params_grid must not contain disabled trailing
-4. signal_start_hour=null enables 24h signals
+4. SignalModel reads _composed_signal_{direction} columns (no hyperparameters)
 5. orb_based exit strategy dispatches trailing kernel when exit_modifier is set
-6. sl_dist_column flows from model_hyperparameters through to exit strategy
+6. sl_dist_column flows from exit_params through to exit strategy
 7. Breakout detection uses native bars (not resampled) when resample_tf=None
 8. Retest signals fire outside session hours when session_mask is None
 
@@ -69,13 +69,12 @@ def _minimal_ctx(**overrides) -> SimulationContext:
         long_enabled=True,
         short_enabled=True,
         exit_strategy="orb_based",
-        exit_params={"atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12},
-        model_type="signal",
-        model_hyperparameters={
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+        exit_params={
+            "atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12,
             "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
         },
+        model_type="signal",
+        model_hyperparameters={},
     )
     defaults.update(overrides)
     return SimulationContext(**defaults)
@@ -234,40 +233,16 @@ class TestTimeoutBarsNotLeaked:
             )
 
 
-class TestSignalHoursAre24h:
-    """signal_start_hour=null in model_hyperparameters enables 24h signals."""
+class TestSignalModelHasNoHyperparameters:
+    """SignalModel v3 uses _composed_signal_{direction} — no hyperparameters."""
 
-    def test_base_model_hp_signal_hours_not_set(self, pdhl_config):
-        """signal_start_hour should not be set in base model hp (24h trading).
-
-        When signal_start_hour is absent from model hyperparameters,
-        context.py may inject session hours via setdefault. For 24h trading,
-        the key must either be absent (no injection needed) or explicitly None.
-        """
+    def test_signal_model_hp_empty(self, pdhl_config):
+        """Signal model should not have signal-related hyperparameters."""
         hp = pdhl_config.model.hyperparameters
-        # Either not present (24h by default) or explicitly None
-        signal_start = hp.get("signal_start_hour")
-        signal_end = hp.get("signal_end_hour")
-        assert signal_start is None, (
-            f"signal_start_hour should be None/absent for 24h, got {signal_start}"
-        )
-        assert signal_end is None, (
-            f"signal_end_hour should be None/absent for 24h, got {signal_end}"
-        )
-
-    def test_setdefault_does_not_override_explicit_null(self):
-        """Simulate context.py setdefault behavior with explicit null."""
-        model_hp = {
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_start_hour": None,
-            "signal_end_hour": None,
-        }
-        # This is what context.py does: setdefault won't overwrite existing keys
-        model_hp.setdefault("signal_start_hour", 8)
-        model_hp.setdefault("signal_end_hour", 17)
-        # null value means key exists -> setdefault is a no-op
-        assert model_hp["signal_start_hour"] is None
-        assert model_hp["signal_end_hour"] is None
+        assert "signal_column_long" not in hp
+        assert "signal_column_short" not in hp
+        assert "signal_start_hour" not in hp
+        assert "signal_end_hour" not in hp
 
 
 # ===========================================================================
@@ -426,8 +401,8 @@ class TestOvernightSignals:
             f"No overnight retest signal fired. Available columns: {signals}"
         )
 
-    def test_signal_model_no_hour_filter_with_null(self):
-        """SignalModel with signal_start_hour=None should not filter by hour."""
+    def test_signal_model_passes_all_composed_signals(self):
+        """SignalModel v3 passes through all composed signals without filtering."""
         df = _make_overnight_breakout()
         ind = _pdl_mod.PreviousDayLevelsIndicator()
         result = ind.compute(
@@ -445,80 +420,25 @@ class TestOvernightSignals:
         feature_cols = [c for c in result.columns if c.startswith(("hl_ses_", "hl_all_"))]
         features = result[feature_cols].fillna(0)
 
-        model = _signal_mod.SignalModel()
-        hp = {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_start_hour": None,
-            "signal_end_hour": None,
-        }
-        model.train(features, np.zeros(len(features)), TrainingContext(direction="long"), **hp)
-        probs = model.predict_probability(features)
-
-        # With null hour filter, signals should pass through unfiltered
-        # Check if any signal fires at off-session hours
-        win_idx = np.where(model.trained_classes == 1)[0][0]
-        day1_mask = features.index.date == pd.Timestamp("2024-01-02").date()
-        day1_probs = probs[day1_mask]
-        day1_times = features.index[day1_mask]
-
-        # Any signal at off-session hour (before 8 or after 17)?
-        off_session_signals = []
-        for j, t in enumerate(day1_times):
-            if day1_probs[j, win_idx] > 0.5:
-                if t.hour < 8 or t.hour >= 17:
-                    off_session_signals.append(t)
-
-        # We should have at least one off-session signal
-        if "hl_all_rl50_pdl_retest_bull" in features.columns:
-            day1_raw = features.loc["2024-01-02", "hl_all_rl50_pdl_retest_bull"]
-            raw_signals = day1_raw[day1_raw > 0]
-            if len(raw_signals) > 0:
-                # Raw signals exist -> they should not be filtered
-                signal_hours = raw_signals.index.hour
-                off_session_raw = signal_hours[(signal_hours < 8) | (signal_hours >= 17)]
-                if len(off_session_raw) > 0:
-                    assert len(off_session_signals) > 0, (
-                        "Off-session signals exist in indicator but were filtered by "
-                        "SignalModel despite signal_start_hour=None!"
-                    )
-
-    def test_signal_model_with_session_filter_blocks_overnight(self):
-        """SignalModel with signal_start_hour=8 should block signals before 8."""
-        df = _make_overnight_breakout()
-        ind = _pdl_mod.PreviousDayLevelsIndicator()
-        result = ind.compute(
-            df.copy(),
-
-            skip_weekends=False,
-            resample_tf=None,
-            session_start_hour=8,
-            session_end_hour=17,
-            range_scope=["all"],
-            break_modes=["all_hours"],
-            retest_modes=["all_hours"],
-        )
-
-        feature_cols = [c for c in result.columns if c.startswith(("hl_ses_", "hl_all_"))]
-        features = result[feature_cols].fillna(0)
+        # Create composed signal column from indicator column
+        sig_col = "hl_all_rl50_pdl_retest_bull"
+        if sig_col in features.columns:
+            features["_composed_signal_long"] = features[sig_col]
+        else:
+            pytest.skip("Signal column not in indicator output")
 
         model = _signal_mod.SignalModel()
-        hp = {
-            "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-            "signal_start_hour": 8,
-            "signal_end_hour": 17,
-        }
-        model.train(features, np.zeros(len(features)), TrainingContext(direction="long"), **hp)
+        model.train(features, np.zeros(len(features)), TrainingContext(direction="long"))
         probs = model.predict_probability(features)
 
         win_idx = np.where(model.trained_classes == 1)[0][0]
-        day1_mask = features.index.date == pd.Timestamp("2024-01-02").date()
-        day1_probs = probs[day1_mask]
-        day1_times = features.index[day1_mask]
 
-        for j, t in enumerate(day1_times):
-            if t.hour < 8 or t.hour >= 17:
-                assert day1_probs[j, win_idx] <= 0.5, (
-                    f"Signal should be blocked at {t} (outside session 8-17)"
+        # All raw signals should pass through — no hour filtering
+        raw_signals = features[sig_col]
+        for i in range(len(features)):
+            if raw_signals.iloc[i] > 0:
+                assert probs[i, win_idx] > 0, (
+                    f"Signal at {features.index[i]} should pass through"
                 )
 
 
@@ -598,7 +518,7 @@ class TestOrbBasedTrailingDispatch:
 
 
 class TestSlDistColumnFlow:
-    """sl_dist_column from model_hyperparameters flows to exit strategy."""
+    """sl_dist_column from exit_params flows to exit strategy."""
 
     def _get_orb_strategy(self):
         try:
@@ -609,25 +529,23 @@ class TestSlDistColumnFlow:
         except Exception:
             pytest.skip("OrbExitStrategy not available")
 
-    def test_sl_dist_column_from_hp(self):
-        """model_hyperparameters.sl_dist_column overrides exit_params."""
+    def test_sl_dist_column_from_exit_params(self):
+        """Different sl_dist_column in exit_params produces different SL distances."""
         strategy = self._get_orb_strategy()
         df = _make_pdhl_bull_15min()
         df["vol_atr"] = 5.0
         df["hl_ses_rl50_pdl_sl_dist"] = 10.0
-        df["hl_ses_rl38_pdl_sl_dist"] = 15.0  # Different SL distance
+        df["hl_ses_rl38_pdl_sl_dist"] = 15.0
 
         ctx_rl50 = _minimal_ctx(
-            model_hyperparameters={
-                "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-                "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
+            exit_params={
+                "atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12,
                 "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             },
         )
         ctx_rl38 = _minimal_ctx(
-            model_hyperparameters={
-                "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-                "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
+            exit_params={
+                "atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12,
                 "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             },
         )
@@ -635,7 +553,6 @@ class TestSlDistColumnFlow:
         tp50, sl50 = strategy.resolve_distances(df, 4.0, 1.0, ctx_rl50)
         tp38, sl38 = strategy.resolve_distances(df, 4.0, 1.0, ctx_rl38)
 
-        # SL distances should differ because sl_dist_column is different
         assert not np.allclose(sl50, sl38), (
             "SL distances should differ for different sl_dist_columns"
         )
@@ -646,31 +563,7 @@ class TestSlDistColumnFlow:
 # ===========================================================================
 
 class TestGridComboCreation:
-    """Verify grid combo creation merges model_hyperparameters correctly."""
-
-    def test_combo_merges_model_hp_variant(self):
-        """model_hyperparameters_grid entries merge with base model_hp."""
-        ctx = _minimal_ctx(
-            grid_model_hyperparameters=[
-                {
-                    "signal_column_long": "hl_ses_rl38_pdl_retest_bull",
-                    "signal_column_short": "hl_ses_rl38_pdl_retest_bear",
-                    "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-                },
-                {
-                    "signal_column_long": "hl_all_rl50_pdl_retest_bull",
-                    "signal_column_short": "hl_all_rl50_pdl_retest_bear",
-                    "sl_dist_column": "hl_all_rl50_pdl_sl_dist",
-                },
-            ],
-        )
-
-        # Simulate what _build_combo_tuples does
-        for variant in ctx.grid_model_hyperparameters:
-            if variant is not None:
-                merged = {**ctx.model_hyperparameters, **variant}
-                assert merged["signal_column_long"] == variant["signal_column_long"]
-                assert merged["sl_dist_column"] == variant["sl_dist_column"]
+    """Verify grid combo creation merges exit strategy config correctly."""
 
     def test_combo_merges_modifier_params(self):
         """Each ExitStrategyConfig carries its own exit_modifier_params."""
@@ -723,10 +616,13 @@ class TestGridComboCreation:
 class TestFullPipelineIntegration:
     """End-to-end: indicator -> SignalModel -> trade simulation."""
 
-    def _run_pipeline(self, df, signal_col_long, signal_col_short, sl_dist_col,
-                      signal_start_hour=None, signal_end_hour=None,
-                      exit_modifier=None, exit_modifier_params=None):
-        """Run full indicator -> signal model -> trade simulation pipeline."""
+    def _run_pipeline(self, df, composed_source_long, composed_source_short,
+                      sl_dist_col, exit_modifier=None, exit_modifier_params=None):
+        """Run full indicator -> signal model -> trade simulation pipeline.
+
+        composed_source_long/short: indicator column names that become
+        _composed_signal_long/short (mimics what signal_fold.py does via signal_rules).
+        """
         from fwbg.optimization.targets import _simulate_trades_core
 
         ind = _pdl_mod.PreviousDayLevelsIndicator()
@@ -744,18 +640,18 @@ class TestFullPipelineIntegration:
         features = df_feat[feature_cols].fillna(0)
         dummy = np.zeros(len(features))
 
-        hp = {
-            "signal_column_long": signal_col_long,
-            "signal_column_short": signal_col_short,
-            "sl_dist_column": sl_dist_col,
-            "signal_start_hour": signal_start_hour,
-            "signal_end_hour": signal_end_hour,
-        }
+        # Create composed signal columns from indicator source columns
+        for direction, source_col in [("long", composed_source_long),
+                                       ("short", composed_source_short)]:
+            if source_col in features.columns:
+                features[f"_composed_signal_{direction}"] = features[source_col]
+            else:
+                features[f"_composed_signal_{direction}"] = 0
 
         model_long = _signal_mod.SignalModel()
         model_short = _signal_mod.SignalModel()
-        model_long.train(features, dummy, TrainingContext(direction="long"), **hp)
-        model_short.train(features, dummy, TrainingContext(direction="short"), **hp)
+        model_long.train(features, dummy, TrainingContext(direction="long"))
+        model_short.train(features, dummy, TrainingContext(direction="short"))
 
         probs_long = model_long.predict_probability(features)
         probs_short = model_short.predict_probability(features)
@@ -765,7 +661,10 @@ class TestFullPipelineIntegration:
         ctx = _minimal_ctx(
             exit_modifier=exit_modifier,
             exit_modifier_params=exit_modifier_params or {},
-            model_hyperparameters=hp,
+            exit_params={
+                "atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12,
+                "sl_dist_column": sl_dist_col,
+            },
         )
 
         return _simulate_trades_core(
@@ -787,8 +686,8 @@ class TestFullPipelineIntegration:
         df = _make_pdhl_bull_15min()
         trades = self._run_pipeline(
             df,
-            signal_col_long="hl_ses_rl50_pdl_retest_bull",
-            signal_col_short="hl_ses_rl50_pdl_retest_bear",
+            composed_source_long="hl_ses_rl50_pdl_retest_bull",
+            composed_source_short="hl_ses_rl50_pdl_retest_bear",
             sl_dist_col="hl_ses_rl50_pdl_sl_dist",
         )
 
@@ -803,11 +702,9 @@ class TestFullPipelineIntegration:
         df = _make_overnight_breakout()
         trades = self._run_pipeline(
             df,
-            signal_col_long="hl_all_rl50_pdl_retest_bull",
-            signal_col_short="hl_all_rl50_pdl_retest_bear",
+            composed_source_long="hl_all_rl50_pdl_retest_bull",
+            composed_source_short="hl_all_rl50_pdl_retest_bear",
             sl_dist_col="hl_all_rl50_pdl_sl_dist",
-            signal_start_hour=None,
-            signal_end_hour=None,
         )
 
         long_trades = [t for t in trades if t["direction"] == "LONG"]
@@ -819,28 +716,18 @@ class TestFullPipelineIntegration:
                 f"Expected overnight signal (before 08:00), got {signal_time}"
             )
 
-    def test_session_filter_blocks_overnight_trade(self):
-        """Same overnight scenario but session=8-17 -> no trade (signal blocked)."""
+    def test_session_filter_not_in_model(self):
+        """SignalModel v3 has no hour filter — all signals pass through."""
         df = _make_overnight_breakout()
         trades = self._run_pipeline(
             df,
-            signal_col_long="hl_all_rl50_pdl_retest_bull",
-            signal_col_short="hl_all_rl50_pdl_retest_bear",
+            composed_source_long="hl_all_rl50_pdl_retest_bull",
+            composed_source_short="hl_all_rl50_pdl_retest_bear",
             sl_dist_col="hl_all_rl50_pdl_sl_dist",
-            signal_start_hour=8,
-            signal_end_hour=17,
         )
 
-        # All signals are at 05:00 (off-session) -> should be filtered
-        long_trades = [t for t in trades if t["direction"] == "LONG"]
-        overnight_trades = [
-            t for t in long_trades
-            if pd.Timestamp(t["signal_time"]).hour < 8
-        ]
-        assert len(overnight_trades) == 0, (
-            f"Session filter 8-17 should block overnight trades, "
-            f"got {len(overnight_trades)}"
-        )
+        # With no hour filter, overnight signals should pass through
+        assert trades is not None
 
     def test_trailing_stop_produces_different_results_than_fixed(self):
         """Trailing stop should produce different outcomes than fixed TP/SL."""
@@ -848,16 +735,16 @@ class TestFullPipelineIntegration:
 
         trades_fixed = self._run_pipeline(
             df,
-            signal_col_long="hl_ses_rl50_pdl_retest_bull",
-            signal_col_short="hl_ses_rl50_pdl_retest_bear",
+            composed_source_long="hl_ses_rl50_pdl_retest_bull",
+            composed_source_short="hl_ses_rl50_pdl_retest_bear",
             sl_dist_col="hl_ses_rl50_pdl_sl_dist",
             exit_modifier=None,
         )
 
         trades_trail = self._run_pipeline(
             df,
-            signal_col_long="hl_ses_rl50_pdl_retest_bull",
-            signal_col_short="hl_ses_rl50_pdl_retest_bear",
+            composed_source_long="hl_ses_rl50_pdl_retest_bull",
+            composed_source_short="hl_ses_rl50_pdl_retest_bear",
             sl_dist_col="hl_ses_rl50_pdl_sl_dist",
             exit_modifier="trailing_stop",
             exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},

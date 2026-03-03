@@ -244,28 +244,15 @@ def run_optimizer(
         wf = result.get("walk_forward", {})
         fold_tag = f" [Fold {wf.get('best_fold_id', '?')}]" if wf.get("config_inconsistent") else ""
 
-        # Model hyperparameters tag (rl level + hours)
-        hp = cfg.get("model_hyperparameters") or {}
-        hp_tag = ""
-        if hp:
-            sig = hp.get("signal_column_short", hp.get("signal_column_long", ""))
-            rl_part = sig.split("_")[0] if sig.startswith("rl") else ""
-            sh = hp.get("signal_start_hour")
-            eh = hp.get("signal_end_hour")
-            hours_part = f"{sh}-{eh}h" if sh is not None else ""
-            parts = [p for p in [rl_part, hours_part] if p]
-            if parts:
-                hp_tag = f" [{'/'.join(parts)}]"
-
         if status == "ok":
             sharpe = result.get("sharpe", 0)
-            summary = f"WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T){hp_tag}{fold_tag}"
+            summary = f"WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T){fold_tag}"
         elif status == "no_edge":
-            summary = f"No edge{fold_tag} WR={wr:.1%} PnL={pnl:.1f} RRR={rrr_val:.2f} TP={tp} SL={sl} ({n_trades}T){hp_tag}"
+            summary = f"No edge{fold_tag} WR={wr:.1%} PnL={pnl:.1f} RRR={rrr_val:.2f} TP={tp} SL={sl} ({n_trades}T)"
         elif status == "not_significant":
             p_val = result.get("monte_carlo", {}).get("p_value", 0)
             sharpe = result.get("sharpe", 0)
-            summary = f"p={p_val:.3f} WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T){hp_tag}{fold_tag}"
+            summary = f"p={p_val:.3f} WR={wr:.1%} PnL={pnl:.1f} Sharpe={sharpe:.2f} TP={tp} SL={sl} ({n_trades}T){fold_tag}"
         elif status == "no_successful_folds":
             summary = "Keine profitablen Konfigurationen"
         else:
@@ -447,15 +434,6 @@ def run_optimizer(
 
             # Details
             output_lines.append(f"  Best Config: TP={tp}, SL={sl}, CT={ct:.2f}")
-            # Model hyperparameters (rl level, trading hours)
-            detail_hp = cfg.get("model_hyperparameters") or {}
-            if detail_hp:
-                sig = detail_hp.get("signal_column_short", detail_hp.get("signal_column_long", ""))
-                rl_label = sig.split("_")[0] if sig.startswith("rl") else "-"
-                sh = detail_hp.get("signal_start_hour")
-                eh = detail_hp.get("signal_end_hour")
-                hours_label = f"{sh}:00-{eh}:00 UTC" if sh is not None else "all"
-                output_lines.append(f"  Strategy HP: rl={rl_label}, hours={hours_label}")
             output_lines.append(f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}")
             output_lines.append(f"  Performance: Sharpe={sharpe:.2f}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
             output_lines.append(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
