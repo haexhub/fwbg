@@ -49,6 +49,9 @@ class StabilitySelector(BaseFeatureSelector):
             X_boot = X.iloc[indices].reset_index(drop=True)
             y_boot = y[indices]
 
+            if len(np.unique(y_boot)) < 2:
+                continue
+
             selector = selector_cls()
             selected, _ = selector.select_features(
                 X_boot, y_boot, **(inner_params or {})

@@ -40,6 +40,9 @@ def _boruta_iteration(
     n_jobs: int = 1,
 ) -> Tuple[np.ndarray, float]:
     """Führt eine Boruta-Iteration durch."""
+    if len(np.unique(y)) < 2:
+        return np.zeros(len(original_features)), 0.0
+
     model = XGBClassifier(
         n_estimators=n_estimators,
         max_depth=max_depth,
@@ -95,6 +98,9 @@ class BorutaSelector(BaseFeatureSelector):
             (selected_features, metadata)
         """
         if len(X.columns) == 0:
+            return [], {}
+
+        if len(np.unique(y)) < 2:
             return [], {}
 
         # NaN/Inf behandeln

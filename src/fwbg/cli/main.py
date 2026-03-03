@@ -743,6 +743,8 @@ def _run_data_command(argv):
 def main():
     """CLI-Einstiegspunkt mit Argument-Parsing."""
     import sys
+    import faulthandler
+    faulthandler.enable()  # Dump Python traceback on SIGSEGV/SIGABRT (C-level crashes)
 
     # Handle 'data' subcommand (ETL: raw → datasource)
     if len(sys.argv) > 1 and sys.argv[1] == "data":
