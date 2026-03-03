@@ -107,7 +107,6 @@ class SimulationContext:
     model_hyperparameters: dict = field(default_factory=dict)
 
     # Session boundaries for indicator calculation (Opening Range, PDH/PDL).
-    # Also used by SignalModel to filter entries (via model_hyperparameters).
     session_start_hour: Optional[int] = None
     session_end_hour: Optional[int] = None
 
@@ -154,28 +153,18 @@ class SimulationContext:
         # Model hyperparameters from base model config
         model_hp = dict(strategy.model.hyperparameters)
 
-        # Session hours from model hyperparameters (if configured)
-        session_start = model_hp.get("signal_start_hour")
-        session_end = model_hp.get("signal_end_hour")
-        exit_session_start = model_hp.get("exit_session_start_hour")
-        exit_session_end = model_hp.get("exit_session_end_hour")
-
         # Required features from base model config
         req_feats = list(strategy.model.required_features)
 
-        # Auto-add signal columns + sl_dist_column from base model_hyperparameters
-        for key in ('signal_column_long', 'signal_column_short', 'sl_dist_column'):
-            val = model_hp.get(key)
-            if val and val not in req_feats:
+        # Auto-add sl_dist_column from exit strategy params to required features
+        for es in strategy.exit_strategies:
+            val = es.params.get("sl_dist_column")
+            if isinstance(val, list):
+                for v in val:
+                    if v and v not in req_feats:
+                        req_feats.append(v)
+            elif val and val not in req_feats:
                 req_feats.append(val)
-
-        # Auto-add signal columns + sl_dist_column from model_hyperparameters_grid
-        for hp_variant in (grid_model_hyperparameters or [None]):
-            if hp_variant and isinstance(hp_variant, dict):
-                for key in ('signal_column_long', 'signal_column_short', 'sl_dist_column'):
-                    val = hp_variant.get(key)
-                    if val and val not in req_feats:
-                        req_feats.append(val)
 
         return cls(
             symbol=asset.symbol,
@@ -201,12 +190,11 @@ class SimulationContext:
             grid_model_hyperparameters=grid_model_hyperparameters or [None],
             # Model Hyperparameters
             model_hyperparameters=model_hp,
-            # Session boundaries for indicators + entry filtering
-            session_start_hour=session_start,
-            session_end_hour=session_end,
-            # Separate exit session (wider window for CFD assets)
-            exit_session_start_hour=exit_session_start,
-            exit_session_end_hour=exit_session_end,
+            # Session boundaries (not derived from model HP; set externally if needed)
+            session_start_hour=None,
+            session_end_hour=None,
+            exit_session_start_hour=None,
+            exit_session_end_hour=None,
             required_features=req_feats,
             # Signal rules for composed entry signals
             signal_rules=getattr(strategy, 'signal_rules', None),

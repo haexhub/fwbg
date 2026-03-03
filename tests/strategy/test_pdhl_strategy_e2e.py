@@ -42,20 +42,21 @@ def _minimal_ctx(**overrides) -> SimulationContext:
         short_enabled=True,
         exit_strategy="fixed",
         model_type="signal",
-        model_hyperparameters={
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-        },
+        model_hyperparameters={},
     )
     defaults.update(overrides)
     return SimulationContext(**defaults)
 
 
-def _run_strategy(df: pd.DataFrame, ctx: SimulationContext, tp: float = 6, sl: float = 4):
+def _run_strategy(df: pd.DataFrame, ctx: SimulationContext, tp: float = 6, sl: float = 4,
+                   composed_source_long: str = "hl_ses_rl50_pdl_retest_bull",
+                   composed_source_short: str = "hl_ses_rl50_pdl_retest_bear"):
     """Full pipeline: indicator → SignalModel → trade simulation.
 
     tp/sl are multipliers of ctx.spread.  With spread=0.5:
       tp_dist = 0.5 * 6 = 3.0 points, sl_dist = 0.5 * 4 = 2.0 points.
+
+    composed_source_long/short: indicator columns mapped to _composed_signal_{direction}.
 
     Returns list of detailed trade dicts.
     """
@@ -63,19 +64,23 @@ def _run_strategy(df: pd.DataFrame, ctx: SimulationContext, tp: float = 6, sl: f
     ind = _pdl_mod.PreviousDayLevelsIndicator()
     df_feat = ind.compute(df.copy(), skip_weekends=False)
 
-    # 2) Train SignalModel for long and short
-    model_long = _signal_mod.SignalModel()
-    model_short = _signal_mod.SignalModel()
-
+    # 2) Create composed signal columns from indicator output
     feature_cols = [c for c in df_feat.columns if c.startswith("hl_ses_")]
     features = df_feat[feature_cols].fillna(0)
 
-    # Dummy targets (SignalModel ignores them)
-    dummy_targets = np.zeros(len(features))
+    for direction, source_col in [("long", composed_source_long),
+                                   ("short", composed_source_short)]:
+        if source_col in features.columns:
+            features[f"_composed_signal_{direction}"] = features[source_col]
+        else:
+            features[f"_composed_signal_{direction}"] = 0
 
-    hp = ctx.model_hyperparameters
-    model_long.train(features, dummy_targets, TrainingContext(direction="long"), **hp)
-    model_short.train(features, dummy_targets, TrainingContext(direction="short"), **hp)
+    # 3) Train SignalModel for long and short
+    model_long = _signal_mod.SignalModel()
+    model_short = _signal_mod.SignalModel()
+    dummy_targets = np.zeros(len(features))
+    model_long.train(features, dummy_targets, TrainingContext(direction="long"))
+    model_short.train(features, dummy_targets, TrainingContext(direction="short"))
 
     # 3) Get predictions
     probs_long = model_long.predict_probability(features)
@@ -468,94 +473,13 @@ class TestSignalProperties:
         )
 
 
-class TestSessionFiltering:
-    """Verify session hour filtering zeroes out signals outside trading hours."""
+class TestSignalModelNoHyperparameters:
+    """SignalModel v3 has no hyperparameters — all signals pass through."""
 
-    def test_session_filtering_blocks_off_session_trades(self):
-        """Retest fires at 12:00-13:00 but session=8..10 → no trades."""
+    def test_all_composed_signals_pass_through(self):
+        """With _composed_signal columns, all signals are used without filtering."""
         df = _make_pdhl_bull_retest()
-        # Session hours 8-10: the retest at 12:00 (shifted to 13:00) is outside
-        ctx = _minimal_ctx(model_hyperparameters={
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "signal_start_hour": 8,
-            "signal_end_hour": 10,
-        })
-        trades = _run_strategy(df, ctx)
-        assert len(trades) == 0, (
-            f"Expected 0 trades outside session 8-10, got {len(trades)}: "
-            f"{[(t['direction'], t.get('signal_time')) for t in trades]}"
-        )
-
-    def test_session_filtering_allows_in_session_trades(self):
-        """Retest fires at 12:00 (shifted to 13:00), session=0..23 → trade occurs."""
-        df = _make_pdhl_bull_retest()
-        ctx = _minimal_ctx(model_hyperparameters={
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "signal_start_hour": 0,
-            "signal_end_hour": 23,
-        })
+        ctx = _minimal_ctx()
         trades = _run_strategy(df, ctx)
         long_trades = [t for t in trades if t["direction"] == "LONG"]
         assert len(long_trades) == 1
-
-    def test_midnight_crossing_session_allows_in_session_trades(self):
-        """Session 22-6 (crosses midnight) allows trade at 01:00 (inside session).
-
-        Uses the standard bull_retest data (retest fires at 12:00 shifted to 13:00)
-        and a session of 0-14 to include the signal, versus 14-22 to exclude it.
-        """
-        df = _make_pdhl_bull_retest()
-
-        # Session 22-14 (crosses midnight) includes hour 13 → trade should fire
-        ctx_in = _minimal_ctx(model_hyperparameters={
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "signal_start_hour": 22,
-            "signal_end_hour": 14,
-        })
-        trades_in = _run_strategy(df, ctx_in)
-        long_in = [t for t in trades_in if t["direction"] == "LONG"]
-        assert len(long_in) == 1, (
-            f"Expected 1 LONG trade in session 22-14, got {len(long_in)}"
-        )
-
-        # Session 14-22 (no midnight crossing) excludes hour 13 → no trades
-        ctx_out = _minimal_ctx(model_hyperparameters={
-            "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-            "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-            "signal_start_hour": 14,
-            "signal_end_hour": 22,
-        })
-        trades_out = _run_strategy(df, ctx_out)
-        assert len(trades_out) == 0, (
-            f"Expected 0 trades in session 14-22, got {len(trades_out)}"
-        )
-
-    def test_exits_only_during_session_hours(self):
-        """Trade exits (TP/SL/timeout) only happen during session hours.
-
-        Trades may run through off-session periods (overnight holds allowed).
-        With session 0-18 and entry at 14:00, exit must be in-session.
-        With session 0-15, exit must still be on an in-session bar — trade
-        runs through off-session and exits next session.
-        """
-        df = _make_pdhl_bull_retest()
-
-        # Session 0-18: entry at 14:00 is within session → exit in session
-        ctx_wide = _minimal_ctx(
-            model_hyperparameters={
-                "signal_column_long": "hl_ses_rl50_pdl_retest_bull",
-                "signal_column_short": "hl_ses_rl50_pdl_retest_bear",
-                "signal_start_hour": 0,
-                "signal_end_hour": 23,
-            },
-            session_start_hour=0,
-            session_end_hour=18,
-        )
-        trades_wide = _run_strategy(df, ctx_wide)
-        long_wide = [t for t in trades_wide if t["direction"] == "LONG"]
-        assert len(long_wide) == 1
-        exit_hour = int(long_wide[0]["exit_time"][11:13])
-        assert exit_hour < 18, f"Exit at hour {exit_hour} should be within session 0-18"

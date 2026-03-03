@@ -26,15 +26,15 @@ class BaseEntryModifier(ABC):
     und implementiert zusätzliche Logik wie Scale-In bei Retracement-Levels
     oder Nachkauf-Strategien.
 
-    Der Modifier erhält dieselben vorberechneten Arrays (OHLC, ATR, Distanzen)
-    und gibt die gleichen Target-Arrays (targets_long, targets_short) zurück.
+    Der Modifier erhält vorberechnete OHLC + TP/SL-Distanz-Arrays und gibt
+    die gleichen Target-Arrays (targets_long, targets_short) zurück.
 
     Strategy-Konfiguration (pipeline JSON):
         {
           "entry_modifier": "scale_in",
           "entry_modifier_params": {
-            "retracement_pct": 0.5,
-            "max_additions": 2
+            "levels": [0.2, 0.4, 0.6],
+            "qty_multiplier": 1.0
           }
         }
     """
@@ -48,13 +48,11 @@ class BaseEntryModifier(ABC):
         closes: np.ndarray,
         highs: np.ndarray,
         lows: np.ndarray,
-        atr_values: np.ndarray,
-        tp_mult: float,
-        sl_mult: float,
+        tp_dist_arr: np.ndarray,
+        sl_dist_arr: np.ndarray,
+        trail_dist_arr: np.ndarray,
         spread: float,
         slippage: float,
-        min_tp_distance: float,
-        min_sl_distance: float,
         max_bars: int,
         timeout_val: int,
         return_durations: bool = False,
@@ -64,21 +62,19 @@ class BaseEntryModifier(ABC):
         Führt die Trade-Simulation mit modifier-spezifischer Entry-Logik durch.
 
         Args:
-            opens:            Open-Preise
-            closes:           Close-Preise
-            highs:            High-Preise
-            lows:             Low-Preise
-            atr_values:       ATR-Werte pro Bar
-            tp_mult:          TP ATR-Multiplikator
-            sl_mult:          SL ATR-Multiplikator
-            spread:           Spread in Preiseinheiten
-            slippage:         Slippage in Preiseinheiten
-            min_tp_distance:  Mindest-TP-Distanz
-            min_sl_distance:  Mindest-SL-Distanz
-            max_bars:         Maximale Trade-Laufzeit
-            timeout_val:      Timeout in Bars (0 = kein Timeout)
+            opens:          Open-Preise
+            closes:         Close-Preise
+            highs:          High-Preise
+            lows:           Low-Preise
+            tp_dist_arr:       Pre-computed TP-Distanzen pro Bar
+            sl_dist_arr:       Pre-computed SL-Distanzen pro Bar
+            trail_dist_arr:    Pre-computed Trail-Stop-Distanzen pro Bar
+            spread:            Spread in Preiseinheiten
+            slippage:          Slippage in Preiseinheiten
+            max_bars:       Maximale Trade-Laufzeit
+            timeout_val:    Timeout in Bars (0 = kein Timeout)
             return_durations: Wenn True, auch Durations zurückgeben
-            **params:         Modifier-spezifische Parameter
+            **params:       Modifier-spezifische Parameter
 
         Returns:
             (targets_long, targets_short) — Arrays mit 1.0 für Win, 0.0 für Loss

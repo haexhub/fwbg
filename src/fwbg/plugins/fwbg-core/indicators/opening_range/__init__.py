@@ -524,17 +524,22 @@ class OpeningRangeIndicator(BaseIndicator):
         rl_list = [retracement_levels] if isinstance(retracement_levels, (int, float)) else list(retracement_levels)
         return [f"{rl_tag(rl)}_" for rl in rl_list]
 
-    def get_feature_columns(self) -> List[str]:
-        if self._feature_columns:
-            return self._feature_columns
-        d = self.get_default_params()
+    def _resolve_col_params(self, params=None):
+        """Merge defaults with optional params for column building."""
+        d = {**self.get_default_params(), **(params or {})}
         rb = d["range_bars"]
-        # cf/prb default to 0 → omit from prefix (None)
         cf = d["carry_forward_days"] or None
         prb = d["pre_range_bars"] or None
+        sessions = d.get("sessions") or [8, 9, 14, 15]
         rl_pfxs = self._rl_prefixes(d["retracement_levels"])
+        return rb, cf, prb, sessions, rl_pfxs
+
+    def get_feature_columns(self, params=None) -> List[str]:
+        if self._feature_columns and not params:
+            return self._feature_columns
+        rb, cf, prb, sessions, rl_pfxs = self._resolve_col_params(params)
         cols = []
-        for h in self._PIPELINE_SESSIONS:
+        for h in sessions:
             for feat in ORB_BASE_FEATURES:
                 cols.append(orb_col(rb, cf, prb, h, feat))
             for rl_pfx in rl_pfxs:
@@ -543,16 +548,12 @@ class OpeningRangeIndicator(BaseIndicator):
                 cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}sl_dist"))
         return cols
 
-    def get_signal_columns(self) -> List[str]:
-        if self._signal_columns:
+    def get_signal_columns(self, params=None) -> List[str]:
+        if self._signal_columns and not params:
             return self._signal_columns
-        d = self.get_default_params()
-        rb = d["range_bars"]
-        cf = d["carry_forward_days"] or None
-        prb = d["pre_range_bars"] or None
-        rl_pfxs = self._rl_prefixes(d["retracement_levels"])
+        rb, cf, prb, sessions, rl_pfxs = self._resolve_col_params(params)
         signals = []
-        for h in self._PIPELINE_SESSIONS:
+        for h in sessions:
             signals.extend([
                 orb_col(rb, cf, prb, h, "breakout_up"),
                 orb_col(rb, cf, prb, h, "breakout_down"),

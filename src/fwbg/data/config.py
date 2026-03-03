@@ -25,7 +25,7 @@ TIMEFRAME_CONFIG = {
 tf_cfg = TIMEFRAME_CONFIG.get(TIMEFRAME, TIMEFRAME_CONFIG["HOUR"])
 WINDOW_SIZE = tf_cfg["window_size"]
 OOS_SIZE = tf_cfg["oos_size"]
-WALK_FORWARD_FOLDS = 8
+WALK_FORWARD_FOLDS = 8  # Default, overridden by strategy.validation.folds
 
 
 def convert_numpy(obj):

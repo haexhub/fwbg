@@ -79,6 +79,18 @@ def _resample_ohlcv(df, target_tf: str):
     return resampled
 
 
+def _forward_fill_to_chart_tf(indicator_df, chart_df, columns: list[str]):
+    """Forward-fill indicator columns from a higher timeframe onto the chart timeframe.
+
+    Each higher-TF value is held constant for all lower-TF bars until the next
+    higher-TF bar produces a new value.
+    """
+    for col in columns:
+        if col in indicator_df.columns:
+            chart_df[col] = indicator_df[col].reindex(chart_df.index, method="ffill")
+    return chart_df
+
+
 def _best_native_file(ds, symbol: str, target_tf: str):
     """Find the best native file to load for a given target timeframe.
     Prefers exact match, then the lowest available timeframe that can be
@@ -177,7 +189,7 @@ def get_ohlcv(
     symbol: str = Query(...),
     timeframe: str = Query("HOUR"),
     source: str = Query("forexsb"),
-    limit: int = Query(5000, le=50000),
+    limit: int = Query(5000, le=999999),
     offset: int = Query(0, ge=0),
 ) -> dict:
     """Load OHLCV data from a CSV data source for charting."""
@@ -338,6 +350,7 @@ class IndicatorRequest(BaseModel):
     offset: int = 0
     credentials: Optional[dict] = None
     broker_type: Optional[str] = None
+    indicator_timeframe: Optional[str] = None
 
 
 @router.post("/indicator")
@@ -396,6 +409,33 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     if df is None or df.empty:
         raise HTTPException(500, "Failed to load data")
 
+    # --- MTF: load indicator-timeframe data if different from chart TF ---
+    chart_df = None
+    ind_tf = body.indicator_timeframe
+    if ind_tf and ind_tf != body.timeframe:
+        chart_idx = _TIMEFRAME_ORDER.index(body.timeframe) if body.timeframe in _TIMEFRAME_ORDER else -1
+        ind_idx = _TIMEFRAME_ORDER.index(ind_tf) if ind_tf in _TIMEFRAME_ORDER else -1
+        if ind_idx < 0 or chart_idx < 0:
+            raise HTTPException(400, f"Unknown timeframe: {ind_tf}")
+        if ind_idx <= chart_idx:
+            raise HTTPException(400, f"indicator_timeframe ({ind_tf}) must be higher than chart timeframe ({body.timeframe})")
+        chart_df = df
+        if body.credentials and body.broker_type:
+            raise HTTPException(501, "MTF via broker not yet supported")
+        else:
+            ind_path = ds.get_file_path(body.symbol, ind_tf)
+            ind_native_tf = ind_tf
+            if not ind_path.exists():
+                ind_path, ind_native_tf = _best_native_file(ds, body.symbol, ind_tf)
+                if not ind_path:
+                    raise HTTPException(404, f"Data not found for indicator timeframe: {body.symbol}_{ind_tf}")
+            ind_df = load_data_aligned(str(ind_path))
+            if ind_native_tf != ind_tf and ind_df is not None and not ind_df.empty:
+                ind_df = _resample_ohlcv(ind_df, ind_tf)
+            if ind_df is None or ind_df.empty:
+                raise HTTPException(500, "Failed to load indicator-timeframe data")
+            df = ind_df
+
     # --- Get plugin and compute ---
     registry = get_plugin_registry()
     try:
@@ -422,6 +462,12 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     feature_cols = plugin.get_feature_columns()
     available_cols = [c for c in feature_cols if c in result_df.columns and not c.startswith("_")]
 
+    # --- Overlay columns (price-scale, for main chart) ---
+    overlay_cols = []
+    if hasattr(plugin, "get_overlay_columns"):
+        overlay_cols = [c for c in plugin.get_overlay_columns()
+                        if c in result_df.columns]
+
     # --- Classify columns via plugin methods (needed before undo-shift) ---
     plugin_signal_cols = set(plugin.get_signal_columns()) if hasattr(plugin, "get_signal_columns") else set()
 
@@ -437,6 +483,23 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             result_df[col] = result_df[col].shift(1)
         else:
             result_df[col] = result_df[col].shift(-1)
+    for col in overlay_cols:
+        result_df[col] = result_df[col].shift(-1)
+
+    # --- MTF: forward-fill indicator columns to chart timeframe ---
+    # Continuous columns (plot + overlay) are forward-filled so each lower-TF bar
+    # holds the last higher-TF value. Signal columns are NOT forward-filled —
+    # they only appear at the higher-TF bar boundary (point values, not blocks).
+    if chart_df is not None:
+        ffill_cols = list(set(
+            [c for c in available_cols if c not in plugin_signal_cols] + overlay_cols
+        ))
+        _forward_fill_to_chart_tf(result_df, chart_df, ffill_cols)
+        # Signal columns: reindex without ffill (NaN between higher-TF bars)
+        for col in available_cols:
+            if col in plugin_signal_cols and col in result_df.columns:
+                chart_df[col] = result_df[col].reindex(chart_df.index)
+        result_df = chart_df
 
     # --- Slice ---
     total = len(result_df)
@@ -473,11 +536,22 @@ def compute_indicator(body: IndicatorRequest) -> dict:
 
     timestamps = [int(ts.timestamp() * 1000) for ts in result_slice.index]
 
+    # --- Overlay data (absolute price-scale values for main chart) ---
+    overlay_data = {}
+    for col in overlay_cols:
+        values = result_slice[col].tolist()
+        overlay_data[col] = [
+            None if (v != v or v == float("inf") or v == float("-inf")) else float(v)
+            for v in values
+        ]
+
     response = {
         "fqn": body.fqn,
         "columns": available_cols,
         "plot_columns": plot_columns,
         "signal_columns": signal_columns,
+        "overlay_columns": overlay_cols,
+        "overlay_data": overlay_data,
         "timestamps": timestamps,
         "data": columns_data,
     }

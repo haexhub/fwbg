@@ -146,13 +146,17 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         ctx = SimulationContext.create(asset, strategy)
 
         # === WALK-FORWARD FOLDS ERSTELLEN ===
-        report_phase(sym, f"Creating {data_config.WALK_FORWARD_FOLDS} walk-forward folds...")
+        n_folds = strategy.validation.folds
+        min_train = data_config.WINDOW_SIZE // 2
+        # OOS size: split all available data (after min training) into n_folds
+        oos_size = max(data_config.OOS_SIZE, (len(df) - min_train) // n_folds)
+        report_phase(sym, f"Creating {n_folds} walk-forward folds (oos_size={oos_size})...")
         try:
             wf_folds = create_walk_forward_folds(
                 df,
-                n_folds=data_config.WALK_FORWARD_FOLDS,
-                test_size=data_config.OOS_SIZE,
-                min_train_size=data_config.WINDOW_SIZE // 2,
+                n_folds=n_folds,
+                test_size=oos_size,
+                min_train_size=min_train,
                 anchored=True,
                 embargo_bars=ctx.embargo_bars,
             )
@@ -165,30 +169,82 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         for fold in wf_folds:
             log(2, f"  Fold {fold.fold_id}: Train[{fold.train_end - fold.train_start}] Test[{fold.test_end - fold.test_start}]", sym)
 
-        # Grid-Summary
-        grid_per_fold = ctx.total_grid_combinations()
-        total_trainings = grid_per_fold * len(wf_folds)
-        log(1, f"Grid: {grid_per_fold} combos/fold × {len(wf_folds)} folds = {total_trainings} total trainings", sym)
+        # === INDICATOR GRID: expand variants ===
+        from .indicator_grid import expand_indicator_grid
 
-        # === WALK-FORWARD LOOP ===
-        all_fold_results = []
-        accumulated_grid_results = []
+        variants = expand_indicator_grid(strategy)
+        n_variants = len(variants)
 
-        fold_indicators, precomputed_raw_df, total_indicators = precompute_indicators(
-            df, strategy, sym,
-        )
-        preprocessing_configs = strategy.get_preprocessing()
+        if n_variants > 1:
+            log(1, f"Indicator Grid: {n_variants} variants", sym)
 
-        for fold_idx, fold in enumerate(wf_folds):
-            fold_result, grid_results = process_single_fold(
-                fold, fold_idx, len(wf_folds),
-                fold_indicators, precomputed_raw_df, preprocessing_configs,
-                ctx, sym, total_indicators,
+        best_variant_score = (-1, float("-inf"))  # (n_successful_folds, mean_pnl)
+        best_variant_data = None
+
+        for variant_idx, (variant_label, variant_strategy) in enumerate(variants):
+            if n_variants > 1:
+                log(1, f"--- Variant {variant_idx+1}/{n_variants}: {variant_label} ---", sym)
+
+            variant_ctx = SimulationContext.create(asset, variant_strategy)
+
+            # Grid-Summary (per variant)
+            grid_per_fold = variant_ctx.total_grid_combinations()
+            total_trainings = grid_per_fold * len(wf_folds)
+            if n_variants == 1:
+                log(1, f"Grid: {grid_per_fold} combos/fold × {len(wf_folds)} folds = {total_trainings} total trainings", sym)
+
+            fold_indicators, precomputed_raw_df, total_indicators = precompute_indicators(
+                df, variant_strategy, sym,
             )
-            accumulated_grid_results.extend(grid_results)
-            if fold_result:
-                all_fold_results.append(fold_result)
-            gc.collect()
+            preprocessing_configs = variant_strategy.get_preprocessing()
+
+            all_fold_results = []
+            accumulated_grid_results = []
+            for fold_idx, fold in enumerate(wf_folds):
+                fold_result, grid_results = process_single_fold(
+                    fold, fold_idx, len(wf_folds),
+                    fold_indicators, precomputed_raw_df, preprocessing_configs,
+                    variant_ctx, sym, total_indicators,
+                )
+                accumulated_grid_results.extend(grid_results)
+                if fold_result:
+                    all_fold_results.append(fold_result)
+                gc.collect()
+
+            # Score this variant: (successful_folds, mean_test_pnl)
+            n_successful = len(all_fold_results)
+            mean_pnl = float(np.mean([r["test_pnl"] for r in all_fold_results])) if n_successful else float("-inf")
+            variant_score = (n_successful, mean_pnl)
+
+            if n_variants > 1:
+                log(1, f"  Variant result: {n_successful}/{len(wf_folds)} folds"
+                       + (f", mean_pnl={mean_pnl:.1f}" if n_successful else ""), sym)
+
+            if variant_score > best_variant_score:
+                best_variant_score = variant_score
+                best_variant_data = {
+                    "label": variant_label,
+                    "strategy": variant_strategy,
+                    "ctx": variant_ctx,
+                    "all_fold_results": all_fold_results,
+                    "accumulated_grid_results": accumulated_grid_results,
+                    "fold_indicators": fold_indicators,
+                    "precomputed_raw_df": precomputed_raw_df,
+                    "preprocessing_configs": preprocessing_configs,
+                }
+
+        # Use best variant for post-processing
+        if n_variants > 1:
+            log(1, f"Best variant: {best_variant_data['label']} "
+                   f"({best_variant_score[0]}/{len(wf_folds)} folds, pnl={best_variant_score[1]:.1f})", sym)
+
+        ctx = best_variant_data["ctx"]
+        all_fold_results = best_variant_data["all_fold_results"]
+        accumulated_grid_results = best_variant_data["accumulated_grid_results"]
+        fold_indicators = best_variant_data["fold_indicators"]
+        precomputed_raw_df = best_variant_data["precomputed_raw_df"]
+        preprocessing_configs = best_variant_data["preprocessing_configs"]
+        indicator_variant_label = best_variant_data["label"] if n_variants > 1 else None
 
         # === END OF WALK-FORWARD LOOP ===
 
@@ -196,6 +252,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(1, "SKIP - No successful folds", sym)
             report_done(sym, "no_successful_folds")
             result = {"symbol": sym, "status": "no_successful_folds", "grid_results": accumulated_grid_results}
+            if indicator_variant_label:
+                result["indicator_variant"] = indicator_variant_label
             # Include best grid result for diagnostics
             valid = [g for g in accumulated_grid_results
                      if g.get("inner_val_pnl") is not None
@@ -287,13 +345,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             inconsistent_count = len(all_fold_results) - len(consistent_folds)
             # Show what each fold picked
             for i, (r, hp) in enumerate(zip(all_fold_results, hp_list)):
-                sig = hp.get("signal_column_short", hp.get("signal_column_long", "?"))
-                rl_tag = sig.split("_")[0] if sig.startswith("rl") else "?"
-                sh = hp.get("signal_start_hour")
-                eh = hp.get("signal_end_hour")
-                hours_tag = f"{sh}-{eh}" if sh is not None else "all"
                 is_majority = "✓" if hp_keys[i] == majority_hp_key else "✗"
-                log(2, f"    Fold {i+1}: {rl_tag} hours={hours_tag} {is_majority}", sym)
+                log(2, f"    Fold {i+1}: hp={dict(hp) if hp else '{}'} {is_majority}", sym)
             log(1, f"  Model HP inconsistent: {majority_hp_count}/{len(all_fold_results)} folds agree. "
                    f"Dropping {inconsistent_count} inconsistent fold(s).", sym)
         else:
@@ -583,12 +636,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "risk_adjustment": risk_adjustment,
                 "vol_targeting": risk_result.get("vol_targeting"),
                 "model_hyperparameters": b_config.get("model_hyperparameters"),
-                "signal_meta": decode_signal_meta(
-                    (b_config.get("model_hyperparameters") or {}).get(
-                        "signal_column_long",
-                        (b_config.get("model_hyperparameters") or {}).get("signal_column_short", ""),
-                    )
-                ),
+                "signal_meta": {},
             },
             "tr_trace": all_trades_pnl,
             "test_period_years": test_period_years,
@@ -603,6 +651,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "feature_stability": feature_stability,
             "grid_results": accumulated_grid_results,
         }
+        if indicator_variant_label:
+            result["indicator_variant"] = indicator_variant_label
 
         log(1, f"OK (Walk-Forward) - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
                f"p={mc_perm['p_value']:.3f} Trades={total_trades} ({time.time()-t_start:.1f}s)", sym)

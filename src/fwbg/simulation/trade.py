@@ -461,7 +461,7 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
     # --- Scale-in preparation ---
     use_scale_in = scale_levels is not None and len(scale_levels) > 0
     if use_scale_in:
-        positions = [(entry, 1.0)]
+        positions = [(entry, 1.0, entry_idx)]
         avg_price = entry
         total_qty = 1.0
         n_fills = 1
@@ -525,7 +525,12 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             res["total_qty"] = float(total_qty)
             res["n_fills"] = n_fills
             res["scale_in_fills"] = [
-                {"price": float(p), "qty": float(q)} for p, q in positions[1:]
+                {
+                    "price": float(p),
+                    "qty": float(q),
+                    "fill_time": str(timestamps[bi]) if timestamps is not None else None,
+                }
+                for p, q, bi in positions[1:]
             ]
 
         return res
@@ -554,9 +559,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                 trigger = scale_trigger_prices[k]
                 if direction == 1:
                     if lows[j] <= trigger and trigger > sl:
-                        positions.append((trigger, scale_qty_mult))
-                        total_qty = sum(q for _, q in positions)
-                        avg_price = sum(p * q for p, q in positions) / total_qty
+                        positions.append((trigger, scale_qty_mult, j))
+                        total_qty = sum(q for _, q, _ in positions)
+                        avg_price = sum(p * q for p, q, _ in positions) / total_qty
                         tp = avg_price + tp_distance
                         levels_filled[k] = True
                         n_fills += 1
@@ -564,9 +569,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                             be_trigger_price = avg_price + tp_distance * breakeven_trigger
                 else:
                     if highs[j] >= trigger and trigger < sl:
-                        positions.append((trigger, scale_qty_mult))
-                        total_qty = sum(q for _, q in positions)
-                        avg_price = sum(p * q for p, q in positions) / total_qty
+                        positions.append((trigger, scale_qty_mult, j))
+                        total_qty = sum(q for _, q, _ in positions)
+                        avg_price = sum(p * q for p, q, _ in positions) / total_qty
                         tp = avg_price - tp_distance
                         levels_filled[k] = True
                         n_fills += 1

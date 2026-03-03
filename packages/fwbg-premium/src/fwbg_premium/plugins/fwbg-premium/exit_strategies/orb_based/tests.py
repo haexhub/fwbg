@@ -311,27 +311,6 @@ class TestOrbExitStrategySLDistColumn:
             f"Expected fallback to orb_sl_dist=200, got min={sl_dists.min():.2f}"
         )
 
-    def test_sl_dist_column_from_model_hyperparameters(self, ohlc_df):
-        """model_hyperparameters.sl_dist_column overrides exit_params.sl_dist_column."""
-        strategy = OrbExitStrategy()
-        df = ohlc_df.copy()
-        df["hl_ses_pdl_sl_dist"] = 100.0   # exit_params default
-        df["hl_ses_rl30_pdl_sl_dist"] = 500.0  # model_hyperparameters override
-
-        ctx = SimulationContext(
-            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
-            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
-            exit_params={"atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 5,
-                         "sl_dist_column": "hl_ses_pdl_sl_dist"},
-            model_hyperparameters={"sl_dist_column": "hl_ses_rl30_pdl_sl_dist"},
-        )
-
-        _, sl_dists = strategy.resolve_distances(df, tp=2.0, sl=1.0, ctx=ctx)
-        # model_hyperparameters.sl_dist_column=rl30_pdl_sl_dist=500 must win
-        assert (sl_dists >= 500.0).all(), (
-            f"Expected SL from rl30_pdl_sl_dist=500, got min={sl_dists.min():.2f}"
-        )
-
     def test_compute_targets_uses_sl_dist_column(self, ohlc_df):
         """compute_targets must also respect sl_dist_column from exit_params."""
         strategy = OrbExitStrategy()

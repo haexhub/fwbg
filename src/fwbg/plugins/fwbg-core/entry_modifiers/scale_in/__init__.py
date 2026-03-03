@@ -73,42 +73,35 @@ def _compute_targets_scale_in_numba(
     closes: np.ndarray,
     highs: np.ndarray,
     lows: np.ndarray,
-    atr_values: np.ndarray,
-    tp_mult: float,
-    sl_mult: float,
+    tp_dist_arr: np.ndarray,
+    sl_dist_arr: np.ndarray,
+    trail_dist_arr: np.ndarray,
+    trail_tp_dist_arr: np.ndarray,
     spread: float,
     slippage: float,
-    min_tp_distance: float,
-    min_sl_distance: float,
     max_bars: int,
     timeout_val: int,
     scale_levels: np.ndarray,
     n_levels: int,
     scale_qty_mult: float,
     breakeven_trigger: float,
-    trail_atr_mult: float,
-    trail_tp_atr_mult: float,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
     targets_short = np.zeros(n, dtype=np.float64)
 
     for i in range(n - 1):
-        if i + 1 >= n:
-            continue
-
-        atr = atr_values[i]
-        tp_distance = max(atr * tp_mult, min_tp_distance)
-        sl_distance = max(atr * sl_mult, min_sl_distance)
-        trail_dist = atr * trail_atr_mult if trail_atr_mult > 0.0 else 0.0
-        trail_tp_dist = atr * trail_tp_atr_mult if trail_tp_atr_mult > 0.0 else 0.0
+        tp_distance = tp_dist_arr[i]
+        sl_distance = sl_dist_arr[i]
+        trail_dist = trail_dist_arr[i]
+        trail_tp = trail_tp_dist_arr[i]
 
         result_long, _, _, _, _, _, _ = _simulate_trade_scale_in_numba(
             opens, closes, highs, lows, i, 1,
             tp_distance, sl_distance, spread, slippage,
             max_bars, timeout_val,
             scale_levels, n_levels, scale_qty_mult,
-            breakeven_trigger, trail_dist, trail_tp_dist,
+            breakeven_trigger, trail_dist, trail_tp,
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
@@ -118,7 +111,7 @@ def _compute_targets_scale_in_numba(
             tp_distance, sl_distance, spread, slippage,
             max_bars, timeout_val,
             scale_levels, n_levels, scale_qty_mult,
-            breakeven_trigger, trail_dist, trail_tp_dist,
+            breakeven_trigger, trail_dist, trail_tp,
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
@@ -132,21 +125,18 @@ def _compute_targets_scale_in_with_durations_numba(
     closes: np.ndarray,
     highs: np.ndarray,
     lows: np.ndarray,
-    atr_values: np.ndarray,
-    tp_mult: float,
-    sl_mult: float,
+    tp_dist_arr: np.ndarray,
+    sl_dist_arr: np.ndarray,
+    trail_dist_arr: np.ndarray,
+    trail_tp_dist_arr: np.ndarray,
     spread: float,
     slippage: float,
-    min_tp_distance: float,
-    min_sl_distance: float,
     max_bars: int,
     timeout_val: int,
     scale_levels: np.ndarray,
     n_levels: int,
     scale_qty_mult: float,
     breakeven_trigger: float,
-    trail_atr_mult: float,
-    trail_tp_atr_mult: float,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -155,21 +145,17 @@ def _compute_targets_scale_in_with_durations_numba(
     durations_short = np.zeros(n, dtype=np.int64)
 
     for i in range(n - 1):
-        if i + 1 >= n:
-            continue
-
-        atr = atr_values[i]
-        tp_distance = max(atr * tp_mult, min_tp_distance)
-        sl_distance = max(atr * sl_mult, min_sl_distance)
-        trail_dist = atr * trail_atr_mult if trail_atr_mult > 0.0 else 0.0
-        trail_tp_dist = atr * trail_tp_atr_mult if trail_tp_atr_mult > 0.0 else 0.0
+        tp_distance = tp_dist_arr[i]
+        sl_distance = sl_dist_arr[i]
+        trail_dist = trail_dist_arr[i]
+        trail_tp = trail_tp_dist_arr[i]
 
         result_long, exit_long, _, _, _, _, _ = _simulate_trade_scale_in_numba(
             opens, closes, highs, lows, i, 1,
             tp_distance, sl_distance, spread, slippage,
             max_bars, timeout_val,
             scale_levels, n_levels, scale_qty_mult,
-            breakeven_trigger, trail_dist, trail_tp_dist,
+            breakeven_trigger, trail_dist, trail_tp,
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
@@ -180,7 +166,7 @@ def _compute_targets_scale_in_with_durations_numba(
             tp_distance, sl_distance, spread, slippage,
             max_bars, timeout_val,
             scale_levels, n_levels, scale_qty_mult,
-            breakeven_trigger, trail_dist, trail_tp_dist,
+            breakeven_trigger, trail_dist, trail_tp,
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
@@ -207,13 +193,11 @@ class ScaleInModifier(BaseEntryModifier):
         closes: np.ndarray,
         highs: np.ndarray,
         lows: np.ndarray,
-        atr_values: np.ndarray,
-        tp_mult: float,
-        sl_mult: float,
+        tp_dist_arr: np.ndarray,
+        sl_dist_arr: np.ndarray,
+        trail_dist_arr: np.ndarray,
         spread: float,
         slippage: float,
-        min_tp_distance: float,
-        min_sl_distance: float,
         max_bars: int,
         timeout_val: int,
         return_durations: bool = False,
@@ -222,34 +206,35 @@ class ScaleInModifier(BaseEntryModifier):
         qty_multiplier: float = 1.0,
         # Trailing params (pass-through from exit modifier)
         breakeven_trigger: float = 0.0,
-        trail_atr_mult: float = 0.0,
-        trail_tp_atr_mult: float = 0.0,
+        trail_tp_dist_arr: np.ndarray = None,
         **kwargs,
     ):
         if levels is None:
             levels = [0.2, 0.4, 0.6]
+        if trail_tp_dist_arr is None:
+            trail_tp_dist_arr = np.zeros_like(tp_dist_arr)
 
         scale_arr, n_levels = _pack_levels(levels)
 
         if return_durations:
             return _call_numba(
                 _compute_targets_scale_in_with_durations_numba,
-                opens, closes, highs, lows, atr_values,
-                tp_mult, sl_mult, spread, slippage,
-                min_tp_distance, min_sl_distance,
+                opens, closes, highs, lows,
+                tp_dist_arr, sl_dist_arr, trail_dist_arr, trail_tp_dist_arr,
+                spread, slippage,
                 max_bars, timeout_val,
                 scale_arr, n_levels, float(qty_multiplier),
-                float(breakeven_trigger), float(trail_atr_mult), float(trail_tp_atr_mult),
+                float(breakeven_trigger),
             )
 
         return _call_numba(
             _compute_targets_scale_in_numba,
-            opens, closes, highs, lows, atr_values,
-            tp_mult, sl_mult, spread, slippage,
-            min_tp_distance, min_sl_distance,
+            opens, closes, highs, lows,
+            tp_dist_arr, sl_dist_arr, trail_dist_arr, trail_tp_dist_arr,
+            spread, slippage,
             max_bars, timeout_val,
             scale_arr, n_levels, float(qty_multiplier),
-            float(breakeven_trigger), float(trail_atr_mult), float(trail_tp_atr_mult),
+            float(breakeven_trigger),
         )
 
     @classmethod

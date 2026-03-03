@@ -48,22 +48,23 @@ def select_features(
     # Verwende ersten Inner Fold für Feature Selection
     train_df, _ = inner_folds[0]
 
-    # Berechne Targets mit Default TP/SL from first exit strategy
-    # Feature Selection ist unabhängig von TP/SL!
+    # Berechne Targets mit Default TP/SL from first exit strategy.
+    # Use the first configured exit strategy (not ctx.exit_strategy which
+    # defaults to "fixed" before grid_search sets it per-combo).
     if ctx.exit_strategies:
-        first_ep = ctx.exit_strategies[0].params
+        first_es = ctx.exit_strategies[0]
+        first_ep = first_es.params
         default_tp = first_ep.get("tp_mult", 1.5)
         default_sl = first_ep.get("sl_mult", 1.0)
+        fs_exit_mode = first_es.name
     else:
         default_tp = 1.5
         default_sl = 1.0
+        fs_exit_mode = ctx.exit_strategy
 
-    # Use compute_targets_cached which dispatches to the exit strategy plugin.
-    # This ensures ATR-based exits compute targets with ATR distances,
-    # not spread-based distances.
     result = compute_targets_cached(
         train_df, default_tp, default_sl, ctx, timeout_bars=None,
-        exit_strategy_mode=ctx.exit_strategy,
+        exit_strategy_mode=fs_exit_mode,
     )
     targets_long, targets_short = result[0], result[1]
     has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
@@ -163,6 +164,8 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "exit_strategy": ctx.exit_strategy,
         "exit_params": ctx.exit_params,
         "exit_modifier_params": ctx.exit_modifier_params,
+        "entry_modifier": ctx.entry_modifier,
+        "entry_modifier_params": ctx.entry_modifier_params,
         "model_hyperparameters": ctx.model_hyperparameters,
     }
 
@@ -319,7 +322,7 @@ def _target_cache_key(tp, sl, timeout_bars, ctx):
     Only parameters that affect compute_targets output are included.
     Signal columns and hour filters do NOT affect targets.
     """
-    sl_dist_col = ctx.model_hyperparameters.get("sl_dist_column", "")
+    sl_dist_col = (ctx.exit_params or {}).get("sl_dist_column", "")
     exit_mod = ctx.exit_modifier_params or {}
     entry_mod = ctx.entry_modifier_params or {}
     return (

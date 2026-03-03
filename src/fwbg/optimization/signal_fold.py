@@ -1,6 +1,6 @@
 """Signal model fold processing — no training, no grid search.
 
-Signal models read pre-computed indicator columns as entry signals.
+Signal models evaluate signal_rules into composed signal columns.
 This module handles their specific data preparation (keep all rows,
 fill NaN with 0, preserve auxiliary columns for exit strategies)
 and direct evaluation (no inner CV needed).
@@ -10,28 +10,6 @@ import dataclasses
 from fwbg.utils.logging import log
 from .nested_cv import evaluate_on_holdout
 from .process_fold import _prepare_fold_common, _finalize_fold_data
-
-
-def _resolve_signal_column(name: str, df_columns, sym: str) -> str:
-    """Resolve a signal column name against actual dataframe columns.
-
-    When indicator params change (e.g. carry_forward_days), column name
-    prefixes change but the suffix stays the same. If the exact column
-    doesn't exist, find a match by suffix (e.g. _breakout_up).
-    """
-    if name in df_columns:
-        return name
-    # Extract suffix after last "orb_s" segment: e.g. "rb12_prb6_orb_s00_breakout_up" → "_breakout_up"
-    for sep in ("_breakout_up", "_breakout_down", "_retest_bull", "_retest_bear"):
-        if name.endswith(sep):
-            matches = [c for c in df_columns if c.endswith(sep)]
-            if len(matches) == 1:
-                log(1, f"  Signal column auto-resolved: {name} → {matches[0]}", sym)
-                return matches[0]
-            if len(matches) > 1:
-                log(1, f"  Signal column {name}: {len(matches)} candidates, using {matches[0]}", sym)
-                return matches[0]
-    return name
 
 
 def prepare_signal_fold_data(fold, fold_indicators, precomputed_raw_df,
@@ -60,28 +38,7 @@ def prepare_signal_fold_data(fold, fold_indicators, precomputed_raw_df,
     log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features "
            f"(excl: {common['excluded_inf']} inf, {common['excluded_nan']} nan)", sym)
 
-    # Auto-resolve signal columns: when indicator params change (e.g.
-    # carry_forward_days), column prefixes change but suffixes stay the same.
-    # Resolve against actual dataframe columns and update ctx so downstream
-    # code (model.train, simulate_trades) uses the correct column names.
-    cols = set(train_df.columns)
-    hp = ctx.model_hyperparameters
-    resolved_any = False
-    for key in ("signal_column_long", "signal_column_short"):
-        old = hp.get(key, "")
-        if old and old not in cols:
-            resolved = _resolve_signal_column(old, cols, sym)
-            if resolved != old:
-                hp[key] = resolved
-                resolved_any = True
-    if resolved_any:
-        # Rebuild required_features with resolved column names
-        ctx.required_features = [
-            hp.get(k, "") for k in ("signal_column_long", "signal_column_short")
-            if hp.get(k, "")
-        ]
-
-    # If signal_rules defined, add composed columns to required features
+    # Add composed signal columns to required features
     signal_rules = getattr(ctx, "signal_rules", None)
     if signal_rules:
         for direction in ("long", "short"):

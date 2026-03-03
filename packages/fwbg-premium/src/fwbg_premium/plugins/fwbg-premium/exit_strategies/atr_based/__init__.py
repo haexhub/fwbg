@@ -432,23 +432,27 @@ class AtrExitStrategy(BaseExitStrategy):
             entry_mod = entry_mod_cls()
             entry_mod_params = getattr(ctx, "entry_modifier_params", {}) or {}
 
-            # Pass through trailing params from exit modifier
+            # Pre-compute TP/SL distances using ATR
+            tp_dist_arr = np.maximum(atr_v * tp_mult, min_tp_distance)
+            sl_dist_arr = np.maximum(atr_v * sl_mult, min_sl_distance)
+
+            # Trailing distances from exit modifier
             modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}
             em_breakeven = modifier_params.get("breakeven_trigger", 0.0)
-            em_trail = modifier_params.get("trail_atr_mult", 0.0)
-            em_trail_tp = modifier_params.get("trail_tp_atr_mult", 0.0)
+            em_trail_mult = modifier_params.get("trail_atr_mult", 0.0)
+            em_trail_tp_mult = modifier_params.get("trail_tp_atr_mult", 0.0)
+            trail_dist_arr = atr_v * em_trail_mult if em_trail_mult > 0.0 else np.zeros_like(atr_v)
+            trail_tp_dist_arr = atr_v * em_trail_tp_mult if em_trail_tp_mult > 0.0 else np.zeros_like(atr_v)
 
             timeout_val = timeout_bars if timeout_bars else 0
             return entry_mod.compute_targets(
-                opn_v, cls_v, hgh_v, low_v, atr_v,
-                tp_mult, sl_mult,
+                opn_v, cls_v, hgh_v, low_v,
+                tp_dist_arr, sl_dist_arr, trail_dist_arr,
                 ctx.spread, slippage,
-                min_tp_distance, min_sl_distance,
                 max_bars, timeout_val,
                 return_durations=return_durations,
                 breakeven_trigger=em_breakeven,
-                trail_atr_mult=em_trail,
-                trail_tp_atr_mult=em_trail_tp,
+                trail_tp_dist_arr=trail_tp_dist_arr,
                 **entry_mod_params,
             )
 

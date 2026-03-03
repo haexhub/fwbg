@@ -402,14 +402,18 @@ def process_single_fold(
         return None, all_grid_results
 
     # === TEST EVALUATION (on this fold's test set) ===
-    # Apply winning candidate's model_hyperparameters and exit_modifier_params
-    # so holdout evaluation uses the same params that won the grid search.
+    # Apply winning candidate's full context (exit strategy, entry modifier,
+    # model hyperparameters) so holdout evaluation matches grid search.
     import dataclasses
-    holdout_ctx = ctx
-    if b.get("model_hyperparameters") and b["model_hyperparameters"] != ctx.model_hyperparameters:
-        holdout_ctx = dataclasses.replace(holdout_ctx, model_hyperparameters=b["model_hyperparameters"])
-    if b.get("exit_modifier_params") and b["exit_modifier_params"] != ctx.exit_modifier_params:
-        holdout_ctx = dataclasses.replace(holdout_ctx, exit_modifier_params=b["exit_modifier_params"])
+    holdout_ctx = dataclasses.replace(
+        ctx,
+        exit_strategy=b.get("exit_strategy", ctx.exit_strategy),
+        exit_params=b.get("exit_params", ctx.exit_params),
+        exit_modifier_params=b.get("exit_modifier_params", ctx.exit_modifier_params),
+        entry_modifier=b.get("entry_modifier", ctx.entry_modifier),
+        entry_modifier_params=b.get("entry_modifier_params", ctx.entry_modifier_params),
+        model_hyperparameters=b.get("model_hyperparameters", ctx.model_hyperparameters),
+    )
     test_result = evaluate_on_holdout(test_df, train_df, b, holdout_ctx)
 
     if test_result["n_trades"] < 5:

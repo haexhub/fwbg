@@ -1,30 +1,21 @@
 """
 ORB-Based Exit Strategy Plugin.
 
-SL = indicator-provided *_sl_dist column, fallback to ATR * sl_mult.
+SL = indicator-provided *_sl_dist column (= full OR range), fallback to ATR * sl_mult.
 TP = ATR * tp_mult (default) or range * tp_mult (tp_mode="range").
 
 Design rationale:
   - SL is anchored to the structural level that invalidates the trade thesis.
+  - orb_sl_dist = full OR range. With sl_mult=1.0, SL sits at the opposite
+    boundary (e.g. long entry at or_high → SL at or_low). sl_mult>1.0 adds buffer.
   - When sl_dist_column is explicitly set (via exit_params), the column value
     is the ABSOLUTE SL distance — used as-is, no sl_mult applied.
-    E.g. pdl_sl_dist = pd_range/2 → SL exactly at PDL (long) or PDH (short).
   - When auto-detected (no explicit sl_dist_column), sl_mult is applied as a
-    buffer multiplier on the raw distance (1.0 = exact boundary, >1.0 = buffer).
-
-sl_level_column (exit_params):
-  - When set, SL is placed at the absolute price level from this column,
-    regardless of entry price.  Useful for anchoring SL to structural levels
-    (e.g. *_or_midpoint, *_or_high, *_or_low).
-  - sl_mult still applies as a buffer multiplier: the SL level is pushed
-    further from entry by (sl_mult - 1.0) * abs(level - entry).
-    sl_mult=1.0 → exact level. sl_mult=1.2 → 20% beyond the level.
+    buffer multiplier on the raw distance (1.0 = opposite boundary, >1.0 = beyond).
 
 tp_mode (exit_params):
   - "atr" (default): TP = ATR * tp_mult. Trailing uses ATR * trail_atr_mult.
   - "range": TP = range_column * tp_mult. Trailing uses range as trail distance.
-    Typical config: tp_mult=1.0 (TP = full range), sl_mult=1.4 (SL = 70% of range
-    from midpoint entry = 20% beyond range boundary), breakeven_trigger=0.5.
 """
 from typing import Tuple, Union, TYPE_CHECKING
 import numpy as np
@@ -44,15 +35,13 @@ class OrbExitStrategy(BaseExitStrategy):
     """
     Exit strategy for ORB (Opening Range Breakout) setups.
 
-    SL: When sl_dist_column is explicitly set in exit_params, uses that column
-        as the ABSOLUTE SL distance (no multiplier). When auto-detected, applies
-        sl_mult as buffer multiplier. Falls back to ATR * sl_mult when no column.
+    SL: orb_sl_dist = full OR range. sl_mult=1.0 → SL at opposite boundary.
+        sl_mult>1.0 adds buffer beyond boundary. Falls back to ATR * sl_mult
+        when no orb_sl_dist column present.
 
     TP modes (set via tp_mode in exit_params):
       - "atr" (default): TP = ATR * tp_mult. Trail distance = ATR * trail_atr_mult.
       - "range": TP = range_column * tp_mult. Trail distance = range_column value.
-        Example: entry at midpoint, orb_sl_dist = range/2.
-        tp_mult=1.0 → TP = full range. sl_mult=1.4 → SL = 70% of range from entry.
     """
 
     def compute_targets(
@@ -83,10 +72,6 @@ class OrbExitStrategy(BaseExitStrategy):
         exit_params = ctx.exit_params if ctx.exit_params else {}
         sl_dist_column = exit_params.get("sl_dist_column")
         tp_mode = exit_params.get("tp_mode", "atr")
-        # Per-combo override from model_hyperparameters (grid search selects rl variant)
-        hp_sl_dist = ctx.model_hyperparameters.get("sl_dist_column")
-        if hp_sl_dist:
-            sl_dist_column = hp_sl_dist
 
         opn_v = df["O"].values.astype(np.float64)
         cls_v = df["C"].values.astype(np.float64)
@@ -131,22 +116,32 @@ class OrbExitStrategy(BaseExitStrategy):
             entry_mod = entry_mod_cls()
             entry_mod_params = getattr(ctx, "entry_modifier_params", {}) or {}
 
-            # Pass through trailing params from exit modifier
+            # Pre-compute TP/SL distances using ORB-specific logic
+            if use_range_tp:
+                tp_dist_arr = np.maximum(range_v * tp_mult, min_tp_distance)
+            else:
+                tp_dist_arr = np.maximum(atr_v * tp_mult, min_tp_distance)
+            sl_dist_arr = np.maximum(sl_dist_v, min_sl_distance)
+
+            # Trailing distances from exit modifier
             modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}
             em_breakeven = modifier_params.get("breakeven_trigger", 0.0)
-            em_trail = modifier_params.get("trail_atr_mult", 0.0)
-            em_trail_tp = modifier_params.get("trail_tp_atr_mult", 0.0)
+            em_trail_mult = modifier_params.get("trail_atr_mult", 0.0)
+            em_trail_tp_mult = modifier_params.get("trail_tp_atr_mult", 0.0)
+            if use_range_tp:
+                trail_dist_arr = np.where(range_v > 0.0, range_v, 0.0) if em_trail_mult > 0.0 else np.zeros_like(atr_v)
+            else:
+                trail_dist_arr = atr_v * em_trail_mult if em_trail_mult > 0.0 else np.zeros_like(atr_v)
+            trail_tp_dist_arr = atr_v * em_trail_tp_mult if em_trail_tp_mult > 0.0 else np.zeros_like(atr_v)
 
             return entry_mod.compute_targets(
-                opn_v, cls_v, hgh_v, low_v, atr_v,
-                tp_mult, sl_mult,
+                opn_v, cls_v, hgh_v, low_v,
+                tp_dist_arr, sl_dist_arr, trail_dist_arr,
                 ctx.spread, slippage,
-                min_tp_distance, min_sl_distance,
                 max_bars, timeout_val,
                 return_durations=return_durations,
                 breakeven_trigger=em_breakeven,
-                trail_atr_mult=em_trail,
-                trail_tp_atr_mult=em_trail_tp,
+                trail_tp_dist_arr=trail_tp_dist_arr,
                 **entry_mod_params,
             )
 
@@ -243,10 +238,6 @@ class OrbExitStrategy(BaseExitStrategy):
         min_sl_pips = exit_params.get("min_sl_pips", 5)
         tp_mode = exit_params.get("tp_mode", "atr")
         sl_dist_column = exit_params.get("sl_dist_column")
-        # Per-combo override from model_hyperparameters (grid search selects rl variant)
-        hp_sl_dist = ctx.model_hyperparameters.get("sl_dist_column")
-        if hp_sl_dist:
-            sl_dist_column = hp_sl_dist
 
         min_tp_distance = ctx.spread * min_tp_pips
         min_sl_distance = ctx.spread * min_sl_pips
@@ -279,7 +270,7 @@ class OrbExitStrategy(BaseExitStrategy):
             "min_tp_pips": 8,
             "min_sl_pips": 5,
             "timeout_bars": None,
-            "sl_level_column": None,
+            "sl_level": "none",
             "entry_delay": 1,
             "max_trades_per_signal": 1,
         }
@@ -308,9 +299,9 @@ class OrbExitStrategy(BaseExitStrategy):
                 "type": "float",
                 "default": 1.0,
                 "description": (
-                    "Multiplier on orb_sl_dist. "
+                    "Multiplier on orb_sl_dist (= full OR range). "
                     "1.0 = SL at opposite ORB boundary, >1.0 adds buffer beyond. "
-                    "E.g. 1.4 with entry at midpoint = SL at 70% of range = 20% beyond boundary. "
+                    "E.g. 1.3 = SL 30% beyond opposite boundary. "
                     "Fallback to ATR * sl_mult if no orb_sl_dist column present."
                 ),
                 "min": 0.5,
@@ -350,15 +341,14 @@ class OrbExitStrategy(BaseExitStrategy):
                 "step": 1,
                 "required": False,
             },
-            "sl_level_column": {
-                "type": "string",
-                "default": None,
+            "sl_level": {
+                "type": "choice",
+                "default": "none",
                 "description": (
-                    "Column with absolute SL price level (e.g. *_or_midpoint, "
-                    "*_or_high, *_or_low). When set, SL is anchored at this "
-                    "structural level instead of entry ± sl_dist."
+                    "SL an strukturellem Preisniveau verankern statt Entry ± sl_dist. "
+                    "sl_mult wirkt als Buffer-Multiplikator auf die Distanz zum Level."
                 ),
-                "required": False,
+                "choices": ["none", "or_midpoint", "or_high", "or_low"],
             },
             "entry_delay": {
                 "type": "int",
