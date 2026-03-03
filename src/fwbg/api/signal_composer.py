@@ -104,11 +104,11 @@ def get_available_columns(strategy_name: str) -> dict[str, Any]:
     )
 
     if not pipeline:
-        raise HTTPException(400, f"Strategy has no pipeline configured")
+        raise HTTPException(400, "Strategy has no pipeline configured")
 
     indicator_configs = pipeline.get("indicators", [])
     if not indicator_configs:
-        raise HTTPException(400, f"Pipeline has no indicators configured")
+        raise HTTPException(400, "Pipeline has no indicators configured")
 
     registry = get_plugin_registry()
     groups: list[dict[str, Any]] = [_price_columns_group()]
