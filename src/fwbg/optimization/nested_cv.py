@@ -118,10 +118,17 @@ def select_features_from_fold(
         selector = selector_cls()
 
         max_features = params.pop("max_features", None)
-        selected, meta = selector.select_features(
-            train_df[selected], targets,
-            max_features=max_features, **params
-        )
+        try:
+            selected, meta = selector.select_features(
+                train_df[selected], targets,
+                max_features=max_features, **params
+            )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error(
+                f"Feature selector '{name}' raised an exception: {exc}", exc_info=True
+            )
+            return None, metadata
 
         if not selected or len(selected) < 2:
             return None, metadata

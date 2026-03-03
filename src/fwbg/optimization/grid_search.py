@@ -73,20 +73,28 @@ def select_features(
     selected_short = None
 
     if has_long:
-        selected_long, _ = select_features_from_fold(
-            train_df, targets_long, features, ctx.min_trades,
-            feature_selection_plugins=ctx.feature_selection_plugins,
-        )
-        if selected_long:
-            log(2, f"  Feature Selection (Long): {len(selected_long)} Features ausgewählt", sym)
+        try:
+            selected_long, _ = select_features_from_fold(
+                train_df, targets_long, features, ctx.min_trades,
+                feature_selection_plugins=ctx.feature_selection_plugins,
+            )
+            if selected_long:
+                log(2, f"  Feature Selection (Long): {len(selected_long)} Features ausgewählt", sym)
+        except Exception as exc:
+            log(0, f"  Feature Selection (Long) failed: {exc}", sym)
+            selected_long = None
 
     if has_short:
-        selected_short, _ = select_features_from_fold(
-            train_df, targets_short, features, ctx.min_trades,
-            feature_selection_plugins=ctx.feature_selection_plugins,
-        )
-        if selected_short:
-            log(2, f"  Feature Selection (Short): {len(selected_short)} Features ausgewählt", sym)
+        try:
+            selected_short, _ = select_features_from_fold(
+                train_df, targets_short, features, ctx.min_trades,
+                feature_selection_plugins=ctx.feature_selection_plugins,
+            )
+            if selected_short:
+                log(2, f"  Feature Selection (Short): {len(selected_short)} Features ausgewählt", sym)
+        except Exception as exc:
+            log(0, f"  Feature Selection (Short) failed: {exc}", sym)
+            selected_short = None
 
     # Merge required_features (always included, bypass feature selection)
     if ctx.required_features:
