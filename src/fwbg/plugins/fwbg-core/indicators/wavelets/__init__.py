@@ -13,6 +13,10 @@ Each decomposition level captures a different frequency band:
 
 Features encode energy distribution across frequency bands, enabling the
 ML model to distinguish trending vs choppy market regimes.
+
+Implementation note:
+DWT is applied in a rolling window (causal) to avoid lookahead bias.
+A global DWT would use future bars to compute past features.
 """
 from typing import List
 
@@ -59,12 +63,68 @@ def _rolling_mean(signal: np.ndarray, window: int) -> np.ndarray:
     return s.rolling(window, min_periods=1).mean().values
 
 
+def _compute_causal_dwt_signals(
+    log_returns: np.ndarray,
+    wavelet: str,
+    levels: int,
+    dwt_window: int,
+) -> tuple:
+    """Compute DWT signals causally via a rolling window.
+
+    For each bar i, DWT is applied only to log_returns[max(0, i-dwt_window+1):i+1].
+    The last element of each reconstructed level is used as the signal value at bar i.
+    This guarantees that no future data influences past feature values.
+
+    Args:
+        log_returns: Log return series (length n).
+        wavelet: Wavelet family name.
+        levels: Number of decomposition levels requested.
+        dwt_window: Maximum number of past bars used per DWT computation.
+
+    Returns:
+        Tuple (approx_signal, detail_signals) where approx_signal is an array of
+        length n and detail_signals is a dict {level: array of length n}.
+        Values are NaN until enough bars have accumulated (2**levels minimum).
+    """
+    n = len(log_returns)
+    min_samples = 2 ** levels
+
+    approx_signal = np.full(n, np.nan)
+    detail_signals = {lvl: np.full(n, np.nan) for lvl in range(1, levels + 1)}
+
+    for i in range(n):
+        start = max(0, i - dwt_window + 1)
+        segment = log_returns[start : i + 1]
+        seg_len = len(segment)
+
+        if seg_len < min_samples:
+            continue
+
+        max_lvl = pywt.dwt_max_level(seg_len, wavelet)
+        actual_lvl = min(levels, max_lvl)
+
+        coeffs = pywt.wavedec(segment, wavelet, level=actual_lvl)
+
+        # Take the last reconstructed value = contribution at bar i
+        rec = _reconstruct_level(coeffs, 0, wavelet)
+        approx_signal[i] = rec[min(seg_len - 1, len(rec) - 1)]
+
+        for lvl in range(1, levels + 1):
+            if lvl > actual_lvl:
+                continue
+            coeffs_idx = actual_lvl + 1 - lvl
+            rec_d = _reconstruct_level(coeffs, coeffs_idx, wavelet)
+            detail_signals[lvl][i] = rec_d[min(seg_len - 1, len(rec_d) - 1)]
+
+    return approx_signal, detail_signals
+
+
 @register_indicator("wavelets")
 class WaveletsIndicator(BaseIndicator):
     """Wavelet decomposition features for ML trading."""
 
     name = "wavelets"
-    version = "1.0.0"
+    version = "2.0.0"
 
     def compute(
         self,
@@ -72,6 +132,7 @@ class WaveletsIndicator(BaseIndicator):
         wavelet: str = "db4",
         levels: int = 3,
         windows: List[int] = None,
+        dwt_window: int = 256,
         **params,
     ) -> pd.DataFrame:
         """Compute wavelet decomposition features from close prices.
@@ -81,6 +142,8 @@ class WaveletsIndicator(BaseIndicator):
             wavelet: Wavelet family (default: 'db4').
             levels: Number of decomposition levels (default: 3).
             windows: Rolling windows for energy/mean stats (default: [10, 20, 50]).
+            dwt_window: Number of past bars used per DWT computation (default: 256).
+                        Larger values capture lower-frequency structure but are slower.
 
         Returns:
             DataFrame with original columns plus wavelet features.
@@ -90,32 +153,15 @@ class WaveletsIndicator(BaseIndicator):
 
         close = df["C"].values
         log_returns = np.diff(np.log(close), prepend=np.log(close[0]))
-
-        # Decompose log returns via DWT
-        # pywt.wavedec returns [cA_n, cD_n, cD_{n-1}, ..., cD_1]
-        # coeffs[0] = approximation (lowest freq)
-        # coeffs[1] = cD_n (coarsest detail)
-        # coeffs[-1] = cD_1 (finest detail, highest freq)
-        coeffs = pywt.wavedec(log_returns, wavelet, level=levels)
-
-        # Reconstruct each level to full length.
-        # Map detail_1 = highest freq (cD_1 = coeffs[levels]),
-        #      detail_N = lowest freq  (cD_N = coeffs[1]).
         n = len(log_returns)
-        detail_signals = {}
-        for lvl in range(1, levels + 1):
-            # detail level lvl -> coeffs index (levels + 1 - lvl)
-            coeffs_idx = levels + 1 - lvl
-            rec = _reconstruct_level(coeffs, coeffs_idx, wavelet)
-            detail_signals[lvl] = rec[:n]
 
-        approx_signal = _reconstruct_level(coeffs, 0, wavelet)[:n]
+        approx_signal, detail_signals = _compute_causal_dwt_signals(
+            log_returns, wavelet, levels, dwt_window
+        )
 
-        # Build features
         features = {}
 
         for w in windows:
-            # Approximation energy
             features[f"wt_approx_energy_{w}"] = _rolling_energy(approx_signal, w)
 
             for lvl in range(1, levels + 1):
@@ -123,8 +169,6 @@ class WaveletsIndicator(BaseIndicator):
                 features[f"wt_detail_{lvl}_energy_{w}"] = _rolling_energy(sig, w)
                 features[f"wt_detail_{lvl}_mean_{w}"] = _rolling_mean(sig, w)
 
-        # Ratio features (window-independent, use instantaneous squared values
-        # smoothed over a moderate window)
         ratio_window = min(20, n)
         total_energy = _rolling_energy(approx_signal, ratio_window).copy()
         detail_energies = {}
@@ -138,13 +182,11 @@ class WaveletsIndicator(BaseIndicator):
                 detail_energies[lvl], total_energy
             )
 
-        # High-frequency to low-frequency ratio
         for w in windows:
             hf_energy = _rolling_energy(detail_signals[1], w)
             lf_energy = _rolling_energy(detail_signals[levels], w)
             features[f"wt_high_freq_ratio_{w}"] = safe_divide(hf_energy, lf_energy)
 
-        # Cache feature columns for get_feature_columns
         self._feature_columns = sorted(features.keys())
 
         features_df = shift_features(features, df.index)
@@ -153,7 +195,6 @@ class WaveletsIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         if self._feature_columns:
             return self._feature_columns
-        # Return default feature names for default params
         return self._build_feature_names(levels=3, windows=[10, 20, 50])
 
     @staticmethod
@@ -177,6 +218,7 @@ class WaveletsIndicator(BaseIndicator):
             "wavelet": "db4",
             "levels": 3,
             "windows": [10, 20, 50],
+            "dwt_window": 256,
         }
 
     @classmethod
@@ -206,6 +248,14 @@ class WaveletsIndicator(BaseIndicator):
                 "description": "Rolling window sizes for computing energy (mean squared amplitude) and mean statistics of each wavelet decomposition level. Shorter windows capture recent energy shifts, longer windows provide more stable regime characterization.",
                 "min": 2,
                 "max": 5000,
+            },
+            "dwt_window": {
+                "type": "int",
+                "default": 256,
+                "description": "Number of past bars used per causal DWT computation. Larger values capture lower-frequency structure with better resolution but increase computation time linearly. Must be >= 2**levels.",
+                "min": 8,
+                "max": 2048,
+                "step": 64,
             },
         }
 

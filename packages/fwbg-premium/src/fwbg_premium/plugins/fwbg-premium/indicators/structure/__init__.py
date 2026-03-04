@@ -29,15 +29,14 @@ def _bars_since_event(event_series: pd.Series) -> pd.Series:
         event_series: Series mit 1 wo Event auftritt, 0 sonst
 
     Returns:
-        Series mit Anzahl Bars seit letztem Event
+        Series mit Anzahl Bars seit letztem Event; NaN bis das erste Event auftritt.
     """
     event_groups = event_series.cumsum()
-    result = event_series.groupby(event_groups).cumcount()
-
-    first_event_idx = event_series.idxmax() if event_series.any() else None
-    if first_event_idx is not None:
-        result.loc[:first_event_idx] = np.nan
-
+    result = event_series.groupby(event_groups).cumcount().astype(float)
+    # Bars vor dem ersten Event (noch kein Event aufgetreten) → NaN.
+    # event_groups[i] == 0 bedeutet: cumsum bis Bar i ist 0, d.h. kein Event bisher.
+    # Diese Bedingung ist rein kausal – keine Zukunftsdaten nötig.
+    result[event_groups == 0] = np.nan
     return result
 
 
