@@ -487,14 +487,15 @@ def run_optimizer(
     # Worker-Funktion mit Strategy-Config via partial wrappen
     worker_func = partial(process_symbol, strategy=strategy)
 
-    raw_results = pool_manager.map_adaptive(
-        func=worker_func,
-        items=files,
-        progress_callback=update_progress,
-        result_callback=on_result_ready
-    )
-
-    progress_tracker.stop()
+    try:
+        raw_results = pool_manager.map_adaptive(
+            func=worker_func,
+            items=files,
+            progress_callback=update_progress,
+            result_callback=on_result_ready
+        )
+    finally:
+        progress_tracker.stop()
 
     # Gepufferte Ergebnis-Ausgaben jetzt anzeigen
     for output in result_output_buffer:

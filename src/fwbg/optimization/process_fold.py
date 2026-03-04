@@ -444,6 +444,8 @@ def process_single_fold(
             "timeout_bars": b.get("timeout_bars"),
             "model_hyperparameters": b.get("model_hyperparameters"),
             "exit_modifier_params": b.get("exit_modifier_params"),
+            "exit_strategy": b.get("exit_strategy"),
+            "exit_params": b.get("exit_params"),
         },
         "selected_features_long": b.get("selected_features_long") or [],
         "selected_features_short": b.get("selected_features_short") or [],
