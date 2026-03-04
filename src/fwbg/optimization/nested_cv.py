@@ -512,6 +512,19 @@ def evaluate_on_holdout(
     features_long = candidate.get("selected_features_long")
     features_short = candidate.get("selected_features_short")
 
+    # Use the candidate's exit_strategy/exit_params if different from ctx.
+    # This ensures compute_targets uses the correct exit strategy regardless
+    # of how the caller set up ctx (e.g. unified simulation uses base ctx
+    # whose exit_strategy defaults to "fixed").
+    cand_exit = candidate.get("exit_strategy")
+    if cand_exit and cand_exit != ctx.exit_strategy:
+        import dataclasses
+        ctx = dataclasses.replace(
+            ctx,
+            exit_strategy=cand_exit,
+            exit_params=candidate.get("exit_params") or {},
+        )
+
     # Berechne Targets (und optional Durations für Sample Weights)
     weights = None
     if ctx.sample_weights:
