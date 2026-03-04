@@ -639,7 +639,22 @@ def get_run_progress(run_id: str) -> dict:
     progress_file = results_dir / run_id / "progress.json"
     if progress_file.exists():
         try:
-            return json.loads(progress_file.read_text())
+            data = json.loads(progress_file.read_text())
+            # Stale "running" detection: if status is running but no active job
+            # and progress.json hasn't been updated in >2 minutes, the process
+            # has exited without writing a "completed" status (e.g. killed).
+            if data.get("status") == "running" and run_id not in _active_jobs:
+                updated_at_str = data.get("updated_at")
+                if updated_at_str:
+                    from datetime import datetime, timezone, timedelta
+                    try:
+                        updated_at = datetime.fromisoformat(updated_at_str)
+                        if datetime.now(timezone.utc) - updated_at > timedelta(minutes=2):
+                            data["status"] = "completed"
+                            data["stale_status_recovered"] = True
+                    except ValueError:
+                        pass
+            return data
         except (json.JSONDecodeError, IOError):
             pass
 
