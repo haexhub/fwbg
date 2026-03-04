@@ -46,7 +46,17 @@ class SignalModel(BaseModel):
         **hyperparameters: Any,
     ) -> None:
         self._classes = np.array([0, 1])
-        self._signal_col = f"_composed_signal_{training_context.direction}"
+        direction = training_context.direction
+        if direction == "long":
+            self._signal_col = (
+                hyperparameters.get("signal_column_long")
+                or "_composed_signal_long"
+            )
+        else:
+            self._signal_col = (
+                hyperparameters.get("signal_column_short")
+                or "_composed_signal_short"
+            )
         self._fitted = True
 
     def _predict_probability_impl(self, features: pd.DataFrame) -> np.ndarray:
@@ -67,4 +77,6 @@ class SignalModel(BaseModel):
     def get_reduced_hyperparameters(
         cls, hyperparameters: Dict[str, Any]
     ) -> Dict[str, Any]:
-        return {}
+        # Signal columns are not training hyperparameters — pass them through unchanged.
+        return {k: v for k, v in hyperparameters.items()
+                if k in ("signal_column_long", "signal_column_short")}

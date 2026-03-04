@@ -15,13 +15,9 @@ import json
 import os
 import re
 
-import numpy as np
-import pandas as pd
 import pytest
 
 from fwbg.core.config import StrategyConfig
-from fwbg.core.context import SimulationContext
-from fwbg.plugins import import_plugin_module
 
 STRATEGY_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "strategies")
 ORB_EXPLORATION_PATH = os.path.join(STRATEGY_DIR, "configs", "orb_exploration.json")
@@ -187,13 +183,18 @@ class TestExitModifierParams:
 # ===========================================================================
 
 class TestModelHyperparametersGridCoverage:
-    """All model_hyperparameters_grid variants have signal columns with expected prefixes."""
+    """If model_hyperparameters_grid is explicitly configured, variants must have signal columns.
+
+    Note: Most strategies now use optimization.indicator_grid to generate HP variants
+    dynamically at runtime. Tests skip when no static model_hyperparameters_grid is present.
+    """
 
     def test_all_variants_have_signal_columns(self, orb_config):
-        """Every variant must have signal_column_long and signal_column_short."""
+        """Every explicit variant must have signal_column_long and signal_column_short."""
         mhg = orb_config.optimization.model_hyperparameters_grid or []
         non_none = [v for v in mhg if v is not None]
-        assert len(non_none) > 0, "No model_hyperparameters_grid variants"
+        if not non_none:
+            pytest.skip("No static model_hyperparameters_grid variants (uses indicator_grid)")
 
         for i, v in enumerate(non_none):
             assert "signal_column_long" in v, (
@@ -207,6 +208,8 @@ class TestModelHyperparametersGridCoverage:
         """At least rb1 and rb2 range_bars variants should be present."""
         mhg = orb_config.optimization.model_hyperparameters_grid or []
         non_none = [v for v in mhg if v is not None]
+        if not non_none:
+            pytest.skip("No static model_hyperparameters_grid variants (uses indicator_grid)")
 
         rb1_count = sum(1 for v in non_none if "rb1_" in v.get("signal_column_long", ""))
         rb2_count = sum(1 for v in non_none if "rb2_" in v.get("signal_column_long", ""))
