@@ -34,6 +34,39 @@ class StructuralRRExitStrategy(BaseExitStrategy):
     Take-profit = SL distance × r_multiple.
     """
 
+    def _build_sl_tp_arrays(
+        self,
+        df: pd.DataFrame,
+        sl_col_long: str,
+        sl_col_short: str,
+        min_sl_distance: float,
+        r_multiple: float,
+        min_tp_distance: float,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Merge long/short SL columns into per-bar arrays and derive TP.
+
+        Long and short entries fire at different bars, so we merge both columns:
+        at long-entry bars sl_col_long is set (sl_col_short is NaN), and vice versa.
+        Prefer long SL when both are set (shouldn't happen in normal operation).
+        """
+        n = len(df)
+        sl_long_raw = (
+            df[sl_col_long].to_numpy(dtype=np.float64, copy=False)
+            if sl_col_long in df.columns
+            else np.full(n, np.nan)
+        )
+        sl_short_raw = (
+            df[sl_col_short].to_numpy(dtype=np.float64, copy=False)
+            if sl_col_short in df.columns
+            else np.full(n, np.nan)
+        )
+
+        sl_dist = np.where(~np.isnan(sl_long_raw), sl_long_raw, sl_short_raw)
+        sl_dist = np.nan_to_num(sl_dist, nan=min_sl_distance)
+        sl_dist = np.maximum(sl_dist, min_sl_distance)
+        tp_dist = np.maximum(sl_dist * r_multiple, min_tp_distance)
+        return tp_dist, sl_dist
+
     def compute_targets(
         self,
         df: pd.DataFrame,
@@ -42,57 +75,31 @@ class StructuralRRExitStrategy(BaseExitStrategy):
         return_durations: bool = False,
         **kwargs,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        # --- Parameter resolution (grid params take precedence over kwargs) ---
+        # --- Parameter resolution: grid params override kwargs ---
         r_multiple = 2.0
         timeout_bars = None
 
         if params is not None:
-            # r_multiple is mapped to tp_value in the grid system
             if hasattr(params, "tp_value") and params.tp_value is not None:
                 r_multiple = float(params.tp_value)
-            # Also check params.extra for frameworks that support it
-            if hasattr(params, "extra") and params.extra:
-                r_multiple = float(params.extra.get("r_multiple", r_multiple))
             timeout_bars = getattr(params, "timeout_bars", None)
 
-        # kwargs override (direct call without grid)
         r_multiple = float(kwargs.get("r_multiple", r_multiple))
         timeout_bars = kwargs.get("timeout_bars", timeout_bars)
 
         sl_col_long = kwargs.get("sl_dist_column_long", "tpm_sl_dist_long")
         sl_col_short = kwargs.get("sl_dist_column_short", "tpm_sl_dist_short")
-        min_tp_pips = int(kwargs.get("min_tp_pips", 10))
-        min_sl_pips = int(kwargs.get("min_sl_pips", 5))
+        min_sl_distance = ctx.spread * int(kwargs.get("min_sl_pips", 5))
+        min_tp_distance = ctx.spread * int(kwargs.get("min_tp_pips", 10))
 
-        min_tp_distance = ctx.spread * min_tp_pips
-        min_sl_distance = ctx.spread * min_sl_pips
-
-        # --- Build per-bar SL distance array ---
-        # Long and short entries fire at different bars, so we merge both columns:
-        # at long-entry bars sl_col_long is set (sl_col_short is NaN), and vice versa.
-        sl_long_raw = (
-            df[sl_col_long].values.astype(np.float64)
-            if sl_col_long in df.columns
-            else np.full(len(df), np.nan)
-        )
-        sl_short_raw = (
-            df[sl_col_short].values.astype(np.float64)
-            if sl_col_short in df.columns
-            else np.full(len(df), np.nan)
+        tp_dist_arr, sl_dist_arr = self._build_sl_tp_arrays(
+            df, sl_col_long, sl_col_short, min_sl_distance, r_multiple, min_tp_distance
         )
 
-        # Prefer long SL when both are set (shouldn't happen in normal operation)
-        sl_dist_arr = np.where(~np.isnan(sl_long_raw), sl_long_raw, sl_short_raw)
-        sl_dist_arr = np.nan_to_num(sl_dist_arr, nan=min_sl_distance)
-        sl_dist_arr = np.maximum(sl_dist_arr, min_sl_distance)
-
-        tp_dist_arr = np.maximum(sl_dist_arr * r_multiple, min_tp_distance)
-
-        # --- Run Numba simulation ---
-        opn_v = df["O"].values.astype(np.float64)
-        cls_v = df["C"].values.astype(np.float64)
-        hgh_v = df["H"].values.astype(np.float64)
-        low_v = df["L"].values.astype(np.float64)
+        opn_v = df["O"].to_numpy(dtype=np.float64, copy=False)
+        cls_v = df["C"].to_numpy(dtype=np.float64, copy=False)
+        hgh_v = df["H"].to_numpy(dtype=np.float64, copy=False)
+        low_v = df["L"].to_numpy(dtype=np.float64, copy=False)
         slippage = ctx.spread * 0.5
         max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(df)
         timeout_val = timeout_bars if timeout_bars else 0
@@ -122,32 +129,15 @@ class StructuralRRExitStrategy(BaseExitStrategy):
         ep = ctx.exit_params or {}
         sl_col_long = ep.get("sl_dist_column_long", "tpm_sl_dist_long")
         sl_col_short = ep.get("sl_dist_column_short", "tpm_sl_dist_short")
-        min_sl_pips = int(ep.get("min_sl_pips", 5))
-        min_tp_pips = int(ep.get("min_tp_pips", 10))
+        min_sl_distance = ctx.spread * int(ep.get("min_sl_pips", 5))
+        min_tp_distance = ctx.spread * int(ep.get("min_tp_pips", 10))
 
-        min_sl_distance = ctx.spread * min_sl_pips
-        min_tp_distance = ctx.spread * min_tp_pips
-
-        sl_long_raw = (
-            df[sl_col_long].values.astype(np.float64)
-            if sl_col_long in df.columns
-            else np.full(len(df), np.nan)
+        return self._build_sl_tp_arrays(
+            df, sl_col_long, sl_col_short, min_sl_distance, r_multiple, min_tp_distance
         )
-        sl_short_raw = (
-            df[sl_col_short].values.astype(np.float64)
-            if sl_col_short in df.columns
-            else np.full(len(df), np.nan)
-        )
-
-        sl_dist = np.where(~np.isnan(sl_long_raw), sl_long_raw, sl_short_raw)
-        sl_dist = np.nan_to_num(sl_dist, nan=min_sl_distance)
-        sl_dist = np.maximum(sl_dist, min_sl_distance)
-
-        tp_dist = np.maximum(sl_dist * r_multiple, min_tp_distance)
-        return tp_dist, sl_dist
 
     def get_cache_key(self, params: dict) -> str:
-        r = params.get("r_multiple", params.get("tp", 2.0))
+        r = params.get("r_multiple", 2.0)
         timeout = params.get("timeout_bars")
         timeout_str = str(timeout) if timeout else "none"
         return f"structural_rr_r{r}_to{timeout_str}"

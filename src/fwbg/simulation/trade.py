@@ -3,12 +3,7 @@ Trade-Simulation und Metriken
 """
 import numpy as np
 import pandas as pd
-from numba import njit
-
 from fwbg.data import config as data_config
-
-# Import shared numba function from numba_core to avoid duplication
-from fwbg.simulation.numba_core import _simulate_trade_numba
 
 
 def compute_session_mask(timestamps, session_start_hour, session_end_hour,
@@ -45,53 +40,6 @@ def compute_session_mask(timestamps, session_start_hour, session_end_hour,
         mask = mask & ~np.asarray(flat, dtype=bool)
 
     return mask
-
-
-@njit(cache=True)
-def compute_targets_numba(
-    opens: np.ndarray,
-    closes: np.ndarray,
-    highs: np.ndarray,
-    lows: np.ndarray,
-    tp_distances: np.ndarray,
-    sl_distances: np.ndarray,
-    spread: float,
-    slippage: float,
-    max_bars: int,
-    timeout_bars: int,
-) -> tuple:
-    """
-    Berechnet Long/Short Targets und Durations für alle Bars.
-
-    Sequentiell um Thread-Kontention mit XGBoost zu vermeiden.
-
-    Returns:
-        (targets_long, targets_short, durations_long, durations_short)
-    """
-    n = len(closes)
-    targets_long = np.zeros(n, dtype=np.float64)
-    targets_short = np.zeros(n, dtype=np.float64)
-    durations_long = np.zeros(n, dtype=np.int64)
-    durations_short = np.zeros(n, dtype=np.int64)
-
-    for i in range(n - 1):
-        result_long, exit_long, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, 1,
-            tp_distances[i], sl_distances[i], spread, slippage, max_bars, timeout_bars
-        )
-        if result_long == 1.0:
-            targets_long[i] = 1.0
-        durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
-
-        result_short, exit_short, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, -1,
-            tp_distances[i], sl_distances[i], spread, slippage, max_bars, timeout_bars
-        )
-        if result_short == 1.0:
-            targets_short[i] = 1.0
-        durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
-
-    return targets_long, targets_short, durations_long, durations_short
 
 
 # Cache für Sub-Stunden-Daten (wird einmal pro Symbol geladen)
