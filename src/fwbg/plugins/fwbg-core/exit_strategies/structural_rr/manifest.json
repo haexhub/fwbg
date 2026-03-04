@@ -1,0 +1,6 @@
+{
+  "name": "structural_rr",
+  "version": "1.0.0",
+  "description": "Structural R:R exit: SL from pre-computed indicator column (e.g. pullback low), TP = SL × r_multiple.",
+  "phase": "exit_strategy"
+}

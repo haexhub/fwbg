@@ -1,0 +1,7 @@
+{
+  "name": "pullback_momentum",
+  "version": "1.0.0",
+  "description": "Trend + Pullback + Momentum Break: detects trend-aligned BOS, measures Fibonacci retracement depth, and fires entry on breakout of the last local Lower High (long) or Higher Low (short).",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
