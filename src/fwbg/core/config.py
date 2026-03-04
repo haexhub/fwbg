@@ -4,6 +4,7 @@ StrategyConfig - Zentrale Konfigurationsklasse für Trading-Strategien.
 Plugin-basierte Struktur mit Pipeline-Format.
 Alle Config-Klassen sind hier definiert - keine Duplikate in anderen Modulen.
 """
+import dataclasses
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Union
 import glob
@@ -424,10 +425,9 @@ class StrategyConfig:
         if isinstance(regime_data, dict):
             if "condition_grids" in regime_data:
                 # Grid preset → merge into optimization.regime_filter_grid
-                optimization = OptimizationConfig(
+                optimization = dataclasses.replace(
+                    optimization,
                     regime_filter_grid=RegimeFilterGridConfig.from_dict(regime_data),
-                    model_hyperparameters_grid=optimization.model_hyperparameters_grid,
-                    indicator_grid=optimization.indicator_grid,
                 )
             else:
                 regime_filter = RegimeFilterConfig.from_dict(regime_data)

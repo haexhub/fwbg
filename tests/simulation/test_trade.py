@@ -14,9 +14,12 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 
-from fwbg.simulation.trade import (
+from fwbg.simulation.numba_core import (
     _simulate_trade_numba,
-    compute_targets_numba,
+    _simulate_trade_session_numba,
+)
+from fwbg.simulation import compute_targets_numba
+from fwbg.simulation.trade import (
     simulate_pro_trade,
     compute_session_mask,
     calculate_sharpe_ratio,
@@ -27,7 +30,6 @@ from fwbg.simulation.trade import (
     find_optimal_circuit_breaker,
     pnl_to_returns,
 )
-from fwbg.simulation.numba_core import _simulate_trade_session_numba
 
 
 def create_price_arrays(n: int, trend: str = "flat", volatility: float = 0.01, seed: int = 42):

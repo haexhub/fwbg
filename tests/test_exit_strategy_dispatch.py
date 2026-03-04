@@ -548,9 +548,10 @@ class TestStrategyJsonEndToEnd:
     def test_all_strategies_produce_targets(self):
         """Jede Strategy-JSON muss mit ihren exit_strategies Targets produzieren."""
         import os
-        from fwbg.core import get_exit_strategy, GridParams, discover_plugins
+        from fwbg.core import get_exit_strategy, GridParams
+        from fwbg.pipeline.registry import get_registry
 
-        discover_plugins()
+        get_registry().auto_discover()
 
         strategy_files = self._get_strategy_files()
         assert strategy_files, "Keine Strategy-Dateien gefunden"
