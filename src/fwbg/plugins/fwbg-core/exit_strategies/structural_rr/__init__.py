@@ -111,6 +111,46 @@ class StructuralRRExitStrategy(BaseExitStrategy):
             max_bars, timeout_val,
         )
 
+    def resolve_distances(
+        self,
+        df: pd.DataFrame,
+        tp: float,
+        sl: float,
+        ctx: "SimulationContext",
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Resolve per-bar TP/SL distances from indicator columns.
+
+        tp is used as r_multiple, sl is ignored (SL comes from the indicator).
+        """
+        r_multiple = tp if tp else 2.0
+
+        ep = ctx.exit_params or {}
+        sl_col_long = ep.get("sl_dist_column_long", "tpm_sl_dist_long")
+        sl_col_short = ep.get("sl_dist_column_short", "tpm_sl_dist_short")
+        min_sl_pips = int(ep.get("min_sl_pips", 5))
+        min_tp_pips = int(ep.get("min_tp_pips", 10))
+
+        min_sl_distance = ctx.spread * min_sl_pips
+        min_tp_distance = ctx.spread * min_tp_pips
+
+        sl_long_raw = (
+            df[sl_col_long].values.astype(np.float64)
+            if sl_col_long in df.columns
+            else np.full(len(df), np.nan)
+        )
+        sl_short_raw = (
+            df[sl_col_short].values.astype(np.float64)
+            if sl_col_short in df.columns
+            else np.full(len(df), np.nan)
+        )
+
+        sl_dist = np.where(~np.isnan(sl_long_raw), sl_long_raw, sl_short_raw)
+        sl_dist = np.nan_to_num(sl_dist, nan=min_sl_distance)
+        sl_dist = np.maximum(sl_dist, min_sl_distance)
+
+        tp_dist = np.maximum(sl_dist * r_multiple, min_tp_distance)
+        return tp_dist, sl_dist
+
     def get_cache_key(self, params: dict) -> str:
         r = params.get("r_multiple", params.get("tp", 2.0))
         timeout = params.get("timeout_bars")

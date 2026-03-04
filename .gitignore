@@ -32,3 +32,5 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+
+.claude
