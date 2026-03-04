@@ -430,9 +430,9 @@ class TestComputeTargetsBasic:
         opens, closes, highs, lows = simple_uptrend
         n = len(closes)
 
-        targets_long, targets_short = compute_targets_numba(
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0010, sl_distance=0.0010,
+            tp_distances=np.full(n, 0.0010), sl_distances=np.full(n, 0.0010),
             spread=0.0001, slippage=0.00005,
             max_bars=50, timeout_bars=0
         )
@@ -444,9 +444,10 @@ class TestComputeTargetsBasic:
         """Im Aufwärtstrend sollten mehr Longs gewinnen."""
         opens, closes, highs, lows = simple_uptrend
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(closes)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0010, sl_distance=0.0020,
+            tp_distances=np.full(n, 0.0010), sl_distances=np.full(n, 0.0020),
             spread=0.0001, slippage=0.00005,
             max_bars=50, timeout_bars=0
         )
@@ -460,9 +461,10 @@ class TestComputeTargetsBasic:
         """Im Abwärtstrend sollten mehr Shorts gewinnen."""
         opens, closes, highs, lows = simple_downtrend
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(closes)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0010, sl_distance=0.0020,
+            tp_distances=np.full(n, 0.0010), sl_distances=np.full(n, 0.0020),
             spread=0.0001, slippage=0.00005,
             max_bars=50, timeout_bars=0
         )
@@ -476,9 +478,10 @@ class TestComputeTargetsBasic:
         """Targets sollten nur 0.0 oder 1.0 sein."""
         opens, closes, highs, lows = simple_uptrend
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(closes)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0010, sl_distance=0.0010,
+            tp_distances=np.full(n, 0.0010), sl_distances=np.full(n, 0.0010),
             spread=0.0001, slippage=0.00005,
             max_bars=50, timeout_bars=0
         )
@@ -490,9 +493,10 @@ class TestComputeTargetsBasic:
         """Letzter Bar kann keinen Trade starten."""
         opens, closes, highs, lows = simple_uptrend
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(closes)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0010, sl_distance=0.0010,
+            tp_distances=np.full(n, 0.0010), sl_distances=np.full(n, 0.0010),
             spread=0.0001, slippage=0.00005,
             max_bars=50, timeout_bars=0
         )
@@ -511,9 +515,9 @@ class TestComputeTargetsEdgeCases:
         highs = np.array([], dtype=np.float64)
         lows = np.array([], dtype=np.float64)
 
-        targets_long, targets_short = compute_targets_numba(
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0010, sl_distance=0.0010,
+            tp_distances=np.array([], dtype=np.float64), sl_distances=np.array([], dtype=np.float64),
             spread=0.0001, slippage=0.00005,
             max_bars=50, timeout_bars=0
         )
@@ -528,9 +532,10 @@ class TestComputeTargetsEdgeCases:
         highs = np.array([1.1020, 1.1020])
         lows = np.array([1.0995, 1.1005])
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(closes)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0005, sl_distance=0.0010,
+            tp_distances=np.full(n, 0.0005), sl_distances=np.full(n, 0.0010),
             spread=0.0001, slippage=0.00005,
             max_bars=10, timeout_bars=0
         )
@@ -542,18 +547,19 @@ class TestComputeTargetsEdgeCases:
         """Timeout im Flat Market sollte Wins erzeugen wenn PnL > 0."""
         opens, closes, highs, lows = flat_market
 
+        n = len(closes)
         # Ohne Timeout
-        targets_long_no_to, targets_short_no_to = compute_targets_numba(
+        targets_long_no_to, targets_short_no_to, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0100, sl_distance=0.0100,
+            tp_distances=np.full(n, 0.0100), sl_distances=np.full(n, 0.0100),
             spread=0.0001, slippage=0.00005,
             max_bars=50, timeout_bars=0
         )
 
         # Mit Timeout
-        targets_long_to, targets_short_to = compute_targets_numba(
+        targets_long_to, targets_short_to, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0100, sl_distance=0.0100,
+            tp_distances=np.full(n, 0.0100), sl_distances=np.full(n, 0.0100),
             spread=0.0001, slippage=0.00005,
             max_bars=50, timeout_bars=10
         )
@@ -570,9 +576,10 @@ class TestComputeTargetsEdgeCases:
         """Extremer Spread sollte alle Trades unrentabel machen."""
         opens, closes, highs, lows = simple_uptrend
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(closes)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0010, sl_distance=0.0010,
+            tp_distances=np.full(n, 0.0010), sl_distances=np.full(n, 0.0010),
             spread=0.0100,  # 100 Pips Spread!
             slippage=0.0050,
             max_bars=50, timeout_bars=0
@@ -592,9 +599,10 @@ class TestComputeTargetsSymmetry:
         opens, closes, highs, lows = flat_market
 
         # Mit Timeout für deterministisches Ergebnis
-        targets_long, targets_short = compute_targets_numba(
+        n = len(closes)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0010, sl_distance=0.0010,
+            tp_distances=np.full(n, 0.0010), sl_distances=np.full(n, 0.0010),
             spread=0.0, slippage=0.0,  # Keine Kosten
             max_bars=50, timeout_bars=10
         )
@@ -625,9 +633,9 @@ class TestComputeTargetsPerformance:
         highs = np.maximum(opens, closes) + np.random.rand(n) * 0.0002
         lows = np.minimum(opens, closes) - np.random.rand(n) * 0.0002
 
-        targets_long, targets_short = compute_targets_numba(
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.0020, sl_distance=0.0020,
+            tp_distances=np.full(n, 0.0020), sl_distances=np.full(n, 0.0020),
             spread=0.0001, slippage=0.00005,
             max_bars=100, timeout_bars=50
         )

@@ -58,8 +58,9 @@ class FixedExitStrategy(BaseExitStrategy):
         hgh_v = df["H"].values.astype(np.float64)
         low_v = df["L"].values.astype(np.float64)
 
-        tp_distance = ctx.spread * tp
-        sl_distance = ctx.spread * sl
+        n = len(df)
+        tp_distances = np.full(n, ctx.spread * tp)
+        sl_distances = np.full(n, ctx.spread * sl)
         slippage = ctx.spread * 0.5
         max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(df)
         timeout_val = timeout_bars if timeout_bars else 0
@@ -98,7 +99,7 @@ class FixedExitStrategy(BaseExitStrategy):
                 opn_v, cls_v, hgh_v, low_v, atr_v,
                 0.0, 0.0,
                 ctx.spread, slippage,
-                tp_distance, sl_distance,
+                tp_distances[0], sl_distances[0],
                 max_bars, timeout_val,
                 return_durations=return_durations,
                 breakeven_trigger=em_breakeven,
@@ -107,19 +108,14 @@ class FixedExitStrategy(BaseExitStrategy):
                 **entry_mod_params,
             )
 
-        if return_durations:
-            from fwbg.simulation.numba_core import compute_targets_with_durations_numba
-            return compute_targets_with_durations_numba(
-                opn_v, cls_v, hgh_v, low_v,
-                tp_distance, sl_distance, ctx.spread, slippage,
-                max_bars, timeout_val
-            )
-
-        return compute_targets_numba(
+        result = compute_targets_numba(
             opn_v, cls_v, hgh_v, low_v,
-            tp_distance, sl_distance, ctx.spread, slippage,
+            tp_distances, sl_distances, ctx.spread, slippage,
             max_bars, timeout_val
         )
+        if return_durations:
+            return result  # (tgt_l, tgt_s, dur_l, dur_s)
+        return result[0], result[1]
 
     def resolve_distances(
         self,

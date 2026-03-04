@@ -97,19 +97,14 @@ class StructuralRRExitStrategy(BaseExitStrategy):
         max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(df)
         timeout_val = timeout_bars if timeout_bars else 0
 
-        if return_durations:
-            from fwbg.simulation.numba_core import compute_targets_with_durations_numba
-            return compute_targets_with_durations_numba(
-                opn_v, cls_v, hgh_v, low_v,
-                tp_dist_arr, sl_dist_arr, ctx.spread, slippage,
-                max_bars, timeout_val,
-            )
-
-        return compute_targets_numba(
+        result = compute_targets_numba(
             opn_v, cls_v, hgh_v, low_v,
             tp_dist_arr, sl_dist_arr, ctx.spread, slippage,
             max_bars, timeout_val,
         )
+        if return_durations:
+            return result  # (tgt_l, tgt_s, dur_l, dur_s)
+        return result[0], result[1]
 
     def resolve_distances(
         self,
@@ -183,12 +178,12 @@ class StructuralRRExitStrategy(BaseExitStrategy):
                 "step": 0.5,
             },
             "sl_dist_column_long": {
-                "type": "str",
+                "type": "string",
                 "default": "tpm_sl_dist_long",
                 "description": "Column containing the structural SL distance for long trades.",
             },
             "sl_dist_column_short": {
-                "type": "str",
+                "type": "string",
                 "default": "tpm_sl_dist_short",
                 "description": "Column containing the structural SL distance for short trades.",
             },

@@ -493,7 +493,7 @@ class TestNumbaCompilation:
         )
         atr_values = np.nan_to_num(atr_series.values.astype(np.float64), nan=0.0)
 
-        targets_l, targets_s = _atr._compute_targets_atr_numba(
+        targets_l, targets_s, dur_l, dur_s = _atr._compute_targets_atr_numba(
             opens, closes, highs, lows, atr_values,
             tp_mult=2.0, sl_mult=1.5,
             spread=0.05, slippage=0.025,
@@ -502,24 +502,6 @@ class TestNumbaCompilation:
         )
         assert len(targets_l) == len(closes)
         assert targets_l.sum() + targets_s.sum() > 0
-
-    def test_atr_compute_targets_with_durations_numba_compiles(self):
-        """_compute_targets_atr_with_durations_numba muss kompilierbar sein."""
-        opens, closes, highs, lows = self._make_numba_arrays()
-
-        import ta
-        atr_series = ta.volatility.average_true_range(
-            pd.Series(highs), pd.Series(lows), pd.Series(closes), window=14
-        )
-        atr_values = np.nan_to_num(atr_series.values.astype(np.float64), nan=0.0)
-
-        targets_l, targets_s, dur_l, dur_s = _atr._compute_targets_atr_with_durations_numba(
-            opens, closes, highs, lows, atr_values,
-            tp_mult=2.0, sl_mult=1.5,
-            spread=0.05, slippage=0.025,
-            min_tp_distance=0.5, min_sl_distance=0.75,
-            max_bars=200, timeout_bars=0,
-        )
         assert len(dur_l) == len(closes)
         assert dur_l.dtype == np.int64
 
@@ -534,7 +516,7 @@ class TestNumbaCompilation:
         atr_values = np.nan_to_num(atr_series.values.astype(np.float64), nan=0.0)
         atr_ma = pd.Series(atr_values).rolling(50, min_periods=1).mean().values.astype(np.float64)
 
-        targets_l, targets_s = _atr._compute_targets_atr_adaptive_timeout_numba(
+        targets_l, targets_s, dur_l, dur_s = _atr._compute_targets_atr_adaptive_timeout_numba(
             opens, closes, highs, lows,
             atr_values, atr_ma,
             tp_mult=2.0, sl_mult=1.5,
