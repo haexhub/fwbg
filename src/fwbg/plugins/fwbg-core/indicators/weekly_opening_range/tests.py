@@ -43,6 +43,14 @@ def _get_ind():
     return cls()
 
 
+def _wor_col(result, suffix):
+    """Return the first wor_rb{N}_{suffix} column found in result, or the bare suffix."""
+    for col in result.columns:
+        if col.startswith("wor_rb") and col.endswith(f"_{suffix}"):
+            return col
+    return f"wor_{suffix}"  # Fallback to bare name (will trigger skip)
+
+
 class TestWORFeaturePresence:
     def test_features_computed_after_warmup(self):
         """WOR features should have non-NaN values after the first week range bars."""
@@ -91,104 +99,113 @@ class TestWORPositionAndBreakout:
         df = _make_m15_df(known_wor_high=102.0, known_wor_low=98.0)
         ind = _get_ind()
         result = ind.compute(df)
-        if "wor_position" not in result.columns:
-            pytest.skip("wor_position not in result")
+        col = _wor_col(result, "position")
+        if col not in result.columns:
+            pytest.skip(f"{col} not in result")
         # Only check the first week where WOR is 98-102 (known boundaries)
         first_week_end = pd.Timestamp("2022-01-07 23:59")
         first_week = result[result.index <= first_week_end]
         inside = first_week[
-            (first_week["C"] >= 98.0) & (first_week["C"] <= 102.0) & first_week["wor_position"].notna()
+            (first_week["C"] >= 98.0) & (first_week["C"] <= 102.0) & first_week[col].notna()
         ]
         if len(inside) > 0:
-            assert (inside["wor_position"].between(0, 1)).all(), (
+            assert (inside[col].between(0, 1)).all(), (
                 f"Position inside range should be [0, 1], got "
-                f"[{inside['wor_position'].min():.3f}, {inside['wor_position'].max():.3f}]"
+                f"[{inside[col].min():.3f}, {inside[col].max():.3f}]"
             )
 
     def test_breakout_up_when_close_above_wor_high(self):
-        """Bars with close above WOR high should have wor_breakout_up=1."""
+        """Bars with close above WOR high should have breakout_up=1."""
         df = _make_m15_df(known_wor_high=101.0, known_wor_low=99.0)
         ind = _get_ind()
         result = ind.compute(df)
-        if "wor_breakout_up" not in result.columns:
-            pytest.skip("wor_breakout_up not in result")
-        breakout_bars = result[result["C"] > 101.0].dropna(subset=["wor_breakout_up"])
+        col = _wor_col(result, "breakout_up")
+        if col not in result.columns:
+            pytest.skip(f"{col} not in result")
+        breakout_bars = result[result["C"] > 101.0].dropna(subset=[col])
         if len(breakout_bars) > 0:
-            assert (breakout_bars["wor_breakout_up"] == 1).any(), (
-                "Close above WOR high should set wor_breakout_up=1"
+            assert (breakout_bars[col] == 1).any(), (
+                f"Close above WOR high should set {col}=1"
             )
 
     def test_breakout_down_when_close_below_wor_low(self):
-        """Bars with close below WOR low should have wor_breakout_down=1."""
+        """Bars with close below WOR low should have breakout_down=1."""
         df = _make_m15_df(known_wor_high=101.0, known_wor_low=99.0)
         ind = _get_ind()
         result = ind.compute(df)
-        if "wor_breakout_down" not in result.columns:
-            pytest.skip("wor_breakout_down not in result")
-        breakout_bars = result[result["C"] < 99.0].dropna(subset=["wor_breakout_down"])
+        col = _wor_col(result, "breakout_down")
+        if col not in result.columns:
+            pytest.skip(f"{col} not in result")
+        breakout_bars = result[result["C"] < 99.0].dropna(subset=[col])
         if len(breakout_bars) > 0:
-            assert (breakout_bars["wor_breakout_down"] == 1).any(), (
-                "Close below WOR low should set wor_breakout_down=1"
+            assert (breakout_bars[col] == 1).any(), (
+                f"Close below WOR low should set {col}=1"
             )
 
     def test_breakout_up_and_down_mutually_exclusive(self):
-        """Cannot have wor_breakout_up=1 and wor_breakout_down=1 simultaneously."""
+        """Cannot have breakout_up=1 and breakout_down=1 simultaneously."""
         df = _make_m15_df()
         ind = _get_ind()
         result = ind.compute(df)
-        if "wor_breakout_up" not in result.columns or "wor_breakout_down" not in result.columns:
+        col_up = _wor_col(result, "breakout_up")
+        col_dn = _wor_col(result, "breakout_down")
+        if col_up not in result.columns or col_dn not in result.columns:
             pytest.skip("breakout columns not in result")
-        both = (result["wor_breakout_up"] == 1) & (result["wor_breakout_down"] == 1)
-        assert not both.any(), "Cannot have both wor_breakout_up and wor_breakout_down at same bar"
+        both = (result[col_up] == 1) & (result[col_dn] == 1)
+        assert not both.any(), f"Cannot have both {col_up} and {col_dn} at same bar"
 
     def test_no_breakout_inside_range(self):
         """Bars strictly inside WOR should have both breakout flags = 0."""
         df = _make_m15_df(known_wor_high=101.0, known_wor_low=99.0)
         ind = _get_ind()
         result = ind.compute(df)
-        if "wor_breakout_up" not in result.columns or "wor_breakout_down" not in result.columns:
+        col_up = _wor_col(result, "breakout_up")
+        col_dn = _wor_col(result, "breakout_down")
+        if col_up not in result.columns or col_dn not in result.columns:
             pytest.skip("breakout columns not in result")
         # Only check the first week where WOR is known to be 99-101
         first_week_end = pd.Timestamp("2022-01-07 23:59")
         first_week = result[result.index <= first_week_end]
         inside = first_week[
             (first_week["C"] > 99.0) & (first_week["C"] < 101.0)
-            & first_week["wor_breakout_up"].notna() & first_week["wor_breakout_down"].notna()
+            & first_week[col_up].notna() & first_week[col_dn].notna()
         ]
         if len(inside) > 0:
-            assert (inside["wor_breakout_up"] == 0).all(), "Close inside range should have wor_breakout_up=0"
-            assert (inside["wor_breakout_down"] == 0).all(), "Close inside range should have wor_breakout_down=0"
+            assert (inside[col_up] == 0).all(), f"Close inside range should have {col_up}=0"
+            assert (inside[col_dn] == 0).all(), f"Close inside range should have {col_dn}=0"
 
     def test_dist_to_high_positive_when_below_wor(self):
-        """wor_dist_to_high should be positive when close is below WOR high."""
+        """dist_to_high should be positive when close is below WOR high."""
         df = _make_m15_df(known_wor_high=101.0, known_wor_low=99.0)
         ind = _get_ind()
         result = ind.compute(df)
-        if "wor_dist_to_high" not in result.columns:
-            pytest.skip("wor_dist_to_high not in result")
+        col = _wor_col(result, "dist_to_high")
+        if col not in result.columns:
+            pytest.skip(f"{col} not in result")
         # Restrict to the first week where WOR high is known to be 101.0
         first_week_end = pd.Timestamp("2022-01-07 23:59")
         first_week = result[result.index <= first_week_end]
-        below_high = first_week[(first_week["C"] < 101.0) & first_week["wor_dist_to_high"].notna()]
+        below_high = first_week[(first_week["C"] < 101.0) & first_week[col].notna()]
         if len(below_high) > 0:
-            assert (below_high["wor_dist_to_high"] > 0).all(), (
-                "wor_dist_to_high should be positive when close is below WOR high"
+            assert (below_high[col] > 0).all(), (
+                f"{col} should be positive when close is below WOR high"
             )
 
     def test_dist_to_low_positive_when_above_wor(self):
-        """wor_dist_to_low should be positive when close is above WOR low."""
+        """dist_to_low should be positive when close is above WOR low."""
         df = _make_m15_df(known_wor_high=101.0, known_wor_low=99.0)
         ind = _get_ind()
         result = ind.compute(df)
-        if "wor_dist_to_low" not in result.columns:
-            pytest.skip("wor_dist_to_low not in result")
+        col = _wor_col(result, "dist_to_low")
+        if col not in result.columns:
+            pytest.skip(f"{col} not in result")
         # Restrict to the first week where WOR low is known to be 99.0
         first_week_end = pd.Timestamp("2022-01-07 23:59")
         first_week = result[result.index <= first_week_end]
-        above_low = first_week[(first_week["C"] > 99.0) & first_week["wor_dist_to_low"].notna()]
+        above_low = first_week[(first_week["C"] > 99.0) & first_week[col].notna()]
         if len(above_low) > 0:
-            assert (above_low["wor_dist_to_low"] > 0).all(), (
-                "wor_dist_to_low should be positive when close is above WOR low"
+            assert (above_low[col] > 0).all(), (
+                f"{col} should be positive when close is above WOR low"
             )
 
 
@@ -216,12 +233,13 @@ class TestWORRangeBars:
         df = _make_m15_df(n_weeks=2)
         ind = _get_ind()
         result = ind.compute(df, range_bars=2)
-        if "wor_range" not in result.columns:
-            pytest.skip("wor_range not in result")
-        first_valid_idx = result["wor_range"].first_valid_index()
-        assert first_valid_idx is not None, "wor_range is entirely NaN"
+        col = _wor_col(result, "range")
+        if col not in result.columns:
+            pytest.skip(f"{col} not in result")
+        first_valid_idx = result[col].first_valid_index()
+        assert first_valid_idx is not None, f"{col} is entirely NaN"
         pos = result.index.get_loc(first_valid_idx)
-        assert pos >= 2, f"wor_range valid too early at position {pos}"
+        assert pos >= 2, f"{col} valid too early at position {pos}"
 
 
 class TestWORStatistics:
@@ -334,11 +352,12 @@ class TestPluginAttributes:
             assert key in params, f"Missing key {key!r} in get_default_params()"
 
     def test_wor_range_non_negative(self):
-        """wor_range (normalized OR range) must be non-negative where valid."""
+        """wor_range (OR range) must be non-negative where valid."""
         df = _make_m15_df(n_weeks=4)
         ind = _get_ind()
         result = ind.compute(df)
-        if "wor_range" not in result.columns:
-            pytest.skip("wor_range not in result")
-        valid = result["wor_range"].dropna()
-        assert (valid >= 0).all(), "wor_range should be non-negative"
+        col = _wor_col(result, "range")
+        if col not in result.columns:
+            pytest.skip(f"{col} not in result")
+        valid = result[col].dropna()
+        assert (valid >= 0).all(), f"{col} should be non-negative"
