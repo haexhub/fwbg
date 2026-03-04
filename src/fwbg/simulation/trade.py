@@ -53,45 +53,45 @@ def compute_targets_numba(
     closes: np.ndarray,
     highs: np.ndarray,
     lows: np.ndarray,
-    tp_distance: float,
-    sl_distance: float,
+    tp_distances: np.ndarray,
+    sl_distances: np.ndarray,
     spread: float,
     slippage: float,
     max_bars: int,
     timeout_bars: int,
 ) -> tuple:
     """
-    Berechnet Long/Short Targets für alle Bars.
+    Berechnet Long/Short Targets und Durations für alle Bars.
 
-    HINWEIS: Sequentiell, um Thread-Kontention mit XGBoost zu vermeiden.
-    Numba JIT macht die Berechnung bereits sehr schnell.
+    Sequentiell um Thread-Kontention mit XGBoost zu vermeiden.
 
     Returns:
-        (targets_long, targets_short) - Arrays mit 1.0 für Win, 0.0 sonst
+        (targets_long, targets_short, durations_long, durations_short)
     """
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
     targets_short = np.zeros(n, dtype=np.float64)
+    durations_long = np.zeros(n, dtype=np.int64)
+    durations_short = np.zeros(n, dtype=np.int64)
 
-    # Sequentiell - Parallelisierung auf höherer Ebene (Feature-Gruppen)
     for i in range(n - 1):
-        # Long Trade
-        result_long, _, _, _ = _simulate_trade_numba(
+        result_long, exit_long, _, _ = _simulate_trade_numba(
             opens, closes, highs, lows, i, 1,
-            tp_distance, sl_distance, spread, slippage, max_bars, timeout_bars
+            tp_distances[i], sl_distances[i], spread, slippage, max_bars, timeout_bars
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
+        durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
-        # Short Trade
-        result_short, _, _, _ = _simulate_trade_numba(
+        result_short, exit_short, _, _ = _simulate_trade_numba(
             opens, closes, highs, lows, i, -1,
-            tp_distance, sl_distance, spread, slippage, max_bars, timeout_bars
+            tp_distances[i], sl_distances[i], spread, slippage, max_bars, timeout_bars
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
+        durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
 
-    return targets_long, targets_short
+    return targets_long, targets_short, durations_long, durations_short
 
 
 # Cache für Sub-Stunden-Daten (wird einmal pro Symbol geladen)

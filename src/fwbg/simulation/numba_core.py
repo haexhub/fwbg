@@ -576,76 +576,25 @@ def compute_targets_numba(
     closes: np.ndarray,
     highs: np.ndarray,
     lows: np.ndarray,
-    tp_distance: float,
-    sl_distance: float,
+    tp_distances: np.ndarray,
+    sl_distances: np.ndarray,
     spread: float,
     slippage: float,
     max_bars: int,
     timeout_bars: int,
 ) -> tuple:
     """
-    Berechnet Long/Short Targets für alle Bars.
+    Berechnet Long/Short Targets und Durations für alle Bars.
 
     PARALLELISIERT: Nutzt alle verfügbaren CPU-Kerne für 2-4x Speedup.
 
     Args:
         opens, closes, highs, lows: OHLC-Arrays
-        tp_distance: Take-Profit Distanz
-        sl_distance: Stop-Loss Distanz
-        spread: Bid-Ask Spread
-        slippage: Slippage-Kosten
-        max_bars: Maximale Simulation-Länge
-        timeout_bars: Trade schließen nach X Bars (0 = kein Timeout)
-
-    Returns:
-        (targets_long, targets_short) - Arrays mit 1.0 für Win, 0.0 sonst
-    """
-    n = len(closes)
-    targets_long = np.zeros(n, dtype=np.float64)
-    targets_short = np.zeros(n, dtype=np.float64)
-
-    # Parallelisierte Schleife - jeder Bar unabhängig
-    for i in prange(n - 1):
-        # Long Trade
-        result_long, _, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, 1,
-            tp_distance, sl_distance, spread, slippage, max_bars, timeout_bars
-        )
-        if result_long == 1.0:
-            targets_long[i] = 1.0
-
-        # Short Trade
-        result_short, _, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, -1,
-            tp_distance, sl_distance, spread, slippage, max_bars, timeout_bars
-        )
-        if result_short == 1.0:
-            targets_short[i] = 1.0
-
-    return targets_long, targets_short
-
-
-@njit(cache=True, parallel=True)
-def compute_targets_with_durations_numba(
-    opens: np.ndarray,
-    closes: np.ndarray,
-    highs: np.ndarray,
-    lows: np.ndarray,
-    tp_distance: float,
-    sl_distance: float,
-    spread: float,
-    slippage: float,
-    max_bars: int,
-    timeout_bars: int,
-) -> tuple:
-    """
-    Wie compute_targets_numba, gibt zusätzlich Trade-Durations zurück.
-
-    Durations werden für Sample Uniqueness Weights benötigt (AFML Ch. 4).
+        tp_distances: Per-bar TP-Distanzen (Array, len == n)
+        sl_distances: Per-bar SL-Distanzen (Array, len == n)
 
     Returns:
         (targets_long, targets_short, durations_long, durations_short)
-        durations: Anzahl Bars vom Entry bis Exit für jeden Trade
     """
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -656,7 +605,7 @@ def compute_targets_with_durations_numba(
     for i in prange(n - 1):
         result_long, exit_long, _, _ = _simulate_trade_numba(
             opens, closes, highs, lows, i, 1,
-            tp_distance, sl_distance, spread, slippage, max_bars, timeout_bars
+            tp_distances[i], sl_distances[i], spread, slippage, max_bars, timeout_bars
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
@@ -664,7 +613,7 @@ def compute_targets_with_durations_numba(
 
         result_short, exit_short, _, _ = _simulate_trade_numba(
             opens, closes, highs, lows, i, -1,
-            tp_distance, sl_distance, spread, slippage, max_bars, timeout_bars
+            tp_distances[i], sl_distances[i], spread, slippage, max_bars, timeout_bars
         )
         if result_short == 1.0:
             targets_short[i] = 1.0

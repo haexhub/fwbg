@@ -68,68 +68,8 @@ def _compute_targets_atr_numba(
     min_sl_distance: float,
     max_bars: int,
     timeout_bars: int,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Berechnet Win/Loss Targets mit ATR-basierten TP/SL.
-
-    TP/SL werden pro Trade basierend auf ATR bei Entry berechnet:
-    - tp_distance = max(atr[entry_idx] * tp_mult, min_tp_distance)
-    - sl_distance = max(atr[entry_idx] * sl_mult, min_sl_distance)
-    """
-    n = len(closes)
-    targets_long = np.zeros(n, dtype=np.float64)
-    targets_short = np.zeros(n, dtype=np.float64)
-
-    for i in range(n - 1):
-        entry_idx = i + 1
-        if entry_idx >= n:
-            continue
-
-        # ATR bei Signal-Bar verwenden
-        atr_at_signal = atr_values[i]
-
-        # Dynamische TP/SL berechnen mit Mindest-Werten
-        tp_distance = max(atr_at_signal * tp_mult, min_tp_distance)
-        sl_distance = max(atr_at_signal * sl_mult, min_sl_distance)
-
-        # Long Trade simulieren
-        result_long, _, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, 1,
-            tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_bars
-        )
-        if result_long == 1.0:
-            targets_long[i] = 1.0
-
-        # Short Trade simulieren
-        result_short, _, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, -1,
-            tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_bars
-        )
-        if result_short == 1.0:
-            targets_short[i] = 1.0
-
-    return targets_long, targets_short
-
-
-@njit(cache=True, parallel=False)
-def _compute_targets_atr_with_durations_numba(
-    opens: np.ndarray,
-    closes: np.ndarray,
-    highs: np.ndarray,
-    lows: np.ndarray,
-    atr_values: np.ndarray,
-    tp_mult: float,
-    sl_mult: float,
-    spread: float,
-    slippage: float,
-    min_tp_distance: float,
-    min_sl_distance: float,
-    max_bars: int,
-    timeout_bars: int,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Wie _compute_targets_atr_numba, gibt zusätzlich Trade-Durations zurück."""
+    """Berechnet Targets + Durations mit ATR-basierten TP/SL."""
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
     targets_short = np.zeros(n, dtype=np.float64)
@@ -137,10 +77,6 @@ def _compute_targets_atr_with_durations_numba(
     durations_short = np.zeros(n, dtype=np.int64)
 
     for i in range(n - 1):
-        entry_idx = i + 1
-        if entry_idx >= n:
-            continue
-
         atr_at_signal = atr_values[i]
         tp_distance = max(atr_at_signal * tp_mult, min_tp_distance)
         sl_distance = max(atr_at_signal * sl_mult, min_sl_distance)
@@ -184,87 +120,8 @@ def _compute_targets_atr_adaptive_timeout_numba(
     base_timeout: int,
     min_timeout: int,
     max_timeout: int,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Berechnet Win/Loss Targets mit ATR-basierten TP/SL und adaptivem Timeout.
-
-    Der Timeout wird pro Trade dynamisch berechnet:
-    - timeout = base_timeout * (atr_ma / atr_current)
-    - Bei hoher Volatilität (atr > atr_ma): kürzerer Timeout
-    - Bei niedriger Volatilität (atr < atr_ma): längerer Timeout
-    - Begrenzt durch min_timeout und max_timeout
-    """
-    n = len(closes)
-    targets_long = np.zeros(n, dtype=np.float64)
-    targets_short = np.zeros(n, dtype=np.float64)
-
-    for i in range(n - 1):
-        entry_idx = i + 1
-        if entry_idx >= n:
-            continue
-
-        # ATR bei Signal-Bar verwenden
-        atr_at_signal = atr_values[i]
-        atr_ma_at_signal = atr_ma_values[i]
-
-        # Dynamische TP/SL berechnen mit Mindest-Werten
-        tp_distance = max(atr_at_signal * tp_mult, min_tp_distance)
-        sl_distance = max(atr_at_signal * sl_mult, min_sl_distance)
-
-        # Adaptiver Timeout berechnen
-        # Ratio: atr_ma / atr_current
-        # Bei hoher Vol (atr > ma): ratio < 1 → kürzerer Timeout
-        # Bei niedriger Vol (atr < ma): ratio > 1 → längerer Timeout
-        if atr_at_signal > 0 and atr_ma_at_signal > 0:
-            vol_ratio = atr_ma_at_signal / atr_at_signal
-            # Begrenzen um extreme Werte zu vermeiden
-            vol_ratio = max(0.25, min(4.0, vol_ratio))
-            adaptive_timeout = int(base_timeout * vol_ratio)
-            adaptive_timeout = max(min_timeout, min(max_timeout, adaptive_timeout))
-        else:
-            adaptive_timeout = base_timeout
-
-        # Long Trade simulieren
-        result_long, _, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, 1,
-            tp_distance, sl_distance, spread, slippage,
-            max_bars, adaptive_timeout
-        )
-        if result_long == 1.0:
-            targets_long[i] = 1.0
-
-        # Short Trade simulieren
-        result_short, _, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, -1,
-            tp_distance, sl_distance, spread, slippage,
-            max_bars, adaptive_timeout
-        )
-        if result_short == 1.0:
-            targets_short[i] = 1.0
-
-    return targets_long, targets_short
-
-
-@njit(cache=True, parallel=False)
-def _compute_targets_atr_adaptive_timeout_with_durations_numba(
-    opens: np.ndarray,
-    closes: np.ndarray,
-    highs: np.ndarray,
-    lows: np.ndarray,
-    atr_values: np.ndarray,
-    atr_ma_values: np.ndarray,
-    tp_mult: float,
-    sl_mult: float,
-    spread: float,
-    slippage: float,
-    min_tp_distance: float,
-    min_sl_distance: float,
-    max_bars: int,
-    base_timeout: int,
-    min_timeout: int,
-    max_timeout: int,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Wie adaptive timeout variant, gibt zusätzlich Trade-Durations zurück."""
+    """Berechnet Targets + Durations mit ATR-basierten TP/SL und adaptivem Timeout."""
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
     targets_short = np.zeros(n, dtype=np.float64)
@@ -272,10 +129,6 @@ def _compute_targets_atr_adaptive_timeout_with_durations_numba(
     durations_short = np.zeros(n, dtype=np.int64)
 
     for i in range(n - 1):
-        entry_idx = i + 1
-        if entry_idx >= n:
-            continue
-
         atr_at_signal = atr_values[i]
         atr_ma_at_signal = atr_ma_values[i]
         tp_distance = max(atr_at_signal * tp_mult, min_tp_distance)
@@ -284,15 +137,15 @@ def _compute_targets_atr_adaptive_timeout_with_durations_numba(
         if atr_at_signal > 0 and atr_ma_at_signal > 0:
             vol_ratio = atr_ma_at_signal / atr_at_signal
             vol_ratio = max(0.25, min(4.0, vol_ratio))
-            adaptive_timeout = int(base_timeout * vol_ratio)
-            adaptive_timeout = max(min_timeout, min(max_timeout, adaptive_timeout))
+            adaptive_to = int(base_timeout * vol_ratio)
+            adaptive_to = max(min_timeout, min(max_timeout, adaptive_to))
         else:
-            adaptive_timeout = base_timeout
+            adaptive_to = base_timeout
 
         result_long, exit_long, _, _ = _simulate_trade_numba(
             opens, closes, highs, lows, i, 1,
             tp_distance, sl_distance, spread, slippage,
-            max_bars, adaptive_timeout
+            max_bars, adaptive_to
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
@@ -301,7 +154,7 @@ def _compute_targets_atr_adaptive_timeout_with_durations_numba(
         result_short, exit_short, _, _ = _simulate_trade_numba(
             opens, closes, highs, lows, i, -1,
             tp_distance, sl_distance, spread, slippage,
-            max_bars, adaptive_timeout
+            max_bars, adaptive_to
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
@@ -481,18 +334,7 @@ class AtrExitStrategy(BaseExitStrategy):
             atr_ma_v = pd.Series(atr_v).rolling(window=atr_ma_period, min_periods=1).mean().values
             atr_ma_v = np.nan_to_num(atr_ma_v, nan=0.0).astype(np.float64)
 
-            if return_durations:
-                return _call_numba(_compute_targets_atr_adaptive_timeout_with_durations_numba,
-                    opn_v, cls_v, hgh_v, low_v,
-                    atr_v, atr_ma_v,
-                    tp_mult, sl_mult,
-                    ctx.spread, slippage,
-                    min_tp_distance, min_sl_distance,
-                    max_bars,
-                    base_timeout, min_timeout, max_timeout
-                )
-
-            return _call_numba(_compute_targets_atr_adaptive_timeout_numba,
+            result = _call_numba(_compute_targets_atr_adaptive_timeout_numba,
                 opn_v, cls_v, hgh_v, low_v,
                 atr_v, atr_ma_v,
                 tp_mult, sl_mult,
@@ -501,26 +343,23 @@ class AtrExitStrategy(BaseExitStrategy):
                 max_bars,
                 base_timeout, min_timeout, max_timeout
             )
+            if return_durations:
+                return result
+            return result[0], result[1]
 
         # === FIXER TIMEOUT ===
         timeout_val = timeout_bars if timeout_bars else 0
 
-        if return_durations:
-            return _call_numba(_compute_targets_atr_with_durations_numba,
-                opn_v, cls_v, hgh_v, low_v,
-                atr_v, tp_mult, sl_mult,
-                ctx.spread, slippage,
-                min_tp_distance, min_sl_distance,
-                max_bars, timeout_val
-            )
-
-        return _call_numba(_compute_targets_atr_numba,
+        result = _call_numba(_compute_targets_atr_numba,
             opn_v, cls_v, hgh_v, low_v,
             atr_v, tp_mult, sl_mult,
             ctx.spread, slippage,
             min_tp_distance, min_sl_distance,
             max_bars, timeout_val
         )
+        if return_durations:
+            return result
+        return result[0], result[1]
 
     def resolve_distances(
         self,

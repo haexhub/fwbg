@@ -236,9 +236,10 @@ class TestComputeTargetsNumba:
         """Test: Grundlegende Target-Berechnung."""
         opens, closes, highs, lows = create_price_arrays(1000, trend="up")
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(opens)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=1.0, sl_distance=0.5,
+            tp_distances=np.full(n, 1.0), sl_distances=np.full(n, 0.5),
             spread=0.0, slippage=0.0,
             max_bars=100, timeout_bars=0
         )
@@ -252,9 +253,10 @@ class TestComputeTargetsNumba:
         """Test: Aufwärtstrend sollte mehr Long-Wins produzieren."""
         opens, closes, highs, lows = create_price_arrays(500, trend="up", volatility=0.005)
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(opens)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.5, sl_distance=0.5,
+            tp_distances=np.full(n, 0.5), sl_distances=np.full(n, 0.5),
             spread=0.0, slippage=0.0,
             max_bars=50, timeout_bars=0
         )
@@ -269,9 +271,10 @@ class TestComputeTargetsNumba:
         """Test: Abwärtstrend sollte mehr Short-Wins produzieren."""
         opens, closes, highs, lows = create_price_arrays(500, trend="down", volatility=0.005)
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(opens)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=0.5, sl_distance=0.5,
+            tp_distances=np.full(n, 0.5), sl_distances=np.full(n, 0.5),
             spread=0.0, slippage=0.0,
             max_bars=50, timeout_bars=0
         )
@@ -286,9 +289,10 @@ class TestComputeTargetsNumba:
         """Test: Letzter Bar sollte kein Target haben."""
         opens, closes, highs, lows = create_price_arrays(100)
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(opens)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=1.0, sl_distance=1.0,
+            tp_distances=np.full(n, 1.0), sl_distances=np.full(n, 1.0),
             spread=0.0, slippage=0.0,
             max_bars=100, timeout_bars=0
         )
@@ -633,9 +637,10 @@ class TestEdgeCases:
         # Numba kann mit NaN arbeiten, aber Ergebnisse sind undefiniert
         # Sollte zumindest nicht crashen
         try:
-            targets_long, targets_short = compute_targets_numba(
+            n = len(opens)
+            targets_long, targets_short, _, _ = compute_targets_numba(
                 opens, closes, highs, lows,
-                tp_distance=1.0, sl_distance=1.0,
+                tp_distances=np.full(n, 1.0), sl_distances=np.full(n, 1.0),
                 spread=0.0, slippage=0.0,
                 max_bars=100, timeout_bars=0
             )
@@ -666,9 +671,10 @@ class TestEdgeCases:
         highs = opens + 0.5
         lows = opens - 0.5
 
-        targets_long, targets_short = compute_targets_numba(
+        n = len(opens)
+        targets_long, targets_short, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=1.0, sl_distance=1.0,
+            tp_distances=np.full(n, 1.0), sl_distances=np.full(n, 1.0),
             spread=0.0, slippage=0.0,
             max_bars=100, timeout_bars=0
         )
@@ -680,9 +686,10 @@ class TestEdgeCases:
         """Test: Sehr große TP/SL-Werte."""
         opens, closes, highs, lows = create_price_arrays(100)
 
-        targets_long, _ = compute_targets_numba(
+        n = len(opens)
+        targets_long, _, _, _ = compute_targets_numba(
             opens, closes, highs, lows,
-            tp_distance=1000.0, sl_distance=1000.0,  # Viel größer als Price-Bewegung
+            tp_distances=np.full(n, 1000.0), sl_distances=np.full(n, 1000.0),  # Viel größer als Price-Bewegung
             spread=0.0, slippage=0.0,
             max_bars=10, timeout_bars=0
         )

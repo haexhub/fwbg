@@ -1,7 +1,7 @@
 """
 Simulation Module - Trade-Simulation und Numba-Kernfunktionen.
 """
-from .numba_core import (
+from .numba_core import (  # noqa: F401
     _simulate_trade_numba,
     _simulate_trade_trailing_numba,
     _simulate_trade_scale_in_numba,
