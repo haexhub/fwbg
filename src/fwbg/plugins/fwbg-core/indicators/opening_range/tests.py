@@ -396,7 +396,7 @@ class TestBreakoutEventFeature:
 
 
 class TestORBSLDist:
-    """rb1_orb_sl_dist = or_range / 2 — half ORB range as SL distance."""
+    """rb1_orb_sl_dist = or_range — full ORB range as SL distance (entry at boundary → SL at opposite boundary)."""
 
     def test_session_sl_dist_column_exists(self):
         ind = _get_indicator()
@@ -876,13 +876,13 @@ class TestCarryForwardDays:
                              carry_forward_days=0)
 
         # Day 1's range should be its own (not carried from day 0)
-        # sl_dist = or_range / 2 = (102-98) / 2 = 2.0
+        # sl_dist = or_range = (102-98) = 4.0
         day1_start = df.index[0] + pd.Timedelta(days=1, hours=8, minutes=15)
         if day1_start in result.index:
             sl_dist = result.loc[day1_start, "rb1_orb_s08_sl_dist"]
             if not pd.isna(sl_dist):
-                assert sl_dist == pytest.approx(2.0, abs=0.1), (
-                    f"With carry_forward_days=0, day 1 should use its own range/2 (2.0), got {sl_dist}"
+                assert sl_dist == pytest.approx(4.0, abs=0.1), (
+                    f"With carry_forward_days=0, day 1 should use its own range (4.0), got {sl_dist}"
                 )
 
     def test_carry_preserves_range_on_no_breakout(self):
@@ -897,14 +897,14 @@ class TestCarryForwardDays:
         result = ind.compute(df.copy(), sessions=[8],
                              carry_forward_days=1)
 
-        # Day 1 should have sl_dist = 5.0 (carried range/2 = (105-95)/2), not 1.0 (its own)
+        # Day 1 should have sl_dist = 10.0 (carried range = (105-95)), not 2.0 (its own)
         # Find a valid bar in day 1's session (after range period)
         day1_post_range = df.index[0] + pd.Timedelta(days=1, hours=8, minutes=15)
         if day1_post_range in result.index:
             sl_dist = result.loc[day1_post_range, "rb1_cf1_orb_s08_sl_dist"]
             if not pd.isna(sl_dist):
-                assert sl_dist == pytest.approx(5.0, abs=0.1), (
-                    f"Carried range/2 should be 5.0 (from day 0), got {sl_dist}"
+                assert sl_dist == pytest.approx(10.0, abs=0.1), (
+                    f"Carried range should be 10.0 (from day 0), got {sl_dist}"
                 )
 
     def test_carry_resets_after_breakout(self):
@@ -926,13 +926,13 @@ class TestCarryForwardDays:
         result = ind.compute(df.copy(), sessions=[8],
                              carry_forward_days=2)
 
-        # Day 2 should use its own range/2 (2.0), not the carried one (5.0)
+        # Day 2 should use its own range (4.0), not the carried one (10.0)
         day2_post_range = df.index[0] + pd.Timedelta(days=2, hours=8, minutes=15)
         if day2_post_range in result.index:
             sl_dist = result.loc[day2_post_range, "rb1_cf2_orb_s08_sl_dist"]
             if not pd.isna(sl_dist):
-                assert sl_dist == pytest.approx(2.0, abs=0.1), (
-                    f"After breakout in carried session, day 2 should use own range/2 (2.0), got {sl_dist}"
+                assert sl_dist == pytest.approx(4.0, abs=0.1), (
+                    f"After breakout in carried session, day 2 should use own range (4.0), got {sl_dist}"
                 )
 
     def test_carry_respects_max_days(self):
@@ -949,12 +949,12 @@ class TestCarryForwardDays:
         result = ind.compute(df.copy(), sessions=[8],
                              carry_forward_days=1)
 
-        # Day 2 should use its own range/2 (2.0), carry expired after 1 day
+        # Day 2 should use its own range (4.0), carry expired after 1 day
         day2_post_range = df.index[0] + pd.Timedelta(days=2, hours=8, minutes=15)
         if day2_post_range in result.index:
             sl_dist = result.loc[day2_post_range, "rb1_cf1_orb_s08_sl_dist"]
             if not pd.isna(sl_dist):
-                assert sl_dist == pytest.approx(2.0, abs=0.1), (
+                assert sl_dist == pytest.approx(4.0, abs=0.1), (
                     f"carry_forward_days=1 should expire after 1 day, got sl_dist={sl_dist}"
                 )
 
@@ -1555,17 +1555,17 @@ class TestBodyBasedRange:
             f"Expected raw body range {expected}, got {range_val}"
         )
 
-    def test_sl_dist_is_half_range(self):
-        """Session sl_dist = or_range / 2 (entry at midpoint -> SL at body boundary)."""
+    def test_sl_dist_is_full_range(self):
+        """Session sl_dist = or_range (entry at boundary -> SL at opposite boundary)."""
         ind = _get_indicator()
         df, b = self._make_body_vs_wick_df(range_bars=2)
         result = ind.compute(df, sessions=[8], range_bars=2, candle_span="body")
 
-        # Body range = 4.0, sl_dist = 4.0 / 2 = 2.0
+        # Body range = 4.0, sl_dist = 4.0 (full range, not half)
         sl_val = result["rb2_orb_s08_sl_dist"].iloc[b + 3]
         assert not np.isnan(sl_val), "sl_dist should not be NaN"
-        assert abs(sl_val - 2.0) < 0.01, (
-            f"Expected sl_dist = 2.0 (body_range 4.0 / 2), got {sl_val}"
+        assert abs(sl_val - 4.0) < 0.01, (
+            f"Expected sl_dist = 4.0 (body_range 4.0), got {sl_val}"
         )
 
     def test_poc_dist_reflects_body_midpoint(self):

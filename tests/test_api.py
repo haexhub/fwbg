@@ -2,10 +2,6 @@
 
 Tests run against the real plugin registry and filesystem — no mocks.
 """
-import json
-import os
-import tempfile
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -265,8 +261,10 @@ class TestRunEndpoints:
         """List runs from test_results/."""
         resp = client.get("/api/runs")
         assert resp.status_code == 200
-        runs = resp.json()
-        assert isinstance(runs, list)
+        data = resp.json()
+        assert "items" in data
+        assert "total" in data
+        runs = data["items"]
         # Verify each run has required fields
         for run in runs:
             assert "run_id" in run
@@ -275,13 +273,15 @@ class TestRunEndpoints:
     def test_list_runs_limit(self, client):
         """Limit parameter restricts result count."""
         resp = client.get("/api/runs?limit=2")
-        runs = resp.json()
+        data = resp.json()
+        runs = data["items"] if isinstance(data, dict) else data
         assert len(runs) <= 2
 
     def test_get_run_details(self, client):
         """Get details of a completed run."""
         # First get a run_id
-        runs = client.get("/api/runs?limit=1").json()
+        data = client.get("/api/runs?limit=1").json()
+        runs = data["items"] if isinstance(data, dict) else data
         if not runs:
             pytest.skip("No runs available")
 
