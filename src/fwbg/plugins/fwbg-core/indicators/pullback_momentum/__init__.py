@@ -107,7 +107,7 @@ class PullbackMomentumIndicator(BaseIndicator):
         for i in range(1, n):
             c = closes[i]
             h = highs[i]
-            l = lows[i]
+            lo = lows[i]
             ema_i = ema[i]
             atr_i = atr[i] if atr[i] > EPSILON else 1e-5
 
@@ -125,7 +125,7 @@ class PullbackMomentumIndicator(BaseIndicator):
                     long_state = 1
                     imp_high_l = prev_sh
                     imp_low_l = prev_sl
-                    pb_low_l = l
+                    pb_low_l = lo
 
             else:  # PULLBACK
                 if c < imp_low_l:
@@ -136,11 +136,11 @@ class PullbackMomentumIndicator(BaseIndicator):
                     # New BOS while waiting for pullback → refresh impulse
                     imp_high_l = prev_sh
                     imp_low_l = prev_sl
-                    pb_low_l = l
+                    pb_low_l = lo
 
                 else:
-                    if l < pb_low_l:
-                        pb_low_l = l
+                    if lo < pb_low_l:
+                        pb_low_l = lo
 
                     impulse_range = imp_high_l - imp_low_l
                     pb = 0.0
