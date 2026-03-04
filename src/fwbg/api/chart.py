@@ -6,41 +6,18 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from fwbg.data.resample import (
+    TIMEFRAME_ORDER as _TIMEFRAME_ORDER,
+    resample_ohlcv as _resample_ohlcv,
+    parse_symbol_timeframe as _parse_symbol_timeframe,
+)
+
 router = APIRouter(prefix="/chart", tags=["chart"])
 
 
 # ---------------------------------------------------------------------------
 # Timeframe hierarchy & resampling
 # ---------------------------------------------------------------------------
-
-# Ordered from lowest to highest resolution
-_TIMEFRAME_ORDER = ["MINUTE_1", "MINUTE_5", "MINUTE_15", "MINUTE_30", "HOUR", "HOUR_4", "DAY"]
-
-# Pandas resample rule for each timeframe
-_RESAMPLE_RULE: dict[str, str] = {
-    "MINUTE_1": "1min",
-    "MINUTE_5": "5min",
-    "MINUTE_15": "15min",
-    "MINUTE_30": "30min",
-    "HOUR": "1h",
-    "HOUR_4": "4h",
-    "DAY": "1D",
-}
-
-
-def _parse_symbol_timeframe(stem: str) -> tuple[str, str] | None:
-    """Parse a filename stem like 'ASX200_MINUTE_15' into ('ASX200', 'MINUTE_15').
-
-    Uses known timeframe names (longest first) to avoid splitting 'MINUTE_15'
-    into ('ASX200_MINUTE', '15') at the last underscore.
-    """
-    for tf in sorted(_TIMEFRAME_ORDER, key=len, reverse=True):
-        suffix = f"_{tf}"
-        if stem.endswith(suffix):
-            symbol = stem[: -len(suffix)]
-            if symbol:
-                return symbol, tf
-    return None
 
 
 def _derivable_timeframes(native_tfs: list[str]) -> list[str]:
@@ -62,21 +39,6 @@ def _derivable_timeframes(native_tfs: list[str]) -> list[str]:
         if i >= lowest_idx:
             result.append(tf)
     return result
-
-
-def _resample_ohlcv(df, target_tf: str):
-    """Resample an OHLCV DataFrame to a higher timeframe."""
-
-    rule = _RESAMPLE_RULE.get(target_tf)
-    if not rule:
-        return df
-
-    agg = {"O": "first", "H": "max", "L": "min", "C": "last"}
-    if "V" in df.columns:
-        agg["V"] = "sum"
-
-    resampled = df.resample(rule).agg(agg).dropna(subset=["O"])
-    return resampled
 
 
 def _forward_fill_to_chart_tf(indicator_df, chart_df, columns: list[str]):

@@ -114,6 +114,14 @@ def run_optimizer(
     # Lade nur Dateien für das gewählte Timeframe
     files = sorted(glob.glob(f"{data_config.DATA_PATH}/*_{data_config.TIMEFRAME}.csv"))
 
+    # Fallback: resample from a lower timeframe if no files found
+    if not files:
+        from fwbg.data.resample import find_fallback_files
+        files, source_tf = find_fallback_files(data_config.DATA_PATH, data_config.TIMEFRAME)
+        if files:
+            data_config.RESAMPLE_FROM = source_tf
+            print(f"No {data_config.TIMEFRAME} files found — will resample from {source_tf}")
+
     # Strategy-Metadaten auswerten für Filter
     if strategy_metadata:
         # Assets aus Strategy

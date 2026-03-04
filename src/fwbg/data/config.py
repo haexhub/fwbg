@@ -22,6 +22,8 @@ TIMEFRAME_CONFIG = {
     "DAY": {"bars_per_hour": 1/24, "window_size": 2000, "oos_size": 500},
 }
 
+RESAMPLE_FROM = None  # Set by CLI when loading lower-TF files for resampling
+
 tf_cfg = TIMEFRAME_CONFIG.get(TIMEFRAME, TIMEFRAME_CONFIG["HOUR"])
 WINDOW_SIZE = tf_cfg["window_size"]
 OOS_SIZE = tf_cfg["oos_size"]

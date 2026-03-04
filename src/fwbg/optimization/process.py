@@ -120,6 +120,15 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(1, "SKIP - Keine Daten", sym)
             result = {"symbol": sym, "status": "no_data"}
             return result
+
+        # Resample to target timeframe if loaded from a lower one
+        if data_config.RESAMPLE_FROM:
+            from fwbg.data.resample import resample_ohlcv
+            n_before = len(df)
+            df = resample_ohlcv(df, data_config.TIMEFRAME)
+            log(2, f"Resampled {data_config.RESAMPLE_FROM} → {data_config.TIMEFRAME} "
+                    f"({n_before} → {len(df)} bars)", sym)
+
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
 
         # === DATA LOADING (generic orchestrator) ===
