@@ -1,12 +1,12 @@
 {
   "name": "trend-pullback-momentum",
   "description": "Trend + Pullback + Momentum Break: EMA trend filter, BOS confirmation, 38% Fibonacci retracement, entry on local LH/HL break. Structural SL below pullback low + ATR buffer, TP at 2R.",
-  "tags": ["trend", "pullback", "momentum", "forex"],
+  "tags": ["trend", "pullback", "momentum", "index"],
   "datasource": "dukascopy",
-  "timeframe": "HOUR_1",
+  "timeframe": "HOUR",
 
   "assets": {
-    "filter": ["EURUSD"]
+    "filter": ["NAS100"]
   },
 
   "pipeline": {

@@ -418,6 +418,20 @@ class StrategyConfig:
         risk_params = _resolve_section(data.get("risk_params", {}), "risk_params", strategy_dir)
         optimization = OptimizationConfig.from_dict(data.get("optimization"))
 
+        # Resolve regime_filter: string → preset, dict → inline, None → empty
+        regime_data = _resolve_section(data.get("regime_filter"), "regime_filters", strategy_dir)
+        regime_filter = RegimeFilterConfig()
+        if isinstance(regime_data, dict):
+            if "condition_grids" in regime_data:
+                # Grid preset → merge into optimization.regime_filter_grid
+                optimization = OptimizationConfig(
+                    regime_filter_grid=RegimeFilterGridConfig.from_dict(regime_data),
+                    model_hyperparameters_grid=optimization.model_hyperparameters_grid,
+                    indicator_grid=optimization.indicator_grid,
+                )
+            else:
+                regime_filter = RegimeFilterConfig.from_dict(regime_data)
+
         # Parse exit_strategies array
         raw_exits = data.get("exit_strategies", [])
         exit_strategies = [ExitStrategyConfig.from_dict(e) for e in raw_exits]
@@ -436,7 +450,7 @@ class StrategyConfig:
             validation=ValidationConfig.from_dict(validation_data),
             filters=FilterConfig.from_dict(filters_data),
             resources=ResourceConfig.from_dict(resources_data),
-            regime_filter=RegimeFilterConfig.from_dict(data.get("regime_filter")),
+            regime_filter=regime_filter,
             datasource=data.get("datasource"),
             timeframe=data.get("timeframe"),
             hypothesis=data.get("hypothesis", ""),
