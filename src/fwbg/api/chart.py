@@ -162,6 +162,7 @@ def get_ohlcv(
     source: str = Query("forexsb"),
     limit: int = Query(5000, le=999999),
     offset: int = Query(0, ge=0),
+    drop_flat_bars: bool = Query(False),
 ) -> dict:
     """Load OHLCV data from a CSV data source for charting."""
     from fwbg.core.data_sources import get_data_source, CSVSourceConfig
@@ -186,6 +187,10 @@ def get_ohlcv(
     df = load_data_aligned(str(path))
     if df is None or df.empty:
         raise HTTPException(500, f"Failed to load data: {symbol}_{timeframe}")
+
+    # Drop flat bars (O==H==L==C, weekends/holidays for index data)
+    if drop_flat_bars:
+        df = df[~((df["O"] == df["H"]) & (df["H"] == df["L"]) & (df["L"] == df["C"]))]
 
     # Resample if we loaded a lower timeframe
     if native_tf != timeframe:
