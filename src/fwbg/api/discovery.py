@@ -252,13 +252,13 @@ def _analyze_direction(
             vals_clean = np.where(np.isnan(vals), median_val, vals)
 
             w = vals_clean[dir_win]
-            l = vals_clean[dir_loss]
-            if len(w) < 3 or len(l) < 3:
+            lo = vals_clean[dir_loss]
+            if len(w) < 3 or len(lo) < 3:
                 continue
 
-            d = _compute_effect_size(w, l)
+            d = _compute_effect_size(w, lo)
             try:
-                _, p = mannwhitneyu(w, l, alternative="two-sided")
+                _, p = mannwhitneyu(w, lo, alternative="two-sided")
             except ValueError:
                 p = 1.0
 
@@ -269,7 +269,7 @@ def _analyze_direction(
                 "p_value": round(float(p), 6),
                 "significant": bool(p < 0.05),
                 "win_mean": round(float(np.mean(w)), 6),
-                "loss_mean": round(float(np.mean(l)), 6),
+                "loss_mean": round(float(np.mean(lo)), 6),
             }
             if indicator_map and col in indicator_map:
                 entry["indicator"] = indicator_map[col]
