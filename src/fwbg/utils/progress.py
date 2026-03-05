@@ -288,14 +288,19 @@ class ProgressTracker:
         if self._queue_thread:
             self._queue_thread.join(timeout=1)
 
-        # WICHTIG: Queue schließen um Worker-Prozesse freizugeben
-        # Ohne close() und join_thread() können Worker beim put() blockieren
+        # Complete persistent progress file first — before queue teardown which can deadlock
+        if self._run_progress_writer:
+            self._run_progress_writer.complete_run()
+        if self._run_logger:
+            self._run_logger.close()
+
+        # WICHTIG: Queue schließen um Worker-Prozesse freizugeben.
+        # cancel_join_thread() statt join_thread() vermeidet Deadlock wenn
+        # der Consumer-Thread bereits gestoppt ist aber noch Daten im Buffer sind.
         if self.queue is not None:
             try:
-                # close() verhindert weitere put() Calls
+                self.queue.cancel_join_thread()
                 self.queue.close()
-                # join_thread() wartet bis alle gepufferten Daten geschrieben wurden
-                self.queue.join_thread()
             except Exception:
                 pass  # Queue könnte bereits geschlossen sein
 
@@ -308,12 +313,6 @@ class ProgressTracker:
 
         print(f"\nVerarbeitung abgeschlossen: {self.completed_assets}/{self.total_assets} in {self._format_time(elapsed)}")
         sys.stdout.flush()
-
-        # Complete persistent progress file
-        if self._run_progress_writer:
-            self._run_progress_writer.complete_run()
-        if self._run_logger:
-            self._run_logger.close()
 
         # Detail-Logs wieder erlauben
         set_progress_ui_active(False)
