@@ -1,0 +1,82 @@
+{
+  "datasource": "dukascopy",
+  "assets": {
+    "filter": [
+      "ASX200"
+    ]
+  },
+  "pipeline": {
+    "indicators": [
+      {
+        "name": "weekly_opening_range",
+        "params": {
+          "range_bars": [
+            5
+          ],
+          "atr_period": 14,
+          "stat_window": 12,
+          "enable_stats": true
+        },
+        "is_signal": true
+      },
+      {
+        "name": "trend",
+        "params": {
+          "adx_periods": [
+            7,
+            14,
+            21
+          ],
+          "ema_periods": [
+            8,
+            21,
+            50,
+            100,
+            200
+          ],
+          "sma_periods": [
+            20,
+            50,
+            200
+          ],
+          "supertrend_period": 14,
+          "supertrend_multiplier": 3,
+          "macd_only": false
+        },
+        "is_signal": true
+      }
+    ],
+    "preprocessing": [],
+    "feature_selection": [],
+    "data_loading": []
+  },
+  "exit_strategies": [
+    {
+      "name": "fixed",
+      "params": {
+        "tp_mult": 2,
+        "sl_mult": 1
+      },
+      "ct": [
+        0.5
+      ]
+    }
+  ],
+  "model": {
+    "type": "xgboost",
+    "architecture": "long_short_separate",
+    "trade_directions": [
+      "long",
+      "short"
+    ],
+    "hyperparameters": {}
+  },
+  "optimization": {},
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8
+  },
+  "filters": {},
+  "resources": {},
+  "name": "weekly_range_supertrend"
+}
