@@ -10,7 +10,7 @@ Pipeline:
 import json
 import logging
 import math
-import signal
+import time
 from pathlib import Path
 
 import numpy as np
@@ -47,16 +47,9 @@ _SKIP_INDICATORS = frozenset({
     "support_resistance",     # Very slow on large datasets
 })
 
-# Per-indicator timeout (seconds)
-_INDICATOR_TIMEOUT = 60
-
-
-class _IndicatorTimeout(Exception):
-    pass
-
-
-def _timeout_handler(signum, frame):
-    raise _IndicatorTimeout("Indicator computation timed out")
+# Per-indicator timeout (seconds) — logged as warning but not enforced
+# (SIGALRM doesn't work in threadpool workers used by FastAPI)
+_INDICATOR_SLOW_THRESHOLD = 60
 
 
 def _load_run_config(run_id: str) -> dict:
@@ -188,24 +181,19 @@ def run_discovery(run_id: str, symbol: str) -> dict:
     computed_indicators = []
     df_full = df.copy()
     for ind_name in indicator_names:
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(_INDICATOR_TIMEOUT)
+        t0 = time.monotonic()
         try:
             result = compute_indicator_pool(df, indicators=[ind_name])
-            signal.alarm(0)  # Cancel timeout
+            elapsed = time.monotonic() - t0
             # Merge new columns
             new_cols = [c for c in result.columns if c not in df_full.columns]
             if new_cols:
                 df_full = df_full.join(result[new_cols])
                 computed_indicators.append(ind_name)
-                log.info(f"  {ind_name}: +{len(new_cols)} columns")
-        except _IndicatorTimeout:
-            log.warning(f"  {ind_name}: TIMEOUT (>{_INDICATOR_TIMEOUT}s)")
+                slow = f" (SLOW: {elapsed:.0f}s)" if elapsed > _INDICATOR_SLOW_THRESHOLD else ""
+                log.info(f"  {ind_name}: +{len(new_cols)} columns{slow}")
         except Exception as e:
             log.warning(f"  {ind_name}: SKIP ({e})")
-        finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, old_handler)
     indicator_names = computed_indicators
 
     # Get feature columns (exclude OHLCV and internal)
