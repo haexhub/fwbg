@@ -3,43 +3,36 @@
   "assets": {
     "filter": [
       "NAS100"
-    ]
+    ],
+    "drop_flat_bars": true
   },
   "pipeline": {
     "data_loading": [],
     "preprocessing": [],
     "indicators": [
       {
-        "name": "supertrend_mtf",
-        "params": {
-          "period": 14,
-          "multiplier": 3,
-          "d1_bars": 96
-        }
-      },
-      {
         "name": "opening_range",
         "params": {
           "range_bars": [
-            12
+            3
           ],
           "atr_period": 14,
           "sessions": [
-            14
+            15
           ],
           "enable_retracement": false,
           "carry_forward_days": [
             0
           ],
           "pre_range_bars": [
-            6
+            0
           ],
           "candle_span": "body",
           "breakout_threshold": 0,
           "breakout_threshold_abs": 5,
           "retracement_levels": [],
           "min_retracement": 0,
-          "min_range_height": 40,
+          "min_range_height": 0,
           "min_range_height_atr": 0
         }
       }
@@ -61,7 +54,7 @@
   },
   "filters": {},
   "resources": {},
-  "name": "orb-asx200",
+  "name": "orb-test",
   "risk_management": "vol_targeted_kelly",
   "risk_params": {
     "kelly_fraction": 0.25,
@@ -85,15 +78,18 @@
       "name": "orb_based",
       "params": {
         "tp_mode": "range",
-        "tp_mult": 2,
-        "sl_mult": 1.3,
+        "tp_mult": 10,
+        "sl_mult": 2.5,
         "atr_period": 14,
         "min_tp_pips": 8,
-        "min_sl_pips": 5,
+        "min_sl_pips": 100,
         "timeout_bars": null,
         "sl_level": "none",
-        "entry_delay": 0,
-        "max_trades_per_signal": 1
+        "entry_delay": 1,
+        "max_trades_per_signal": 1,
+        "breakeven_trigger": 0.25,
+        "breakeven_offset": 0.15,
+        "trail_pips": 30
       },
       "ct": [
         0.5
@@ -122,12 +118,6 @@
           "column": "breakout_dist",
           "op": "<=",
           "value": 0.2
-        },
-        {
-          "type": "value_check",
-          "column": "st_d1_direction",
-          "op": ">",
-          "value": 0
         }
       ]
     },
@@ -143,12 +133,6 @@
           "column": "breakout_dist",
           "op": "<=",
           "value": 0.2
-        },
-        {
-          "type": "value_check",
-          "column": "st_d1_direction",
-          "op": "<",
-          "value": 0
         }
       ]
     }

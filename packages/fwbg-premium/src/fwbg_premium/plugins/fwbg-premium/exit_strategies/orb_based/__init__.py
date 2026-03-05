@@ -145,12 +145,24 @@ class OrbExitStrategy(BaseExitStrategy):
                 **entry_mod_params,
             )
 
-        # === EXIT MODIFIER DISPATCH ===
+        # === TRAILING / BREAKEVEN CONFIG ===
+        # Direct params on exit strategy (preferred)
+        be_trigger = exit_params.get("breakeven_trigger", 0.0)
+        be_offset = exit_params.get("breakeven_offset", 0.0)
+        trail_pips = exit_params.get("trail_pips", 0)
+        trail_pips_dist = ctx.spread * trail_pips if trail_pips > 0 else 0.0
+
+        # Legacy: exit_modifier overrides if set
         exit_modifier_name = getattr(ctx, "exit_modifier", None)
-        modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}
-        use_trailing = bool(exit_modifier_name)
-        breakeven_trigger = modifier_params.get("breakeven_trigger", 0.5) if use_trailing else 0.0
-        trail_atr_mult = modifier_params.get("trail_atr_mult", 0.5) if use_trailing else 0.0
+        if exit_modifier_name:
+            modifier_params = getattr(ctx, "exit_modifier_params", {}) or {}
+            be_trigger = modifier_params.get("breakeven_trigger", 0.5)
+            be_offset = modifier_params.get("breakeven_offset", be_offset)
+            trail_atr_mult = modifier_params.get("trail_atr_mult", 0.5)
+        else:
+            trail_atr_mult = 0.0
+
+        use_trailing = be_trigger > 0.0 or trail_pips_dist > 0.0 or trail_atr_mult > 0.0
 
         n = len(cls_v)
         targets_long = np.zeros(n, dtype=np.float64)
@@ -167,14 +179,17 @@ class OrbExitStrategy(BaseExitStrategy):
             sl_distance = max(sl_dist_v[i], min_sl_distance)
 
             if use_trailing:
-                if use_range_tp:
+                if trail_pips_dist > 0.0:
+                    trail_distance = trail_pips_dist
+                elif use_range_tp:
                     trail_distance = range_v[i] if range_v[i] > 0.0 else 0.0
                 else:
                     trail_distance = atr_v[i] * trail_atr_mult if trail_atr_mult > 0.0 else 0.0
                 result_long, exit_long, _, _ = _simulate_trade_trailing_numba(
                     opn_v, cls_v, hgh_v, low_v, i, 1,
                     tp_distance, sl_distance, ctx.spread, slippage,
-                    max_bars, timeout_val, breakeven_trigger, trail_distance, 0.0,
+                    max_bars, timeout_val, be_trigger, trail_distance, 0.0,
+                    be_offset,
                 )
             elif use_session:
                 result_long, exit_long, _, _ = _simulate_trade_session_numba(
@@ -194,14 +209,17 @@ class OrbExitStrategy(BaseExitStrategy):
                 durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
             if use_trailing:
-                if use_range_tp:
+                if trail_pips_dist > 0.0:
+                    trail_distance = trail_pips_dist
+                elif use_range_tp:
                     trail_distance = range_v[i] if range_v[i] > 0.0 else 0.0
                 else:
                     trail_distance = atr_v[i] * trail_atr_mult if trail_atr_mult > 0.0 else 0.0
                 result_short, exit_short, _, _ = _simulate_trade_trailing_numba(
                     opn_v, cls_v, hgh_v, low_v, i, -1,
                     tp_distance, sl_distance, ctx.spread, slippage,
-                    max_bars, timeout_val, breakeven_trigger, trail_distance, 0.0,
+                    max_bars, timeout_val, be_trigger, trail_distance, 0.0,
+                    be_offset,
                 )
             elif use_session:
                 result_short, exit_short, _, _ = _simulate_trade_session_numba(
@@ -273,6 +291,9 @@ class OrbExitStrategy(BaseExitStrategy):
             "sl_level": "none",
             "entry_delay": 1,
             "max_trades_per_signal": 1,
+            "breakeven_trigger": 0.0,
+            "breakeven_offset": 0.0,
+            "trail_pips": 0,
         }
 
     @classmethod
@@ -372,6 +393,45 @@ class OrbExitStrategy(BaseExitStrategy):
                 ),
                 "min": 0,
                 "max": 10,
+                "step": 1,
+            },
+            "breakeven_trigger": {
+                "type": "float",
+                "default": 0.0,
+                "description": (
+                    "Fraction of TP at which SL moves to breakeven. "
+                    "0.0 = disabled. 0.5 = when price reaches 50% of TP, "
+                    "SL is moved to entry + breakeven_offset."
+                ),
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.05,
+            },
+            "breakeven_offset": {
+                "type": "float",
+                "default": 0.0,
+                "description": (
+                    "Fraction of TP distance to add above entry when breakeven triggers. "
+                    "0.0 = SL moves exactly to entry (true breakeven). "
+                    "0.1 = SL moves to entry + 10% of TP distance (guaranteed profit). "
+                    "Only active when breakeven_trigger > 0."
+                ),
+                "min": 0.0,
+                "max": 0.5,
+                "step": 0.05,
+            },
+            "trail_pips": {
+                "type": "int",
+                "default": 0,
+                "description": (
+                    "Trailing stop distance in spread multiples (pips). "
+                    "SL follows the best price (high for long, low for short) "
+                    "with this fixed distance. 0 = no trailing. "
+                    "When breakeven_trigger > 0, trailing activates after breakeven; "
+                    "when breakeven_trigger = 0, trailing is active from entry."
+                ),
+                "min": 0,
+                "max": 500,
                 "step": 1,
             },
         }
