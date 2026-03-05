@@ -80,7 +80,7 @@
         "sl_mult": 1.0,
         "timeout_bars": null
       },
-      "ct": [0.45, 0.5]
+      "ct": [0.35, 0.4, 0.45]
     },
     {
       "name": "atr_based",
@@ -92,7 +92,7 @@
         "sl_mult": 1.5,
         "timeout_bars": null
       },
-      "ct": [0.45, 0.5]
+      "ct": [0.35, 0.4, 0.45]
     },
     {
       "name": "atr_based",
@@ -104,7 +104,7 @@
         "sl_mult": 1.0,
         "timeout_bars": null
       },
-      "ct": [0.45, 0.5]
+      "ct": [0.35, 0.4, 0.45]
     },
     {
       "name": "atr_based",
@@ -116,7 +116,7 @@
         "sl_mult": 1.5,
         "timeout_bars": null
       },
-      "ct": [0.45, 0.5]
+      "ct": [0.35, 0.4, 0.45]
     }
   ]
 }
