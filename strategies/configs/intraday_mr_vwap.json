@@ -1,42 +1,42 @@
 {
-  "name": "Intraday MR: VWAP",
-  "description": "Intraday Mean Reversion auf VWAP-Basis mit Regime-Filter fuer US-Indizes und DAX. VWAP Z-Score als primaeres Signal, Hurst-Exponent als Ranging-Filter.",
-  "tags": [
-    "intraday",
-    "mean_reversion",
-    "vwap",
-    "regime",
-    "index",
-    "step1"
-  ],
+  "name": "intraday_mr_vwap",
+  "description": "Intraday Mean Reversion VWAP: Z-Score-Extreme mit Hurst-Ranging-Filter auf NAS100 und DAX.",
+  "tags": ["intraday", "mean_reversion", "vwap", "regime", "index"],
   "timeframe": "MINUTE_15",
-  "hypothesis": "Preis revertiert intraday zum VWAP in ranging Maerkten (Hurst < 0.5). VWAP Z-Score > 1.5 oder < -1.5 mit niedrigem ADX signalisiert ueberdehnte Moves.",
+  "hypothesis": "Preis revertiert intraday zum VWAP in ranging Maerkten (Hurst < 0.5). VWAP Z-Score > 1.5 / < -1.5 mit niedrigem ADX signalisiert ueberdehnte Moves.",
   "expected_outcome": "VWAP Z-Score und Regime-Features werden selektiert. Beste Performance in Low-Trend-Phasen (ADX < 25, Hurst < 0.5).",
+  "datasource": "dukascopy",
+  "assets": {
+    "filter": ["NAS100", "DAX"]
+  },
   "pipeline": "mr_vwap_intraday_v1",
   "model": "xgboost_screen_v1",
   "validation": "walk_forward_screening_v1",
   "filters": "screening_v1",
   "resources": "exploration_heavy_v1",
-  "datasource": "forexsb",
+  "risk_management": "vol_targeted_kelly",
+  "risk_params": {
+    "kelly_fraction": 0.25,
+    "max_risk": 0.05,
+    "target_max_dd": 0.3,
+    "circuit_breaker_loss_range": [3, 8],
+    "circuit_breaker_pause_range": [5, 30],
+    "target_vol": 15,
+    "min_scale": 0.25,
+    "max_scale": 2
+  },
   "optimization": {
     "regime_filter_grid": {
       "condition_grids": [
         {
           "column": "regime_hurst_100",
           "operator": "<",
-          "values": [
-            null,
-            0.5,
-            0.45
-          ]
+          "values": [null, 0.5]
         },
         {
           "column": "trend_adx_14",
           "operator": "<",
-          "values": [
-            null,
-            25
-          ]
+          "values": [null, 25]
         }
       ]
     }
@@ -48,18 +48,11 @@
         "atr_period": 14,
         "min_tp_pips": 8,
         "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
         "tp_mult": 1.0,
         "sl_mult": 1.5,
         "timeout_bars": 16
       },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
+      "ct": [0.5, 0.55]
     },
     {
       "name": "atr_based",
@@ -67,37 +60,11 @@
         "atr_period": 14,
         "min_tp_pips": 8,
         "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.0,
-        "sl_mult": 1.5,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
         "tp_mult": 1.0,
         "sl_mult": 2.0,
         "timeout_bars": 16
       },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
+      "ct": [0.5, 0.55]
     },
     {
       "name": "atr_based",
@@ -105,113 +72,11 @@
         "atr_period": 14,
         "min_tp_pips": 8,
         "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.0,
-        "sl_mult": 2.0,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.0,
-        "sl_mult": 2.5,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.0,
-        "sl_mult": 2.5,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.0,
-        "sl_mult": 3.0,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.0,
-        "sl_mult": 3.0,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
         "tp_mult": 1.5,
         "sl_mult": 1.5,
         "timeout_bars": 16
       },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
+      "ct": [0.5, 0.55]
     },
     {
       "name": "atr_based",
@@ -219,436 +84,11 @@
         "atr_period": 14,
         "min_tp_pips": 8,
         "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.5,
-        "sl_mult": 1.5,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
         "tp_mult": 1.5,
         "sl_mult": 2.0,
         "timeout_bars": 16
       },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.5,
-        "sl_mult": 2.0,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.5,
-        "sl_mult": 2.5,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.5,
-        "sl_mult": 2.5,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.5,
-        "sl_mult": 3.0,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 1.5,
-        "sl_mult": 3.0,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.0,
-        "sl_mult": 1.5,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.0,
-        "sl_mult": 1.5,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.0,
-        "sl_mult": 2.0,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.0,
-        "sl_mult": 2.0,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.0,
-        "sl_mult": 2.5,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.0,
-        "sl_mult": 2.5,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.0,
-        "sl_mult": 3.0,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.0,
-        "sl_mult": 3.0,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.5,
-        "sl_mult": 1.5,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.5,
-        "sl_mult": 1.5,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.5,
-        "sl_mult": 2.0,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.5,
-        "sl_mult": 2.0,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.5,
-        "sl_mult": 2.5,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.5,
-        "sl_mult": 2.5,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.5,
-        "sl_mult": 3.0,
-        "timeout_bars": 16
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
-    },
-    {
-      "name": "atr_based",
-      "params": {
-        "atr_period": 14,
-        "min_tp_pips": 8,
-        "min_sl_pips": 12,
-        "adaptive_timeout": false,
-        "breakeven_trigger": 0.5,
-        "trail_atr_mult": 0.5,
-        "tp_mult": 2.5,
-        "sl_mult": 3.0,
-        "timeout_bars": 32
-      },
-      "ct": [
-        0.5,
-        0.55,
-        0.6
-      ]
+      "ct": [0.5, 0.55]
     }
   ]
 }
