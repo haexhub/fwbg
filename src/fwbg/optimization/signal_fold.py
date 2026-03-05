@@ -39,14 +39,16 @@ def prepare_signal_fold_data(fold, fold_indicators, precomputed_raw_df,
            f"(excl: {common['excluded_inf']} inf, {common['excluded_nan']} nan)", sym)
 
     # Add composed signal columns to required features
+    has_time_filters = getattr(ctx, "allowed_hours", None) or getattr(ctx, "allowed_days", None)
     signal_rules = getattr(ctx, "signal_rules", None)
-    if signal_rules:
+    has_signal_rules = signal_rules and any(
+        signal_rules.get(d, {}).get("conditions") for d in ("long", "short")
+    )
+    if has_signal_rules or has_time_filters:
         for direction in ("long", "short"):
-            rules = signal_rules.get(direction)
-            if rules and rules.get("conditions"):
-                col_name = f"_composed_signal_{direction}"
-                if col_name not in ctx.required_features:
-                    ctx.required_features.append(col_name)
+            col_name = f"_composed_signal_{direction}"
+            if col_name not in ctx.required_features:
+                ctx.required_features.append(col_name)
 
     # Fill feature NaN with 0 (NaN = "no signal") instead of dropping rows.
     # Dropping bars creates gaps that break sequential trade simulation

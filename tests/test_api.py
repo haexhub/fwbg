@@ -126,7 +126,7 @@ class TestPluginEndpoints:
 
     def test_plugin_schema_types_valid(self, client):
         """All param types are one of the known types."""
-        valid_types = {"int", "float", "bool", "string", "list[int]", "list[float]", "list[string]", "choice"}
+        valid_types = {"int", "float", "bool", "string", "list[int]", "list[float]", "list[string]", "choice", "session_ranges"}
         resp = client.get("/api/plugins")
         for p in resp.json():
             for param_name, schema in p["param_schema"].items():

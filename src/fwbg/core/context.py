@@ -120,6 +120,10 @@ class SimulationContext:
     # Required features: always included in feature selection, bypass selection plugins
     required_features: List[str] = field(default_factory=list)
 
+    # Time-based entry filters (from FilterConfig)
+    allowed_hours: Optional[list] = None
+    allowed_days: Optional[list] = None
+
     # Signal rules for composed entry signals (from strategy config)
     signal_rules: Optional[dict] = None
 
@@ -196,6 +200,9 @@ class SimulationContext:
             exit_session_start_hour=None,
             exit_session_end_hour=None,
             required_features=req_feats,
+            # Time-based entry filters
+            allowed_hours=strategy.filters.allowed_hours,
+            allowed_days=strategy.filters.allowed_days,
             # Signal rules for composed entry signals
             signal_rules=getattr(strategy, 'signal_rules', None),
             # Regime-Filter Grid (from optimization)

@@ -109,6 +109,31 @@ def _eval_col_compare(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
     return _apply_op(df[col_a], cond["op"], df[col_b])
 
 
+def _eval_hour_filter(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
+    """True when the bar's hour is in the allowed set.
+
+    Config examples:
+        {"type": "hour_filter", "hours": [14, 15, 16, 17]}
+        {"type": "hour_filter", "hours": [14, 15, 16, 17], "exclude": true}
+    """
+    hours = set(cond["hours"])
+    exclude = cond.get("exclude", False)
+    mask = df.index.hour.isin(hours)
+    return (~mask if exclude else mask).astype(bool)
+
+
+def _eval_day_filter(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
+    """True when the bar's day of week is in the allowed set.
+
+    Config: {"type": "day_filter", "days": [0, 1, 2, 3, 4]}
+    (0=Monday, 6=Sunday)
+    """
+    days = set(cond["days"])
+    exclude = cond.get("exclude", False)
+    mask = df.index.dayofweek.isin(days)
+    return (~mask if exclude else mask).astype(bool)
+
+
 def _eval_crossing(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
     col_a = resolve_column(cond["column_a"], df.columns)
     col_b = resolve_column(cond["column_b"], df.columns)
@@ -133,6 +158,8 @@ _CONDITION_DISPATCH: dict[str, Any] = {
     "value_check": _eval_value_check,
     "col_compare": _eval_col_compare,
     "crossing": _eval_crossing,
+    "hour_filter": _eval_hour_filter,
+    "day_filter": _eval_day_filter,
 }
 
 
