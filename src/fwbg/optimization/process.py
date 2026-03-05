@@ -129,6 +129,13 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(2, f"Resampled {data_config.RESAMPLE_FROM} → {data_config.TIMEFRAME} "
                     f"({n_before} → {len(df)} bars)", sym)
 
+        # Drop flat bars (O==H==L==C, weekends/holidays for index data)
+        if strategy.assets.get("drop_flat_bars"):
+            n_before = len(df)
+            df = df[~((df["O"] == df["H"]) & (df["H"] == df["L"]) & (df["L"] == df["C"]))]
+            log(2, f"Dropped {n_before - len(df)} flat bars "
+                    f"({n_before} → {len(df)})", sym)
+
         log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
 
         # === DATA LOADING (generic orchestrator) ===

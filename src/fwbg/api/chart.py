@@ -322,6 +322,7 @@ class IndicatorRequest(BaseModel):
     credentials: Optional[dict] = None
     broker_type: Optional[str] = None
     indicator_timeframe: Optional[str] = None
+    drop_flat_bars: bool = False
 
 
 @router.post("/indicator")
@@ -379,6 +380,10 @@ def compute_indicator(body: IndicatorRequest) -> dict:
 
     if df is None or df.empty:
         raise HTTPException(500, "Failed to load data")
+
+    # Drop flat bars (O==H==L==C, weekends/holidays for index data)
+    if body.drop_flat_bars:
+        df = df[~((df["O"] == df["H"]) & (df["H"] == df["L"]) & (df["L"] == df["C"]))]
 
     # --- MTF: load indicator-timeframe data if different from chart TF ---
     chart_df = None
