@@ -239,25 +239,40 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
-    def get_feature_columns(self) -> List[str]:
-        if self._feature_columns:
+    def _resolve_range_bars(self, params=None) -> List[int]:
+        """Extract range_bars from params or fall back to defaults."""
+        p = params if params else self.get_default_params()
+        rb = p.get("range_bars", self.get_default_params()["range_bars"])
+        return [rb] if isinstance(rb, int) else list(rb)
+
+    def get_feature_columns(self, params=None) -> List[str]:
+        if self._feature_columns and not params:
             return self._feature_columns
-        rb = self.get_default_params()["range_bars"]
+        rb_list = self._resolve_range_bars(params)
         base_feats = [
             "range", "position", "breakout_up", "breakout_down",
             "range_vs_atr", "dist_to_high", "dist_to_low", "sl_dist",
         ]
-        return [wor_col(rb, f) for f in base_feats] + [
-            "wor_stat_avg_range", "wor_stat_range_vs_avg", "wor_stat_breakout_rate",
-        ]
+        cols = []
+        for rb in rb_list:
+            cols.extend(wor_col(rb, f) for f in base_feats)
+        p = params if params else self.get_default_params()
+        if p.get("enable_stats", True):
+            cols.extend([
+                "wor_stat_avg_range", "wor_stat_range_vs_avg", "wor_stat_breakout_rate",
+            ])
+        return cols
 
-    def get_signal_columns(self) -> List[str]:
-        if self._signal_columns:
+    def get_signal_columns(self, params=None) -> List[str]:
+        if self._signal_columns and not params:
             return self._signal_columns
-        rb = self.get_default_params()["range_bars"]
-        return [
-            wor_col(rb, "breakout_up"), wor_col(rb, "breakout_down"),
-        ]
+        rb_list = self._resolve_range_bars(params)
+        signals = []
+        for rb in rb_list:
+            signals.extend([
+                wor_col(rb, "breakout_up"), wor_col(rb, "breakout_down"),
+            ])
+        return signals
 
     @classmethod
     def get_default_params(cls) -> dict:

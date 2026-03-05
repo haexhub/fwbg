@@ -1,0 +1,117 @@
+{
+  "datasource": "dukascopy",
+  "assets": {
+    "filter": [
+      "ASX200"
+    ]
+  },
+  "pipeline": {
+    "data_loading": [],
+    "preprocessing": [],
+    "indicators": [
+      {
+        "name": "opening_range",
+        "params": {
+          "range_bars": [
+            12
+          ],
+          "atr_period": 14,
+          "sessions": [
+            0
+          ],
+          "enable_retracement": false,
+          "carry_forward_days": 0,
+          "pre_range_bars": [
+            6
+          ],
+          "candle_span": "body",
+          "breakout_threshold": 0,
+          "breakout_threshold_abs": 5,
+          "retracement_levels": 0.5,
+          "min_retracement": 0,
+          "min_range_height": 0,
+          "min_range_height_atr": 0
+        }
+      },
+      {
+        "name": "supertrend_mtf",
+        "params": {
+          "d1_bars": 24,
+          "period": 14,
+          "multiplier": 3.0
+        }
+      }
+    ],
+    "feature_selection": []
+  },
+  "exit_strategies": [
+    {
+      "name": "orb_based",
+      "params": {
+        "tp_mode": "range",
+        "tp_mult": 2,
+        "sl_mult": 1,
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 5,
+        "timeout_bars": null,
+        "sl_level": "none",
+        "entry_delay": 1,
+        "max_trades_per_signal": 1
+      },
+      "ct": [
+        0.5
+      ],
+      "min_rrr": 0
+    }
+  ],
+  "model": {
+    "type": "signal",
+    "architecture": "long_short_separate",
+    "trade_directions": [
+      "long",
+      "short"
+    ],
+    "hyperparameters": {}
+  },
+  "signal_rules": {
+    "long": {
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "signal_active",
+          "column": "rb12_prb6_orb_s00_breakout_up"
+        },
+        {
+          "type": "value_check",
+          "column": "st_d1_direction",
+          "op": ">",
+          "value": 0
+        }
+      ]
+    },
+    "short": {
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "signal_active",
+          "column": "rb12_prb6_orb_s00_breakout_down"
+        },
+        {
+          "type": "value_check",
+          "column": "st_d1_direction",
+          "op": "<",
+          "value": 0
+        }
+      ]
+    }
+  },
+  "optimization": {},
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8
+  },
+  "filters": {},
+  "resources": {},
+  "name": "asx200-open-range-supertrend"
+}

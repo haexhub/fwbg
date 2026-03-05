@@ -453,20 +453,24 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     # holds the last higher-TF value. Signal columns are NOT forward-filled —
     # they only appear at the higher-TF bar boundary (point values, not blocks).
     if chart_df is not None:
-        ffill_cols = list(set(
-            [c for c in available_cols if c not in plugin_signal_cols] + overlay_cols
-        ))
-        _forward_fill_to_chart_tf(result_df, chart_df, ffill_cols)
-        # Signal columns: reindex without ffill (NaN between higher-TF bars)
-        for col in available_cols:
-            if col in plugin_signal_cols and col in result_df.columns:
-                chart_df[col] = result_df[col].reindex(chart_df.index)
+        # MTF: all indicator columns (including signals) are forward-filled
+        # onto the chart timeframe.  A daily supertrend value of 1.0 is valid
+        # for every M15 bar of that day, not just at midnight.
+        all_ind_cols = list(set(available_cols + overlay_cols))
+        _forward_fill_to_chart_tf(result_df, chart_df, all_ind_cols)
         result_df = chart_df
 
     # --- Slice ---
+    # Cap total cells (columns × bars) to ~3M to keep JSON response
+    # under ~50 MB (Node.js proxy limit).  With 160 columns this allows
+    # ~18k bars; with 5 columns up to 600k bars.
+    MAX_CELLS = 3_000_000
+    n_cols = max(1, len(available_cols) + len(overlay_cols))
+    max_bars = MAX_CELLS // n_cols
+    effective_limit = min(body.limit, max_bars)
     total = len(result_df)
     end_idx = total - body.offset
-    start_idx = max(0, end_idx - body.limit)
+    start_idx = max(0, end_idx - effective_limit)
     result_slice = result_df.iloc[start_idx:end_idx]
     plugin_plot_cols = set(plugin.get_plot_columns()) if hasattr(plugin, "get_plot_columns") else set()
 
