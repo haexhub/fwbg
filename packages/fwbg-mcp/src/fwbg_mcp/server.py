@@ -326,7 +326,6 @@ def list_presets(preset_type: str) -> list[str]:
     Returns list of preset names (use as string values in strategy config,
     e.g. `"pipeline": "sr_trend_v1"`).
     """
-    import glob
     import pathlib
 
     strategies_dir = pathlib.Path("/home/haex/Projekte/fwbg/strategies")

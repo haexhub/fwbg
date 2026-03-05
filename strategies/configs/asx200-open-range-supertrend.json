@@ -3,12 +3,22 @@
   "assets": {
     "filter": [
       "ASX200"
-    ]
+    ],
+    "drop_flat_bars": true
   },
   "pipeline": {
     "data_loading": [],
     "preprocessing": [],
     "indicators": [
+      {
+        "name": "supertrend_mtf",
+        "params": {
+          "period": 20,
+          "multiplier": 3,
+          "d1_bars": 96
+        },
+        "is_signal": true
+      },
       {
         "name": "opening_range",
         "params": {
@@ -19,7 +29,7 @@
           "sessions": [
             0
           ],
-          "enable_retracement": false,
+          "enable_retracement": true,
           "carry_forward_days": 0,
           "pre_range_bars": [
             6
@@ -31,15 +41,8 @@
           "min_retracement": 0,
           "min_range_height": 0,
           "min_range_height_atr": 0
-        }
-      },
-      {
-        "name": "supertrend_mtf",
-        "params": {
-          "d1_bars": 96,
-          "period": 14,
-          "multiplier": 3.0
-        }
+        },
+        "is_signal": true
       }
     ],
     "feature_selection": []
@@ -49,10 +52,10 @@
       "name": "orb_based",
       "params": {
         "tp_mode": "range",
-        "tp_mult": 2,
-        "sl_mult": 1,
+        "tp_mult": 0.8,
+        "sl_mult": 2,
         "atr_period": 14,
-        "min_tp_pips": 8,
+        "min_tp_pips": 10,
         "min_sl_pips": 5,
         "timeout_bars": null,
         "sl_level": "none",
@@ -113,5 +116,7 @@
   },
   "filters": {},
   "resources": {},
-  "name": "asx200-open-range-supertrend"
+  "name": "asx200-open-range-supertrend",
+  "timeframe": "MINUTE_15",
+  "_refs": {}
 }

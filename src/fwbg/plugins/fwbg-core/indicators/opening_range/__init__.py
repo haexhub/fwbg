@@ -527,44 +527,63 @@ class OpeningRangeIndicator(BaseIndicator):
         return [f"{rl_tag(rl)}_" for rl in rl_list]
 
     def _resolve_col_params(self, params=None):
-        """Merge defaults with optional params for column building."""
+        """Merge defaults with optional params and normalise list params.
+
+        Returns (rb_list, cf_val_or_None, prb_val_or_None, include_cf, include_prb,
+                 sessions, rl_pfxs) — mirrors the normalisation in compute().
+        """
         d = {**self.get_default_params(), **(params or {})}
-        rb = d["range_bars"]
-        cf = d["carry_forward_days"] or None
-        prb = d["pre_range_bars"] or None
+        rb_raw = d["range_bars"]
+        cf_raw = d["carry_forward_days"]
+        prb_raw = d["pre_range_bars"]
+        rb_list = [rb_raw] if isinstance(rb_raw, (int, float)) else list(rb_raw)
+        cf_list = [cf_raw] if isinstance(cf_raw, (int, float)) else list(cf_raw)
+        prb_list = [prb_raw] if isinstance(prb_raw, (int, float)) else list(prb_raw)
+        include_cf = len(cf_list) > 1 or any(v != 0 for v in cf_list)
+        include_prb = len(prb_list) > 1 or any(v != 0 for v in prb_list)
         sessions = d.get("sessions") or [8, 9, 14, 15]
         rl_pfxs = self._rl_prefixes(d["retracement_levels"])
-        return rb, cf, prb, sessions, rl_pfxs
+        return rb_list, cf_list, prb_list, include_cf, include_prb, sessions, rl_pfxs
 
     def get_feature_columns(self, params=None) -> List[str]:
         if self._feature_columns and not params:
             return self._feature_columns
-        rb, cf, prb, sessions, rl_pfxs = self._resolve_col_params(params)
+        rb_list, cf_list, prb_list, include_cf, include_prb, sessions, rl_pfxs = self._resolve_col_params(params)
         cols = []
-        for h in sessions:
-            for feat in ORB_BASE_FEATURES:
-                cols.append(orb_col(rb, cf, prb, h, feat))
-            for rl_pfx in rl_pfxs:
-                cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bull"))
-                cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bear"))
-                cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}sl_dist"))
+        for rb in rb_list:
+            for cf_val in cf_list:
+                for prb_val in prb_list:
+                    cf = cf_val if include_cf else None
+                    prb = prb_val if include_prb else None
+                    for h in sessions:
+                        for feat in ORB_BASE_FEATURES:
+                            cols.append(orb_col(rb, cf, prb, h, feat))
+                        for rl_pfx in rl_pfxs:
+                            cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bull"))
+                            cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bear"))
+                            cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}sl_dist"))
         return cols
 
     def get_signal_columns(self, params=None) -> List[str]:
         if self._signal_columns and not params:
             return self._signal_columns
-        rb, cf, prb, sessions, rl_pfxs = self._resolve_col_params(params)
+        rb_list, cf_list, prb_list, include_cf, include_prb, sessions, rl_pfxs = self._resolve_col_params(params)
         signals = []
-        for h in sessions:
-            signals.extend([
-                orb_col(rb, cf, prb, h, "breakout_up"),
-                orb_col(rb, cf, prb, h, "breakout_down"),
-            ])
-            for rl_pfx in rl_pfxs:
-                signals.extend([
-                    orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bull"),
-                    orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bear"),
-                ])
+        for rb in rb_list:
+            for cf_val in cf_list:
+                for prb_val in prb_list:
+                    cf = cf_val if include_cf else None
+                    prb = prb_val if include_prb else None
+                    for h in sessions:
+                        signals.extend([
+                            orb_col(rb, cf, prb, h, "breakout_up"),
+                            orb_col(rb, cf, prb, h, "breakout_down"),
+                        ])
+                        for rl_pfx in rl_pfxs:
+                            signals.extend([
+                                orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bull"),
+                                orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bear"),
+                            ])
         return signals
 
     @classmethod
