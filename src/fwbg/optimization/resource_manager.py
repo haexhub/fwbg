@@ -153,6 +153,16 @@ class SimplePoolManager:
 
             _active_futures.clear()
 
+            # Drain progress queue before executor __exit__ joins workers.
+            # Workers can't exit if their feeder threads are blocked on a full pipe.
+            if self.progress_queue is not None:
+                from queue import Empty
+                try:
+                    while True:
+                        self.progress_queue.get_nowait()
+                except (Empty, OSError):
+                    pass
+
         _active_executor = None
 
         signal.signal(signal.SIGINT, _original_sigint if _original_sigint else signal.SIG_DFL)

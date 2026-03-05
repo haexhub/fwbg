@@ -294,15 +294,19 @@ class ProgressTracker:
         if self._run_logger:
             self._run_logger.close()
 
-        # WICHTIG: Queue schließen um Worker-Prozesse freizugeben.
-        # cancel_join_thread() statt join_thread() vermeidet Deadlock wenn
-        # der Consumer-Thread bereits gestoppt ist aber noch Daten im Buffer sind.
+        # Drain remaining queue items to unblock worker feeder threads.
+        # Workers can't exit if their feeder thread is blocked writing to a full pipe.
         if self.queue is not None:
+            try:
+                while True:
+                    self.queue.get_nowait()
+            except (Empty, OSError):
+                pass
             try:
                 self.queue.cancel_join_thread()
                 self.queue.close()
             except Exception:
-                pass  # Queue könnte bereits geschlossen sein
+                pass
 
         # Finale Ausgabe
         elapsed = time.time() - self.start_time if self.start_time else 0
@@ -400,8 +404,10 @@ class ProgressTracker:
                                     self.completed_symbols.append(symbol)
             except Empty:
                 continue
-            except Exception:
-                break
+            except Exception as e:
+                # Log but don't break — a dead queue reader causes deadlocks
+                print(f"[ProgressTracker] queue reader error: {e}", file=sys.stderr)
+                continue
 
     @staticmethod
     def _phase_to_stage(phase: str) -> str:
