@@ -203,50 +203,59 @@ class TrendIndicators(BaseIndicator):
 
         return pd.concat([df, features_df], axis=1)
 
-    def get_feature_columns(self) -> List[str]:
-        """Gibt Liste aller Trend-Feature-Spalten zurück."""
-        return [
-            # ADX
-            "trend_adx_7", "trend_adx_14", "trend_adx_21",
-            # EMA Distance
-            "trend_ema_dist_8", "trend_ema_dist_21", "trend_ema_dist_50",
-            "trend_ema_dist_100", "trend_ema_dist_200",
-            # EMA Crossings
-            "trend_ema_8_above_21", "trend_ema_8_above_50",
-            "trend_ema_8_above_100", "trend_ema_8_above_200",
-            "trend_ema_21_above_50", "trend_ema_21_above_100",
-            "trend_ema_21_above_200", "trend_ema_50_above_100",
-            "trend_ema_50_above_200", "trend_ema_100_above_200",
-            # SMA Distance
-            "trend_sma_dist_20", "trend_sma_dist_50", "trend_sma_dist_200",
-            # SMA Crossings
-            "trend_sma_20_above_50", "trend_sma_20_above_200",
-            "trend_sma_50_above_200",
-            # MACD
-            "trend_macd", "trend_macd_signal",
-            "trend_macd_line", "trend_macd_above_zero",
-            "trend_macd_dist_zero", "trend_macd_hist_flip",
-            # CCI
-            "trend_cci_14", "trend_cci_20",
-            # Aroon
-            "trend_aroon_up", "trend_aroon_down",
-            # Efficiency Ratio
-            "trend_er_10", "trend_er_20", "trend_er_50",
-            "trend_er_10_chg", "trend_er_20_chg",
-            # Supertrend
-            "trend_supertrend", "trend_supertrend_flip",
-        ]
+    def _resolve_params(self, params=None):
+        p = {**self.get_default_params(), **(params or {})}
+        return (
+            p.get("adx_periods", []),
+            p.get("ema_periods", []),
+            p.get("sma_periods", []),
+            p.get("macd_only", False),
+        )
 
-    def get_signal_columns(self) -> List[str]:
+    def get_feature_columns(self, params=None) -> List[str]:
+        adx_periods, ema_periods, sma_periods, macd_only = self._resolve_params(params)
+        cols = []
+
+        if not macd_only:
+            cols.extend(f"trend_adx_{p}" for p in adx_periods)
+            sorted_ema = sorted(ema_periods)
+            cols.extend(f"trend_ema_dist_{p}" for p in sorted_ema)
+            for i, short_p in enumerate(sorted_ema):
+                for long_p in sorted_ema[i + 1:]:
+                    cols.append(f"trend_ema_{short_p}_above_{long_p}")
+            sorted_sma = sorted(sma_periods)
+            cols.extend(f"trend_sma_dist_{p}" for p in sorted_sma)
+            for i, short_p in enumerate(sorted_sma):
+                for long_p in sorted_sma[i + 1:]:
+                    cols.append(f"trend_sma_{short_p}_above_{long_p}")
+
+        cols.extend([
+            "trend_macd", "trend_macd_signal", "trend_macd_line",
+            "trend_macd_above_zero", "trend_macd_dist_zero", "trend_macd_hist_flip",
+        ])
+
+        if not macd_only:
+            cols.extend(["trend_cci_14", "trend_cci_20",
+                         "trend_aroon_up", "trend_aroon_down",
+                         "trend_er_10", "trend_er_20", "trend_er_50",
+                         "trend_er_10_chg", "trend_er_20_chg",
+                         "trend_supertrend", "trend_supertrend_flip"])
+        return cols
+
+    def get_signal_columns(self, params=None) -> List[str]:
+        _, _, _, macd_only = self._resolve_params(params)
+        if macd_only:
+            return ["trend_macd_above_zero", "trend_macd_hist_flip"]
         return ["trend_supertrend", "trend_supertrend_flip"]
 
-    def get_overlay_columns(self) -> List[str]:
-        return [
-            "_trend_ema_8", "_trend_ema_21", "_trend_ema_50",
-            "_trend_ema_100", "_trend_ema_200",
-            "_trend_sma_20", "_trend_sma_50", "_trend_sma_200",
-            "_trend_supertrend_line",
-        ]
+    def get_overlay_columns(self, params=None) -> List[str]:
+        _, ema_periods, sma_periods, macd_only = self._resolve_params(params)
+        if macd_only:
+            return []
+        cols = [f"_trend_ema_{p}" for p in sorted(ema_periods)]
+        cols.extend(f"_trend_sma_{p}" for p in sorted(sma_periods))
+        cols.append("_trend_supertrend_line")
+        return cols
 
     @classmethod
     def get_default_params(cls) -> dict:
