@@ -1,0 +1,341 @@
+"""Feature discovery — find indicators that distinguish winning from losing trades.
+
+Pipeline:
+1. Load trades from fold_results (entry_time + pnl)
+2. Load OHLCV data, compute ALL available indicators
+3. Sample indicator values at each trade's entry_time
+4. Split into wins vs losses, run statistical tests
+5. Return ranking by discriminative power
+"""
+import json
+import logging
+import math
+import signal
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from fastapi import APIRouter, HTTPException
+
+from fwbg.api.deps import get_test_results_dir
+from fwbg.data import load_data_aligned
+from fwbg.pipeline.features import compute_indicator_pool
+
+log = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/runs", tags=["runs"])
+
+# Indicators to skip (internal / non-predictive / too slow)
+_SKIP_INDICATORS = frozenset({
+    "autoencoder_features",   # Needs training data
+    "adversarial_validation", # Needs train/test split
+    "calendar_events",        # Needs external data
+    "wavelets",               # Very slow on large datasets
+    "topological_features",   # Very slow on large datasets
+    "cross_features",         # Needs specific feature pairs
+    "computed_signal",        # Internal (signal composition)
+    "cusum_events",           # Needs specific config
+    "distribution",           # Extremely slow (O(n²) rolling)
+    "volume_profile",         # Very slow on large datasets
+    "multi_timeframe",        # Needs multi-TF data
+    "fractal_dimension",      # Very slow on large datasets
+    "regime",                 # Very slow on large datasets
+    "regime_cluster",         # Depends on regime
+    "liquidity_levels",       # Very slow on large datasets
+    "macro_surprise",         # Needs external macro data
+    "market_regime",          # Duplicate of regime
+    "support_resistance",     # Very slow on large datasets
+})
+
+# Per-indicator timeout (seconds)
+_INDICATOR_TIMEOUT = 60
+
+
+class _IndicatorTimeout(Exception):
+    pass
+
+
+def _timeout_handler(signum, frame):
+    raise _IndicatorTimeout("Indicator computation timed out")
+
+
+def _load_run_config(run_id: str) -> dict:
+    results_dir = get_test_results_dir()
+    config_file = results_dir / run_id / "config.json"
+    if not config_file.exists():
+        raise HTTPException(404, f"Run config not found: {run_id}")
+    return json.loads(config_file.read_text())
+
+
+def _load_strategy_config(run_id: str) -> dict:
+    results_dir = get_test_results_dir()
+    strat_file = results_dir / run_id / "strategy.json"
+    if not strat_file.exists():
+        raise HTTPException(404, f"Strategy config not found: {run_id}")
+    return json.loads(strat_file.read_text())
+
+
+def _load_trades(run_id: str, symbol: str) -> list[dict]:
+    results_dir = get_test_results_dir()
+    fold_file = results_dir / run_id / "grid_details" / symbol / "fold_results.json"
+    if not fold_file.exists():
+        raise HTTPException(404, f"No fold results for {run_id}/{symbol}")
+
+    fdata = json.loads(fold_file.read_text())
+    trades = []
+    for fold in fdata.get("walk_forward", {}).get("fold_details", []):
+        for t in fold.get("test_trades_detail", []):
+            if isinstance(t, dict) and "pnl_raw" in t and "entry_time" in t:
+                trades.append(t)
+    return trades
+
+
+def _resolve_csv_path(strategy: dict, symbol: str, timeframe: str) -> Path:
+    """Resolve the OHLCV CSV path from datasource config."""
+    ds_name = strategy.get("datasource")
+    if not ds_name:
+        raise HTTPException(400, "Strategy has no datasource configured")
+
+    from fwbg.core.data_sources import get_data_source, CSVSourceConfig
+    try:
+        ds = get_data_source(ds_name)
+    except ValueError:
+        raise HTTPException(404, f"Datasource not found: {ds_name}")
+
+    if not isinstance(ds, CSVSourceConfig):
+        raise HTTPException(400, f"Datasource '{ds_name}' is not a CSV source")
+
+    csv_path = ds.get_file_path(symbol, timeframe)
+    if not csv_path.exists():
+        raise HTTPException(404, f"No data file for {symbol}/{timeframe}")
+    return csv_path
+
+
+def _get_available_indicators() -> list[str]:
+    """Get all indicator plugin names that can be computed."""
+    from fwbg.pipeline.registry import get_registry, PluginPhase
+    registry = get_registry()
+    registry.auto_discover()
+    all_plugins = registry.list_plugins(phase=PluginPhase.INDICATORS)
+    # Extract short names, skip problematic ones
+    names = []
+    for fqn in all_plugins:
+        short = fqn.split(":")[-1] if ":" in fqn else fqn
+        if short not in _SKIP_INDICATORS:
+            names.append(short)
+    return sorted(names)
+
+
+def _compute_effect_size(wins: np.ndarray, losses: np.ndarray) -> float:
+    """Cohen's d — standardized mean difference."""
+    n1, n2 = len(wins), len(losses)
+    if n1 < 2 or n2 < 2:
+        return 0.0
+    m1, m2 = np.mean(wins), np.mean(losses)
+    s1, s2 = np.var(wins, ddof=1), np.var(losses, ddof=1)
+    pooled_std = math.sqrt(((n1 - 1) * s1 + (n2 - 1) * s2) / (n1 + n2 - 2))
+    if pooled_std == 0:
+        return 0.0
+    return float((m1 - m2) / pooled_std)
+
+
+def _compute_auc(wins: np.ndarray, losses: np.ndarray) -> float:
+    """AUC via Mann-Whitney U statistic (probability that a random win > random loss)."""
+    from scipy.stats import mannwhitneyu
+    try:
+        u_stat, _ = mannwhitneyu(wins, losses, alternative="two-sided")
+        return float(u_stat / (len(wins) * len(losses)))
+    except ValueError:
+        return 0.5
+
+
+def run_discovery(run_id: str, symbol: str) -> dict:
+    """Run feature discovery for a completed run."""
+    strategy = _load_strategy_config(run_id)
+    run_config = _load_run_config(run_id)
+    timeframe = run_config.get("timeframe") or strategy.get("timeframe") or "HOUR"
+
+    # Load trades
+    trades = _load_trades(run_id, symbol)
+    if len(trades) < 20:
+        raise HTTPException(400, f"Too few trades ({len(trades)}) for meaningful discovery")
+
+    # Parse entry times
+    entry_times = pd.to_datetime([t["entry_time"] for t in trades])
+    pnls = np.array([t["pnl_raw"] for t in trades])
+    directions = [t.get("direction", "LONG") for t in trades]
+
+    # Load OHLCV data
+    csv_path = _resolve_csv_path(strategy, symbol, timeframe)
+    df = load_data_aligned(str(csv_path))
+    if df is None or df.empty:
+        raise HTTPException(500, f"Failed to load data from {csv_path}")
+
+    # Trim to trade window + lookback to speed up indicator computation
+    lookback_bars = 500  # Most indicators need < 500 bars lookback
+    first_trade = entry_times.min()
+    last_trade = entry_times.max()
+    start_idx = max(0, df.index.searchsorted(first_trade) - lookback_bars)
+    end_idx = min(len(df), df.index.searchsorted(last_trade) + 1)
+    df = df.iloc[start_idx:end_idx].copy()
+
+    log.info(f"Discovery: {len(df)} bars loaded for {symbol}/{timeframe} (trimmed to trade window)")
+
+    # Compute indicators one by one (resilient to individual failures)
+    indicator_names = _get_available_indicators()
+    log.info(f"Discovery: computing {len(indicator_names)} indicators on {len(df)} bars...")
+
+    computed_indicators = []
+    df_full = df.copy()
+    for ind_name in indicator_names:
+        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(_INDICATOR_TIMEOUT)
+        try:
+            result = compute_indicator_pool(df, indicators=[ind_name])
+            signal.alarm(0)  # Cancel timeout
+            # Merge new columns
+            new_cols = [c for c in result.columns if c not in df_full.columns]
+            if new_cols:
+                df_full = df_full.join(result[new_cols])
+                computed_indicators.append(ind_name)
+                log.info(f"  {ind_name}: +{len(new_cols)} columns")
+        except _IndicatorTimeout:
+            log.warning(f"  {ind_name}: TIMEOUT (>{_INDICATOR_TIMEOUT}s)")
+        except Exception as e:
+            log.warning(f"  {ind_name}: SKIP ({e})")
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+    indicator_names = computed_indicators
+
+    # Get feature columns (exclude OHLCV and internal)
+    base_cols = {"O", "H", "L", "C", "V"}
+    feature_cols = [c for c in df_full.columns
+                    if c not in base_cols and not c.startswith("_")]
+    log.info(f"Discovery: {len(feature_cols)} feature columns computed")
+
+    # Sample indicator values at trade entry times
+    # Use nearest-match join since entry_time should exactly match a bar
+    sampled = df_full.reindex(entry_times, method="nearest", tolerance=pd.Timedelta("2h"))
+
+    win_mask = pnls > 0
+    loss_mask = pnls < 0
+
+    # Analyze each feature
+    from scipy.stats import mannwhitneyu
+    results = []
+    for col in feature_cols:
+        vals = sampled[col].values
+        if np.isnan(vals).sum() > len(vals) * 0.5:
+            continue  # Skip columns with >50% NaN at entry points
+
+        # Replace NaN with column median for comparison
+        valid = vals[~np.isnan(vals)]
+        if len(valid) < 10:
+            continue
+        median_val = np.median(valid)
+        vals_clean = np.where(np.isnan(vals), median_val, vals)
+
+        win_vals = vals_clean[win_mask]
+        loss_vals = vals_clean[loss_mask]
+
+        if len(win_vals) < 5 or len(loss_vals) < 5:
+            continue
+
+        # Cohen's d effect size
+        d = _compute_effect_size(win_vals, loss_vals)
+
+        # Mann-Whitney U test
+        try:
+            _, p_value = mannwhitneyu(win_vals, loss_vals, alternative="two-sided")
+        except ValueError:
+            p_value = 1.0
+
+        # AUC
+        auc = _compute_auc(win_vals, loss_vals)
+
+        results.append({
+            "feature": col,
+            "effect_size": round(d, 4),
+            "abs_effect_size": round(abs(d), 4),
+            "p_value": round(float(p_value), 6),
+            "significant": bool(p_value < 0.05),
+            "auc": round(auc, 4),
+            "win_mean": round(float(np.mean(win_vals)), 6),
+            "loss_mean": round(float(np.mean(loss_vals)), 6),
+            "win_std": round(float(np.std(win_vals)), 6),
+            "loss_std": round(float(np.std(loss_vals)), 6),
+            "n_valid": int(np.sum(~np.isnan(vals))),
+        })
+
+    # Sort by absolute effect size (strongest discriminators first)
+    results.sort(key=lambda x: x["abs_effect_size"], reverse=True)
+
+    # Also run per-direction discovery
+    direction_results = {}
+    for dir_name, dir_label in [("LONG", "long"), ("SHORT", "short")]:
+        dir_mask = np.array([d == dir_name for d in directions])
+        dir_pnls = pnls[dir_mask]
+        if len(dir_pnls) < 10:
+            direction_results[dir_label] = []
+            continue
+
+        dir_win = dir_mask & win_mask
+        dir_loss = dir_mask & loss_mask
+        if dir_win.sum() < 3 or dir_loss.sum() < 3:
+            direction_results[dir_label] = []
+            continue
+
+        dir_features = []
+        for col in feature_cols:
+            vals = sampled[col].values
+            if np.isnan(vals).sum() > len(vals) * 0.5:
+                continue
+            valid = vals[~np.isnan(vals)]
+            if len(valid) < 10:
+                continue
+            median_val = np.median(valid)
+            vals_clean = np.where(np.isnan(vals), median_val, vals)
+
+            w = vals_clean[dir_win]
+            l = vals_clean[dir_loss]
+            if len(w) < 3 or len(l) < 3:
+                continue
+
+            d = _compute_effect_size(w, l)
+            try:
+                _, p = mannwhitneyu(w, l, alternative="two-sided")
+            except ValueError:
+                p = 1.0
+
+            dir_features.append({
+                "feature": col,
+                "effect_size": round(d, 4),
+                "abs_effect_size": round(abs(d), 4),
+                "p_value": round(float(p), 6),
+                "significant": bool(p < 0.05),
+                "win_mean": round(float(np.mean(w)), 6),
+                "loss_mean": round(float(np.mean(l)), 6),
+            })
+
+        dir_features.sort(key=lambda x: x["abs_effect_size"], reverse=True)
+        direction_results[dir_label] = dir_features[:50]
+
+    return {
+        "run_id": run_id,
+        "symbol": symbol,
+        "total_trades": len(trades),
+        "wins": int(win_mask.sum()),
+        "losses": int(loss_mask.sum()),
+        "total_features": len(feature_cols),
+        "analyzed_features": len(results),
+        "indicators_computed": indicator_names,
+        "results": results[:100],  # Top 100
+        "direction": direction_results,
+    }
+
+
+@router.get("/{run_id}/discovery/{symbol}")
+def get_feature_discovery(run_id: str, symbol: str) -> dict:
+    """Feature discovery: find indicators that distinguish wins from losses."""
+    return run_discovery(run_id, symbol)

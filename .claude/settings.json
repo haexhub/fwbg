@@ -1,7 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(journalctl:*)"
+      "Bash(journalctl:*)",
+      "Bash(# Check if maybe it runs as a thread inside the API - look at thread count ls /proc/2217980/task/)",
+      "Bash(# Check dmesg for OOM killer or other kernel kill reasons dmesg --time-format iso)",
+      "Read(//home/haex/Projekte/fwbg-dashboard/**)",
+      "Bash(npx vue-tsc --noEmit)",
+      "Bash(npx nuxi build)",
+      "Read(//home/haex/**)",
+      "Bash(.venv/bin/python -c \"from fwbg.api.signal_composer import router; print\\(''signal_composer.py imports OK''\\)\")",
+      "Bash(.venv/bin/python -c \":*)"
+    ],
+    "additionalDirectories": [
+      "/home/haex/Projekte/fwbg-dashboard/types",
+      "/home/haex/Projekte/fwbg-dashboard/composables",
+      "/home/haex/Projekte/fwbg-dashboard/components/runs",
+      "/home/haex/Projekte/fwbg-dashboard/pages/runs",
+      "/home/haex/Projekte/fwbg-dashboard/server/api/chart",
+      "/home/haex/Projekte/fwbg-dashboard/components/performance"
     ]
   }
 }

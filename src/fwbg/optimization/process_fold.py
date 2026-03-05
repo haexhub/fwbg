@@ -161,17 +161,35 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
             drop_cols.append(col)
             excluded_nan += 1
 
-    # Compose signal rules into _composed_signal_long/short columns
+    # Build time filter conditions from allowed_hours / allowed_days
+    time_conditions = []
+    if getattr(ctx, "allowed_hours", None):
+        time_conditions.append({"type": "hour_filter", "hours": ctx.allowed_hours})
+    if getattr(ctx, "allowed_days", None):
+        time_conditions.append({"type": "day_filter", "days": ctx.allowed_days})
+
+    # Compose signal rules + time filters into _composed_signal_long/short columns
     signal_rules = getattr(ctx, "signal_rules", None)
-    if signal_rules:
-        from fwbg.signals.evaluator import evaluate_rules
+    has_signal_rules = signal_rules and any(
+        signal_rules.get(d, {}).get("conditions") for d in ("long", "short")
+    )
+
+    if has_signal_rules or time_conditions:
+        from fwbg.signals.evaluator import evaluate_rules, evaluate_condition
         for direction in ("long", "short"):
-            rules = signal_rules.get(direction)
-            if rules and rules.get("conditions"):
-                col_name = f"_composed_signal_{direction}"
-                for target_df in (train_df, test_df):
-                    mask = evaluate_rules(rules, target_df)
-                    target_df[col_name] = mask.astype(float)
+            rules = (signal_rules or {}).get(direction)
+            col_name = f"_composed_signal_{direction}"
+            for target_df in (train_df, test_df):
+                masks = []
+                if rules and rules.get("conditions"):
+                    masks.append(evaluate_rules(rules, target_df))
+                for tc in time_conditions:
+                    masks.append(evaluate_condition(tc, target_df))
+                if masks:
+                    combined = masks[0]
+                    for m in masks[1:]:
+                        combined = combined & m
+                    target_df[col_name] = combined.astype(float)
 
     return {
         "train_df": train_df,

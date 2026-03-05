@@ -256,6 +256,8 @@ class FilterConfig:
     max_drawdown: float = 1.0
     min_sharpe: float = 0.0
     min_fold_stability: float = 0.0
+    allowed_hours: Optional[List[int]] = None
+    allowed_days: Optional[List[int]] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FilterConfig":
@@ -267,6 +269,8 @@ class FilterConfig:
             max_drawdown=data.get("max_drawdown", 1.0),
             min_sharpe=data.get("min_sharpe", 0.0),
             min_fold_stability=data.get("min_fold_stability", 0.0),
+            allowed_hours=data.get("allowed_hours"),
+            allowed_days=data.get("allowed_days"),
         )
 
 
@@ -538,6 +542,8 @@ class StrategyConfig:
                 "min_trades": self.filters.min_trades,
                 "min_annual_return": self.filters.min_annual_return,
                 "max_drawdown": self.filters.max_drawdown,
+                **({"allowed_hours": self.filters.allowed_hours} if self.filters.allowed_hours else {}),
+                **({"allowed_days": self.filters.allowed_days} if self.filters.allowed_days else {}),
             },
             "hypothesis": self.hypothesis,
             "expected_outcome": self.expected_outcome,

@@ -52,7 +52,28 @@
     "method": "walk_forward",
     "folds": 8
   },
-  "filters": {},
+  "filters": {
+    "allowed_hours": [
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19
+    ],
+    "allowed_days": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
   "resources": {},
   "name": "orb-test",
   "risk_management": "vol_targeted_kelly",

@@ -210,6 +210,43 @@ def _significance_test(pnls: list[float]) -> dict:
     }
 
 
+def _equity_curve(pnls: list[float]) -> list[float]:
+    """Cumulative PnL series for equity curve charting."""
+    if not pnls:
+        return []
+    return [round(float(v), 4) for v in np.cumsum(pnls)]
+
+
+def _direction_detail(trades: list[dict], direction: str) -> dict:
+    """Full analysis for a single direction (LONG or SHORT)."""
+    filtered = [t for t in trades if t.get("direction") == direction]
+    if not filtered:
+        return {
+            "count": 0, "win_rate": 0, "avg_pnl": 0, "total_pnl": 0,
+            "quality": _trade_quality([]),
+            "streaks": {"max_consecutive_wins": 0, "max_consecutive_losses": 0},
+            "drawdown": {"max_drawdown": 0, "longest_drawdown_trades": 0},
+            "bars_held": {"avg": 0, "median": 0, "min": 0, "max": 0},
+            "equity_curve": [],
+            "hourly": [],
+        }
+
+    pnls = [t["pnl_raw"] for t in filtered]
+    wins = sum(1 for p in pnls if p > 0)
+    return {
+        "count": len(filtered),
+        "win_rate": round(wins / len(filtered) * 100, 1),
+        "avg_pnl": round(float(np.mean(pnls)), 4),
+        "total_pnl": round(sum(pnls), 4),
+        "quality": _trade_quality(pnls),
+        "streaks": _consecutive_streaks(pnls),
+        "drawdown": _drawdown_analysis(pnls),
+        "bars_held": _bars_held_stats(filtered),
+        "equity_curve": _equity_curve(pnls),
+        "hourly": _hourly_distribution(filtered),
+    }
+
+
 def compute_analysis(run_id: str, symbol: str) -> dict:
     """Compute full statistical analysis for a symbol's trades."""
     trades = _load_trades(run_id, symbol)
@@ -224,14 +261,15 @@ def compute_analysis(run_id: str, symbol: str) -> dict:
         "symbol": symbol,
         "total_trades": len(trades),
         "direction": {
-            "long": _direction_stats(trades, "LONG"),
-            "short": _direction_stats(trades, "SHORT"),
+            "long": _direction_detail(trades, "LONG"),
+            "short": _direction_detail(trades, "SHORT"),
         },
         "quality": _trade_quality(pnls),
         "streaks": _consecutive_streaks(pnls),
         "drawdown": _drawdown_analysis(pnls),
         "significance": _significance_test(pnls),
         "bars_held": _bars_held_stats(trades),
+        "equity_curve": _equity_curve(pnls),
         "hourly": _hourly_distribution(trades),
         "fold_stability": _fold_stability(trades),
     }
