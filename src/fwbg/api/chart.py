@@ -1,4 +1,5 @@
 """Chart data endpoints — OHLCV data and indicator computation for charting UI."""
+import inspect
 import math
 from collections import defaultdict
 from typing import Optional
@@ -13,6 +14,14 @@ from fwbg.data.resample import (
 )
 
 router = APIRouter(prefix="/chart", tags=["chart"])
+
+
+def _call_plugin_method(method, params):
+    """Call a plugin column method, forwarding params if the method accepts them."""
+    sig = inspect.signature(method)
+    if len(sig.parameters) > 0 and params is not None:
+        return method(params)
+    return method()
 
 
 # ---------------------------------------------------------------------------
@@ -421,17 +430,17 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     result_df = plugin.compute(df, **params)
 
     # --- Extract feature columns ---
-    feature_cols = plugin.get_feature_columns()
+    feature_cols = _call_plugin_method(plugin.get_feature_columns, params)
     available_cols = [c for c in feature_cols if c in result_df.columns and not c.startswith("_")]
 
     # --- Overlay columns (price-scale, for main chart) ---
     overlay_cols = []
     if hasattr(plugin, "get_overlay_columns"):
-        overlay_cols = [c for c in plugin.get_overlay_columns()
+        overlay_cols = [c for c in _call_plugin_method(plugin.get_overlay_columns, params)
                         if c in result_df.columns]
 
     # --- Classify columns via plugin methods (needed before undo-shift) ---
-    plugin_signal_cols = set(plugin.get_signal_columns()) if hasattr(plugin, "get_signal_columns") else set()
+    plugin_signal_cols = set(_call_plugin_method(plugin.get_signal_columns, params)) if hasattr(plugin, "get_signal_columns") else set()
 
     # --- Adjust shift for chart display ---
     # Non-signal columns: undo shift_features (+1) so values appear at the
@@ -472,7 +481,7 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     end_idx = total - body.offset
     start_idx = max(0, end_idx - effective_limit)
     result_slice = result_df.iloc[start_idx:end_idx]
-    plugin_plot_cols = set(plugin.get_plot_columns()) if hasattr(plugin, "get_plot_columns") else set()
+    plugin_plot_cols = set(_call_plugin_method(plugin.get_plot_columns, params)) if hasattr(plugin, "get_plot_columns") else set()
 
     # --- Build response ---
     columns_data = {}
