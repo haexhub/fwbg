@@ -12,6 +12,7 @@ Uses SSE (Server-Sent Events) to stream progress and partial results.
 import json
 import logging
 import math
+import threading
 import time
 from collections.abc import Generator
 from pathlib import Path
@@ -29,29 +30,24 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
-# Indicators to skip (internal / non-predictive / too slow)
+# Indicators to skip (need external data, special config, or internal-only)
 _SKIP_INDICATORS = frozenset({
     "autoencoder_features",   # Needs training data
     "adversarial_validation", # Needs train/test split
     "calendar_events",        # Needs external data
-    "wavelets",               # Very slow on large datasets
-    "topological_features",   # Very slow on large datasets
     "cross_features",         # Needs specific feature pairs
     "computed_signal",        # Internal (signal composition)
     "cusum_events",           # Needs specific config
     "distribution",           # Extremely slow (O(n²) rolling)
-    "volume_profile",         # Very slow on large datasets
     "multi_timeframe",        # Needs multi-TF data
-    "fractal_dimension",      # Very slow on large datasets
-    "regime",                 # Very slow on large datasets
-    "regime_cluster",         # Depends on regime
-    "liquidity_levels",       # Very slow on large datasets
     "macro_surprise",         # Needs external macro data
     "market_regime",          # Duplicate of regime
-    "support_resistance",     # Very slow on large datasets
+    "regime_cluster",         # Depends on regime
+    "topological_features",   # Very slow, niche
 })
 
-_INDICATOR_SLOW_THRESHOLD = 60
+# Per-indicator wall-clock timeout (seconds) — computed in a daemon thread
+_INDICATOR_TIMEOUT = 120
 
 
 def _load_run_config(run_id: str) -> dict:
@@ -120,6 +116,30 @@ def _get_available_indicators() -> list[str]:
     return sorted(names)
 
 
+def _compute_indicator_with_timeout(
+    df: pd.DataFrame, ind_name: str, timeout: int = _INDICATOR_TIMEOUT,
+) -> pd.DataFrame | None:
+    """Compute a single indicator in a daemon thread with wall-clock timeout."""
+    result: list[pd.DataFrame | None] = [None]
+    error: list[Exception | None] = [None]
+
+    def worker():
+        try:
+            result[0] = compute_indicator_pool(df, indicators=[ind_name])
+        except Exception as e:
+            error[0] = e
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(timeout)
+
+    if t.is_alive():
+        raise TimeoutError(f"{ind_name} exceeded {timeout}s timeout")
+    if error[0]:
+        raise error[0]
+    return result[0]
+
+
 def _compute_effect_size(wins: np.ndarray, losses: np.ndarray) -> float:
     """Cohen's d — standardized mean difference."""
     n1, n2 = len(wins), len(losses)
@@ -146,6 +166,7 @@ def _compute_auc(wins: np.ndarray, losses: np.ndarray) -> float:
 def _analyze_features(
     sampled: pd.DataFrame, feature_cols: list[str],
     win_mask: np.ndarray, loss_mask: np.ndarray,
+    indicator_map: dict[str, str] | None = None,
 ) -> list[dict]:
     """Run statistical tests on all feature columns."""
     from scipy.stats import mannwhitneyu
@@ -177,7 +198,7 @@ def _analyze_features(
 
         auc = _compute_auc(win_vals, loss_vals)
 
-        results.append({
+        entry = {
             "feature": col,
             "effect_size": round(d, 4),
             "abs_effect_size": round(abs(d), 4),
@@ -189,7 +210,10 @@ def _analyze_features(
             "win_std": round(float(np.std(win_vals)), 6),
             "loss_std": round(float(np.std(loss_vals)), 6),
             "n_valid": int(np.sum(~np.isnan(vals))),
-        })
+        }
+        if indicator_map and col in indicator_map:
+            entry["indicator"] = indicator_map[col]
+        results.append(entry)
 
     results.sort(key=lambda x: x["abs_effect_size"], reverse=True)
     return results
@@ -199,6 +223,7 @@ def _analyze_direction(
     sampled: pd.DataFrame, feature_cols: list[str],
     directions: list[str], pnls: np.ndarray,
     win_mask: np.ndarray, loss_mask: np.ndarray,
+    indicator_map: dict[str, str] | None = None,
 ) -> dict:
     """Per-direction discovery (long/short)."""
     from scipy.stats import mannwhitneyu
@@ -239,7 +264,7 @@ def _analyze_direction(
             except ValueError:
                 p = 1.0
 
-            dir_features.append({
+            entry = {
                 "feature": col,
                 "effect_size": round(d, 4),
                 "abs_effect_size": round(abs(d), 4),
@@ -247,7 +272,10 @@ def _analyze_direction(
                 "significant": bool(p < 0.05),
                 "win_mean": round(float(np.mean(w)), 6),
                 "loss_mean": round(float(np.mean(l)), 6),
-            })
+            }
+            if indicator_map and col in indicator_map:
+                entry["indicator"] = indicator_map[col]
+            dir_features.append(entry)
 
         dir_features.sort(key=lambda x: x["abs_effect_size"], reverse=True)
         direction_results[dir_label] = dir_features[:50]
@@ -307,6 +335,7 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
 
     # Compute indicators one by one, yielding progress + partial results
     computed_indicators = []
+    indicator_map: dict[str, str] = {}  # column → indicator name
     df_full = df.copy()
     base_cols = {"O", "H", "L", "C", "V"}
 
@@ -319,18 +348,24 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
 
         t0 = time.monotonic()
         try:
-            result = compute_indicator_pool(df, indicators=[ind_name])
+            result = _compute_indicator_with_timeout(df, ind_name)
             elapsed = time.monotonic() - t0
+            if result is None:
+                continue
             new_cols = [c for c in result.columns if c not in df_full.columns]
             if new_cols:
                 df_full = df_full.join(result[new_cols])
                 computed_indicators.append(ind_name)
+                for col in new_cols:
+                    indicator_map[col] = ind_name
 
                 # Analyze new features immediately
                 new_feature_cols = [c for c in new_cols if not c.startswith("_")]
                 if new_feature_cols:
                     sampled = df_full.reindex(entry_times, method="nearest", tolerance=pd.Timedelta("2h"))
-                    partial_results = _analyze_features(sampled, new_feature_cols, win_mask, loss_mask)
+                    partial_results = _analyze_features(
+                        sampled, new_feature_cols, win_mask, loss_mask, indicator_map,
+                    )
                     significant = [r for r in partial_results if r["significant"]]
 
                     yield _sse_event("indicator_done", {
@@ -361,12 +396,15 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
                     if c not in base_cols and not c.startswith("_")]
 
     sampled = df_full.reindex(entry_times, method="nearest", tolerance=pd.Timedelta("2h"))
-    all_results = _analyze_features(sampled, feature_cols, win_mask, loss_mask)
-    direction_results = _analyze_direction(sampled, feature_cols, directions, pnls, win_mask, loss_mask)
+    all_results = _analyze_features(sampled, feature_cols, win_mask, loss_mask, indicator_map)
+    direction_results = _analyze_direction(
+        sampled, feature_cols, directions, pnls, win_mask, loss_mask, indicator_map,
+    )
 
     yield _sse_event("done", {
         "run_id": run_id,
         "symbol": symbol,
+        "strategy_name": strategy.get("name", ""),
         "total_trades": len(trades),
         "wins": int(win_mask.sum()),
         "losses": int(loss_mask.sum()),
