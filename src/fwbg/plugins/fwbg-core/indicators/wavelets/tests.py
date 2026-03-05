@@ -248,4 +248,4 @@ class TestPluginIntegration:
 
     def test_name_and_version(self, indicator):
         assert indicator.name == "wavelets"
-        assert indicator.version == "1.0.0"
+        assert indicator.version == "2.0.0"
