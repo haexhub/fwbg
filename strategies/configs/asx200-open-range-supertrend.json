@@ -36,7 +36,7 @@
       {
         "name": "supertrend_mtf",
         "params": {
-          "d1_bars": 24,
+          "d1_bars": 96,
           "period": 14,
           "multiplier": 3.0
         }
