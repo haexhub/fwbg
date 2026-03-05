@@ -45,6 +45,30 @@
       ]
     }
   },
+  "signal_rules": {
+    "long": {
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "value_check",
+          "column": "sr_at_support_in_uptrend",
+          "op": ">",
+          "value": 0
+        }
+      ]
+    },
+    "short": {
+      "operator": "AND",
+      "conditions": [
+        {
+          "type": "value_check",
+          "column": "sr_at_resistance_in_downtrend",
+          "op": ">",
+          "value": 0
+        }
+      ]
+    }
+  },
   "exit_strategies": [
     {
       "name": "atr_based",
@@ -56,7 +80,7 @@
         "sl_mult": 1.0,
         "timeout_bars": null
       },
-      "ct": [0.5, 0.55]
+      "ct": [0.45, 0.5]
     },
     {
       "name": "atr_based",
@@ -68,7 +92,7 @@
         "sl_mult": 1.5,
         "timeout_bars": null
       },
-      "ct": [0.5, 0.55]
+      "ct": [0.45, 0.5]
     },
     {
       "name": "atr_based",
@@ -80,7 +104,7 @@
         "sl_mult": 1.0,
         "timeout_bars": null
       },
-      "ct": [0.5, 0.55]
+      "ct": [0.45, 0.5]
     },
     {
       "name": "atr_based",
@@ -92,7 +116,7 @@
         "sl_mult": 1.5,
         "timeout_bars": null
       },
-      "ct": [0.5, 0.55]
+      "ct": [0.45, 0.5]
     }
   ]
 }
