@@ -38,12 +38,10 @@ _SKIP_INDICATORS = frozenset({
     "cross_features",         # Needs specific feature pairs
     "computed_signal",        # Internal (signal composition)
     "cusum_events",           # Needs specific config
-    "distribution",           # Extremely slow (O(n²) rolling)
     "multi_timeframe",        # Needs multi-TF data
     "macro_surprise",         # Needs external macro data
     "market_regime",          # Duplicate of regime
     "regime_cluster",         # Depends on regime
-    "topological_features",   # Very slow, niche
 })
 
 # Per-indicator wall-clock timeout (seconds) — computed in a daemon thread
