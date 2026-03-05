@@ -727,12 +727,10 @@ def get_run_logs(
                     continue
 
                 entries.append(entry)
-                if len(entries) >= limit:
-                    break
     except IOError:
         raise HTTPException(500, f"Failed to read logs for run: {run_id}")
 
-    return entries
+    return entries[-limit:]
 
 
 @router.delete("/{run_id}")
