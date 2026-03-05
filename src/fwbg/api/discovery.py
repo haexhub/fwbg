@@ -281,6 +281,134 @@ def _analyze_direction(
     return direction_results
 
 
+def _analyze_combinations(
+    sampled: pd.DataFrame, top_features: list[dict],
+    pnls: np.ndarray, win_mask: np.ndarray,
+    indicator_map: dict[str, str] | None = None,
+    max_features: int = 20,
+    min_trades: int = 15,
+) -> list[dict]:
+    """Find synergistic feature pairs that improve win-rate beyond individual features.
+
+    For each pair of top features (from different indicators), split trades
+    at the midpoint between win_mean and loss_mean, then check if the
+    combined filter has a higher win-rate than either filter alone.
+    """
+    from scipy.stats import fisher_exact
+
+    # Use top N features, ensure they come from different indicators
+    candidates = top_features[:max_features]
+    if len(candidates) < 2:
+        return []
+
+    total_trades = len(pnls)
+    base_wr = float(win_mask.sum()) / total_trades if total_trades else 0
+
+    # Pre-compute binary masks for each feature's "favorable" side
+    feature_masks: dict[str, np.ndarray] = {}
+    feature_wr: dict[str, float] = {}
+    feature_info: dict[str, dict] = {}
+
+    for feat in candidates:
+        col = feat["feature"]
+        if col not in sampled.columns:
+            continue
+        vals = sampled[col].values
+        # Fill NaN with median
+        valid = vals[~np.isnan(vals)]
+        if len(valid) < 10:
+            continue
+        median_val = np.median(valid)
+        vals_clean = np.where(np.isnan(vals), median_val, vals)
+
+        threshold = (feat["win_mean"] + feat["loss_mean"]) / 2
+        # Negative effect_size → wins have lower values → filter: val < threshold
+        if feat["effect_size"] < 0:
+            mask = vals_clean < threshold
+            op = "<"
+        else:
+            mask = vals_clean > threshold
+            op = ">"
+
+        n_pass = mask.sum()
+        if n_pass < min_trades:
+            continue
+
+        wr = float(win_mask[mask].sum()) / n_pass
+        feature_masks[col] = mask
+        feature_wr[col] = wr
+        feature_info[col] = {
+            "threshold": round(threshold, 4),
+            "op": op,
+            "indicator": indicator_map.get(col, "") if indicator_map else "",
+        }
+
+    # Test all pairs (from different indicators to avoid redundancy)
+    cols = list(feature_masks.keys())
+    results = []
+
+    for i in range(len(cols)):
+        for j in range(i + 1, len(cols)):
+            col_a, col_b = cols[i], cols[j]
+            ind_a = feature_info[col_a]["indicator"]
+            ind_b = feature_info[col_b]["indicator"]
+            # Skip pairs from same indicator (columns are likely correlated)
+            if ind_a and ind_b and ind_a == ind_b:
+                continue
+
+            combined = feature_masks[col_a] & feature_masks[col_b]
+            n_combined = combined.sum()
+            if n_combined < min_trades:
+                continue
+
+            combined_wins = int(win_mask[combined].sum())
+            combined_wr = combined_wins / n_combined
+
+            # Synergy = how much better is the combo vs the best individual?
+            best_individual_wr = max(feature_wr[col_a], feature_wr[col_b])
+            synergy = combined_wr - best_individual_wr
+
+            # Fisher's exact test: is the combined WR significantly different from base?
+            # 2x2 table: [combined_wins, combined_losses] vs [other_wins, other_losses]
+            combined_losses = n_combined - combined_wins
+            other_mask = ~combined
+            other_wins = int(win_mask[other_mask].sum())
+            other_losses = int(other_mask.sum()) - other_wins
+
+            try:
+                _, p_value = fisher_exact([
+                    [combined_wins, combined_losses],
+                    [other_wins, other_losses],
+                ])
+            except ValueError:
+                p_value = 1.0
+
+            results.append({
+                "feature_a": col_a,
+                "feature_b": col_b,
+                "indicator_a": ind_a,
+                "indicator_b": ind_b,
+                "op_a": feature_info[col_a]["op"],
+                "op_b": feature_info[col_b]["op"],
+                "threshold_a": feature_info[col_a]["threshold"],
+                "threshold_b": feature_info[col_b]["threshold"],
+                "wr_a": round(feature_wr[col_a], 4),
+                "wr_b": round(feature_wr[col_b], 4),
+                "wr_combined": round(combined_wr, 4),
+                "base_wr": round(base_wr, 4),
+                "synergy": round(synergy, 4),
+                "lift": round(combined_wr - base_wr, 4),
+                "n_trades": n_combined,
+                "n_wins": combined_wins,
+                "p_value": round(float(p_value), 6),
+                "significant": bool(p_value < 0.05),
+            })
+
+    # Sort by synergy (combo improvement over best individual)
+    results.sort(key=lambda x: x["synergy"], reverse=True)
+    return results[:50]
+
+
 def _sse_event(event: str, data: dict) -> str:
     """Format a Server-Sent Event."""
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
@@ -393,10 +521,19 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
     feature_cols = [c for c in df_full.columns
                     if c not in base_cols and not c.startswith("_")]
 
+    yield _sse_event("progress", {
+        "step": total_steps,
+        "total": total_steps,
+        "indicator": "Finale Analyse & Kombinationen...",
+    })
+
     sampled = df_full.reindex(entry_times, method="nearest", tolerance=pd.Timedelta("2h"))
     all_results = _analyze_features(sampled, feature_cols, win_mask, loss_mask, indicator_map)
     direction_results = _analyze_direction(
         sampled, feature_cols, directions, pnls, win_mask, loss_mask, indicator_map,
+    )
+    combinations = _analyze_combinations(
+        sampled, all_results, pnls, win_mask, indicator_map,
     )
 
     yield _sse_event("done", {
@@ -411,6 +548,7 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
         "indicators_computed": computed_indicators,
         "results": all_results[:100],
         "direction": direction_results,
+        "combinations": combinations,
     })
 
 
