@@ -66,9 +66,18 @@ def _get_plugin_columns(plugin_cls, params=None) -> tuple[list[str], list[str], 
     return only the columns that match the pipeline configuration (sessions,
     retracement_levels, etc.) instead of the full default set.
     """
+    import inspect
+
     inst = plugin_cls()
-    feature_cols = inst.get_feature_columns(params)
-    signal_cols = inst.get_signal_columns(params)
+
+    def _call_with_optional_params(method, params):
+        sig = inspect.signature(method)
+        if len(sig.parameters) > 0 and params is not None:
+            return method(params)
+        return method()
+
+    feature_cols = _call_with_optional_params(inst.get_feature_columns, params)
+    signal_cols = _call_with_optional_params(inst.get_signal_columns, params)
 
     try:
         group_labels = inst.get_column_group_labels()
