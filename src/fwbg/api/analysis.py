@@ -1,11 +1,9 @@
 """Statistical analysis for completed backtesting runs."""
 import json
 import math
-from pathlib import Path
-from typing import Optional
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
 from fwbg.api.deps import get_test_results_dir
 
