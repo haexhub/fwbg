@@ -266,17 +266,21 @@ def _simulate_trade_trailing_numba(
     breakeven_trigger: float,
     trail_distance: float,
     trail_tp_dist: float,
+    breakeven_offset: float = 0.0,
 ) -> tuple:
     """
     Single-trade simulation with breakeven and trailing stop.
 
     Args:
-        breakeven_trigger: Fraction of tp_distance at which SL moves to entry.
+        breakeven_trigger: Fraction of tp_distance at which SL moves to breakeven.
                            0.0 = no breakeven (trailing starts immediately if trail_distance > 0).
         trail_distance:    Absolute trailing stop distance from best price.
                            0.0 = no trailing.
         trail_tp_dist:     Absolute trailing TP distance from best price.
                            0.0 = no trailing TP.
+        breakeven_offset:  Fraction of tp_distance to add above entry when breakeven
+                           triggers. E.g. 0.1 = SL moves to entry + 10% of TP distance
+                           (guarantees profit). 0.0 = SL moves exactly to entry.
 
     Returns:
         (result, exit_idx, exit_price, exit_reason)
@@ -330,12 +334,14 @@ def _simulate_trade_trailing_numba(
         if not trailing_active and breakeven_trigger > 0.0:
             if direction == 1 and best_price >= be_trigger_price:
                 trailing_active = True
-                if entry > sl:
-                    sl = entry
+                be_sl = entry + breakeven_offset * tp_distance
+                if be_sl > sl:
+                    sl = be_sl
             elif direction == -1 and best_price <= be_trigger_price:
                 trailing_active = True
-                if entry < sl:
-                    sl = entry
+                be_sl = entry - breakeven_offset * tp_distance
+                if be_sl < sl:
+                    sl = be_sl
 
         if trailing_active and trail_distance > 0.0:
             if direction == 1:
