@@ -451,6 +451,8 @@ class OpeningRangeIndicator(BaseIndicator):
 
         if sessions is None:
             sessions = [8, 9, 14, 15]
+        else:
+            sessions = [int(s) for s in sessions]
 
         # Normalisiere Parameter zu Listen
         rb_list = [range_bars] if isinstance(range_bars, int) else list(range_bars)

@@ -10,25 +10,35 @@
     "preprocessing": [],
     "indicators": [
       {
-        "name": "weekly_opening_range",
+        "name": "opening_range",
         "params": {
           "range_bars": [
-            5
+            12
           ],
           "atr_period": 14,
-          "stat_window": 12,
-          "enable_stats": true
+          "sessions": [
+            0
+          ],
+          "enable_retracement": false,
+          "carry_forward_days": 0,
+          "pre_range_bars": [
+            6
+          ],
+          "candle_span": "body",
+          "breakout_threshold": 0,
+          "breakout_threshold_abs": 5,
+          "retracement_levels": 0.5,
+          "min_retracement": 0,
+          "min_range_height": 0,
+          "min_range_height_atr": 0
         }
       },
       {
-        "name": "trend",
+        "name": "supertrend_mtf",
         "params": {
-          "adx_periods": [],
-          "ema_periods": [],
-          "sma_periods": [],
-          "supertrend_period": 14,
-          "supertrend_multiplier": 3,
-          "macd_only": false
+          "d1_bars": 24,
+          "period": 14,
+          "multiplier": 3.0
         }
       }
     ],
@@ -38,7 +48,7 @@
     {
       "name": "orb_based",
       "params": {
-        "tp_mode": "atr",
+        "tp_mode": "range",
         "tp_mult": 2,
         "sl_mult": 1,
         "atr_period": 14,
@@ -64,27 +74,19 @@
     ],
     "hyperparameters": {}
   },
-  "optimization": {},
-  "validation": {
-    "method": "walk_forward",
-    "folds": 8
-  },
-  "filters": {},
-  "resources": {},
-  "name": "weekly_range_supertrend",
   "signal_rules": {
     "long": {
       "operator": "AND",
       "conditions": [
         {
           "type": "signal_active",
-          "column": "wor_rb5_breakout_up"
+          "column": "rb12_prb6_orb_s00_breakout_up"
         },
         {
           "type": "value_check",
-          "column": "trend_supertrend",
-          "op": "==",
-          "value": 1.0
+          "column": "st_d1_direction",
+          "op": ">",
+          "value": 0
         }
       ]
     },
@@ -93,15 +95,23 @@
       "conditions": [
         {
           "type": "signal_active",
-          "column": "wor_rb5_breakout_down"
+          "column": "rb12_prb6_orb_s00_breakout_down"
         },
         {
           "type": "value_check",
-          "column": "trend_supertrend",
-          "op": "==",
-          "value": -1.0
+          "column": "st_d1_direction",
+          "op": "<",
+          "value": 0
         }
       ]
     }
-  }
+  },
+  "optimization": {},
+  "validation": {
+    "method": "walk_forward",
+    "folds": 8
+  },
+  "filters": {},
+  "resources": {},
+  "name": "asx200-open-range-supertrend"
 }
