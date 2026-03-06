@@ -12,9 +12,10 @@ Uses SSE (Server-Sent Events) to stream progress and partial results.
 import json
 import logging
 import math
-import threading
+import os
 import time
 from collections.abc import Generator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -44,8 +45,10 @@ _SKIP_INDICATORS = frozenset({
     "regime_cluster",         # Depends on regime
 })
 
-# Per-indicator wall-clock timeout (seconds) — computed in a daemon thread
+# Per-indicator timeout (seconds) for the thread pool future
 _INDICATOR_TIMEOUT = 120
+# Max parallel workers for indicator computation
+_MAX_WORKERS = min(8, (os.cpu_count() or 4))
 
 
 def _load_run_config(run_id: str) -> dict:
@@ -114,28 +117,21 @@ def _get_available_indicators() -> list[str]:
     return sorted(names)
 
 
-def _compute_indicator_with_timeout(
-    df: pd.DataFrame, ind_name: str, timeout: int = _INDICATOR_TIMEOUT,
-) -> pd.DataFrame | None:
-    """Compute a single indicator in a daemon thread with wall-clock timeout."""
-    result: list[pd.DataFrame | None] = [None]
-    error: list[Exception | None] = [None]
+def _ensure_registry_initialized() -> None:
+    """Pre-initialize the plugin registry once (avoids repeated auto_discover)."""
+    from fwbg.pipeline.registry import get_registry
+    registry = get_registry()
+    registry.auto_discover()
 
-    def worker():
-        try:
-            result[0] = compute_indicator_pool(df, indicators=[ind_name])
-        except Exception as e:
-            error[0] = e
 
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-    t.join(timeout)
-
-    if t.is_alive():
-        raise TimeoutError(f"{ind_name} exceeded {timeout}s timeout")
-    if error[0]:
-        raise error[0]
-    return result[0]
+def _compute_single_indicator(
+    df: pd.DataFrame, ind_name: str,
+) -> tuple[str, pd.DataFrame, float]:
+    """Compute a single indicator, return (name, result_df, elapsed_seconds)."""
+    t0 = time.monotonic()
+    result = compute_indicator_pool(df, indicators=[ind_name])
+    elapsed = time.monotonic() - t0
+    return ind_name, result, elapsed
 
 
 def _compute_effect_size(wins: np.ndarray, losses: np.ndarray) -> float:
@@ -415,7 +411,12 @@ def _sse_event(event: str, data: dict) -> str:
 
 
 def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
-    """Generator that yields SSE events during discovery."""
+    """Generator that yields SSE events during discovery.
+
+    Indicators are computed in parallel using a thread pool for maximum
+    CPU utilisation.  Progress events are emitted as each indicator
+    completes (in finishing order, not submission order).
+    """
     strategy = _load_strategy_config(run_id)
     run_config = _load_run_config(run_id)
     timeframe = run_config.get("timeframe") or strategy.get("timeframe") or "HOUR"
@@ -448,6 +449,9 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
     end_idx = min(len(df), df.index.searchsorted(last_trade) + 1)
     df = df.iloc[start_idx:end_idx].copy()
 
+    # Pre-initialize registry once before spawning workers
+    _ensure_registry_initialized()
+
     indicator_names = _get_available_indicators()
     total_steps = len(indicator_names)
 
@@ -457,67 +461,63 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
         "losses": int(loss_mask.sum()),
         "total_indicators": total_steps,
         "bars": len(df),
+        "workers": _MAX_WORKERS,
     })
 
-    # Compute indicators one by one, yielding progress + partial results
-    computed_indicators = []
+    # ── Parallel indicator computation ──
+    computed_indicators: list[str] = []
     indicator_map: dict[str, str] = {}  # column → indicator name
-    df_full = df.copy()
     base_cols = {"O", "H", "L", "C", "V"}
+    all_new_cols: dict[str, pd.DataFrame] = {}  # ind_name → result df
+    done_count = 0
 
-    for step, ind_name in enumerate(indicator_names, 1):
-        yield _sse_event("progress", {
-            "step": step,
-            "total": total_steps,
-            "indicator": ind_name,
-        })
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        future_to_name = {
+            pool.submit(_compute_single_indicator, df, name): name
+            for name in indicator_names
+        }
 
-        t0 = time.monotonic()
-        try:
-            result = _compute_indicator_with_timeout(df, ind_name)
-            elapsed = time.monotonic() - t0
-            if result is None:
-                continue
-            new_cols = [c for c in result.columns if c not in df_full.columns]
-            if new_cols:
-                df_full = df_full.join(result[new_cols])
-                computed_indicators.append(ind_name)
-                for col in new_cols:
-                    indicator_map[col] = ind_name
+        for future in as_completed(future_to_name):
+            ind_name = future_to_name[future]
+            done_count += 1
 
-                # Analyze new features immediately
-                new_feature_cols = [c for c in new_cols if not c.startswith("_")]
-                if new_feature_cols:
-                    sampled = df_full.reindex(entry_times, method="nearest", tolerance=pd.Timedelta("2h"))
-                    partial_results = _analyze_features(
-                        sampled, new_feature_cols, win_mask, loss_mask, indicator_map,
-                    )
-                    significant = [r for r in partial_results if r["significant"]]
+            try:
+                _, result, elapsed = future.result(timeout=_INDICATOR_TIMEOUT)
+                new_cols = [c for c in result.columns if c not in base_cols and c not in df.columns]
+                if new_cols:
+                    all_new_cols[ind_name] = result[new_cols]
+                    computed_indicators.append(ind_name)
+                    for col in new_cols:
+                        indicator_map[col] = ind_name
 
                     yield _sse_event("indicator_done", {
+                        "step": done_count,
+                        "total": total_steps,
                         "indicator": ind_name,
                         "columns": len(new_cols),
                         "elapsed": round(elapsed, 1),
-                        "features_analyzed": len(partial_results),
-                        "significant_count": len(significant),
-                        "top_features": partial_results[:5],
                     })
                 else:
                     yield _sse_event("indicator_done", {
+                        "step": done_count,
+                        "total": total_steps,
                         "indicator": ind_name,
-                        "columns": len(new_cols),
+                        "columns": 0,
                         "elapsed": round(elapsed, 1),
-                        "features_analyzed": 0,
-                        "significant_count": 0,
-                        "top_features": [],
                     })
-        except Exception as e:
-            yield _sse_event("indicator_skip", {
-                "indicator": ind_name,
-                "reason": str(e),
-            })
+            except Exception as e:
+                yield _sse_event("indicator_skip", {
+                    "step": done_count,
+                    "total": total_steps,
+                    "indicator": ind_name,
+                    "reason": str(e),
+                })
 
-    # Final analysis across all features
+    # ── Merge all indicator results at once ──
+    df_full = df
+    if all_new_cols:
+        df_full = pd.concat([df, *all_new_cols.values()], axis=1)
+
     feature_cols = [c for c in df_full.columns
                     if c not in base_cols and not c.startswith("_")]
 
@@ -527,6 +527,7 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
         "indicator": "Finale Analyse & Kombinationen...",
     })
 
+    # ── Statistical analysis (single pass) ──
     sampled = df_full.reindex(entry_times, method="nearest", tolerance=pd.Timedelta("2h"))
     all_results = _analyze_features(sampled, feature_cols, win_mask, loss_mask, indicator_map)
     direction_results = _analyze_direction(
