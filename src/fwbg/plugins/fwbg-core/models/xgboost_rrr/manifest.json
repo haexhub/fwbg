@@ -1,0 +1,6 @@
+{
+  "name": "xgboost_rrr",
+  "version": "1.0.0",
+  "description": "XGBoost classifier with RRR as an input feature",
+  "phase": "model"
+}
