@@ -281,6 +281,20 @@ def _evaluate_single_fold(
     if not has_long and not has_short:
         return {"success": False}
 
+    # For xgboost_mfe, compute MFE regression targets for training
+    train_targets_long = targets_long
+    train_targets_short = targets_short
+    if ctx.model_type == "xgboost_mfe":
+        from fwbg.optimization.targets import compute_mfe_targets
+        sl_variants = ctx.model_hyperparameters.get("sl_variants", [2.0])
+        mfe_long, mfe_short = compute_mfe_targets(
+            train_df, sl_atr=sl_variants[0],
+            max_bars=ctx.max_trade_bars or 50,
+            spread=ctx.spread,
+        )
+        train_targets_long = mfe_long
+        train_targets_short = mfe_short
+
     feat_long = selected_features_long
     feat_short = selected_features_short
     if feat_long is None and feat_short is None:
@@ -299,11 +313,11 @@ def _evaluate_single_fold(
         return {"success": False}
 
     mod_long = train_model(
-        train_df, targets_long, feat_long, ctx.min_trades, ctx,
+        train_df, train_targets_long, feat_long, ctx.min_trades, ctx,
         use_reduced_params=True, sample_weight=weights, direction="long",
     ) if has_long else None
     mod_short = train_model(
-        train_df, targets_short, feat_short, ctx.min_trades, ctx,
+        train_df, train_targets_short, feat_short, ctx.min_trades, ctx,
         use_reduced_params=True, sample_weight=weights, direction="short",
     ) if has_short else None
 
@@ -542,8 +556,22 @@ def evaluate_on_holdout(
     else:
         targets_long, targets_short, has_long, has_short = compute_targets(inner_df, tp, sl, ctx, timeout_bars)
 
-    mod_long = train_model(inner_df, targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="long") if has_long and features_long else None
-    mod_short = train_model(inner_df, targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="short") if has_short and features_short else None
+    # For xgboost_mfe, use MFE regression targets for training
+    train_targets_long = targets_long
+    train_targets_short = targets_short
+    if ctx.model_type == "xgboost_mfe":
+        from fwbg.optimization.targets import compute_mfe_targets
+        sl_variants = ctx.model_hyperparameters.get("sl_variants", [2.0])
+        mfe_long, mfe_short = compute_mfe_targets(
+            inner_df, sl_atr=sl_variants[0],
+            max_bars=ctx.max_trade_bars or 50,
+            spread=ctx.spread,
+        )
+        train_targets_long = mfe_long
+        train_targets_short = mfe_short
+
+    mod_long = train_model(inner_df, train_targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="long") if has_long and features_long else None
+    mod_short = train_model(inner_df, train_targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="short") if has_short and features_short else None
 
     if not mod_long and not mod_short:
         return {"trades": [], "trades_detailed": [], "pnl": 0, "win_rate": 0, "n_trades": 0}
