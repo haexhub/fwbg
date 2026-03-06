@@ -221,6 +221,26 @@ class BaseModel(BasePlugin, ABC):
         """Feature importance dict. Not every model supports this."""
         return None
 
+    def get_per_trade_params(
+        self, features: pd.DataFrame, atr: Optional[np.ndarray] = None
+    ) -> Optional[np.ndarray]:
+        """Return per-sample TP/SL overrides as absolute price distances.
+
+        Models that select dynamic TP/SL per trade (e.g. xgboost_rrr, xgboost_mfe)
+        override this. The returned array is used by _simulate_trades_core to
+        override the global tp_dists/sl_dists per trade entry.
+
+        Args:
+            features: The same feature DataFrame passed to predict_probability().
+            atr: Per-bar ATR values (absolute). Needed to convert ATR multiples
+                 to price distances.
+
+        Returns:
+            None (use global TP/SL) or ndarray of shape (n_samples, 2)
+            where column 0 = TP distance, column 1 = SL distance.
+        """
+        return None
+
     @classmethod
     def get_reduced_hyperparameters(
         cls, hyperparameters: Dict[str, Any]
