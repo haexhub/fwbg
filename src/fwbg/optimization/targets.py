@@ -88,6 +88,7 @@ def _simulate_trades_core(
     return_detailed: bool = False,
     timeout_bars: int = None,
     direction_filter: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """
     Kern-Funktion für Trade-Simulation (konsolidiert aus 3 ähnlichen Funktionen).
@@ -125,6 +126,11 @@ def _simulate_trades_core(
 
     # TP/SL-Distanzen vom Exit-Strategy-Plugin berechnen lassen
     tp_dists, sl_dists = _resolve_distances(df, tp, sl, ctx)
+
+    # Per-trade TP/SL overrides from model (xgboost_rrr, xgboost_mfe)
+    if per_trade_params is not None:
+        tp_dists = per_trade_params[:, 0].copy()
+        sl_dists = per_trade_params[:, 1].copy()
 
     # Absolute SL levels: when sl_level is set in exit_params, SL is
     # anchored to the structural price level from that column (e.g. OR midpoint)
@@ -319,6 +325,7 @@ def simulate_trades_sequential(
     ctx: SimulationContext,
     return_detailed: bool = False,
     timeout_bars: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Simuliert Trades sequentiell mit gleichem CT für Long/Short."""
     return _simulate_trades_core(
@@ -334,6 +341,7 @@ def simulate_trades_sequential(
         ctx,
         return_detailed,
         timeout_bars,
+        per_trade_params=per_trade_params,
     )
 
 
@@ -396,6 +404,7 @@ def simulate_trades_sequential_separate_ct(
     ctx: SimulationContext,
     return_detailed: bool = False,
     timeout_bars: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Simuliert Trades mit separaten CT-Thresholds für Long und Short."""
     return _simulate_trades_core(
@@ -411,6 +420,7 @@ def simulate_trades_sequential_separate_ct(
         ctx,
         return_detailed,
         timeout_bars,
+        per_trade_params=per_trade_params,
     )
 
 
