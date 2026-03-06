@@ -20,13 +20,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-sys.path.insert(0, os.path.dirname(__file__))
 from conftest import make_m1_ohlcv, make_liquidity_sweep_scenario
 
 from fwbg.pipeline.features import compute_indicator_pool
 from fwbg.core.config import StrategyConfig
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "liq_sweep_scalping.json")
+from fwbg.api.workspace import get_strategies_dir as _gsd; CONFIG_PATH = str(_gsd() / "liq_sweep_scalping.json")
 
 
 def _load_config():

@@ -11,14 +11,13 @@ import pandas as pd
 import pytest
 
 # Allow importing conftest helpers directly (not as pytest conftest)
-sys.path.insert(0, os.path.dirname(__file__))
 from conftest import make_m5_ohlcv
 
 from fwbg.pipeline.features import compute_indicator_pool
 from fwbg.core.config import StrategyConfig
 
 # Path to the strategy config (resolved relative to this file)
-_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "pbd_balance.json")
+_from fwbg.api.workspace import get_strategies_dir as _gsd; CONFIG_PATH = str(_gsd() / "pbd_balance.json")
 
 
 def load_config():

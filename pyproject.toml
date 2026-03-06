@@ -117,7 +117,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = [
     "tests",
-    "strategies/configs",
     "src/fwbg/plugins",
     "packages/fwbg-premium/src/fwbg_premium/plugins",
     "packages/fwbg-sdk/tests",

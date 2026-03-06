@@ -25,13 +25,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-sys.path.insert(0, os.path.dirname(__file__))
 from conftest import make_m15_ohlcv, make_orb_breakout_scenario
 
 from fwbg.pipeline.features import compute_indicator_pool
 from fwbg.core.config import StrategyConfig
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "orb_exploration.json")
+from fwbg.api.workspace import get_strategies_dir as _gsd; CONFIG_PATH = str(_gsd() / "orb_exploration.json")
 
 # Primary session signal to test (hour 8 = London open, reliably in config sessions)
 # With carry_forward_days=0 (disabled) and pre_range_bars=[0,1] in the pipeline,

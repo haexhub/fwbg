@@ -19,10 +19,11 @@ import pytest
 
 from fwbg.core.config import StrategyConfig
 
-STRATEGY_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "strategies")
-ORB_EXPLORATION_PATH = os.path.join(STRATEGY_DIR, "configs", "orb_exploration.json")
-DEEP_ORB_INDEX_PATH = os.path.join(STRATEGY_DIR, "configs", "deep_orb_index.json")
-WEEKLY_ORB_PATH = os.path.join(STRATEGY_DIR, "configs", "weekly_orb_scalping.json")
+from fwbg.api.workspace import get_strategies_dir as _gsd
+_CONFIGS = _gsd()
+ORB_EXPLORATION_PATH = str(_CONFIGS / "orb_exploration.json")
+DEEP_ORB_INDEX_PATH = str(_CONFIGS / "deep_orb_index.json")
+WEEKLY_ORB_PATH = str(_CONFIGS / "weekly_orb_scalping.json")
 
 
 # ---------------------------------------------------------------------------
