@@ -551,17 +551,31 @@ def evaluate_on_holdout(
     probs_long, long_win_idx = _get_probs(mod_long, holdout_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, holdout_df, features_short)
 
+    # Per-trade TP/SL overrides from model
+    per_trade_params = None
+    atr_col = "_atr" if "_atr" in holdout_df.columns else ("vol_atr" if "vol_atr" in holdout_df.columns else None)
+    atr_vals = holdout_df[atr_col].values if atr_col else None
+    if mod_long is not None:
+        ptp = mod_long.get_per_trade_params(holdout_df[features_long], atr=atr_vals)
+        if ptp is not None:
+            per_trade_params = ptp
+    if per_trade_params is None and mod_short is not None:
+        ptp = mod_short.get_per_trade_params(holdout_df[features_short], atr=atr_vals)
+        if ptp is not None:
+            per_trade_params = ptp
+
     if isinstance(ct, tuple):
         ct_long, ct_short = ct
         result = simulate_trades_sequential_separate_ct(
             holdout_df, probs_long, probs_short, long_win_idx, short_win_idx,
             ct_long, ct_short, tp, sl, ctx, return_detailed=True,
-            timeout_bars=timeout_bars
+            timeout_bars=timeout_bars, per_trade_params=per_trade_params,
         )
     else:
         result = simulate_trades_sequential(
             holdout_df, probs_long, probs_short, long_win_idx, short_win_idx,
-            ct, tp, sl, ctx, return_detailed=True, timeout_bars=timeout_bars
+            ct, tp, sl, ctx, return_detailed=True, timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
 
     trades = result["trades"]
