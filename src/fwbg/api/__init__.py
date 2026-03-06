@@ -9,8 +9,6 @@ from fwbg.api.exploration import exit_optimization_router
 from fwbg.api.plugins import router as plugins_router, entry_modifiers_router, exit_modifiers_router
 from fwbg.api.presets import migrate_presets, migrate_strategy_refs, router as presets_router
 from fwbg.api.strategies import router as strategies_router
-
-log = logging.getLogger(__name__)
 from fwbg.api.runs import router as runs_router
 from fwbg.api.chart import router as chart_router
 from fwbg.api.custom_signals import router as custom_signals_router
@@ -18,6 +16,8 @@ from fwbg.api.datasources import router as datasources_router
 from fwbg.api.signal_composer import router as signal_composer_router
 from fwbg.api.analysis import router as analysis_router
 from fwbg.api.discovery import router as discovery_router
+
+log = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
