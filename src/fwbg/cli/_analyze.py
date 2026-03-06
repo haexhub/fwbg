@@ -28,9 +28,13 @@ Examples:
         "--max-bars", type=int, default=48, help="Forward window in bars (default: 48)"
     )
     parser.add_argument(
-        "--output-dir", default="test_results/exploration", help="Output directory"
+        "--output-dir", default=None, help="Output directory (default: {workspace}/test_results/exploration)"
     )
     args = parser.parse_args(argv)
+
+    if args.output_dir is None:
+        from fwbg.results.storage import RESULTS_BASE_PATH
+        args.output_dir = os.path.join(RESULTS_BASE_PATH, "exploration")
 
     if not args.asset and not args.asset_class:
         parser.error("Either asset file or --asset-class required")

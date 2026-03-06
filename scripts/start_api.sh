@@ -8,5 +8,6 @@ cd "$PROJECT_ROOT"
 
 HOST="${FWBG_HOST:-0.0.0.0}"
 PORT="${FWBG_PORT:-8420}"
+export FWBG_WORKSPACE="${FWBG_WORKSPACE:-$HOME/fwbg}"
 
 exec "$PROJECT_ROOT/.venv/bin/fwbg" api --host "$HOST" --port "$PORT"

@@ -9,13 +9,16 @@ Pipeline:
 
 Uses SSE (Server-Sent Events) to stream progress and partial results.
 """
+import asyncio
 import json
 import logging
 import math
 import os
+import signal
 import time
-from collections.abc import Generator
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import weakref
+from collections.abc import AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +33,34 @@ from fwbg.pipeline.features import compute_indicator_pool
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+
+# ── Global pool registry + SIGINT handler ──────────────────────────────────
+# Keeps weak references to all active discovery pools.  On SIGINT, we signal
+# them to stop immediately so _python_exit doesn't wait for long computations.
+
+_active_pools: weakref.WeakSet[ThreadPoolExecutor] = weakref.WeakSet()
+
+
+def _shutdown_active_pools() -> None:
+    for pool in list(_active_pools):
+        try:
+            pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+
+
+_prev_sigint = signal.getsignal(signal.SIGINT)
+
+
+def _sigint_handler(signum: int, frame) -> None:  # noqa: ANN001
+    _shutdown_active_pools()
+    if callable(_prev_sigint):
+        _prev_sigint(signum, frame)
+    else:
+        raise KeyboardInterrupt()
+
+
+signal.signal(signal.SIGINT, _sigint_handler)
 
 # Indicators to skip (need external data, special config, or internal-only)
 _SKIP_INDICATORS = frozenset({
@@ -405,18 +436,57 @@ def _analyze_combinations(
     return results[:50]
 
 
+class _NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that converts numpy scalars to native Python types."""
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 def _sse_event(event: str, data: dict) -> str:
     """Format a Server-Sent Event."""
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(data, cls=_NumpyEncoder)}\n\n"
 
 
-def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
-    """Generator that yields SSE events during discovery.
+def _cache_path(run_id: str, symbol: str) -> Path:
+    return get_test_results_dir() / run_id / "discovery" / f"{symbol}.json"
 
-    Indicators are computed in parallel using a thread pool for maximum
-    CPU utilisation.  Progress events are emitted as each indicator
-    completes (in finishing order, not submission order).
+
+def _load_cached_discovery(run_id: str, symbol: str) -> dict | None:
+    path = _cache_path(run_id, symbol)
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            return None
+    return None
+
+
+def _save_discovery_cache(run_id: str, symbol: str, result: dict) -> None:
+    path = _cache_path(run_id, symbol)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(result, cls=_NumpyEncoder, ensure_ascii=False, indent=2))
+
+
+async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> AsyncGenerator[str, None]:
+    """Async generator that yields SSE events during discovery.
+
+    Indicators are computed in parallel via asyncio.run_in_executor so that
+    cancellation propagates cleanly when the client disconnects or the server
+    is shut down with Ctrl+C — no thread-join deadlock.
     """
+    if not force:
+        cached = _load_cached_discovery(run_id, symbol)
+        if cached is not None:
+            cached["cached"] = True
+            yield _sse_event("done", cached)
+            return
+
     strategy = _load_strategy_config(run_id)
     run_config = _load_run_config(run_id)
     timeframe = run_config.get("timeframe") or strategy.get("timeframe") or "HOUR"
@@ -441,7 +511,7 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
         yield _sse_event("error", {"message": f"Failed to load data from {csv_path}"})
         return
 
-    # Trim to trade window
+    # Trim to trade window (with lookback for indicator warm-up)
     lookback_bars = 500
     first_trade = entry_times.min()
     last_trade = entry_times.max()
@@ -464,58 +534,64 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
         "workers": _MAX_WORKERS,
     })
 
-    # ── Parallel indicator computation ──
+    # ── Async parallel indicator computation ──
     computed_indicators: list[str] = []
     indicator_map: dict[str, str] = {}  # column → indicator name
     base_cols = {"O", "H", "L", "C", "V"}
     all_new_cols: dict[str, pd.DataFrame] = {}  # ind_name → result df
     done_count = 0
 
+    loop = asyncio.get_running_loop()
     pool = ThreadPoolExecutor(max_workers=_MAX_WORKERS)
-    try:
-        future_to_name = {
-            pool.submit(_compute_single_indicator, df, name): name
-            for name in indicator_names
-        }
+    _active_pools.add(pool)
+    tasks: list[asyncio.Task] = []
 
-        for future in as_completed(future_to_name):
-            ind_name = future_to_name[future]
+    async def _compute_safe(name: str) -> tuple[str, pd.DataFrame | None, float, str | None]:
+        """Run one indicator; always returns (name, result, elapsed, error_msg)."""
+        try:
+            ind_name, result, elapsed = await asyncio.wait_for(
+                loop.run_in_executor(pool, _compute_single_indicator, df, name),
+                timeout=_INDICATOR_TIMEOUT,
+            )
+            return ind_name, result, elapsed, None
+        except TimeoutError:
+            return name, None, 0.0, f"Timeout after {_INDICATOR_TIMEOUT}s"
+        except Exception as exc:
+            return name, None, 0.0, str(exc)
+
+    try:
+        tasks = [asyncio.create_task(_compute_safe(name)) for name in indicator_names]
+        for coro in asyncio.as_completed(tasks):
+            ind_name, result, elapsed, err = await coro
             done_count += 1
 
-            try:
-                _, result, elapsed = future.result(timeout=_INDICATOR_TIMEOUT)
-                new_cols = [c for c in result.columns if c not in base_cols and c not in df.columns]
-                if new_cols:
-                    all_new_cols[ind_name] = result[new_cols]
-                    computed_indicators.append(ind_name)
-                    for col in new_cols:
-                        indicator_map[col] = ind_name
-
-                    yield _sse_event("indicator_done", {
-                        "step": done_count,
-                        "total": total_steps,
-                        "indicator": ind_name,
-                        "columns": len(new_cols),
-                        "elapsed": round(elapsed, 1),
-                    })
-                else:
-                    yield _sse_event("indicator_done", {
-                        "step": done_count,
-                        "total": total_steps,
-                        "indicator": ind_name,
-                        "columns": 0,
-                        "elapsed": round(elapsed, 1),
-                    })
-            except Exception as e:
+            if err:
                 yield _sse_event("indicator_skip", {
                     "step": done_count,
                     "total": total_steps,
                     "indicator": ind_name,
-                    "reason": str(e),
+                    "reason": err,
                 })
+                continue
+
+            new_cols = [c for c in result.columns if c not in base_cols and c not in df.columns]
+            if new_cols:
+                all_new_cols[ind_name] = result[new_cols]
+                computed_indicators.append(ind_name)
+                for col in new_cols:
+                    indicator_map[col] = ind_name
+
+            yield _sse_event("indicator_done", {
+                "step": done_count,
+                "total": total_steps,
+                "indicator": ind_name,
+                "columns": len(new_cols),
+                "elapsed": round(elapsed, 1),
+            })
+
     finally:
-        # Use wait=False to avoid RuntimeError("cannot join current thread") when
-        # the generator is garbage-collected from within a pool worker thread.
+        for task in tasks:
+            task.cancel()
         pool.shutdown(wait=False, cancel_futures=True)
 
     # ── Merge all indicator results at once ──
@@ -542,7 +618,7 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
         sampled, all_results, pnls, win_mask, indicator_map,
     )
 
-    yield _sse_event("done", {
+    done_payload = {
         "run_id": run_id,
         "symbol": symbol,
         "strategy_name": strategy.get("name", ""),
@@ -555,14 +631,25 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
         "results": all_results[:100],
         "direction": direction_results,
         "combinations": combinations,
-    })
+    }
+
+    try:
+        _save_discovery_cache(run_id, symbol, done_payload)
+    except Exception as e:
+        log.warning("Failed to cache discovery results for %s/%s: %s", run_id, symbol, e)
+
+    yield _sse_event("done", done_payload)
 
 
 @router.get("/{run_id}/discovery/{symbol}")
-def get_feature_discovery(run_id: str, symbol: str):
-    """Feature discovery via SSE stream."""
+async def get_feature_discovery(run_id: str, symbol: str, force: bool = False):
+    """Feature discovery via SSE stream.
+
+    Results are cached in test_results/{run_id}/discovery/{symbol}.json.
+    Pass ?force=true to recompute even if a cache exists.
+    """
     return StreamingResponse(
-        _discovery_stream(run_id, symbol),
+        _discovery_stream(run_id, symbol, force=force),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

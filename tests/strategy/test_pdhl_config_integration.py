@@ -33,8 +33,8 @@ if _pdl_mod is None or _signal_mod is None:
 
 from fwbg_sdk.models import TrainingContext
 
-STRATEGY_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "strategies")
-PDHL_CONFIG_PATH = os.path.join(STRATEGY_DIR, "configs", "pdhl_retest.json")
+from fwbg.api.workspace import get_strategies_dir as _gsd
+PDHL_CONFIG_PATH = str(_gsd() / "pdhl_retest.json")
 
 
 # ---------------------------------------------------------------------------

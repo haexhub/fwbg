@@ -10,7 +10,18 @@ from datetime import datetime
 from fwbg.data import config as data_config
 from fwbg.data.config import convert_numpy
 
-RESULTS_BASE_PATH = "test_results"
+
+def _get_results_base_path() -> str:
+    test_results_dir = os.environ.get("FWBG_TEST_RESULTS_DIR")
+    if test_results_dir:
+        return test_results_dir
+    workspace = os.environ.get("FWBG_WORKSPACE")
+    if workspace:
+        return os.path.join(workspace, "test_results")
+    return os.path.join(os.path.expanduser("~"), "fwbg", "test_results")
+
+
+RESULTS_BASE_PATH = _get_results_base_path()
 
 
 # =============================================================================

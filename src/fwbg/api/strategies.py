@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from fwbg.api.deps import get_strategies_dir
+from fwbg.api.git_utils import commit_file, file_at_commit, file_history, is_git_repo
 from fwbg.core.config import _resolve_section
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
@@ -25,6 +26,11 @@ class StrategyCreate(BaseModel):
     """Request body for creating/updating a strategy."""
     name: str
     data: dict
+
+
+class CommitRequest(BaseModel):
+    """Request body for committing a strategy change."""
+    message: str = ""
 
 
 @router.get("")
@@ -92,12 +98,18 @@ def create_strategy(body: StrategyCreate) -> dict:
     body.data["name"] = body.name
     filepath.write_text(json.dumps(body.data, indent=2))
 
+    if is_git_repo(strategies_dir):
+        try:
+            commit_file(strategies_dir, f"{filename}.json", f"create: {filename}")
+        except RuntimeError:
+            pass  # git not critical
+
     return {"filename": filename, "name": body.name, "status": "created"}
 
 
 @router.put("/{name}")
 def update_strategy(name: str, body: dict) -> dict:
-    """Update an existing strategy file."""
+    """Update an existing strategy file (write only, no git commit)."""
     strategies_dir = get_strategies_dir()
     filepath = strategies_dir / f"{name}.json"
 
@@ -106,6 +118,61 @@ def update_strategy(name: str, body: dict) -> dict:
 
     filepath.write_text(json.dumps(body, indent=2))
     return {"filename": name, "status": "updated"}
+
+
+@router.post("/{name}/commit")
+def commit_strategy(name: str, body: CommitRequest) -> dict:
+    """Commit the current state of a strategy file to git."""
+    strategies_dir = get_strategies_dir()
+    filepath = strategies_dir / f"{name}.json"
+
+    if not filepath.exists():
+        raise HTTPException(404, f"Strategy not found: {name}")
+
+    if not is_git_repo(strategies_dir):
+        raise HTTPException(501, "Strategies directory is not a git repository")
+
+    message = body.message.strip() or f"update: {name}"
+    try:
+        commit_hash = commit_file(strategies_dir, f"{name}.json", message)
+    except RuntimeError as e:
+        raise HTTPException(500, f"Git commit failed: {e}")
+
+    return {"filename": name, "hash": commit_hash, "status": "committed"}
+
+
+@router.get("/{name}/history")
+def strategy_history(name: str) -> list[dict]:
+    """Return git commit history for a strategy file."""
+    strategies_dir = get_strategies_dir()
+    filepath = strategies_dir / f"{name}.json"
+
+    if not filepath.exists():
+        raise HTTPException(404, f"Strategy not found: {name}")
+
+    if not is_git_repo(strategies_dir):
+        return []
+
+    return file_history(strategies_dir, f"{name}.json")
+
+
+@router.get("/{name}/version/{ref}")
+def strategy_version(name: str, ref: str) -> dict:
+    """Load a specific git version of a strategy."""
+    strategies_dir = get_strategies_dir()
+
+    if not is_git_repo(strategies_dir):
+        raise HTTPException(501, "Strategies directory is not a git repository")
+
+    try:
+        raw = file_at_commit(strategies_dir, f"{name}.json", ref)
+    except RuntimeError as e:
+        raise HTTPException(404, f"Version not found: {e}")
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(500, f"Invalid JSON at ref {ref}: {e}")
 
 
 @router.delete("/{name}")

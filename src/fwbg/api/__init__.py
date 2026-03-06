@@ -1,11 +1,16 @@
 """FWBG REST API server (FastAPI)."""
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fwbg.api.workspace import init_workspace
 from fwbg.api.exploration import exit_optimization_router
 from fwbg.api.plugins import router as plugins_router, entry_modifiers_router, exit_modifiers_router
 from fwbg.api.presets import migrate_presets, migrate_strategy_refs, router as presets_router
 from fwbg.api.strategies import router as strategies_router
+
+log = logging.getLogger(__name__)
 from fwbg.api.runs import router as runs_router
 from fwbg.api.chart import router as chart_router
 from fwbg.api.custom_signals import router as custom_signals_router
@@ -17,6 +22,8 @@ from fwbg.api.discovery import router as discovery_router
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    ws = init_workspace()
+    log.info(f"FWBG workspace: {ws}")
     migrate_presets()
     migrate_strategy_refs()
 
@@ -57,4 +64,4 @@ app = create_app()
 def run_server(host: str = "0.0.0.0", port: int = 8420):
     """Start the API server."""
     import uvicorn
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=5)

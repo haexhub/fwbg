@@ -193,8 +193,9 @@ def analyze_reversed_strategies(run_id, top_n=10):
 
     # Sammle alle Grid-Ergebnisse
     all_grids = []
-    grid_details_path = f"test_results/{run_id}/grid_details"
-    results_path = f"test_results/{run_id}/results.json"
+    from fwbg.results.storage import RESULTS_BASE_PATH
+    grid_details_path = f"{RESULTS_BASE_PATH}/{run_id}/grid_details"
+    results_path = f"{RESULTS_BASE_PATH}/{run_id}/results.json"
 
     if os.path.exists(grid_details_path):
         for entry in os.listdir(grid_details_path):

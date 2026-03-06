@@ -150,7 +150,8 @@ def main():
             sys.exit(1)
         run_bot_for_account(args.broker, args.account_dir, use_streaming)
     else:
-        accounts_dir = os.environ.get("ACCOUNTS_PATH", "accounts")
+        from fwbg.api.workspace import get_accounts_dir
+        accounts_dir = os.environ.get("ACCOUNTS_PATH", str(get_accounts_dir()))
         accounts = discover_accounts(accounts_dir)
 
         if not accounts:

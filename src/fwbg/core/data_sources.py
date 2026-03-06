@@ -24,8 +24,18 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-# Default Basis-Pfad für Daten
-DEFAULT_DATA_ROOT = Path("data")
+# Default Basis-Pfad für Daten — resolved from workspace env vars at import time
+def _default_data_root() -> Path:
+    import os
+    data_dir = os.environ.get("FWBG_DATA_DIR")
+    if data_dir:
+        return Path(data_dir)
+    workspace = os.environ.get("FWBG_WORKSPACE")
+    if workspace:
+        return Path(workspace) / "data"
+    return Path.home() / "fwbg" / "data"
+
+DEFAULT_DATA_ROOT = _default_data_root()
 
 
 @dataclass

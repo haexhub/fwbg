@@ -15,14 +15,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-sys.path.insert(0, os.path.dirname(__file__))
 
 from conftest import make_h1_ohlcv  # noqa: E402
 
 from fwbg.core.config import StrategyConfig
 from fwbg.pipeline.features import compute_indicator_pool
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "sr_trend_continuation.json")
+from fwbg.api.workspace import get_strategies_dir as _gsd; CONFIG_PATH = str(_gsd() / "sr_trend_continuation.json")
 
 _OHLCV_COLS = {"O", "H", "L", "C", "V"}
 

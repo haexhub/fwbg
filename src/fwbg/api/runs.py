@@ -64,11 +64,15 @@ def start_run(body: RunStartRequest) -> dict:
     cmd.extend(["--run-id", job_id])
 
     try:
+        from fwbg.api.workspace import get_workspace
+        env = os.environ.copy()
+        env.setdefault("FWBG_WORKSPACE", str(get_workspace()))
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=env,
         )
 
         _active_jobs[job_id] = {

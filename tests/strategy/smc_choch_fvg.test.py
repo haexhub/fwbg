@@ -11,14 +11,13 @@ import numpy as np
 import pytest
 
 # Ensure conftest helpers are importable from this directory
-sys.path.insert(0, os.path.dirname(__file__))
 
 from conftest import make_m15_ohlcv, make_fvg_scenario  # noqa: E402
 
 from fwbg.core.config import StrategyConfig
 from fwbg.pipeline.features import compute_indicator_pool
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "smc_choch_fvg.json")
+from fwbg.api.workspace import get_strategies_dir as _gsd; CONFIG_PATH = str(_gsd() / "smc_choch_fvg.json")
 
 
 @pytest.fixture(scope="module")
