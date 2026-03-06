@@ -471,7 +471,8 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
     all_new_cols: dict[str, pd.DataFrame] = {}  # ind_name → result df
     done_count = 0
 
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+    pool = ThreadPoolExecutor(max_workers=_MAX_WORKERS)
+    try:
         future_to_name = {
             pool.submit(_compute_single_indicator, df, name): name
             for name in indicator_names
@@ -512,6 +513,10 @@ def _discovery_stream(run_id: str, symbol: str) -> Generator[str, None, None]:
                     "indicator": ind_name,
                     "reason": str(e),
                 })
+    finally:
+        # Use wait=False to avoid RuntimeError("cannot join current thread") when
+        # the generator is garbage-collected from within a pool worker thread.
+        pool.shutdown(wait=False, cancel_futures=True)
 
     # ── Merge all indicator results at once ──
     df_full = df
