@@ -33,4 +33,4 @@ build/
 .coverage
 htmlcov/
 
-.claude
+.claude.worktrees/
