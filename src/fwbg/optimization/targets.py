@@ -88,6 +88,7 @@ def _simulate_trades_core(
     return_detailed: bool = False,
     timeout_bars: int = None,
     direction_filter: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """
     Kern-Funktion für Trade-Simulation (konsolidiert aus 3 ähnlichen Funktionen).
@@ -125,6 +126,11 @@ def _simulate_trades_core(
 
     # TP/SL-Distanzen vom Exit-Strategy-Plugin berechnen lassen
     tp_dists, sl_dists = _resolve_distances(df, tp, sl, ctx)
+
+    # Per-trade TP/SL overrides from model (xgboost_rrr, xgboost_mfe)
+    if per_trade_params is not None:
+        tp_dists = per_trade_params[:, 0].copy()
+        sl_dists = per_trade_params[:, 1].copy()
 
     # Absolute SL levels: when sl_level is set in exit_params, SL is
     # anchored to the structural price level from that column (e.g. OR midpoint)
@@ -319,6 +325,7 @@ def simulate_trades_sequential(
     ctx: SimulationContext,
     return_detailed: bool = False,
     timeout_bars: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Simuliert Trades sequentiell mit gleichem CT für Long/Short."""
     return _simulate_trades_core(
@@ -334,6 +341,7 @@ def simulate_trades_sequential(
         ctx,
         return_detailed,
         timeout_bars,
+        per_trade_params=per_trade_params,
     )
 
 
@@ -396,6 +404,7 @@ def simulate_trades_sequential_separate_ct(
     ctx: SimulationContext,
     return_detailed: bool = False,
     timeout_bars: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Simuliert Trades mit separaten CT-Thresholds für Long und Short."""
     return _simulate_trades_core(
@@ -411,6 +420,7 @@ def simulate_trades_sequential_separate_ct(
         ctx,
         return_detailed,
         timeout_bars,
+        per_trade_params=per_trade_params,
     )
 
 
@@ -493,6 +503,84 @@ def compute_targets_cached(
     return exit_strategy.compute_targets(
         full_df, ctx, params=grid_params, return_durations=return_durations
     )
+
+
+def compute_mfe_targets(
+    df: pd.DataFrame,
+    sl_atr: float,
+    max_bars: int = 50,
+    spread: float = 0.0,
+    atr_col: str = "_atr",
+    timeout_bars: Optional[int] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute Maximum Favorable Excursion in ATR multiples per bar.
+
+    For each bar, simulates a hypothetical long and short trade with the
+    given SL (in ATR multiples). Tracks the maximum favorable price movement
+    before the trade is stopped out or times out. Returns MFE normalized
+    by ATR.
+
+    Args:
+        df: DataFrame with OHLC and ATR column.
+        sl_atr: Stop-loss in ATR multiples.
+        max_bars: Maximum trade duration to consider.
+        spread: Bid-ask spread.
+        atr_col: Name of ATR column (default "_atr").
+        timeout_bars: Optional trade timeout.
+
+    Returns:
+        (mfe_long, mfe_short): Arrays of shape (n,) with MFE in ATR multiples.
+    """
+    if atr_col not in df.columns:
+        fallback = "vol_atr" if "vol_atr" in df.columns else None
+        if fallback:
+            atr_col = fallback
+        else:
+            raise ValueError(f"ATR column '{atr_col}' not found in DataFrame")
+
+    closes = df["C"].values
+    highs = df["H"].values
+    lows = df["L"].values
+    opens = df["O"].values
+    atr = df[atr_col].values.astype(np.float64)
+    n = len(df)
+    effective_timeout = timeout_bars or max_bars
+
+    mfe_long = np.zeros(n, dtype=np.float64)
+    mfe_short = np.zeros(n, dtype=np.float64)
+
+    for i in range(n - 1):
+        atr_i = atr[i]
+        if np.isnan(atr_i) or atr_i <= 0:
+            continue
+
+        sl_dist = atr_i * sl_atr
+        # entry_delay=1: enter at next bar open
+        entry_price = opens[i + 1] if i + 1 < n else closes[i]
+
+        # Long MFE
+        max_favorable = 0.0
+        for j in range(i + 1, min(i + 1 + effective_timeout, n)):
+            favorable = highs[j] - entry_price - spread
+            if favorable > max_favorable:
+                max_favorable = favorable
+            adverse = entry_price - lows[j] + spread
+            if adverse >= sl_dist:
+                break
+        mfe_long[i] = max_favorable / atr_i
+
+        # Short MFE
+        max_favorable = 0.0
+        for j in range(i + 1, min(i + 1 + effective_timeout, n)):
+            favorable = entry_price - lows[j] - spread
+            if favorable > max_favorable:
+                max_favorable = favorable
+            adverse = highs[j] - entry_price + spread
+            if adverse >= sl_dist:
+                break
+        mfe_short[i] = max_favorable / atr_i
+
+    return mfe_long, mfe_short
 
 
 def slice_targets_for_fold(
