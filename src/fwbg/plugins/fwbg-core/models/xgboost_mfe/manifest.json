@@ -1,0 +1,6 @@
+{
+  "name": "xgboost_mfe",
+  "version": "1.0.0",
+  "description": "XGBoost regressor predicting MFE in ATR multiples",
+  "phase": "model"
+}
