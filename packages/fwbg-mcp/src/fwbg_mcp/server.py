@@ -265,7 +265,7 @@ def list_indicators() -> list[dict]:
     Returns name, fqn (use in pipeline config), description,
     signal_columns (use in signal_rules), and feature_columns.
     """
-    plugins = _get("/plugins", phase="indicator")
+    plugins = _get("/plugins", phase="indicators")
     return [
         {
             "name": p["name"],
@@ -302,7 +302,7 @@ def list_exit_strategies() -> list[dict]:
     Key params for grid optimization: tp_mult (TP as ATR multiple),
     sl_mult (SL as ATR multiple), timeout_bars (max bars in trade).
     """
-    plugins = _get("/plugins", phase="exit_strategy")
+    plugins = _get("/plugins", phase="exit_strategies")
     return [
         {
             "name": p["name"],
