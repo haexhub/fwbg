@@ -252,48 +252,32 @@ class TestComputeTargets:
 
 
 class TestSliceTargetsForFold:
-    """Tests für slice_targets_for_fold."""
+    """Tests für slice_targets_for_fold (Recompute-per-Fold semantics)."""
 
-    def test_correct_slicing(self):
-        """Test: Korrektes Slicen der Targets für einen Fold."""
+    def test_output_shape_matches_fold(self):
+        """Targets-Array hat die gleiche Länge wie fold_df."""
         df = create_test_df(1000)
         ctx = create_mock_context()
-
-        # Volle Targets berechnen
-        full_targets_l = np.random.randint(0, 2, len(df)).astype(float)
-        full_targets_s = np.random.randint(0, 2, len(df)).astype(float)
-
-        # Fold erstellen
         fold_df = df.iloc[200:400].copy()
 
-        targets_l, targets_s, has_l, has_s = slice_targets_for_fold(
-            full_targets_l, full_targets_s, df, fold_df, ctx
+        t_l, t_s, has_l, has_s = slice_targets_for_fold(
+            fold_df, ctx, tp=20, sl=10,
         )
+        assert len(t_l) == 200
+        assert len(t_s) == 200
 
-        assert len(targets_l) == 200
-        np.testing.assert_array_equal(targets_l, full_targets_l[200:400])
-
-    def test_boundary_conditions(self):
-        """Test: Randbedinungen beim Slicen."""
+    def test_boundary_folds(self):
+        """Folds am Anfang und Ende liefern korrekt geformte Arrays."""
         df = create_test_df(1000)
         ctx = create_mock_context()
 
-        full_targets_l = np.random.randint(0, 2, len(df)).astype(float)
-        full_targets_s = np.random.randint(0, 2, len(df)).astype(float)
-
-        # Anfang
         fold_start = df.iloc[:100].copy()
-        t_l, _, _, _ = slice_targets_for_fold(
-            full_targets_l, full_targets_s, df, fold_start, ctx
-        )
-        np.testing.assert_array_equal(t_l, full_targets_l[:100])
+        t_l, _, _, _ = slice_targets_for_fold(fold_start, ctx, tp=20, sl=10)
+        assert len(t_l) == 100
 
-        # Ende
         fold_end = df.iloc[900:].copy()
-        t_l, _, _, _ = slice_targets_for_fold(
-            full_targets_l, full_targets_s, df, fold_end, ctx
-        )
-        np.testing.assert_array_equal(t_l, full_targets_l[900:])
+        t_l, _, _, _ = slice_targets_for_fold(fold_end, ctx, tp=20, sl=10)
+        assert len(t_l) == 100
 
 
 class TestSelectFeaturesFromFold:

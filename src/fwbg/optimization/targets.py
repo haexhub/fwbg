@@ -618,70 +618,50 @@ def compute_mfe_targets(
 
 
 def slice_targets_for_fold(
-    full_targets_long: np.ndarray,
-    full_targets_short: np.ndarray,
-    full_df: pd.DataFrame,
     fold_df: pd.DataFrame,
     ctx: SimulationContext,
-) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
-    """
-    Extrahiert Targets für einen bestimmten Fold aus gecachten Gesamt-Targets.
+    tp: float,
+    sl: float,
+    timeout_bars: Optional[int] = None,
+    return_durations: bool = False,
+) -> Tuple:
+    """Compute targets for one inner-CV fold using ONLY the fold's own bars.
+
+    Embargo fix: the previous implementation precomputed targets on the entire
+    inner_df and sliced per fold by index — that leaked val information into
+    train targets near the fold boundary, because the forward TP/SL window of
+    the last train bars overlapped the val region. Recomputing per fold
+    eliminates that leak: target at bar t now uses only bars in [t+1, t+max_bars]
+    inside fold_df.
 
     Args:
-        full_targets_long: Gecachte Long-Targets für gesamten DataFrame
-        full_targets_short: Gecachte Short-Targets für gesamten DataFrame
-        full_df: Der gesamte DataFrame (für Index-Mapping)
-        fold_df: Der Fold-DataFrame (Train oder Val)
-        ctx: SimulationContext
+        fold_df: The fold's DataFrame (train slice in production).
+        ctx: SimulationContext (exit_strategy, max_trade_bars, …).
+        tp: Take-profit multiplier.
+        sl: Stop-loss multiplier.
+        timeout_bars: Optional trade-timeout override.
+        return_durations: When True, also return per-trade durations.
 
     Returns:
-        (targets_long, targets_short, has_long, has_short)
+        return_durations=False -> (targets_long, targets_short, has_long, has_short)
+        return_durations=True  -> (targets_long, targets_short, dur_long, dur_short,
+                                   has_long, has_short)
     """
-    # Finde die Positionen des Fold im Gesamt-DataFrame
-    # Verwende searchsorted für robuste Index-Suche (auch bei nicht-eindeutigen Indices)
-    try:
-        # Versuche get_loc (schnell bei eindeutigen Indices)
-        start_loc = full_df.index.get_loc(fold_df.index[0])
-        end_loc = full_df.index.get_loc(fold_df.index[-1])
+    exit_strategy_mode = getattr(ctx, "exit_strategy", "fixed")
+    result = compute_targets_cached(
+        fold_df, tp, sl, ctx, timeout_bars,
+        exit_strategy_mode=exit_strategy_mode,
+        return_durations=return_durations,
+    )
+    if return_durations:
+        targets_long, targets_short, dur_long, dur_short = result
+    else:
+        targets_long, targets_short = result
 
-        # get_loc kann slice, int oder array zurückgeben
-        if isinstance(start_loc, slice):
-            start_idx = start_loc.start if start_loc.start is not None else 0
-        elif isinstance(start_loc, np.ndarray):
-            start_idx = np.where(start_loc)[0][0]
-        else:
-            start_idx = start_loc
-
-        if isinstance(end_loc, slice):
-            end_idx = end_loc.stop if end_loc.stop is not None else len(full_df)
-        elif isinstance(end_loc, np.ndarray):
-            end_idx = np.where(end_loc)[0][-1] + 1
-        else:
-            end_idx = end_loc + 1
-
-    except (KeyError, IndexError):
-        # Fallback: Nutze get_indexer (vectorisiert, O(log n) bei sortiertem Index)
-        fold_start = fold_df.index[0]
-        fold_end = fold_df.index[-1]
-
-        indices = full_df.index.get_indexer([fold_start, fold_end])
-        if indices[0] >= 0 and indices[1] >= 0:
-            start_idx = indices[0]
-            end_idx = indices[1] + 1
-        else:
-            # Index nicht gefunden - verwende Länge des fold_df
-            # Dies sollte nur passieren wenn fold_df nicht aus full_df stammt
-            start_idx = 0
-            end_idx = len(fold_df)
-
-    # Slice die gecachten Targets
-    fold_targets_long = full_targets_long[start_idx:end_idx]
-    fold_targets_short = full_targets_short[start_idx:end_idx]
-
-    # Prüfe ob genug Targets vorhanden (nutzt konsolidierte Funktion)
-    has_long, has_short = _validate_targets(fold_targets_long, fold_targets_short, ctx)
-
-    return fold_targets_long, fold_targets_short, has_long, has_short
+    has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
+    if return_durations:
+        return targets_long, targets_short, dur_long, dur_short, has_long, has_short
+    return targets_long, targets_short, has_long, has_short
 
 
 def _get_probs(
