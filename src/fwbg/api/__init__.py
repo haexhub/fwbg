@@ -1,8 +1,12 @@
 """FWBG REST API server (FastAPI)."""
+import hmac
 import logging
+import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from fwbg.api.workspace import init_workspace
 from fwbg.api.exploration import exit_optimization_router
@@ -20,6 +24,37 @@ from fwbg.api.discovery import router as discovery_router
 log = logging.getLogger(__name__)
 
 
+# Paths that bypass API-key checks even when auth is enabled.
+_AUTH_BYPASS_PATHS = ("/docs", "/redoc", "/openapi.json", "/health")
+
+
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Simple X-API-Key check, enabled via FWBG_API_KEY env var.
+
+    When FWBG_API_KEY is unset the middleware is a no-op so existing
+    single-user setups keep working. When set, every request to /api/* must
+    carry a matching X-API-Key header.
+    """
+
+    def __init__(self, app, api_key: str):
+        super().__init__(app)
+        self._api_key = api_key
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if not path.startswith("/api") or path.startswith(_AUTH_BYPASS_PATHS):
+            return await call_next(request)
+        provided = request.headers.get("x-api-key", "")
+        if not hmac.compare_digest(provided, self._api_key):
+            # BaseHTTPMiddleware does not route HTTPException through FastAPI's
+            # exception handlers, so we must return the response directly.
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"detail": "Invalid or missing API key"},
+            )
+        return await call_next(request)
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     ws = init_workspace()
@@ -33,13 +68,25 @@ def create_app() -> FastAPI:
         version="1.0.0",
     )
 
+    # CORS: wildcard origins are incompatible with credentials. Configure
+    # FWBG_CORS_ORIGINS as a comma-separated list of trusted origins for
+    # browser deployments. Default keeps the dashboard origins.
+    cors_env = os.environ.get("FWBG_CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173")
+    cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    api_key = os.environ.get("FWBG_API_KEY", "").strip()
+    if api_key:
+        app.add_middleware(APIKeyMiddleware, api_key=api_key)
+        log.info("API key authentication enabled")
+    else:
+        log.warning("FWBG_API_KEY not set — API is unauthenticated. Set FWBG_API_KEY for production.")
 
     app.include_router(exit_optimization_router, prefix="/api/exploration/exit-optimization")
     app.include_router(plugins_router, prefix="/api")

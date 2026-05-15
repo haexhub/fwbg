@@ -33,10 +33,20 @@ def _topological_sort(
     if not plugin_configs:
         return []
 
-    # Build short_name → fq_name mapping for this phase
+    # Build short_name → fq_name mapping for this phase. Reject collisions
+    # (same short name from different fully-qualified plugins) so dependency
+    # resolution can't silently bind to whichever plugin happened to register
+    # last.
     short_to_fq: Dict[str, str] = {}
     for pc in plugin_configs:
         short = _short_name(pc.name)
+        existing = short_to_fq.get(short)
+        if existing is not None and existing != pc.name:
+            raise ValueError(
+                f"Plugin short-name collision: '{short}' is registered by both "
+                f"'{existing}' and '{pc.name}'. Use the fully-qualified name in "
+                f"the pipeline configuration to disambiguate."
+            )
         short_to_fq[short] = pc.name
 
     # Build adjacency list and in-degree count (using FQ names as node IDs)

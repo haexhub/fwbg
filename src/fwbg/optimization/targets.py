@@ -574,6 +574,11 @@ def compute_mfe_targets(
     mfe_long = np.zeros(n, dtype=np.float64)
     mfe_short = np.zeros(n, dtype=np.float64)
 
+    # Mirror the trade simulator's spread/slippage model so MFE-derived targets
+    # use the same effective fill price the live simulator would. Slippage is
+    # half the spread (see simulation/trade.py::simulate_pro_trade).
+    slippage = spread * 0.5
+
     for i in range(n - 1):
         atr_i = atr[i]
         if np.isnan(atr_i) or atr_i <= 0:
@@ -581,26 +586,30 @@ def compute_mfe_targets(
 
         sl_dist = atr_i * sl_atr
         # entry_delay=1: enter at next bar open
-        entry_price = opens[i + 1] if i + 1 < n else closes[i]
+        mid_entry = opens[i + 1] if i + 1 < n else closes[i]
 
-        # Long MFE
+        # Long: pay the ask + slippage on entry; exit at the mark (TP/SL acts
+        # as a trigger level on the mid). Spread/slippage are already baked
+        # into the effective entry so no extra subtraction at exit.
+        long_entry = mid_entry + spread + slippage
         max_favorable = 0.0
         for j in range(i + 1, min(i + 1 + effective_timeout, n)):
-            favorable = highs[j] - entry_price - spread
+            favorable = highs[j] - long_entry
             if favorable > max_favorable:
                 max_favorable = favorable
-            adverse = entry_price - lows[j] + spread
+            adverse = long_entry - lows[j]
             if adverse >= sl_dist:
                 break
         mfe_long[i] = max_favorable / atr_i
 
-        # Short MFE
+        # Short: sell the bid - slippage on entry.
+        short_entry = mid_entry - spread - slippage
         max_favorable = 0.0
         for j in range(i + 1, min(i + 1 + effective_timeout, n)):
-            favorable = entry_price - lows[j] - spread
+            favorable = short_entry - lows[j]
             if favorable > max_favorable:
                 max_favorable = favorable
-            adverse = highs[j] - entry_price + spread
+            adverse = highs[j] - short_entry
             if adverse >= sl_dist:
                 break
         mfe_short[i] = max_favorable / atr_i

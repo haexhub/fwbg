@@ -12,6 +12,21 @@ from fwbg_sdk import BasePlugin, PluginPhase
 logger = logging.getLogger(__name__)
 
 
+def _load_manifest(path: Path, label: str) -> Optional[dict]:
+    """Read and parse a plugin / package manifest JSON file.
+
+    Returns the parsed dict on success and ``None`` on any IO/JSON error
+    (logging a warning). Centralising this avoids three near-identical
+    try/except blocks scattered through the registry.
+    """
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to load %s manifest from %s: %s", label, path, e)
+        return None
+
+
 class PluginNotFoundError(Exception):
     """Raised when a plugin is not found in the registry."""
 
@@ -233,11 +248,8 @@ class PluginRegistry:
             logger.warning(f"No manifest.json in package directory: {package_dir}")
             return discovered
 
-        try:
-            with open(package_manifest_file) as f:
-                package_manifest = json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.warning(f"Failed to load package manifest from {package_manifest_file}: {e}")
+        package_manifest = _load_manifest(package_manifest_file, "package")
+        if package_manifest is None:
             return discovered
 
         namespace = package_manifest.get("name", package_dir.name)
@@ -278,12 +290,8 @@ class PluginRegistry:
             if not manifest_file.exists() or not init_file.exists():
                 continue
 
-            # Load plugin manifest
-            try:
-                with open(manifest_file) as f:
-                    manifest = json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning(f"Failed to load manifest from {manifest_file}: {e}")
+            manifest = _load_manifest(manifest_file, "plugin")
+            if manifest is None:
                 continue
 
             plugin_name = manifest.get("name", plugin_dir.name)
@@ -391,13 +399,8 @@ class PluginRegistry:
             return discovered
 
         for def_file in sorted(definitions_dir.glob("*.json")):
-            try:
-                with open(def_file) as f:
-                    definition = json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
-                logger.warning(
-                    f"Failed to load signal definition {def_file}: {e}"
-                )
+            definition = _load_manifest(def_file, "signal definition")
+            if definition is None:
                 continue
 
             sig_name = definition.get("name")

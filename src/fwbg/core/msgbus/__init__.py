@@ -196,9 +196,12 @@ class MessageBus:
             try:
                 sub.handler(event)
                 self._stats["events_delivered"] += 1
-            except Exception as e:
+            except Exception:
                 self._stats["errors"] += 1
-                log.error(f"Error in event handler: {e}")
+                # Use exception() to include the traceback — bare error() loses
+                # the stack and makes faulty handlers nearly impossible to debug
+                # in production.
+                log.exception("Error in event handler for %s", event.event_type)
 
     def _worker_loop(self):
         """Worker-Thread für async Event-Verarbeitung."""

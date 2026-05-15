@@ -4,6 +4,7 @@ StrategyConfig - Zentrale Konfigurationsklasse für Trading-Strategien.
 Plugin-basierte Struktur mit Pipeline-Format.
 Alle Config-Klassen sind hier definiert - keine Duplikate in anderen Modulen.
 """
+import copy
 import dataclasses
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Union
@@ -329,22 +330,43 @@ def _load_json_preset(name: str, presets_dir: str) -> dict:
 
     Tries ``{name}.json`` first; if not found, falls back to the highest-version
     ``{name}_v*.json`` file (versioned naming scheme).
+
+    The preset name must be a simple identifier (no path separators) and the
+    resolved file path must stay inside ``presets_dir`` even after following
+    symlinks — this protects against ``../etc/passwd``-style traversal and
+    symlink-race attacks.
     """
+    # Reject obviously hostile names early; presets are simple identifiers.
+    if not name or "/" in name or "\\" in name or name in (".", "..") or "\x00" in name:
+        raise ValueError(f"Invalid preset name: {name!r}")
+
     real_dir = os.path.realpath(presets_dir)
+    real_dir_prefix = real_dir.rstrip(os.sep) + os.sep
+
+    def _safe_resolve(candidate: str) -> Optional[str]:
+        resolved = os.path.realpath(candidate)
+        if resolved == real_dir or resolved.startswith(real_dir_prefix):
+            return resolved
+        return None
 
     path = os.path.join(presets_dir, f"{name}.json")
-    resolved = os.path.realpath(path)
-    if not resolved.startswith(real_dir):
+    resolved = _safe_resolve(path)
+    if resolved is None:
         raise ValueError(f"Preset name '{name}' resolves outside allowed directory")
 
     if not os.path.isfile(resolved):
-        # Fall back to versioned filename (e.g. name_v1.json, name_v2.json …)
+        # Fall back to versioned filename. Filter the glob output through the
+        # realpath check inside the loop so a symlink injected between glob and
+        # realpath cannot escape the presets directory.
         matches = sorted(glob.glob(os.path.join(presets_dir, f"{name}_v*.json")))
-        if not matches:
+        valid: list[str] = []
+        for m in matches:
+            safe = _safe_resolve(m)
+            if safe is not None and os.path.isfile(safe):
+                valid.append(safe)
+        if not valid:
             raise FileNotFoundError(f"Preset '{name}' not found at {path}")
-        resolved = os.path.realpath(matches[-1])  # highest lexicographic = highest version
-        if not resolved.startswith(real_dir):
-            raise ValueError(f"Preset name '{name}' resolves outside allowed directory")
+        resolved = valid[-1]  # highest lexicographic = highest version
 
     with open(resolved, "r") as f:
         data = json.load(f)
@@ -357,9 +379,15 @@ def _resolve_section(
     section_dir: str,
     strategy_dir: Optional[str],
 ) -> "Optional[Dict[str, Any]]":
-    """Resolve a config section: string loads preset file, dict/None passes through."""
-    if value is None or isinstance(value, dict):
+    """Resolve a config section: string loads preset file, dict/None passes through.
+
+    Dicts are deep-copied so that downstream mutation of the returned object
+    cannot leak back into the caller's strategy data structure.
+    """
+    if value is None:
         return value
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
     if isinstance(value, str):
         base = os.path.dirname(strategy_dir) if strategy_dir else os.getcwd()
         return _load_json_preset(value, os.path.join(base, section_dir))
