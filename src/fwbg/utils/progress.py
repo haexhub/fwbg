@@ -15,6 +15,7 @@ from queue import Empty
 from typing import Any, Optional, List, Dict
 
 from .logging import set_progress_ui_active
+from .run_progress import compute_fold_progress
 
 
 # Globale Queue für Worker-Updates (wird in main.py initialisiert)
@@ -360,11 +361,9 @@ class ProgressTracker:
                                 fold = msg.get("fold", 0)
                                 total_folds = msg.get("total_folds", 0)
                                 if grid_total > 0:
-                                    # Progress across all folds (monotonically increasing)
-                                    if fold > 0 and total_folds > 0:
-                                        frac = ((fold - 1) + (grid_pos / grid_total)) / total_folds
-                                    else:
-                                        frac = grid_pos / grid_total
+                                    frac = compute_fold_progress(
+                                        fold, total_folds, grid_pos, grid_total,
+                                    )
                                     desc = f"Fold {fold}/{total_folds}: Grid-Search..." if fold else f"{grid_pos}/{grid_total}"
                                     self._run_progress_writer.update_asset_stage(
                                         symbol, "grid_search", "running",
@@ -596,8 +595,9 @@ class ProgressTracker:
                     ind_suffix = f" {'/'.join(meta_parts)}" if meta_parts else ""
 
                     if fold > 0 and total_folds > 0:
-                        # Gesamt-Asset-Fortschritt über alle Folds (monoton steigend)
-                        asset_progress = ((fold - 1) + (grid_pos / grid_total)) / total_folds
+                        asset_progress = compute_fold_progress(
+                            fold, total_folds, grid_pos, grid_total,
+                        )
                         asset_pct = asset_progress * 100
                         filled = int(bar_width * asset_progress)
                         bar = "▓" * filled + "░" * (bar_width - filled)

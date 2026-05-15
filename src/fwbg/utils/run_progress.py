@@ -21,6 +21,35 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def compute_fold_progress(
+    fold: int,
+    total_folds: int,
+    grid_pos: int = 0,
+    grid_total: int = 0,
+) -> float:
+    """Asset progress fraction across nested folds + grid sweep.
+
+    Semantics:
+        - fold is 1-based. fold == 0 means "not started yet" → returns 0.0.
+        - When fold > 0 and total_folds > 0: combines completed folds with
+          within-fold grid sweep position to give a monotonically increasing
+          fraction in [0, 1].
+        - When only grid_pos/grid_total are known (no fold tracking): falls
+          back to grid_pos / grid_total.
+        - Returns 0.0 if no progress can be computed.
+
+    The same formula was previously inlined in two places in
+    ``fwbg.utils.progress``; extracted here so the file writer and the
+    terminal renderer can never drift.
+    """
+    if fold > 0 and total_folds > 0:
+        within = (grid_pos / grid_total) if grid_total > 0 else 0.0
+        return ((fold - 1) + within) / total_folds
+    if grid_total > 0:
+        return grid_pos / grid_total
+    return 0.0
+
+
 class AssetStageStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
