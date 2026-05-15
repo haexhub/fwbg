@@ -16,6 +16,22 @@ from .nested_cv import nested_cv_split, evaluate_on_holdout
 from .grid_search import run_grid_search, select_features
 
 
+def _attach_regime_to_fold(
+    df: pd.DataFrame,
+    regime_params: RegimeFilterConfig,
+) -> pd.DataFrame:
+    """Compute the regime bitmask and attach it as a ``_regime`` column.
+
+    Causality contract: the bitmask at bar t depends only on indicator values
+    at bar t (and earlier, if those indicators are themselves causal). The
+    underlying ``compute_regime_bitmask`` is purely elementwise — no rolling,
+    no shift — so no future bars are read. This helper is the single
+    attach-point so that property can be pinned by tests.
+    """
+    df["_regime"] = compute_regime_bitmask(df, regime_params)
+    return df
+
+
 def precompute_indicators(df, strategy, sym):
     """Split indicators by stationarity and precompute raw ones.
 
@@ -360,8 +376,8 @@ def process_single_fold(
         regime_params = RegimeFilterConfig.from_dict(regime_config)
 
         # Berechne _regime bitmask SEPARAT für Train und Test (kein Lookahead!)
-        train_df["_regime"] = compute_regime_bitmask(train_df, regime_params)
-        test_df["_regime"] = compute_regime_bitmask(test_df, regime_params)
+        _attach_regime_to_fold(train_df, regime_params)
+        _attach_regime_to_fold(test_df, regime_params)
 
         # Update inner_folds mit neuem regime bitmask
         for train_df_fold, val_df_fold in inner_folds:

@@ -119,37 +119,30 @@ def select_features(
 
 
 def _compute_cached_targets(tp, sl, timeout_bars, inner_folds, inner_df, ctx):
-    """Pre-compute and slice targets for all folds of a TP/SL combo."""
-    from .targets import compute_targets_cached, slice_targets_for_fold
+    """Compute per-fold train targets for a TP/SL combo.
+
+    Targets are computed independently per fold (on train_df only) to prevent
+    the embargo leak that would occur if we precomputed on inner_df and then
+    sliced — see slice_targets_for_fold for details.
+    """
+    from .targets import slice_targets_for_fold
 
     if inner_df is None:
         return None
 
     use_durations = ctx.sample_weights
-    if use_durations:
-        full_tgt_l, full_tgt_s, full_dur_l, full_dur_s = compute_targets_cached(
-            inner_df, tp, sl, ctx, timeout_bars,
-            exit_strategy_mode=ctx.exit_strategy,
-            return_durations=True,
-        )
-    else:
-        full_tgt_l, full_tgt_s = compute_targets_cached(
-            inner_df, tp, sl, ctx, timeout_bars,
-            exit_strategy_mode=ctx.exit_strategy,
-        )
-
     cached_targets = {}
     for fold_idx, (train_df, _) in enumerate(inner_folds):
-        fold_tgt_l, fold_tgt_s, _, _ = slice_targets_for_fold(
-            full_tgt_l, full_tgt_s, inner_df, train_df, ctx
-        )
         if use_durations:
-            fold_dur_l, fold_dur_s, _, _ = slice_targets_for_fold(
-                full_dur_l, full_dur_s, inner_df, train_df, ctx
+            tgt_l, tgt_s, dur_l, dur_s, _, _ = slice_targets_for_fold(
+                train_df, ctx, tp, sl, timeout_bars, return_durations=True,
             )
-            cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s, fold_dur_l, fold_dur_s)
+            cached_targets[fold_idx] = (tgt_l, tgt_s, dur_l, dur_s)
         else:
-            cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s)
+            tgt_l, tgt_s, _, _ = slice_targets_for_fold(
+                train_df, ctx, tp, sl, timeout_bars,
+            )
+            cached_targets[fold_idx] = (tgt_l, tgt_s)
 
     return cached_targets
 

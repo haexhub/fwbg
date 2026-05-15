@@ -343,6 +343,55 @@ class TestRunDataLoading:
         finally:
             del _DATA_SOURCES["_test_bias"]
 
+    def test_release_date_column_blocks_pre_release_lookahead(self, tmp_path):
+        """CSVs that carry a `release_date` column must be merged via the
+        release-date contract, not the legacy prev-day shift.
+
+        Scenario: a COT-style weekly row for the Tuesday 2024-01-02 report
+        is *released* Friday 2024-01-05.  Bars on Wed-Thu (between report
+        and release) must NOT see the value.
+        """
+        from fwbg.data.loader import run_data_loading
+        from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
+
+        csv_path = tmp_path / "COT_DEMO_DAY.csv"
+        pd.DataFrame({
+            "Datetime": ["2024-01-02", "2024-01-09"],  # report dates (Tue)
+            "Close": [100.0, 200.0],                   # net position
+            "release_date": [
+                "2024-01-05 21:00:00",                  # Fri after Jan-02 report
+                "2024-01-12 21:00:00",                  # Fri after Jan-09 report
+            ],
+        }).to_csv(csv_path, index=False)
+
+        register_csv_source(name="_test_release", path=tmp_path)
+
+        try:
+            # Hourly bars covering Tue 2024-01-02 → Mon 2024-01-08
+            df = pd.DataFrame(
+                {"O": 1.0, "C": 1.0},
+                index=pd.date_range("2024-01-02", periods=24 * 7, freq="h"),
+            )
+            configs = [{
+                "source": "_test_release",
+                "params": {"indicators": {"COT_DEMO_DAY": "cot_demo"}},
+            }]
+            result = run_data_loading(df, configs)
+
+            # Tue 2024-01-02: report exists but not yet released → NaN.
+            assert pd.isna(result.loc["2024-01-02 12:00:00", "macro_cot_demo"]), (
+                "Lookahead: Tuesday bar saw COT value before Friday release."
+            )
+            # Wed-Thu: still pre-release → NaN.
+            assert pd.isna(result.loc["2024-01-03 12:00:00", "macro_cot_demo"])
+            assert pd.isna(result.loc["2024-01-04 12:00:00", "macro_cot_demo"])
+            # Fri 2024-01-05 22:00 (≈ release moment) → visible.
+            assert result.loc["2024-01-05 22:00:00", "macro_cot_demo"] == 100.0
+            # Mon 2024-01-08: first report still in effect.
+            assert result.loc["2024-01-08 12:00:00", "macro_cot_demo"] == 100.0
+        finally:
+            del _DATA_SOURCES["_test_release"]
+
 
 # ============================================================================
 # Step 7: StrategyConfig.get_data_loading()
