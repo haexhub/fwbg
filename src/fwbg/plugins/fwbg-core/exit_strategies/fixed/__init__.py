@@ -6,6 +6,7 @@ Verwendet fixe TP/SL-Werte basierend auf Spread-Multiplikatoren.
 from typing import Tuple, TYPE_CHECKING
 import numpy as np
 import pandas as pd
+import ta
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
 from fwbg.simulation import compute_targets_numba
@@ -80,7 +81,6 @@ class FixedExitStrategy(BaseExitStrategy):
             elif "vol_atr" in df.columns:
                 atr_v = df["vol_atr"].values.astype(np.float64)
             else:
-                import ta
                 atr_series = ta.volatility.average_true_range(
                     df["H"], df["L"], df["C"], window=14
                 )

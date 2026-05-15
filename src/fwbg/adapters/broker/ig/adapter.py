@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
 from threading import Lock
 import logging
+import os
 import time
 import pandas as pd
 
@@ -45,6 +46,43 @@ from .mappings import (
 from .streaming import IGCandleListener
 
 log = logging.getLogger(__name__)
+
+
+class _IGCredentials:
+    """Container for IG credentials with a safe repr that never leaks secrets."""
+
+    __slots__ = ("username", "_password", "_api_key")
+
+    def __init__(self, username: str, password: str, api_key: str):
+        self.username = username
+        self._password = password
+        self._api_key = api_key
+
+    @property
+    def password(self) -> str:
+        return self._password
+
+    @property
+    def api_key(self) -> str:
+        return self._api_key
+
+    def __repr__(self) -> str:
+        return f"_IGCredentials(username={self.username!r}, password=<redacted>, api_key=<redacted>)"
+
+    __str__ = __repr__
+
+    def __getitem__(self, key: str) -> str:
+        # backward compatibility with code that used dict-style access
+        if key == "username":
+            return self.username
+        if key == "password":
+            return self._password
+        if key == "api_key":
+            return self._api_key
+        raise KeyError(key)
+
+    def __bool__(self) -> bool:
+        return bool(self.username and self._password and self._api_key)
 
 
 class IGBrokerAdapter(BrokerAdapter):
@@ -86,13 +124,10 @@ class IGBrokerAdapter(BrokerAdapter):
 
         super().__init__(**kwargs)
 
-        # Credentials werden nur während connect() verwendet und dann verworfen
-        # WICHTIG: Nicht als Instanzvariablen speichern um Exposition zu minimieren
-        self._credentials = {
-            "username": username,
-            "password": password,
-            "api_key": api_key,
-        }
+        # Credentials are kept wrapped to prevent accidental leakage via repr/str.
+        # Username + api_key are needed for session refresh; the password is also
+        # retained for reconnect after session expiry (IG sessions live ~6h).
+        self._credentials: Optional[_IGCredentials] = _IGCredentials(username, password, api_key)
         self.env = env.upper()
         self.currency = currency
         self.use_yfinance_fallback = use_yfinance_fallback
@@ -148,7 +183,9 @@ class IGBrokerAdapter(BrokerAdapter):
                 return True
 
             except Exception as e:
-                self.log_error(f"Connection attempt {attempt} failed: {e}")
+                # Log the exception type but never the message body — IG client
+                # libraries occasionally embed credentials in error payloads.
+                self.log_error(f"Connection attempt {attempt} failed: {type(e).__name__}")
                 if attempt < self.max_reconnect_attempts:
                     time.sleep(self.reconnect_delay_seconds * attempt)  # Exponential backoff
 
@@ -425,6 +462,14 @@ class IGBrokerAdapter(BrokerAdapter):
     # Order Execution
     # =========================================================================
 
+    # Defensive limits to prevent obviously-wrong orders from reaching the
+    # broker (e.g. negative size, zero stop, runaway TP). These are intentional
+    # safety floors; tweak via env vars if needed.
+    MIN_ORDER_SIZE = 0.1
+    MAX_ORDER_SIZE = float(os.environ.get("FWBG_IG_MAX_ORDER_SIZE", "100"))
+    MIN_STOP_POINTS = 1
+    MAX_STOP_POINTS = int(os.environ.get("FWBG_IG_MAX_STOP_POINTS", "10000"))
+
     def submit_order(
         self,
         symbol: Symbol,
@@ -448,6 +493,26 @@ class IGBrokerAdapter(BrokerAdapter):
                 success=False,
                 status=OrderStatus.REJECTED,
                 message=f"No EPIC mapping for: {symbol}"
+            )
+
+        # Validate order parameters before hitting the broker.
+        if not (self.MIN_ORDER_SIZE <= size <= self.MAX_ORDER_SIZE):
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"Size {size} outside allowed range [{self.MIN_ORDER_SIZE}, {self.MAX_ORDER_SIZE}]",
+            )
+        if stop_distance is not None and not (self.MIN_STOP_POINTS <= stop_distance <= self.MAX_STOP_POINTS):
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"stop_distance {stop_distance} outside allowed range [{self.MIN_STOP_POINTS}, {self.MAX_STOP_POINTS}]",
+            )
+        if limit_distance is not None and not (self.MIN_STOP_POINTS <= limit_distance <= self.MAX_STOP_POINTS):
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"limit_distance {limit_distance} outside allowed range [{self.MIN_STOP_POINTS}, {self.MAX_STOP_POINTS}]",
             )
 
         self._rate_limit()
