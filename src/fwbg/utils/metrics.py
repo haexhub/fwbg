@@ -10,7 +10,7 @@ need.
 """
 from __future__ import annotations
 
-from typing import Iterable, List, Mapping, Sequence, Tuple
+from typing import Iterable, List, Mapping, Sequence
 
 import numpy as np
 

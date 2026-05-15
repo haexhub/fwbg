@@ -142,7 +142,7 @@ class BaseStackedXGBoostModel(BaseModel, ABC):
         direction: str,
     ) -> Tuple[pd.DataFrame, np.ndarray, Optional[np.ndarray]]:
         self.progress.begin_stage(
-            "stacking", f"Stacking dataset with per-variant targets"
+            "stacking", "Stacking dataset with per-variant targets"
         )
         stacked_features: List[pd.DataFrame] = []
         stacked_targets: List[np.ndarray] = []

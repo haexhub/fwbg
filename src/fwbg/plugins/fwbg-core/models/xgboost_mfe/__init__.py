@@ -11,7 +11,7 @@ the SL variant with the best predicted MFE/SL ratio is selected.
 """
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fwbg_sdk.registry import register_model
 
