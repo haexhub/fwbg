@@ -74,7 +74,7 @@ def _validate_targets(
     return has_long, has_short
 
 
-def _simulate_trades_core(
+def simulate_trades(
     df: pd.DataFrame,
     probs_long: Optional[np.ndarray],
     probs_short: Optional[np.ndarray],
@@ -91,7 +91,12 @@ def _simulate_trades_core(
     per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """
-    Kern-Funktion für Trade-Simulation (konsolidiert aus 3 ähnlichen Funktionen).
+    Canonical trade-simulation entry point.
+
+    Combines previously-separate wrappers (joint CT, separate CT, single
+    direction) into one public function. The three legacy wrappers
+    (`simulate_trades_sequential`, `simulate_trades_sequential_separate_ct`,
+    `_simulate_single_direction`) remain as thin shims for back-compat.
 
     Args:
         df: DataFrame mit OHLC-Daten und _regime bitmask column
@@ -335,6 +340,10 @@ def _simulate_trades_core(
     return result
 
 
+# Back-compat alias — older callers (api/runs.py, tests) import this name.
+_simulate_trades_core = simulate_trades
+
+
 def simulate_trades_sequential(
     df: pd.DataFrame,
     probs_long: Optional[np.ndarray],
@@ -349,8 +358,11 @@ def simulate_trades_sequential(
     timeout_bars: int = None,
     per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
-    """Simuliert Trades sequentiell mit gleichem CT für Long/Short."""
-    return _simulate_trades_core(
+    """Simuliert Trades sequentiell mit gleichem CT für Long/Short.
+
+    Back-compat wrapper around :func:`simulate_trades`.
+    """
+    return simulate_trades(
         df,
         probs_long,
         probs_short,
@@ -379,9 +391,12 @@ def _simulate_single_direction(
     timeout_bars: int = None,
     per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
-    """Simuliert Trades für eine einzelne Richtung (Long oder Short)."""
+    """Simuliert Trades für eine einzelne Richtung (Long oder Short).
+
+    Back-compat wrapper around :func:`simulate_trades` with a direction filter.
+    """
     if direction == 1:
-        return _simulate_trades_core(
+        return simulate_trades(
             df,
             probs,
             None,
@@ -398,7 +413,7 @@ def _simulate_single_direction(
             per_trade_params=per_trade_params,
         )
     else:
-        return _simulate_trades_core(
+        return simulate_trades(
             df,
             None,
             probs,
@@ -431,8 +446,11 @@ def simulate_trades_sequential_separate_ct(
     timeout_bars: int = None,
     per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
-    """Simuliert Trades mit separaten CT-Thresholds für Long und Short."""
-    return _simulate_trades_core(
+    """Simuliert Trades mit separaten CT-Thresholds für Long und Short.
+
+    Back-compat wrapper around :func:`simulate_trades`.
+    """
+    return simulate_trades(
         df,
         probs_long,
         probs_short,
