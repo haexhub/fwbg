@@ -51,7 +51,7 @@ class XGBoostMFEModel(BaseModel):
         self.progress.begin_training()
 
         # Extract MFE-specific params
-        self._sl_variants = hyperparameters.pop("sl_variants", [1.5, 2.0, 2.5])
+        self._sl_variants = hyperparameters.pop("sl_variants", [1.5, 2.0, 2.5, 3.0])
 
         # Get full OHLC data for per-variant MFE computation
         fold_info = training_context.fold_information or {}

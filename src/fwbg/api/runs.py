@@ -1,12 +1,15 @@
 """Run management endpoints."""
 import json
+import logging
 import os
 import signal
 import statistics
 import subprocess
 import sys
 import hashlib
+import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -14,11 +17,23 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from fwbg.api.deps import get_strategies_dir, get_test_results_dir
+from fwbg.api._paths import (
+    safe_load_json,
+    safe_results_path as _safe_results_path,
+    validate_id as _validate_id,
+)
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
-# Track active background processes
+# Track active background processes. The lock guards every read/write because
+# multiple FastAPI worker threads can hit the run endpoints concurrently.
 _active_jobs: dict[str, dict] = {}
+_active_jobs_lock = threading.Lock()
+
+# Limit concurrent CLI subprocesses to prevent resource exhaustion via spam.
+MAX_CONCURRENT_RUNS = int(os.environ.get("FWBG_MAX_CONCURRENT_RUNS", "10"))
 
 
 class RunStartRequest(BaseModel):
@@ -43,6 +58,19 @@ class PreviewRequest(BaseModel):
 @router.post("/start")
 def start_run(body: RunStartRequest) -> dict:
     """Start a strategy optimization run in the background."""
+    _validate_id(body.strategy_name, "strategy_name")
+    if body.assets:
+        for a in body.assets:
+            _validate_id(a, "asset")
+    if body.asset_classes:
+        for c in body.asset_classes:
+            _validate_id(c, "asset_class")
+
+    with _active_jobs_lock:
+        running = sum(1 for j in _active_jobs.values() if j.get("status") == "running")
+    if running >= MAX_CONCURRENT_RUNS:
+        raise HTTPException(429, f"Too many active runs (limit {MAX_CONCURRENT_RUNS})")
+
     strategies_dir = get_strategies_dir()
     strategy_file = strategies_dir / f"{body.strategy_name}.json"
 
@@ -75,17 +103,19 @@ def start_run(body: RunStartRequest) -> dict:
             env=env,
         )
 
-        _active_jobs[job_id] = {
-            "job_id": job_id,
-            "pid": process.pid,
-            "process": process,
-            "strategy_name": body.strategy_name,
-            "status": "running",
-            "started_at": datetime.now().isoformat(),
-            "cmd": cmd,
-        }
+        with _active_jobs_lock:
+            _active_jobs[job_id] = {
+                "job_id": job_id,
+                "pid": process.pid,
+                "process": process,
+                "strategy_name": body.strategy_name,
+                "status": "running",
+                "started_at": datetime.now().isoformat(),
+                "cmd": cmd,
+            }
     except Exception as e:
-        raise HTTPException(500, f"Failed to start run: {e}")
+        log.exception("Failed to start run")
+        raise HTTPException(500, "Failed to start run") from e
 
     return {
         "job_id": job_id,
@@ -464,9 +494,13 @@ def list_runs(
     results_dir = get_test_results_dir()
     runs = []
 
-    # Active jobs — reap finished processes
+    # Active jobs — reap finished processes (snapshot under lock to avoid
+    # mutating the dict while iterating from another thread).
     finished_ids = []
-    for job_id, job in _active_jobs.items():
+    with _active_jobs_lock:
+        jobs_snapshot = list(_active_jobs.items())
+
+    for job_id, job in jobs_snapshot:
         proc = job.get("process")
         if proc and proc.poll() is not None:
             if proc.returncode == 0:
@@ -495,15 +529,17 @@ def list_runs(
             "error_message": job.get("error_message"),
         })
 
-    for jid in finished_ids:
-        del _active_jobs[jid]
+    with _active_jobs_lock:
+        for jid in finished_ids:
+            _active_jobs.pop(jid, None)
+        active_ids = set(_active_jobs.keys())
 
     # Collect completed run directory names (cheap: no file reads yet)
     completed_ids: list[str] = []
     if results_dir.exists():
         completed_ids = sorted(
             (d.name for d in results_dir.iterdir()
-             if d.is_dir() and d.name not in _active_jobs),
+             if d.is_dir() and d.name not in active_ids),
             reverse=True,
         )
 
@@ -603,22 +639,23 @@ def _resolve_strategy_refs(strategy: dict) -> None:
 @router.get("/{run_id}")
 def get_run(run_id: str) -> dict:
     """Get detailed results for a completed run."""
-    results_dir = get_test_results_dir()
-    run_dir = results_dir / run_id
+    _validate_id(run_id, "run_id")
+    run_dir = _safe_results_path(run_id)
 
     if not run_dir.exists():
         # Check active jobs
-        if run_id in _active_jobs:
-            job = _active_jobs[run_id]
-            proc = job.get("process")
-            if proc and proc.poll() is not None:
-                job["status"] = "completed" if proc.returncode == 0 else "failed"
-            return {
-                "run_id": run_id,
-                "status": job["status"],
-                "strategy_name": job.get("strategy_name"),
-                "started_at": job.get("started_at"),
-            }
+        with _active_jobs_lock:
+            job = _active_jobs.get(run_id)
+            if job is not None:
+                proc = job.get("process")
+                if proc and proc.poll() is not None:
+                    job["status"] = "completed" if proc.returncode == 0 else "failed"
+                return {
+                    "run_id": run_id,
+                    "status": job["status"],
+                    "strategy_name": job.get("strategy_name"),
+                    "started_at": job.get("started_at"),
+                }
         raise HTTPException(404, f"Run not found: {run_id}")
 
     result: dict = {"run_id": run_id, "status": "completed"}
@@ -681,8 +718,8 @@ def _summarize_walk_forward(wf: dict) -> dict:
 @router.get("/{run_id}/grid_details")
 def list_grid_details(run_id: str) -> list[str]:
     """List asset symbols with grid details for a completed run."""
-    results_dir = get_test_results_dir()
-    grid_dir = results_dir / run_id / "grid_details"
+    _validate_id(run_id, "run_id")
+    grid_dir = _safe_results_path(run_id, "grid_details")
 
     if not grid_dir.exists():
         raise HTTPException(404, f"No grid details for run: {run_id}")
@@ -693,8 +730,9 @@ def list_grid_details(run_id: str) -> list[str]:
 @router.get("/{run_id}/grid_details/{symbol}")
 def get_grid_detail(run_id: str, symbol: str) -> dict:
     """Get merged grid detail for a symbol (config + fold_results + grid_results)."""
-    results_dir = get_test_results_dir()
-    sym_dir = results_dir / run_id / "grid_details" / symbol
+    _validate_id(run_id, "run_id")
+    _validate_id(symbol, "symbol")
+    sym_dir = _safe_results_path(run_id, "grid_details", symbol)
 
     if not sym_dir.exists() or not sym_dir.is_dir():
         raise HTTPException(404, f"Grid detail not found: {run_id}/{symbol}")
@@ -721,8 +759,9 @@ def get_run_symbol_trades(run_id: str, symbol: str) -> dict:
     Returns unified simulation trades from trades.json if available,
     otherwise extracts fold-level trades from fold_results.json.
     """
-    results_dir = get_test_results_dir()
-    sym_dir = results_dir / run_id / "grid_details" / symbol
+    _validate_id(run_id, "run_id")
+    _validate_id(symbol, "symbol")
+    sym_dir = _safe_results_path(run_id, "grid_details", symbol)
 
     if not sym_dir.exists() or not sym_dir.is_dir():
         raise HTTPException(404, f"No grid detail found for symbol: {symbol}")
@@ -768,17 +807,19 @@ def get_run_progress(run_id: str) -> dict:
     Reads the progress.json file written by RunProgressWriter.
     Falls back to basic job info if no progress file exists.
     """
-    results_dir = get_test_results_dir()
+    _validate_id(run_id, "run_id")
 
     # Try reading progress.json from run directory
-    progress_file = results_dir / run_id / "progress.json"
+    progress_file = _safe_results_path(run_id, "progress.json")
     if progress_file.exists():
         try:
             data = json.loads(progress_file.read_text())
             # Stale "running" detection: if status is running but no active job
             # and progress.json hasn't been updated in >2 minutes, the process
             # has exited without writing a "completed" status (e.g. killed).
-            if data.get("status") == "running" and run_id not in _active_jobs:
+            with _active_jobs_lock:
+                run_active = run_id in _active_jobs
+            if data.get("status") == "running" and not run_active:
                 updated_at_str = data.get("updated_at")
                 if updated_at_str:
                     from datetime import datetime, timezone, timedelta
@@ -794,8 +835,9 @@ def get_run_progress(run_id: str) -> dict:
             pass
 
     # Fallback: check active jobs
-    if run_id in _active_jobs:
-        job = _active_jobs[run_id]
+    with _active_jobs_lock:
+        job = _active_jobs.get(run_id)
+    if job is not None:
         proc = job.get("process")
         if proc and proc.poll() is not None:
             if proc.returncode == 0:
@@ -836,8 +878,10 @@ def get_run_logs(
 
     Reads logs.jsonl and applies optional filters.
     """
-    results_dir = get_test_results_dir()
-    logs_file = results_dir / run_id / "logs.jsonl"
+    _validate_id(run_id, "run_id")
+    if symbol is not None:
+        _validate_id(symbol, "symbol")
+    logs_file = _safe_results_path(run_id, "logs.jsonl")
 
     if not logs_file.exists():
         raise HTTPException(404, f"No logs for run: {run_id}")
@@ -862,8 +906,9 @@ def get_run_logs(
                     continue
 
                 entries.append(entry)
-    except IOError:
-        raise HTTPException(500, f"Failed to read logs for run: {run_id}")
+    except IOError as e:
+        log.exception("Failed to read logs for run %s", run_id)
+        raise HTTPException(500, "Failed to read run logs") from e
 
     return entries[-limit:]
 
@@ -873,8 +918,8 @@ def delete_run(run_id: str) -> dict:
     """Delete all results for a completed run."""
     import shutil
 
-    results_dir = get_test_results_dir()
-    run_dir = results_dir / run_id
+    _validate_id(run_id, "run_id")
+    run_dir = _safe_results_path(run_id)
 
     if not run_dir.exists():
         raise HTTPException(404, f"Run not found: {run_id}")
@@ -882,7 +927,8 @@ def delete_run(run_id: str) -> dict:
     try:
         shutil.rmtree(run_dir)
     except Exception as e:
-        raise HTTPException(500, f"Failed to delete run: {e}")
+        log.exception("Failed to delete run %s", run_id)
+        raise HTTPException(500, "Failed to delete run") from e
 
     return {"run_id": run_id, "deleted": True}
 
@@ -890,15 +936,20 @@ def delete_run(run_id: str) -> dict:
 @router.post("/{run_id}/cancel")
 def cancel_run(run_id: str) -> dict:
     """Cancel an active run."""
-    if run_id not in _active_jobs:
-        raise HTTPException(404, f"No active job: {run_id}")
-
-    job = _active_jobs[run_id]
-    proc = job.get("process")
-
-    if proc and proc.poll() is None:
-        os.kill(proc.pid, signal.SIGTERM)
-        job["status"] = "cancelled"
-        return {"job_id": run_id, "status": "cancelled"}
-
-    return {"job_id": run_id, "status": job["status"], "message": "Job already finished"}
+    _validate_id(run_id, "run_id")
+    with _active_jobs_lock:
+        job = _active_jobs.get(run_id)
+        if job is None:
+            raise HTTPException(404, f"No active job: {run_id}")
+        proc = job.get("process")
+        if proc and proc.poll() is None:
+            try:
+                os.kill(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                # Process exited between poll() and kill — treat as already
+                # finished and fall through to the normal status response.
+                pass
+            else:
+                job["status"] = "cancelled"
+                return {"job_id": run_id, "status": "cancelled"}
+        return {"job_id": run_id, "status": job["status"], "message": "Job already finished"}

@@ -6,6 +6,7 @@ Progress is written to disk on every state change, making it:
 - Accessible from CLI (cat/jq the file)
 """
 import json
+import os
 import time
 import threading
 import tempfile
@@ -251,7 +252,7 @@ class RunProgressWriter:
             for asset in self._progress.assets.values():
                 if asset.status == "running":
                     partial += self._estimate_asset_progress(asset)
-            self._progress.overall_progress_fraction = (completed + failed + partial) / total
+            self._progress.overall_progress_fraction = min((completed + failed + partial) / total, 1.0)
 
         if self._progress.started_at:
             start = datetime.fromisoformat(self._progress.started_at)
@@ -335,8 +336,12 @@ class RunProgressWriter:
             tmp_fd, tmp_path = tempfile.mkstemp(
                 dir=self._file_path.parent, suffix=".tmp"
             )
+            # Close the raw fd immediately and re-open by path. Otherwise an
+            # exception between mkstemp() and open(tmp_fd, ...) would leak the
+            # fd because the with-block never sees it.
+            os.close(tmp_fd)
             try:
-                with open(tmp_fd, "w", encoding="utf-8") as f:
+                with open(tmp_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, default=str)
                 Path(tmp_path).replace(self._file_path)
             except Exception:

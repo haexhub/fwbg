@@ -25,6 +25,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from fwbg.api.deps import get_test_results_dir
+from fwbg.api._paths import safe_load_json, safe_results_path, validate_id
 from fwbg.data import load_data_aligned
 from fwbg.pipeline.features import compute_indicator_pool
 
@@ -53,28 +54,31 @@ _MAX_WORKERS = min(8, (os.cpu_count() or 4))
 
 
 def _load_run_config(run_id: str) -> dict:
-    results_dir = get_test_results_dir()
-    config_file = results_dir / run_id / "config.json"
-    if not config_file.exists():
+    validate_id(run_id, "run_id")
+    config_file = safe_results_path(run_id, "config.json")
+    data = safe_load_json(config_file)
+    if data is None:
         raise HTTPException(404, f"Run config not found: {run_id}")
-    return json.loads(config_file.read_text())
+    return data
 
 
 def _load_strategy_config(run_id: str) -> dict:
-    results_dir = get_test_results_dir()
-    strat_file = results_dir / run_id / "strategy.json"
-    if not strat_file.exists():
+    validate_id(run_id, "run_id")
+    strat_file = safe_results_path(run_id, "strategy.json")
+    data = safe_load_json(strat_file)
+    if data is None:
         raise HTTPException(404, f"Strategy config not found: {run_id}")
-    return json.loads(strat_file.read_text())
+    return data
 
 
 def _load_trades(run_id: str, symbol: str) -> list[dict]:
-    results_dir = get_test_results_dir()
-    fold_file = results_dir / run_id / "grid_details" / symbol / "fold_results.json"
-    if not fold_file.exists():
+    validate_id(run_id, "run_id")
+    validate_id(symbol, "symbol")
+    fold_file = safe_results_path(run_id, "grid_details", symbol, "fold_results.json")
+    fdata = safe_load_json(fold_file)
+    if fdata is None:
         raise HTTPException(404, f"No fold results for {run_id}/{symbol}")
 
-    fdata = json.loads(fold_file.read_text())
     trades = []
     for fold in fdata.get("walk_forward", {}).get("fold_details", []):
         for t in fold.get("test_trades_detail", []):

@@ -283,12 +283,14 @@ def resolve_tp_sl_collision(symbol, hour_timestamp, direction, tp, sl):
     if sub_df is None:
         return None
 
-    # Finde die Sub-Stunden-Bars innerhalb der Stunde
+    # Sub-bars within the hour. pd.DataFrame.loc is inclusive on both ends, so
+    # we must use an exclusive right edge to avoid leaking the next hour's bar
+    # into the TP/SL resolution (lookahead bias).
     hour_start = hour_timestamp
-    hour_end = hour_timestamp + pd.Timedelta(hours=1)
+    hour_end_exclusive = hour_timestamp + pd.Timedelta(hours=1)
 
     try:
-        sub_bars = sub_df.loc[hour_start:hour_end]
+        sub_bars = sub_df.loc[(sub_df.index >= hour_start) & (sub_df.index < hour_end_exclusive)]
         if len(sub_bars) == 0:
             return None
     except Exception:
