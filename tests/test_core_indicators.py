@@ -45,7 +45,7 @@ class TestADX:
         df = create_ohlc(close)
         result = compute_indicator_pool(df)
 
-        adx = result["trend_adx_14"].dropna()
+        adx = result["adx_14"].dropna()
         # ADX > 30 gilt als starker Trend
         assert adx.mean() > 25, f"Expected ADX > 25 in trend, got {adx.mean():.1f}"
 
@@ -58,13 +58,13 @@ class TestADX:
         close_sideways = 100 + np.random.randn(n) * 0.5
         df_sideways = create_ohlc(close_sideways)
         result_sideways = compute_indicator_pool(df_sideways)
-        adx_sideways = result_sideways["trend_adx_14"].dropna().mean()
+        adx_sideways = result_sideways["adx_14"].dropna().mean()
 
         # Starker Trend
         close_trend = 100 * np.cumprod(1 + np.full(n, 0.01))
         df_trend = create_ohlc(close_trend)
         result_trend = compute_indicator_pool(df_trend)
-        adx_trend = result_trend["trend_adx_14"].dropna().mean()
+        adx_trend = result_trend["adx_14"].dropna().mean()
 
         # ADX im Trend sollte höher sein als seitwärts
         assert adx_trend > adx_sideways, f"ADX in trend ({adx_trend:.1f}) should be > sideways ({adx_sideways:.1f})"
@@ -81,7 +81,7 @@ class TestEMADistance:
         df = create_ohlc(close)
         result = compute_indicator_pool(df)
 
-        ema_dist = result["trend_ema_dist_21"].dropna()
+        ema_dist = result["ema_dist_21"].dropna()
         # Die letzten Werte sollten positiv sein
         assert ema_dist.iloc[-50:].mean() > 0, "Price above EMA should have positive distance"
 
@@ -93,7 +93,7 @@ class TestEMADistance:
         df = create_ohlc(close)
         result = compute_indicator_pool(df)
 
-        ema_dist = result["trend_ema_dist_21"].dropna()
+        ema_dist = result["ema_dist_21"].dropna()
         assert ema_dist.iloc[-50:].mean() < 0, "Price below EMA should have negative distance"
 
 
@@ -108,7 +108,7 @@ class TestEfficiencyRatio:
         df = create_ohlc(close)
         result = compute_indicator_pool(df)
 
-        er = result["trend_er_20"].dropna()
+        er = result["er_20"].dropna()
         # ER sollte sehr hoch sein (nahe 1)
         assert er.mean() > 0.8, f"Expected ER > 0.8 in linear trend, got {er.mean():.2f}"
 
@@ -121,7 +121,7 @@ class TestEfficiencyRatio:
         df = create_ohlc(close)
         result = compute_indicator_pool(df)
 
-        er = result["trend_er_20"].dropna()
+        er = result["er_20"].dropna()
         assert er.mean() < 0.3, f"Expected ER < 0.3 in noisy sideways, got {er.mean():.2f}"
 
 
@@ -633,9 +633,9 @@ class TestIndicatorPoolIntegration:
         result = compute_indicator_pool(df)
 
         all_features = get_feature_columns(result)
-        trend_features = [f for f in all_features if f.startswith("trend_")]
+        trend_prefixes = ("ema_", "sma_", "adx_", "macd_", "cci_", "aroon_", "er_", "st_")
+        trend_features = [f for f in all_features if f.startswith(trend_prefixes)]
 
-        # Sollte mehrere Trend-Features haben
         assert len(trend_features) > 10, f"Expected > 10 trend features, got {len(trend_features)}"
 
 

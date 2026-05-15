@@ -9,6 +9,8 @@ from .numba_core import (  # noqa: F401
 )
 from .trade import (
     simulate_pro_trade,
+    analyze_sl_potential,
+    analyze_tp_potential,
     compute_session_mask,
     calculate_sharpe_ratio,
     calculate_calmar_ratio,
@@ -27,6 +29,8 @@ __all__ = [
     "_simulate_trade_scale_in_numba",
     "compute_targets_numba",
     "simulate_pro_trade",
+    "analyze_sl_potential",
+    "analyze_tp_potential",
     "compute_session_mask",
     "calculate_sharpe_ratio",
     "calculate_calmar_ratio",

@@ -34,4 +34,3 @@ build/
 htmlcov/
 
 .claude.worktrees/
-.worktrees/

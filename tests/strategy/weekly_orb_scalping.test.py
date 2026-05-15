@@ -16,12 +16,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from conftest import make_m15_ohlcv
+from tests.strategy.conftest import make_m15_ohlcv
 
 from fwbg.pipeline.features import compute_indicator_pool
 from fwbg.core.config import StrategyConfig
 
-_from fwbg.api.workspace import get_strategies_dir as _gsd; CONFIG_PATH = str(_gsd() / "weekly_orb_scalping.json")
+from fwbg.api.workspace import get_strategies_dir as _gsd; _CONFIG_PATH = str(_gsd() / "weekly_orb_scalping.json")
 
 # Need at least 2 full weeks so the weekly range can form and break.
 # make_m15_ohlcv starts on 2022-01-03 (Monday). 2000 bars = ~20 days.

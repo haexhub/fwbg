@@ -1,0 +1,7 @@
+{
+  "name": "efficiency_ratio",
+  "version": "1.0.0",
+  "description": "Kaufman's Efficiency Ratio - measures trend quality (1=clean trend, 0=choppy)",
+  "phase": "indicators",
+  "benefits_from_stationary": true
+}

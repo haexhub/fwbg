@@ -1,0 +1,7 @@
+{
+  "name": "macd",
+  "version": "1.0.0",
+  "description": "MACD (Moving Average Convergence Divergence) - momentum and trend-following oscillator",
+  "phase": "indicators",
+  "benefits_from_stationary": true
+}

@@ -46,7 +46,7 @@ class TestAutoDiscover:
         assert len(discovered) > 0
 
         # Should include known core indicators with fwbg-core namespace
-        assert "fwbg-core:trend" in discovered
+        assert "fwbg-core:ema" in discovered
         assert "fwbg-core:momentum" in discovered
 
 

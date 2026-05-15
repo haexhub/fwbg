@@ -4,6 +4,9 @@ Trains a single XGBClassifier on multiple RRR variants simultaneously.
 RRR (reward-risk ratio = tp/sl) is added as an input feature, letting
 the model learn which RRR works best for each market setup.
 
+Each RRR variant gets its own binary Win/Loss targets computed from OHLC
+data with variant-specific TP/SL distances.
+
 At inference, all RRR variants are scored and the best one is selected
 per sample.
 """
@@ -13,6 +16,63 @@ from typing import Any, Dict, List, Optional
 
 from fwbg_sdk.models import BaseModel, TrainingContext
 from fwbg_sdk.registry import register_model
+
+
+def _compute_binary_targets(
+    df: pd.DataFrame,
+    rrr: float,
+    base_sl_atr: float,
+    direction: str,
+    atr_col: str = "_atr",
+    max_bars: int = 50,
+) -> np.ndarray:
+    """Compute binary Win/Loss targets for a specific RRR variant.
+
+    Simulates trades with TP = rrr * base_sl_atr * ATR, SL = base_sl_atr * ATR.
+    Entry at next bar open (entry_delay=1). Returns 1 if TP hit first, 0 otherwise.
+    """
+    if atr_col not in df.columns:
+        fallback = "vol_atr" if "vol_atr" in df.columns else None
+        if fallback:
+            atr_col = fallback
+        else:
+            raise ValueError(
+                f"ATR column '{atr_col}' not found in DataFrame. "
+                "Add the 'volatility' indicator to your pipeline config."
+            )
+
+    opens = df["O"].values
+    highs = df["H"].values
+    lows = df["L"].values
+    atr = df[atr_col].values.astype(np.float64)
+    n = len(df)
+    targets = np.zeros(n, dtype=np.int32)
+
+    for i in range(n - 1):
+        atr_i = atr[i]
+        if np.isnan(atr_i) or atr_i <= 0:
+            continue
+
+        tp_dist = rrr * base_sl_atr * atr_i
+        sl_dist = base_sl_atr * atr_i
+        entry_price = opens[i + 1]
+
+        if direction == "long":
+            for j in range(i + 1, min(i + 1 + max_bars, n)):
+                if highs[j] - entry_price >= tp_dist:
+                    targets[i] = 1
+                    break
+                if entry_price - lows[j] >= sl_dist:
+                    break
+        else:  # short
+            for j in range(i + 1, min(i + 1 + max_bars, n)):
+                if entry_price - lows[j] >= tp_dist:
+                    targets[i] = 1
+                    break
+                if highs[j] - entry_price >= sl_dist:
+                    break
+
+    return targets
 
 
 @register_model("xgboost_rrr")
@@ -51,16 +111,29 @@ class XGBoostRRRModel(BaseModel):
         self._rrr_variants = hyperparameters.pop("rrr_variants", [2.0, 3.0])
         self._base_sl_atr = hyperparameters.pop("base_sl_atr", 2.0)
 
-        self.progress.begin_stage("stacking", "Stacking dataset for RRR variants")
+        # Get full OHLC data for per-variant target computation
+        fold_info = training_context.fold_information or {}
+        train_df = fold_info.get("train_df")
+        direction = training_context.direction or "long"
 
-        # Stack: duplicate dataset for each RRR variant, add rrr column
+        self.progress.begin_stage("stacking", "Stacking dataset with per-variant targets")
+
         stacked_features = []
         stacked_targets = []
         for rrr in self._rrr_variants:
             df_copy = features.copy()
             df_copy["rrr"] = rrr
+
+            if train_df is not None:
+                variant_targets = _compute_binary_targets(
+                    train_df, rrr, self._base_sl_atr, direction,
+                )
+            else:
+                # Fallback: use passed targets (legacy / tests without train_df)
+                variant_targets = targets.copy()
+
             stacked_features.append(df_copy)
-            stacked_targets.append(targets.copy())
+            stacked_targets.append(variant_targets)
 
         X_stacked = pd.concat(stacked_features, ignore_index=True)
         y_stacked = np.concatenate(stacked_targets)
@@ -194,6 +267,10 @@ class XGBoostRRRModel(BaseModel):
         ptp[:, 0] = self._selected_rrr * self._base_sl_atr * atr  # TP
         ptp[:, 1] = self._base_sl_atr * atr  # SL
         return ptp
+
+    @classmethod
+    def get_required_indicators(cls) -> List[str]:
+        return ["volatility"]
 
     @classmethod
     def get_reduced_hyperparameters(
