@@ -1,0 +1,822 @@
+{
+  "name": "Weekly ORB Scalping",
+  "description": "Rule-based Weekly ORB strategy. First 30-60 min of Monday define the weekly range. Breakout + retracement entries with trailing stop.",
+  "tags": [
+    "weekly_orb",
+    "orb",
+    "intraday",
+    "swing",
+    "rule_based"
+  ],
+  "timeframe": "MINUTE_15",
+  "hypothesis": "Weekly Opening Ranges are observed by institutional participants. Breakouts over WOR High/Low have higher continuation probability. Rule-based entries with grid-optimized TP/SL.",
+  "expected_outcome": "WOR retest signals dominate entries. Stronger edge than daily ORB on weekly basis.",
+  "pipeline": "weekly_orb_v1",
+  "model": "signal_orb_v1",
+  "validation": "walk_forward_intraday_v1",
+  "filters": "weekly_orb_v1",
+  "resources": "standard_v1",
+  "datasource": "forexsb",
+  "exit_strategies": [
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.5,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.5,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.5,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.5,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 2.5,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 3.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 3.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 3.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 3.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 3.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 4.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 4.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 4.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 4.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 4.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 5.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 5.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 5.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 5.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 5.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 6.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 6.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 6.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 6.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 6.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 8.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 8.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 8.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 8.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 8.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 10.0,
+        "sl_mult": 1.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 10.0,
+        "sl_mult": 2.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 10.0,
+        "sl_mult": 2.5,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 10.0,
+        "sl_mult": 3.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    },
+    {
+      "name": "orb_based",
+      "params": {
+        "atr_period": 14,
+        "min_tp_pips": 8,
+        "min_sl_pips": 12,
+        "sl_dist_column": "wor_rb2_sl_dist",
+        "tp_mult": 10.0,
+        "sl_mult": 4.0,
+        "timeout_bars": null
+      },
+      "ct": [
+        0.5
+      ],
+      "exit_modifier": "trailing_stop",
+      "exit_modifier_params": {
+        "breakeven_trigger": 0.5,
+        "trail_atr_mult": 0.5
+      }
+    }
+  ]
+}
