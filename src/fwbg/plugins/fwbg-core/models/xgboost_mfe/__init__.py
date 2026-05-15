@@ -5,7 +5,8 @@ XGBRegressor instead of binary Win/Loss classification. MFE is normalized
 by ATR for regime robustness.
 
 SL is provided as an input feature (multiple SL variants are stacked),
-letting the model learn which SL works best per setup. At inference,
+letting the model learn which SL works best per setup. Each SL variant
+gets its own MFE targets computed from OHLC data. At inference,
 the SL variant with the best predicted MFE/SL ratio is selected.
 """
 import numpy as np
@@ -52,16 +53,31 @@ class XGBoostMFEModel(BaseModel):
         # Extract MFE-specific params
         self._sl_variants = hyperparameters.pop("sl_variants", [1.5, 2.0, 2.5])
 
-        self.progress.begin_stage("stacking", "Stacking dataset for SL variants")
+        # Get full OHLC data for per-variant MFE computation
+        fold_info = training_context.fold_information or {}
+        train_df = fold_info.get("train_df")
+        direction = training_context.direction or "long"
 
-        # Stack: duplicate dataset for each SL variant, add sl_atr column
+        self.progress.begin_stage("stacking", "Stacking dataset with per-variant MFE targets")
+
         stacked_features = []
         stacked_targets = []
         for sl in self._sl_variants:
             df_copy = features.copy()
             df_copy["sl_atr"] = sl
+
+            if train_df is not None:
+                from fwbg.optimization.targets import compute_mfe_targets
+                mfe_long, mfe_short = compute_mfe_targets(
+                    train_df, sl_atr=sl, max_bars=50,
+                )
+                variant_targets = mfe_long if direction == "long" else mfe_short
+            else:
+                # Fallback: use passed targets (legacy / tests without train_df)
+                variant_targets = targets.copy()
+
             stacked_features.append(df_copy)
-            stacked_targets.append(targets.copy())
+            stacked_targets.append(variant_targets)
 
         X_stacked = pd.concat(stacked_features, ignore_index=True)
         y_stacked = np.concatenate(stacked_targets)
@@ -207,6 +223,10 @@ class XGBoostMFEModel(BaseModel):
         ptp[:, 0] = self._predicted_mfe * atr   # TP = predicted_mfe * atr
         ptp[:, 1] = self._selected_sl_atr * atr  # SL = selected_sl_atr * atr
         return ptp
+
+    @classmethod
+    def get_required_indicators(cls) -> List[str]:
+        return ["volatility"]
 
     @classmethod
     def get_reduced_hyperparameters(

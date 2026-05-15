@@ -6,6 +6,23 @@ import pytest
 from fwbg_sdk.models import TrainingContext
 
 
+def _make_ohlc_df(n=200, seed=42):
+    """Create a synthetic OHLC DataFrame with ATR."""
+    np.random.seed(seed)
+    close = 100 + np.cumsum(np.random.randn(n) * 0.5)
+    high = close + np.abs(np.random.randn(n)) * 0.3
+    low = close - np.abs(np.random.randn(n)) * 0.3
+    opn = close + np.random.randn(n) * 0.1
+    atr = np.full(n, 1.0)
+    return pd.DataFrame({
+        "O": opn, "H": high, "L": low, "C": close,
+        "_atr": atr,
+        "feat_1": np.random.randn(n),
+        "feat_2": np.random.randn(n),
+        "feat_3": np.random.randn(n),
+    })
+
+
 class TestXGBoostMFEModel:
     @pytest.fixture
     def model(self):
@@ -44,6 +61,35 @@ class TestXGBoostMFEModel:
         probs = model.predict_probability(features)
         assert probs.shape == (len(features), 2)
         assert np.all(probs[:, 1] >= 0.0)
+
+    def test_train_with_ohlc_data(self, model):
+        """Train with full OHLC data — per-variant MFE targets should be computed."""
+        train_df = _make_ohlc_df(300)
+        features = train_df[["feat_1", "feat_2", "feat_3"]]
+        targets = np.abs(np.random.randn(300)) * 2.0
+
+        ctx = TrainingContext(
+            direction="long",
+            fold_information={"train_df": train_df},
+        )
+        model.train(
+            features, targets, ctx,
+            sl_variants=[1.5, 3.0],
+        )
+        assert model.is_trained
+        probs = model.predict_probability(features)
+        assert probs.shape == (300, 2)
+        assert np.all(probs[:, 1] >= 0.0)
+
+    def test_different_sl_produce_different_mfe(self):
+        """Core bug fix: different SL variants produce different MFE targets."""
+        from fwbg.optimization.targets import compute_mfe_targets
+
+        df = _make_ohlc_df(300, seed=99)
+        mfe_long_tight, _ = compute_mfe_targets(df, sl_atr=1.0, max_bars=50)
+        mfe_long_wide, _ = compute_mfe_targets(df, sl_atr=3.0, max_bars=50)
+        # Wider SL should generally allow higher MFE (trade lives longer)
+        assert not np.array_equal(mfe_long_tight, mfe_long_wide)
 
     def test_trained_classes(self, model, training_data):
         features, targets = training_data

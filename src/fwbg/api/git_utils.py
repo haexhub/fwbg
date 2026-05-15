@@ -1,6 +1,9 @@
 """Git-based versioning utilities for strategy configs."""
+import logging
 import subprocess
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 def _run(args: list[str], cwd: Path) -> str:
@@ -23,6 +26,37 @@ def is_git_repo(path: Path) -> bool:
         return True
     except (RuntimeError, FileNotFoundError):
         return False
+
+
+def ensure_git_repo(path: Path) -> None:
+    """Initialize a git repo at *path* if one doesn't exist yet."""
+    if is_git_repo(path):
+        return
+    path.mkdir(parents=True, exist_ok=True)
+    _run(["init"], cwd=path)
+    log.info("Initialized git repository at %s", path)
+
+
+def get_git_identity(repo_dir: Path) -> dict[str, str]:
+    """Return the local git user.name and user.email (empty strings if unset)."""
+    name = ""
+    email = ""
+    try:
+        name = _run(["config", "user.name"], cwd=repo_dir)
+    except RuntimeError:
+        pass
+    try:
+        email = _run(["config", "user.email"], cwd=repo_dir)
+    except RuntimeError:
+        pass
+    return {"name": name, "email": email}
+
+
+def set_git_identity(repo_dir: Path, name: str, email: str) -> None:
+    """Set local git user.name and user.email for the repo."""
+    _run(["config", "user.name", name], cwd=repo_dir)
+    _run(["config", "user.email", email], cwd=repo_dir)
+    log.info("Set git identity for %s: %s <%s>", repo_dir, name, email)
 
 
 def commit_file(repo_dir: Path, filename: str, message: str) -> str:

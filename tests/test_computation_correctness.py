@@ -449,7 +449,7 @@ class TestPipelineIntegration:
 
         config = PipelineConfig(
             indicators=[
-                PluginConfig(name='fwbg-core:trend', params={'adx_periods': [14], 'ema_periods': [20]}),
+                PluginConfig(name='fwbg-core:ema', params={'lines': [{'period': 20, 'source': 'C'}]}),
                 PluginConfig(name='fwbg-core:momentum', params={'rsi_periods': [14]}),
             ]
         )
@@ -495,7 +495,7 @@ class TestPipelineIntegration:
                            params={'auto_d': False, 'default_d': 0.4})
             ],
             indicators=[
-                PluginConfig(name='fwbg-core:trend', params={'adx_periods': [14]}),
+                PluginConfig(name='fwbg-core:ema', params={}),
             ]
         )
 
@@ -535,7 +535,7 @@ class TestPipelineIntegration:
 
         config = PipelineConfig(
             indicators=[
-                PluginConfig(name='fwbg-core:trend', params={'adx_periods': [14]}),
+                PluginConfig(name='fwbg-core:ema', params={}),
                 PluginConfig(name='fwbg-core:momentum', params={'rsi_periods': [14]}),
                 PluginConfig(name='fwbg-core:volatility', params={'atr_periods': [14]}),
             ]
@@ -558,13 +558,15 @@ class TestPipelineIntegration:
         registry = get_registry()
         registry.auto_discover()
 
-        # Minimale Config: nur trend mit wenigen Parametern
+        # Minimale Config: EMA + ADX + SMA
         config = PipelineConfig(
             indicators=[
-                PluginConfig(name='fwbg-core:trend', params={
-                    'adx_periods': [14],
-                    'ema_periods': [20],
-                    'sma_periods': [20],
+                PluginConfig(name='fwbg-core:ema', params={
+                    'lines': [{'period': 20, 'source': 'C'}],
+                }),
+                PluginConfig(name='fwbg-core:adx', params={'periods': [14]}),
+                PluginConfig(name='fwbg-core:sma', params={
+                    'lines': [{'period': 20, 'source': 'C'}],
                 }),
             ]
         )
@@ -800,7 +802,7 @@ class TestComputationsAreActuallyPerformed:
                            params={'auto_d': False, 'default_d': 0.4})
             ],
             indicators=[
-                PluginConfig(name='fwbg-core:trend', params={'adx_periods': [14]}),
+                PluginConfig(name='fwbg-core:ema', params={}),
                 PluginConfig(name='fwbg-core:momentum', params={'rsi_periods': [14]}),
             ]
         )

@@ -50,8 +50,8 @@ class TestGridProgressCallback:
         # Dummy inner_df mit genug Daten
         np.random.seed(42)
         inner_df = pd.DataFrame({
-            "trend_adx_14": np.random.randn(1000),
-            "trend_ema_21": np.random.randn(1000),
+            "adx_14": np.random.randn(1000),
+            "ema_21": np.random.randn(1000),
             "trend_slope_21": np.random.randn(1000),
             "momentum_rsi_14": np.random.randn(1000),
         })
@@ -63,7 +63,7 @@ class TestGridProgressCallback:
         ]
 
         # full_pool mit Feature-Namen
-        full_pool = ["trend_adx_14", "trend_ema_21", "trend_slope_21", "momentum_rsi_14"]
+        full_pool = ["adx_14", "ema_21", "trend_slope_21", "momentum_rsi_14"]
 
         # Aufruf der Funktion
         with patch("fwbg.optimization.grid_search.select_features") as mock_select:

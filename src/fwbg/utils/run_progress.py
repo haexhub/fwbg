@@ -118,6 +118,30 @@ class RunProgressWriter:
             self._recalculate_totals()
             self._maybe_flush()
 
+    # Canonical stage ordering for complete_earlier_stages
+    _STAGE_ORDER = ["data_loading", "indicators", "evaluation", "grid_search", "model_training"]
+
+    def complete_earlier_stages(self, symbol: str, new_stage_name: str) -> None:
+        """Mark all stages that come before new_stage_name as completed."""
+        with self._lock:
+            asset = self._progress.assets.get(symbol)
+            if not asset:
+                return
+            try:
+                new_idx = self._STAGE_ORDER.index(new_stage_name)
+            except ValueError:
+                return  # Unknown stage, skip
+            for stage in asset.stages:
+                try:
+                    stage_idx = self._STAGE_ORDER.index(stage.stage_name)
+                except ValueError:
+                    continue
+                if stage_idx < new_idx and stage.status == AssetStageStatus.RUNNING:
+                    stage.status = AssetStageStatus.COMPLETED
+                    stage.progress_fraction = 1.0
+                    if not stage.completed_at:
+                        stage.completed_at = _iso_now()
+
     def update_asset_stage(self, symbol: str, stage_name: str,
                            status: str = "running", description: str = "",
                            progress_fraction: Optional[float] = None,

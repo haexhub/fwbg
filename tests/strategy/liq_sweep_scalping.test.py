@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from conftest import make_m1_ohlcv, make_liquidity_sweep_scenario
+from tests.strategy.conftest import make_m1_ohlcv, make_liquidity_sweep_scenario
 
 from fwbg.pipeline.features import compute_indicator_pool
 from fwbg.core.config import StrategyConfig

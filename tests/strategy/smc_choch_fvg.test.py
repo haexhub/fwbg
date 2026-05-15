@@ -12,7 +12,7 @@ import pytest
 
 # Ensure conftest helpers are importable from this directory
 
-from conftest import make_m15_ohlcv, make_fvg_scenario  # noqa: E402
+from tests.strategy.conftest import make_m15_ohlcv, make_fvg_scenario
 
 from fwbg.core.config import StrategyConfig
 from fwbg.pipeline.features import compute_indicator_pool

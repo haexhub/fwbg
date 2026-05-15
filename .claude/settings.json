@@ -13,7 +13,9 @@
       "Skill(commit-commands:commit)",
       "Skill(commit-commands:commit:*)",
       "Bash(.venv/bin/python -m pytest tests/ -x -q)",
-      "Bash(.venv/bin/ruff check src/fwbg/api/discovery.py)"
+      "Bash(.venv/bin/ruff check src/fwbg/api/discovery.py)",
+      "Bash(bun run typecheck)",
+      "Bash(grep -l '\"\"trend\"\"' /home/haex/fwbg/strategies/configs/*.json)"
     ],
     "additionalDirectories": [
       "/home/haex/Projekte/fwbg-dashboard/types",
@@ -21,7 +23,9 @@
       "/home/haex/Projekte/fwbg-dashboard/components/runs",
       "/home/haex/Projekte/fwbg-dashboard/pages/runs",
       "/home/haex/Projekte/fwbg-dashboard/server/api/chart",
-      "/home/haex/Projekte/fwbg-dashboard/components/performance"
+      "/home/haex/Projekte/fwbg-dashboard/components/performance",
+      "/home/haex/fwbg/strategies/configs",
+      "/home/haex/Projekte/fwbg-dashboard/pages/strategy/[name]"
     ]
   }
 }

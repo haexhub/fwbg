@@ -92,8 +92,8 @@ class TestPipelineConfig:
         assert config.preprocessing[0].name == "normalizer"
 
         assert len(config.indicators) == 2
-        assert config.indicators[0].name == "sma"
-        assert config.indicators[1].name == "rsi"
+        assert config.indicators[0].name in ("sma", "fwbg-core:sma")
+        assert config.indicators[1].name in ("rsi", "fwbg-core:rsi")
 
         assert len(config.feature_selection) == 1
         assert config.feature_selection[0].name in (
@@ -113,7 +113,7 @@ class TestPipelineConfig:
         # Test get_phase method
         indicators = config.get_phase("indicators")
         assert len(indicators) == 2
-        assert indicators[0].name == "sma"
+        assert indicators[0].name in ("sma", "fwbg-core:sma")
 
         # Test all_plugins method
         all_plugins = config.all_plugins()
@@ -133,7 +133,7 @@ class TestPipelineConfig:
 
         # Specified phase should have plugins
         assert len(config.indicators) == 1
-        assert config.indicators[0].name == "sma"
+        assert config.indicators[0].name in ("sma", "fwbg-core:sma")
 
         # Missing phases should be empty lists
         assert config.data_loading == []

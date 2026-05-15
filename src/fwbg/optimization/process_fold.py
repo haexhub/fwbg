@@ -88,10 +88,10 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
                 pp_cls = get_preprocessor(pp_name)
                 pp = pp_cls()
 
-                train_ctx = PipelineContext(
-                    df=pp_train_raw.copy(), symbol=sym, asset_class=ctx.asset_class
+                fit_ctx = PipelineContext(
+                    df=pp_train_raw, symbol=sym, asset_class=ctx.asset_class
                 )
-                pp.fit(train_ctx, **pp_params)
+                pp.fit(fit_ctx, **pp_params)
 
                 train_ctx = PipelineContext(
                     df=pp_train_raw.copy(), symbol=sym, asset_class=ctx.asset_class
@@ -449,6 +449,7 @@ def process_single_fold(
         "test_start": str(fold.test_df.index[0]),
         "test_end": str(fold.test_df.index[-1]),
         "inner_val_pnl": b.get("inner_val_pnl", 0),
+        "inner_fold_stability": b.get("fold_stability", 0),
         "test_pnl": test_result["pnl"],
         "test_win_rate": test_result["win_rate"],
         "test_trades": test_result["n_trades"],
@@ -464,16 +465,40 @@ def process_single_fold(
             "exit_modifier_params": b.get("exit_modifier_params"),
             "exit_strategy": b.get("exit_strategy"),
             "exit_params": b.get("exit_params"),
+            "ct_votes": b.get("ct_votes"),
+            "ct_diagnostics": b.get("ct_diagnostics"),
         },
         "selected_features_long": b.get("selected_features_long") or [],
         "selected_features_short": b.get("selected_features_short") or [],
+        "n_candidates": len(candidates),
     }
 
     # Calculate bias ratio
     bias_ratio = fold_result["test_pnl"] / fold_result["inner_val_pnl"] if fold_result["inner_val_pnl"] > 0 else 0
 
+    # Log detailed fold results for diagnostics
+    bc = fold_result["best_config"]
+    ct_str = f"CT={bc['ct']}"
+    if isinstance(bc["ct"], tuple):
+        ct_str = f"CT_L={bc['ct'][0]} CT_S={bc['ct'][1]}"
+    extra_parts = [ct_str, f"TP={bc['tp']} SL={bc['sl']}"]
+    hp = bc.get("model_hyperparameters") or {}
+    if "rrr_variants" in hp:
+        extra_parts.append(f"RRR_variants={hp['rrr_variants']}")
+    if "base_sl_atr" in hp:
+        extra_parts.append(f"base_sl={hp['base_sl_atr']}")
+    if "sl_variants" in hp:
+        extra_parts.append(f"SL_variants={hp['sl_variants']}")
+    if bc.get("exit_modifier_params"):
+        emp = bc["exit_modifier_params"]
+        trail = emp.get("trail_pips", 0)
+        be = emp.get("breakeven_trigger", 0)
+        if trail or be:
+            extra_parts.append(f"trail={trail} BE={be}")
+    detail_str = " | ".join(extra_parts)
+
     log(1, f"  Fold {fold.fold_id + 1}: WR={test_result['win_rate']:.1%} "
            f"PnL={test_result['pnl']:.1f} Trades={test_result['n_trades']} "
-           f"Bias={bias_ratio:.2f}x", sym)
+           f"Bias={bias_ratio:.2f}x [{detail_str}]", sym)
 
     return fold_result, all_grid_results

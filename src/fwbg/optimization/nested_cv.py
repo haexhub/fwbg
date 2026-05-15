@@ -15,6 +15,7 @@ from fwbg_sdk.models import BaseModel, TrainingContext
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_feature_selector, get_model
 
+from fwbg.simulation.trade import analyze_sl_potential, analyze_tp_potential
 from .targets import (
     _validate_targets,
     compute_targets,
@@ -23,6 +24,39 @@ from .targets import (
     simulate_trades_sequential,
     simulate_trades_sequential_separate_ct,
 )
+
+
+def _compact_trades_by_ct(fold_result):
+    """Strip trade dicts in trades_by_ct to only pnl_raw and result.
+
+    After the first-fold sanity check, _aggregate_cv_folds only reads
+    t["pnl_raw"] and len(trades).  Dropping other fields (mae, mfe,
+    entry/exit times, etc.) frees memory without changing semantics.
+    """
+    trades_by_ct = fold_result.get("trades_by_ct")
+    if not trades_by_ct:
+        return
+
+    def _strip(trades):
+        if not trades or not isinstance(trades, list):
+            return trades
+        return [{"pnl_raw": t["pnl_raw"]} for t in trades if isinstance(t, dict)]
+
+    compacted = {}
+    for key, value in trades_by_ct.items():
+        if key in ("long", "short") and isinstance(value, dict):
+            compacted[key] = {ct_val: _strip(ct_trades) for ct_val, ct_trades in value.items()}
+        elif key == "combined" and isinstance(value, dict) and "trades" in value:
+            compacted[key] = {
+                "ct_long": value.get("ct_long"),
+                "ct_short": value.get("ct_short"),
+                "trades": _strip(value["trades"]),
+            }
+        elif isinstance(value, list):
+            compacted[key] = _strip(value)
+        else:
+            compacted[key] = value
+    fold_result["trades_by_ct"] = compacted
 
 
 def nested_cv_split(
@@ -165,7 +199,14 @@ def train_model(
         params = model_class.get_reduced_hyperparameters(params)
 
     model = model_class()
-    training_context = TrainingContext(sample_weights=sample_weight, direction=direction)
+    fold_info = None
+    if ctx.model_type in ("xgboost_rrr", "xgboost_mfe"):
+        fold_info = {"train_df": train_df}
+    training_context = TrainingContext(
+        sample_weights=sample_weight,
+        direction=direction,
+        fold_information=fold_info,
+    )
     model.train(train_df[features], targets, training_context, **params)
 
     if ctx.probability_calibration:
@@ -281,20 +322,6 @@ def _evaluate_single_fold(
     if not has_long and not has_short:
         return {"success": False}
 
-    # For xgboost_mfe, compute MFE regression targets for training
-    train_targets_long = targets_long
-    train_targets_short = targets_short
-    if ctx.model_type == "xgboost_mfe":
-        from fwbg.optimization.targets import compute_mfe_targets
-        sl_variants = ctx.model_hyperparameters.get("sl_variants", [2.0])
-        mfe_long, mfe_short = compute_mfe_targets(
-            train_df, sl_atr=sl_variants[0],
-            max_bars=ctx.max_trade_bars or 50,
-            spread=ctx.spread,
-        )
-        train_targets_long = mfe_long
-        train_targets_short = mfe_short
-
     feat_long = selected_features_long
     feat_short = selected_features_short
     if feat_long is None and feat_short is None:
@@ -313,11 +340,11 @@ def _evaluate_single_fold(
         return {"success": False}
 
     mod_long = train_model(
-        train_df, train_targets_long, feat_long, ctx.min_trades, ctx,
+        train_df, targets_long, feat_long, ctx.min_trades, ctx,
         use_reduced_params=True, sample_weight=weights, direction="long",
     ) if has_long else None
     mod_short = train_model(
-        train_df, train_targets_short, feat_short, ctx.min_trades, ctx,
+        train_df, targets_short, feat_short, ctx.min_trades, ctx,
         use_reduced_params=True, sample_weight=weights, direction="short",
     ) if has_short else None
 
@@ -367,6 +394,7 @@ def _aggregate_cv_folds(
     """
     inner_val_pnls = []
     best_ct_votes = {}
+    ct_pnl_summary = {}  # {ct: [pnl_fold0, pnl_fold1, ...]}
 
     for fr in fold_results:
         if not fr.get("success"):
@@ -374,6 +402,28 @@ def _aggregate_cv_folds(
         inner_val_pnls.append(fr["pnl"])
         ct = fr["best_ct"]
         best_ct_votes[ct] = best_ct_votes.get(ct, 0) + 1
+
+        # Collect per-CT PnL from trades_by_ct for post-hoc analysis
+        trades_by_ct = fr.get("trades_by_ct") or {}
+        if ctx.separate_long_short:
+            # separate_long_short: trades_by_ct = {"long": {ct: trades}, "short": {ct: trades}, "combined": {...}}
+            for direction in ("long", "short"):
+                for ct_val, ct_trades in (trades_by_ct.get(direction) or {}).items():
+                    ct_key = f"{direction}_{ct_val}"
+                    if ct_key not in ct_pnl_summary:
+                        ct_pnl_summary[ct_key] = {"pnls": [], "trade_counts": []}
+                    ct_pnl = sum(t["pnl_raw"] for t in ct_trades) if ct_trades else 0
+                    ct_pnl_summary[ct_key]["pnls"].append(ct_pnl)
+                    ct_pnl_summary[ct_key]["trade_counts"].append(len(ct_trades))
+        else:
+            # unified CT: trades_by_ct = {ct_val: [trades]}
+            for ct_val, ct_trades in trades_by_ct.items():
+                ct_key = str(ct_val)
+                if ct_key not in ct_pnl_summary:
+                    ct_pnl_summary[ct_key] = {"pnls": [], "trade_counts": []}
+                ct_pnl = sum(t["pnl_raw"] for t in ct_trades) if ct_trades else 0
+                ct_pnl_summary[ct_key]["pnls"].append(ct_pnl)
+                ct_pnl_summary[ct_key]["trade_counts"].append(len(ct_trades))
 
     if not inner_val_pnls or not best_ct_votes:
         return {"success": False}
@@ -394,10 +444,21 @@ def _aggregate_cv_folds(
 
     best_ct = max(best_ct_votes.keys(), key=lambda x: best_ct_votes[x])
 
+    # Compute mean PnL per CT for diagnostics
+    ct_diagnostics = {}
+    for ct_key, data in ct_pnl_summary.items():
+        ct_diagnostics[ct_key] = {
+            "mean_pnl": float(np.mean(data["pnls"])) if data["pnls"] else 0,
+            "mean_trades": float(np.mean(data["trade_counts"])) if data["trade_counts"] else 0,
+            "n_folds": len(data["pnls"]),
+        }
+
     result = {
         "success": True,
         "avg_val_pnl": np.mean(inner_val_pnls),
         "best_ct": best_ct,
+        "ct_votes": {str(k) if isinstance(k, tuple) else str(k): v for k, v in best_ct_votes.items()},
+        "ct_diagnostics": ct_diagnostics,
         "selected_features_long": selected_features_long,
         "selected_features_short": selected_features_short,
         "selected_features": selected_features,
@@ -485,7 +546,12 @@ def run_inner_cv(
             if fold_idx == 0 and first_fold_sanity_check:
                 trades_by_ct = fold_result["trades_by_ct"]
                 best_ct = fold_result["best_ct"]
-                fold_trades = trades_by_ct.get(best_ct, [])
+                # For separate_long_short, trades_by_ct has "combined" dict
+                # with a "trades" key instead of ct→trades mapping.
+                if isinstance(best_ct, tuple) and "combined" in trades_by_ct:
+                    fold_trades = trades_by_ct["combined"].get("trades", [])
+                else:
+                    fold_trades = trades_by_ct.get(best_ct, [])
                 n_fold_trades = len(fold_trades)
 
                 if n_fold_trades > 0:
@@ -499,6 +565,10 @@ def run_inner_cv(
                         return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
                 elif n_fold_trades < first_fold_min_trades:
                     return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
+
+            # Compact trades_by_ct: replace full trade dicts with
+            # lightweight summaries (pnl + count) for _aggregate_cv_folds.
+            _compact_trades_by_ct(fold_result)
         else:
             failed_count += 1
 
@@ -556,22 +626,8 @@ def evaluate_on_holdout(
     else:
         targets_long, targets_short, has_long, has_short = compute_targets(inner_df, tp, sl, ctx, timeout_bars)
 
-    # For xgboost_mfe, use MFE regression targets for training
-    train_targets_long = targets_long
-    train_targets_short = targets_short
-    if ctx.model_type == "xgboost_mfe":
-        from fwbg.optimization.targets import compute_mfe_targets
-        sl_variants = ctx.model_hyperparameters.get("sl_variants", [2.0])
-        mfe_long, mfe_short = compute_mfe_targets(
-            inner_df, sl_atr=sl_variants[0],
-            max_bars=ctx.max_trade_bars or 50,
-            spread=ctx.spread,
-        )
-        train_targets_long = mfe_long
-        train_targets_short = mfe_short
-
-    mod_long = train_model(inner_df, train_targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="long") if has_long and features_long else None
-    mod_short = train_model(inner_df, train_targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="short") if has_short and features_short else None
+    mod_long = train_model(inner_df, targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="long") if has_long and features_long else None
+    mod_short = train_model(inner_df, targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="short") if has_short and features_short else None
 
     if not mod_long and not mod_short:
         return {"trades": [], "trades_detailed": [], "pnl": 0, "win_rate": 0, "n_trades": 0}
@@ -608,6 +664,22 @@ def evaluate_on_holdout(
 
     trades = result["trades"]
     trades_detailed = result["trades_detailed"]
+
+    # Enrich trades with potential analyses (SL + TP)
+    if trades_detailed:
+        analyze_sl_potential(
+            trades_detailed,
+            holdout_df["C"].values,
+            holdout_df["H"].values,
+            holdout_df["L"].values,
+        )
+        analyze_tp_potential(
+            trades_detailed,
+            holdout_df["C"].values,
+            holdout_df["H"].values,
+            holdout_df["L"].values,
+        )
+
     pnl = sum(t["pnl_raw"] for t in trades) if trades else 0
     win_rate = sum(1 for t in trades if t["result"] == 1.0) / len(trades) if trades else 0
 

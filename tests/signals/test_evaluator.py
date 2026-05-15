@@ -21,7 +21,7 @@ def df():
         {
             "rb1_orb_s08_breakout_up": [0, 0, 1, 1, 0, 0, 1, 0, 0, 1],
             "rb1_orb_s08_breakout_down": [0, 1, 0, 0, 1, 0, 0, 0, 1, 0],
-            "trend_adx_14": [10, 15, 25, 30, 35, 20, 18, 40, 22, 28],
+            "adx_14": [10, 15, 25, 30, 35, 20, 18, 40, 22, 28],
             "mom_rsi_14": [50, 55, 70, 80, 30, 45, 60, 25, 35, 65],
             "ema_9": [100, 101, 103, 105, 104, 102, 103, 106, 107, 108],
             "ema_21": [100, 100, 101, 102, 103, 103, 104, 104, 105, 106],
@@ -42,9 +42,9 @@ class TestResolveColumn:
         assert resolve_column("ema_9", cols) == "ema_9"
 
     def test_suffix_match(self):
-        cols = ["rb1_orb_s08_breakout_up", "rb1_orb_s08_breakout_down", "trend_adx_14"]
+        cols = ["rb1_orb_s08_breakout_up", "rb1_orb_s08_breakout_down", "adx_14"]
         assert resolve_column("breakout_up", cols) == "rb1_orb_s08_breakout_up"
-        assert resolve_column("adx_14", cols) == "trend_adx_14"
+        assert resolve_column("adx_14", cols) == "adx_14"
 
     def test_not_found_raises(self):
         cols = ["close", "ema_9"]
@@ -87,7 +87,7 @@ class TestSignalActive:
 
 class TestValueCheck:
     def test_less_than(self, df):
-        cond = {"type": "value_check", "column": "trend_adx_14", "op": "<", "value": 20}
+        cond = {"type": "value_check", "column": "adx_14", "op": "<", "value": 20}
         result = evaluate_condition(cond, df)
         # adx: 10,15,25,30,35,20,18,40,22,28
         expected = pd.Series(
@@ -97,7 +97,7 @@ class TestValueCheck:
         pd.testing.assert_series_equal(result, expected, check_names=False)
 
     def test_greater_equal(self, df):
-        cond = {"type": "value_check", "column": "trend_adx_14", "op": ">=", "value": 25}
+        cond = {"type": "value_check", "column": "adx_14", "op": ">=", "value": 25}
         result = evaluate_condition(cond, df)
         # adx: 10,15,25,30,35,20,18,40,22,28
         expected = pd.Series(
@@ -107,7 +107,7 @@ class TestValueCheck:
         pd.testing.assert_series_equal(result, expected, check_names=False)
 
     def test_equal(self, df):
-        cond = {"type": "value_check", "column": "trend_adx_14", "op": "==", "value": 25}
+        cond = {"type": "value_check", "column": "adx_14", "op": "==", "value": 25}
         result = evaluate_condition(cond, df)
         expected = pd.Series(
             [False, False, True, False, False, False, False, False, False, False],
@@ -117,8 +117,8 @@ class TestValueCheck:
 
     def test_nan_handling(self, df):
         df_copy = df.copy()
-        df_copy.loc[df_copy.index[0], "trend_adx_14"] = np.nan
-        cond = {"type": "value_check", "column": "trend_adx_14", "op": "<", "value": 20}
+        df_copy.loc[df_copy.index[0], "adx_14"] = np.nan
+        cond = {"type": "value_check", "column": "adx_14", "op": "<", "value": 20}
         result = evaluate_condition(cond, df_copy)
         # index 0 was 10 (True) but is now NaN → should be False
         assert result.iloc[0] is np.bool_(False)
@@ -214,7 +214,7 @@ class TestNestedRules:
             "operator": "AND",
             "conditions": [
                 {"type": "signal_active", "column": "breakout_up"},
-                {"type": "value_check", "column": "trend_adx_14", "op": ">=", "value": 25},
+                {"type": "value_check", "column": "adx_14", "op": ">=", "value": 25},
             ],
         }
         result = evaluate_rules(rules, df)
@@ -256,7 +256,7 @@ class TestNestedRules:
                     "type": "group",
                     "operator": "OR",
                     "conditions": [
-                        {"type": "value_check", "column": "trend_adx_14", "op": ">=", "value": 25},
+                        {"type": "value_check", "column": "adx_14", "op": ">=", "value": 25},
                         {"type": "value_check", "column": "mom_rsi_14", "op": ">", "value": 60},
                     ],
                 },
@@ -322,8 +322,8 @@ class TestEdgeCases:
 
     def test_all_nan_column(self, df):
         df_copy = df.copy()
-        df_copy["trend_adx_14"] = np.nan
-        cond = {"type": "value_check", "column": "trend_adx_14", "op": ">=", "value": 25}
+        df_copy["adx_14"] = np.nan
+        cond = {"type": "value_check", "column": "adx_14", "op": ">=", "value": 25}
         result = evaluate_condition(cond, df_copy)
         assert not result.any()
 
@@ -347,7 +347,7 @@ class TestEdgeCases:
         rules = {
             "conditions": [
                 {"type": "signal_active", "column": "breakout_up"},
-                {"type": "value_check", "column": "trend_adx_14", "op": ">=", "value": 25},
+                {"type": "value_check", "column": "adx_14", "op": ">=", "value": 25},
             ],
         }
         result = evaluate_rules(rules, df)

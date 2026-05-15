@@ -25,7 +25,7 @@ from fwbg.core.config import (
 SAMPLE_REGIME_FILTER = {
     "condition_grids": [
         {
-            "column": "trend_adx_14",
+            "column": "adx_14",
             "operator": ">=",
             "values": [None, 25],
             "directions": 6,

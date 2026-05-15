@@ -9,6 +9,8 @@ import gc
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import numpy as np
 
 from fwbg.data import config as data_config
@@ -27,6 +29,135 @@ from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds
 from .bias_checks import check_asset_bias
 from .process_fold import precompute_indicators, process_single_fold
+
+
+def _compute_trade_analytics(trades_detailed):
+    """Compute MAE/MFE and SL-potential statistics from detailed trades."""
+    if not trades_detailed:
+        return None
+
+    winners = [t for t in trades_detailed if t.get("result", 0) > 0]
+    losers = [t for t in trades_detailed if t.get("result", 0) < 0]
+
+    def _mae_stats(trades):
+        maes = [t["mae"] for t in trades if "mae" in t]
+        if not maes:
+            return None
+        return {
+            "mean": float(np.mean(maes)),
+            "median": float(np.median(maes)),
+            "max": float(max(maes)),
+            "p75": float(np.percentile(maes, 75)),
+            "p90": float(np.percentile(maes, 90)),
+        }
+
+    def _mfe_stats(trades):
+        mfes = [t["mfe"] for t in trades if "mfe" in t]
+        if not mfes:
+            return None
+        return {
+            "mean": float(np.mean(mfes)),
+            "median": float(np.median(mfes)),
+            "max": float(max(mfes)),
+        }
+
+    analytics = {
+        "n_winners": len(winners),
+        "n_losers": len(losers),
+        "mae_winners": _mae_stats(winners),
+        "mae_losers": _mae_stats(losers),
+        "mfe_winners": _mfe_stats(winners),
+        "mfe_losers": _mfe_stats(losers),
+    }
+
+    # SL potential analysis: for losers, how many would have reached TP with wider SL?
+    losers_with_potential = [t for t in losers if "potential_tp_reached" in t]
+    if losers_with_potential:
+        would_win = [t for t in losers_with_potential if t["potential_tp_reached"]]
+        analytics["sl_potential"] = {
+            "losers_analyzed": len(losers_with_potential),
+            "would_reach_tp": len(would_win),
+            "recovery_rate": len(would_win) / len(losers_with_potential),
+        }
+        if would_win:
+            required_maes = [t["required_mae"] for t in would_win]
+            analytics["sl_potential"]["required_mae"] = {
+                "mean": float(np.mean(required_maes)),
+                "median": float(np.median(required_maes)),
+                "max": float(max(required_maes)),
+                "p75": float(np.percentile(required_maes, 75)),
+                "p90": float(np.percentile(required_maes, 90)),
+            }
+            bars_to_tp = [t["bars_to_potential_tp"] for t in would_win]
+            analytics["sl_potential"]["bars_to_tp"] = {
+                "mean": float(np.mean(bars_to_tp)),
+                "median": float(np.median(bars_to_tp)),
+                "max": int(max(bars_to_tp)),
+            }
+
+    # TP potential analysis: for winners, how much further did the price run?
+    winners_with_continuation = [t for t in winners if "continuation_mfe" in t]
+    if winners_with_continuation:
+        cont_mfes = [t["continuation_mfe"] for t in winners_with_continuation]
+        cont_maes = [t["continuation_mae"] for t in winners_with_continuation]
+        # How many winners had significant continuation (>50% of TP distance)?
+        with_continuation = [t for t in winners_with_continuation
+                             if t["continuation_mfe"] > t.get("tp_distance", 1) * 0.5]
+        analytics["tp_potential"] = {
+            "winners_analyzed": len(winners_with_continuation),
+            "with_significant_continuation": len(with_continuation),
+            "continuation_rate": len(with_continuation) / len(winners_with_continuation),
+            "continuation_mfe": {
+                "mean": float(np.mean(cont_mfes)),
+                "median": float(np.median(cont_mfes)),
+                "max": float(max(cont_mfes)),
+                "p75": float(np.percentile(cont_mfes, 75)),
+                "p90": float(np.percentile(cont_mfes, 90)),
+            },
+            "reversal_depth": {
+                "mean": float(np.mean(cont_maes)),
+                "median": float(np.median(cont_maes)),
+            },
+        }
+
+    # Per-CT statistics (from unified trades — all share same CT, but useful for
+    # separate_long_short where long_ct != short_ct)
+    ct_groups = {}
+    for t in trades_detailed:
+        ct_val = t.get("ct")
+        if ct_val is not None:
+            ct_key = str(ct_val)
+            if ct_key not in ct_groups:
+                ct_groups[ct_key] = {"wins": 0, "losses": 0, "pnl": 0.0}
+            if t.get("result", 0) > 0:
+                ct_groups[ct_key]["wins"] += 1
+            else:
+                ct_groups[ct_key]["losses"] += 1
+            ct_groups[ct_key]["pnl"] += t.get("pnl_raw", 0)
+
+    if ct_groups:
+        for key in ct_groups:
+            total = ct_groups[key]["wins"] + ct_groups[key]["losses"]
+            ct_groups[key]["total"] = total
+            ct_groups[key]["win_rate"] = ct_groups[key]["wins"] / total if total > 0 else 0
+        analytics["ct_breakdown"] = ct_groups
+
+    # Per-direction breakdown
+    for direction in ("LONG", "SHORT"):
+        dir_trades = [t for t in trades_detailed if t.get("direction") == direction]
+        if dir_trades:
+            dir_wins = sum(1 for t in dir_trades if t.get("result", 0) > 0)
+            dir_pnl = sum(t.get("pnl_raw", 0) for t in dir_trades)
+            analytics[f"{direction.lower()}_stats"] = {
+                "total": len(dir_trades),
+                "wins": dir_wins,
+                "win_rate": dir_wins / len(dir_trades),
+                "pnl": float(dir_pnl),
+                "mae": _mae_stats(dir_trades),
+                "mfe": _mfe_stats(dir_trades),
+            }
+
+    return analytics
 
 
 def _parse_ct_value(ct_value):
@@ -91,6 +222,152 @@ def decode_signal_meta(signal_col: str) -> dict:
             meta["session_hour"] = int(m.group(4))
             meta["retracement_level"] = int(m.group(5)) / 100
     return meta
+
+
+def _run_folds_parallel(wf_folds, max_parallel_folds,
+                        fold_indicators, precomputed_raw_df, preprocessing_configs,
+                        ctx, sym, total_indicators,
+                        all_fold_results, accumulated_grid_results):
+    """Run walk-forward folds in parallel using ThreadPoolExecutor.
+
+    XGBoost n_jobs is reduced proportionally to avoid CPU over-subscription.
+    Progress is aggregated across folds before reporting.
+    """
+    from fwbg.utils.xgb_config import get_xgboost_n_jobs, set_xgboost_n_jobs
+
+    n_folds = len(wf_folds)
+    workers = min(max_parallel_folds, n_folds)
+
+    # Reduce XGBoost threads to share CPU across parallel folds
+    original_n_jobs = get_xgboost_n_jobs()
+    cpu_count = os.cpu_count() or 4
+    if original_n_jobs == -1:
+        effective_n_jobs = max(1, cpu_count // workers)
+    else:
+        effective_n_jobs = max(1, original_n_jobs // workers)
+    set_xgboost_n_jobs(effective_n_jobs)
+
+    log(1, f"Parallel folds: {workers} workers, XGBoost n_jobs={effective_n_jobs}", sym)
+
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    process_single_fold,
+                    fold, fold_idx, n_folds,
+                    fold_indicators, precomputed_raw_df, preprocessing_configs,
+                    ctx, sym, total_indicators,
+                ): fold_idx
+                for fold_idx, fold in enumerate(wf_folds)
+            }
+            for future in as_completed(futures):
+                fold_result, grid_results = future.result()
+                accumulated_grid_results.extend(grid_results)
+                if fold_result:
+                    all_fold_results.append(fold_result)
+    finally:
+        set_xgboost_n_jobs(original_n_jobs)
+        gc.collect()
+
+
+def _process_single_variant(variant_idx, variant_label, variant_strategy,
+                             df, wf_folds, asset, sym, n_variants):
+    """Process one indicator grid variant (thread-safe)."""
+    if n_variants > 1:
+        log(1, f"--- Variant {variant_idx+1}/{n_variants}: {variant_label} ---", sym)
+
+    variant_ctx = SimulationContext.create(asset, variant_strategy)
+
+    grid_per_fold = variant_ctx.total_grid_combinations()
+    total_trainings = grid_per_fold * len(wf_folds)
+    if n_variants == 1:
+        log(1, f"Grid: {grid_per_fold} combos/fold × {len(wf_folds)} folds = {total_trainings} total trainings", sym)
+
+    fold_indicators, precomputed_raw_df, total_indicators = precompute_indicators(
+        df, variant_strategy, sym,
+    )
+    preprocessing_configs = variant_strategy.get_preprocessing()
+
+    all_fold_results = []
+    accumulated_grid_results = []
+    max_parallel_folds = variant_strategy.resources.max_parallel_folds
+    n_folds = len(wf_folds)
+
+    if max_parallel_folds <= 1:
+        for fold_idx, fold in enumerate(wf_folds):
+            fold_result, grid_results = process_single_fold(
+                fold, fold_idx, n_folds,
+                fold_indicators, precomputed_raw_df, preprocessing_configs,
+                variant_ctx, sym, total_indicators,
+            )
+            accumulated_grid_results.extend(grid_results)
+            if fold_result:
+                all_fold_results.append(fold_result)
+            gc.collect()
+    else:
+        _run_folds_parallel(
+            wf_folds, max_parallel_folds,
+            fold_indicators, precomputed_raw_df, preprocessing_configs,
+            variant_ctx, sym, total_indicators,
+            all_fold_results, accumulated_grid_results,
+        )
+
+    n_successful = len(all_fold_results)
+    mean_pnl = float(np.mean([r["test_pnl"] for r in all_fold_results])) if n_successful else float("-inf")
+
+    if n_variants > 1:
+        log(1, f"  Variant result: {n_successful}/{len(wf_folds)} folds"
+               + (f", mean_pnl={mean_pnl:.1f}" if n_successful else ""), sym)
+
+    return {
+        "score": (n_successful, mean_pnl),
+        "label": variant_label,
+        "strategy": variant_strategy,
+        "ctx": variant_ctx,
+        "all_fold_results": all_fold_results,
+        "accumulated_grid_results": accumulated_grid_results,
+        "fold_indicators": fold_indicators,
+        "precomputed_raw_df": precomputed_raw_df,
+        "preprocessing_configs": preprocessing_configs,
+    }
+
+
+def _run_indicator_variants(variants, df, wf_folds, asset, sym):
+    """Run indicator grid variants sequentially, keeping only the best.
+
+    Sequential processing avoids multiplying RAM by the number of variants.
+    Each variant's precomputed_raw_df (~180MB+) is released before the next
+    variant starts, unless it's the current best.
+    """
+    n_variants = len(variants)
+
+    if n_variants == 1:
+        label, strategy = variants[0]
+        return _process_single_variant(0, label, strategy, df, wf_folds, asset, sym, 1)
+
+    log(1, f"Indicator Grid: {n_variants} variants (sequential)", sym)
+
+    best_score = (-1, float("-inf"))
+    best_data = None
+
+    for idx, (label, strat) in enumerate(variants):
+        result = _process_single_variant(
+            idx, label, strat, df, wf_folds, asset, sym, n_variants,
+        )
+        if result["score"] > best_score:
+            # Release previous best's heavy data
+            if best_data is not None:
+                best_data.pop("precomputed_raw_df", None)
+                best_data.pop("fold_indicators", None)
+            best_score = result["score"]
+            best_data = result
+        else:
+            # Release this variant's heavy data immediately
+            result.pop("precomputed_raw_df", None)
+            result.pop("fold_indicators", None)
+        gc.collect()
+
+    return best_data
 
 
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
@@ -161,6 +438,22 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # SimulationContext erstellen (wird durch alle Funktionen gereicht)
         ctx = SimulationContext.create(asset, strategy)
 
+        # === MODEL DEPENDENCY VALIDATION ===
+        from fwbg.core.registry import get_model
+        model_class = get_model(ctx.model_type)
+        required = model_class.get_required_indicators()
+        if required:
+            configured = {ind["name"] for ind in strategy.get_indicators()}
+            missing = [r for r in required if r not in configured]
+            if missing:
+                log(1, f"SKIP - Model '{ctx.model_type}' requires indicators: {missing}", sym)
+                result = {
+                    "symbol": sym,
+                    "status": "missing_model_dependencies",
+                    "error": f"Model '{ctx.model_type}' requires indicators not in config: {missing}",
+                }
+                return result
+
         # === WALK-FORWARD FOLDS ERSTELLEN ===
         n_folds = strategy.validation.folds
         min_train = data_config.WINDOW_SIZE // 2
@@ -194,65 +487,17 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if n_variants > 1:
             log(1, f"Indicator Grid: {n_variants} variants", sym)
 
-        best_variant_score = (-1, float("-inf"))  # (n_successful_folds, mean_pnl)
-        best_variant_data = None
-
-        for variant_idx, (variant_label, variant_strategy) in enumerate(variants):
-            if n_variants > 1:
-                log(1, f"--- Variant {variant_idx+1}/{n_variants}: {variant_label} ---", sym)
-
-            variant_ctx = SimulationContext.create(asset, variant_strategy)
-
-            # Grid-Summary (per variant)
-            grid_per_fold = variant_ctx.total_grid_combinations()
-            total_trainings = grid_per_fold * len(wf_folds)
-            if n_variants == 1:
-                log(1, f"Grid: {grid_per_fold} combos/fold × {len(wf_folds)} folds = {total_trainings} total trainings", sym)
-
-            fold_indicators, precomputed_raw_df, total_indicators = precompute_indicators(
-                df, variant_strategy, sym,
-            )
-            preprocessing_configs = variant_strategy.get_preprocessing()
-
-            all_fold_results = []
-            accumulated_grid_results = []
-            for fold_idx, fold in enumerate(wf_folds):
-                fold_result, grid_results = process_single_fold(
-                    fold, fold_idx, len(wf_folds),
-                    fold_indicators, precomputed_raw_df, preprocessing_configs,
-                    variant_ctx, sym, total_indicators,
-                )
-                accumulated_grid_results.extend(grid_results)
-                if fold_result:
-                    all_fold_results.append(fold_result)
-                gc.collect()
-
-            # Score this variant: (successful_folds, mean_test_pnl)
-            n_successful = len(all_fold_results)
-            mean_pnl = float(np.mean([r["test_pnl"] for r in all_fold_results])) if n_successful else float("-inf")
-            variant_score = (n_successful, mean_pnl)
-
-            if n_variants > 1:
-                log(1, f"  Variant result: {n_successful}/{len(wf_folds)} folds"
-                       + (f", mean_pnl={mean_pnl:.1f}" if n_successful else ""), sym)
-
-            if variant_score > best_variant_score:
-                best_variant_score = variant_score
-                best_variant_data = {
-                    "label": variant_label,
-                    "strategy": variant_strategy,
-                    "ctx": variant_ctx,
-                    "all_fold_results": all_fold_results,
-                    "accumulated_grid_results": accumulated_grid_results,
-                    "fold_indicators": fold_indicators,
-                    "precomputed_raw_df": precomputed_raw_df,
-                    "preprocessing_configs": preprocessing_configs,
-                }
+        best_variant_data = _run_indicator_variants(
+            variants, df, wf_folds, asset, sym,
+        )
 
         # Use best variant for post-processing
-        if n_variants > 1:
+        if len(variants) > 1:
+            score = (len(best_variant_data["all_fold_results"]),
+                     float(np.mean([r["test_pnl"] for r in best_variant_data["all_fold_results"]]))
+                     if best_variant_data["all_fold_results"] else float("-inf"))
             log(1, f"Best variant: {best_variant_data['label']} "
-                   f"({best_variant_score[0]}/{len(wf_folds)} folds, pnl={best_variant_score[1]:.1f})", sym)
+                   f"({score[0]}/{len(wf_folds)} folds, pnl={score[1]:.1f})", sym)
 
         ctx = best_variant_data["ctx"]
         all_fold_results = best_variant_data["all_fold_results"]
@@ -260,7 +505,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         fold_indicators = best_variant_data["fold_indicators"]
         precomputed_raw_df = best_variant_data["precomputed_raw_df"]
         preprocessing_configs = best_variant_data["preprocessing_configs"]
-        indicator_variant_label = best_variant_data["label"] if n_variants > 1 else None
+        indicator_variant_label = best_variant_data["label"] if len(variants) > 1 else None
 
         # === END OF WALK-FORWARD LOOP ===
 
@@ -342,7 +587,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             """Hashable key for model_hyperparameters (ignoring None values)."""
             if not hp:
                 return ()
-            return tuple(sorted((k, v) for k, v in hp.items() if v is not None))
+            def _make_hashable(v):
+                if isinstance(v, list):
+                    return tuple(v)
+                return v
+            return tuple(sorted((k, _make_hashable(v)) for k, v in hp.items() if v is not None))
 
         hp_keys = [_hp_key(hp) for hp in hp_list]
         hp_counts = {}
@@ -387,6 +636,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             ctx, sym, prepare_data_fn=prepare_fn,
         )
 
+        # Release heavy data no longer needed after unified simulation
+        del fold_indicators, precomputed_raw_df, best_variant_data, df
+        gc.collect()
+
         tp_unified, sl_unified, ct_unified = unified_candidate["params"]
         b_config = {
             "tp": tp_unified,
@@ -400,8 +653,13 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # Aggregate trades from unified simulation
         all_trades = []
+        all_trades_detailed = []
         for unified_fold_result in unified_fold_results:
             all_trades.extend(unified_fold_result["trades"])
+            all_trades_detailed.extend(unified_fold_result.get("trades_detailed") or [])
+
+        n_unified_folds = len(unified_fold_results)
+        del unified_fold_results
 
         all_trades_pnl = [t["pnl_raw"] for t in all_trades]
         all_trades_binary = [t["result"] for t in all_trades]
@@ -410,7 +668,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Recalculate metrics from unified trades
         total_trades = len(all_trades)
         mean_wr = sum(1 for t in all_trades if t["result"] == 1.0) / total_trades if total_trades > 0 else 0.0
-        mean_pnl = sum(all_trades_pnl) / len(unified_fold_results) if unified_fold_results else 0.0
+        mean_pnl = sum(all_trades_pnl) / n_unified_folds if n_unified_folds else 0.0
 
         if total_trades == 0:
             log(1, "SKIP - Unified simulation produced no trades", sym)
@@ -474,6 +732,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                f" PBO={pbo_val:.2f}" if pbo_val is not None else
                f"  DSR={overfitting['dsr']['dsr']:.3f} PBO=n/a", sym)
 
+        del grid_results_by_fold
+
         # === FEATURE STABILITY ANALYSIS ===
         feature_counts = {}
         n_successful_folds = len(all_fold_results)
@@ -510,9 +770,27 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         wf_summary["total_trades"] = total_trades
         features_list = (unified_candidate.get("selected_features_long") or []) + (unified_candidate.get("selected_features_short") or [])
 
+        # Trade analytics (MAE/MFE, SL potential, direction breakdown)
+        trade_analytics = _compute_trade_analytics(all_trades_detailed)
+        if trade_analytics:
+            sl_pot = trade_analytics.get("sl_potential")
+            if sl_pot:
+                log(1, f"  SL Potential: {sl_pot['would_reach_tp']}/{sl_pot['losers_analyzed']} "
+                       f"losers would reach TP ({sl_pot['recovery_rate']:.0%})"
+                       + (f", required MAE median={sl_pot['required_mae']['median']:.1f}" if sl_pot.get('required_mae') else ""),
+                    sym)
+            tp_pot = trade_analytics.get("tp_potential")
+            if tp_pot:
+                log(1, f"  TP Potential: {tp_pot['with_significant_continuation']}/{tp_pot['winners_analyzed']} "
+                       f"winners had >50% continuation ({tp_pot['continuation_rate']:.0%})"
+                       f", median continuation={tp_pot['continuation_mfe']['median']:.1f}",
+                    sym)
+
         # Test period duration (used for annual return, sharpe, etc.)
+        # Use all wf_folds (not just successful ones) because unified simulation
+        # re-simulates every fold with the merged config.
         bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
-        total_test_bars = sum(r["test_size"] for r in all_fold_results)
+        total_test_bars = sum(f.test_end - f.test_start for f in wf_folds)
         test_period_years = total_test_bars / bars_per_year if bars_per_year > 0 else 1
 
         # === NO EDGE ===
@@ -541,6 +819,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "walk_forward": wf_summary,
                 "overfitting": overfitting,
                 "feature_stability": feature_stability,
+                "trade_analytics": trade_analytics,
                 "reason": f"No profitable edge (WR={mean_wr*100:.1f}%, RRR={rrr:.2f})"
             }
 
@@ -611,6 +890,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "monte_carlo": mc_summary,
                 "overfitting": overfitting,
                 "feature_stability": feature_stability,
+                "trade_analytics": trade_analytics,
                 "reason": f"Not statistically significant (p={mc_perm['p_value']:.3f})",
                 "grid_results": accumulated_grid_results,
             }
@@ -665,6 +945,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "monte_carlo": mc_summary,
             "overfitting": overfitting,
             "feature_stability": feature_stability,
+            "trade_analytics": trade_analytics,
             "grid_results": accumulated_grid_results,
         }
         if indicator_variant_label:

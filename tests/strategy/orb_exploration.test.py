@@ -25,7 +25,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from conftest import make_m15_ohlcv, make_orb_breakout_scenario
+from tests.strategy.conftest import make_m15_ohlcv, make_orb_breakout_scenario
 
 from fwbg.pipeline.features import compute_indicator_pool
 from fwbg.core.config import StrategyConfig
