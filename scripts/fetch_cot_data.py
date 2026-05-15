@@ -19,7 +19,6 @@ import os
 import zipfile
 
 import pandas as pd
-import requests
 
 DATA_PATH = "./data/forexsb"
 os.makedirs(DATA_PATH, exist_ok=True)
@@ -64,6 +63,8 @@ def _build_urls(start_year=2006, end_year=None):
 
 def _download_zip(url):
     """Download and parse a CFTC TFF ZIP file."""
+    import requests  # imported lazily so tests can use compute_release_date without it
+
     print(f"  {url.split('/')[-1]}...")
     resp = requests.get(url, timeout=60)
     resp.raise_for_status()
