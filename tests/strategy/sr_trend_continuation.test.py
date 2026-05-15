@@ -16,7 +16,7 @@ import pandas as pd
 import pytest
 
 
-from conftest import make_h1_ohlcv  # noqa: E402
+from tests.strategy.conftest import make_h1_ohlcv
 
 from fwbg.core.config import StrategyConfig
 from fwbg.pipeline.features import compute_indicator_pool

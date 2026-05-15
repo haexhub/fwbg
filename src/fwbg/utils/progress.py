@@ -360,8 +360,12 @@ class ProgressTracker:
                                 fold = msg.get("fold", 0)
                                 total_folds = msg.get("total_folds", 0)
                                 if grid_total > 0:
-                                    frac = grid_pos / grid_total
-                                    desc = f"Fold {fold}/{total_folds} ({grid_pos}/{grid_total})" if fold else f"{grid_pos}/{grid_total}"
+                                    # Progress across all folds (monotonically increasing)
+                                    if fold > 0 and total_folds > 0:
+                                        frac = ((fold - 1) + (grid_pos / grid_total)) / total_folds
+                                    else:
+                                        frac = grid_pos / grid_total
+                                    desc = f"Fold {fold}/{total_folds}: Grid-Search..." if fold else f"{grid_pos}/{grid_total}"
                                     self._run_progress_writer.update_asset_stage(
                                         symbol, "grid_search", "running",
                                         description=desc, progress_fraction=frac,
@@ -379,6 +383,9 @@ class ProgressTracker:
                                 # Map known phase text to stage names
                                 stage_name = self._phase_to_stage(phase)
                                 self._run_progress_writer.begin_asset(sym)
+                                # Complete all earlier stages before starting new one
+                                self._run_progress_writer.complete_earlier_stages(
+                                    sym, stage_name)
                                 self._run_progress_writer.update_asset_stage(
                                     sym, stage_name, "running", description=phase,
                                 )

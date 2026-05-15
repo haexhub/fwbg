@@ -242,6 +242,18 @@ class BaseModel(BasePlugin, ABC):
         return None
 
     @classmethod
+    def get_required_indicators(cls) -> List[str]:
+        """Return indicator names required by this model type.
+
+        Override in subclass to declare dependencies on specific indicators.
+        The pipeline validates these are present in the config before starting.
+
+        Returns:
+            List of indicator plugin names (e.g. ["volatility"]).
+        """
+        return []
+
+    @classmethod
     def get_reduced_hyperparameters(
         cls, hyperparameters: Dict[str, Any]
     ) -> Dict[str, Any]:

@@ -5,7 +5,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from fwbg.api.deps import get_strategies_dir
-from fwbg.api.git_utils import commit_file, file_at_commit, file_history, is_git_repo
+from fwbg.api.git_utils import (
+    commit_file, ensure_git_repo, file_at_commit, file_history,
+    get_git_identity, is_git_repo, set_git_identity,
+)
 from fwbg.core.config import _resolve_section
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
@@ -33,6 +36,12 @@ class CommitRequest(BaseModel):
     message: str = ""
 
 
+class GitIdentityRequest(BaseModel):
+    """Request body for setting git author identity."""
+    name: str
+    email: str
+
+
 @router.get("")
 def list_strategies() -> list[dict]:
     """List all strategy files."""
@@ -52,6 +61,28 @@ def list_strategies() -> list[dict]:
             continue
 
     return strategies
+
+
+# ── Git identity (must be registered before /{name} catch-all) ──
+
+
+@router.get("/git/identity")
+def get_identity() -> dict:
+    """Return the current git identity for the strategies repo."""
+    strategies_dir = get_strategies_dir()
+    ensure_git_repo(strategies_dir)
+    return get_git_identity(strategies_dir)
+
+
+@router.put("/git/identity")
+def set_identity(body: GitIdentityRequest) -> dict:
+    """Set git user.name and user.email for the strategies repo."""
+    if not body.name.strip() or not body.email.strip():
+        raise HTTPException(422, "Both name and email are required")
+    strategies_dir = get_strategies_dir()
+    ensure_git_repo(strategies_dir)
+    set_git_identity(strategies_dir, body.name.strip(), body.email.strip())
+    return {"status": "ok", "name": body.name.strip(), "email": body.email.strip()}
 
 
 @router.get("/{name}")
@@ -122,15 +153,28 @@ def update_strategy(name: str, body: dict) -> dict:
 
 @router.post("/{name}/commit")
 def commit_strategy(name: str, body: CommitRequest) -> dict:
-    """Commit the current state of a strategy file to git."""
+    """Commit the current state of a strategy file to git.
+
+    Auto-initializes the git repo on first use.  Returns a 428 error
+    with ``code: "identity_required"`` when user.name / user.email are
+    not configured yet — the client should prompt the user and call
+    ``PUT /strategies/git/identity`` before retrying.
+    """
     strategies_dir = get_strategies_dir()
     filepath = strategies_dir / f"{name}.json"
 
     if not filepath.exists():
         raise HTTPException(404, f"Strategy not found: {name}")
 
-    if not is_git_repo(strategies_dir):
-        raise HTTPException(501, "Strategies directory is not a git repository")
+    ensure_git_repo(strategies_dir)
+
+    identity = get_git_identity(strategies_dir)
+    if not identity["name"] or not identity["email"]:
+        raise HTTPException(428, detail={
+            "code": "identity_required",
+            "message": "Git author identity not configured",
+            "current": identity,
+        })
 
     message = body.message.strip() or f"update: {name}"
     try:

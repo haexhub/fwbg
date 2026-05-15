@@ -134,7 +134,7 @@ class TestAutoDiscoverWithEntryPoints:
             discovered = registry.auto_discover()
 
         # Should find built-in core plugins
-        assert "fwbg-core:trend" in discovered
+        assert "fwbg-core:ema" in discovered
         # Should also find entry_point plugins
         assert "external-pkg:external_ind" in discovered
 
@@ -164,7 +164,7 @@ class TestGracefulDegradation:
         # Core plugins should still be found
         core_plugins = [p for p in discovered if p.startswith("fwbg-core:")]
         assert len(core_plugins) > 0
-        assert "fwbg-core:trend" in core_plugins
+        assert "fwbg-core:ema" in core_plugins
 
     def test_core_works_without_premium_import(self):
         """Core registry functions should not crash if premium is absent."""

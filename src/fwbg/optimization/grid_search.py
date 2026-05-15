@@ -16,6 +16,7 @@ from fwbg.utils.logging import log
 from .nested_cv import (
     run_inner_cv, select_features_from_fold,
     _evaluate_single_fold, _aggregate_cv_folds,
+    _compact_trades_by_ct,
 )
 
 
@@ -118,37 +119,30 @@ def select_features(
 
 
 def _compute_cached_targets(tp, sl, timeout_bars, inner_folds, inner_df, ctx):
-    """Pre-compute and slice targets for all folds of a TP/SL combo."""
-    from .targets import compute_targets_cached, slice_targets_for_fold
+    """Compute per-fold train targets for a TP/SL combo.
+
+    Targets are computed independently per fold (on train_df only) to prevent
+    the embargo leak that would occur if we precomputed on inner_df and then
+    sliced — see slice_targets_for_fold for details.
+    """
+    from .targets import slice_targets_for_fold
 
     if inner_df is None:
         return None
 
     use_durations = ctx.sample_weights
-    if use_durations:
-        full_tgt_l, full_tgt_s, full_dur_l, full_dur_s = compute_targets_cached(
-            inner_df, tp, sl, ctx, timeout_bars,
-            exit_strategy_mode=ctx.exit_strategy,
-            return_durations=True,
-        )
-    else:
-        full_tgt_l, full_tgt_s = compute_targets_cached(
-            inner_df, tp, sl, ctx, timeout_bars,
-            exit_strategy_mode=ctx.exit_strategy,
-        )
-
     cached_targets = {}
     for fold_idx, (train_df, _) in enumerate(inner_folds):
-        fold_tgt_l, fold_tgt_s, _, _ = slice_targets_for_fold(
-            full_tgt_l, full_tgt_s, inner_df, train_df, ctx
-        )
         if use_durations:
-            fold_dur_l, fold_dur_s, _, _ = slice_targets_for_fold(
-                full_dur_l, full_dur_s, inner_df, train_df, ctx
+            tgt_l, tgt_s, dur_l, dur_s, _, _ = slice_targets_for_fold(
+                train_df, ctx, tp, sl, timeout_bars, return_durations=True,
             )
-            cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s, fold_dur_l, fold_dur_s)
+            cached_targets[fold_idx] = (tgt_l, tgt_s, dur_l, dur_s)
         else:
-            cached_targets[fold_idx] = (fold_tgt_l, fold_tgt_s)
+            tgt_l, tgt_s, _, _ = slice_targets_for_fold(
+                train_df, ctx, tp, sl, timeout_bars,
+            )
+            cached_targets[fold_idx] = (tgt_l, tgt_s)
 
     return cached_targets
 
@@ -175,6 +169,8 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "entry_modifier": ctx.entry_modifier,
         "entry_modifier_params": ctx.entry_modifier_params,
         "model_hyperparameters": ctx.model_hyperparameters,
+        "ct_votes": inner_result.get("ct_votes"),
+        "ct_diagnostics": inner_result.get("ct_diagnostics"),
     }
 
     if ctx.separate_long_short and "ct_long" in inner_result:
@@ -196,6 +192,9 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "regime_filter": regime_config,
         "exit_modifier_params": ctx.exit_modifier_params,
         "model_hyperparameters": ctx.model_hyperparameters,
+        "ct_votes": inner_result.get("ct_votes"),
+        "ct_diagnostics": inner_result.get("ct_diagnostics"),
+        "fold_pnls": inner_result.get("fold_pnls"),
     }
     if isinstance(conf_thresh, tuple):
         grid_result["ct_long"] = conf_thresh[0]
@@ -423,6 +422,9 @@ def _run_with_successive_halving(
                 selected_features_long=selected_features_long,
                 selected_features_short=selected_features_short,
             )
+            # Compact trade dicts to reduce memory across many combos × folds
+            if fold_result.get("success"):
+                _compact_trades_by_ct(fold_result)
             combo_fold_results[combo_idx].append(fold_result)
 
             # Report intermediate progress during fold evaluation
@@ -462,6 +464,10 @@ def _run_with_successive_halving(
                 threshold_pnl = scores[n_keep - 1][1] if n_keep <= len(scores) else float("-inf")
                 log(2, f"  Fold {fold_idx}: {len(new_active)} survivors, "
                        f"{len(pruned)} pruned (threshold PnL={threshold_pnl:.1f})", sym)
+
+                # Release fold results for pruned combos
+                for idx in pruned:
+                    combo_fold_results[idx].clear()
 
                 # Report pruned combos as done
                 for _ in pruned:

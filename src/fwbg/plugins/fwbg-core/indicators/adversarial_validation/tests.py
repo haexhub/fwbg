@@ -38,7 +38,7 @@ def sample_df():
             "L": close - abs(np.random.randn(n) * 0.3),
             "C": close,
             "V": np.random.randint(100, 10000, n).astype(float),
-            "trend_ema_14": close + np.random.randn(n) * 0.5,
+            "ema_14": close + np.random.randn(n) * 0.5,
             "mom_rsi_14": 50 + np.random.randn(n) * 15,
             "vol_atr_14": np.abs(np.random.randn(n)) * 2,
             "pa_range_pos": np.random.rand(n),

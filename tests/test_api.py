@@ -108,7 +108,7 @@ class TestPluginEndpoints:
         resp = client.get("/api/plugins/fwbg-core:trend")
         assert resp.status_code == 200
         p = resp.json()
-        assert p["fqn"] == "fwbg-core:trend"
+        assert p["fqn"] == "fwbg-core:ema"
         assert p["phase"] == "indicators"
         assert len(p["param_schema"]) > 0
 

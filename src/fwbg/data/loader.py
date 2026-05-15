@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 
 from .config import TARGET_TZ
+from .macro_contract import RELEASE_COL, merge_respect_release
 
 
 def _has_header(path):
@@ -222,9 +223,33 @@ def run_data_loading(df, data_loading_configs):
             )
 
             for prefix, raw_df in result.data.items():
-                if "Close" in raw_df.columns:
+                if "Close" not in raw_df.columns:
+                    continue
+                macro_col = f"macro_{prefix}"
+
+                if RELEASE_COL in raw_df.columns:
+                    # Source declares a release calendar (e.g. COT) — asof-join
+                    # on release_date so bars before publication see NaN.
+                    macro_df = (
+                        raw_df.reset_index()[[RELEASE_COL, "Close"]]
+                        .rename(columns={"Close": macro_col})
+                    )
+                    macro_df[RELEASE_COL] = pd.to_datetime(macro_df[RELEASE_COL])
+                    # Normalise tz so a tz-naive bar index can compare against
+                    # a tz-aware release_date (CSV round-trips often produce
+                    # UTC tz-aware columns).  Bars in this codebase are stored
+                    # tz-naive; we keep that domain.
+                    if df.index.tz is None and macro_df[RELEASE_COL].dt.tz is not None:
+                        macro_df[RELEASE_COL] = (
+                            macro_df[RELEASE_COL].dt.tz_convert("UTC").dt.tz_localize(None)
+                        )
+                    df = merge_respect_release(df, macro_df, prefix, [macro_col])
+                else:
+                    # Legacy 1-calendar-day shift for daily series without a
+                    # release calendar.  See docs/data/macro-release-dates.md
+                    # for the known limitations of this path.
                     lookup = raw_df["Close"].to_dict()
-                    df[f"macro_{prefix}"] = prev_date.map(
+                    df[macro_col] = prev_date.map(
                         lambda d, lk=lookup: lk.get(d, np.nan)
                     ).ffill()
 

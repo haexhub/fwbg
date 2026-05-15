@@ -1,4 +1,6 @@
 """REST API for data source management."""
+import os
+import re
 import threading
 import uuid
 from pathlib import Path
@@ -20,6 +22,40 @@ router = APIRouter()
 
 # In-memory store for async prepare tasks
 _prepare_tasks: Dict[str, dict] = {}
+
+# Max bytes accepted per uploaded file (100 MB)
+MAX_UPLOAD_SIZE = 100 * 1024 * 1024
+
+# Datasource names must be safe filesystem identifiers.
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
+
+
+def _safe_filename(filename: str) -> str:
+    """Return the basename of *filename* and reject path traversal attempts."""
+    if not filename:
+        raise HTTPException(status_code=400, detail="Empty filename")
+    base = os.path.basename(filename)
+    if base in ("", ".", "..") or base != filename:
+        raise HTTPException(status_code=400, detail=f"Invalid filename: {filename!r}")
+    if "/" in base or "\\" in base or "\x00" in base:
+        raise HTTPException(status_code=400, detail=f"Invalid filename: {filename!r}")
+    return base
+
+
+def _validate_source_name(name: str) -> None:
+    if not _SAFE_NAME_RE.match(name):
+        raise HTTPException(status_code=400, detail=f"Invalid source name: {name!r}")
+
+
+def _safe_child_path(parent: Path, child_name: str) -> Path:
+    """Resolve *child_name* under *parent* and ensure it stays inside."""
+    parent_resolved = parent.resolve()
+    candidate = (parent / child_name).resolve()
+    try:
+        candidate.relative_to(parent_resolved)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path traversal detected")
+    return candidate
 
 
 def _raw_dir(name: str) -> Path:
@@ -75,6 +111,7 @@ def create_source(body: dict):
     name = body.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
+    _validate_source_name(name)
     if name in _DATA_SOURCES:
         raise HTTPException(status_code=409, detail=f"Source already exists: {name}")
 
@@ -104,6 +141,7 @@ def create_source(body: dict):
 
 @router.delete("/datasources/{name}", status_code=204)
 def remove_source(name: str):
+    _validate_source_name(name)
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
 
@@ -118,6 +156,7 @@ def remove_source(name: str):
 @router.put("/datasources/{name}")
 def update_source(name: str, body: dict):
     """Merge-update an existing source config."""
+    _validate_source_name(name)
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
 
@@ -152,25 +191,32 @@ def list_raw_files(name: str):
 
 @router.post("/datasources/{name}/raw", status_code=201)
 async def upload_raw_files(name: str, files: List[UploadFile] = File(...)):
+    _validate_source_name(name)
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
     raw_path = _raw_dir(name)
     raw_path.mkdir(parents=True, exist_ok=True)
     saved = []
     for file in files:
-        dest = raw_path / file.filename
-        dest.write_bytes(await file.read())
-        saved.append(file.filename)
+        safe_name = _safe_filename(file.filename or "")
+        data = await file.read()
+        if len(data) > MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=413, detail=f"File too large: {safe_name}")
+        dest = _safe_child_path(raw_path, safe_name)
+        dest.write_bytes(data)
+        saved.append(safe_name)
     return {"saved": saved}
 
 
 @router.delete("/datasources/{name}/raw/{filename}", status_code=204)
 def delete_raw_file(name: str, filename: str):
+    _validate_source_name(name)
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
-    f = _raw_dir(name) / filename
+    safe_name = _safe_filename(filename)
+    f = _safe_child_path(_raw_dir(name), safe_name)
     if not f.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+        raise HTTPException(status_code=404, detail=f"File not found: {safe_name}")
     f.unlink()
 
 
@@ -188,11 +234,13 @@ def list_datasource_files(name: str):
 
 @router.delete("/datasources/{name}/datasource/{filename}", status_code=204)
 def delete_datasource_file(name: str, filename: str):
+    _validate_source_name(name)
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
-    f = _datasource_dir(name) / filename
+    safe_name = _safe_filename(filename)
+    f = _safe_child_path(_datasource_dir(name), safe_name)
     if not f.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+        raise HTTPException(status_code=404, detail=f"File not found: {safe_name}")
     f.unlink()
 
 

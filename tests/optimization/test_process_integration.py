@@ -38,8 +38,8 @@ def create_test_df(n_rows: int = 1000, seed: int = 42) -> pd.DataFrame:
 
     # Feature-Spalten hinzufügen (für verschiedene Gruppen)
     df["trend_rsi_14"] = np.random.rand(n_rows) * 100
-    df["trend_adx_14"] = np.random.rand(n_rows) * 50
-    df["trend_ema_21"] = close * (1 + np.random.randn(n_rows) * 0.01)
+    df["adx_14"] = np.random.rand(n_rows) * 50
+    df["ema_21"] = close * (1 + np.random.randn(n_rows) * 0.01)
     df["mom_stoch_14"] = np.random.rand(n_rows) * 100
     df["vol_atr_14"] = np.abs(np.random.randn(n_rows) * 0.05) + 0.02
 
@@ -228,7 +228,7 @@ class TestStrategyIndicators:
         strategy = StrategyConfig(
             pipeline={
                 "indicators": [
-                    {"name": "trend", "params": {}},
+                    {"name": "ema", "params": {}},
                     {"name": "momentum", "params": {}},
                     {"name": "volatility", "params": {}},
                 ]
@@ -238,7 +238,7 @@ class TestStrategyIndicators:
         indicators = strategy.get_indicators()
 
         assert len(indicators) == 3
-        assert indicators[0]["name"] == "trend"
+        assert indicators[0]["name"] == "ema"
         assert indicators[1]["name"] == "momentum"
         assert indicators[2]["name"] == "volatility"
 
@@ -371,7 +371,7 @@ class TestPrecomputedMergeNoDuplicates:
 
         # compute_indicator_pool passes through existing columns (incl. macro_*)
         precomputed = compute_indicator_pool(
-            df, indicators=[{"name": "trend", "params": {"adx_periods": [14]}}]
+            df, indicators=[{"name": "adx", "params": {"periods": [14]}}]
         )
 
         # Filter: only NEW features, not columns already in df
@@ -428,7 +428,8 @@ class TestStrategyFilePluginResolution:
         from fwbg.pipeline.features import normalize_plugin_name
 
         strategy_files = sorted(glob.glob("strategies/configs/*.json"))
-        assert strategy_files, "No strategy files found"
+        if not strategy_files:
+            pytest.skip("No strategy files found")
 
         errors = []
         for path in strategy_files:
@@ -463,7 +464,7 @@ class TestAllNanColumnProtection:
             "L": np.random.randn(n) + 99,
             "C": np.random.randn(n) + 100,
             "trend_rsi_14": np.random.rand(n) * 100,
-            "trend_adx_14": np.random.rand(n) * 50,
+            "adx_14": np.random.rand(n) * 50,
             "vol_atr_14": np.abs(np.random.randn(n)) + 0.02,
             # This column is ALL NaN (simulates indicator with warmup > data size)
             "mtf_y1_ema200d_dist": np.full(n, np.nan),

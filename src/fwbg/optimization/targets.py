@@ -203,6 +203,25 @@ def _simulate_trades_core(
             ohlc=(opn, hgh, low, cls),
         )
 
+    # Signal rules pre-filter: when _composed_signal_long/short columns exist,
+    # only allow entries on bars where the signal is active (== 1.0).
+    # This lets signal_rules act as entry gates for ML models.
+    # Skipped when return_detailed=False during inner-CV evaluation (too few
+    # signal bars in small validation windows would starve the grid search).
+    signal_long = None
+    signal_short = None
+    if return_detailed:
+        signal_long = (
+            df["_composed_signal_long"].values
+            if "_composed_signal_long" in df.columns
+            else None
+        )
+        signal_short = (
+            df["_composed_signal_short"].values
+            if "_composed_signal_short" in df.columns
+            else None
+        )
+
     # Signal event limiting: prevent re-entry into the same persistent signal.
     # A "signal event" is a contiguous run of bars where P(win) >= ct.
     # max_trades_per_signal=1 means one trade per breakout event (ORB default).
@@ -232,6 +251,7 @@ def _simulate_trades_core(
                 and ctx.long_enabled
                 and probs_long is not None
                 and probs_long[i, long_win_idx] >= ct_long
+                and (signal_long is None or signal_long[i] >= 1.0)
             ):
                 # Check signal event limit
                 if max_per_signal > 0 and long_event_ids is not None:
@@ -247,6 +267,7 @@ def _simulate_trades_core(
                 and ctx.short_enabled
                 and probs_short is not None
                 and probs_short[i, short_win_idx] >= ct_short
+                and (signal_short is None or signal_short[i] >= 1.0)
             ):
                 if max_per_signal > 0 and short_event_ids is not None:
                     eid = short_event_ids[i]
@@ -285,7 +306,8 @@ def _simulate_trades_core(
                 scale_qty_mult=scale_qty_mult,
             )
             if trade:
-                t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"]}
+                t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"],
+                     "mae": trade["mae"], "mfe": trade["mfe"]}
                 if has_rv:
                     rv_val = float(rv_values[i])
                     if not np.isnan(rv_val):
@@ -355,6 +377,7 @@ def _simulate_single_direction(
     ctx: SimulationContext,
     direction: int,
     timeout_bars: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Simuliert Trades für eine einzelne Richtung (Long oder Short)."""
     if direction == 1:
@@ -372,6 +395,7 @@ def _simulate_single_direction(
             False,
             timeout_bars,
             direction_filter=1,
+            per_trade_params=per_trade_params,
         )
     else:
         return _simulate_trades_core(
@@ -388,6 +412,7 @@ def _simulate_single_direction(
             False,
             timeout_bars,
             direction_filter=-1,
+            per_trade_params=per_trade_params,
         )
 
 
@@ -549,6 +574,11 @@ def compute_mfe_targets(
     mfe_long = np.zeros(n, dtype=np.float64)
     mfe_short = np.zeros(n, dtype=np.float64)
 
+    # Mirror the trade simulator's spread/slippage model so MFE-derived targets
+    # use the same effective fill price the live simulator would. Slippage is
+    # half the spread (see simulation/trade.py::simulate_pro_trade).
+    slippage = spread * 0.5
+
     for i in range(n - 1):
         atr_i = atr[i]
         if np.isnan(atr_i) or atr_i <= 0:
@@ -556,26 +586,30 @@ def compute_mfe_targets(
 
         sl_dist = atr_i * sl_atr
         # entry_delay=1: enter at next bar open
-        entry_price = opens[i + 1] if i + 1 < n else closes[i]
+        mid_entry = opens[i + 1] if i + 1 < n else closes[i]
 
-        # Long MFE
+        # Long: pay the ask + slippage on entry; exit at the mark (TP/SL acts
+        # as a trigger level on the mid). Spread/slippage are already baked
+        # into the effective entry so no extra subtraction at exit.
+        long_entry = mid_entry + spread + slippage
         max_favorable = 0.0
         for j in range(i + 1, min(i + 1 + effective_timeout, n)):
-            favorable = highs[j] - entry_price - spread
+            favorable = highs[j] - long_entry
             if favorable > max_favorable:
                 max_favorable = favorable
-            adverse = entry_price - lows[j] + spread
+            adverse = long_entry - lows[j]
             if adverse >= sl_dist:
                 break
         mfe_long[i] = max_favorable / atr_i
 
-        # Short MFE
+        # Short: sell the bid - slippage on entry.
+        short_entry = mid_entry - spread - slippage
         max_favorable = 0.0
         for j in range(i + 1, min(i + 1 + effective_timeout, n)):
-            favorable = entry_price - lows[j] - spread
+            favorable = short_entry - lows[j]
             if favorable > max_favorable:
                 max_favorable = favorable
-            adverse = highs[j] - entry_price + spread
+            adverse = highs[j] - short_entry
             if adverse >= sl_dist:
                 break
         mfe_short[i] = max_favorable / atr_i
@@ -584,70 +618,50 @@ def compute_mfe_targets(
 
 
 def slice_targets_for_fold(
-    full_targets_long: np.ndarray,
-    full_targets_short: np.ndarray,
-    full_df: pd.DataFrame,
     fold_df: pd.DataFrame,
     ctx: SimulationContext,
-) -> Tuple[np.ndarray, np.ndarray, bool, bool]:
-    """
-    Extrahiert Targets für einen bestimmten Fold aus gecachten Gesamt-Targets.
+    tp: float,
+    sl: float,
+    timeout_bars: Optional[int] = None,
+    return_durations: bool = False,
+) -> Tuple:
+    """Compute targets for one inner-CV fold using ONLY the fold's own bars.
+
+    Embargo fix: the previous implementation precomputed targets on the entire
+    inner_df and sliced per fold by index — that leaked val information into
+    train targets near the fold boundary, because the forward TP/SL window of
+    the last train bars overlapped the val region. Recomputing per fold
+    eliminates that leak: target at bar t now uses only bars in [t+1, t+max_bars]
+    inside fold_df.
 
     Args:
-        full_targets_long: Gecachte Long-Targets für gesamten DataFrame
-        full_targets_short: Gecachte Short-Targets für gesamten DataFrame
-        full_df: Der gesamte DataFrame (für Index-Mapping)
-        fold_df: Der Fold-DataFrame (Train oder Val)
-        ctx: SimulationContext
+        fold_df: The fold's DataFrame (train slice in production).
+        ctx: SimulationContext (exit_strategy, max_trade_bars, …).
+        tp: Take-profit multiplier.
+        sl: Stop-loss multiplier.
+        timeout_bars: Optional trade-timeout override.
+        return_durations: When True, also return per-trade durations.
 
     Returns:
-        (targets_long, targets_short, has_long, has_short)
+        return_durations=False -> (targets_long, targets_short, has_long, has_short)
+        return_durations=True  -> (targets_long, targets_short, dur_long, dur_short,
+                                   has_long, has_short)
     """
-    # Finde die Positionen des Fold im Gesamt-DataFrame
-    # Verwende searchsorted für robuste Index-Suche (auch bei nicht-eindeutigen Indices)
-    try:
-        # Versuche get_loc (schnell bei eindeutigen Indices)
-        start_loc = full_df.index.get_loc(fold_df.index[0])
-        end_loc = full_df.index.get_loc(fold_df.index[-1])
+    exit_strategy_mode = getattr(ctx, "exit_strategy", "fixed")
+    result = compute_targets_cached(
+        fold_df, tp, sl, ctx, timeout_bars,
+        exit_strategy_mode=exit_strategy_mode,
+        return_durations=return_durations,
+    )
+    if return_durations:
+        targets_long, targets_short, dur_long, dur_short = result
+    else:
+        targets_long, targets_short = result
 
-        # get_loc kann slice, int oder array zurückgeben
-        if isinstance(start_loc, slice):
-            start_idx = start_loc.start if start_loc.start is not None else 0
-        elif isinstance(start_loc, np.ndarray):
-            start_idx = np.where(start_loc)[0][0]
-        else:
-            start_idx = start_loc
-
-        if isinstance(end_loc, slice):
-            end_idx = end_loc.stop if end_loc.stop is not None else len(full_df)
-        elif isinstance(end_loc, np.ndarray):
-            end_idx = np.where(end_loc)[0][-1] + 1
-        else:
-            end_idx = end_loc + 1
-
-    except (KeyError, IndexError):
-        # Fallback: Nutze get_indexer (vectorisiert, O(log n) bei sortiertem Index)
-        fold_start = fold_df.index[0]
-        fold_end = fold_df.index[-1]
-
-        indices = full_df.index.get_indexer([fold_start, fold_end])
-        if indices[0] >= 0 and indices[1] >= 0:
-            start_idx = indices[0]
-            end_idx = indices[1] + 1
-        else:
-            # Index nicht gefunden - verwende Länge des fold_df
-            # Dies sollte nur passieren wenn fold_df nicht aus full_df stammt
-            start_idx = 0
-            end_idx = len(fold_df)
-
-    # Slice die gecachten Targets
-    fold_targets_long = full_targets_long[start_idx:end_idx]
-    fold_targets_short = full_targets_short[start_idx:end_idx]
-
-    # Prüfe ob genug Targets vorhanden (nutzt konsolidierte Funktion)
-    has_long, has_short = _validate_targets(fold_targets_long, fold_targets_short, ctx)
-
-    return fold_targets_long, fold_targets_short, has_long, has_short
+    has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
+    if return_durations:
+        return targets_long, targets_short, dur_long, dur_short, has_long, has_short
+    return targets_long, targets_short, has_long, has_short
 
 
 def _get_probs(
@@ -743,6 +757,19 @@ def evaluate_on_validation(
     probs_long, long_win_idx = _get_probs(mod_long, val_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, val_df, features_short)
 
+    # Per-trade TP/SL overrides from model (xgboost_rrr, xgboost_mfe)
+    per_trade_params = None
+    atr_col = "_atr" if "_atr" in val_df.columns else ("vol_atr" if "vol_atr" in val_df.columns else None)
+    atr_vals = val_df[atr_col].values if atr_col else None
+    if mod_long is not None:
+        ptp = mod_long.get_per_trade_params(val_df[features_long], atr=atr_vals)
+        if ptp is not None:
+            per_trade_params = ptp
+    if per_trade_params is None and mod_short is not None:
+        ptp = mod_short.get_per_trade_params(val_df[features_short], atr=atr_vals)
+        if ptp is not None:
+            per_trade_params = ptp
+
     # Meta-Labeling: filter predictions via meta-model
     if meta_mod_long is not None and probs_long is not None:
         probs_long = _apply_meta_filter(
@@ -771,6 +798,7 @@ def evaluate_on_validation(
                 ctx,
                 return_detailed=False,
                 timeout_bars=timeout_bars,
+                per_trade_params=per_trade_params,
             )
             trades = result["trades"]
             pnl = (
@@ -792,6 +820,7 @@ def evaluate_on_validation(
                 ctx,
                 return_detailed=False,
                 timeout_bars=timeout_bars,
+                per_trade_params=per_trade_params,
             )
             trades = result["trades"]
             pnl = (
@@ -814,6 +843,7 @@ def evaluate_on_validation(
             sl,
             ctx,
             timeout_bars,
+            per_trade_params=per_trade_params,
         )
 
     # Standard: Gemeinsamer CT für Long und Short
@@ -833,6 +863,7 @@ def evaluate_on_validation(
             ctx,
             return_detailed=False,
             timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
         trades_by_ct[ct] = result["trades"]
 
@@ -859,7 +890,8 @@ def _optimize_ct_for_direction(
     ctx: SimulationContext,
     direction: int,
     timeout_bars: int = None,
-    min_trades: int = 5,
+    min_trades: int = 1,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Tuple[Optional[float], float, Dict[float, List[float]]]:
     """
     Optimiert CT für eine einzelne Richtung (Long oder Short).
@@ -874,6 +906,7 @@ def _optimize_ct_for_direction(
         direction: 1=Long, -1=Short
         timeout_bars: Optional Timeout
         min_trades: Minimum Trades für gültigen CT
+        per_trade_params: Optional per-trade TP/SL overrides
 
     Returns:
         (best_ct, best_pnl, trades_by_ct)
@@ -891,6 +924,7 @@ def _optimize_ct_for_direction(
             ctx,
             direction=direction,
             timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
         trades_by_ct[ct] = result["trades"]
 
@@ -917,6 +951,7 @@ def _evaluate_separate_ct(
     sl: int,
     ctx: SimulationContext,
     timeout_bars: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Tuple[Optional[tuple], float, Dict]:
     """
     Optimiert CT separat für Long und Short Trades.
@@ -954,6 +989,7 @@ def _evaluate_separate_ct(
             ctx,
             direction=1,
             timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
         trades_info["long"] = long_trades_by_ct
 
@@ -970,6 +1006,7 @@ def _evaluate_separate_ct(
             ctx,
             direction=-1,
             timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
         trades_info["short"] = short_trades_by_ct
 
@@ -1000,6 +1037,7 @@ def _evaluate_separate_ct(
         ctx,
         return_detailed=False,
         timeout_bars=timeout_bars,
+        per_trade_params=per_trade_params,
     )
     combined_trades = combined_result["trades"]
     min_eval = ctx.min_eval_trades
