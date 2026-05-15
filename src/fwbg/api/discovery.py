@@ -14,9 +14,7 @@ import json
 import logging
 import math
 import os
-import signal
 import time
-import weakref
 from collections.abc import AsyncGenerator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -33,34 +31,6 @@ from fwbg.pipeline.features import compute_indicator_pool
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
-
-# ── Global pool registry + SIGINT handler ──────────────────────────────────
-# Keeps weak references to all active discovery pools.  On SIGINT, we signal
-# them to stop immediately so _python_exit doesn't wait for long computations.
-
-_active_pools: weakref.WeakSet[ThreadPoolExecutor] = weakref.WeakSet()
-
-
-def _shutdown_active_pools() -> None:
-    for pool in list(_active_pools):
-        try:
-            pool.shutdown(wait=False, cancel_futures=True)
-        except Exception:
-            pass
-
-
-_prev_sigint = signal.getsignal(signal.SIGINT)
-
-
-def _sigint_handler(signum: int, frame) -> None:  # noqa: ANN001
-    _shutdown_active_pools()
-    if callable(_prev_sigint):
-        _prev_sigint(signum, frame)
-    else:
-        raise KeyboardInterrupt()
-
-
-signal.signal(signal.SIGINT, _sigint_handler)
 
 # Indicators to skip (need external data, special config, or internal-only)
 _SKIP_INDICATORS = frozenset({
@@ -157,10 +127,20 @@ def _ensure_registry_initialized() -> None:
 
 def _compute_single_indicator(
     df: pd.DataFrame, ind_name: str,
+    params: dict | None = None,
 ) -> tuple[str, pd.DataFrame, float]:
-    """Compute a single indicator, return (name, result_df, elapsed_seconds)."""
+    """Compute a single indicator, return (name, result_df, elapsed_seconds).
+
+    When *params* is provided the indicator is computed with those params
+    (matching the strategy pipeline config) instead of plugin defaults.
+    """
     t0 = time.monotonic()
-    result = compute_indicator_pool(df, indicators=[ind_name])
+    if params is not None:
+        result = compute_indicator_pool(
+            df, indicators=[{"name": ind_name, "params": params}],
+        )
+    else:
+        result = compute_indicator_pool(df, indicators=[ind_name])
     elapsed = time.monotonic() - t0
     return ind_name, result, elapsed
 
@@ -308,30 +288,31 @@ def _analyze_direction(
     return direction_results
 
 
-def _analyze_combinations(
+def _analyze_combinations_for_mask(
     sampled: pd.DataFrame, top_features: list[dict],
-    pnls: np.ndarray, win_mask: np.ndarray,
+    trade_mask: np.ndarray, win_mask: np.ndarray,
     indicator_map: dict[str, str] | None = None,
     max_features: int = 20,
     min_trades: int = 15,
 ) -> list[dict]:
-    """Find synergistic feature pairs that improve win-rate beyond individual features.
+    """Find synergistic feature pairs for a given subset of trades.
 
-    For each pair of top features (from different indicators), split trades
-    at the midpoint between win_mean and loss_mean, then check if the
-    combined filter has a higher win-rate than either filter alone.
+    ``trade_mask`` selects which trades to consider (e.g. all, long-only,
+    short-only).  ``win_mask`` marks which of those are wins (same length
+    as ``sampled``; entries outside ``trade_mask`` are ignored).
     """
     from scipy.stats import fisher_exact
 
-    # Use top N features, ensure they come from different indicators
     candidates = top_features[:max_features]
     if len(candidates) < 2:
         return []
 
-    total_trades = len(pnls)
-    base_wr = float(win_mask.sum()) / total_trades if total_trades else 0
+    # Restrict to the trade subset
+    sub_win = win_mask & trade_mask
+    total_trades = int(trade_mask.sum())
+    total_wins = int(sub_win.sum())
+    base_wr = total_wins / total_trades if total_trades else 0
 
-    # Pre-compute binary masks for each feature's "favorable" side
     feature_masks: dict[str, np.ndarray] = {}
     feature_wr: dict[str, float] = {}
     feature_info: dict[str, dict] = {}
@@ -341,7 +322,6 @@ def _analyze_combinations(
         if col not in sampled.columns:
             continue
         vals = sampled[col].values
-        # Fill NaN with median
         valid = vals[~np.isnan(vals)]
         if len(valid) < 10:
             continue
@@ -349,19 +329,20 @@ def _analyze_combinations(
         vals_clean = np.where(np.isnan(vals), median_val, vals)
 
         threshold = (feat["win_mean"] + feat["loss_mean"]) / 2
-        # Negative effect_size → wins have lower values → filter: val < threshold
         if feat["effect_size"] < 0:
-            mask = vals_clean < threshold
+            val_mask = vals_clean < threshold
             op = "<"
         else:
-            mask = vals_clean > threshold
+            val_mask = vals_clean > threshold
             op = ">"
 
-        n_pass = mask.sum()
+        # Intersect with trade subset
+        mask = val_mask & trade_mask
+        n_pass = int(mask.sum())
         if n_pass < min_trades:
             continue
 
-        wr = float(win_mask[mask].sum()) / n_pass
+        wr = float(sub_win[mask].sum()) / n_pass
         feature_masks[col] = mask
         feature_wr[col] = wr
         feature_info[col] = {
@@ -370,7 +351,6 @@ def _analyze_combinations(
             "indicator": indicator_map.get(col, "") if indicator_map else "",
         }
 
-    # Test all pairs (from different indicators to avoid redundancy)
     cols = list(feature_masks.keys())
     results = []
 
@@ -379,27 +359,23 @@ def _analyze_combinations(
             col_a, col_b = cols[i], cols[j]
             ind_a = feature_info[col_a]["indicator"]
             ind_b = feature_info[col_b]["indicator"]
-            # Skip pairs from same indicator (columns are likely correlated)
             if ind_a and ind_b and ind_a == ind_b:
                 continue
 
             combined = feature_masks[col_a] & feature_masks[col_b]
-            n_combined = combined.sum()
+            n_combined = int(combined.sum())
             if n_combined < min_trades:
                 continue
 
-            combined_wins = int(win_mask[combined].sum())
+            combined_wins = int(sub_win[combined].sum())
             combined_wr = combined_wins / n_combined
 
-            # Synergy = how much better is the combo vs the best individual?
             best_individual_wr = max(feature_wr[col_a], feature_wr[col_b])
             synergy = combined_wr - best_individual_wr
 
-            # Fisher's exact test: is the combined WR significantly different from base?
-            # 2x2 table: [combined_wins, combined_losses] vs [other_wins, other_losses]
             combined_losses = n_combined - combined_wins
-            other_mask = ~combined
-            other_wins = int(win_mask[other_mask].sum())
+            other_mask = trade_mask & ~combined
+            other_wins = int(sub_win[other_mask].sum())
             other_losses = int(other_mask.sum()) - other_wins
 
             try:
@@ -431,9 +407,55 @@ def _analyze_combinations(
                 "significant": bool(p_value < 0.05),
             })
 
-    # Sort by synergy (combo improvement over best individual)
     results.sort(key=lambda x: x["synergy"], reverse=True)
-    return results[:50]
+
+    # Deduplicate: keep only the best synergy per indicator pair
+    seen_pairs: set[tuple[str, str]] = set()
+    deduped: list[dict] = []
+    for r in results:
+        pair = tuple(sorted([r["indicator_a"], r["indicator_b"]]))
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        deduped.append(r)
+
+    return deduped[:50]
+
+
+def _analyze_combinations(
+    sampled: pd.DataFrame, direction_features: dict[str, list[dict]],
+    directions: list[str], pnls: np.ndarray,
+    win_mask: np.ndarray,
+    indicator_map: dict[str, str] | None = None,
+    max_features: int = 20,
+    min_trades: int = 15,
+) -> dict[str, list[dict]]:
+    """Compute pairwise feature combinations per direction.
+
+    Returns ``{"long": [...], "short": [...]}``.  Each direction uses its
+    own top features (from ``direction_features``) and only considers
+    trades of that direction.
+    """
+    dir_arrays = np.array(directions)
+    result: dict[str, list[dict]] = {}
+
+    for dir_name, dir_label in [("LONG", "long"), ("SHORT", "short")]:
+        dir_mask = dir_arrays == dir_name
+        if int(dir_mask.sum()) < min_trades:
+            result[dir_label] = []
+            continue
+
+        top = direction_features.get(dir_label, [])
+        if len(top) < 2:
+            result[dir_label] = []
+            continue
+
+        result[dir_label] = _analyze_combinations_for_mask(
+            sampled, top, dir_mask, win_mask,
+            indicator_map, max_features, min_trades,
+        )
+
+    return result
 
 
 class _NumpyEncoder(json.JSONEncoder):
@@ -487,12 +509,16 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
             yield _sse_event("done", cached)
             return
 
-    strategy = _load_strategy_config(run_id)
-    run_config = _load_run_config(run_id)
-    timeframe = run_config.get("timeframe") or strategy.get("timeframe") or "HOUR"
+    try:
+        strategy = _load_strategy_config(run_id)
+        run_config = _load_run_config(run_id)
+        timeframe = run_config.get("timeframe") or strategy.get("timeframe") or "HOUR"
+        trades = _load_trades(run_id, symbol)
+        csv_path = _resolve_csv_path(strategy, symbol, timeframe)
+    except HTTPException as exc:
+        yield _sse_event("error", {"message": exc.detail})
+        return
 
-    # Load trades
-    trades = _load_trades(run_id, symbol)
     if len(trades) < 20:
         yield _sse_event("error", {"message": f"Too few trades ({len(trades)}) for meaningful discovery"})
         return
@@ -505,7 +531,6 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
     loss_mask = pnls < 0
 
     # Load OHLCV data
-    csv_path = _resolve_csv_path(strategy, symbol, timeframe)
     df = load_data_aligned(str(csv_path))
     if df is None or df.empty:
         yield _sse_event("error", {"message": f"Failed to load data from {csv_path}"})
@@ -521,6 +546,14 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
 
     # Pre-initialize registry once before spawning workers
     _ensure_registry_initialized()
+
+    # Build params lookup from the strategy's pipeline config so that
+    # indicators already in the pipeline are computed with the same params
+    # (producing the same column names the strategy actually uses).
+    pipeline_params: dict[str, dict] = {}
+    for ind_cfg in strategy.get("pipeline", {}).get("indicators", []):
+        if isinstance(ind_cfg, dict) and ind_cfg.get("name"):
+            pipeline_params[ind_cfg["name"]] = ind_cfg.get("params", {})
 
     indicator_names = _get_available_indicators()
     total_steps = len(indicator_names)
@@ -543,14 +576,16 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
 
     loop = asyncio.get_running_loop()
     pool = ThreadPoolExecutor(max_workers=_MAX_WORKERS)
-    _active_pools.add(pool)
     tasks: list[asyncio.Task] = []
 
     async def _compute_safe(name: str) -> tuple[str, pd.DataFrame | None, float, str | None]:
         """Run one indicator; always returns (name, result, elapsed, error_msg)."""
         try:
+            params = pipeline_params.get(name)
             ind_name, result, elapsed = await asyncio.wait_for(
-                loop.run_in_executor(pool, _compute_single_indicator, df, name),
+                loop.run_in_executor(
+                    pool, _compute_single_indicator, df, name, params,
+                ),
                 timeout=_INDICATOR_TIMEOUT,
             )
             return ind_name, result, elapsed, None
@@ -615,7 +650,7 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
         sampled, feature_cols, directions, pnls, win_mask, loss_mask, indicator_map,
     )
     combinations = _analyze_combinations(
-        sampled, all_results, pnls, win_mask, indicator_map,
+        sampled, direction_results, directions, pnls, win_mask, indicator_map,
     )
 
     done_payload = {

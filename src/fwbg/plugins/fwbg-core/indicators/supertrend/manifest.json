@@ -1,0 +1,7 @@
+{
+  "name": "supertrend",
+  "version": "1.0.0",
+  "description": "Supertrend (standard + multi-timeframe) - ATR-based trend-following indicator",
+  "phase": "indicators",
+  "benefits_from_stationary": true
+}

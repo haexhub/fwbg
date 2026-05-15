@@ -193,8 +193,20 @@ def run_unified_simulation(
 
         train_df, test_df, _full_pool = fold_data
 
+        # Filter unified features to columns available in this fold.
+        # NaN-cleaning in prepare_fold_data may drop columns that were
+        # stable across most folds but have >10% NaN in this specific fold.
+        available = set(train_df.columns)
+        fold_candidate = unified_candidate
+        for key in ("selected_features_long", "selected_features_short"):
+            feats = unified_candidate.get(key)
+            if feats and not all(f in available for f in feats):
+                if fold_candidate is unified_candidate:
+                    fold_candidate = {**unified_candidate}
+                fold_candidate[key] = [f for f in feats if f in available]
+
         result = evaluate_on_holdout(
-            test_df, train_df, unified_candidate, holdout_context,
+            test_df, train_df, fold_candidate, holdout_context,
         )
 
         total_trades += result["n_trades"]

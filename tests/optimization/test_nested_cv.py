@@ -52,7 +52,7 @@ def create_test_df(n_rows: int, seed: int = 42) -> pd.DataFrame:
 
     # Einige Feature-Spalten hinzufügen
     df["trend_rsi_14"] = np.random.rand(n_rows) * 100
-    df["trend_adx_14"] = np.random.rand(n_rows) * 100
+    df["adx_14"] = np.random.rand(n_rows) * 100
     df["mom_stoch_14"] = np.random.rand(n_rows) * 100
 
     return df
@@ -315,7 +315,7 @@ class TestSelectFeaturesFromFold:
         """Test: Zu wenige Targets für Training."""
         df = create_test_df(500)
         targets = np.zeros(len(df))  # Keine positiven Targets
-        features = ["trend_rsi_14", "trend_adx_14"]
+        features = ["trend_rsi_14", "adx_14"]
 
         selected, _ = select_features_from_fold(
             df, targets, features, min_trades=100
@@ -340,7 +340,7 @@ class TestSelectFeaturesFromFold:
         df = create_test_df(1000)
         # Targets die mit einem Feature korrelieren
         targets = (df["trend_rsi_14"].values > 50).astype(int)
-        features = ["trend_rsi_14", "trend_adx_14", "mom_stoch_14"]
+        features = ["trend_rsi_14", "adx_14", "mom_stoch_14"]
 
         plugins = [{"name": "boruta", "params": {
             "n_iter": 3, "n_estimators": 20, "max_depth": 3, "min_z_score": 0.0
@@ -362,7 +362,7 @@ class TestTrainModel:
         """Test: Grundlegendes Modell-Training."""
         df = create_test_df(500)
         targets = np.random.randint(0, 2, len(df))
-        features = ["trend_rsi_14", "trend_adx_14"]
+        features = ["trend_rsi_14", "adx_14"]
         ctx = create_mock_context()
 
         model = train_model(df, targets, features, min_trades=10, ctx=ctx)

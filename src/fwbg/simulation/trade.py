@@ -466,6 +466,8 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             "tp_distance": float(tp_distance),
             "sl_distance": float(abs(entry - sl)) if sl_level_abs is not None else float(sl_distance),
             "pnl_raw": float(pnl_raw),
+            "mae": float(entry - mae_price) if direction == 1 else float(mae_price - entry),
+            "mfe": float(mfe_price - entry) if direction == 1 else float(entry - mfe_price),
         }
 
         if use_scale_in:
@@ -482,6 +484,10 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             ]
 
         return res
+
+    # MAE/MFE tracking (always active, near-zero overhead)
+    mae_price = entry  # worst price against the trade
+    mfe_price = entry  # best price for the trade
 
     # Trailing state
     use_trailing = breakeven_trigger > 0.0 or trail_distance > 0.0
@@ -525,6 +531,18 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                         n_fills += 1
                         if breakeven_trigger > 0.0:
                             be_trigger_price = avg_price - tp_distance * breakeven_trigger
+
+        # Track MAE/MFE on ALL bars (including off-session)
+        if direction == 1:
+            if lows[j] < mae_price:
+                mae_price = lows[j]
+            if highs[j] > mfe_price:
+                mfe_price = highs[j]
+        else:
+            if highs[j] > mae_price:
+                mae_price = highs[j]
+            if lows[j] < mfe_price:
+                mfe_price = lows[j]
 
         # Skip off-session bars — no exits outside trading hours
         if in_session is not None and not in_session[j]:
@@ -628,6 +646,118 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
 
     # Kein Exit (weder TP/SL noch Timeout innerhalb max_bars)
     return None
+
+
+def analyze_sl_potential(trades, closes, highs, lows, max_scan_bars=500):
+    """For losing trades, check if TP would have been reached with a wider SL.
+
+    Scans forward from each losing trade's entry point WITHOUT SL constraint
+    to determine what SL would have been needed for the trade to hit TP.
+
+    Enriches each losing trade dict in-place with:
+      - potential_tp_reached: bool - would TP have been hit without SL?
+      - required_mae: float - max adverse excursion needed to reach TP
+      - bars_to_potential_tp: int - bars from entry until TP would be reached
+
+    Args:
+        trades: list of trade dicts (modified in-place for losing trades)
+        closes: Close prices array
+        highs: High prices array
+        lows: Low prices array
+        max_scan_bars: maximum bars to scan forward from entry
+    """
+    for trade in trades:
+        if trade.get("result", 0) >= 0:
+            continue  # Only analyze losing trades
+
+        entry_idx = trade["entry_idx"]
+        entry = trade["entry_price"]
+        tp = trade["tp_level"]
+        is_long = trade["direction"] == "LONG"
+
+        worst = entry
+        end = min(entry_idx + max_scan_bars, len(closes))
+
+        for j in range(entry_idx, end):
+            if is_long:
+                if lows[j] < worst:
+                    worst = lows[j]
+                if highs[j] >= tp:
+                    trade["potential_tp_reached"] = True
+                    trade["required_mae"] = float(entry - worst)
+                    trade["bars_to_potential_tp"] = j - entry_idx
+                    break
+            else:
+                if highs[j] > worst:
+                    worst = highs[j]
+                if lows[j] <= tp:
+                    trade["potential_tp_reached"] = True
+                    trade["required_mae"] = float(worst - entry)
+                    trade["bars_to_potential_tp"] = j - entry_idx
+                    break
+        else:
+            # TP never reached within scan window
+            trade["potential_tp_reached"] = False
+            if is_long:
+                trade["required_mae"] = float(entry - worst)
+            else:
+                trade["required_mae"] = float(worst - entry)
+
+
+def analyze_tp_potential(trades, closes, highs, lows, max_scan_bars=500):
+    """For winning trades, check how far the price continued after TP was hit.
+
+    Scans forward from each winning trade's exit point to determine how much
+    additional profit could have been captured with a wider TP.
+
+    Enriches each winning trade dict in-place with:
+      - continuation_mfe: float - max favorable excursion beyond TP level
+      - continuation_mae: float - max adverse excursion after TP (reversal depth)
+      - bars_of_continuation: int - bars until price reversed to entry level
+
+    Args:
+        trades: list of trade dicts (modified in-place for winning trades)
+        closes: Close prices array
+        highs: High prices array
+        lows: Low prices array
+        max_scan_bars: maximum bars to scan forward from exit
+    """
+    for trade in trades:
+        if trade.get("result", 0) <= 0:
+            continue  # Only analyze winning trades
+
+        exit_idx = trade["exit_idx"]
+        entry = trade["entry_price"]
+        tp = trade["tp_level"]
+        is_long = trade["direction"] == "LONG"
+
+        best_beyond_tp = tp  # best price beyond TP
+        worst_after_tp = tp  # worst price after TP (reversal tracking)
+        end = min(exit_idx + max_scan_bars, len(closes))
+
+        for j in range(exit_idx + 1, end):
+            if is_long:
+                if highs[j] > best_beyond_tp:
+                    best_beyond_tp = highs[j]
+                if lows[j] < worst_after_tp:
+                    worst_after_tp = lows[j]
+                # Stop if price reverses back to entry
+                if lows[j] <= entry:
+                    break
+            else:
+                if lows[j] < best_beyond_tp:
+                    best_beyond_tp = lows[j]
+                if highs[j] > worst_after_tp:
+                    worst_after_tp = highs[j]
+                if highs[j] >= entry:
+                    break
+
+        if is_long:
+            trade["continuation_mfe"] = float(best_beyond_tp - tp)
+            trade["continuation_mae"] = float(tp - worst_after_tp)
+        else:
+            trade["continuation_mfe"] = float(tp - best_beyond_tp)
+            trade["continuation_mae"] = float(worst_after_tp - tp)
 
 
 def calculate_max_drawdown(returns, risk_per_trade, rrr):

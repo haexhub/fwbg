@@ -1,0 +1,7 @@
+{
+  "name": "aroon",
+  "version": "1.0.0",
+  "description": "Aroon Up/Down - time since last N-period high/low for trend detection",
+  "phase": "indicators",
+  "benefits_from_stationary": true
+}

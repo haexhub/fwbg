@@ -322,6 +322,8 @@ def run_optimizer(
             fold_data["walk_forward"] = result["walk_forward"]
         if result.get("bias_check"):
             fold_data["bias_check"] = result["bias_check"]
+        if result.get("trade_analytics"):
+            fold_data["trade_analytics"] = result["trade_analytics"]
         if fold_data:
             with open(os.path.join(sym_dir, "fold_results.json"), "w") as f:
                 json.dump(fold_data, f, indent=2, cls=_SafeJsonEncoder)
@@ -401,6 +403,16 @@ def run_optimizer(
             }
             with open(os.path.join(sym_dir, "grid_results.json"), "w") as f:
                 json.dump(grid_results_data, f, indent=2, cls=_SafeJsonEncoder)
+
+        # --- Memory cleanup: strip heavy data now that it's on disk ---
+        result.pop("grid_results", None)
+        wf = result.get("walk_forward", {})
+        for fold in wf.get("fold_details", []):
+            # Replace full trade dicts with PnL-only values
+            trace = fold.get("test_trades_trace", [])
+            if trace and isinstance(trace[0], dict):
+                fold["test_trades_trace"] = [t.get("pnl_raw", 0) for t in trace]
+            fold.pop("test_trades_detail", None)
 
         # Zusammenfassung für später sammeln (wird nach Progress-UI ausgegeben)
         output_lines = []

@@ -28,11 +28,15 @@ def expand_indicator_grid(
         "optimization": {
             "indicator_grid": {
                 "opening_range": {
-                    "sessions": [[0], [8], [9]],
-                    "range_bars": [[8], [12]]
+                    "sessions": [0, 8, 9],
+                    "range_bars": [8, 12]
                 }
             }
         }
+
+    Each value in the list is one grid variant.  Values are auto-wrapped
+    into single-element lists when the indicator's current param is a list
+    (e.g. ``range_bars: 8`` becomes ``range_bars: [8]``).
 
     This produces 3×2 = 6 variants where the opening_range indicator's
     ``sessions`` and ``range_bars`` params are overridden per variant.
@@ -56,9 +60,20 @@ def expand_indicator_grid(
                 f"{[i.get('name', '?') for i in indicators]}"
             )
 
-        # Build cartesian product of this indicator's param variants
+        current_params = indicators[ind_idx].get("params", {})
+
+        # Build cartesian product of this indicator's param variants.
+        # Grid values are flat arrays: [4, 8, 12] = 3 variants.
+        # When the indicator param is a list (e.g. range_bars=[3]),
+        # each scalar is wrapped into [scalar] for type correctness.
         param_names = list(param_grid.keys())
-        param_value_lists = [param_grid[p] for p in param_names]
+        param_value_lists = []
+        for p in param_names:
+            original = current_params.get(p)
+            values = param_grid[p]
+            if isinstance(original, list):
+                values = [[v] for v in values]
+            param_value_lists.append(values)
 
         for combo in itertools.product(*param_value_lists):
             # Each combo is one set of overrides for this indicator

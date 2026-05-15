@@ -1,7 +1,0 @@
-{
-  "name": "supertrend_mtf",
-  "version": "1.0.0",
-  "description": "Supertrend auf aggregierter höherer Zeitebene (z.B. Tagesbasis) als Trend-Filter für M15-Strategien",
-  "phase": "indicators",
-  "benefits_from_stationary": false
-}

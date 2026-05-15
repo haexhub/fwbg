@@ -16,6 +16,7 @@ from fwbg.utils.logging import log
 from .nested_cv import (
     run_inner_cv, select_features_from_fold,
     _evaluate_single_fold, _aggregate_cv_folds,
+    _compact_trades_by_ct,
 )
 
 
@@ -175,6 +176,8 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "entry_modifier": ctx.entry_modifier,
         "entry_modifier_params": ctx.entry_modifier_params,
         "model_hyperparameters": ctx.model_hyperparameters,
+        "ct_votes": inner_result.get("ct_votes"),
+        "ct_diagnostics": inner_result.get("ct_diagnostics"),
     }
 
     if ctx.separate_long_short and "ct_long" in inner_result:
@@ -196,6 +199,9 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "regime_filter": regime_config,
         "exit_modifier_params": ctx.exit_modifier_params,
         "model_hyperparameters": ctx.model_hyperparameters,
+        "ct_votes": inner_result.get("ct_votes"),
+        "ct_diagnostics": inner_result.get("ct_diagnostics"),
+        "fold_pnls": inner_result.get("fold_pnls"),
     }
     if isinstance(conf_thresh, tuple):
         grid_result["ct_long"] = conf_thresh[0]
@@ -423,6 +429,9 @@ def _run_with_successive_halving(
                 selected_features_long=selected_features_long,
                 selected_features_short=selected_features_short,
             )
+            # Compact trade dicts to reduce memory across many combos × folds
+            if fold_result.get("success"):
+                _compact_trades_by_ct(fold_result)
             combo_fold_results[combo_idx].append(fold_result)
 
             # Report intermediate progress during fold evaluation
@@ -462,6 +471,10 @@ def _run_with_successive_halving(
                 threshold_pnl = scores[n_keep - 1][1] if n_keep <= len(scores) else float("-inf")
                 log(2, f"  Fold {fold_idx}: {len(new_active)} survivors, "
                        f"{len(pruned)} pruned (threshold PnL={threshold_pnl:.1f})", sym)
+
+                # Release fold results for pruned combos
+                for idx in pruned:
+                    combo_fold_results[idx].clear()
 
                 # Report pruned combos as done
                 for _ in pruned:

@@ -203,6 +203,25 @@ def _simulate_trades_core(
             ohlc=(opn, hgh, low, cls),
         )
 
+    # Signal rules pre-filter: when _composed_signal_long/short columns exist,
+    # only allow entries on bars where the signal is active (== 1.0).
+    # This lets signal_rules act as entry gates for ML models.
+    # Skipped when return_detailed=False during inner-CV evaluation (too few
+    # signal bars in small validation windows would starve the grid search).
+    signal_long = None
+    signal_short = None
+    if return_detailed:
+        signal_long = (
+            df["_composed_signal_long"].values
+            if "_composed_signal_long" in df.columns
+            else None
+        )
+        signal_short = (
+            df["_composed_signal_short"].values
+            if "_composed_signal_short" in df.columns
+            else None
+        )
+
     # Signal event limiting: prevent re-entry into the same persistent signal.
     # A "signal event" is a contiguous run of bars where P(win) >= ct.
     # max_trades_per_signal=1 means one trade per breakout event (ORB default).
@@ -232,6 +251,7 @@ def _simulate_trades_core(
                 and ctx.long_enabled
                 and probs_long is not None
                 and probs_long[i, long_win_idx] >= ct_long
+                and (signal_long is None or signal_long[i] >= 1.0)
             ):
                 # Check signal event limit
                 if max_per_signal > 0 and long_event_ids is not None:
@@ -247,6 +267,7 @@ def _simulate_trades_core(
                 and ctx.short_enabled
                 and probs_short is not None
                 and probs_short[i, short_win_idx] >= ct_short
+                and (signal_short is None or signal_short[i] >= 1.0)
             ):
                 if max_per_signal > 0 and short_event_ids is not None:
                     eid = short_event_ids[i]
@@ -285,7 +306,8 @@ def _simulate_trades_core(
                 scale_qty_mult=scale_qty_mult,
             )
             if trade:
-                t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"]}
+                t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"],
+                     "mae": trade["mae"], "mfe": trade["mfe"]}
                 if has_rv:
                     rv_val = float(rv_values[i])
                     if not np.isnan(rv_val):
@@ -355,6 +377,7 @@ def _simulate_single_direction(
     ctx: SimulationContext,
     direction: int,
     timeout_bars: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """Simuliert Trades für eine einzelne Richtung (Long oder Short)."""
     if direction == 1:
@@ -372,6 +395,7 @@ def _simulate_single_direction(
             False,
             timeout_bars,
             direction_filter=1,
+            per_trade_params=per_trade_params,
         )
     else:
         return _simulate_trades_core(
@@ -388,6 +412,7 @@ def _simulate_single_direction(
             False,
             timeout_bars,
             direction_filter=-1,
+            per_trade_params=per_trade_params,
         )
 
 
@@ -743,6 +768,19 @@ def evaluate_on_validation(
     probs_long, long_win_idx = _get_probs(mod_long, val_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, val_df, features_short)
 
+    # Per-trade TP/SL overrides from model (xgboost_rrr, xgboost_mfe)
+    per_trade_params = None
+    atr_col = "_atr" if "_atr" in val_df.columns else ("vol_atr" if "vol_atr" in val_df.columns else None)
+    atr_vals = val_df[atr_col].values if atr_col else None
+    if mod_long is not None:
+        ptp = mod_long.get_per_trade_params(val_df[features_long], atr=atr_vals)
+        if ptp is not None:
+            per_trade_params = ptp
+    if per_trade_params is None and mod_short is not None:
+        ptp = mod_short.get_per_trade_params(val_df[features_short], atr=atr_vals)
+        if ptp is not None:
+            per_trade_params = ptp
+
     # Meta-Labeling: filter predictions via meta-model
     if meta_mod_long is not None and probs_long is not None:
         probs_long = _apply_meta_filter(
@@ -771,6 +809,7 @@ def evaluate_on_validation(
                 ctx,
                 return_detailed=False,
                 timeout_bars=timeout_bars,
+                per_trade_params=per_trade_params,
             )
             trades = result["trades"]
             pnl = (
@@ -792,6 +831,7 @@ def evaluate_on_validation(
                 ctx,
                 return_detailed=False,
                 timeout_bars=timeout_bars,
+                per_trade_params=per_trade_params,
             )
             trades = result["trades"]
             pnl = (
@@ -814,6 +854,7 @@ def evaluate_on_validation(
             sl,
             ctx,
             timeout_bars,
+            per_trade_params=per_trade_params,
         )
 
     # Standard: Gemeinsamer CT für Long und Short
@@ -833,6 +874,7 @@ def evaluate_on_validation(
             ctx,
             return_detailed=False,
             timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
         trades_by_ct[ct] = result["trades"]
 
@@ -859,7 +901,8 @@ def _optimize_ct_for_direction(
     ctx: SimulationContext,
     direction: int,
     timeout_bars: int = None,
-    min_trades: int = 5,
+    min_trades: int = 1,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Tuple[Optional[float], float, Dict[float, List[float]]]:
     """
     Optimiert CT für eine einzelne Richtung (Long oder Short).
@@ -874,6 +917,7 @@ def _optimize_ct_for_direction(
         direction: 1=Long, -1=Short
         timeout_bars: Optional Timeout
         min_trades: Minimum Trades für gültigen CT
+        per_trade_params: Optional per-trade TP/SL overrides
 
     Returns:
         (best_ct, best_pnl, trades_by_ct)
@@ -891,6 +935,7 @@ def _optimize_ct_for_direction(
             ctx,
             direction=direction,
             timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
         trades_by_ct[ct] = result["trades"]
 
@@ -917,6 +962,7 @@ def _evaluate_separate_ct(
     sl: int,
     ctx: SimulationContext,
     timeout_bars: int = None,
+    per_trade_params: Optional[np.ndarray] = None,
 ) -> Tuple[Optional[tuple], float, Dict]:
     """
     Optimiert CT separat für Long und Short Trades.
@@ -954,6 +1000,7 @@ def _evaluate_separate_ct(
             ctx,
             direction=1,
             timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
         trades_info["long"] = long_trades_by_ct
 
@@ -970,6 +1017,7 @@ def _evaluate_separate_ct(
             ctx,
             direction=-1,
             timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
         trades_info["short"] = short_trades_by_ct
 
@@ -1000,6 +1048,7 @@ def _evaluate_separate_ct(
         ctx,
         return_detailed=False,
         timeout_bars=timeout_bars,
+        per_trade_params=per_trade_params,
     )
     combined_trades = combined_result["trades"]
     min_eval = ctx.min_eval_trades

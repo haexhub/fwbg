@@ -331,6 +331,130 @@ def _simulate_preview_trades(
     return trades
 
 
+class CompareRequest(BaseModel):
+    """Request body for comparing multiple runs."""
+    run_ids: list[str]
+
+
+@router.post("/compare")
+def compare_runs(body: CompareRequest) -> dict:
+    """Compare multiple runs side-by-side with per-asset metrics."""
+    results_dir = get_test_results_dir()
+    strategies_dir = get_strategies_dir()
+
+    runs = []
+    all_symbols: set[str] = set()
+
+    for run_id in body.run_ids:
+        run_dir = results_dir / run_id
+        if not run_dir.exists():
+            continue
+
+        run_data: dict = {"run_id": run_id}
+
+        # Config
+        config_file = run_dir / "config.json"
+        if config_file.exists():
+            try:
+                config = json.loads(config_file.read_text())
+                run_data["timestamp"] = config.get("timestamp")
+                run_data["description"] = config.get("description")
+                run_data["timeframe"] = config.get("timeframe")
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # Strategy
+        strategy_file = run_dir / "strategy.json"
+        if strategy_file.exists():
+            try:
+                strategy = json.loads(strategy_file.read_text())
+                _resolve_strategy_refs(strategy)
+                run_data["strategy"] = strategy
+                run_data["strategy_name"] = strategy.get("name", "")
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # Per-asset metrics + trades
+        grid_dir = run_dir / "grid_details"
+        assets: dict[str, dict] = {}
+        if grid_dir.exists():
+            for sym_dir in sorted(d for d in grid_dir.iterdir() if d.is_dir()):
+                symbol = sym_dir.name
+                all_symbols.add(symbol)
+                asset_data: dict = {"symbol": symbol}
+
+                # Unified metrics
+                um_file = sym_dir / "unified_metrics.json"
+                if um_file.exists():
+                    try:
+                        asset_data["metrics"] = json.loads(um_file.read_text())
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
+                # Config (status, best_config)
+                cfg_file = sym_dir / "config.json"
+                if cfg_file.exists():
+                    try:
+                        cfg = json.loads(cfg_file.read_text())
+                        asset_data["status"] = cfg.get("status")
+                        asset_data["best_config"] = cfg.get("best_config")
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
+                # Trade trace for equity overlay
+                trades_file = sym_dir / "trades.json"
+                if trades_file.exists():
+                    try:
+                        tdata = json.loads(trades_file.read_text())
+                        asset_data["tr_trace"] = tdata.get("tr_trace", [])
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
+                # Fold stability from fold_results
+                fold_file = sym_dir / "fold_results.json"
+                if fold_file.exists():
+                    try:
+                        fdata = json.loads(fold_file.read_text())
+                        wf = fdata.get("walk_forward", {})
+                        asset_data["fold_summary"] = {
+                            "n_folds": wf.get("n_folds"),
+                            "successful_folds": wf.get("successful_folds"),
+                            "profitable_folds": wf.get("profitable_folds"),
+                            "fold_stability": wf.get("fold_stability"),
+                            "mean_win_rate": wf.get("mean_win_rate"),
+                            "std_win_rate": wf.get("std_win_rate"),
+                            "mean_pnl": wf.get("mean_pnl"),
+                            "std_pnl": wf.get("std_pnl"),
+                        }
+                    except (json.JSONDecodeError, IOError):
+                        pass
+
+                assets[symbol] = asset_data
+
+        run_data["assets"] = assets
+
+        # Aggregate metrics across assets
+        metrics_list = [a["metrics"] for a in assets.values() if "metrics" in a]
+        if metrics_list:
+            run_data["aggregate"] = {
+                "total_pnl": sum(m.get("pnl", 0) for m in metrics_list),
+                "avg_win_rate": sum(m.get("win_rate", 0) for m in metrics_list) / len(metrics_list),
+                "avg_sharpe": sum(m.get("sharpe", 0) for m in metrics_list) / len(metrics_list),
+                "avg_calmar": sum(m.get("calmar", 0) for m in metrics_list) / len(metrics_list),
+                "avg_profit_factor": sum(m.get("profit_factor", 0) for m in metrics_list) / len(metrics_list),
+                "total_trades": sum(m.get("trades", 0) for m in metrics_list),
+                "asset_count": len(assets),
+                "profitable_count": sum(1 for a in assets.values() if a.get("status") == "ok"),
+            }
+
+        runs.append(run_data)
+
+    return {
+        "runs": runs,
+        "all_symbols": sorted(all_symbols),
+    }
+
+
 @router.get("")
 def list_runs(
     limit: int = Query(20, ge=1, le=100),
@@ -340,69 +464,7 @@ def list_runs(
     results_dir = get_test_results_dir()
     runs = []
 
-    # Completed runs from test_results/
-    if results_dir.exists():
-        run_dirs = sorted(
-            results_dir.iterdir(),
-            key=lambda d: d.stat().st_mtime,
-            reverse=True,
-        )
-        for run_dir in run_dirs:
-            if not run_dir.is_dir():
-                continue
-            # Skip dirs that belong to active jobs (dir created early for progress)
-            if run_dir.name in _active_jobs:
-                continue
-
-            config_file = run_dir / "config.json"
-            strategy_file = run_dir / "strategy.json"
-
-            run_info: dict = {
-                "run_id": run_dir.name,
-                "status": "completed",
-            }
-
-            if config_file.exists():
-                try:
-                    config = json.loads(config_file.read_text())
-                    run_info.update({
-                        "timestamp": config.get("timestamp"),
-                        "description": config.get("description"),
-                        "timeframe": config.get("timeframe"),
-                    })
-                except (json.JSONDecodeError, IOError):
-                    pass
-
-            if strategy_file.exists():
-                try:
-                    strategy = json.loads(strategy_file.read_text())
-                    run_info["strategy_name"] = strategy.get("name", "")
-                    run_info["tags"] = strategy.get("tags", [])
-                except (json.JSONDecodeError, IOError):
-                    pass
-
-            # Count assets from grid_details (subdirectories per symbol)
-            grid_dir = run_dir / "grid_details"
-            if grid_dir.exists():
-                sym_dirs = [d for d in grid_dir.iterdir() if d.is_dir()]
-                run_info["asset_count"] = len(sym_dirs)
-
-                # Summarize asset results
-                profitable = 0
-                for sd in sym_dirs:
-                    cfg_file = sd / "config.json"
-                    if cfg_file.exists():
-                        try:
-                            data = json.loads(cfg_file.read_text())
-                            if data.get("status") == "ok":
-                                profitable += 1
-                        except (json.JSONDecodeError, IOError):
-                            pass
-                run_info["profitable_count"] = profitable
-
-            runs.append(run_info)
-
-    # Active jobs — reap finished processes, only show jobs not yet on filesystem
+    # Active jobs — reap finished processes
     finished_ids = []
     for job_id, job in _active_jobs.items():
         proc = job.get("process")
@@ -420,12 +482,11 @@ def list_runs(
                     except Exception:
                         job["error_message"] = f"Process exited with code {proc.returncode}"
 
-            # Process finished and results dir exists → reap
             if (results_dir / job_id).exists():
                 finished_ids.append(job_id)
                 continue
 
-        runs.insert(0, {
+        runs.append({
             "run_id": job_id,
             "status": job["status"],
             "strategy_name": job.get("strategy_name"),
@@ -437,9 +498,79 @@ def list_runs(
     for jid in finished_ids:
         del _active_jobs[jid]
 
-    total = len(runs)
-    paginated = runs[offset:offset + limit]
-    return {"items": paginated, "total": total}
+    # Collect completed run directory names (cheap: no file reads yet)
+    completed_ids: list[str] = []
+    if results_dir.exists():
+        completed_ids = sorted(
+            (d.name for d in results_dir.iterdir()
+             if d.is_dir() and d.name not in _active_jobs),
+            reverse=True,
+        )
+
+    total = len(runs) + len(completed_ids)
+
+    # Paginate: active jobs come first, then completed runs by name (desc)
+    active_count = len(runs)
+    if offset < active_count:
+        # Page starts within active jobs
+        remaining = limit - (active_count - offset)
+        runs = runs[offset:]
+        if remaining > 0:
+            completed_ids = completed_ids[:remaining]
+        else:
+            completed_ids = []
+    else:
+        # Page starts within completed runs
+        runs = []
+        skip = offset - active_count
+        completed_ids = completed_ids[skip:skip + limit]
+
+    # Only read JSON files for the paginated completed runs
+    for run_id in completed_ids:
+        run_dir = results_dir / run_id
+        run_info: dict = {"run_id": run_id, "status": "completed"}
+
+        config_file = run_dir / "config.json"
+        if config_file.exists():
+            try:
+                config = json.loads(config_file.read_text())
+                run_info.update({
+                    "timestamp": config.get("timestamp"),
+                    "description": config.get("description"),
+                    "timeframe": config.get("timeframe"),
+                })
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        strategy_file = run_dir / "strategy.json"
+        if strategy_file.exists():
+            try:
+                strategy = json.loads(strategy_file.read_text())
+                run_info["strategy_name"] = strategy.get("name", "")
+                run_info["tags"] = strategy.get("tags", [])
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        grid_dir = run_dir / "grid_details"
+        if grid_dir.exists():
+            sym_dirs = [d for d in grid_dir.iterdir() if d.is_dir()]
+            run_info["asset_count"] = len(sym_dirs)
+
+            profitable = 0
+            for sd in sym_dirs:
+                cfg_file = sd / "config.json"
+                if cfg_file.exists():
+                    try:
+                        data = json.loads(cfg_file.read_text())
+                        if data.get("status") == "ok":
+                            profitable += 1
+                    except (json.JSONDecodeError, IOError):
+                        pass
+            run_info["profitable_count"] = profitable
+
+        runs.append(run_info)
+
+    return {"items": runs, "total": total}
 
 
 def _resolve_strategy_refs(strategy: dict) -> None:

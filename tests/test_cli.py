@@ -224,7 +224,7 @@ class TestComputeIndicatorPool:
         # Es sollte mindestens Indikator-Spalten hinzugefügt haben
         indicator_cols = [c for c in result.columns if c not in ["O", "H", "L", "C"]]
         assert len(indicator_cols) > 0, "Keine Indikator-Spalten hinzugefügt"
-        assert "trend_adx_14" in result.columns or any("trend" in c for c in result.columns)
+        assert "adx_14" in result.columns or any("trend" in c for c in result.columns)
 
     def test_compute_no_symbol_arg(self):
         """Test: compute_indicator_pool akzeptiert kein symbol Argument."""

@@ -22,7 +22,7 @@ class RegimeCondition:
         Bit 0 (1) = Sideways allowed (future use)
         7 = all allowed, 6 = Long+Short, 4 = Long only, 2 = Short only, 0 = blocked
     """
-    column: str           # e.g. "trend_adx_14", "macro_vix"
+    column: str           # e.g. "adx_14", "macro_vix"
     operator: str         # ">=", "<=", ">", "<"
     value: float
     directions: int = 6       # Bitmask when condition is TRUE (default: Long+Short)
@@ -39,6 +39,11 @@ class RegimeFilterGridConfig:
         if data is None:
             return cls()
         grids = data.get("condition_grids", [])
+        if not grids:
+            raise ValueError(
+                "regime_filter_grid requires 'condition_grids' array. "
+                f"Got keys: {list(data.keys())}"
+            )
         return cls(condition_grids=grids)
 
     def get_combinations(self) -> List[Dict[str, Any]]:
@@ -301,10 +306,13 @@ class RegimeFilterConfig:
 class ResourceConfig:
     """Resource limits for optimization runs.
 
-    KISS: max_concurrent_assets is the primary and only reliable control.
-    Each model plugin manages its own thread count internally.
+    max_concurrent_assets: number of symbols processed in parallel (ProcessPoolExecutor).
+    max_parallel_folds: number of walk-forward folds processed in parallel per asset
+        (ThreadPoolExecutor). XGBoost n_jobs is automatically reduced to avoid
+        over-subscribing CPU cores.
     """
     max_concurrent_assets: int = 1
+    max_parallel_folds: int = 1
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ResourceConfig":
@@ -312,6 +320,7 @@ class ResourceConfig:
             return cls()
         return cls(
             max_concurrent_assets=data.get("max_concurrent_assets", 1),
+            max_parallel_folds=data.get("max_parallel_folds", 1),
         )
 
 

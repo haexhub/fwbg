@@ -485,18 +485,30 @@ DataSource = CSVSourceConfig | RESTSourceConfig | WebSocketSourceConfig | DBSour
 _DATA_SOURCES: Dict[str, DataSource] = {}
 
 
-def source_from_dict(d: dict) -> DataSource:
-    """Deserialize a source config from a dict."""
+def _resolve_path(p: str | Path, base_dir: Path | None) -> Path:
+    """Resolve a path: absolute paths stay absolute, relative ones resolve against base_dir."""
+    path = Path(p)
+    if path.is_absolute() or base_dir is None:
+        return path
+    return base_dir / path
+
+
+def source_from_dict(d: dict, base_dir: Path | None = None) -> DataSource:
+    """Deserialize a source config from a dict.
+
+    If *base_dir* is given, relative ``path`` / ``raw_path`` values are
+    resolved against it (typically ``DEFAULT_DATA_ROOT.parent``).
+    """
     t = d.get("type")
     if t == "csv":
         raw_path = d.get("raw_path")
         return CSVSourceConfig(
             name=d["name"],
             description=d.get("description", ""),
-            path=Path(d.get("path", "data")),
+            path=_resolve_path(d.get("path", "data"), base_dir),
             file_pattern=d.get("file_pattern", "{symbol}_{timeframe}.csv"),
             timeframe_map=d.get("timeframe_map", {}),
-            raw_path=Path(raw_path) if raw_path else None,
+            raw_path=_resolve_path(raw_path, base_dir) if raw_path else None,
             raw_pattern=d.get("raw_pattern", "{raw_symbol}_m15.csv"),
             timestamp_unit=d.get("timestamp_unit", ""),
             symbol_map=d.get("symbol_map", {}),
@@ -562,7 +574,7 @@ def discover_sources(data_root: Path = None) -> None:
         try:
             with open(config_file, encoding="utf-8") as f:
                 d = json.load(f)
-            source = source_from_dict(d)
+            source = source_from_dict(d, base_dir=root.parent)
             _DATA_SOURCES[source.name] = source
             log.debug(f"Discovered source: {source.name} ({source.source_type})")
         except Exception as e:
