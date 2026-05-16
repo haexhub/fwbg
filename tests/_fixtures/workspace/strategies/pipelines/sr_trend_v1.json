@@ -1,0 +1,59 @@
+{
+  "_meta": {
+    "name": "sr_trend",
+    "description": "",
+    "version": 1
+  },
+  "indicators": [
+    {
+      "name": "support_resistance",
+      "params": {
+        "swing_periods": [
+          5,
+          10,
+          20
+        ],
+        "lookback": 200,
+        "cluster_threshold": 1.5,
+        "atr_period": 14,
+        "ma_periods": [
+          20,
+          50,
+          200
+        ],
+        "zone_proximity_atr_mult": 0.5,
+        "d1_bars": 24
+      }
+    },
+    {
+      "name": "volatility",
+      "params": {
+        "atr_periods": [
+          14
+        ],
+        "bb_periods": [
+          20
+        ],
+        "vol_est_windows": [
+          20
+        ]
+      }
+    },
+    {
+      "name": "time_season",
+      "params": {
+        "include_raw": true,
+        "include_encoded": false
+      }
+    }
+  ],
+  "feature_selection": [
+    {
+      "name": "correlation_filter",
+      "params": {
+        "max_correlation": 0.7,
+        "max_features": 20
+      }
+    }
+  ]
+}

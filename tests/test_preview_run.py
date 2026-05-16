@@ -31,10 +31,12 @@ import fwbg.api.runs as runs_mod
 def client_with_strategy(tmp_path):
     """TestClient mit Temp-Strategie- und Results-Verzeichnis."""
     from fwbg.api import deps as deps_mod
+    from fwbg.api import _paths as paths_mod
 
     orig_strategies = runs_mod.get_strategies_dir
     orig_results_deps = deps_mod.get_test_results_dir
     orig_results_runs = runs_mod.get_test_results_dir
+    orig_results_paths = paths_mod.get_test_results_dir
 
     results_path = tmp_path / "test_results"
     results_path.mkdir()
@@ -43,6 +45,7 @@ def client_with_strategy(tmp_path):
     runs_mod.get_strategies_dir = lambda: tmp_path
     deps_mod.get_test_results_dir = results_fn
     runs_mod.get_test_results_dir = results_fn
+    paths_mod.get_test_results_dir = results_fn
 
     strat = {"name": "Preview Test", "pipeline": {}, "grids": {}}
     (tmp_path / "preview_test.json").write_text(json.dumps(strat))
@@ -54,6 +57,7 @@ def client_with_strategy(tmp_path):
     runs_mod.get_strategies_dir = orig_strategies
     deps_mod.get_test_results_dir = orig_results_deps
     runs_mod.get_test_results_dir = orig_results_runs
+    paths_mod.get_test_results_dir = orig_results_paths
 
 
 # ──────────────────────────────────────────────

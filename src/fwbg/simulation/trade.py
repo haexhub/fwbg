@@ -4,6 +4,12 @@ Trade-Simulation und Metriken
 import numpy as np
 import pandas as pd
 from fwbg.data import config as data_config
+from fwbg.utils.metrics import (
+    compute_drawdown_from_equity,
+    simulate_equity_from_binary_returns,
+    simulate_equity_from_returns as _simulate_equity_from_returns,
+    pnl_to_returns as _pnl_to_returns,
+)
 
 
 def compute_session_mask(timestamps, session_start_hour, session_end_hour,
@@ -163,23 +169,8 @@ def calculate_calmar_ratio(returns, risk_per_trade, rrr):
     if not returns:
         return 0.0
 
-    equity = [100.0]
-    for r in returns:
-        if r > 0:
-            equity.append(equity[-1] * (1 + risk_per_trade * rrr))
-        else:
-            equity.append(equity[-1] * (1 - risk_per_trade))
-
-    peak = equity[0]
-    max_dd = 0.0
-    for e in equity:
-        if e > peak:
-            peak = e
-        dd = (peak - e) / peak
-        if dd > max_dd:
-            max_dd = dd
-
-    max_dd = max(max_dd, 0.01)
+    equity = simulate_equity_from_binary_returns(returns, risk_per_trade, rrr)
+    max_dd = max(compute_drawdown_from_equity(equity), 0.01)
     total_return = (equity[-1] - equity[0]) / equity[0]
     return min(10.0, total_return / max_dd)
 
@@ -189,20 +180,8 @@ def calculate_calmar_from_returns(trade_returns):
     if not trade_returns:
         return 0.0
 
-    equity = [100.0]
-    for r in trade_returns:
-        equity.append(equity[-1] * (1 + r))
-
-    peak = equity[0]
-    max_dd = 0.0
-    for e in equity:
-        if e > peak:
-            peak = e
-        dd = (peak - e) / peak
-        if dd > max_dd:
-            max_dd = dd
-
-    max_dd = max(max_dd, 0.01)
+    equity = _simulate_equity_from_returns(trade_returns)
+    max_dd = max(compute_drawdown_from_equity(equity), 0.01)
     total_return = (equity[-1] - equity[0]) / equity[0]
     return min(10.0, total_return / max_dd)
 
@@ -767,23 +746,8 @@ def calculate_max_drawdown(returns, risk_per_trade, rrr):
     if not returns:
         return 0.0
 
-    equity = [100.0]
-    for r in returns:
-        if r > 0:
-            equity.append(equity[-1] * (1 + risk_per_trade * rrr))
-        else:
-            equity.append(equity[-1] * (1 - risk_per_trade))
-
-    peak = equity[0]
-    max_dd = 0.0
-    for e in equity:
-        if e > peak:
-            peak = e
-        dd = (peak - e) / peak
-        if dd > max_dd:
-            max_dd = dd
-
-    return max_dd
+    equity = simulate_equity_from_binary_returns(returns, risk_per_trade, rrr)
+    return compute_drawdown_from_equity(equity)
 
 
 def calculate_annual_return(returns, risk_per_trade, rrr, total_bars, bars_per_year=8760):
@@ -815,20 +779,8 @@ def pnl_to_returns(pnl_raw, fk):
 
     Skaliert so, dass der durchschnittliche Loss-Return exakt -fk ist.
     Gewinner reflektieren die tatsächlich realisierte RRR (nicht die erwartete).
-
-    Args:
-        pnl_raw: Liste der tatsächlichen PnL-Werte (positiv=Gewinn, negativ=Verlust)
-        fk: Kelly-Fraktion (Risiko pro Trade, z.B. 0.02 = 2%)
-
-    Returns:
-        Liste der Per-Trade-Returns als Anteil des Kapitals.
-        Bei leerer Eingabe: leere Liste.
     """
-    if not pnl_raw:
-        return []
-    losses = [abs(p) for p in pnl_raw if p < 0]
-    scale = float(np.mean(losses)) if losses else float(np.mean(np.abs(pnl_raw))) or 1.0
-    return [fk * p / scale for p in pnl_raw]
+    return _pnl_to_returns(pnl_raw, fk)
 
 
 def monte_carlo_permutation_test(trade_pnls, n_permutations=1000, random_seed=42, rrr=None):

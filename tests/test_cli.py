@@ -217,14 +217,13 @@ class TestComputeIndicatorPool:
         df["H"] = df[["O", "H", "C"]].max(axis=1) + 0.1
         df["L"] = df[["O", "L", "C"]].min(axis=1) - 0.1
 
-        # Test mit nur trend indicators (schneller)
-        result = compute_indicator_pool(df, indicators=["trend"])
+        # Test mit ein paar Trend-Indikatoren (nach dem Split aus 'trend')
+        result = compute_indicator_pool(df, indicators=["ema", "adx"])
 
         # compute_indicator_pool gibt den DataFrame MIT Indikatoren zurück
-        # Es sollte mindestens Indikator-Spalten hinzugefügt haben
         indicator_cols = [c for c in result.columns if c not in ["O", "H", "L", "C"]]
         assert len(indicator_cols) > 0, "Keine Indikator-Spalten hinzugefügt"
-        assert "adx_14" in result.columns or any("trend" in c for c in result.columns)
+        assert any("adx_" in c for c in result.columns) or any("ema" in c.lower() for c in result.columns)
 
     def test_compute_no_symbol_arg(self):
         """Test: compute_indicator_pool akzeptiert kein symbol Argument."""
