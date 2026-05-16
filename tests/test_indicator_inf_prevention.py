@@ -79,18 +79,19 @@ class TestIndicatorsNoInf:
             inf_count = np.isinf(result[col]).sum()
             assert inf_count == 0, f"volatility/{col} hat {inf_count} inf-Werte"
 
-    def test_trend_no_inf(self, realistic_ohlc):
-        """Trend-Indikatoren dürfen keine inf-Werte produzieren."""
+    @pytest.mark.parametrize("indicator", ["ema", "sma", "adx", "macd", "supertrend"])
+    def test_trend_indicators_no_inf(self, realistic_ohlc, indicator):
+        """Trend-Indikatoren (post-split) dürfen keine inf-Werte produzieren."""
         from fwbg.pipeline import compute_indicator_pool
 
-        result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["trend"])
+        result = compute_indicator_pool(realistic_ohlc.copy(), indicators=[indicator])
 
         feature_cols = [c for c in result.columns
                         if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")]
 
         for col in feature_cols:
             inf_count = np.isinf(result[col]).sum()
-            assert inf_count == 0, f"trend/{col} hat {inf_count} inf-Werte"
+            assert inf_count == 0, f"{indicator}/{col} hat {inf_count} inf-Werte"
 
     def test_dynamics_no_inf(self, realistic_ohlc):
         """Dynamics-Indikatoren dürfen keine inf-Werte produzieren."""
@@ -149,8 +150,9 @@ class TestIndicatorsNoInf:
         from fwbg.pipeline import compute_indicator_pool
 
         all_indicators = [
-            "trend", "momentum", "volatility", "dynamics",
-            "ichimoku", "multi_timeframe", "price_action"
+            "ema", "sma", "adx", "macd", "supertrend",
+            "momentum", "volatility", "dynamics",
+            "ichimoku", "multi_timeframe", "price_action",
         ]
 
         for indicator in all_indicators:

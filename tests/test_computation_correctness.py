@@ -400,11 +400,11 @@ class TestADXCorrectness:
         from fwbg.plugins import import_plugin_module
         from fwbg_sdk import PipelineContext
 
-        mod = import_plugin_module('fwbg-core', 'indicators', 'trend')
-        indicator = mod.TrendIndicators()
+        mod = import_plugin_module('fwbg-core', 'indicators', 'adx')
+        indicator = mod.ADXIndicator()
 
         ctx = PipelineContext(df=linear_uptrend_df.copy(), symbol='TEST', asset_class='FOREX')
-        result = indicator.execute(ctx, adx_periods=[14])
+        result = indicator.execute(ctx, periods=[14])
 
         adx_col = [c for c in result.df.columns if 'adx_14' in c.lower()]
         assert len(adx_col) > 0, "ADX-14 Spalte nicht gefunden"
@@ -418,11 +418,11 @@ class TestADXCorrectness:
         from fwbg.plugins import import_plugin_module
         from fwbg_sdk import PipelineContext
 
-        mod = import_plugin_module('fwbg-core', 'indicators', 'trend')
-        indicator = mod.TrendIndicators()
+        mod = import_plugin_module('fwbg-core', 'indicators', 'adx')
+        indicator = mod.ADXIndicator()
 
         ctx = PipelineContext(df=oscillating_df.copy(), symbol='TEST', asset_class='FOREX')
-        result = indicator.execute(ctx, adx_periods=[14])
+        result = indicator.execute(ctx, periods=[14])
 
         adx_col = [c for c in result.df.columns if 'adx_14' in c.lower()]
         adx = result.df[adx_col[0]].dropna()
@@ -450,6 +450,7 @@ class TestPipelineIntegration:
         config = PipelineConfig(
             indicators=[
                 PluginConfig(name='fwbg-core:ema', params={'lines': [{'period': 20, 'source': 'C'}]}),
+                PluginConfig(name='fwbg-core:adx', params={'periods': [14]}),
                 PluginConfig(name='fwbg-core:momentum', params={'rsi_periods': [14]}),
             ]
         )
@@ -615,11 +616,12 @@ class TestFullPipelineCorrectness:
         registry = get_registry()
         registry.auto_discover()
 
-        # Mapping: welche Plugins in welchem Package sind
-        # fwbg-core: trend, momentum, volatility, price_action, time_season
-        # fwbg-premium: regime, structure, risk, distribution, dynamics,
-        #               multi_timeframe, cross_features, ichimoku, microstructure
-        core_indicators = ['trend', 'momentum', 'volatility', 'price_action', 'time_season']
+        # Mapping: welche Plugins in welchem Package sind. 'trend' wurde in
+        # einzelne Plugins aufgeteilt (ema, sma, adx, macd, supertrend, ...).
+        core_indicators = [
+            'ema', 'sma', 'adx', 'macd', 'supertrend',
+            'momentum', 'volatility', 'price_action', 'time_season',
+        ]
         premium_indicators = ['regime', 'distribution', 'dynamics', 'ichimoku']
 
         indicators = []
@@ -733,8 +735,8 @@ class TestComputationsAreActuallyPerformed:
 
         original_columns = set(df.columns)
 
-        mod = import_plugin_module('fwbg-core', 'indicators', 'trend')
-        indicator = mod.TrendIndicators()
+        mod = import_plugin_module('fwbg-core', 'indicators', 'adx')
+        indicator = mod.ADXIndicator()
 
         ctx = PipelineContext(df=df.copy(), symbol='TEST', asset_class='FOREX')
         result = indicator.execute(ctx)
@@ -803,6 +805,7 @@ class TestComputationsAreActuallyPerformed:
             ],
             indicators=[
                 PluginConfig(name='fwbg-core:ema', params={}),
+                PluginConfig(name='fwbg-core:adx', params={'periods': [14]}),
                 PluginConfig(name='fwbg-core:momentum', params={'rsi_periods': [14]}),
             ]
         )

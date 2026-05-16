@@ -50,10 +50,12 @@ class TestResolveSection:
         assert result == preset_data
 
     def test_dict_passes_through(self):
-        """Dict value is returned as-is."""
-        data = {"indicators": [{"name": "trend", "params": {}}]}
+        """Dict value is returned as a deep copy with equal contents."""
+        data = {"indicators": [{"name": "ema", "params": {}}]}
         result = _resolve_section(data, "pipelines", None)
-        assert result is data
+        # Equal contents, but deep-copied so caller mutations cannot leak back.
+        assert result == data
+        assert result is not data
 
     def test_none_passes_through(self):
         """None value is returned as-is."""

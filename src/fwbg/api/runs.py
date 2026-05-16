@@ -9,7 +9,6 @@ import sys
 import hashlib
 import threading
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -18,7 +17,6 @@ from pydantic import BaseModel
 
 from fwbg.api.deps import get_strategies_dir, get_test_results_dir
 from fwbg.api._paths import (
-    safe_load_json,
     safe_results_path as _safe_results_path,
     validate_id as _validate_id,
 )
@@ -370,7 +368,6 @@ class CompareRequest(BaseModel):
 def compare_runs(body: CompareRequest) -> dict:
     """Compare multiple runs side-by-side with per-asset metrics."""
     results_dir = get_test_results_dir()
-    strategies_dir = get_strategies_dir()
 
     runs = []
     all_symbols: set[str] = set()
