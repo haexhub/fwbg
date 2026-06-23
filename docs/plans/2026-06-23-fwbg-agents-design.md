@@ -9,7 +9,7 @@
 | Milestone | Status | Notes |
 |---|---|---|
 | M0 — Skeleton | ✓ done 2026-06-23 | Commit `5cc7649` in `~/Projekte/fwbg-agents/`. FastAPI boots, SQLite + alembic init, mock SSE, pydantic-ai LLM client. Proxy connection not end-to-end verified (port 8080 was occupied by another service during test). |
-| M1 — Calibrator + Criteria | next | |
+| M1 — Calibrator + Criteria | ✓ done 2026-06-23 | Calibrator scans `~/fwbg/test_results/` (not `~/Projekte/fwbg/test_results/`), groups by asset class via inlined symbol→class map (no fwbg runtime dep), writes section-6.1 YAMLs + raw baseline JSON. Endpoints: `GET /criteria`, `GET/PUT /criteria/{class}`, `POST /calibrate`, `GET /calibrate/runs`. Verified against real data: 79 runs scanned, 12 INDEX elites, calibration_run row persisted. Dashboard page at `/agents/criteria` (textarea editor, Recalibrate button). DSR/PBO/max_drawdown/profit_factor are absent from current fwbg results and intentionally omitted from generated YAML — schema is forward-compatible when fwbg starts emitting them. |
 | M2 — Strategy-Lifecycle Skeleton | pending | |
 | M3 — Runner + Analyst | pending | |
 | M4 — Researcher + Translator | pending | |
