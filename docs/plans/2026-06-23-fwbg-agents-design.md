@@ -1,8 +1,26 @@
 # fwbg-agents — Design Document
 
 **Datum**: 2026-06-23
-**Status**: Approved Design, ready for implementation
+**Status**: M0 implemented, M1 next
 **Author**: brainstorming session zwischen User und Claude
+
+## Implementation Status
+
+| Milestone | Status | Notes |
+|---|---|---|
+| M0 — Skeleton | ✓ done 2026-06-23 | Commit `5cc7649` in `~/Projekte/fwbg-agents/`. FastAPI boots, SQLite + alembic init, mock SSE, pydantic-ai LLM client. Proxy connection not end-to-end verified (port 8080 was occupied by another service during test). |
+| M1 — Calibrator + Criteria | next | |
+| M2 — Strategy-Lifecycle Skeleton | pending | |
+| M3 — Runner + Analyst | pending | |
+| M4 — Researcher + Translator | pending | |
+| M5 — Plugin-System | pending | |
+| M6 — Paper Trading | pending | |
+| M7 — Live Trading + Risk | pending | |
+| M8 — Promotion + Polish | pending | |
+
+### Late-binding design changes
+
+- **LLM SDK**: switched from raw `anthropic` SDK to **`pydantic-ai`** during M0 — provider-neutral, typed, Vercel-AI-SDK-style. `AnthropicModel(base_url=...)` still routes through `haex-claude-proxy`. Decision recorded in section 15.
 
 ## 1. Motivation & Goals
 
@@ -69,7 +87,7 @@ Ein **Webdashboard** erlaubt Konfiguration, Monitoring, manuelle Eingriffe.
 | API-Framework | FastAPI | Async-native, SSE-fähig, pydantic-typed |
 | State-Storage | SQLite + Filesystem | Queryable Metadata, inspizierbare Artefakte; kein Postgres-Overhead |
 | Frontend | Nuxt 4 + `@nuxt/ui` v4 | Existing fwbg-dashboard erweitern statt neu bauen |
-| LLM-Provider | Anthropic SDK via `haex-claude-proxy` | Subscription-Nutzung statt API-Credits; Provider-Switch via env-var möglich |
+| LLM-Provider | **pydantic-ai** mit `AnthropicModel(base_url=haex-claude-proxy)` | Provider-neutral, typed Agent-Abstraktionen; heute Claude via Proxy für Subscription-Pricing, später Multi-Provider ohne Refactor |
 | Agent-Orchestration | Custom Python | Spec-kit zu interaktiv, LangGraph zu schwer für unsere klar abgegrenzten Rollen |
 | Spec-Workflow | Spec-Kit Artefakt-Format + Prompts | Konsistente Contracts; via direkte SDK-Calls (Variante 1) |
 | Web Research | Tavily (primary) + Anthropic web_search (fallback) | LLM-optimierte Snippets; Fallback bei Quota-Reißen |
@@ -646,7 +664,7 @@ fwbg-dashboard/
 | Neues vs. existing Dashboard? | Existing `fwbg-dashboard` erweitern, @nuxt/ui behalten | Spart komplettes Frontend-Reimplement |
 | Prozess-Modell? | FastAPI + asyncio + Resumable State | Agents sind I/O-bound; State-Persistence für Multi-Tages-Runs |
 | Storage? | SQLite + Filesystem-Artefakte | Queryable Metadata + inspizierbare Artefakte; SQL-Komfort ohne Postgres-Overhead |
-| LLM-Stack? | Anthropic SDK via `haex-claude-proxy` | Subscription statt API-Credits |
+| LLM-Stack? | **pydantic-ai** (Anthropic provider) via `haex-claude-proxy` | Typed, provider-neutral, Vercel-AI-SDK-Philosophie (konsistent mit user's TS-Projekten); Proxy für Subscription-Pricing bleibt erhalten |
 | Agent-Topologie? | Pipeline mit Rollen + Orchestrator | Klare Verantwortungen, einzeln debuggbar, vorhersagbar |
 | Plugin-Generierung? | Separater Bereich + Human-Promote ins fwbg-Core | fwbg-Core bleibt sauber, alles auditierbar |
 | Promotion-Logic? | Hard Rules + Human Approval für live | Sicher, transparent, nachvollziehbar |
