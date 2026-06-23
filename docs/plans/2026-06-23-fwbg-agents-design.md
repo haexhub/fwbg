@@ -1,7 +1,7 @@
 # fwbg-agents — Design Document
 
 **Datum**: 2026-06-23
-**Status**: M0 implemented, M1 next
+**Status**: M0+M1+M2 implemented, M3 next
 **Author**: brainstorming session zwischen User und Claude
 
 ## Implementation Status
@@ -10,7 +10,7 @@
 |---|---|---|
 | M0 — Skeleton | ✓ done 2026-06-23 | Commit `5cc7649` in `~/Projekte/fwbg-agents/`. FastAPI boots, SQLite + alembic init, mock SSE, pydantic-ai LLM client. Proxy connection not end-to-end verified (port 8080 was occupied by another service during test). |
 | M1 — Calibrator + Criteria | ✓ done 2026-06-23 | Calibrator scans `~/fwbg/test_results/` (not `~/Projekte/fwbg/test_results/`), groups by asset class via inlined symbol→class map (no fwbg runtime dep), writes section-6.1 YAMLs + raw baseline JSON. Endpoints: `GET /criteria`, `GET/PUT /criteria/{class}`, `POST /calibrate`, `GET /calibrate/runs`. Verified against real data: 79 runs scanned, 12 INDEX elites, calibration_run row persisted. Dashboard page at `/agents/criteria` (textarea editor, Recalibrate button). DSR/PBO/max_drawdown/profit_factor are absent from current fwbg results and intentionally omitted from generated YAML — schema is forward-compatible when fwbg starts emitting them. |
-| M2 — Strategy-Lifecycle Skeleton | pending | |
+| M2 — Strategy-Lifecycle Skeleton | ✓ done 2026-06-24 | Commit `ade47ad`. ORM models (`Strategy`, `Plugin`, `Transition`, `StrategyTag`) + alembic 0002. Deterministic state machine in `orchestrator/lifecycle.py`: collapsed strategy lifecycle `proposed → backtested → paper_trading → live_trading` plus terminal `abandoned`, plugin lifecycle `specified → authored → verified → adopted_in_fwbg` plus `abandoned`. Guards: `backtested → paper_trading` evaluates criteria YAML via a small comparator parser (`>=`, `<=`, `>`, `<`, `==`, `!=`); `paper_trading → live_trading` requires `human_approval=True` in payload (UI gate ships M7, state machine enforces from day one); `→ abandoned` requires `post_mortem_path` (anti-redundancy for the Researcher's M4 prior-art lookup). Append-only: no cascade deletes, transition rows insert-only. Read-only API: `GET /strategies` (filters `?state=` `?asset_class=`), `GET /strategies/{id}` (detail + transitions + tags), `GET /strategies/{id}/transitions`; mirror for `/plugins`. 23 new tests (16 lifecycle + 7 API) all green. End-to-end smoke (`scripts/m2_smoke.py`) verified live. Dashboard pages deferred to a follow-up session. |
 | M3 — Runner + Analyst | pending | |
 | M4 — Researcher + Translator | pending | |
 | M5 — Plugin-System | pending | |
