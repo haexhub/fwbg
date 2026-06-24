@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (or superpowers:subagent-driven-development if running inline) to implement this plan task-by-task.
 
-**Status:** in progress — opens after M6a (`fa0a92a`, 282 tests). Target: ~302 tests, agents-only repo, alembic 0005→0006.
+**Status:** ✓ done 2026-06-24 — 8 tasks + 5 polish refactors = 13 agents commits, agents-only repo, alembic 0005→0006. Final HEAD `eccb07e`. Tests 282→323 (+41). Manual `scripts/m6b_smoke.py` against dev DB ends `[m6b_smoke] PASSED` twice in a row (idempotent). Commits: `e558b17` (T1 migration), `33301e4` (T2 YAMLs), `ffa7dfb`+`ec2b07a` (T3 criteria_paper +polish), `61b997c`+`54ac7dd` (T4 PaperAnalyst +polish), `51fdf9c`+`0f20213` (T5 paper_flow +polish), `16d8003`+`ca00697` (T6 paper-analyze endpoint +polish), `f3daf61`+`d17807f` (T7 promote-live endpoint +polish), `eccb07e` (T8 smoke).
 
 **Goal:** Close the decision loop after M6a's telemetry pipeline. Once a Strategy has been running in `PAPER_TRADING` long enough to have meaningful summary metrics on disk, an LLM **Paper-Analyst** reads the summary + positions, compares against hand-curated paper-criteria YAMLs, and emits a typed recommendation: **PromotePaperToLive**, **AbandonPaper**, or **ContinueObservation**. The Analyst **never** transitions state — it only writes a sidecar and sets a metadata flag. A separate **human-gated** `POST /promote-live` endpoint is the only path into `LIVE_TRADING`, requiring `human_approval=True` AND a prior promote-recommended flag.
 
