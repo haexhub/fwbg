@@ -1,5 +1,8 @@
 # fwbg-agents M3 — Runner + Analyst Implementation Plan
 
+**Status**: ✓ done 2026-06-24, final commit `df33384` (78 tests green).
+Cross-reference: design doc Implementation-Status row for M3.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans / superpowers:test-driven-development to implement this plan task-by-task.
 
 **Goal:** After M3, a human can POST a strategy.json to fwbg-agents, the Runner deterministically drives fwbg's backtest via HTTP, persists results, transitions to `backtested`, then the Analyst (LLM) emits a typed recommendation that the orchestrator validates against hard rules and applies (promote / abandon / record-tuning).
