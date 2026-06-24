@@ -56,6 +56,7 @@ class AssetConfig:
     sl_mult: float = 25.0
     tp_mult: float = 40.0
     ensemble: Dict[str, Any] = field(default_factory=dict)
+    strategy_slug: str | None = None
 
     @classmethod
     def from_dict(cls, symbol: str, data: Dict[str, Any]) -> "AssetConfig":
@@ -69,6 +70,7 @@ class AssetConfig:
             sl_mult=data.get("sl_mult", 25.0),
             tp_mult=data.get("tp_mult", 40.0),
             ensemble=data.get("ensemble", {}),
+            strategy_slug=data.get("strategy_slug"),
         )
 
 
@@ -127,6 +129,14 @@ class TradingBot:
         self.assets: Dict[str, AssetConfig] = {}
         for symbol, cfg in assets_config.items():
             self.assets[symbol] = AssetConfig.from_dict(symbol, cfg)
+
+        # Strategy slug (M6a): when set, telemetry (Task 3) writes under
+        # data/account-trades/<strategy_slug>/. None → legacy mode.
+        # Derive from the first asset's slug (1-strategy-per-bot).
+        self.strategy_slug: str | None = next(
+            (a.strategy_slug for a in self.assets.values() if a.strategy_slug),
+            None,
+        )
 
         # ML Models
         self.models: Dict[str, BaseModel] = {}
@@ -762,7 +772,8 @@ class TradingBot:
 def run_bot_from_config(
     adapter: BrokerAdapter,
     account_dir: str,
-    use_streaming: bool = True
+    use_streaming: bool = True,
+    strategy_slug: str | None = None,
 ):
     """
     Startet einen Bot aus Konfigurations-Dateien.
@@ -771,6 +782,11 @@ def run_bot_from_config(
         adapter: Verbundener BrokerAdapter
         account_dir: Verzeichnis mit account_info.json und assets.json
         use_streaming: Streaming nutzen wenn verfügbar
+        strategy_slug: Optional. When set, propagates into every AssetConfig
+            so the bot can isolate paper-trade telemetry under
+            ``data/account-trades/<strategy_slug>/``. Kwarg wins over the
+            ``strategy_slug`` key inside ``account_info.json``.
+            ``None`` → legacy mode (no telemetry written).
     """
     # Configs laden
     with open(os.path.join(account_dir, "account_info.json")) as f:
@@ -781,6 +797,12 @@ def run_bot_from_config(
 
     # Account ID aus Verzeichnis
     account_config["account_id"] = os.path.basename(account_dir)
+
+    # Resolve strategy_slug: kwarg wins over the optional file-key.
+    effective_slug = strategy_slug if strategy_slug is not None else account_config.get("strategy_slug")
+    if effective_slug is not None:
+        for sym_cfg in assets_config.values():
+            sym_cfg["strategy_slug"] = effective_slug
 
     # Bot erstellen und starten
     bot = TradingBot(
