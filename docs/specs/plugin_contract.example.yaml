@@ -1,0 +1,50 @@
+# Example contract.yaml for an agent-authored indicator plugin.
+# This file is the M5b PluginEvaluator's source of truth: every invariant
+# listed here is enforced against the synthetic test_scenarios before the
+# plugin can transition from AUTHORED to VERIFIED.
+name: zone_pivots
+kind: indicator
+version: v1
+
+inputs:
+  - name: ohlcv
+    dtype: ohlcv
+    required: true
+    description: OHLCV frame for the asset
+  - name: lookback
+    dtype: int
+    required: false
+    description: Pivot-window length
+
+outputs:
+  - name: support
+    dtype: series
+    length_invariant: same_as_input
+  - name: resistance
+    dtype: series
+    length_invariant: same_as_input
+
+params:
+  - name: lookback
+    dtype: int
+    default: 20
+    min: 5
+    max: 200
+    description: Bars to look back when computing pivots
+  - name: threshold
+    dtype: float
+    default: 0.001
+    min: 0.0
+    max: 0.1
+    description: Minimum price-distance threshold for a zone
+
+invariants:
+  - "outputs[0] same length as inputs[0]"
+  - "outputs[1] same length as inputs[0]"
+  - "outputs[0] never NaN past first lookback bars"
+
+test_scenarios:
+  - name: trending_up
+    data_path: test_scenarios/trending_up.parquet
+  - name: sideways
+    data_path: test_scenarios/sideways.parquet
