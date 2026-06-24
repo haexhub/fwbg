@@ -26,10 +26,13 @@ Beispiel:
 """
 import os
 import json
+import math
 import time
+import uuid
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
 
@@ -109,6 +112,7 @@ class TradingBot:
         stats_dir: str = "stats_export",
         use_streaming: bool = True,
         min_training_samples: int = 500,
+        paper_data_dir: str = "data",
     ):
         """
         Args:
@@ -118,12 +122,16 @@ class TradingBot:
             stats_dir: Verzeichnis für Status-Export
             use_streaming: Live-Streaming nutzen wenn verfügbar
             min_training_samples: Minimum Samples für Model-Training
+            paper_data_dir: M6a — Basisverzeichnis für per-Strategy Telemetrie
+                (``<paper_data_dir>/account-trades/<strategy_slug>/``). Default
+                ``"data"`` (matches the documented dashboard layout).
         """
         self.adapter = adapter
         self.account_config = account_config
         self.stats_dir = stats_dir
         self.use_streaming = use_streaming
         self.min_training_samples = min_training_samples
+        self.paper_data_dir = paper_data_dir
 
         # Parse asset configs
         self.assets: Dict[str, AssetConfig] = {}
@@ -178,6 +186,13 @@ class TradingBot:
         self._consecutive_losses = 0
         self._pause_until: datetime = None
         self._last_day: int = -1
+
+        # M6a — per-strategy equity tracking (sampled by `_write_status`).
+        # `starting_equity` is captured on the first observation; the curve is
+        # an unbounded internal list, downsampled to <=200 entries when
+        # persisted to status.json.
+        self._equity_curve: List[Dict[str, Any]] = []
+        self._starting_equity: float | None = None
 
     def initialize(self) -> bool:
         """
@@ -563,6 +578,14 @@ class TradingBot:
             if result.success:
                 logger.info(f"✅ {symbol}: Order filled @ {result.fill_price}")
 
+                # M6a — append the executed entry to the per-strategy trade log.
+                self._append_trade_entry(
+                    symbol=symbol,
+                    direction=direction,
+                    size=size,
+                    fill_price=result.fill_price,
+                )
+
                 # Slippage tracken
                 if result.fill_price:
                     expected_price = self.ohlc_cache.get(symbol, pd.DataFrame()).get("C", pd.Series()).iloc[-1] if symbol in self.ohlc_cache else None
@@ -756,6 +779,184 @@ class TradingBot:
 
         except Exception as e:
             logger.warning(f"Failed to write status: {e}")
+
+        # M6a — per-strategy telemetry (status.json + positions.json).
+        # Best-effort: telemetry failures are logged and never raised.
+        if self.strategy_slug is not None:
+            try:
+                self._sample_equity()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Failed to sample equity for telemetry: {exc}")
+            try:
+                self._write_strategy_status_json()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Failed to write strategy status.json telemetry: {exc}")
+            try:
+                self._write_strategy_positions_json()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"Failed to write strategy positions.json telemetry: {exc}")
+
+    # =========================================================================
+    # M6a — per-strategy paper/live telemetry
+    # =========================================================================
+
+    def _strategy_telemetry_dir(self) -> Path | None:
+        """Returns ``<paper_data_dir>/account-trades/<slug>/`` or None in legacy mode."""
+        if self.strategy_slug is None:
+            return None
+        return Path(self.paper_data_dir) / "account-trades" / self.strategy_slug
+
+    def _append_trade_entry(
+        self,
+        symbol: str,
+        direction: OrderSide,
+        size: float,
+        fill_price: float,
+    ) -> None:
+        """Append one JSON line to ``trades.jsonl`` for a freshly-filled entry.
+
+        Best-effort: failures are logged, never raised. No-op in legacy mode.
+        """
+        if self.strategy_slug is None:
+            return
+        try:
+            telemetry_dir = self._strategy_telemetry_dir()
+            assert telemetry_dir is not None  # guarded by check above
+            telemetry_dir.mkdir(parents=True, exist_ok=True)
+            entry = {
+                "trade_id": str(uuid.uuid4()),
+                "strategy_slug": self.strategy_slug,
+                "symbol": symbol,
+                "side": direction.value.lower(),
+                "entry_time": datetime.now(timezone.utc).isoformat(),
+                "exit_time": None,
+                "entry_price": float(fill_price) if fill_price else None,
+                "exit_price": None,
+                "pnl_pct": None,
+                "quantity": float(size),
+                "fees": 0.0,
+            }
+            trades_file = telemetry_dir / "trades.jsonl"
+            with open(trades_file, "a") as f:
+                f.write(json.dumps(entry, default=str) + "\n")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Failed to append trade telemetry entry: {exc}")
+
+    def _sample_equity(self) -> None:
+        """Append the current account equity to the in-memory equity curve."""
+        try:
+            account = self.adapter.get_account_info()
+            equity = float(getattr(account, "equity", 0.0) or 0.0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Failed to read account equity for telemetry: {exc}")
+            return
+        if self._starting_equity is None:
+            self._starting_equity = equity
+        self._equity_curve.append(
+            {"t": datetime.now(timezone.utc).isoformat(), "equity": equity}
+        )
+
+    def _downsample_equity_curve(self, max_points: int = 200) -> List[Dict[str, Any]]:
+        """Downsample ``self._equity_curve`` to <=max_points, keeping first and last."""
+        curve = self._equity_curve
+        if not curve:
+            return []
+        if len(curve) <= max_points:
+            return list(curve)
+        # Stride sampling, then force-include the last point.
+        stride = max(1, math.ceil(len(curve) / max_points))
+        sampled = curve[::stride]
+        if sampled[-1] is not curve[-1]:
+            sampled.append(curve[-1])
+        # Final safety clamp in case stride math overshoots.
+        if len(sampled) > max_points:
+            # Keep first + last; uniformly thin the interior.
+            first, last = sampled[0], sampled[-1]
+            interior = sampled[1:-1]
+            keep = max_points - 2
+            if keep <= 0:
+                sampled = [first, last]
+            else:
+                inner_stride = max(1, math.ceil(len(interior) / keep))
+                sampled = [first] + interior[::inner_stride][:keep] + [last]
+        return sampled
+
+    def _write_strategy_status_json(self) -> None:
+        """Write per-strategy status.json snapshot."""
+        telemetry_dir = self._strategy_telemetry_dir()
+        if telemetry_dir is None:
+            return
+        telemetry_dir.mkdir(parents=True, exist_ok=True)
+        current_equity = (
+            self._equity_curve[-1]["equity"] if self._equity_curve else None
+        )
+        starting_equity = (
+            self._starting_equity
+            if self._starting_equity is not None
+            else current_equity
+        )
+        payload = {
+            "strategy_slug": self.strategy_slug,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "current_equity": current_equity,
+            "starting_equity": starting_equity,
+            "equity_curve_sample": self._downsample_equity_curve(200),
+        }
+        (telemetry_dir / "status.json").write_text(
+            json.dumps(payload, indent=2, default=str)
+        )
+
+    def _write_strategy_positions_json(self) -> None:
+        """Write per-strategy positions.json snapshot from ``adapter.get_positions()``."""
+        telemetry_dir = self._strategy_telemetry_dir()
+        if telemetry_dir is None:
+            return
+        telemetry_dir.mkdir(parents=True, exist_ok=True)
+        positions_payload: List[Dict[str, Any]] = []
+        try:
+            positions = self.adapter.get_positions() or []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Failed to read positions for telemetry: {exc}")
+            positions = []
+        for pos in positions:
+            # Compute unrealised PnL pct only when both prices are known.
+            entry = getattr(pos, "entry_price", None)
+            current = getattr(pos, "current_price", None)
+            if entry and current:
+                direction = getattr(pos, "direction", None)
+                sign = 1.0 if direction == OrderSide.BUY else -1.0
+                unrealised_pnl_pct = sign * (current - entry) / entry
+            else:
+                unrealised_pnl_pct = None
+            side_attr = getattr(pos, "direction", None)
+            side_value = (
+                side_attr.value.lower() if hasattr(side_attr, "value") else str(side_attr).lower()
+            )
+            positions_payload.append(
+                {
+                    "symbol": getattr(pos, "symbol", None),
+                    "side": side_value,
+                    "quantity": getattr(pos, "size", None),
+                    "entry_price": entry,
+                    "current_price": current,
+                    "stop_loss": getattr(pos, "stop_loss", None),
+                    "take_profit": getattr(pos, "take_profit", None),
+                    "unrealised_pnl_pct": unrealised_pnl_pct,
+                    "opened_at": (
+                        pos.opened_at.isoformat()
+                        if getattr(pos, "opened_at", None)
+                        else None
+                    ),
+                }
+            )
+        payload = {
+            "strategy_slug": self.strategy_slug,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "positions": positions_payload,
+        }
+        (telemetry_dir / "positions.json").write_text(
+            json.dumps(payload, indent=2, default=str)
+        )
 
     def _check_restart_signal(self) -> bool:
         """Prüft ob ein Restart-Signal existiert."""
