@@ -243,6 +243,11 @@ class IGBrokerAdapter(BrokerAdapter):
         """Gibt Point Value für ein Symbol zurück."""
         return SYMBOL_POINT_VALUE.get(symbol, 0.0001)
 
+    @property
+    def is_paper(self) -> bool:
+        """True iff connected to the IG DEMO environment."""
+        return self.env == "DEMO"
+
     # =========================================================================
     # Historical Data
     # =========================================================================

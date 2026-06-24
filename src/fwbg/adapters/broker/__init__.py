@@ -82,6 +82,11 @@ class Position:
     stop_level: Optional[float] = None
     limit_level: Optional[float] = None
     currency: str = "EUR"
+    # M6a telemetry — optional, populated by adapters that know SL/TP per position.
+    # Adapters that don't surface these may leave them as None.
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    opened_at: Optional[datetime] = None
 
 
 @dataclass
@@ -220,6 +225,17 @@ class BrokerAdapter(BaseAdapter):
             Broker-spezifischer Identifier (z.B. IG Epic) oder None
         """
         pass
+
+    @property
+    def is_paper(self) -> bool:
+        """
+        True iff this adapter operates against a demo/paper account.
+
+        Default: True (safe default — subclasses override for live trading).
+        Used by read-side consumers and audit logs; the M6a telemetry writer
+        does NOT gate on this — it writes for both paper and live mode.
+        """
+        return True
 
     # =========================================================================
     # Optionale Methoden - können überschrieben werden
