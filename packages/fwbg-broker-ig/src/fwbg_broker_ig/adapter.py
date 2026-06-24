@@ -498,6 +498,8 @@ class IGBrokerAdapter(BrokerAdapter):
                 epic = row.get("epic", "")
                 symbol = self._epic_to_symbol(epic)
 
+                stop_level = row.get("stopLevel")
+                limit_level = row.get("limitLevel")
                 positions.append(Position(
                     symbol=symbol,
                     direction=direction,
@@ -506,8 +508,10 @@ class IGBrokerAdapter(BrokerAdapter):
                     current_price=float(row.get("level", 0)),
                     unrealized_pnl=float(row.get("profit", 0)),
                     position_id=str(row.get("dealId", "")),
-                    stop_level=row.get("stopLevel"),
-                    limit_level=row.get("limitLevel"),
+                    stop_level=stop_level,
+                    limit_level=limit_level,
+                    stop_loss=float(stop_level) if stop_level is not None else None,
+                    take_profit=float(limit_level) if limit_level is not None else None,
                     currency=row.get("currency", self.currency),
                 ))
             return positions
