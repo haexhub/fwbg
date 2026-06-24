@@ -67,8 +67,22 @@ def create_adapter(broker: str, credentials: dict, currency: str):
         raise ValueError(f"Unknown broker: {broker}")
 
 
-def run_bot_for_account(broker: str, account_path: str, use_streaming: bool = True):
-    """Startet den Bot für einen spezifischen Account."""
+def run_bot_for_account(
+    broker: str,
+    account_path: str,
+    use_streaming: bool = True,
+    strategy_slug: str | None = None,
+):
+    """Startet den Bot für einen spezifischen Account.
+
+    Args:
+        broker: Broker identifier (e.g. "ig").
+        account_path: Path to the account directory.
+        use_streaming: Use streaming mode when available.
+        strategy_slug: Optional. When set, propagates into every AssetConfig so
+            paper-trade telemetry can isolate output under
+            ``data/account-trades/<strategy_slug>/``. ``None`` → legacy mode.
+    """
     from fwbg.bot import TradingBot
 
     logger.info(f"Starting bot for account: {os.path.basename(account_path)}")
@@ -93,6 +107,12 @@ def run_bot_for_account(broker: str, account_path: str, use_streaming: bool = Tr
         "min_lot_size": account_info.get("money_management", {}).get("min_lot_size", 0.1),
         "max_risk_percent": account_info.get("money_management", {}).get("max_risk_percent", 0.05),
     }
+
+    # M6a: propagate strategy_slug into every asset config (1-strategy-per-bot).
+    # None → legacy mode (no slug, no telemetry).
+    if strategy_slug is not None:
+        for sym_cfg in assets_config.values():
+            sym_cfg["strategy_slug"] = strategy_slug
 
     # Adapter erstellen
     adapter = create_adapter(broker, creds, account_config["currency"])
@@ -138,6 +158,16 @@ def main():
         action="store_true",
         help="Disable streaming mode (use polling instead)"
     )
+    parser.add_argument(
+        "--strategy-slug",
+        type=str,
+        default=None,
+        help=(
+            "Optional strategy slug for paper-trade telemetry isolation. "
+            "When set, telemetry is written under data/account-trades/<slug>/. "
+            "Omit for legacy mode."
+        ),
+    )
     args = parser.parse_args()
 
     use_streaming = not args.no_streaming
@@ -148,7 +178,10 @@ def main():
         if not os.path.exists(args.account_dir):
             logger.error(f"Account directory not found: {args.account_dir}")
             sys.exit(1)
-        run_bot_for_account(args.broker, args.account_dir, use_streaming)
+        run_bot_for_account(
+            args.broker, args.account_dir, use_streaming,
+            strategy_slug=args.strategy_slug,
+        )
     else:
         from fwbg.api.workspace import get_accounts_dir
         accounts_dir = os.environ.get("ACCOUNTS_PATH", str(get_accounts_dir()))
@@ -162,7 +195,10 @@ def main():
         logger.info(f"Found {len(accounts)} account(s)")
 
         if len(accounts) == 1:
-            run_bot_for_account(args.broker, accounts[0], use_streaming)
+            run_bot_for_account(
+                args.broker, accounts[0], use_streaming,
+                strategy_slug=args.strategy_slug,
+            )
         else:
             import threading
             threads = []
@@ -170,6 +206,7 @@ def main():
                 t = threading.Thread(
                     target=run_bot_for_account,
                     args=(args.broker, account_path, use_streaming),
+                    kwargs={"strategy_slug": args.strategy_slug},
                     daemon=True
                 )
                 t.start()
