@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. After each task, run the tests for that task; commit immediately on green. Do not batch commits across tasks.
 
-**Status:** In progress (2026-06-24). Builds on M3 (commit `df33384`). Tasks 1-6 of 8 complete, latest commit `ed2b59a`. 147 tests green (78 baseline + 69 new).
+**Status:** ✓ done (2026-06-24). Builds on M3 (commit `df33384`). All 8 tasks complete, final commit `45825f9`. **159 tests green** (78 baseline + 81 new in M4).
 
-**Done in this session:**
+**Commits (in order):**
 - Task 1 `1e9707e` — `orchestrator/prior_art.py` (tag-Jaccard similarity, no LLM, 11 tests)
 - Task 2 `4d5041a` — `orchestrator/hypotheses.py` (ResearcherHypothesis schema, validate_hypothesis, generate_slug — 13 tests)
 - Task 3 `3991d4f` — `tools/web_search.py` (Tavily client + quota via `llm_call(model='tavily-search')` — 9 tests)
@@ -12,11 +12,15 @@
 - Task 5a `3d699da` — `orchestrator/strategy_validator.py` (lightweight structural check + plugin catalog — 21 tests)
 - Task 5b `35324cf` — `agents/translator.py` fresh-mode + `agents/prompts/translator.md` (LLM, canonical slug enforced, spec.md written — 4 tests)
 - Task 6 `ed2b59a` — Translator reiterate-mode (deterministic, parent_strategy_id lineage) + extended `Analyst.ChangeExit.new_exit_strategy` — 6 tests
+- Task 7a `73257f1` — `orchestrator/research_flow.py` (Researcher → persist Strategy + StrategyTag + initial Transition + write hypothesis.json/research_notes.md → Translator.run_fresh) + 5 tests with dispatching FunctionModel stub
+- Task 7b `ed453a5` — `api/research.py` (`POST /research/brief`, `POST /strategies/{id}/reiterate` with 422/409 preconditions, `GET /hypotheses`) + router wired in `main.py` + 7 endpoint tests with monkeypatched background tasks
+- Task 8 `45825f9` — `scripts/m4_smoke.py` (end-to-end via ASGI transport with graceful TAVILY_API_KEY skip)
 
-**Open in next session:**
-- Task 7 — `orchestrator/research_flow.py` (orchestration glue: Researcher → persist Strategy/Tags/hypothesis.json → Translator.run_fresh) + `api/research.py` (`POST /research/brief`, `POST /strategies/{id}/reiterate`, `GET /hypotheses`) + wire router in `api/__init__.py`
-- Task 8 — `scripts/m4_smoke.py` + final verification (`pytest -q`, `alembic upgrade head` — no migration expected, `python -c "from fwbg_agents.api import app"`)
-- Housekeeping — design doc M4 row + memory updates were done at the end of the prior session (this file's status reflects that)
+**Final verification (`45825f9`):**
+- `VIRTUAL_ENV= uv run pytest -q` → **159 passed**
+- `VIRTUAL_ENV= uv run alembic upgrade head` → no new migration (Tavily reuses `llm_call`)
+- `VIRTUAL_ENV= uv run python -c "from fwbg_agents.main import app"` → loads clean
+- `TAVILY_API_KEY= uv run python scripts/m4_smoke.py` → clean skip with explanation
 
 **Goal:** Autonomous hypothesis-loop: Researcher (LLM + Tavily + `lookup_prior_art`) emits a typed `ResearcherHypothesis`; Translator (LLM) converts it into a valid fwbg `strategy.json` written to `data/strategies/<slug>/iteration_001/`. Re-iterate path: Translator consumes an Analyst sidecar (`TuneParams` / `ChangeExit` from M3) and produces a child strategy with `parent_strategy_id` set.
 
