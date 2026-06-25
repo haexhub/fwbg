@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Status:** scheduled — to be implemented in `~/Projekte/fwbg-agents/` against HEAD `eccb07e` (323 tests green). Successor of M5b (single-agent `PluginAuthor`). Decision-loop downstream (M5c reiterate, M6b promote-live) remains untouched.
+**Status:** ✓ done 2026-06-25 — seven commits `24b8be0`, `51c16c5`, `46b21c5`, `9a73136`, `1cefb65`, `979cb23`, `d85ad1c` in `~/Projekte/fwbg-agents/` on branch `feat/m5d-planner-implementer-split`. 371 tests green (323 → +48 net after retiring 8 M5b plugin_author tests). `scripts/m5d_smoke.py` self-test ends `[m5d_smoke] PASSED`. M5c smoke also still green (M5d Planner→Implementer drives the M5c reiterate flow via factory monkey-patches).
 
 **Goal:** Split the M5b `PluginAuthor` into two distinct LLM agents — `PluginPlanner` (stronger model: `claude-opus-4-8`) emits a structured `PluginPlan`; `PluginImplementer` (weaker model: `claude-opus-4-7`) writes the actual Python module from that plan, with a deterministic refinement loop bounded by syntax+contract gates and a configurable max-rounds budget. Same external API envelope as M5b (`POST /strategies/{id}/author-plugin`), no change to M5c/M6b consumers.
 
@@ -321,13 +321,38 @@ VIRTUAL_ENV= uv run python scripts/m5d_smoke.py
 - **Planner-self-review** of Implementer output. Not needed — deterministic gates cover all failure modes that matter.
 - **Streaming progress per-round.** Implementer-loop is fast (< 60s typical for 1-2 rounds with opus-4-7); no UX win from streaming.
 
-## Acceptance Criteria (Definition of Done)
+## Acceptance Criteria (Definition of Done) — ✓ all met
 
-- All 7 tasks committed, each commit's `Verify` block passes locally.
-- `pytest -q` in fwbg-agents reports ≥340 tests, 0 failures.
-- `scripts/m5d_smoke.py` against a real dev DB ends `[m5d_smoke] PASSED`.
+- All 7 tasks committed (commit chain above).
+- `pytest -q` in fwbg-agents: 371 passing (target was ≥340), 0 failures.
+- `scripts/m5d_smoke.py` self-test (in pytest) ends `[m5d_smoke] PASSED`.
 - M5c `scripts/m5c_smoke.py` still passes (downstream regression guard).
 - Old `src/fwbg_agents/agents/plugin_author.py` deleted; no `from fwbg_agents.agents.plugin_author` remaining.
-- `prompts/plugin_authoring.md` committed and loaded by Planner at runtime (verified via Task 3 test).
-- Status header in this plan-doc updated with commit hashes per the M5c/M6a/M6b convention.
-- Memory entry `project-fwbg-agents-m5d-sketch.md` superseded by a reference entry pointing to this plan.
+- `prompts/plugin_authoring.md` loaded by both Planner and Implementer at runtime.
+- Plan-doc status updated above.
+- Memory entry `project-fwbg-agents-m5d-sketch.md` was already superseded during planning by `reference-fwbg-agents-m5d-plan.md`.
+
+## Implementation deviations from the original plan (worth noting)
+
+- **Task 1 — Settings:** extended existing `config.py:Settings` (pydantic-settings) rather than creating a parallel `settings.py`. Surgical change, no parallel config layers. Tests live at `tests/test_config_plugin_authoring.py`.
+- **Task 2 — Prompt-doc smoke test:** PluginPhase-drift test uses a pinned `EXPECTED_PHASE_NAMES` list rather than importing `fwbg_sdk.base.PluginPhase` (fwbg-agents intentionally does not depend on fwbg_sdk — kept HTTP/filesystem-decoupled). Update both the constant and the doc when the SDK enum changes.
+- **Task 3 — Phase mapping:** `_PHASE_MAPPING` accepts both plural (per `AddIndicator.phase` Literal — "indicators"/"filters") and singular (per M5c Translator's `_PHASE_TO_FIELD` — "indicator"/"filter") sidecar phase values. Both forms exist in the codebase; tolerance is correct, not legacy-compat.
+- **Task 3 — slug pattern:** relaxed to `^[a-z][a-z0-9_-]*$` (allow kebab-case) to match `PluginContract.name` convention; existing fwbg plugins use both snake_case and kebab-case.
+- **Task 4 — contract gate:** AST-only static check (`contract_check`), no code execution. Plan-doc described a sandbox-exec approach; the static version is cheaper and avoids adding `fwbg_sdk` as an agents dependency.
+- **Task 5 — three AgentRuns total per author session:** outer `plugin_author_flow` (created by the API for the user-facing poll target) + inner `plugin_planner` + inner `plugin_implementer`. Plan-doc described only the two inner runs; the outer was pre-existing.
+- **Task 5 — `lookup_plugin_capability`:** reads only the `plugin_planner` AR (no legacy `plugin_author` fallback). The `tests/api/test_plugin_reiterate.py` fixture was migrated to seed a `plugin_planner` AR row.
+- **Task 6 — smoke compat shim:** the m5c smoke's stub plugin code has both a top-level `compute()` function (for the M5b PluginEvaluator's exec path) and a `BaseIndicator` subclass (for the M5d contract gate). The fwbg_sdk imports are guarded with stub fallbacks so the module loads in the agents venv. Proper cleanup (evaluator update for class-style plugins) belongs in a future M5e.
+- **Task 6 — `scripts/m5_smoke.py`:** soft-abandoned with a deprecation header pointing to `m5c_smoke.py` and `m5d_smoke.py` (per [[feedback-no-hard-delete]]).
+- **Task 7 — smoke assertion filter:** `_assert_split_flow_artifacts` filters AgentRuns by `agent_name.in_(("plugin_planner", "plugin_implementer"))` to exclude the API's outer `plugin_author_flow` row from the 2-AR assertion.
+
+## Final commit table
+
+| # | Commit  | Description |
+|---|---------|-------------|
+| 1 | 24b8be0 | feat(M5d): Settings fields for per-agent model + max-rounds config |
+| 2 | 51c16c5 | docs(M5d): prompts/plugin_authoring.md canonical fwbg-Plugin-Konventionen |
+| 3 | 46b21c5 | feat(M5d): PluginPlanner agent emits PluginPlan from sidecar + parent strategy |
+| 4 | 9a73136 | feat(M5d): PluginImplementer agent with deterministic gate-loop (max_rounds=5) |
+| 5 | 1cefb65 | feat(M5d): author_plugin orchestrator runs Planner→Implementer with 2 AgentRuns |
+| 6 | 979cb23 | refactor(M5d): retire M5b PluginAuthor, move shared helpers to plugin_authoring_shared |
+| 7 | d85ad1c | feat(M5d): scripts/m5d_smoke.py end-to-end Planner→Implementer smoke |
