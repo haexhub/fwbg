@@ -14,6 +14,7 @@ import sys
 import json
 import logging
 import argparse
+import threading
 
 # Setup logging early
 LOG_DIR = os.environ.get("LOG_DIR", "logs")
@@ -188,9 +189,11 @@ def main():
         accounts = discover_accounts(accounts_dir)
 
         if not accounts:
-            logger.error(f"No valid accounts found in {accounts_dir}")
+            logger.warning(f"No valid accounts found in {accounts_dir}")
             logger.info("Each account needs: account_info.json and assets.json")
-            sys.exit(1)
+            logger.warning("Paper/live trading disabled. Idling until accounts are configured.")
+            threading.Event().wait()
+            return
 
         logger.info(f"Found {len(accounts)} account(s)")
 
@@ -200,7 +203,6 @@ def main():
                 strategy_slug=args.strategy_slug,
             )
         else:
-            import threading
             threads = []
             for account_path in accounts:
                 t = threading.Thread(
