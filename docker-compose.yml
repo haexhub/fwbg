@@ -37,6 +37,7 @@ services:
       - TZ=Europe/Berlin
       - DATA_PATH=/app/data
       - ACCOUNTS_PATH=/app/accounts
+      - FWBG_API_URL=http://ig-bot:8420
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     depends_on:
@@ -47,9 +48,45 @@ services:
         max-size: "10mb"
         max-file: "3"
 
+  # Autonomous Agents (strategy research, backtesting, paper/live trading)
+  agents:
+    build:
+      context: ../fwbg-agents
+    container_name: fwbg-agents
+    restart: unless-stopped
+    ports:
+      - "8421:8421"
+    volumes:
+      - fwbg-data:/app/fwbg-data
+      - agents-data:/app/data
+      - .:/fwbg-src:ro
+    environment:
+      - TZ=Europe/Berlin
+      - FWBG_API_URL=http://ig-bot:8420
+      - FWBG_DATA_DIR=/app/fwbg-data
+      - FWBG_REPO_ROOT=/fwbg-src
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://localhost:8080}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-proxy-not-used-but-sdk-requires-it}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-7}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - IG_DEMO_USERNAME=${IG_DEMO_USERNAME:-}
+      - IG_DEMO_PASSWORD=${IG_DEMO_PASSWORD:-}
+      - IG_DEMO_API_KEY=${IG_DEMO_API_KEY:-}
+      - IG_LIVE_USERNAME=${IG_LIVE_USERNAME:-}
+      - IG_LIVE_PASSWORD=${IG_LIVE_PASSWORD:-}
+      - IG_LIVE_API_KEY=${IG_LIVE_API_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    depends_on:
+      - ig-bot
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10mb"
+        max-file: "3"
+
   # Auto-Update Service
   watchtower:
-    image: containrrr/watchtower
+    image: ghcr.io/nicholas-fedor/watchtower:latest
     container_name: watchtower
     restart: unless-stopped
     volumes:
@@ -67,3 +104,4 @@ volumes:
   fwbg-data:
   fwbg-logs:
   fwbg-stats:
+  agents-data:
