@@ -38,10 +38,12 @@ services:
       - DATA_PATH=/app/data
       - ACCOUNTS_PATH=/app/accounts
       - FWBG_API_URL=http://ig-bot:8420
+      - FWBG_AGENTS_API_URL=http://agents:8421
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     depends_on:
       - ig-bot
+      - agents
     logging:
       driver: "json-file"
       options:
