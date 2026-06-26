@@ -52,8 +52,7 @@ services:
 
   # Autonomous Agents (strategy research, backtesting, paper/live trading)
   agents:
-    build:
-      context: ../fwbg-agents
+    image: ghcr.io/haexhub/fwbg-agents:latest
     container_name: fwbg-agents
     restart: unless-stopped
     ports:
@@ -78,6 +77,8 @@ services:
       - IG_LIVE_PASSWORD=${IG_LIVE_PASSWORD:-}
       - IG_LIVE_API_KEY=${IG_LIVE_API_KEY:-}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
     depends_on:
       - ig-bot
     logging:
