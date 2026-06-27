@@ -39,11 +39,14 @@ services:
       - ACCOUNTS_PATH=/app/accounts
       - FWBG_API_URL=http://ig-bot:8420
       - FWBG_AGENTS_API_URL=http://agents:8421
+      - CLAUDE_PROXY_URL=http://claude-proxy:8080
+      - CLAUDE_PROXY_SETUP_TOKEN=${PROXY_SETUP_TOKEN:-}
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     depends_on:
       - ig-bot
       - agents
+      - claude-proxy
     logging:
       driver: "json-file"
       options:
