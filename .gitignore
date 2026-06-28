@@ -12,6 +12,9 @@ test_results/
 # Account data (sensitive!)
 accounts/
 
+# Secrets (.env.example is the tracked template)
+.env
+
 # Build artifacts
 *.egg-info/
 *.egg
