@@ -371,3 +371,78 @@ def prepare_status(name: str, task_id: str):
     if task_id not in _prepare_tasks:
         raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
     return _prepare_tasks[task_id]
+
+
+# ── Dukascopy download (async) ────────────────────────────────────────────────
+
+# In-memory store for async dukascopy download tasks (mirrors _prepare_tasks).
+_download_tasks: Dict[str, dict] = {}
+
+
+class DukascopyRequest(BaseModel):
+    symbols: List[str]
+    timeframe: str = "HOUR_1"
+    start: str                 # ISO date/datetime, e.g. "2023-01-01"
+    end: str
+    offer_side: str = "bid"    # "bid" or "ask"
+
+
+@router.post("/datasources/{name}/dukascopy", status_code=202)
+def start_dukascopy(name: str, req: DukascopyRequest):
+    """Download Dukascopy OHLC straight into a CSV source's datasource dir.
+
+    Writes ready-to-backtest ``{SYMBOL}_{TF}.csv`` files (no ETL needed). Runs in
+    a background thread; poll ``/datasources/{name}/dukascopy/{task_id}``.
+    """
+    from datetime import datetime
+
+    _validate_source_name(name)
+    if name not in _DATA_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Source not found: {name}")
+    source = _DATA_SOURCES[name]
+    if not isinstance(source, CSVSourceConfig):
+        raise HTTPException(
+            status_code=400, detail="dukascopy download is only supported for CSV sources"
+        )
+    if not req.symbols:
+        raise HTTPException(status_code=400, detail="symbols must not be empty")
+
+    try:
+        start_dt = datetime.fromisoformat(req.start)
+        end_dt = datetime.fromisoformat(req.end)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date: {e}")
+
+    out_dir = source.path  # the source's datasource directory
+
+    task_id = uuid.uuid4().hex[:12]
+    _download_tasks[task_id] = {"status": "running", "result": None, "error": None}
+
+    def run():
+        try:
+            from fwbg.data.dukascopy import download
+
+            result = download(
+                out_dir,
+                symbols=req.symbols,
+                timeframe=req.timeframe,
+                start=start_dt,
+                end=end_dt,
+                offer_side=req.offer_side,
+            )
+            _download_tasks[task_id]["result"] = result
+            _download_tasks[task_id]["status"] = "done"
+        except Exception as e:  # noqa: BLE001 — surfaced via task status
+            _download_tasks[task_id]["error"] = str(e)
+            _download_tasks[task_id]["status"] = "error"
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"task_id": task_id}
+
+
+@router.get("/datasources/{name}/dukascopy/{task_id}")
+def dukascopy_status(name: str, task_id: str):
+    """Poll status of a dukascopy download task."""
+    if task_id not in _download_tasks:
+        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+    return _download_tasks[task_id]
