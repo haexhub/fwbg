@@ -49,6 +49,8 @@ dependencies = [
     "psutil>=7.0",
     "PyYAML>=6.0",
     "holidays>=0.70",
+    # Historical data download (Dukascopy adapter)
+    "dukascopy-python>=4.0",
 ]
 
 [project.optional-dependencies]
