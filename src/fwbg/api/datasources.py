@@ -454,11 +454,14 @@ def start_dukascopy(name: str, req: DukascopyRequest):
     out_dir = source.path  # the source's datasource directory
 
     task_id = uuid.uuid4().hex[:12]
-    _download_tasks[task_id] = {"status": "running", "result": None, "error": None}
+    _download_tasks[task_id] = {"status": "running", "result": None, "error": None, "progress": None}
 
     def run():
         try:
             from fwbg.data.dukascopy import download
+
+            def on_progress(p: dict):
+                _download_tasks[task_id]["progress"] = p
 
             result = download(
                 out_dir,
@@ -467,6 +470,7 @@ def start_dukascopy(name: str, req: DukascopyRequest):
                 start=start_dt,
                 end=end_dt,
                 manual_spread=req.spread,
+                progress_cb=on_progress,
             )
             _download_tasks[task_id]["result"] = result
             _download_tasks[task_id]["status"] = "done"

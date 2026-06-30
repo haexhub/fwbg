@@ -146,6 +146,54 @@ def resolve_instrument(symbol: str) -> str:
     raise DukascopyError(f"unknown Dukascopy instrument: {symbol!r}")
 
 
+def _fetch_with_progress(instrument, interval, side, start, end, on_frac):
+    """Like ``dk.fetch`` but reports progress in [0, 1] via *on_frac* as bars stream
+    in (estimated from how far the latest bar's timestamp has advanced through the
+    requested range). Falls back to a plain ``dk.fetch`` (single 0→1 step) if the
+    library's internal streaming helpers are unavailable or change.
+    """
+    import pandas as pd
+
+    stream = getattr(dk, "_stream", None)
+    interval_units = getattr(dk, "_interval_units", None)
+    cols_for_unit = getattr(dk, "_get_dataframe_columns_for_timeunit", None)
+    if stream is None or interval_units is None or cols_for_unit is None:
+        df = dk.fetch(instrument, interval, side, start, end)
+        on_frac(1.0)
+        return df
+
+    start_ms = start.timestamp() * 1000
+    span_ms = max(end.timestamp() * 1000 - start_ms, 1.0)
+    try:
+        columns = cols_for_unit(interval_units[interval])
+        rows = []
+        last = -1.0
+        for row in stream(
+            instrument=instrument,
+            interval=interval,
+            offer_side=side,
+            start=start,
+            end=end,
+            max_retries=7,
+            limit=30_000,
+        ):
+            rows.append(row)
+            frac = (row[0] - start_ms) / span_ms
+            if frac - last >= 0.01:
+                last = frac
+                on_frac(min(max(frac, 0.0), 1.0))
+        df = pd.DataFrame(data=rows, columns=columns)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+        df = df.set_index("timestamp")
+        on_frac(1.0)
+        return df
+    except Exception:  # noqa: BLE001 — degrade gracefully if lib internals change
+        log.warning("dukascopy: streaming progress failed, using plain fetch", exc_info=True)
+        df = dk.fetch(instrument, interval, side, start, end)
+        on_frac(1.0)
+        return df
+
+
 def download(
     out_dir: Path | str,
     symbols: list[str],
@@ -154,6 +202,7 @@ def download(
     end: datetime,
     offer_side: str = "bid",  # deprecated/ignored: OHLC is now mid = (bid+ask)/2
     manual_spread: float | None = None,
+    progress_cb=None,
 ) -> list[dict]:
     """Download bid+ask bars per symbol, write mid-priced ``{SYMBOL}_{TF}.csv``
     and record a conservative bid-ask spread for backtesting.
@@ -189,16 +238,41 @@ def download(
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
+    total = len(symbols)
     results: list[dict] = []
-    for raw_symbol in symbols:
+    for i, raw_symbol in enumerate(symbols):
         instrument = resolve_instrument(raw_symbol)
         clean = _normalize(raw_symbol)
         filename = f"{clean}_{tf_label}.csv"
         dest = out_path / filename
 
+        def report(local: float, phase: str):
+            if progress_cb is None:
+                return
+            overall = (i + min(max(local, 0.0), 1.0)) / total if total else 1.0
+            progress_cb(
+                {
+                    "percent": round(overall * 100, 1),
+                    "symbol": clean,
+                    "phase": phase,
+                    "symbol_index": i + 1,
+                    "symbol_total": total,
+                }
+            )
+
         log.info("dukascopy: fetching %s %s %s..%s (bid+ask)", instrument, timeframe, start, end)
-        bid = dk.fetch(instrument, interval, dk.OFFER_SIDE_BID, start, end)
-        ask = dk.fetch(instrument, interval, dk.OFFER_SIDE_ASK, start, end)
+        # bid ≈ first 45% of this symbol, ask the next 45%, write/spread the last 10%.
+        report(0.0, "bid")
+        bid = _fetch_with_progress(
+            instrument, interval, dk.OFFER_SIDE_BID, start, end,
+            lambda f: report(0.45 * f, "bid"),
+        )
+        report(0.45, "ask")
+        ask = _fetch_with_progress(
+            instrument, interval, dk.OFFER_SIDE_ASK, start, end,
+            lambda f: report(0.45 + 0.45 * f, "ask"),
+        )
+        report(0.9, "write")
 
         if bid is None or bid.empty or ask is None or ask.empty:
             results.append(
