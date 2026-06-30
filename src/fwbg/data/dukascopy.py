@@ -11,8 +11,10 @@ Output matches ``CSVSourceConfig.prepare``: columns ``T,O,H,L,C,V`` with
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 
 import dukascopy_python as dk
@@ -36,12 +38,6 @@ TIMEFRAMES: dict[str, tuple[str, str]] = {
     "DAY_1": (dk.INTERVAL_DAY_1, "DAY_1"),
 }
 
-_OFFER_SIDES: dict[str, str] = {
-    "bid": dk.OFFER_SIDE_BID,
-    "ask": dk.OFFER_SIDE_ASK,
-}
-
-
 def _normalize(symbol: str) -> str:
     return symbol.replace("/", "").replace("_", "").replace("-", "").upper()
 
@@ -59,6 +55,82 @@ def _build_instrument_index() -> dict[str, str]:
 
 
 _INSTRUMENTS = _build_instrument_index()
+
+
+# Asset-class label derived from the ``INSTRUMENT_<GROUP>_…`` constant-name prefix.
+# Anything not listed here (country prefixes like US/UK/GERMANY/…) is a single stock.
+_GROUP_LABELS: dict[str, str] = {
+    "FX": "Forex",
+    "VCCY": "Krypto",
+    "CMD": "Rohstoffe",
+    "IDX": "Indizes",
+    "ETF": "ETF",
+    "BND": "Anleihen",
+}
+
+# Per-instrument history metadata bundled from the dukascopy-node catalogue:
+# normalized symbol -> {description, minute, hourly, daily} (history-start dates).
+_META_PATH = Path(__file__).with_name("dukascopy_meta.json")
+
+
+def _build_group_index() -> dict[str, str]:
+    """Map normalized symbol -> friendly asset-class label (e.g. ``Forex``)."""
+    groups: dict[str, str] = {}
+    for name in dir(dk_instruments):
+        if not name.startswith("INSTRUMENT_"):
+            continue
+        value = getattr(dk_instruments, name)
+        if not isinstance(value, str):
+            continue
+        parts = name.split("_")
+        prefix = parts[1] if len(parts) > 1 else ""
+        groups.setdefault(_normalize(value), _GROUP_LABELS.get(prefix, "Aktien"))
+    return groups
+
+
+@lru_cache(maxsize=1)
+def instrument_catalogue() -> list[dict]:
+    """Downloadable instruments joined with their per-timeframe history starts.
+
+    Returns only instruments that are *both* resolvable by the installed
+    ``dukascopy-python`` library and present in the bundled history metadata, so
+    the UI never offers something that can't be fetched or whose available range
+    is unknown. Each entry::
+
+        {
+          "symbol": "EURUSD",            # ready to pass straight to download()
+          "id": "EUR/USD",
+          "description": "Euro vs US Dollar",
+          "group": "Forex",
+          "historyStart": {"minute": "2003-05-04", "hourly": "2003-05-04",
+                           "daily": "1973-03-01"},
+        }
+
+    The three ``historyStart`` granularities map onto our timeframes: minute
+    candles (MINUTE_*), hourly candles (HOUR_*) and daily candles (DAY_1).
+    """
+    meta: dict = json.loads(_META_PATH.read_text())
+    groups = _build_group_index()
+    out: list[dict] = []
+    for norm_key, instrument_id in _INSTRUMENTS.items():
+        m = meta.get(norm_key)
+        if m is None:
+            continue  # no history metadata -> not adaptively selectable
+        out.append(
+            {
+                "symbol": norm_key,
+                "id": instrument_id,
+                "description": m.get("description") or instrument_id,
+                "group": groups.get(norm_key, "Aktien"),
+                "historyStart": {
+                    "minute": m.get("minute"),
+                    "hourly": m.get("hourly"),
+                    "daily": m.get("daily"),
+                },
+            }
+        )
+    out.sort(key=lambda r: (r["group"], r["description"]))
+    return out
 
 
 def available_timeframes() -> list[str]:
@@ -80,23 +152,32 @@ def download(
     timeframe: str,
     start: datetime,
     end: datetime,
-    offer_side: str = "bid",
+    offer_side: str = "bid",  # deprecated/ignored: OHLC is now mid = (bid+ask)/2
+    manual_spread: float | None = None,
 ) -> list[dict]:
-    """Download OHLC bars for each symbol and write ``{SYMBOL}_{TF}.csv``.
+    """Download bid+ask bars per symbol, write mid-priced ``{SYMBOL}_{TF}.csv``
+    and record a conservative bid-ask spread for backtesting.
 
-    Returns one result dict per symbol: ``{symbol, file, rows[, warning]}``.
+    The written OHLC is the unbiased mid price ``(bid+ask)/2``. The spread is
+    measured as the **90th percentile** of the per-bar ``ask_close - bid_close``
+    gap (a single fixed value that already leans pessimistic, so brief spread
+    spikes are roughly covered) and persisted per symbol via
+    :func:`fwbg.data.assets.save_asset_spread`. If ``manual_spread`` is given it is
+    stored as a user override that wins over the measured value in backtests.
+    ``offer_side`` is accepted for backwards compatibility but ignored.
+
+    Returns one result dict per symbol: ``{symbol, file, rows, spread[, warning]}``.
     """
+    import numpy as np
     import pandas as pd
+
+    from fwbg.data.assets import save_asset_spread
 
     if timeframe not in TIMEFRAMES:
         raise DukascopyError(
             f"unsupported timeframe {timeframe!r}; choose from {available_timeframes()}"
         )
     interval, tf_label = TIMEFRAMES[timeframe]
-
-    side = _OFFER_SIDES.get(offer_side.lower())
-    if side is None:
-        raise DukascopyError(f"unsupported offer_side {offer_side!r}; use 'bid' or 'ask'")
 
     if start.tzinfo is None:
         start = start.replace(tzinfo=timezone.utc)
@@ -115,30 +196,63 @@ def download(
         filename = f"{clean}_{tf_label}.csv"
         dest = out_path / filename
 
-        log.info("dukascopy: fetching %s %s %s..%s", instrument, timeframe, start, end)
-        df = dk.fetch(instrument, interval, side, start, end)
+        log.info("dukascopy: fetching %s %s %s..%s (bid+ask)", instrument, timeframe, start, end)
+        bid = dk.fetch(instrument, interval, dk.OFFER_SIDE_BID, start, end)
+        ask = dk.fetch(instrument, interval, dk.OFFER_SIDE_ASK, start, end)
 
-        if df is None or df.empty:
+        if bid is None or bid.empty or ask is None or ask.empty:
             results.append(
                 {"symbol": clean, "file": filename, "rows": 0, "warning": "no data in range"}
             )
             continue
 
-        idx = df.index
-        ts = pd.DatetimeIndex(idx)
+        # Align both sides on their common timestamps before combining.
+        bid, ask = bid.align(ask, join="inner", axis=0)
+        if bid.empty:
+            results.append(
+                {"symbol": clean, "file": filename, "rows": 0,
+                 "warning": "no overlapping bid/ask bars"}
+            )
+            continue
+
+        ts = pd.DatetimeIndex(bid.index)
         ts = ts.tz_convert("UTC") if ts.tz is not None else ts.tz_localize("UTC")
+
+        mid = {
+            c: (bid[c].to_numpy() + ask[c].to_numpy()) / 2.0
+            for c in ("open", "high", "low", "close")
+        }
+        if "volume" in bid.columns and "volume" in ask.columns:
+            volume = (bid["volume"].to_numpy() + ask["volume"].to_numpy()) / 2.0
+        else:
+            volume = 0
+
         out = pd.DataFrame(
             {
                 "T": ts.strftime("%Y-%m-%d %H:%M:%S"),
-                "O": df["open"].to_numpy(),
-                "H": df["high"].to_numpy(),
-                "L": df["low"].to_numpy(),
-                "C": df["close"].to_numpy(),
-                "V": df["volume"].to_numpy() if "volume" in df.columns else 0,
+                "O": mid["open"],
+                "H": mid["high"],
+                "L": mid["low"],
+                "C": mid["close"],
+                "V": volume,
             }
         )
         out.to_csv(dest, index=False)
-        log.info("dukascopy: wrote %s (%d bars)", dest, len(out))
-        results.append({"symbol": clean, "file": filename, "rows": int(len(out))})
+
+        # Conservative spread: 90th percentile of the per-bar ask-bid close gap.
+        gap = ask["close"].to_numpy() - bid["close"].to_numpy()
+        gap = gap[np.isfinite(gap)]
+        gap = gap[gap >= 0]
+        spread = float(np.percentile(gap, 90)) if gap.size else 0.0
+        if spread > 0:
+            save_asset_spread(clean, spread, manual=False)
+        if manual_spread and manual_spread > 0:
+            save_asset_spread(clean, float(manual_spread), manual=True)
+
+        log.info("dukascopy: wrote %s (%d bars, spread_p90=%.6g)", dest, len(out), spread)
+        result = {"symbol": clean, "file": filename, "rows": int(len(out)), "spread": spread}
+        if manual_spread and manual_spread > 0:
+            result["manual_spread"] = float(manual_spread)
+        results.append(result)
 
     return results
