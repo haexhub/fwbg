@@ -373,6 +373,43 @@ def prepare_status(name: str, task_id: str):
     return _prepare_tasks[task_id]
 
 
+# ── Dukascopy ─────────────────────────────────────────────────────────────────
+
+@router.get("/dukascopy/instruments")
+def dukascopy_instruments():
+    """Catalogue of downloadable Dukascopy instruments + per-timeframe history starts.
+
+    Powers the asset multi-select and adaptive date range in the dashboard.
+    """
+    from fwbg.data.dukascopy import instrument_catalogue
+
+    return instrument_catalogue()
+
+
+@router.get("/dukascopy/spreads")
+def dukascopy_spreads():
+    """Per-asset backtest spreads: measured (p90), manual override and effective."""
+    from fwbg.data.assets import list_asset_spreads
+
+    return list_asset_spreads()
+
+
+class SpreadOverride(BaseModel):
+    spread: Optional[float] = None  # >0 sets the override, None/≤0 clears it
+
+
+@router.put("/dukascopy/spreads/{symbol}")
+def set_dukascopy_spread(symbol: str, body: SpreadOverride):
+    """Set or clear the manual spread override a backtest uses for *symbol*."""
+    from fwbg.data.assets import list_asset_spreads, set_manual_spread
+
+    set_manual_spread(symbol, body.spread)
+    for entry in list_asset_spreads():
+        if entry["symbol"] == symbol:
+            return entry
+    return {"symbol": symbol, "measured": None, "manual": None, "effective": None}
+
+
 # ── Dukascopy download (async) ────────────────────────────────────────────────
 
 # In-memory store for async dukascopy download tasks (mirrors _prepare_tasks).
@@ -384,7 +421,8 @@ class DukascopyRequest(BaseModel):
     timeframe: str = "HOUR_1"
     start: str                 # ISO date/datetime, e.g. "2023-01-01"
     end: str
-    offer_side: str = "bid"    # "bid" or "ask"
+    offer_side: str = "bid"    # deprecated/ignored: OHLC is now mid = (bid+ask)/2
+    spread: Optional[float] = None  # manual backtest spread override (else p90 measured)
 
 
 @router.post("/datasources/{name}/dukascopy", status_code=202)
@@ -416,11 +454,14 @@ def start_dukascopy(name: str, req: DukascopyRequest):
     out_dir = source.path  # the source's datasource directory
 
     task_id = uuid.uuid4().hex[:12]
-    _download_tasks[task_id] = {"status": "running", "result": None, "error": None}
+    _download_tasks[task_id] = {"status": "running", "result": None, "error": None, "progress": None}
 
     def run():
         try:
             from fwbg.data.dukascopy import download
+
+            def on_progress(p: dict):
+                _download_tasks[task_id]["progress"] = p
 
             result = download(
                 out_dir,
@@ -428,7 +469,8 @@ def start_dukascopy(name: str, req: DukascopyRequest):
                 timeframe=req.timeframe,
                 start=start_dt,
                 end=end_dt,
-                offer_side=req.offer_side,
+                manual_spread=req.spread,
+                progress_cb=on_progress,
             )
             _download_tasks[task_id]["result"] = result
             _download_tasks[task_id]["status"] = "done"
