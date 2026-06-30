@@ -1,4 +1,5 @@
 """REST API for data source management."""
+import logging
 import os
 import re
 import threading
@@ -11,12 +12,15 @@ from pydantic import BaseModel
 
 from fwbg.core.data_sources import (
     _DATA_SOURCES,
+    AssetInfo,
     CSVSourceConfig,
     source_from_dict,
     save_source_config,
     delete_data_source,
     get_data_root,
 )
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -97,6 +101,43 @@ def _source_to_response(name: str) -> dict:
         d["raw_file_count"] = len(raw_files)
 
     return d
+
+
+# ── Asset discovery ───────────────────────────────────────────────────────────
+
+def _asset_to_dict(a: AssetInfo) -> dict:
+    return {
+        "symbol": a.symbol,
+        "timeframes": a.timeframes,
+        "date_from": a.date_from.isoformat() if a.date_from else None,
+        "date_to": a.date_to.isoformat() if a.date_to else None,
+        "source": a.source,
+        "source_type": a.source_type,
+    }
+
+
+@router.get("/datasources/assets")
+def list_available_assets():
+    """Gibt alle Assets aller konfigurierten Datasources zurück.
+
+    Response enthält eine flache Liste (``assets``) und eine nach Source
+    gruppierte Ansicht (``by_source``).
+    """
+    all_assets: List[dict] = []
+    by_source: Dict[str, List[dict]] = {}
+
+    for source in _DATA_SOURCES.values():
+        try:
+            infos = source.list_assets()
+        except Exception as exc:
+            log.warning(f"list_assets() fehlgeschlagen für '{source.name}': {exc}")
+            continue
+
+        dicts = [_asset_to_dict(a) for a in infos]
+        by_source[source.name] = dicts
+        all_assets.extend(dicts)
+
+    return {"assets": all_assets, "by_source": by_source}
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────

@@ -14,15 +14,29 @@ Struktur:
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import date
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Optional, Any
 import json
 import logging
+import re
 
 import pandas as pd
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class AssetInfo:
+    """Ein verfügbares Asset in einer Datenquelle."""
+    symbol: str
+    timeframes: List[str]
+    date_from: Optional[date]
+    date_to: Optional[date]
+    source: str
+    source_type: str
+
 
 # Default Basis-Pfad für Daten — resolved from workspace env vars at import time
 def _default_data_root() -> Path:
@@ -75,6 +89,10 @@ class DataSourceConfig(ABC):
     def to_dict(self) -> dict:
         """Serialize to JSON-compatible dict."""
         pass
+
+    def list_assets(self) -> List["AssetInfo"]:
+        """Gibt alle verfügbaren Assets dieser Quelle zurück."""
+        return []
 
 
 @dataclass
@@ -277,6 +295,62 @@ class CSVSourceConfig(DataSourceConfig):
         if not self.exists():
             return []
         return list(self.path.glob(pattern))
+
+    def _filename_regex(self) -> re.Pattern | None:
+        """Baut einen Regex aus file_pattern mit benannten Gruppen für symbol + timeframe."""
+        try:
+            escaped = re.escape(self.file_pattern.removesuffix(".csv"))
+            pattern = (
+                escaped
+                .replace(r"\{symbol\}", r"(?P<symbol>.+?)")
+                .replace(r"\{timeframe\}", r"(?P<timeframe>.+)")
+            )
+            return re.compile(f"^{pattern}$")
+        except re.error:
+            return None
+
+    def _read_date_range(self, path: Path) -> tuple[Optional[date], Optional[date]]:
+        """Liest erstes und letztes Datum aus einer CSV-Datei (nur erste Spalte)."""
+        try:
+            import pandas as pd
+            df = pd.read_csv(path, usecols=[0], index_col=0, parse_dates=True)
+            if df.empty:
+                return None, None
+            return df.index.min().date(), df.index.max().date()
+        except Exception:
+            return None, None
+
+    def list_assets(self) -> List["AssetInfo"]:
+        """Scant das Datenverzeichnis und gibt alle verfügbaren Assets zurück."""
+        regex = self._filename_regex()
+        if regex is None or not self.exists():
+            return []
+
+        # symbol → {timeframe → (date_from, date_to)}
+        found: Dict[str, Dict[str, tuple]] = {}
+        for csv_path in sorted(self.path.glob("*.csv")):
+            m = regex.match(csv_path.stem)
+            if not m:
+                continue
+            symbol = m.group("symbol")
+            timeframe = m.group("timeframe")
+            date_from, date_to = self._read_date_range(csv_path)
+            found.setdefault(symbol, {})[timeframe] = (date_from, date_to)
+
+        assets = []
+        for symbol, tf_map in sorted(found.items()):
+            timeframes = sorted(tf_map.keys())
+            all_froms = [v[0] for v in tf_map.values() if v[0]]
+            all_tos = [v[1] for v in tf_map.values() if v[1]]
+            assets.append(AssetInfo(
+                symbol=symbol,
+                timeframes=timeframes,
+                date_from=min(all_froms) if all_froms else None,
+                date_to=max(all_tos) if all_tos else None,
+                source=self.name,
+                source_type="csv",
+            ))
+        return assets
 
     def load(self, items: Dict[str, str], **params) -> LoadResult:
         """Load CSV files from self.path."""
@@ -721,6 +795,7 @@ discover_sources(DEFAULT_DATA_ROOT)
 
 __all__ = [
     # Types
+    "AssetInfo",
     "SourceType",
     "LoadResult",
     "DataSourceConfig",
