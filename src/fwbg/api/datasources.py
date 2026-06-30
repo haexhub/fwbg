@@ -7,8 +7,6 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
 
-log = logging.getLogger(__name__)
-
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
@@ -21,6 +19,8 @@ from fwbg.core.data_sources import (
     delete_data_source,
     get_data_root,
 )
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
