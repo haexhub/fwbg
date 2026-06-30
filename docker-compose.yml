@@ -21,6 +21,32 @@ services:
         max-size: "10mb"
         max-file: "3"
 
+  # REST API server (datasources, backtests, Dukascopy, etc.).
+  # Runs from the same image as the bot but serves `fwbg.api:app` — the bot's
+  # default `python -m fwbg` only trades and never starts the API, which the
+  # dashboard and agents both depend on (FWBG_API_URL).
+  api:
+    image: ghcr.io/haexhub/fwbg:latest
+    container_name: fwbg-api
+    restart: unless-stopped
+    command: ["uvicorn", "fwbg.api:app", "--host", "0.0.0.0", "--port", "8420"]
+    volumes:
+      - fwbg-accounts:/app/accounts
+      - fwbg-data:/app/data
+      - fwbg-logs:/app/logs
+      - fwbg-stats:/app/data/stats_export
+    environment:
+      - TZ=Europe/Berlin
+      - LOG_DIR=/app/logs
+      - STATS_DIR=/app/data/stats_export
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10mb"
+        max-file: "3"
+
   # Dashboard Web Interface
   dashboard:
     image: ghcr.io/haexhub/fwbg-dashboard:latest
@@ -37,14 +63,14 @@ services:
       - TZ=Europe/Berlin
       - DATA_PATH=/app/data
       - ACCOUNTS_PATH=/app/accounts
-      - FWBG_API_URL=http://ig-bot:8420
+      - FWBG_API_URL=http://api:8420
       - FWBG_AGENTS_API_URL=http://agents:8421
       - CLAUDE_PROXY_URL=http://claude-proxy:8080
       - CLAUDE_PROXY_SETUP_TOKEN=${PROXY_SETUP_TOKEN:-}
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     depends_on:
-      - ig-bot
+      - api
       - agents
       - claude-proxy
     logging:
@@ -66,7 +92,7 @@ services:
       - .:/fwbg-src:ro
     environment:
       - TZ=Europe/Berlin
-      - FWBG_API_URL=http://ig-bot:8420
+      - FWBG_API_URL=http://api:8420
       - FWBG_DATA_DIR=/app/fwbg-data
       - FWBG_REPO_ROOT=/fwbg-src
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://claude-proxy:8080}
@@ -83,7 +109,7 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     depends_on:
-      - ig-bot
+      - api
       - claude-proxy
     logging:
       driver: "json-file"
