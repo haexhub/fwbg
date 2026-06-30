@@ -1,10 +1,24 @@
 name: Dependabot Auto-Merge
 
-# Enables GitHub auto-merge on every Dependabot PR so it merges itself into
-# develop once required checks pass.
+# Native GitHub auto-merge is unavailable on this private Free-plan repo
+# ("Auto merge is not allowed for this repository"), so we merge Dependabot
+# PRs ourselves once the CI workflow finishes successfully.
+#
+# This runs via `workflow_run` instead of `pull_request` for two reasons:
+#   1. Dependabot `pull_request` runs only get a read-only GITHUB_TOKEN with no
+#      write access, so they cannot merge. `workflow_run` executes in the
+#      trusted base-repo context with a full-permission token (the pattern
+#      GitHub recommends for acting on Dependabot PRs).
+#   2. It fires *after* CI completes, so we only merge when tests are green.
+#
+# NOTE: `workflow_run` only triggers from the workflow file on the default
+# branch (main), so this becomes active once it lands on main.
 
 on:
-  pull_request:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
 
 permissions:
   contents: write
@@ -12,12 +26,34 @@ permissions:
 
 jobs:
   automerge:
-    if: github.actor == 'dependabot[bot]'
+    # Only act on successful CI runs that came from a Dependabot pull request.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Enable auto-merge
+      - name: Squash-merge the Dependabot PR
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge "$PR_NUMBER" --squash --auto --repo "$REPO"
+        run: |
+          set -euo pipefail
+
+          # Belt-and-suspenders: only Dependabot branches.
+          case "$HEAD_BRANCH" in
+            dependabot/*) ;;
+            *) echo "Branch '$HEAD_BRANCH' is not a Dependabot branch, skipping."; exit 0 ;;
+          esac
+
+          pr=$(gh pr list --repo "$REPO" --head "$HEAD_BRANCH" --state open \
+                 --json number --jq '.[0].number')
+
+          if [ -z "$pr" ]; then
+            echo "No open PR found for branch '$HEAD_BRANCH', nothing to merge."
+            exit 0
+          fi
+
+          echo "Squash-merging PR #$pr ($HEAD_BRANCH)"
+          gh pr merge "$pr" --repo "$REPO" --squash --delete-branch
