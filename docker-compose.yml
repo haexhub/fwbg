@@ -13,6 +13,7 @@ services:
       - TZ=Europe/Berlin
       - LOG_DIR=/app/logs
       - STATS_DIR=/app/data/stats_export
+      - FWBG_DATA_DIR=/app/data
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     logging:
@@ -39,6 +40,7 @@ services:
       - TZ=Europe/Berlin
       - LOG_DIR=/app/logs
       - STATS_DIR=/app/data/stats_export
+      - FWBG_DATA_DIR=/app/data
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     logging:
