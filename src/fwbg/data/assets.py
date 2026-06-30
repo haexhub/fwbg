@@ -3,8 +3,110 @@ AssetConfig - Konfiguration für einzelne Trading-Assets.
 
 Enthält Asset-spezifische Parameter wie Spread, Point-Value, Währungen etc.
 """
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import List, Dict, Optional
+
+
+# ── Data-driven spread overrides ────────────────────────────────────────────────
+# Real bid-ask spreads measured during data download (e.g. Dukascopy) are stored
+# in ``<data_root>/_asset_meta.json`` and take precedence over the hand-tuned
+# DEFAULT_ASSETS spreads below.  Cached by mtime so any process picks up updates.
+
+_OVERRIDES_CACHE: Optional[Dict[str, dict]] = None
+_OVERRIDES_MTIME: float = -1.0
+
+
+def _asset_meta_path() -> Path:
+    from fwbg.core.data_sources import get_data_root  # lazy: avoid import cycle
+
+    return get_data_root() / "_asset_meta.json"
+
+
+def load_asset_overrides() -> Dict[str, dict]:
+    """Measured per-symbol overrides (currently ``{"spread": float}``)."""
+    global _OVERRIDES_CACHE, _OVERRIDES_MTIME
+    path = _asset_meta_path()
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        _OVERRIDES_CACHE, _OVERRIDES_MTIME = {}, -1.0
+        return {}
+    if _OVERRIDES_CACHE is None or mtime != _OVERRIDES_MTIME:
+        try:
+            _OVERRIDES_CACHE = json.loads(path.read_text())
+        except (OSError, ValueError):
+            _OVERRIDES_CACHE = {}
+        _OVERRIDES_MTIME = mtime
+    return _OVERRIDES_CACHE
+
+
+def _update_asset_meta(symbol: str, key: str, value: Optional[float]) -> None:
+    """Set (value>0) or remove (None) one field of a symbol's meta entry."""
+    path = _asset_meta_path()
+    data: Dict[str, dict] = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            data = {}
+    entry = data.get(symbol, {})
+    if value is None:
+        entry.pop(key, None)
+    else:
+        entry[key] = float(value)
+    if entry:
+        data[symbol] = entry
+    else:
+        data.pop(symbol, None)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True))
+    tmp.replace(path)
+
+
+def save_asset_spread(symbol: str, spread: float, *, manual: bool = False) -> None:
+    """Persist a spread for backtesting.
+
+    ``manual=False`` records the value measured from data (e.g. Dukascopy p90);
+    ``manual=True`` records a user override that wins over the measured value.
+    The two are stored side by side so a re-download never clobbers an override.
+    """
+    if not spread or spread <= 0:
+        return
+    _update_asset_meta(symbol, "manual" if manual else "measured", float(spread))
+
+
+def set_manual_spread(symbol: str, spread: Optional[float]) -> None:
+    """Set (spread>0) or clear (None/≤0) the per-asset manual spread override."""
+    _update_asset_meta(symbol, "manual", spread if spread and spread > 0 else None)
+
+
+def _effective_spread(entry: dict) -> Optional[float]:
+    """Manual override wins; otherwise the measured value (legacy ``spread`` too)."""
+    for key in ("manual", "measured", "spread"):
+        val = entry.get(key)
+        if val and val > 0:
+            return float(val)
+    return None
+
+
+def list_asset_spreads() -> List[dict]:
+    """All symbols with a stored spread: ``{symbol, measured, manual, effective}``."""
+    out: List[dict] = []
+    for symbol, entry in sorted(load_asset_overrides().items()):
+        measured = entry.get("measured") or entry.get("spread")
+        manual = entry.get("manual")
+        out.append(
+            {
+                "symbol": symbol,
+                "measured": float(measured) if measured else None,
+                "manual": float(manual) if manual else None,
+                "effective": _effective_spread(entry),
+            }
+        )
+    return out
 
 
 @dataclass
@@ -100,16 +202,24 @@ class AssetRegistry:
         Falls Symbol nicht bekannt, wird Default-FOREX zurückgegeben.
         """
         if symbol in self._assets:
-            return self._assets[symbol]
+            asset = self._assets[symbol]
+        else:
+            # Default für unbekannte Assets
+            asset = AssetConfig(
+                symbol=symbol,
+                asset_class="FOREX",
+                point=0.0001,
+                spread=0.00020,
+                currencies=["USD"],
+            )
 
-        # Default für unbekannte Assets
-        return AssetConfig(
-            symbol=symbol,
-            asset_class="FOREX",
-            point=0.0001,
-            spread=0.00020,
-            currencies=["USD"]
-        )
+        # Data-measured / manually-set spread overrides the configured estimate.
+        override = load_asset_overrides().get(symbol)
+        if override:
+            effective = _effective_spread(override)
+            if effective:
+                return replace(asset, spread=effective)
+        return asset
 
     def register(self, asset: AssetConfig):
         """Registriert ein neues Asset."""
