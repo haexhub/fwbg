@@ -101,6 +101,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-proxy-not-used-but-sdk-requires-it}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-7}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
       - IG_DEMO_USERNAME=${IG_DEMO_USERNAME:-}
       - IG_DEMO_PASSWORD=${IG_DEMO_PASSWORD:-}
       - IG_DEMO_API_KEY=${IG_DEMO_API_KEY:-}
