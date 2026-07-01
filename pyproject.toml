@@ -129,5 +129,6 @@ addopts = "-v --tb=short --import-mode=importlib"
 
 [dependency-groups]
 dev = [
+    "httpx2",
     "ruff>=0.14.14",
 ]
