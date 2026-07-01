@@ -17,6 +17,7 @@ from fwbg.api.runs import router as runs_router
 from fwbg.api.chart import router as chart_router
 from fwbg.api.custom_signals import router as custom_signals_router
 from fwbg.api.datasources import router as datasources_router
+from fwbg.api.assets import router as assets_router
 from fwbg.api.signal_composer import router as signal_composer_router
 from fwbg.api.analysis import router as analysis_router
 from fwbg.api.discovery import router as discovery_router
@@ -96,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(chart_router, prefix="/api")
     app.include_router(custom_signals_router, prefix="/api")
     app.include_router(datasources_router, prefix="/api")
+    app.include_router(assets_router, prefix="/api")
     app.include_router(exit_modifiers_router, prefix="/api")
     app.include_router(entry_modifiers_router, prefix="/api")
     app.include_router(signal_composer_router, prefix="/api")
