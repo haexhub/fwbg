@@ -13,7 +13,7 @@ from typing import Optional
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fwbg.api.deps import get_strategies_dir, get_test_results_dir
 from fwbg.api._paths import (
@@ -50,7 +50,7 @@ class PreviewRequest(BaseModel):
     datasource: Optional[str] = None
     tp: Optional[float] = None
     sl: Optional[float] = None
-    last_n_bars: Optional[int] = None
+    last_n_bars: Optional[int] = Field(default=None, ge=1)
 
 
 @router.post("/start")
@@ -822,6 +822,9 @@ def get_run_progress(run_id: str) -> dict:
                     from datetime import datetime, timezone, timedelta
                     try:
                         updated_at = datetime.fromisoformat(updated_at_str)
+                        if updated_at.tzinfo is None:
+                            # Legacy progress files wrote naive timestamps (UTC)
+                            updated_at = updated_at.replace(tzinfo=timezone.utc)
                         if datetime.now(timezone.utc) - updated_at > timedelta(minutes=2):
                             data["status"] = "completed"
                             data["stale_status_recovered"] = True

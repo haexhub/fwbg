@@ -6,6 +6,7 @@ Each preset file embeds metadata:
 File naming convention: {slug}_v{version}.json
 """
 import json
+import logging
 import re
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from pydantic import BaseModel
 
 from fwbg.api.deps import get_strategies_dir
 from fwbg.api.strategies import SECTION_FIELD_DIRS
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/presets", tags=["presets"])
 
@@ -172,7 +175,8 @@ def migrate_presets() -> None:
         for f in list(path.glob("*.json")):
             try:
                 raw = json.loads(f.read_text())
-            except (json.JSONDecodeError, IOError):
+            except (json.JSONDecodeError, IOError) as exc:
+                log.warning("migrate_presets: skipping unreadable %s: %s", f, exc)
                 continue
 
             if "_meta" in raw:
@@ -223,7 +227,8 @@ def migrate_strategy_refs() -> None:
     for strategy_file in sorted(strategies_dir.glob("*.json")):
         try:
             data = json.loads(strategy_file.read_text())
-        except (json.JSONDecodeError, IOError):
+        except (json.JSONDecodeError, IOError) as exc:
+            log.warning("migrate_strategy_refs: skipping unreadable %s: %s", strategy_file, exc)
             continue
 
         modified = False
