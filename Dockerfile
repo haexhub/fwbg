@@ -27,6 +27,7 @@ COPY packages/ packages/
 # gegebenen lokalen Paths statt PyPI zu fragen.
 RUN pip install --no-cache-dir \
       -e packages/fwbg-sdk \
+      -e packages/fwbg-premium \
       -e packages/fwbg-broker-ig \
       -e ".[ig,api]"
 
