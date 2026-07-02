@@ -26,8 +26,10 @@ dependencies = [
     # SDK (plugin base classes, types, enums)
     "fwbg-sdk>=1.0.0",
     # Core Data Processing
-    "numpy>=2.2",
-    "pandas>=3.0",
+    # numpy <2.5 required by numba; pandas 3.0.4 yanked (segfaults in
+    # datetime code with numpy 2.4, see pypi yank reason)
+    "numpy>=2.2,<2.5",
+    "pandas>=3.0,!=3.0.4",
     "scipy>=1.15",
     # ML / Optimization
     "xgboost>=3.0",
