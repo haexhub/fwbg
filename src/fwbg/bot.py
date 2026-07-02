@@ -554,6 +554,9 @@ class TradingBot:
             atr = ta.volatility.average_true_range(
                 ohlc_df["H"], ohlc_df["L"], ohlc_df["C"]
             ).iloc[-1]
+            if pd.isna(atr) or atr <= 0:
+                logger.warning(f"⚠️ {symbol}: ATR unavailable (NaN/0) — skipping signal")
+                return
 
             # Position Sizing
             risk_cash = min(balance * cfg.risk_per_trade, balance * self.max_risk_percent)
@@ -628,8 +631,12 @@ class TradingBot:
         if close_positions:
             logger.warning("🚨 Closing ALL positions...")
             try:
-                closed = self.adapter.close_all_positions()
-                logger.warning(f"🚨 Closed {closed} positions")
+                results = self.adapter.close_all_positions()
+                closed = sum(1 for r in results if r.success)
+                failed = [r for r in results if not r.success]
+                logger.warning(f"🚨 Closed {closed}/{len(results)} positions")
+                for r in failed:
+                    logger.error(f"❌ Position NOT closed: {r.message}")
             except Exception as e:
                 logger.error(f"❌ Failed to close positions: {e}")
 

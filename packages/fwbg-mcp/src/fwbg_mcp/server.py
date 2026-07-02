@@ -5,7 +5,8 @@ Agents can autonomously: discover indicators → build strategy configs → star
 → wait for results → evaluate → adjust → retry.
 
 Environment variables:
-  FWBG_API_URL  Base URL of the FWBG API (default: http://localhost:8420)
+  FWBG_API_URL         Base URL of the FWBG API (default: http://localhost:8420)
+  FWBG_STRATEGIES_DIR  Path to the strategies/ directory (default: ./strategies)
 """
 
 import os
@@ -328,7 +329,16 @@ def list_presets(preset_type: str) -> list[str]:
     """
     import pathlib
 
-    strategies_dir = pathlib.Path("/home/haex/Projekte/fwbg/strategies")
+    allowed = {
+        "pipelines", "models", "validations", "filters",
+        "resources", "grids", "regime_filters",
+    }
+    if preset_type not in allowed:
+        raise ValueError(f"Invalid preset_type {preset_type!r}; expected one of {sorted(allowed)}")
+
+    strategies_dir = pathlib.Path(
+        os.environ.get("FWBG_STRATEGIES_DIR", "strategies")
+    )
     preset_dir = strategies_dir / preset_type
     if not preset_dir.exists():
         return []

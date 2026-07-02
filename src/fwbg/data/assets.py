@@ -4,6 +4,7 @@ AssetConfig - Konfiguration für einzelne Trading-Assets.
 Enthält Asset-spezifische Parameter wie Spread, Point-Value, Währungen etc.
 """
 import json
+import threading
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -183,11 +184,18 @@ class AssetRegistry:
         "TESTUSD": {"class": "TEST", "point": 0.0001, "spread": 0.00018, "currency": ["USD"]},
     }
 
+    _instance_lock = threading.Lock()
+
     def __new__(cls) -> "AssetRegistry":
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._assets = {}
-            cls._instance._load_defaults()
+            with cls._instance_lock:
+                if cls._instance is None:
+                    instance = super().__new__(cls)
+                    instance._assets = {}
+                    instance._load_defaults()
+                    # Publish only after full initialization so concurrent
+                    # callers never see a half-built registry.
+                    cls._instance = instance
         return cls._instance
 
     def _load_defaults(self):

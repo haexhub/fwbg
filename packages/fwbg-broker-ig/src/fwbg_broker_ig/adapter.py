@@ -47,6 +47,33 @@ from .streaming import IGCandleListener
 log = logging.getLogger(__name__)
 
 
+class _IGCredentials:
+    """Container for IG credentials with a safe repr that never leaks secrets."""
+
+    __slots__ = ("username", "_password", "_api_key")
+
+    def __init__(self, username: str, password: str, api_key: str):
+        self.username = username
+        self._password = password
+        self._api_key = api_key
+
+    @property
+    def password(self) -> str:
+        return self._password
+
+    @property
+    def api_key(self) -> str:
+        return self._api_key
+
+    def __repr__(self) -> str:
+        return f"_IGCredentials(username={self.username!r}, password=<redacted>, api_key=<redacted>)"
+
+    __str__ = __repr__
+
+    def __bool__(self) -> bool:
+        return bool(self.username and self._password and self._api_key)
+
+
 class IGBrokerAdapter(BrokerAdapter):
     """
     IG Markets Broker Adapter.
@@ -86,9 +113,9 @@ class IGBrokerAdapter(BrokerAdapter):
 
         super().__init__(**kwargs)
 
-        self.username = username
-        self.password = password
-        self.api_key = api_key
+        # Credentials are kept wrapped to prevent accidental leakage via repr/str
+        # (mirrors src/fwbg/adapters/broker/ig/adapter.py).
+        self._credentials = _IGCredentials(username, password, api_key)
         self.env = env.upper()
         self.currency = currency
         self.use_yfinance_fallback = use_yfinance_fallback
@@ -108,9 +135,9 @@ class IGBrokerAdapter(BrokerAdapter):
         """Verbindet mit der IG API."""
         try:
             self._ig = IGService(
-                self.username,
-                self.password,
-                self.api_key,
+                self._credentials.username,
+                self._credentials.password,
+                self._credentials.api_key,
                 self.env
             )
             self._ig.create_session()

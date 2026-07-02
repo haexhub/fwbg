@@ -249,12 +249,22 @@ def run_plugin_tests(fqn: str) -> dict:
         }
 
     # Run pytest on the test file
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short", "--no-header"],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short", "--no-header"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "fqn": fqn,
+            "has_tests": True,
+            "status": "timeout",
+            "returncode": -1,
+            "stdout": (exc.stdout or b"").decode() if isinstance(exc.stdout, bytes) else (exc.stdout or ""),
+            "stderr": f"Test run exceeded {exc.timeout:.0f}s timeout and was killed.",
+        }
 
     return {
         "fqn": fqn,
