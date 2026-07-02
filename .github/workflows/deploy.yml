@@ -35,7 +35,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e packages/fwbg-sdk
-          pip install -e packages/fwbg-premium
+          pip install --no-deps -e packages/fwbg-premium
           pip install -e ".[dev,api]"
 
       - name: Lint
