@@ -24,7 +24,10 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["data"])
 
 # In-memory task store — mirrors _download_tasks / _prepare_tasks pattern.
+# Guarded by _ensure_tasks_lock: written from daemon threads, read from
+# request handlers (see runs.py _active_jobs_lock for the same pattern).
 _ensure_tasks: dict[str, dict] = {}
+_ensure_tasks_lock = threading.Lock()
 
 
 class EnsureRequest(BaseModel):
@@ -107,13 +110,14 @@ def ensure_data(req: EnsureRequest):
 
     # 6. Kick off background download.
     task_id = uuid.uuid4().hex[:12]
-    _ensure_tasks[task_id] = {
-        "status": "running",
-        "symbol": symbol,
-        "timeframe": req.timeframe,
-        "result": None,
-        "error": None,
-    }
+    with _ensure_tasks_lock:
+        _ensure_tasks[task_id] = {
+            "status": "running",
+            "symbol": symbol,
+            "timeframe": req.timeframe,
+            "result": None,
+            "error": None,
+        }
 
     def _run():
         try:
@@ -124,13 +128,15 @@ def ensure_data(req: EnsureRequest):
                 start=start_dt,
                 end=end_dt,
             )
-            _ensure_tasks[task_id]["status"] = "ready"
-            _ensure_tasks[task_id]["result"] = results[0] if results else None
+            with _ensure_tasks_lock:
+                _ensure_tasks[task_id]["result"] = results[0] if results else None
+                _ensure_tasks[task_id]["status"] = "ready"
             log.info("ensure_data: %s %s done (task=%s)", symbol, req.timeframe, task_id)
         except Exception as exc:
             log.error("ensure_data: %s %s failed: %s", symbol, req.timeframe, exc)
-            _ensure_tasks[task_id]["status"] = "error"
-            _ensure_tasks[task_id]["error"] = str(exc)
+            with _ensure_tasks_lock:
+                _ensure_tasks[task_id]["error"] = str(exc)
+                _ensure_tasks[task_id]["status"] = "error"
 
     threading.Thread(target=_run, daemon=True, name=f"ensure-{task_id}").start()
 
@@ -150,10 +156,11 @@ def ensure_data(req: EnsureRequest):
 @router.get("/data/ensure/{task_id}")
 def ensure_status(task_id: str):
     """Poll the status of an in-progress ensure_data download."""
-    task = _ensure_tasks.get(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail=f"unknown task id: {task_id!r}")
-    return {"task_id": task_id, **task}
+    with _ensure_tasks_lock:
+        task = _ensure_tasks.get(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"unknown task id: {task_id!r}")
+        return {"task_id": task_id, **task}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

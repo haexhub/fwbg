@@ -24,8 +24,11 @@ log = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# In-memory store for async prepare tasks
+# In-memory store for async prepare tasks.
+# _tasks_lock guards _prepare_tasks and _download_tasks: both are written
+# from daemon threads and read from request handlers.
 _prepare_tasks: Dict[str, dict] = {}
+_tasks_lock = threading.Lock()
 
 # Max bytes accepted per uploaded file (100 MB)
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024
@@ -389,16 +392,19 @@ def start_prepare(name: str, req: PrepareRequest):
         raise HTTPException(status_code=400, detail="prepare is only supported for CSV sources")
 
     task_id = uuid.uuid4().hex[:12]
-    _prepare_tasks[task_id] = {"status": "running", "result": None, "error": None}
+    with _tasks_lock:
+        _prepare_tasks[task_id] = {"status": "running", "result": None, "error": None}
 
     def run():
         try:
             converted = source.prepare(glob_override=req.glob_pattern, excludes=req.excludes)
-            _prepare_tasks[task_id]["result"] = converted
-            _prepare_tasks[task_id]["status"] = "done"
+            with _tasks_lock:
+                _prepare_tasks[task_id]["result"] = converted
+                _prepare_tasks[task_id]["status"] = "done"
         except Exception as e:
-            _prepare_tasks[task_id]["error"] = str(e)
-            _prepare_tasks[task_id]["status"] = "error"
+            with _tasks_lock:
+                _prepare_tasks[task_id]["error"] = str(e)
+                _prepare_tasks[task_id]["status"] = "error"
 
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
@@ -409,9 +415,10 @@ def start_prepare(name: str, req: PrepareRequest):
 @router.get("/datasources/{name}/prepare/{task_id}")
 def prepare_status(name: str, task_id: str):
     """Poll status of a prepare task."""
-    if task_id not in _prepare_tasks:
-        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
-    return _prepare_tasks[task_id]
+    with _tasks_lock:
+        if task_id not in _prepare_tasks:
+            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+        return dict(_prepare_tasks[task_id])
 
 
 # ── Dukascopy ─────────────────────────────────────────────────────────────────
@@ -495,14 +502,16 @@ def start_dukascopy(name: str, req: DukascopyRequest):
     out_dir = source.path  # the source's datasource directory
 
     task_id = uuid.uuid4().hex[:12]
-    _download_tasks[task_id] = {"status": "running", "result": None, "error": None, "progress": None}
+    with _tasks_lock:
+        _download_tasks[task_id] = {"status": "running", "result": None, "error": None, "progress": None}
 
     def run():
         try:
             from fwbg.data.dukascopy import download
 
             def on_progress(p: dict):
-                _download_tasks[task_id]["progress"] = p
+                with _tasks_lock:
+                    _download_tasks[task_id]["progress"] = p
 
             result = download(
                 out_dir,
@@ -513,11 +522,13 @@ def start_dukascopy(name: str, req: DukascopyRequest):
                 manual_spread=req.spread,
                 progress_cb=on_progress,
             )
-            _download_tasks[task_id]["result"] = result
-            _download_tasks[task_id]["status"] = "done"
+            with _tasks_lock:
+                _download_tasks[task_id]["result"] = result
+                _download_tasks[task_id]["status"] = "done"
         except Exception as e:  # noqa: BLE001 — surfaced via task status
-            _download_tasks[task_id]["error"] = str(e)
-            _download_tasks[task_id]["status"] = "error"
+            with _tasks_lock:
+                _download_tasks[task_id]["error"] = str(e)
+                _download_tasks[task_id]["status"] = "error"
 
     threading.Thread(target=run, daemon=True).start()
     return {"task_id": task_id}
@@ -526,6 +537,7 @@ def start_dukascopy(name: str, req: DukascopyRequest):
 @router.get("/datasources/{name}/dukascopy/{task_id}")
 def dukascopy_status(name: str, task_id: str):
     """Poll status of a dukascopy download task."""
-    if task_id not in _download_tasks:
-        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
-    return _download_tasks[task_id]
+    with _tasks_lock:
+        if task_id not in _download_tasks:
+            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+        return dict(_download_tasks[task_id])
