@@ -1,0 +1,8 @@
+{
+  "_meta": {
+    "name": "exploration_heavy",
+    "description": "",
+    "version": 1
+  },
+  "max_concurrent_assets": 2
+}
