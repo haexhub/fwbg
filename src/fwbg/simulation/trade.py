@@ -426,6 +426,12 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             else:
                 pnl_raw = entry - exit_price
 
+        # A trade only counts as a win if it clears transaction costs.
+        # Breakeven-stop exits where the trailing SL barely moved above entry
+        # produce near-zero pnl_raw (floating-point noise) and must be losses.
+        if result > 0 and pnl_raw <= spread + slippage:
+            result = -1.0
+
         res = {
             "result": result,
             "direction": "LONG" if direction == 1 else "SHORT",
