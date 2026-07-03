@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.10.1](https://github.com/haexhub/fwbg/compare/v2.10.0...v2.10.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **api:** redirect run-CLI stdout/stderr to files — unread PIPEs deadlocked long backtests ([834f4a3](https://github.com/haexhub/fwbg/commit/834f4a37b4e3379184cd71a75d64207f04bd09be))
+* **api:** unread subprocess PIPEs deadlocked long backtest runs ([7f6b861](https://github.com/haexhub/fwbg/commit/7f6b86177660076f2e9ad2cb1c373ecf691d9bdf))
+* **compose:** persist the fwbg workspace across redeploys ([190fe45](https://github.com/haexhub/fwbg/commit/190fe452723bab40df4c63a777b6db3cec03bab7))
+* **compose:** persist the fwbg workspace across redeploys ([86e335e](https://github.com/haexhub/fwbg/commit/86e335edc9cf488c3f214e4eafec278ca1aeeb3d))
+
 ## [2.10.0](https://github.com/haexhub/fwbg/compare/v2.9.0...v2.10.0) (2026-07-03)
 
 
