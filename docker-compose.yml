@@ -47,6 +47,9 @@ services:
       - LOG_DIR=/app/logs
       - STATS_DIR=/app/data/stats_export
       - FWBG_DATA_DIR=/app/data
+      # Backtests are CPU-heavy: exactly one at a time, everything else
+      # gets 429 and has to wait (the agents runner does).
+      - FWBG_MAX_CONCURRENT_RUNS=1
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     logging:

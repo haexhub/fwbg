@@ -104,6 +104,14 @@ def start_run(body: RunStartRequest) -> dict:
             _validate_id(c, "asset_class")
 
     with _active_jobs_lock:
+        # Refresh stale statuses first: a job whose process already exited
+        # must not occupy a slot. Statuses are otherwise only updated when a
+        # status endpoint happens to be polled — with a concurrency limit of
+        # 1 a stale "running" would block every future run.
+        for j in _active_jobs.values():
+            proc = j.get("process")
+            if j.get("status") == "running" and proc and proc.poll() is not None:
+                j["status"] = "completed" if proc.returncode == 0 else "failed"
         running = sum(1 for j in _active_jobs.values() if j.get("status") == "running")
     if running >= MAX_CONCURRENT_RUNS:
         raise HTTPException(429, f"Too many active runs (limit {MAX_CONCURRENT_RUNS})")
