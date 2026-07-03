@@ -1,0 +1,14 @@
+{
+  "_meta": {
+    "name": "signal_orb",
+    "description": "Rule-based signal model for ORB strategies. Entry signals are defined via signal_rules in the strategy config.",
+    "version": 3
+  },
+  "type": "signal",
+  "architecture": "long_short_separate",
+  "trade_directions": [
+    "long",
+    "short"
+  ],
+  "hyperparameters": {}
+}
