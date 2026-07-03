@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from fwbg.api.workspace import init_workspace
+from fwbg.api.workspace import init_workspace, seed_workspace_presets
 from fwbg.api.exploration import exit_optimization_router
 from fwbg.api.plugins import router as plugins_router, entry_modifiers_router, exit_modifiers_router
 from fwbg.api.presets import migrate_presets, migrate_strategy_refs, router as presets_router
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     ws = init_workspace()
     log.info(f"FWBG workspace: {ws}")
+    seed_workspace_presets()
     migrate_presets()
     migrate_strategy_refs()
 
