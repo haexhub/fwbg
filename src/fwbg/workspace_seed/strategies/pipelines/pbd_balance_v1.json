@@ -1,0 +1,138 @@
+{
+  "_meta": {
+    "name": "pbd_balance",
+    "description": "",
+    "version": 1
+  },
+  "indicators": [
+    {
+      "name": "adx",
+      "params": {
+        "periods": [
+          14
+        ]
+      }
+    },
+    {
+      "name": "ema",
+      "params": {
+        "lines": [
+          {
+            "period": 50,
+            "source": "C"
+          },
+          {
+            "period": 200,
+            "source": "C"
+          }
+        ],
+        "crossings": true
+      }
+    },
+    {
+      "name": "sma",
+      "params": {
+        "lines": [
+          {
+            "period": 50,
+            "source": "C"
+          },
+          {
+            "period": 200,
+            "source": "C"
+          }
+        ],
+        "crossings": true
+      }
+    },
+    {
+      "name": "supertrend",
+      "params": {
+        "period": 14,
+        "multiplier": 3.0
+      }
+    },
+    {
+      "name": "balance_zones",
+      "params": {
+        "lookback": 10,
+        "balance_atr_threshold": 2.0,
+        "atr_period": 14,
+        "balance_bars_max": 20
+      }
+    },
+    {
+      "name": "market_structure",
+      "params": {
+        "swing_lookback": 20,
+        "choch_lookback": 50,
+        "atr_period": 14
+      }
+    },
+    {
+      "name": "fair_value_gap",
+      "params": {
+        "atr_period": 14,
+        "lookback": 100
+      }
+    },
+    {
+      "name": "displacement",
+      "params": {
+        "atr_period": 14,
+        "range_avg_period": 20
+      }
+    },
+    {
+      "name": "supply_demand_flip",
+      "params": {
+        "swing_lookback": 10,
+        "zone_atr_width": 0.3,
+        "atr_period": 14,
+        "max_active_zones": 20,
+        "zone_expiry": 200
+      }
+    },
+    {
+      "name": "previous_day_levels",
+      "params": {
+        "atr_period": 14,
+        "ma_period": 20
+      }
+    },
+    {
+      "name": "microstructure",
+      "params": {
+        "atr_period": 14,
+        "rolling_window": 5
+      }
+    },
+    {
+      "name": "volatility",
+      "params": {
+        "atr_periods": [
+          7,
+          14
+        ],
+        "vol_est_windows": [
+          20
+        ]
+      }
+    },
+    {
+      "name": "price_action",
+      "params": {
+        "hh_ll_period": 14,
+        "compute_volume": false
+      }
+    },
+    {
+      "name": "time_season",
+      "params": {
+        "include_raw": true,
+        "include_encoded": true
+      }
+    }
+  ],
+  "feature_selection": []
+}
