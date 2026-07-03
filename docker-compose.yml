@@ -9,6 +9,9 @@ services:
       - fwbg-data:/app/data
       - fwbg-logs:/app/logs
       - fwbg-stats:/app/data/stats_export
+      # Workspace (~/fwbg): strategy configs + test results. Without this
+      # mount every image update wipes published strategies and backtests.
+      - fwbg-workspace:/root/fwbg
     environment:
       - TZ=Europe/Berlin
       - LOG_DIR=/app/logs
@@ -36,6 +39,9 @@ services:
       - fwbg-data:/app/data
       - fwbg-logs:/app/logs
       - fwbg-stats:/app/data/stats_export
+      # Same workspace as ig-bot: published strategies must survive redeploys
+      # and be visible to both the API and the bot.
+      - fwbg-workspace:/root/fwbg
     environment:
       - TZ=Europe/Berlin
       - LOG_DIR=/app/logs
@@ -164,5 +170,6 @@ volumes:
   fwbg-data:
   fwbg-logs:
   fwbg-stats:
+  fwbg-workspace:
   agents-data:
   claude-proxy-creds:

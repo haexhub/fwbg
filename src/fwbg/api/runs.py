@@ -34,6 +34,45 @@ _active_jobs_lock = threading.Lock()
 MAX_CONCURRENT_RUNS = int(os.environ.get("FWBG_MAX_CONCURRENT_RUNS", "10"))
 
 
+def _spawn_cli_process(cmd: list[str], env: dict, run_dir) -> tuple:
+    """Start the CLI with stdout/stderr redirected to files in the run dir.
+
+    NEVER use subprocess.PIPE here without a reader: nobody drains the pipes
+    while the run is alive, so once the CLI has written ~64KB the OS pipe is
+    full and the CLI blocks on write. That freezes its progress display
+    thread, which holds the display lock, which stalls the progress-queue
+    reader, which fills the workers' progress pipe — the whole backtest
+    deadlocks. Long runs hit this reliably; short ones stay under the buffer,
+    which is why it went unnoticed.
+    """
+    from pathlib import Path
+
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    stdout_path = run_dir / "cli_stdout.log"
+    stderr_path = run_dir / "cli_stderr.log"
+    with open(stdout_path, "wb") as stdout_f, open(stderr_path, "wb") as stderr_f:
+        process = subprocess.Popen(cmd, stdout=stdout_f, stderr=stderr_f, env=env)
+    return process, stdout_path, stderr_path
+
+
+def _job_error_output(job: dict, limit: int = 500) -> str:
+    """Tail of the CLI's stderr (or stdout) for failure messages."""
+    from pathlib import Path
+
+    for key in ("stderr_path", "stdout_path"):
+        path = job.get(key)
+        if not path:
+            continue
+        try:
+            output = Path(path).read_text(errors="replace").strip()
+        except OSError:
+            continue
+        if output:
+            return output[-limit:]
+    return ""
+
+
 class RunStartRequest(BaseModel):
     """Request body for starting a run."""
     strategy_name: str
@@ -93,12 +132,8 @@ def start_run(body: RunStartRequest) -> dict:
         from fwbg.api.workspace import get_workspace
         env = os.environ.copy()
         env.setdefault("FWBG_WORKSPACE", str(get_workspace()))
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
+        process, stdout_path, stderr_path = _spawn_cli_process(
+            cmd, env, get_test_results_dir() / job_id
         )
 
         with _active_jobs_lock:
@@ -110,6 +145,8 @@ def start_run(body: RunStartRequest) -> dict:
                 "status": "running",
                 "started_at": datetime.now().isoformat(),
                 "cmd": cmd,
+                "stdout_path": str(stdout_path),
+                "stderr_path": str(stderr_path),
             }
     except Exception as e:
         log.exception("Failed to start run")
@@ -505,13 +542,8 @@ def list_runs(
             else:
                 job["status"] = "failed"
                 if "error_message" not in job:
-                    try:
-                        stdout = proc.stdout.read() if proc.stdout else ""
-                        stderr = proc.stderr.read() if proc.stderr else ""
-                        output = (stderr or stdout).strip()
-                        job["error_message"] = output[:500] if output else f"Process exited with code {proc.returncode}"
-                    except Exception:
-                        job["error_message"] = f"Process exited with code {proc.returncode}"
+                    output = _job_error_output(job)
+                    job["error_message"] = output or f"Process exited with code {proc.returncode}"
 
             if (results_dir / job_id).exists():
                 finished_ids.append(job_id)
@@ -845,13 +877,8 @@ def get_run_progress(run_id: str) -> dict:
             else:
                 job["status"] = "failed"
                 if "error_message" not in job:
-                    try:
-                        stdout = proc.stdout.read() if proc.stdout else ""
-                        stderr = proc.stderr.read() if proc.stderr else ""
-                        output = (stderr or stdout).strip()
-                        job["error_message"] = output[:500] if output else f"Process exited with code {proc.returncode}"
-                    except Exception:
-                        job["error_message"] = f"Process exited with code {proc.returncode}"
+                    output = _job_error_output(job)
+                    job["error_message"] = output or f"Process exited with code {proc.returncode}"
         result = {
             "job_id": run_id,
             "status": job["status"],
