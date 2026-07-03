@@ -37,6 +37,45 @@ class EnsureRequest(BaseModel):
     date_to: Optional[str] = None    # ISO date "YYYY-MM-DD"
 
 
+# historyStart granularity per timeframe family (see instrument_catalogue()).
+_TIMEFRAME_GRANULARITY = {"MINUTE": "minute", "HOUR": "hourly", "DAY": "daily"}
+_FALLBACK_HISTORY_START = "2020-01-01"
+
+
+def _default_history_start(symbol: str, timeframe: str) -> str:
+    """Earliest available date for (symbol, timeframe-granularity).
+
+    Backtests want as much history as possible, so an ensure request without
+    an explicit date_from downloads the instrument's FULL available history —
+    e.g. EURUSD daily back to 1973, minute data back to 2003. Falls back to
+    2020-01-01 when the catalogue has no entry for the symbol.
+    """
+    from fwbg.data.dukascopy import instrument_catalogue
+
+    granularity = _TIMEFRAME_GRANULARITY.get(timeframe.split("_")[0])
+    if granularity is None:
+        return _FALLBACK_HISTORY_START
+    try:
+        for inst in instrument_catalogue():
+            if inst["symbol"] == symbol:
+                start = (inst.get("historyStart") or {}).get(granularity)
+                if start:
+                    return start
+                break
+    except Exception:
+        log.warning("catalogue lookup failed for %s; using fallback start", symbol,
+                    exc_info=True)
+    return _FALLBACK_HISTORY_START
+
+
+@router.get("/data/timeframes")
+def list_timeframes() -> dict:
+    """Supported OHLCV timeframes for downloads and strategy configs."""
+    from fwbg.data.dukascopy import TIMEFRAMES
+
+    return {"timeframes": list(TIMEFRAMES.keys())}
+
+
 @router.post("/data/ensure")
 def ensure_data(req: EnsureRequest):
     """Ensure OHLCV data exists for (symbol, timeframe).
@@ -97,8 +136,9 @@ def ensure_data(req: EnsureRequest):
             ),
         )
 
-    # 5. Build date range (default: 2020-01-01 … today UTC).
-    date_from_str = req.date_from or "2020-01-01"
+    # 5. Build date range. Without an explicit date_from, download the
+    # instrument's FULL available history for this granularity.
+    date_from_str = req.date_from or _default_history_start(symbol, req.timeframe)
     date_to_str = req.date_to or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
         start_dt = datetime.fromisoformat(date_from_str).replace(tzinfo=timezone.utc)
