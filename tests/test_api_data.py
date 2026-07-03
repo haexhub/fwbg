@@ -123,3 +123,60 @@ def test_ensure_date_to_before_date_from_returns_422(client, monkeypatch, tmp_pa
     )
     assert resp.status_code == 422
     assert "date_to" in resp.json()["detail"].lower()
+
+
+# ── Full-history defaults + timeframe listing ───────────────────────────────
+
+
+def test_timeframes_endpoint_lists_supported(client):
+    resp = client.get("/api/data/timeframes")
+    assert resp.status_code == 200
+    tfs = resp.json()["timeframes"]
+    assert "MINUTE_1" in tfs and "HOUR_1" in tfs and "DAY_1" in tfs
+
+
+def test_default_history_start_uses_catalogue_per_granularity():
+    from fwbg.api.data import _default_history_start
+
+    daily = _default_history_start("EURUSD", "DAY_1")
+    hourly = _default_history_start("EURUSD", "HOUR_1")
+    minute = _default_history_start("EURUSD", "MINUTE_15")
+    # Daily FX history reaches decades further back than intraday candles.
+    assert daily < hourly <= minute
+    assert daily < "2000-01-01"  # EURUSD daily starts in the 1970s
+
+
+def test_default_history_start_falls_back_for_unknown_symbol():
+    from fwbg.api.data import _FALLBACK_HISTORY_START, _default_history_start
+
+    assert _default_history_start("NOSUCHSYM", "HOUR_1") == _FALLBACK_HISTORY_START
+
+
+def test_ensure_download_defaults_to_full_history(client, monkeypatch, tmp_path):
+    """No date_from in the request -> the background download is started with
+    the catalogue's history start, not the old 2020-01-01 default."""
+    import fwbg.data.dukascopy as dk_mod
+    from fwbg.api import data as data_mod
+    from fwbg.core.data_sources import CSVSourceConfig
+
+    captured = {}
+
+    def fake_download(path, symbols, timeframe, start, end, **kw):
+        captured["start"] = start
+        return [{"symbol": symbols[0], "file": "x.csv", "rows": 1}]
+
+    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t: None)
+    monkeypatch.setattr(
+        data_mod, "_first_csv_source",
+        lambda: CSVSourceConfig(name="dukas_src", path=tmp_path),
+    )
+    monkeypatch.setattr(dk_mod, "download", fake_download)
+
+    resp = client.post("/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "DAY_1"})
+    assert resp.status_code == 202
+    task_id = resp.json()["task_id"]
+    # The daemon thread runs fake_download almost immediately; poll until done.
+    for _ in range(50):
+        if client.get(f"/api/data/ensure/{task_id}").json()["status"] != "running":
+            break
+    assert captured["start"].year < 2000
