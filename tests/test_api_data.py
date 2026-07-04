@@ -27,7 +27,7 @@ def test_ensure_invalid_timeframe_returns_422(client):
 def test_ensure_non_dukascopy_symbol_returns_404(client, monkeypatch):
     from fwbg.api import data as data_mod
 
-    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t: None)
+    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: None)
     resp = client.post("/api/data/ensure", json={"symbol": "FAKEXYZ999", "timeframe": "HOUR_1"})
     assert resp.status_code == 404
     assert "Dukascopy" in resp.json()["detail"]
@@ -38,7 +38,7 @@ def test_ensure_returns_ready_when_file_exists(client, monkeypatch, tmp_path):
 
     fake_path = tmp_path / "EURUSD_HOUR_1.csv"
     fake_path.write_text("T,O,H,L,C,V\n")
-    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t: ("src1", fake_path))
+    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: ("src1", fake_path))
 
     resp = client.post("/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "HOUR_1"})
     assert resp.status_code == 200
@@ -56,7 +56,7 @@ def test_ensure_normalises_symbol(client, monkeypatch, tmp_path):
     fake_path.write_text("T,O,H,L,C,V\n")
     seen: dict = {}
 
-    def _fake_find(s, t):
+    def _fake_find(s, t, d=None):
         seen["symbol"] = s
         return ("src1", fake_path)
 
@@ -68,7 +68,7 @@ def test_ensure_normalises_symbol(client, monkeypatch, tmp_path):
 def test_ensure_no_csv_source_returns_503(client, monkeypatch):
     from fwbg.api import data as data_mod
 
-    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t: None)
+    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: None)
     monkeypatch.setattr(data_mod, "_first_csv_source", lambda: None)
     resp = client.post("/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "HOUR_1"})
     assert resp.status_code == 503
@@ -80,7 +80,7 @@ def test_ensure_starts_download_returns_202_and_task_is_pollable(client, monkeyp
     import fwbg.data.dukascopy as dk_mod
 
     fake_source = CSVSourceConfig(name="dukas_src", path=tmp_path)
-    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t: None)
+    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: None)
     monkeypatch.setattr(data_mod, "_first_csv_source", lambda: fake_source)
     monkeypatch.setattr(
         dk_mod,
@@ -112,7 +112,7 @@ def test_ensure_date_to_before_date_from_returns_422(client, monkeypatch, tmp_pa
     from fwbg.core.data_sources import CSVSourceConfig
     from fwbg.api import data as data_mod
 
-    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t: None)
+    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: None)
     monkeypatch.setattr(
         data_mod, "_first_csv_source",
         lambda: CSVSourceConfig(name="src", path=tmp_path),
@@ -165,7 +165,7 @@ def test_ensure_download_defaults_to_full_history(client, monkeypatch, tmp_path)
         captured["start"] = start
         return [{"symbol": symbols[0], "file": "x.csv", "rows": 1}]
 
-    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t: None)
+    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: None)
     monkeypatch.setattr(
         data_mod, "_first_csv_source",
         lambda: CSVSourceConfig(name="dukas_src", path=tmp_path),
