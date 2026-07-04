@@ -150,6 +150,10 @@ class TestStabilitySelector:
             inner_params={"n_iter": 3, "n_estimators": 20, "max_depth": 3, "min_z_score": 0.0},
             n_bootstrap=7,
             bootstrap_ratio=0.8,
+            # Same seed => identical bootstrap draws => vote counts are shared,
+            # so a higher threshold is guaranteed to select a subset. Without it
+            # the two calls resample independently and the invariant is flaky.
+            seed=42,
         )
 
         selected_low, _ = selector.select_features(df, y, threshold=0.3, **params)
