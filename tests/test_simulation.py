@@ -169,3 +169,41 @@ class TestM15Lookup:
             timestamps=timestamps, symbol="TEST"
         )
         assert trade_result["result"] == 1.0  # Sollte trotzdem funktionieren
+
+
+class TestBreakevenScratchClassification:
+    """Breakeven/trailing-stop scratch exits (pnl ≈ float noise) are losses,
+    but genuine TP hits stay wins — costs already live inside the entry
+    price, so the threshold must be a noise epsilon, NOT spread + slippage
+    (that double-counts costs and flipped every small-TP win to a loss)."""
+
+    def test_tp_win_smaller_than_costs_is_still_a_win(self):
+        closes = np.array([1.0] * 100)
+        highs = np.array([1.0] * 100)
+        lows = np.array([1.0] * 100)
+        lows[1] = 0.95
+        highs[1] = 0.99
+        # tp_distance (0.01) < spread + slippage (0.015): the naive
+        # cost-threshold reclassified this clean TP hit as a loss.
+        r = simulate_pro_trade(closes, highs, lows, 0, -1, 0.01, 0.01, 0.01)
+        assert r["result"] == 1.0
+        assert r["pnl_raw"] > 0
+
+    def test_float_noise_scratch_exit_is_a_loss(self):
+        closes = np.array([1.0] * 100)
+        highs = np.array([1.0] * 100)
+        lows = np.array([1.0] * 100)
+        # Long entry at bar 1 (entry = 1.0 + spread + slippage = 1.015).
+        # Price creeps to the breakeven trigger, then falls back: the
+        # trailing SL sits ~at entry, exit nets float noise.
+        highs[:] = 1.016   # baseline strictly between SL (1.005) and TP (1.025)
+        lows[:] = 1.010
+        highs[2] = 1.0225  # reaches the 50% breakeven trigger (1.020) → SL → entry
+        lows[3] = 0.95     # crash → stopped out at the breakeven SL, pnl ≈ 0
+        r = simulate_pro_trade(
+            closes, highs, lows, 0, 1, 0.01, 0.01, 0.01,
+            breakeven_trigger=0.5, trail_distance=0.0,
+        )
+        # Exit at (or a hair above) entry: not a win.
+        assert r["result"] == -1.0
+        assert abs(r["pnl_raw"]) < 1e-3
