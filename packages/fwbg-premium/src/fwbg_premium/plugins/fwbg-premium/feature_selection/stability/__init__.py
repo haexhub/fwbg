@@ -95,6 +95,7 @@ class StabilitySelector(BaseFeatureSelector):
             "n_bootstrap": 10,
             "threshold": 0.6,
             "bootstrap_ratio": 0.8,
+            "seed": None,
         }
 
     @classmethod
