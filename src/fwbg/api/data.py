@@ -93,8 +93,15 @@ def ensure_data(req: EnsureRequest):
 
     symbol = _normalize_symbol(req.symbol)
 
-    # 1. Already cached in any CSV source?
-    hit = _find_existing_file(symbol, req.timeframe)
+    # Determine the desired date range up front so the cache check can verify
+    # coverage. Without an explicit date_from, the full available history is
+    # requested — an existing file that only starts at 2012 must not satisfy
+    # a request for data going back to 2003.
+    date_from_str = req.date_from or _default_history_start(symbol, req.timeframe)
+    date_to_str = req.date_to or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # 1. Already cached AND covers from date_from?
+    hit = _find_existing_file(symbol, req.timeframe, date_from_str)
     if hit is not None:
         source_name, file_path = hit
         return {
@@ -135,11 +142,6 @@ def ensure_data(req: EnsureRequest):
                 "Create one via POST /api/datasources before requesting on-demand downloads."
             ),
         )
-
-    # 5. Build date range. Without an explicit date_from, download the
-    # instrument's FULL available history for this granularity.
-    date_from_str = req.date_from or _default_history_start(symbol, req.timeframe)
-    date_to_str = req.date_to or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
         start_dt = datetime.fromisoformat(date_from_str).replace(tzinfo=timezone.utc)
         end_dt = datetime.fromisoformat(date_to_str).replace(tzinfo=timezone.utc)
@@ -211,12 +213,58 @@ def _normalize_symbol(raw: str) -> str:
     return raw.replace("/", "").replace("_", "").replace("-", "").upper()
 
 
-def _find_existing_file(symbol: str, timeframe: str) -> tuple[str, Path] | None:
-    """Return (source_name, path) if any CSV source already has this file."""
+def _csv_first_date(path: Path) -> str | None:
+    """Read the first data row's date (YYYY-MM-DD) from a fwbg CSV (T,O,H,L,C,V)."""
+    try:
+        with path.open() as f:
+            f.readline()  # skip header
+            first_line = f.readline()
+        if first_line:
+            return first_line.split(",")[0][:10]
+    except Exception:
+        pass
+    return None
+
+
+_HISTORY_START_TOLERANCE_DAYS = 31  # Dukascopy catalogue dates are approximate
+
+
+def _file_covers_from(path: Path, date_from: str) -> bool:
+    """Return True if *path*'s first bar is within tolerance of *date_from*.
+
+    Dukascopy's historyStart is an approximation; the actual first downloadable
+    bar may be a few days later. 31 days of tolerance avoids a perpetual
+    re-download loop while still catching files that start years too late.
+    """
+    from datetime import date as _date
+
+    first = _csv_first_date(path)
+    if first is None:
+        return True  # can't read → assume ok, don't re-download
+    try:
+        gap = (_date.fromisoformat(first) - _date.fromisoformat(date_from)).days
+        return gap <= _HISTORY_START_TOLERANCE_DAYS
+    except ValueError:
+        return True
+
+
+def _find_existing_file(
+    symbol: str, timeframe: str, date_from: str | None = None
+) -> tuple[str, Path] | None:
+    """Return (source_name, path) if any CSV source has this file AND it covers
+    from *date_from* (within tolerance). If the existing file starts too late
+    (e.g. 2012 when full history goes back to 2003) it is skipped so the
+    caller triggers a fresh full-history download."""
     for name, source in _DATA_SOURCES.items():
         if isinstance(source, CSVSourceConfig):
             path = source.get_file_path(symbol, timeframe)
             if path.exists():
+                if date_from is not None and not _file_covers_from(path, date_from):
+                    log.info(
+                        "ensure_data: %s starts too late for requested %s — re-downloading",
+                        path.name, date_from,
+                    )
+                    continue
                 return name, path
     return None
 
