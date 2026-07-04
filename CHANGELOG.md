@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.4](https://github.com/haexhub/fwbg/compare/v2.10.3...v2.10.4) (2026-07-04)
+
+
+### Bug Fixes
+
+* **indicators:** validate range_scope values in previous_day_levels ([049d88e](https://github.com/haexhub/fwbg/commit/049d88e78f3408bd510c291e3367d10eb61a5cb1))
+* **indicators:** validate range_scope values in previous_day_levels ([fa052fc](https://github.com/haexhub/fwbg/commit/fa052fc31d595289bf928c00df074d7a7b9b828f))
+
 ## [2.10.3](https://github.com/haexhub/fwbg/compare/v2.10.2...v2.10.3) (2026-07-04)
 
 
