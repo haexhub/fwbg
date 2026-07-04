@@ -8,6 +8,8 @@ forever at a frozen progress fraction. Observed live on the first long
 full-history run (GBPUSD M15). stdout/stderr now go to files in the run dir.
 """
 import os
+
+import pytest
 import sys
 
 from fwbg.api.runs import _job_error_output, _spawn_cli_process
@@ -64,3 +66,63 @@ def test_job_error_output_falls_back_to_stdout_then_empty(tmp_path):
 
     assert _job_error_output({"stdout_path": str(tmp_path / "missing.log")}) == ""
     assert _job_error_output({}) == ""
+
+
+# ---------------------------------------------------------------------------
+# Concurrency gate: with FWBG_MAX_CONCURRENT_RUNS=1 exactly one backtest may
+# run; a job whose process already exited must not occupy the slot (statuses
+# are otherwise only refreshed when a status endpoint happens to be polled).
+# The gate sits before the strategy lookup, so a passed gate shows as 404
+# for a nonexistent strategy while a full slot shows as 429.
+# ---------------------------------------------------------------------------
+
+
+class _FakeProc:
+    def __init__(self, returncode):
+        self._rc = returncode
+        self.returncode = returncode
+
+    def poll(self):
+        return self._rc
+
+
+@pytest.fixture
+def _single_slot(monkeypatch):
+    import fwbg.api.runs as runs_mod
+
+    monkeypatch.setattr(runs_mod, "MAX_CONCURRENT_RUNS", 1)
+    monkeypatch.setattr(runs_mod, "_active_jobs", {})
+    return runs_mod
+
+
+def _post_start(client):
+    return client.post("/api/runs/start", json={"strategy_name": "no_such_strategy"})
+
+
+def test_active_run_occupies_the_single_slot(_single_slot):
+    from fastapi.testclient import TestClient
+
+    from fwbg.api import create_app
+
+    _single_slot._active_jobs["job_a"] = {
+        "job_id": "job_a", "status": "running", "process": _FakeProc(None),
+    }
+    with TestClient(create_app()) as client:
+        resp = _post_start(client)
+    assert resp.status_code == 429
+
+
+def test_stale_finished_job_does_not_block_the_slot(_single_slot):
+    from fastapi.testclient import TestClient
+
+    from fwbg.api import create_app
+
+    _single_slot._active_jobs["job_a"] = {
+        "job_id": "job_a", "status": "running", "process": _FakeProc(0),
+    }
+    with TestClient(create_app()) as client:
+        resp = _post_start(client)
+    # Gate passed (stale status refreshed to completed) → 404 for the
+    # nonexistent strategy, not 429.
+    assert resp.status_code == 404
+    assert _single_slot._active_jobs["job_a"]["status"] == "completed"
