@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.3](https://github.com/haexhub/fwbg/compare/v2.10.2...v2.10.3) (2026-07-04)
+
+
+### Bug Fixes
+
+* **data:** ensure full history coverage on first download ([96b1569](https://github.com/haexhub/fwbg/commit/96b156940bbfdfeb0b2a20d67e3d6db7119c5be3))
+* **data:** ensure full history coverage on first download ([375c7c7](https://github.com/haexhub/fwbg/commit/375c7c7912b75df7a375ccb3e5e2ad60e7a30e4e))
+
 ## [2.10.2](https://github.com/haexhub/fwbg/compare/v2.10.1...v2.10.2) (2026-07-04)
 
 
