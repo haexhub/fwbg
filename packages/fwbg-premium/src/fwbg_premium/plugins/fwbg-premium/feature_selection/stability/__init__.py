@@ -31,13 +31,18 @@ class StabilitySelector(BaseFeatureSelector):
         n_bootstrap: int = 10,
         threshold: float = 0.6,
         bootstrap_ratio: float = 0.8,
+        seed: int = None,
         **params,
     ) -> Tuple[List[str], dict]:
         """
         Run inner selector n_bootstrap times with bootstrap samples.
         Keep features selected in >= threshold fraction of runs.
+
+        Pass ``seed`` to make the bootstrap resampling reproducible — two
+        calls with the same seed draw identical samples, so the selection
+        is deterministic (required for stable walk-forward comparisons).
         """
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(seed)
         n_samples = len(X)
         n_per_sample = int(n_samples * bootstrap_ratio)
         feature_votes = {}
@@ -128,5 +133,10 @@ class StabilitySelector(BaseFeatureSelector):
                 "min": 0.1,
                 "max": 1.0,
                 "step": 0.05,
+            },
+            "seed": {
+                "type": "int",
+                "default": None,
+                "description": "Optional RNG seed for reproducible bootstrap resampling (None = nondeterministic)",
             },
         }
