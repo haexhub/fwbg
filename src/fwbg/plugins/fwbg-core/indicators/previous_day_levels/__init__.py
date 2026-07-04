@@ -406,6 +406,13 @@ def _compute_pdl_features(
 
     span_pfx = _CANDLE_SPAN_PREFIX[candle_span]
 
+    invalid_scopes = [s for s in range_scope if s not in _RANGE_SCOPE_PREFIX]
+    if invalid_scopes:
+        raise ValueError(
+            f"Invalid range_scope value(s): {invalid_scopes}. "
+            f"Valid options: {sorted(_RANGE_SCOPE_PREFIX)}"
+        )
+
     for scope in range_scope:
         scope_pfx = _RANGE_SCOPE_PREFIX[scope]
         for break_mode in break_modes:
@@ -524,6 +531,13 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         range_scope = d["range_scope"] if isinstance(d["range_scope"], (list, tuple)) else [d["range_scope"]]
         break_modes = d["break_modes"] if isinstance(d["break_modes"], (list, tuple)) else [d["break_modes"]]
         retest_modes = d["retest_modes"] if isinstance(d["retest_modes"], (list, tuple)) else [d["retest_modes"]]
+
+        invalid_scopes = [s for s in range_scope if s not in _RANGE_SCOPE_PREFIX]
+        if invalid_scopes:
+            raise ValueError(
+                f"Invalid range_scope value(s): {invalid_scopes}. "
+                f"Valid options: {sorted(_RANGE_SCOPE_PREFIX)}"
+            )
 
         features = []
         signals = []
