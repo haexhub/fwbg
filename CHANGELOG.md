@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.10.2](https://github.com/haexhub/fwbg/compare/v2.10.1...v2.10.2) (2026-07-04)
+
+
+### Bug Fixes
+
+* **api:** enforce a single backtest slot (stale-status-safe) ([5a95da4](https://github.com/haexhub/fwbg/commit/5a95da44410e9eed02cc187d959c200a1bc50edc))
+* **api:** single backtest slot — refresh stale job statuses in the gate ([fa1d1f1](https://github.com/haexhub/fwbg/commit/fa1d1f1ccae08704854f81d0f6bfdaa532b94858))
+* **feature-selection:** add seed to stability get_default_params ([cbb5dec](https://github.com/haexhub/fwbg/commit/cbb5dec6f438a6f5d841a51c8c410d18ae9d8be8))
+* **feature-selection:** add seed to stability get_default_params (fixes broken develop) ([c9f72e2](https://github.com/haexhub/fwbg/commit/c9f72e2f8b15e117765e3acd7ef4031cfe6e1fd5))
+* **feature-selection:** seed stability-selection bootstrap for reproducibility ([8b21c90](https://github.com/haexhub/fwbg/commit/8b21c9074e75a42ece3c9e3fdb34c61fa8ccf58f))
+* **feature-selection:** seed stability-selection bootstrap for reproducibility ([5463ec0](https://github.com/haexhub/fwbg/commit/5463ec07370e6c0f471e8840ba0c30db121aab35))
+* **simulation:** breakeven-scratch threshold must not double-count costs ([f1e0afd](https://github.com/haexhub/fwbg/commit/f1e0afdf11fa0b121f39dd7fc8561ad592724946))
+* **simulation:** reclassify breakeven-stop exits as losses ([89bec74](https://github.com/haexhub/fwbg/commit/89bec746af23befefd376651da0f4559e9bb512a))
+* **simulation:** reclassify breakeven-stop exits as losses ([a4a1f33](https://github.com/haexhub/fwbg/commit/a4a1f338fe49155101df356447931466f5850c2d))
+* **simulation:** use noise_eps threshold instead of spread+slippage ([1f9ae91](https://github.com/haexhub/fwbg/commit/1f9ae915608883de3cffe29ad87011ea173d8103))
+* **simulation:** use noise_eps threshold instead of spread+slippage ([c046296](https://github.com/haexhub/fwbg/commit/c04629639df8035d394716a0f9b94b5384ab8f18))
+
 ## [2.10.1](https://github.com/haexhub/fwbg/compare/v2.10.0...v2.10.1) (2026-07-03)
 
 
