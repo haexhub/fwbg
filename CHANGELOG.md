@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.5](https://github.com/haexhub/fwbg/compare/v2.10.4...v2.10.5) (2026-07-05)
+
+
+### Bug Fixes
+
+* **indicators:** use integer choices for opening_range sessions param ([aff7adf](https://github.com/haexhub/fwbg/commit/aff7adf1aef62221ae1054786a0cb8d15ed4cbf5))
+* **indicators:** use integer choices for opening_range sessions param ([5c9308a](https://github.com/haexhub/fwbg/commit/5c9308a38b02ffe77cce0e43c7da3e2aefb230fd))
+
 ## [2.10.4](https://github.com/haexhub/fwbg/compare/v2.10.3...v2.10.4) (2026-07-04)
 
 
