@@ -85,6 +85,7 @@ class TestStabilitySelector:
             n_bootstrap=7,
             threshold=0.6,
             bootstrap_ratio=0.8,
+            seed=42,
         )
 
         # Noise features should NOT survive stability selection

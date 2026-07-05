@@ -24,9 +24,12 @@ from .selector import (
 )
 
 
-def _create_shadow_features(X: pd.DataFrame) -> pd.DataFrame:
+def _create_shadow_features(X: pd.DataFrame, rng: np.random.Generator = None) -> pd.DataFrame:
     """Erstellt Shadow-Features durch Permutation jeder Spalte."""
-    X_shadow = X.apply(lambda col: np.random.permutation(col.values))
+    if rng is not None:
+        X_shadow = X.apply(lambda col: rng.permutation(col.values))
+    else:
+        X_shadow = X.apply(lambda col: np.random.permutation(col.values))
     X_shadow.columns = [f"shadow_{c}" for c in X.columns]
     return pd.concat([X, X_shadow], axis=1)
 
@@ -38,16 +41,18 @@ def _boruta_iteration(
     n_estimators: int = 100,
     max_depth: int = 5,
     n_jobs: int = 1,
+    rng: np.random.Generator = None,
 ) -> Tuple[np.ndarray, float]:
     """Führt eine Boruta-Iteration durch."""
     if len(np.unique(y)) < 2:
         return np.zeros(len(original_features)), 0.0
 
+    random_state = int(rng.integers(10000)) if rng is not None else np.random.randint(10000)
     model = XGBClassifier(
         n_estimators=n_estimators,
         max_depth=max_depth,
         n_jobs=n_jobs,
-        random_state=np.random.randint(10000),
+        random_state=random_state,
         verbosity=0,
     )
     model.fit(X, y)
@@ -79,6 +84,7 @@ class BorutaSelector(BaseFeatureSelector):
         max_depth: int = 4,
         min_z_score: float = 0.5,
         n_jobs: int = 1,
+        seed: int = None,
         **params
     ) -> Tuple[List[str], dict]:
         """
@@ -110,14 +116,16 @@ class BorutaSelector(BaseFeatureSelector):
         original_features = list(X.columns)
         n_features = len(original_features)
 
+        rng = np.random.default_rng(seed)
+
         # Z-Scores akkumulieren
         z_scores_sum = np.zeros(n_features)
 
         for _ in range(n_iter):
-            X_with_shadow = _create_shadow_features(X)
+            X_with_shadow = _create_shadow_features(X, rng=rng)
             importances, shadow_max = _boruta_iteration(
                 X_with_shadow, y, original_features,
-                n_estimators, max_depth, n_jobs
+                n_estimators, max_depth, n_jobs, rng=rng
             )
 
             shadow_std = max(shadow_max * 0.1, 1e-10)
