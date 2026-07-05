@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.6](https://github.com/haexhub/fwbg/compare/v2.10.5...v2.10.6) (2026-07-05)
+
+
+### Bug Fixes
+
+* **tests:** make StabilitySelector noise test deterministic ([30d47c8](https://github.com/haexhub/fwbg/commit/30d47c86571ea911218c7563d0a00bfff8212e2c))
+* **tests:** make StabilitySelector noise test deterministic ([624f743](https://github.com/haexhub/fwbg/commit/624f743296315aaf5de80c6f3516fc0bead3a8a4))
+
 ## [2.10.5](https://github.com/haexhub/fwbg/compare/v2.10.4...v2.10.5) (2026-07-05)
 
 
