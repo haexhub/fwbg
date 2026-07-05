@@ -629,7 +629,7 @@ class OpeningRangeIndicator(BaseIndicator):
                 "description": "Data-local hours for session-specific ORB features. Each session produces features that persist until the next occurrence of that session hour.",
                 "min": 0,
                 "max": 23,
-                "choices": ["0", "1", "2", "5", "6", "7", "8", "9", "12", "13", "14", "15"],
+                "choices": [0, 1, 2, 5, 6, 7, 8, 9, 12, 13, 14, 15],
                 "choice_labels": {
                     "0": "00 – ASX / Nikkei Open",
                     "1": "01 – Nikkei / HK50 Morning",
