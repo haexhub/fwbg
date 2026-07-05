@@ -57,9 +57,13 @@ class StabilitySelector(BaseFeatureSelector):
             if len(np.unique(y_boot)) < 2:
                 continue
 
+            iter_params = dict(inner_params or {})
+            if seed is not None:
+                iter_params.setdefault("seed", int(rng.integers(2**31)))
+
             selector = selector_cls()
             selected, _ = selector.select_features(
-                X_boot, y_boot, **(inner_params or {})
+                X_boot, y_boot, **iter_params
             )
 
             for feat in (selected or []):
