@@ -99,6 +99,13 @@ def run_optimizer(
     # Timeframe aus Strategy übernehmen (überschreibt Modul-Globals)
     if strategy.timeframe:
         tf = strategy.timeframe
+        # CRITICAL: also set the env var, not just the module globals. Optimizer
+        # workers run in a ProcessPoolExecutor; on Python 3.14 the default start
+        # method is "forkserver" (not "fork"), so workers re-import data_config
+        # fresh and would otherwise fall back to the HOUR defaults — inflating
+        # test_period_years ~4x and halving the annualized Sharpe on M15. The
+        # re-import reads TIMEFRAME from the environment, so propagate it there.
+        os.environ["TIMEFRAME"] = tf
         data_config.TIMEFRAME = tf
         tf_cfg = data_config.TIMEFRAME_CONFIG.get(tf, data_config.TIMEFRAME_CONFIG["HOUR"])
         data_config.tf_cfg = tf_cfg
@@ -340,7 +347,6 @@ def run_optimizer(
         # --- unified_metrics.json: Metriken für alle abgeschlossenen Runs ---
         # Quelle: tr_trace (Unified Simulation) oder Fold-Trades als Fallback
         _trades = result.get("tr_trace")
-        _td = result.get("trades_detailed", [])
         if not _trades:
             # Fallback: PnL-Werte aus Fold test_trades_trace extrahieren
             wf = result.get("walk_forward", {})
@@ -366,11 +372,17 @@ def run_optimizer(
             _gross_profit = sum(_wins)
             _gross_loss = sum(_losses)
             _profit_factor = round(_gross_profit / _gross_loss, 2) if _gross_loss > 0 else 0
-            _avg_win = round(sum(_wins) / len(_wins), 2) if _wins else 0
-            _avg_loss = round(sum(_losses) / len(_losses), 2) if _losses else 0
+            # FX pnl_raw is in price units (~1e-3); rounding to 2 dp collapsed
+            # every avg to 0.0. Use 6 dp so the values survive.
+            _avg_win = round(sum(_wins) / len(_wins), 6) if _wins else 0
+            _avg_loss = round(sum(_losses) / len(_losses), 6) if _losses else 0
 
-            _n_long = sum(1 for t in _td if t.get("direction") == "LONG")
-            _n_short = sum(1 for t in _td if t.get("direction") == "SHORT")
+            # Direction counts: result["trades_detailed"] is never populated at
+            # the top level, so the old read was always 0. The real per-direction
+            # totals live in trade_analytics (built from the fold trades).
+            _ta = result.get("trade_analytics") or {}
+            _n_long = (_ta.get("long_stats") or {}).get("total", 0)
+            _n_short = (_ta.get("short_stats") or {}).get("total", 0)
 
             unified_metrics = {
                 "pnl": round(sum(_trades), 4),
