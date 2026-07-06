@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.7](https://github.com/haexhub/fwbg/compare/v2.10.6...v2.10.7) (2026-07-06)
+
+
+### Bug Fixes
+
+* **backtest:** correct metrics under Python 3.14 forkserver workers ([6ff8eae](https://github.com/haexhub/fwbg/commit/6ff8eae38d867cb42d5cd6f90b7e8dfd92db2bea))
+* **backtest:** correct metrics under Python 3.14 forkserver workers ([9bffb81](https://github.com/haexhub/fwbg/commit/9bffb818553651b6ccf1669183aca8840bbe9a35))
+
 ## [2.10.6](https://github.com/haexhub/fwbg/compare/v2.10.5...v2.10.6) (2026-07-05)
 
 
