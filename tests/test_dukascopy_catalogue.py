@@ -38,6 +38,34 @@ def test_groups_cover_known_asset_classes():
     assert {"Forex", "Krypto", "Rohstoffe", "Indizes"} <= groups
 
 
+def test_requests_get_gets_default_timeout():
+    """dukascopy_python omits timeouts on its requests.get, so a stalled
+    connection hangs forever. The module installs a proxy that injects a default
+    timeout (turning a stall into a retryable error) while delegating everything
+    else and never overriding an explicit timeout."""
+    import dukascopy_python as dk
+
+    from fwbg.data.dukascopy import _HTTP_TIMEOUT, _TimeoutRequests
+
+    # The proxy is installed at import time onto the library's requests handle.
+    assert isinstance(dk.requests, _TimeoutRequests)
+
+    calls: list[dict] = []
+
+    class _FakeReal:
+        SENTINEL = object()
+
+        def get(self, *args, **kwargs):
+            calls.append(kwargs)
+
+    proxy = _TimeoutRequests(_FakeReal(), _HTTP_TIMEOUT)
+    proxy.get("http://x")
+    assert calls[-1]["timeout"] == _HTTP_TIMEOUT  # injected when absent
+    proxy.get("http://x", timeout=5)
+    assert calls[-1]["timeout"] == 5  # explicit timeout preserved
+    assert proxy.SENTINEL is _FakeReal.SENTINEL  # other attributes delegate
+
+
 def test_measured_spread_overrides_configured_spread(tmp_path):
     # A spread measured during download must take precedence over the hand-tuned
     # DEFAULT_ASSETS value (and the 0.0002 fallback for unknown symbols).

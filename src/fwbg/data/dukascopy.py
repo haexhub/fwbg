@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -21,6 +22,38 @@ import dukascopy_python as dk
 import dukascopy_python.instruments as dk_instruments
 
 log = logging.getLogger(__name__)
+
+
+# dukascopy_python issues bare ``requests.get`` calls with no timeout, so a
+# stalled Dukascopy connection blocks the reading thread forever instead of
+# raising. Its own ``_stream`` loop already retries on exceptions — it just
+# never sees one on a silently hung socket. Inject a default timeout into the
+# library's requests so a stall raises, is retried, and ultimately surfaces as
+# a DukascopyError instead of hanging the whole download (and any run waiting on
+# the data). (connect, read) seconds; overridable via env for slow links.
+_HTTP_TIMEOUT = (
+    float(os.getenv("FWBG_DUKASCOPY_CONNECT_TIMEOUT", "10")),
+    float(os.getenv("FWBG_DUKASCOPY_READ_TIMEOUT", "60")),
+)
+
+
+class _TimeoutRequests:
+    """Proxy for the ``requests`` module that supplies a default ``timeout`` to
+    the library's bare ``requests.get`` calls; everything else delegates through."""
+
+    def __init__(self, real, timeout):
+        self._real = real
+        self._timeout = timeout
+
+    def get(self, *args, **kwargs):
+        kwargs.setdefault("timeout", self._timeout)
+        return self._real.get(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+dk.requests = _TimeoutRequests(dk.requests, _HTTP_TIMEOUT)
 
 
 class DukascopyError(RuntimeError):

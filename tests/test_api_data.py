@@ -125,6 +125,52 @@ def test_ensure_date_to_before_date_from_returns_422(client, monkeypatch, tmp_pa
     assert "date_to" in resp.json()["detail"].lower()
 
 
+# ── Cache-coverage: implicit full-history accepts any existing file ─────────
+
+
+def test_ensure_implicit_request_accepts_partial_cache(client, monkeypatch, tmp_path):
+    """A request without date_from must NOT force a full-history re-download when
+    a file already exists — _find_existing_file is called with date_from=None so
+    the coverage check is skipped (else a 2012 cache triggers a 2003→now refetch
+    that stalls the whole run)."""
+    from fwbg.api import data as data_mod
+
+    fake_path = tmp_path / "GBPUSD_MINUTE_15.csv"
+    fake_path.write_text("T,O,H,L,C,V\n")
+    seen: dict = {}
+
+    def _fake_find(s, t, d=None):
+        seen["date_from"] = d
+        return ("src1", fake_path)
+
+    monkeypatch.setattr(data_mod, "_find_existing_file", _fake_find)
+    resp = client.post("/api/data/ensure", json={"symbol": "GBPUSD", "timeframe": "MINUTE_15"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ready"
+    assert seen["date_from"] is None  # coverage check skipped for implicit request
+
+
+def test_ensure_explicit_date_from_enforces_coverage(client, monkeypatch, tmp_path):
+    """An explicit date_from still requires the cached file to cover it —
+    _find_existing_file receives that date so a too-late file is rejected."""
+    from fwbg.api import data as data_mod
+
+    fake_path = tmp_path / "GBPUSD_MINUTE_15.csv"
+    fake_path.write_text("T,O,H,L,C,V\n")
+    seen: dict = {}
+
+    def _fake_find(s, t, d=None):
+        seen["date_from"] = d
+        return ("src1", fake_path)
+
+    monkeypatch.setattr(data_mod, "_find_existing_file", _fake_find)
+    client.post(
+        "/api/data/ensure",
+        json={"symbol": "GBPUSD", "timeframe": "MINUTE_15", "date_from": "2015-01-01"},
+    )
+    assert seen["date_from"] == "2015-01-01"
+
+
 # ── Full-history defaults + timeframe listing ───────────────────────────────
 
 
