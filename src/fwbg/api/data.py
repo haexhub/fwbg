@@ -93,15 +93,23 @@ def ensure_data(req: EnsureRequest):
 
     symbol = _normalize_symbol(req.symbol)
 
-    # Determine the desired date range up front so the cache check can verify
-    # coverage. Without an explicit date_from, the full available history is
-    # requested — an existing file that only starts at 2012 must not satisfy
-    # a request for data going back to 2003.
+    # Determine the desired date range up front. Without an explicit date_from
+    # the full available history is requested (date_from defaults to the
+    # instrument's catalogue start).
+    explicit_from = req.date_from is not None
     date_from_str = req.date_from or _default_history_start(symbol, req.timeframe)
     date_to_str = req.date_to or datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # 1. Already cached AND covers from date_from?
-    hit = _find_existing_file(symbol, req.timeframe, date_from_str)
+    # 1. Already cached?  For an explicit date_from the cached file must cover
+    #    that start. For an implicit full-history request any existing file is
+    #    accepted: re-downloading decades of intraday history just because the
+    #    catalogue claims an earlier start (e.g. a 2012 file vs a 2003 catalogue
+    #    start) re-fetches years of data on every run for marginal early
+    #    coverage — and a single stalled Dukascopy connection then hangs the
+    #    whole run. The cached range is enough to backtest on.
+    hit = _find_existing_file(
+        symbol, req.timeframe, date_from_str if explicit_from else None
+    )
     if hit is not None:
         source_name, file_path = hit
         return {
