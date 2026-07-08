@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.8](https://github.com/haexhub/fwbg/compare/v2.10.7...v2.10.8) (2026-07-08)
+
+
+### Bug Fixes
+
+* **data:** stop full-history re-download stall blocking agent runs ([443c3d5](https://github.com/haexhub/fwbg/commit/443c3d50dce84ae8b6915767fd38d781ffdc3168))
+* **data:** stop full-history re-download stall blocking agent runs ([bf36da1](https://github.com/haexhub/fwbg/commit/bf36da1f855b42173526f1a9dfc0495f203f458a))
+
 ## [2.10.7](https://github.com/haexhub/fwbg/compare/v2.10.6...v2.10.7) (2026-07-06)
 
 
