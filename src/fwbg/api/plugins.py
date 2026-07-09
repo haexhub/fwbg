@@ -190,15 +190,8 @@ def get_plugin_doc_file(fqn: str, doc_path: str) -> Response:
     return Response(content=content, media_type=media_type)
 
 
-@router.get("/{fqn:path}/source")
-def get_plugin_source(fqn: str) -> dict:
-    """Return the plugin's Python source.
-
-    The backend is the single source of truth for plugins, so fwbg-agents fetches
-    example source over HTTP (for the PluginPlanner) rather than reading the repo
-    off disk. Resolved via ``inspect`` so it works for core, premium and
-    entry-point-installed plugins alike.
-    """
+def _resolve_plugin_src_file(fqn: str) -> Path:
+    """Resolve the source file path for a plugin, or raise 404."""
     import inspect
 
     registry = get_plugin_registry()
@@ -212,10 +205,39 @@ def get_plugin_source(fqn: str) -> dict:
     except TypeError:
         src_file = None
     if not src_file or not Path(src_file).is_file():
-        raise HTTPException(404, f"No source available for plugin: {fqn}")
+        raise HTTPException(404, f"No source location for plugin: {fqn}")
 
-    source = Path(src_file).read_text(encoding="utf-8")
-    return {"fqn": fqn, "filename": Path(src_file).name, "source": source}
+    return Path(src_file)
+
+
+@router.get("/{fqn:path}/source")
+def get_plugin_source(fqn: str) -> dict:
+    """Return the plugin's Python source.
+
+    The backend is the single source of truth for plugins, so fwbg-agents fetches
+    example source over HTTP (for the PluginPlanner) rather than reading the repo
+    off disk. Resolved via ``inspect`` so it works for core, premium and
+    entry-point-installed plugins alike.
+    """
+    src_file = _resolve_plugin_src_file(fqn)
+    source = src_file.read_text(encoding="utf-8")
+    return {"fqn": fqn, "filename": src_file.name, "source": source}
+
+
+@router.get("/{fqn:path}/spec")
+def get_plugin_spec(fqn: str) -> dict:
+    """Return the plugin's speckit spec.md (co-located with its source).
+
+    The backend is the single source of truth for plugins, so fwbg-agents reads
+    each plugin's structured spec over HTTP (for duplicate detection) rather
+    than off disk. 404 when the plugin has no spec yet.
+    """
+    src_file = _resolve_plugin_src_file(fqn)
+    spec_path = src_file.parent / "spec.md"
+    if not spec_path.is_file():
+        raise HTTPException(404, f"No spec available for plugin: {fqn}")
+
+    return {"fqn": fqn, "spec": spec_path.read_text(encoding="utf-8")}
 
 
 # --- Tests endpoint ---

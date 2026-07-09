@@ -132,6 +132,19 @@ class TestPluginEndpoints:
         resp = client.get("/api/plugins/fwbg-core:does_not_exist/source")
         assert resp.status_code == 404
 
+    def test_get_plugin_spec(self, client):
+        """The co-located speckit spec.md is served for the dedup gate."""
+        resp = client.get("/api/plugins/fwbg-core:ema/spec")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["fqn"] == "fwbg-core:ema"
+        assert "Plugin Spec" in data["spec"]
+
+    def test_get_spec_nonexistent_plugin(self, client):
+        """Spec for an unknown plugin returns 404."""
+        resp = client.get("/api/plugins/fwbg-core:does_not_exist/spec")
+        assert resp.status_code == 404
+
     def test_all_phases_represented(self, client):
         """All pipeline phases have at least one plugin."""
         resp = client.get("/api/plugins")
