@@ -54,7 +54,7 @@ Builds a rolling balance zone from candle body extremes (max/min of Open/Close o
 
 ## Edge Cases
 
-- First bar (i=0): all features remain at their initialised values (zeros, or NaN for width/distances) because the compute loop starts at i=1.
+- First bar (i=0) in the final output: all ten feature columns are NaN because shift_features (AC-010) shifts every pre-shift value forward by one bar, making row 0 entirely NaN regardless of the initialised array values (zeros / NaN) set before the loop.
 - Second bar (i=1): fake_bear / fake_bull are always 0 because the i >= 2 guard prevents access to a two-bar-old zone.
 - Flat ATR (atr_i <= EPSILON, e.g. a constant-price window): the code substitutes 1.0 for atr_i so zone_width and distance features are computed in raw price units without dividing by zero.
 - Close exactly on a zone edge (close == prev_zt or close == prev_zb): treated as in-zone (bz_in_zone = 1) and neither breakout flag fires; the corresponding distance feature is 0.

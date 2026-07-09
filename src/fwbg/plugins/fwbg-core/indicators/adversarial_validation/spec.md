@@ -42,7 +42,7 @@ Adversarial-validation regime-change indicator: for each configured window, fits
 - AC-009: adv_drift_score_{w} equals clip(2*(auc-0.5), 0, 1); adv_stability_{w} equals 1 - adv_drift_score_{w}; adv_drift_acceleration_{w} equals the first difference of adv_drift_score_{w}.
 - AC-010: AUC and importance values are forward-filled between step points; rows before the first computed step (warmup) are set to NaN across all five columns for that window.
 - AC-011: All produced feature columns are passed through shift_features(features, df.index) so values at row t reflect information available strictly before t (no lookahead).
-- AC-012: get_feature_columns() returns the columns actually produced by the most recent compute() call, or the default-parameter column list when compute() has not been invoked.
+- AC-012: get_feature_columns() returns the columns produced by the last compute() call that successfully added features. If compute() exits early (fewer than 3 usable feature columns found, AC-002), _feature_columns is not reset, so the cached value from the prior successful run is preserved and returned. When compute() has never successfully added features, the default-parameter column list is returned instead.
 
 ## Edge Cases
 
