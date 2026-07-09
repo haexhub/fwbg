@@ -218,6 +218,36 @@ def get_plugin_source(fqn: str) -> dict:
     return {"fqn": fqn, "filename": Path(src_file).name, "source": source}
 
 
+@router.get("/{fqn:path}/spec")
+def get_plugin_spec(fqn: str) -> dict:
+    """Return the plugin's speckit spec.md (co-located with its source).
+
+    The backend is the single source of truth for plugins, so fwbg-agents reads
+    each plugin's structured spec over HTTP (for duplicate detection) rather
+    than off disk. 404 when the plugin has no spec yet.
+    """
+    import inspect
+
+    registry = get_plugin_registry()
+    try:
+        plugin_cls = registry.get(fqn)
+    except Exception:
+        raise HTTPException(404, f"Plugin not found: {fqn}")
+
+    try:
+        src_file = inspect.getsourcefile(plugin_cls) or inspect.getfile(plugin_cls)
+    except TypeError:
+        src_file = None
+    if not src_file:
+        raise HTTPException(404, f"No source location for plugin: {fqn}")
+
+    spec_path = Path(src_file).parent / "spec.md"
+    if not spec_path.is_file():
+        raise HTTPException(404, f"No spec available for plugin: {fqn}")
+
+    return {"fqn": fqn, "spec": spec_path.read_text(encoding="utf-8")}
+
+
 # --- Tests endpoint ---
 
 
