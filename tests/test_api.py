@@ -117,6 +117,21 @@ class TestPluginEndpoints:
         resp = client.get("/api/plugins/fwbg-core:does_not_exist")
         assert resp.status_code == 404
 
+    def test_get_plugin_source(self, client):
+        """Plugin source is served for the PluginPlanner examples."""
+        resp = client.get("/api/plugins/fwbg-core:ema/source")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["fqn"] == "fwbg-core:ema"
+        assert data["filename"] == "__init__.py"
+        assert "class" in data["source"]
+        assert "EMA" in data["source"]
+
+    def test_get_source_nonexistent_plugin(self, client):
+        """Source for an unknown plugin returns 404."""
+        resp = client.get("/api/plugins/fwbg-core:does_not_exist/source")
+        assert resp.status_code == 404
+
     def test_all_phases_represented(self, client):
         """All pipeline phases have at least one plugin."""
         resp = client.get("/api/plugins")
