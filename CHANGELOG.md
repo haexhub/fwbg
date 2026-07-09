@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.11.0](https://github.com/haexhub/fwbg/compare/v2.10.8...v2.11.0) (2026-07-09)
+
+
+### Features
+
+* **api:** POST /api/plugins — register agent-authored plugins at runtime ([bdf1ec2](https://github.com/haexhub/fwbg/commit/bdf1ec2d30638afc76314e9336e0c0a11c981ea8))
+* **api:** POST /api/plugins — register agent-authored plugins at runtime ([e6aaf2b](https://github.com/haexhub/fwbg/commit/e6aaf2b5fdcf8872b7533b72bf3bcbf850622239))
+* **api:** serve plugin source via /api/plugins/{fqn}/source ([5255f32](https://github.com/haexhub/fwbg/commit/5255f32d0bdcfbcbbef212487e915985e4abe85d))
+* **api:** serve plugin source via GET /api/plugins/{fqn}/source ([38f8fba](https://github.com/haexhub/fwbg/commit/38f8fba80e2825557147682816aceb87e455ffd8))
+* **plugins:** speckit spec.md for all plugins + GET /api/plugins/{fqn}/spec ([6c9e294](https://github.com/haexhub/fwbg/commit/6c9e294a0050792b3f1ad1cd77de1091d6b0e086))
+* **plugins:** speckit specs for all plugins + spec endpoint ([1cb577b](https://github.com/haexhub/fwbg/commit/1cb577b6a0525c8514f348ca23f0a7618ac10601))
+
+
+### Bug Fixes
+
+* **review:** address all valid PR [#92](https://github.com/haexhub/fwbg/issues/92) code review findings ([e55bee0](https://github.com/haexhub/fwbg/commit/e55bee01943ed6975a84808482fd8a45b4a3f722))
+
 ## [2.10.8](https://github.com/haexhub/fwbg/compare/v2.10.7...v2.10.8) (2026-07-08)
 
 
