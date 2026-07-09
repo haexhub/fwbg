@@ -190,6 +190,34 @@ def get_plugin_doc_file(fqn: str, doc_path: str) -> Response:
     return Response(content=content, media_type=media_type)
 
 
+@router.get("/{fqn:path}/source")
+def get_plugin_source(fqn: str) -> dict:
+    """Return the plugin's Python source.
+
+    The backend is the single source of truth for plugins, so fwbg-agents fetches
+    example source over HTTP (for the PluginPlanner) rather than reading the repo
+    off disk. Resolved via ``inspect`` so it works for core, premium and
+    entry-point-installed plugins alike.
+    """
+    import inspect
+
+    registry = get_plugin_registry()
+    try:
+        plugin_cls = registry.get(fqn)
+    except Exception:
+        raise HTTPException(404, f"Plugin not found: {fqn}")
+
+    try:
+        src_file = inspect.getsourcefile(plugin_cls) or inspect.getfile(plugin_cls)
+    except TypeError:
+        src_file = None
+    if not src_file or not Path(src_file).is_file():
+        raise HTTPException(404, f"No source available for plugin: {fqn}")
+
+    source = Path(src_file).read_text(encoding="utf-8")
+    return {"fqn": fqn, "filename": Path(src_file).name, "source": source}
+
+
 # --- Tests endpoint ---
 
 
