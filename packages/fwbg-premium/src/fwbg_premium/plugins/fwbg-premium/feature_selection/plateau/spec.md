@@ -43,7 +43,7 @@ Trains an XGBoost classifier on X/y to obtain feature importances, filters out f
 - AC-009: Flags is_plateau=True only when stability>0.5 and plateau_factor>0.6
 - AC-010: Sorts filtered features by plateau_score descending when prefer_plateau=True, otherwise by raw importance descending
 - AC-011: Truncates the sorted list to max_features when max_features is a positive int
-- AC-012: Returns metadata containing importances, plateau_scores, plateau_features, n_original, n_with_neighbors, n_selected, and method ('plateau' or 'importance')
+- AC-012: Returns metadata containing importances, plateau_scores, plateau_features, n_original, n_with_neighbors, n_selected, and method ('plateau' | 'importance' | 'importance_fallback')
 
 ## Edge Cases
 

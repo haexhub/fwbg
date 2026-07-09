@@ -51,8 +51,8 @@ Indicator that derives 21 features characterizing "information arrival" in the m
 - AC-003: macro_gap equals O - C.shift(1); macro_gap_pct equals that gap divided by the previous close.
 - AC-004: macro_gap_normalized equals the gap divided by the vol_lookback-period rolling mean of (H - L).
 - AC-005: macro_gap_up and macro_gap_down are 1.0/0.0 flags derived from the sign of the gap.
-- AC-006: macro_gap_filled is 1.0 when an up-gap's close is at or below the previous close, or when a down-gap's close is at or above the previous close.
-- AC-007: macro_gap_extended is 1.0 when the close moves further in the direction of the gap relative to the open.
+- AC-006: macro_gap_filled is 1.0 when an up-gap's close is at or below the previous close, or when a down-gap's close is at or above the previous close. When gap == 0 (flat open, neither up nor down), the np.where else-branch applies and macro_gap_filled = (c >= c_prev), so a zero-gap bar can be reported as filled even though no directional gap exists.
+- AC-007: macro_gap_extended is 1.0 when the close moves further in the direction of the gap relative to the open. When gap == 0 (flat open), the np.where else-branch applies and macro_gap_extended = (c < o), so a zero-gap bar can be reported as extended even though no directional gap exists.
 - AC-008: macro_gap_avg and macro_gap_std are the gap_ma_period rolling mean and std of macro_gap_pct.
 - AC-009: macro_total_return, macro_overnight_return, and macro_intraday_return decompose the return using (C - C_prev)/C_prev, (O - C_prev)/C_prev, and (C - O)/O respectively.
 - AC-010: macro_overnight_ratio equals |overnight_return| / |total_return|, with zero total-return bars mapped to NaN via replace(0, np.nan).

@@ -4,11 +4,11 @@
 
 ## Capability
 
-Computes a composite risk-on/risk-off regime score from VIX, credit-spread (HYG/LQD), equity (SPX) momentum, and treasury (TLT) flight macro series, plus binary risk-on/off flags.
+Computes a composite risk-on/risk-off regime score from VIX and HYG/LQD credit-spread z-scores only, plus standalone SPX equity momentum and TLT treasury flight features, and binary risk-on/off flags. SPX and TLT do not feed into the composite.
 
 ## Summary
 
-Combines up to four macro components — inverted VIX z-score, HYG/LQD credit-spread z-score, SPX 20-day percentage change, and inverted TLT 10-day percentage change — into an averaged composite z-score, and emits binary risk_on (>0.5) and risk_off (<-0.5) flags. All emitted features are shifted by one bar to avoid lookahead.
+Computes up to four macro features — inverted VIX z-score, HYG/LQD credit-spread z-score, SPX 20-day percentage change, and inverted TLT 10-day percentage change — but combines only the z-score components (VIX and credit z-scores) into regime_risk_composite. SPX equity momentum (regime_equity_momentum) and TLT treasury flight (regime_treasury_flight) are standalone output features and do not contribute to the composite. Emits binary risk_on (>0.5) and risk_off (<-0.5) flags derived from the composite only. All emitted features are shifted by one bar to avoid lookahead.
 
 ## Inputs
 

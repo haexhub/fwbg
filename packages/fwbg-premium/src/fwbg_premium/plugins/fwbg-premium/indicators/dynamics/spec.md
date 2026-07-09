@@ -67,7 +67,7 @@ Derives dynamics features describing how fast base indicators (RSI, ATR%, ADX, B
 
 ## Acceptance Criteria
 
-- AC-001: Returns the original df concatenated with all 35 feature columns listed in get_feature_columns().
+- AC-001: Returns the original df concatenated with all 35 feature columns listed in get_feature_columns() when the default lookbacks [4, 8, 24] and lag_periods [4, 8, 24, 48] are used. get_feature_columns() is hardcoded to the defaults and does not accept parameters; callers using non-default lookbacks will get different column names that are not listed in get_feature_columns().
 - AC-002: For each lookback L in lookbacks, produces dyn_rsi14_chg_Lh (absolute diff), dyn_rsi14_pct_Lh (safe percent change *100), dyn_atr_chg_Lh, dyn_bbwidth_chg_Lh, and dyn_adx_chg_Lh.
 - AC-003: Produces dyn_macd_chg_{4h,8h} and dyn_stoch_chg_{4h,8h} using fixed lookbacks [4, 8] regardless of the lookbacks parameter.
 - AC-004: Uses precomputed columns mom_rsi_14, trend_adx_14, vol_atr_pct_14, vol_bb_wband_20, mom_stoch_k_14, trend_macd when present; otherwise computes them from OHLC using ta (RSI14, ADX14, ATR14/close, BB wband window=20, StochK14, MACD diff / close).

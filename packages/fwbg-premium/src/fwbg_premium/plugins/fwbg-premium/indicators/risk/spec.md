@@ -44,7 +44,7 @@ Risk indicator producing drawdown depth/duration/recovery, rolling VaR and CVaR 
 ## Acceptance Criteria
 
 - AC-001: For each w in dd_windows, produces risk_dd_pct_{w} = (close - rolling_max_w) / rolling_max_w and risk_dd_ratio_{w} = dd_pct / rolling_min(dd_pct, w) via safe_divide.
-- AC-002: When 200 is in dd_windows, produces risk_bars_since_peak (bars since last new 200-bar high, NaN before first peak), its log1p, and risk_recovery_ratio clipped to [0, 1].
+- AC-002: When 200 is in dd_windows, produces risk_bars_since_peak (bars since last new 200-bar high), its log1p, and risk_recovery_ratio clipped to [0, 1]. Because the rolling max uses min_periods=1, the very first bar always qualifies as a peak (rolling_max_200[0] == close[0]), so _bars_since_event sets only that first bar to NaN. In practice, risk_bars_since_peak is NaN only for the first row and begins counting from 1 at the second row (before the 1-bar shift; after the shift, the first two rows are NaN). It does NOT remain NaN until a full 200-bar window has elapsed.
 - AC-003: For each (percentile p, window w) in cvar_percentiles × cvar_windows, produces risk_var_{p}_{w} as a rolling quantile of returns and risk_cvar_{p}_{w} as the mean of returns in the lower p-percent tail (NaN when window has fewer than 10 observations).
 - AC-004: When 100 is in cvar_windows and both 1 and 5 are in cvar_percentiles, produces risk_cvar_tail_ratio = cvar_1_100 / cvar_5_100 and risk_cvar_5_change = cvar_5_100 - cvar_5_100.shift(20).
 - AC-005: For each w in vov_windows, produces risk_vol_of_vol_{w} as the rolling std over w of ATR(14).pct_change(); when 100 is present, adds risk_vol_of_vol_zscore against a 200-bar mean/std; when 50 is present, adds risk_vol_of_vol_trend = vov_50 - vov_50.shift(10).
@@ -56,8 +56,8 @@ Risk indicator producing drawdown depth/duration/recovery, rolling VaR and CVaR 
 ## Edge Cases
 
 - Rolling CVaR windows with fewer than 10 valid observations return NaN (calc_cvar early-exits on len(x) < 10).
-- risk_bars_since_peak is NaN for all bars up to and including the first 200-bar peak event.
-- If df['C'] never sets a new 200-bar high anywhere in the series, is_at_peak may still trigger via the >= comparison on the first bar; otherwise the bars_since_event helper returns all-NaN when no event occurs.
+- risk_bars_since_peak is NaN only for the first row (before the output shift), because the rolling max uses min_periods=1 and close[0] >= rolling_max_200[0] is always True — the first bar is always a peak. After the 1-bar output shift, the first two rows are NaN. This is not a 200-bar warm-up; counting begins immediately from the second bar.
+- If df['C'] never sets a new 200-bar high after the first bar (i.e. the series is monotonically declining), bars_since_peak still starts counting from the first bar's event and increases indefinitely.
 - Recovery ratio is explicitly clipped to [0, 1] to guard against division artifacts.
 - safe_divide is used for every ratio (dd_ratio, cvar_tail_ratio, vov_zscore, beta, decoupling normalization, crash-component z-scores) to avoid divide-by-zero.
 - Crash probability gracefully skips components whose source columns are missing; if no components are available, it returns a constant 0.0 series (and crash_regime stays 0).

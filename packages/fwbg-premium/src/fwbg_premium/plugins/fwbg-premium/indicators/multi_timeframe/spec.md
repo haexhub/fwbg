@@ -40,10 +40,10 @@ Aggregates H1 OHLC data into synthetic H4/D1/W1/Y1 timeframes via rolling window
 - mtf_w1_ema20_dist
 - mtf_w1_ema50_dist
 - mtf_w1_trend_strength
-- mtf_y1_ema200d_dist
-- mtf_y1_52w_range_pos
-- mtf_y1_52w_high_dist
-- mtf_y1_52w_low_dist
+- mtf_y1_ema200d_dist (only when include_yearly=True)
+- mtf_y1_52w_range_pos (only when include_yearly=True)
+- mtf_y1_52w_high_dist (only when include_yearly=True)
+- mtf_y1_52w_low_dist (only when include_yearly=True)
 - mtf_trend_alignment_h1h4
 - mtf_trend_alignment_h4d1
 - mtf_trend_alignment_d1w1
@@ -64,7 +64,7 @@ Aggregates H1 OHLC data into synthetic H4/D1/W1/Y1 timeframes via rolling window
 - AC-004: H4 block emits mtf_h4_trend, mtf_h4_range_pos, mtf_h4_ema{p}_dist for each p in ema_periods, mtf_h4_adx, mtf_h4_rsi, mtf_h4_atr_pct, mtf_h4_bb_pband using H4-scaled windows built from h4_bars-length rolling H/L extremes.
 - AC-005: D1 block emits mtf_d1_range_pos, mtf_d1_ema{p}_dist for each p in ema_periods, and mtf_d1_trend_strength as the pct_change of a 20*d1_bars EMA over d1_bars bars, scaled by 100.
 - AC-006: W1 block emits mtf_w1_range_pos, mtf_w1_ema{p}_dist for each p in ema_periods, and mtf_w1_trend_strength as the pct_change of a 20*w1_bars EMA over w1_bars bars, scaled by 100.
-- AC-007: When include_yearly=True, additionally emits mtf_y1_ema200d_dist (using a 200*d1_bars EMA) and mtf_y1_52w_range_pos, mtf_y1_52w_high_dist, mtf_y1_52w_low_dist computed over a rolling 52*w1_bars window with min_periods=w1_bars.
+- AC-007: When include_yearly=True, additionally emits mtf_y1_ema200d_dist (using a 200*d1_bars EMA) and mtf_y1_52w_range_pos, mtf_y1_52w_high_dist, mtf_y1_52w_low_dist computed over a rolling 52*w1_bars window with min_periods=w1_bars. When include_yearly=False, these four columns are absent from the output DataFrame entirely. Note: get_feature_columns() always lists all four mtf_y1_* columns regardless of include_yearly, so its output is inconsistent with the actual DataFrame when include_yearly=False.
 - AC-008: Trend-alignment features mtf_trend_alignment_h1h4, mtf_trend_alignment_h4d1, mtf_trend_alignment_d1w1 are int {0,1} indicators of matching signs between successive-timeframe EMA-distance trends (H1 uses EMA21).
 - AC-009: mtf_consensus is 1 iff the H1, H4-ema20, D1-ema20, and W1-ema20 trend signs all agree, and mtf_trend_strength equals the sum of the three pairwise alignment flags (integer in 0..3).
 - AC-010: mtf_vol_ratio_h1h4 equals safe_divide(H1 14-bar ATR%, H4 14-bar ATR%) and mtf_rsi_divergence equals H1 14-period RSI minus H4 (14*h4_bars)-period RSI.

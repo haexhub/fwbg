@@ -39,7 +39,7 @@ Preprocessor that fits an optimal fractional-differentiation exponent d on the t
 - AC-008: For train data (ctx.df.index[0] <= self.train_end_idx_), execute() applies _frac_diff to each fitted column with the learned d and truncates the result to start at the first valid index of the first fitted column.
 - AC-009: For val/test data (ctx.df.index[0] > self.train_end_idx_) with a stored history_, execute() concatenates history_ with ctx.df, transforms the combined frame, then returns only the rows matching the original ctx.df index (no NaN drop).
 - AC-010: For val/test data without a stored history_, execute() falls back to transforming ctx.df in place without prepending history.
-- AC-011: execute() sets df.attrs['frac_diff_d'] to self.d_ on the returned DataFrame.
+- AC-011: execute() sets df.attrs['frac_diff_d'] to self.d_ on the returned DataFrame, but only when the transform actually runs (self.columns_ is non-empty and self.d_ != 0.0). In the no-op branch (AC-007: self.columns_ is empty or self.d_ == 0.0) execute() returns ctx unchanged without setting df.attrs.
 - AC-012: _frac_diff uses a vectorized np.convolve with weights whose |w|>1e-5 and window capped at MAX_WINDOW=500; d=0 returns the input series unchanged.
 
 ## Edge Cases

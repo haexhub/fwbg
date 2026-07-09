@@ -16,7 +16,7 @@ Consumes pre-loaded macro_cot_* net-position columns and derives, per instrument
 
 ## Parameters
 
-- `indicators` (string, default=None): Mapping of COT data file stems to column prefixes (e.g. COT_EURUSD_DAY -> cot_eurusd). Default in code is a dict of the seven majors {COT_EURUSD_DAY: cot_eurusd, COT_USDJPY_DAY: cot_usdjpy, COT_GBPUSD_DAY: cot_gbpusd, COT_USDCAD_DAY: cot_usdcad, COT_AUDUSD_DAY: cot_audusd, COT_USDCHF_DAY: cot_usdchf, COT_NZDUSD_DAY: cot_nzdusd}. Values are used by get_feature_columns as feature-column prefixes.
+- `indicators` (object, default={COT_EURUSD_DAY: cot_eurusd, COT_USDJPY_DAY: cot_usdjpy, COT_GBPUSD_DAY: cot_gbpusd, COT_USDCAD_DAY: cot_usdcad, COT_AUDUSD_DAY: cot_audusd, COT_USDCHF_DAY: cot_usdchf, COT_NZDUSD_DAY: cot_nzdusd}): Mapping of COT data file stems to column prefixes (e.g. COT_EURUSD_DAY -> cot_eurusd). Values are used by get_feature_columns as feature-column prefixes. Note: get_param_schema() declares this as type 'string' — that is a source bug; the actual runtime type is a dict/object.
 - `lookbacks_weeks` (list[int], default=[1, 4, 12, 26]): Week-based lookback periods used to compute pct_change momentum on the net position series (converted to H1 bars as weeks*5*24).
 - `zscore_window_weeks` (int, default=52): Rolling window in weeks for z-score normalization of net positions (converted to H1 bars as weeks*5*24; min_periods = window//4; std is clipped to a 1e-6 floor).
 

@@ -67,7 +67,7 @@ For each configured session hour, defines an opening range from the first `range
 
 - Daily or higher timeframe input (median diff >= 20h) — returns df unchanged.
 - DataFrame without a DatetimeIndex — raises ValueError.
-- Empty session list defaulting: when sessions=None, defaults to [8, 9, 14, 15] inside _session_orb_features (compute() also defaults to [8,9,14,15] when sessions is None).
+- sessions=None handling: compute()'s Python signature has sessions=None as its default; when called with sessions=None (e.g. a direct Python call bypassing the plugin system), the code substitutes [8, 9, 14, 15]. When invoked via the plugin system using get_default_params(), sessions is [0, 1, 2, 5, 6, 7, 8, 12, 13, 14]. The same [8, 9, 14, 15] fallback applies inside get_feature_columns() / _resolve_col_params() when sessions is absent from the passed params dict.
 - or_range == 0 (doji session where O==C in body mode, or H==L) — sl_dist, or_high/or_low/or_midpoint set to NaN via range_valid guard.
 - safe_divide is used for all divisions (position, breakout_dist, range_vs_atr, poc_dist) to avoid ZeroDivisionError.
 - carry_forward_days > 0 with a session that never breaks out — its range is reused for up to N subsequent sessions; those sessions are marked as carried and excluded from range_zones.

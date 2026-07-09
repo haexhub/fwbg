@@ -21,7 +21,7 @@ Stability selection wrapper that runs a configurable inner feature selector on r
 ## Parameters
 
 - `inner_selector` (string, default='boruta'): Name of the inner feature selector to run on each bootstrap sample
-- `inner_params` (string, default='{"n_iter": 5, "n_estimators": 30, "min_z_score": 0.5}'): Parameter dict passed to the inner selector on each bootstrap run (source default: {'n_iter': 5, 'n_estimators': 30, 'min_z_score': 0.5}; declared as type 'string' in get_param_schema)
+- `inner_params` (dict, default={'n_iter': 5, 'n_estimators': 30, 'min_z_score': 0.5}): Parameter dict passed to the inner selector on each bootstrap run. Note: get_param_schema() declares this as type 'string' — that is a source bug; the actual runtime type (per the select_features() signature) is dict.
 - `n_bootstrap` (int, default=10): Number of bootstrap resampling iterations
 - `threshold` (float, default=0.6): Minimum fraction of bootstrap runs a feature must be selected in to be kept
 - `bootstrap_ratio` (float, default=0.8): Fraction of samples drawn (with replacement) per bootstrap iteration
@@ -60,4 +60,4 @@ Stability selection wrapper that runs a configurable inner feature selector on r
 
 ## Needs Clarification
 
-- [NEEDS CLARIFICATION: get_param_schema declares inner_params with type 'string' while the actual default is a dict — likely a source bug; preserved verbatim in this spec (default encoded as a JSON string here to satisfy the spec schema)]
+- [NEEDS CLARIFICATION: get_param_schema() declares inner_params with type 'string' while the actual runtime type is dict — this is a source bug in the schema declaration. The spec now documents the correct type.]

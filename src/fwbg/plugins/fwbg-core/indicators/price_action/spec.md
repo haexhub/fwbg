@@ -62,7 +62,7 @@ Price-action indicator that derives a family of features directly from OHLC bars
 - AC-013: When compute_volume is True and a V or Volume column exists, vol_obv_change is (OBV - OBV[-5]) / OBV[-5], vol_mfi is ta.volume.money_flow_index(H, L, C, V), vol_relative is V / V.rolling(20).mean(), and vol_price_trend equals pa_body_dir * vol_relative.
 - AC-014: When compute_volume is False or no volume column is present, the vol_* columns are not added by compute().
 - AC-015: All feature columns are shifted by one bar (shift_features) before being concatenated with df, so row i features only depend on data up to row i-1.
-- AC-016: get_feature_columns() lists all 23 documented feature names; get_signal_columns() returns pa_body_dir, pa_gap_dir, pa_gap_filled, pa_inside_bar, pa_outside_bar.
+- AC-016: get_feature_columns() always lists all 23 feature names including the four vol_* columns (vol_obv_change, vol_mfi, vol_relative, vol_price_trend), regardless of compute_volume or whether a volume column is present; callers must not assume vol_* columns exist in the output DataFrame when compute_volume is False or no volume column is available (see AC-014 and volume edge case). get_signal_columns() returns pa_body_dir, pa_gap_dir, pa_gap_filled, pa_inside_bar, pa_outside_bar.
 - AC-017: get_default_params() returns {'hh_ll_period': 5, 'compute_volume': True}.
 
 ## Edge Cases
