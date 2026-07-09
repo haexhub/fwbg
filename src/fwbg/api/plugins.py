@@ -1,20 +1,86 @@
 """Plugin endpoints."""
+import importlib.util
+import inspect
+import json
 import mimetypes
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
+from pydantic import BaseModel
 
 from fwbg.api.deps import get_plugin_registry
-from fwbg_sdk import PluginPhase
+from fwbg_sdk import BasePlugin, PluginPhase
 from fwbg_sdk.registry import ENTRY_MODIFIER_REGISTRY, EXIT_MODIFIER_REGISTRY
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
 exit_modifiers_router = APIRouter(prefix="/exit-modifiers", tags=["exit-modifiers"])
 entry_modifiers_router = APIRouter(prefix="/entry-modifiers", tags=["entry-modifiers"])
+
+_AGENT_AUTHORED_NAMESPACE = "agent-authored"
+
+# Singular PluginKind (fwbg-agents) → plural category dir (fwbg registry)
+_KIND_TO_CATEGORY: dict[str, str] = {
+    "indicator": "indicators",
+    "model": "models",
+    "exit_strategy": "exit_strategies",
+    "risk_management": "risk_management",
+    "entry_modifier": "entry_modifiers",
+    "preprocessing": "preprocessing",
+    "feature_selection": "feature_selection",
+    "data_loading": "data_loading",
+}
+
+_BUNDLE_MANIFEST = {
+    "name": _AGENT_AUTHORED_NAMESPACE,
+    "version": "1.0.0",
+    "description": "Agent-authored plugins",
+    "author": "fwbg-agents",
+    "license": "MIT",
+}
+
+
+class RegisterPluginPayload(BaseModel):
+    slug: str
+    python_code: str
+    kind: str
+    description: str = ""
+    spec_md: str = ""
+    tests_code: str = ""
+    version: str = "1.0.0"
+    overwrite: bool = False
+
+
+def _import_plugin_module(init_py: Path, slug: str) -> tuple[Optional[type], str]:
+    """Load a plugin module and return (plugin_cls, error). error is '' on success."""
+    module_name = f"_fwbg_register_{slug}"
+    sys.modules.pop(module_name, None)
+    spec = importlib.util.spec_from_file_location(module_name, init_py)
+    if spec is None or spec.loader is None:
+        return None, "Could not create module spec"
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        sys.modules.pop(module_name, None)
+        return None, f"Import error: {exc}"
+    for attr_name in dir(module):
+        attr = getattr(module, attr_name)
+        if (
+            isinstance(attr, type)
+            and issubclass(attr, BasePlugin)
+            and attr is not BasePlugin
+            and not inspect.isabstract(attr)
+            and getattr(attr, "name", None) == slug
+        ):
+            return attr, ""
+    sys.modules.pop(module_name, None)
+    return None, f"No non-abstract BasePlugin subclass with name='{slug}' found"
 
 
 def _plugin_to_dict(fqn: str) -> dict:
@@ -114,6 +180,91 @@ def _get_validated_docs_dir(fqn: str) -> Path:
             f"Documentation blocked due to validation errors: {'; '.join(reasons)}",
         )
     return docs_dir
+
+
+@router.post("")
+def register_plugin(payload: RegisterPluginPayload) -> dict:
+    """Register an agent-authored plugin into the fwbg registry.
+
+    Writes verified plugin code to ``~/.fwbg/plugins/agent-authored/<category>/<slug>/``,
+    validates it (module import + tests), and refreshes the registry so the plugin
+    appears immediately in ``GET /api/plugins``.
+    Returns ``{"fqn": "agent-authored:<slug>", ...}`` or a 4xx error on failure.
+    """
+    from fwbg.pipeline.registry import get_user_plugins_dir, reset_registry
+
+    category = _KIND_TO_CATEGORY.get(payload.kind)
+    if category is None:
+        raise HTTPException(
+            422,
+            f"Unknown plugin kind: {payload.kind!r}. Valid: {sorted(_KIND_TO_CATEGORY)}",
+        )
+
+    fqn = f"{_AGENT_AUTHORED_NAMESPACE}:{payload.slug}"
+    target_dir = get_user_plugins_dir() / _AGENT_AUTHORED_NAMESPACE / category / payload.slug
+
+    if target_dir.exists() and not payload.overwrite:
+        raise HTTPException(409, f"Plugin '{fqn}' already registered. Set overwrite=true to replace.")
+
+    # Validate in a temp directory so nothing is written on failure.
+    with tempfile.TemporaryDirectory(prefix="fwbg_register_") as tmp:
+        tmp_path = Path(tmp)
+        init_py = tmp_path / "__init__.py"
+        init_py.write_text(payload.python_code, encoding="utf-8")
+
+        plugin_cls, err = _import_plugin_module(init_py, payload.slug)
+        if err:
+            raise HTTPException(422, f"Plugin validation failed: {err}")
+
+        if payload.tests_code:
+            tests_py = tmp_path / "tests.py"
+            tests_py.write_text(payload.tests_code, encoding="utf-8")
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "pytest", str(tests_py), "-v", "--tb=short", "--no-header", "-q"],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+            except subprocess.TimeoutExpired:
+                raise HTTPException(422, "Plugin tests timed out (120 s)")
+            if result.returncode != 0:
+                raise HTTPException(
+                    422,
+                    f"Plugin tests failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+                )
+
+    # All checks passed — write to the persistent user-plugins directory.
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "__init__.py").write_text(payload.python_code, encoding="utf-8")
+    (target_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "name": payload.slug,
+                "version": payload.version,
+                "description": payload.description,
+                "phase": category,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    if payload.spec_md:
+        (target_dir / "spec.md").write_text(payload.spec_md, encoding="utf-8")
+    if payload.tests_code:
+        (target_dir / "tests.py").write_text(payload.tests_code, encoding="utf-8")
+
+    # Ensure the bundle-level manifest.json (required by discover_package).
+    bundle_manifest = target_dir.parent.parent / "manifest.json"
+    if not bundle_manifest.exists():
+        bundle_manifest.parent.mkdir(parents=True, exist_ok=True)
+        bundle_manifest.write_text(json.dumps(_BUNDLE_MANIFEST, indent=2), encoding="utf-8")
+
+    # Refresh the global registry so the new plugin is visible immediately.
+    reset_registry()
+    get_plugin_registry.cache_clear()
+
+    return {"fqn": fqn, "slug": payload.slug, "category": category}
 
 
 @router.get("")
@@ -288,6 +439,17 @@ def run_plugin_tests(fqn: str) -> dict:
                     test_file = candidate
                     break
         except Exception:
+            pass
+
+    # Fallback: locate tests.py relative to the plugin's source file (covers
+    # user / agent-authored plugins not under the core or entry-point dirs).
+    if not test_file.exists():
+        try:
+            src = _resolve_plugin_src_file(fqn)
+            candidate = src.parent / "tests.py"
+            if candidate.exists():
+                test_file = candidate
+        except HTTPException:
             pass
 
     if not test_file.exists():
