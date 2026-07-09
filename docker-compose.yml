@@ -12,6 +12,9 @@ services:
       # Workspace (~/fwbg): strategy configs + test results. Without this
       # mount every image update wipes published strategies and backtests.
       - fwbg-workspace:/root/fwbg
+      # Agent-authored plugins: persisted across redeploys, shared with api
+      # so live trading can use plugins registered by the agents service.
+      - fwbg-agent-plugins:/root/.fwbg/plugins
     environment:
       - TZ=Europe/Berlin
       - LOG_DIR=/app/logs
@@ -42,6 +45,9 @@ services:
       # Same workspace as ig-bot: published strategies must survive redeploys
       # and be visible to both the API and the bot.
       - fwbg-workspace:/root/fwbg
+      # Agent-authored plugins: shared with ig-bot so registered plugins
+      # persist across redeploys and are available to the bot as well.
+      - fwbg-agent-plugins:/root/.fwbg/plugins
     environment:
       - TZ=Europe/Berlin
       - LOG_DIR=/app/logs
@@ -174,5 +180,6 @@ volumes:
   fwbg-logs:
   fwbg-stats:
   fwbg-workspace:
+  fwbg-agent-plugins:
   agents-data:
   claude-proxy-creds:
