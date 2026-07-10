@@ -475,7 +475,7 @@ class IGBrokerAdapter(BrokerAdapter):
     MIN_STOP_POINTS = 1
     MAX_STOP_POINTS = int(os.environ.get("FWBG_IG_MAX_STOP_POINTS", "10000"))
 
-    def submit_order(
+    def _submit_order_impl(
         self,
         symbol: Symbol,
         direction: OrderSide,
@@ -484,7 +484,11 @@ class IGBrokerAdapter(BrokerAdapter):
         limit_distance: float = None,
         order_type: OrderType = OrderType.MARKET,
     ) -> OrderResult:
-        """Sendet eine Order an IG."""
+        """Sendet eine Order an IG.
+
+        Wird nur über den Stop-Loss-Gate der Basisklasse (submit_order) oder von
+        close_position (Exit, stop_distance=None) aufgerufen.
+        """
         if not self._ig:
             return OrderResult(
                 success=False,
@@ -523,14 +527,21 @@ class IGBrokerAdapter(BrokerAdapter):
         self._rate_limit()
 
         try:
-            sl_dist = int(stop_distance) if stop_distance else 50
-            tp_dist = int(limit_distance) if limit_distance else sl_dist * 2
+            # Entries kommen durch den Basisklassen-Gate: stop_distance ist > 0.
+            # None ist nur bei Exits (close_position) möglich → kein Stop senden
+            # (kein stiller 50er-Default mehr).
+            sl_dist = int(round(stop_distance)) if stop_distance is not None else None
+            tp_dist = (
+                int(round(limit_distance)) if limit_distance
+                else (sl_dist * 2 if sl_dist is not None else None)
+            )
 
             self.log_info(
                 f"Sending order: {direction.value} {symbol} "
                 f"Size={size} SL={sl_dist} TP={tp_dist}"
             )
 
+            # Stop-Loss wird atomar im selben Request mit dem Entry gesendet.
             response = self._ig.create_open_position(
                 currency_code=self.currency,
                 direction=direction.value,

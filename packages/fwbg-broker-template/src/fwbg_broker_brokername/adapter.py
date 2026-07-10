@@ -130,7 +130,7 @@ class MyBrokerAdapter(BrokerAdapter):
     # Order Execution (MUSS implementiert werden)
     # =========================================================================
 
-    def submit_order(
+    def _submit_order_impl(
         self,
         symbol: Symbol,
         direction: OrderSide,
@@ -139,7 +139,12 @@ class MyBrokerAdapter(BrokerAdapter):
         limit_distance: float = None,
         order_type: OrderType = OrderType.MARKET,
     ) -> OrderResult:
-        """Sendet eine Order an den Broker."""
+        """Sendet eine Order an den Broker.
+
+        Nicht submit_order() überschreiben — die Basisklasse erzwingt dort den
+        verpflichtenden Stop-Loss-Gate. Hier nur die Broker-Anbindung umsetzen.
+        stop_distance ist bei Entries garantiert > 0; None nur bei Exits.
+        """
         broker_symbol = self.get_broker_symbol(symbol)
         if not broker_symbol:
             return OrderResult(

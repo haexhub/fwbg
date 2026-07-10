@@ -21,8 +21,9 @@ Beispiel - Eigenen Broker-Adapter schreiben:
             # OHLC-Daten laden
             pass
 
-        def submit_order(self, symbol, direction, size, sl, tp) -> OrderResult:
-            # Order ausführen
+        def _submit_order_impl(self, symbol, direction, size,
+                               stop_distance, limit_distance, order_type) -> OrderResult:
+            # Order ausführen — die Basisklasse erzwingt vorher den Stop-Loss-Gate
             pass
 """
 from abc import abstractmethod
@@ -122,7 +123,7 @@ class BrokerAdapter(BaseAdapter):
     Subklassen MÜSSEN implementieren:
     - connect() / disconnect()
     - get_historical_bars()
-    - submit_order()
+    - _submit_order_impl()  (submit_order() selbst ist der Gate, nicht überschreiben)
     - get_positions()
     - get_account_info()
     - get_symbol_mapping()
@@ -137,6 +138,18 @@ class BrokerAdapter(BaseAdapter):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._bar_callbacks: Dict[Symbol, List[Callable[[BarData], None]]] = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Der Stop-Loss-Gate lebt in submit_order(); Adapter implementieren
+        # _submit_order_impl(). Ein Override von submit_order() würde den Gate
+        # umgehen — das ist verboten (uniform, nicht per Adapter aushebelbar).
+        if "submit_order" in cls.__dict__:
+            raise TypeError(
+                f"{cls.__name__} darf submit_order() nicht überschreiben — "
+                f"implementiere _submit_order_impl(). submit_order() erzwingt den "
+                f"verpflichtenden Stop-Loss-Gate und darf nicht umgangen werden."
+            )
 
     # =========================================================================
     # Abstrakte Methoden - MÜSSEN implementiert werden
@@ -168,6 +181,36 @@ class BrokerAdapter(BaseAdapter):
         pass
 
     @abstractmethod
+    def _submit_order_impl(
+        self,
+        symbol: Symbol,
+        direction: OrderSide,
+        size: float,
+        stop_distance: float = None,
+        limit_distance: float = None,
+        order_type: OrderType = OrderType.MARKET,
+    ) -> OrderResult:
+        """
+        Adapter-spezifische Order-Ausführung.
+
+        NICHT direkt aufrufen — der öffentliche Einstieg ist submit_order(), das
+        den verpflichtenden Stop-Loss-Gate erzwingt. Einzig close_position() ruft
+        diese Methode direkt auf (Exits sind vom Gate ausgenommen und übergeben
+        stop_distance=None).
+
+        Args:
+            symbol: Asset-Symbol (z.B. Symbol.EURUSD)
+            direction: BUY oder SELL
+            size: Positionsgröße
+            stop_distance: Stop-Loss Distanz in Punkten (None nur bei Exits)
+            limit_distance: Take-Profit Distanz in Punkten
+            order_type: Order-Typ (default: MARKET)
+
+        Returns:
+            OrderResult mit Status und Details
+        """
+        pass
+
     def submit_order(
         self,
         symbol: Symbol,
@@ -178,20 +221,43 @@ class BrokerAdapter(BaseAdapter):
         order_type: OrderType = OrderType.MARKET,
     ) -> OrderResult:
         """
-        Sendet eine Order an den Broker.
+        Sendet eine Entry-Order an den Broker — mit verpflichtendem Stop-Loss-Gate.
+
+        Deterministischer Gate an der Broker-Grenze: Jede Entry-Order MUSS einen
+        positiven Stop-Loss haben. Orders ohne (oder mit <= 0) Stop werden hart
+        abgelehnt, bevor sie den Adapter/Broker erreichen — uniform über alle
+        Adapter und nicht per Adapter umgehbar (siehe __init_subclass__). Der Stop
+        wird vom Adapter atomar im selben Broker-Request mit dem Entry gesendet.
+
+        Exits (close_position) rufen _submit_order_impl() direkt auf und sind
+        bewusst vom Gate ausgenommen.
 
         Args:
             symbol: Asset-Symbol (z.B. Symbol.EURUSD)
             direction: BUY oder SELL
             size: Positionsgröße
-            stop_distance: Stop-Loss Distanz in Punkten
+            stop_distance: Stop-Loss Distanz in Punkten (PFLICHT, > 0)
             limit_distance: Take-Profit Distanz in Punkten
             order_type: Order-Typ (default: MARKET)
 
         Returns:
-            OrderResult mit Status und Details
+            OrderResult — bei fehlendem/nicht-positivem Stop: success=False,
+            status=REJECTED, ohne den Broker zu kontaktieren
         """
-        pass
+        if stop_distance is None or not stop_distance > 0:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message="Rejected: stop-loss is mandatory for entry orders",
+            )
+        return self._submit_order_impl(
+            symbol=symbol,
+            direction=direction,
+            size=size,
+            stop_distance=stop_distance,
+            limit_distance=limit_distance,
+            order_type=order_type,
+        )
 
     @abstractmethod
     def get_positions(self) -> List[Position]:
@@ -305,7 +371,9 @@ class BrokerAdapter(BaseAdapter):
         for pos in positions:
             if pos.position_id == position_id:
                 close_direction = OrderSide.SELL if pos.direction == OrderSide.BUY else OrderSide.BUY
-                return self.submit_order(
+                # Exit: Gegenorder ohne Stop — bewusst am Stop-Loss-Gate vorbei
+                # (submit_order würde eine Order ohne Stop ablehnen).
+                return self._submit_order_impl(
                     symbol=pos.symbol,
                     direction=close_direction,
                     size=pos.size,
