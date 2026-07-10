@@ -62,7 +62,7 @@ class _StubBrokerAdapter(BrokerAdapter):
     def get_historical_bars(self, symbol, timeframe=None, limit=1000, start=None, end=None):
         return pd.DataFrame()
 
-    def submit_order(
+    def _submit_order_impl(
         self,
         symbol,
         direction: OrderSide,
