@@ -392,7 +392,8 @@ class TestIGBrokerAdapterOrderExecution:
         result = adapter.submit_order(
             symbol=Symbol.EURUSD,
             direction=OrderSide.BUY,
-            size=1.0
+            size=1.0,
+            stop_distance=50
         )
 
         assert result.success is False
@@ -410,7 +411,8 @@ class TestIGBrokerAdapterOrderExecution:
         result = adapter.submit_order(
             symbol=Symbol.EURUSD,
             direction=OrderSide.BUY,
-            size=1.0
+            size=1.0,
+            stop_distance=50
         )
 
         assert result.success is False
