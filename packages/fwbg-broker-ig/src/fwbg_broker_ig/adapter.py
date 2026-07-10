@@ -441,6 +441,12 @@ class IGBrokerAdapter(BrokerAdapter):
                 status=OrderStatus.REJECTED,
                 message=f"stop_distance {stop_distance} outside allowed range [{self.MIN_STOP_POINTS}, {self.MAX_STOP_POINTS}]",
             )
+        if limit_distance is not None and not (self.MIN_STOP_POINTS <= limit_distance <= self.MAX_STOP_POINTS):
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"limit_distance {limit_distance} outside allowed range [{self.MIN_STOP_POINTS}, {self.MAX_STOP_POINTS}]",
+            )
 
         self._rate_limit()
 
