@@ -102,8 +102,8 @@ class MyBrokerAdapter(BrokerAdapter):
         # OHLC-Daten laden
         pass
 
-    def submit_order(self, symbol, direction, size, stop_distance, limit_distance, order_type):
-        # Order ausführen
+    def _submit_order_impl(self, symbol, direction, size, stop_distance, limit_distance, order_type):
+        # Order ausführen — submit_order() der Basisklasse erzwingt vorher den Stop-Loss-Gate
         pass
 
     def get_positions(self):

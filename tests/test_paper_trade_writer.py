@@ -90,7 +90,7 @@ class _StubBrokerAdapter(BrokerAdapter):
             index=idx,
         )
 
-    def submit_order(
+    def _submit_order_impl(
         self,
         symbol,
         direction: OrderSide,
