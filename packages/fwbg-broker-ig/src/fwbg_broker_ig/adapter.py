@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
 from threading import Lock
 import logging
+import os
 import time
 import pandas as pd
 
@@ -86,6 +87,9 @@ class IGBrokerAdapter(BrokerAdapter):
     """
 
     adapter_type: str = "ig"
+
+    MIN_STOP_POINTS = 1
+    MAX_STOP_POINTS = int(os.environ.get("FWBG_IG_MAX_STOP_POINTS", "10000"))
 
     def __init__(
         self,
@@ -431,15 +435,22 @@ class IGBrokerAdapter(BrokerAdapter):
                 message=f"No EPIC mapping for: {symbol}"
             )
 
+        if stop_distance is not None and not (self.MIN_STOP_POINTS <= stop_distance <= self.MAX_STOP_POINTS):
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"stop_distance {stop_distance} outside allowed range [{self.MIN_STOP_POINTS}, {self.MAX_STOP_POINTS}]",
+            )
+
         self._rate_limit()
 
         try:
             # Entries kommen durch den Basisklassen-Gate: stop_distance ist > 0.
             # None ist nur bei Exits (close_position) möglich → kein Stop senden
             # (kein stiller 50er-Default mehr).
-            sl_dist = int(stop_distance) if stop_distance else None
+            sl_dist = int(round(stop_distance)) if stop_distance is not None else None
             tp_dist = (
-                int(limit_distance) if limit_distance
+                int(round(limit_distance)) if limit_distance
                 else (sl_dist * 2 if sl_dist is not None else None)
             )
 

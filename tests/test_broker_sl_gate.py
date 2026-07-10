@@ -84,7 +84,7 @@ class _SpyBrokerAdapter(BrokerAdapter):
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("bad_stop", [None, 0, -5])
+@pytest.mark.parametrize("bad_stop", [None, 0, -5, float("nan")])
 def test_entry_without_positive_stop_is_rejected(bad_stop):
     """Kein/nicht-positiver Stop => REJECTED, Impl/Broker wird nicht kontaktiert."""
     adapter = _SpyBrokerAdapter()
@@ -112,6 +112,19 @@ def test_entry_with_valid_stop_is_forwarded_atomically():
     call = adapter.impl_calls[0]
     assert call["stop_distance"] == 42
     assert call["limit_distance"] == 84
+
+
+def test_entry_with_fractional_stop_is_rounded_not_truncated():
+    """stop_distance=0.7 passes the gate and is rounded to 1, not truncated to 0."""
+    adapter = _SpyBrokerAdapter()
+
+    result = adapter.submit_order(
+        Symbol.EURUSD, OrderSide.BUY, size=1.0, stop_distance=0.7
+    )
+
+    assert result.success is True
+    assert len(adapter.impl_calls) == 1
+    assert adapter.impl_calls[0]["stop_distance"] == 0.7  # impl receives original value
 
 
 def test_close_position_is_exempt_from_gate():
@@ -164,7 +177,7 @@ def _make_ig_adapter():
     return adapter
 
 
-@pytest.mark.parametrize("bad_stop", [None, 0])
+@pytest.mark.parametrize("bad_stop", [None, 0, -5, float("nan")])
 def test_ig_broker_untouched_without_stop(bad_stop):
     adapter = _make_ig_adapter()
 
@@ -188,3 +201,13 @@ def test_ig_valid_stop_forwarded_in_single_call():
     _, kwargs = adapter._ig.create_open_position.call_args
     assert kwargs["stop_distance"] == 50
     assert kwargs["limit_distance"] == 100
+
+
+def test_ig_fractional_stop_is_rounded_not_truncated():
+    """stop_distance=1.7 must arrive at IG as 2 (rounded), not 1 (truncated)."""
+    adapter = _make_ig_adapter()
+
+    adapter.submit_order(Symbol.EURUSD, OrderSide.BUY, size=1.0, stop_distance=1.7)
+
+    _, kwargs = adapter._ig.create_open_position.call_args
+    assert kwargs["stop_distance"] == 2
