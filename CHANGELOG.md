@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.12.0](https://github.com/haexhub/fwbg/compare/v2.11.0...v2.12.0) (2026-07-10)
+
+
+### Features
+
+* **broker:** reject entry orders without a stop-loss (deterministic gate) ([90d98f2](https://github.com/haexhub/fwbg/commit/90d98f21545151a3c823d0e41e9c30f189dbf8e3))
+* **broker:** reject entry orders without a stop-loss (deterministic gate) ([1ad92d3](https://github.com/haexhub/fwbg/commit/1ad92d3a383bb30b409631ecce65f9cc73b95c22))
+* mandatory stop-loss gate + v2.11.0 sync ([62805de](https://github.com/haexhub/fwbg/commit/62805de5749f209f3f679f22dfce51c662fd95a9))
+
+
+### Bug Fixes
+
+* **broker:** add limit_distance range validation to packages adapter ([986c658](https://github.com/haexhub/fwbg/commit/986c658a2c1ab51f02b032eaa6826cf40ec26a7e))
+* **broker:** address code review findings for PR [#97](https://github.com/haexhub/fwbg/issues/97) ([4b9c04e](https://github.com/haexhub/fwbg/commit/4b9c04e665b855fb1c590dbd13d6523cc4d3b929))
+
 ## [2.11.0](https://github.com/haexhub/fwbg/compare/v2.10.8...v2.11.0) (2026-07-09)
 
 
