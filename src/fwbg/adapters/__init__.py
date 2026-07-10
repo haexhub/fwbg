@@ -21,7 +21,8 @@ Beispiel:
 
     with adapter:
         df = adapter.get_historical_bars("EURUSD", limit=1000)
-        result = adapter.submit_order("EURUSD", OrderSide.BUY, size=0.1)
+        # Stop-Loss ist Pflicht — Entries ohne (positiven) Stop werden abgelehnt
+        result = adapter.submit_order("EURUSD", OrderSide.BUY, size=0.1, stop_distance=50)
 """
 from .base import BaseAdapter
 from .broker import (
