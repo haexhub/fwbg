@@ -530,9 +530,9 @@ class IGBrokerAdapter(BrokerAdapter):
             # Entries kommen durch den Basisklassen-Gate: stop_distance ist > 0.
             # None ist nur bei Exits (close_position) möglich → kein Stop senden
             # (kein stiller 50er-Default mehr).
-            sl_dist = int(stop_distance) if stop_distance else None
+            sl_dist = int(round(stop_distance)) if stop_distance is not None else None
             tp_dist = (
-                int(limit_distance) if limit_distance
+                int(round(limit_distance)) if limit_distance
                 else (sl_dist * 2 if sl_dist is not None else None)
             )
 

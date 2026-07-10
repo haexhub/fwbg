@@ -244,7 +244,7 @@ class BrokerAdapter(BaseAdapter):
             OrderResult — bei fehlendem/nicht-positivem Stop: success=False,
             status=REJECTED, ohne den Broker zu kontaktieren
         """
-        if stop_distance is None or stop_distance <= 0:
+        if stop_distance is None or not stop_distance > 0:
             return OrderResult(
                 success=False,
                 status=OrderStatus.REJECTED,
