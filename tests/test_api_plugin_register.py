@@ -190,3 +190,27 @@ class TestRegisterPlugin:
         })
         assert resp.status_code == 200
         assert resp.json()["category"] == "exit_strategies"
+
+
+class TestNamespaceFilter:
+    def test_namespace_agent_authored_returns_only_agent_plugins(self, client):
+        _register(client)
+        resp = client.get("/api/plugins", params={"namespace": "agent-authored"})
+        assert resp.status_code == 200
+        fqns = [p["fqn"] for p in resp.json()]
+        assert fqns, "expected at least the registered agent plugin"
+        assert all(fqn.startswith("agent-authored:") for fqn in fqns)
+        assert "agent-authored:test_reg_indicator" in fqns
+
+    def test_namespace_fwbg_core_excludes_agent_plugins(self, client):
+        _register(client)
+        resp = client.get("/api/plugins", params={"namespace": "fwbg-core"})
+        assert resp.status_code == 200
+        fqns = [p["fqn"] for p in resp.json()]
+        assert all(fqn.startswith("fwbg-core:") for fqn in fqns)
+        assert "agent-authored:test_reg_indicator" not in fqns
+
+    def test_unknown_namespace_returns_empty(self, client):
+        resp = client.get("/api/plugins", params={"namespace": "does-not-exist"})
+        assert resp.status_code == 200
+        assert resp.json() == []
