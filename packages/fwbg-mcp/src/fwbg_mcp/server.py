@@ -286,8 +286,13 @@ def get_indicator_schema(name: str) -> dict:
     `name` can be the short name (e.g. "opening_range") or full fqn
     (e.g. "fwbg-core:opening_range"). Use the fqn from list_indicators.
     """
-    # Try both namespaces
-    for fqn in [f"fwbg-core:{name}", f"fwbg-premium:{name}", name]:
+    # Try the known namespaces (incl. agent-authored plugins) before the raw name.
+    for fqn in [
+        f"fwbg-core:{name}",
+        f"fwbg-premium:{name}",
+        f"agent-authored:{name}",
+        name,
+    ]:
         try:
             return _get(f"/plugins/{fqn}")
         except httpx.HTTPStatusError:
