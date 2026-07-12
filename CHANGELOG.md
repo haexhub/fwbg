@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.13.0](https://github.com/haexhub/fwbg/compare/v2.12.0...v2.13.0) (2026-07-12)
+
+
+### Features
+
+* plugin source & spec endpoints, stability and data fixes ([3533711](https://github.com/haexhub/fwbg/commit/35337119869121c77067ffe48a603f40a5a396cd))
+* **plugins:** namespace filter in GET /api/plugins + agent-authored MCP resolution ([fe7aa1a](https://github.com/haexhub/fwbg/commit/fe7aa1a484ac614149bdee8d5d7b6aec5418f661))
+* **plugins:** Plan 007 — namespace filter + agent-authored MCP resolution ([3a687a6](https://github.com/haexhub/fwbg/commit/3a687a6cf16333eaecc82d6244f084f868f283e8))
+
 ## [2.12.0](https://github.com/haexhub/fwbg/compare/v2.11.0...v2.12.0) (2026-07-10)
 
 
