@@ -268,8 +268,17 @@ def register_plugin(payload: RegisterPluginPayload) -> dict:
 
 
 @router.get("")
-def list_plugins(phase: Optional[str] = Query(None, description="Filter by phase")) -> list[dict]:
-    """List all registered plugins with their schemas."""
+def list_plugins(
+    phase: Optional[str] = Query(None, description="Filter by phase"),
+    namespace: Optional[str] = Query(
+        None, description="Filter by namespace (e.g. agent-authored, fwbg-core)"
+    ),
+) -> list[dict]:
+    """List all registered plugins with their schemas.
+
+    An unknown ``namespace`` yields an empty list (namespaces are free-form,
+    not an enum), so the caller can filter without pre-validating.
+    """
     registry = get_plugin_registry()
 
     phase_filter = None
@@ -279,7 +288,7 @@ def list_plugins(phase: Optional[str] = Query(None, description="Filter by phase
         except ValueError:
             raise HTTPException(400, f"Invalid phase: {phase}")
 
-    fqns = registry.list_plugins(phase=phase_filter)
+    fqns = registry.list_plugins(phase=phase_filter, namespace=namespace)
     return [_plugin_to_dict(fqn) for fqn in sorted(fqns)]
 
 
