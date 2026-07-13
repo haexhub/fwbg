@@ -173,7 +173,9 @@ class SimulationContext:
         return cls(
             symbol=asset.symbol,
             asset_class=asset.asset_class,
-            spread=asset.spread,
+            # Cost-stress runs scale the spread (slippage is derived as
+            # spread * 0.5 everywhere, so both scale together).
+            spread=asset.spread * strategy.cost_multiplier,
             point=asset.point,
             currencies=asset.currencies,
             min_trades=strategy.filters.min_trades,

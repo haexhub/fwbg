@@ -80,6 +80,9 @@ class RunStartRequest(BaseModel):
     asset_classes: Optional[list[str]] = None
     description: Optional[str] = None
     preview: Optional[bool] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    cost_multiplier: Optional[float] = None
 
 
 class PreviewRequest(BaseModel):
@@ -131,6 +134,12 @@ def start_run(body: RunStartRequest) -> dict:
         cmd.extend(["--asset-classes", ",".join(body.asset_classes)])
     if body.description:
         cmd.extend(["-d", body.description])
+    if body.start_date:
+        cmd.extend(["--start-date", body.start_date])
+    if body.end_date:
+        cmd.extend(["--end-date", body.end_date])
+    if body.cost_multiplier is not None:
+        cmd.extend(["--cost-multiplier", str(body.cost_multiplier)])
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     short_hash = hashlib.md5(timestamp.encode()).hexdigest()[:6]
     job_id = f"{timestamp}_{short_hash}"
