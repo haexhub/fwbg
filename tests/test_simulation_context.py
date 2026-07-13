@@ -9,7 +9,8 @@ Fokus auf Edge Cases:
 import pytest
 
 from fwbg.core.context import SimulationContext, TradeParams
-from fwbg.core.config import ExitStrategyConfig
+from fwbg.core.config import ExitStrategyConfig, StrategyConfig
+from fwbg.data.assets import AssetConfig
 
 
 # --- TradeParams Tests ---
@@ -56,6 +57,48 @@ class TestTradeParams:
         assert params.sl == 1.0
         assert params.ct == 0.55
         assert params.rrr == 1.5
+
+
+# --- Plan 009 WP4: backtest window + cost multiplier ---
+
+
+class TestBacktestWindowAndCostMultiplier:
+    """start_date/end_date/cost_multiplier config fields + spread scaling."""
+
+    def test_strategy_config_round_trips_new_fields(self):
+        sc = StrategyConfig.from_dict(
+            {
+                "name": "t",
+                "start_date": "2024-01-01",
+                "end_date": "2024-06-30",
+                "cost_multiplier": 2.0,
+            }
+        )
+        assert sc.start_date == "2024-01-01"
+        assert sc.end_date == "2024-06-30"
+        assert sc.cost_multiplier == 2.0
+
+    def test_new_fields_default_to_full_series_and_unit_cost(self):
+        sc = StrategyConfig.from_dict({"name": "t"})
+        assert sc.start_date is None
+        assert sc.end_date is None
+        assert sc.cost_multiplier == 1.0
+
+    def test_cost_multiplier_scales_spread_into_context(self):
+        asset = AssetConfig(
+            symbol="EURUSD",
+            asset_class="FOREX",
+            spread=0.0002,
+            point=0.00001,
+            currencies=["EUR", "USD"],
+        )
+        base = SimulationContext.create(asset, StrategyConfig.from_dict({"name": "t"}))
+        assert base.spread == pytest.approx(0.0002)
+
+        stressed = SimulationContext.create(
+            asset, StrategyConfig.from_dict({"name": "t", "cost_multiplier": 2.0})
+        )
+        assert stressed.spread == pytest.approx(0.0004)
 
 
 # --- SimulationContext Basic Tests ---
