@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.0](https://github.com/haexhub/fwbg/compare/v2.13.0...v2.14.0) (2026-07-13)
+
+
+### Features
+
+* **runs:** backtest date window + cost multiplier (fwbg-agents Plan 009 WP4) ([461b46c](https://github.com/haexhub/fwbg/commit/461b46c137852235de976000430c065c2e3f2849))
+
 ## [2.13.0](https://github.com/haexhub/fwbg/compare/v2.12.0...v2.13.0) (2026-07-12)
 
 
