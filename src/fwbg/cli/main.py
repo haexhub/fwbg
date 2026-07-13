@@ -837,6 +837,12 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                         help="Datenpfad (überschreibt DATA_PATH, z.B. data/dukascopy/datasource)")
     parser.add_argument("--run-id", type=str, metavar="ID",
                         help="Feste Run-ID verwenden (statt automatisch generierter ID)")
+    parser.add_argument("--start-date", type=str, metavar="ISO",
+                        help="Backtest-Fenster Start (ISO, überschreibt Strategy-start_date)")
+    parser.add_argument("--end-date", type=str, metavar="ISO",
+                        help="Backtest-Fenster Ende (ISO, überschreibt Strategy-end_date)")
+    parser.add_argument("--cost-multiplier", type=float, metavar="X",
+                        help="Spread/Slippage-Multiplikator (z.B. 2.0 für Kosten-Stresstest)")
 
     args = parser.parse_args()
 
@@ -871,6 +877,14 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             strategy_metadata = {}
         if args.timeframe:
             strategy_metadata["timeframe"] = args.timeframe
+
+        # CLI backtest-window + cost-stress overrides (Plan 009 WP4).
+        if args.start_date:
+            strategy_metadata["start_date"] = args.start_date
+        if args.end_date:
+            strategy_metadata["end_date"] = args.end_date
+        if args.cost_multiplier is not None:
+            strategy_metadata["cost_multiplier"] = args.cost_multiplier
 
         # CLI --data-path hat höchste Priorität → wird in strategy_metadata injiziert
         # damit run_optimizer es nach der Strategy-Datasource nochmal überschreibt

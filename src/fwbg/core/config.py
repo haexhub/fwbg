@@ -439,6 +439,15 @@ class StrategyConfig:
     # Timeframe override (None = use TIMEFRAME env var)
     timeframe: Optional[str] = None
 
+    # Backtest window (ISO dates, None = full series). Slices the loaded data
+    # before fold splitting — used e.g. to reserve a holdout tail.
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+    # Transaction-cost multiplier applied to spread (and thus slippage).
+    # 1.0 = as configured; 2.0 = cost-stress run.
+    cost_multiplier: float = 1.0
+
     # Signal rules for composed entry signals (visual rule builder)
     signal_rules: Optional[Dict[str, Any]] = None
 
@@ -494,6 +503,9 @@ class StrategyConfig:
             regime_filter=regime_filter,
             datasource=data.get("datasource"),
             timeframe=data.get("timeframe"),
+            start_date=data.get("start_date"),
+            end_date=data.get("end_date"),
+            cost_multiplier=data.get("cost_multiplier", 1.0),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
             signal_rules=data.get("signal_rules"),

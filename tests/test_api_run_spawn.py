@@ -126,3 +126,47 @@ def test_stale_finished_job_does_not_block_the_slot(_single_slot):
     # nonexistent strategy, not 429.
     assert resp.status_code == 404
     assert _single_slot._active_jobs["job_a"]["status"] == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Plan 009 WP4: the backtest-window + cost-stress params must reach the CLI
+# command that fwbg-agents relies on (holdout & cost-stress promote-gate runs).
+# ---------------------------------------------------------------------------
+
+
+def test_start_run_threads_window_and_cost_flags_to_cli(_single_slot, tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from fwbg.api import create_app
+
+    strategies_dir = tmp_path / "configs"
+    strategies_dir.mkdir()
+    (strategies_dir / "demo.json").write_text('{"name": "demo"}')
+    monkeypatch.setenv("FWBG_STRATEGIES_DIR", str(strategies_dir))
+
+    captured: dict = {}
+
+    def _fake_spawn(cmd, env, run_dir):
+        captured["cmd"] = cmd
+        proc = _FakeProc(None)
+        proc.pid = 4242
+        return proc, tmp_path / "out.log", tmp_path / "err.log"
+
+    monkeypatch.setattr(_single_slot, "_spawn_cli_process", _fake_spawn)
+
+    with TestClient(create_app()) as client:
+        resp = client.post(
+            "/api/runs/start",
+            json={
+                "strategy_name": "demo",
+                "assets": ["EURUSD"],
+                "start_date": "2024-01-01",
+                "end_date": "2024-12-31",
+                "cost_multiplier": 2.0,
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--start-date") + 1] == "2024-01-01"
+    assert cmd[cmd.index("--end-date") + 1] == "2024-12-31"
+    assert cmd[cmd.index("--cost-multiplier") + 1] == "2.0"
