@@ -406,6 +406,20 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(2, f"Resampled {data_config.RESAMPLE_FROM} → {data_config.TIMEFRAME} "
                     f"({n_before} → {len(df)} bars)", sym)
 
+        # Restrict to the configured backtest window (ISO start/end dates).
+        # The DatetimeIndex makes all downstream fold/holdout splitting (which is
+        # purely positional) operate on the window automatically — no fold-logic
+        # change needed. Used to reserve a holdout tail or run a holdout window.
+        if strategy.start_date or strategy.end_date:
+            n_before = len(df)
+            df = df.loc[strategy.start_date:strategy.end_date]
+            log(2, f"Datumsfenster {strategy.start_date}..{strategy.end_date}: "
+                    f"{n_before} → {len(df)} Zeilen", sym)
+            if df.empty:
+                log(1, "SKIP - Keine Daten im Datumsfenster", sym)
+                result = {"symbol": sym, "status": "no_data"}
+                return result
+
         # Drop flat bars (O==H==L==C, weekends/holidays for index data)
         if strategy.assets.get("drop_flat_bars"):
             n_before = len(df)
