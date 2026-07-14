@@ -145,6 +145,27 @@ def list_sources() -> list[dict]:
 # GET /api/chart/ohlcv — load OHLCV data from a CSV data source
 # ---------------------------------------------------------------------------
 
+def _resolve_source(source: Optional[str]) -> str:
+    """Resolve the data-source name when the client sent none.
+
+    Exactly one configured source → use it. None or several → 422 with the
+    configured names; a frozen default here would break on every workspace
+    whose source is named differently.
+    """
+    if source:
+        return source
+    from fwbg.core.data_sources import list_data_sources
+
+    names = list_data_sources()
+    if len(names) == 1:
+        return names[0]
+    raise HTTPException(
+        422,
+        f"No 'source' specified and {len(names)} data sources are configured "
+        f"({names}); pass 'source' explicitly.",
+    )
+
+
 def _safe_float(v) -> Optional[float]:
     """Convert value to float, returning None for NaN/inf."""
     if v is None:
@@ -159,7 +180,7 @@ def _safe_float(v) -> Optional[float]:
 def get_ohlcv(
     symbol: str = Query(...),
     timeframe: str = Query("HOUR"),
-    source: str = Query("forexsb"),
+    source: Optional[str] = Query(None),
     limit: int = Query(5000, le=999999),
     offset: int = Query(0, ge=0),
     drop_flat_bars: bool = Query(False),
@@ -168,6 +189,7 @@ def get_ohlcv(
     from fwbg.core.data_sources import get_data_source, CSVSourceConfig
     from fwbg.data.loader import load_data_aligned
 
+    source = _resolve_source(source)
     try:
         ds = get_data_source(source)
     except ValueError as e:
@@ -319,7 +341,7 @@ def _create_broker_adapter(broker_type: str, credentials: dict):
 class IndicatorRequest(BaseModel):
     symbol: str
     timeframe: str = "HOUR"
-    source: str = "forexsb"
+    source: Optional[str] = None
     fqn: str
     params: Optional[dict] = None
     limit: int = 5000
@@ -367,12 +389,13 @@ def compute_indicator(body: IndicatorRequest) -> dict:
                 pass
     else:
         # CSV source
+        source = _resolve_source(body.source)
         try:
-            ds = get_data_source(body.source)
+            ds = get_data_source(source)
         except ValueError as e:
             raise HTTPException(404, str(e))
         if not isinstance(ds, CSVSourceConfig):
-            raise HTTPException(400, f"Source '{body.source}' is not CSV. Provide credentials for broker.")
+            raise HTTPException(400, f"Source '{source}' is not CSV. Provide credentials for broker.")
         path = ds.get_file_path(body.symbol, body.timeframe)
         native_tf = body.timeframe
         if not path.exists():
