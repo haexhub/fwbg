@@ -15,7 +15,7 @@ from fwbg_sdk.models import BaseModel, TrainingContext
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_feature_selector, get_model
 
-from fwbg.simulation.trade import analyze_sl_potential, analyze_tp_potential
+from fwbg.simulation.trade import analyze_sl_potential, analyze_tp_potential, attach_regime_labels
 from .targets import (
     _validate_targets,
     compute_targets,
@@ -707,6 +707,7 @@ def evaluate_on_holdout(
             holdout_df["H"].values,
             holdout_df["L"].values,
         )
+        attach_regime_labels(trades_detailed, holdout_df)
 
     pnl = sum(t["pnl_raw"] for t in trades) if trades else 0
     win_rate = sum(1 for t in trades if t["result"] == 1.0) / len(trades) if trades else 0
