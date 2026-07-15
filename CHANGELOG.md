@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.16.0](https://github.com/haexhub/fwbg/compare/v2.15.0...v2.16.0) (2026-07-15)
+
+
+### Features
+
+* **runs:** expose run duration in list endpoint ([853a420](https://github.com/haexhub/fwbg/commit/853a4209d35e8eaf2902cf36603e33a06c5797d9))
+* **runs:** expose run duration in list endpoint ([ed3283a](https://github.com/haexhub/fwbg/commit/ed3283aee5364b7be18a6d616a9471830199fdfb))
+
 ## [2.15.0](https://github.com/haexhub/fwbg/compare/v2.14.0...v2.15.0) (2026-07-15)
 
 
