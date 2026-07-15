@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.15.0](https://github.com/haexhub/fwbg/compare/v2.14.0...v2.15.0) (2026-07-15)
+
+
+### Features
+
+* **optimization:** causal risk calibration for reporting + time-based equity replay ([0c01be5](https://github.com/haexhub/fwbg/commit/0c01be5df5e8510e20c2aa0c5b81d0dab22d45b5))
+* **simulation:** attach vol_regime/trend_regime labels to trade dicts (Plan 010 WP5) ([f736edd](https://github.com/haexhub/fwbg/commit/f736eddf5c2eabb64c22c73a99b767b6d77d42e8))
+
+
+### Bug Fixes
+
+* **api:** drop frozen 'forexsb' source defaults, resolve at runtime ([8d4bca2](https://github.com/haexhub/fwbg/commit/8d4bca2b9df8603cef339561b946e1b6f781fdc3))
+* phantom SL wins (sl_level validation) + causal risk reporting + time-based equity replay ([78b48d0](https://github.com/haexhub/fwbg/commit/78b48d04fb8d780979207988a1fd6ddc4a2f5e05))
+* **simulation:** reject invalid sl_level suffixes and guard wrong-side SL levels ([7b3268a](https://github.com/haexhub/fwbg/commit/7b3268ac048967af5f43a7a7fb5a64041b5a62a0))
+
 ## [2.14.0](https://github.com/haexhub/fwbg/compare/v2.13.0...v2.14.0) (2026-07-13)
 
 
