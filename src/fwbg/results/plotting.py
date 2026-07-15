@@ -78,10 +78,30 @@ def create_asset_plot(result, output_dir, trade_directions=None, unified_metrics
     if risk <= 0:
         risk = 0.01  # Minimum für Visualisierung
 
-    # Equity mit echten PnL-Magnitudes simulieren (nicht binäres Kelly)
+    # Equity mit echten PnL-Magnitudes simulieren (nicht binäres Kelly).
+    # Dient als Fallback und liefert die Per-Trade-Balken (ax3).
     eq_result = simulate_equity_from_pnl(trades, fk=risk)
     eq = eq_result["equity_curve"]
     drawdowns = eq_result["drawdowns"]
+
+    # Zeitbasierter Replay (kausales Reporting) als Quelle für Equity- und
+    # Drawdown-Panel, wenn vorhanden — echte Zeitachse statt Trade-Index.
+    _rep_equity = (result.get("reporting") or {}).get("equity") or {}
+    _eq_points = _rep_equity.get("equity_points") or []
+    if _eq_points:
+        import pandas as pd
+        eq_times = pd.to_datetime([t for t, _ in _eq_points])
+        eq_curve = [v for _, v in _eq_points]
+        dd_curve = []
+        _peak = eq_curve[0] if eq_curve else 1.0
+        for v in eq_curve:
+            if v > _peak:
+                _peak = v
+            dd_curve.append((_peak - v) / _peak * 100 if _peak > 0 else 0.0)
+    else:
+        eq_times = None
+        eq_curve = eq
+        dd_curve = drawdowns
 
     # Gewinn pro Trade berechnen (aus Equity-Kurve)
     profit_per_trade = []
@@ -104,9 +124,13 @@ def create_asset_plot(result, output_dir, trade_directions=None, unified_metrics
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 9), height_ratios=[3, 1, 1])
 
     # === Equity Kurve (logarithmisch) ===
-    ax1.plot(eq, color="blue", linewidth=1.5)
-    ax1.fill_between(range(len(eq)), eq, alpha=0.3)
-    _setup_log_yaxis(ax1, eq)
+    if eq_times is not None:
+        ax1.plot(eq_times, eq_curve, color="blue", linewidth=1.5)
+        ax1.fill_between(eq_times, eq_curve, alpha=0.3)
+    else:
+        ax1.plot(eq_curve, color="blue", linewidth=1.5)
+        ax1.fill_between(range(len(eq_curve)), eq_curve, alpha=0.3)
+    _setup_log_yaxis(ax1, eq_curve)
 
     # Titel-Metriken aus unified_metrics (Single Source of Truth)
     um = unified_metrics or {}
@@ -144,9 +168,12 @@ def create_asset_plot(result, output_dir, trade_directions=None, unified_metrics
     ax1.grid(True, alpha=0.3)
 
     # === Drawdown ===
-    ax2.fill_between(range(len(drawdowns)), drawdowns, color="red", alpha=0.5)
+    if eq_times is not None:
+        ax2.fill_between(eq_times, dd_curve, color="red", alpha=0.5)
+    else:
+        ax2.fill_between(range(len(dd_curve)), dd_curve, color="red", alpha=0.5)
     ax2.set_ylabel("Drawdown (%)")
-    ax2.set_ylim(max(drawdowns) * 1.1 if drawdowns else 1, 0)
+    ax2.set_ylim(max(dd_curve) * 1.1 if dd_curve else 1, 0)
     ax2.grid(True, alpha=0.3)
 
     # === Profit per Trade ===
