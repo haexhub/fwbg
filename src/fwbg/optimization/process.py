@@ -673,7 +673,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             all_trades_detailed.extend(unified_fold_result.get("trades_detailed") or [])
 
         n_unified_folds = len(unified_fold_results)
-        del unified_fold_results
 
         all_trades_pnl = [t["pnl_raw"] for t in all_trades]
         all_trades_binary = [t["result"] for t in all_trades]
@@ -711,6 +710,21 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(2, f"Circuit Breaker: Pause after {circuit_breaker['pause_after_losses']} losses "
                    f"for {circuit_breaker['pause_bars']} bars", sym)
 
+        # === CAUSAL REPORTING CALIBRATION ===
+        # Der Deployment-Call oben kalibriert auf ALLEN Folds — korrekt fürs
+        # Live-Sizing (assets.json/bot.py), aber Hindsight-Optimierung fürs
+        # Reporting. Für die reported Metriken wird Fold i deshalb nur mit
+        # einer auf Folds 0..i-1 kalibrierten Sizing bewertet (Fold 0 entfällt).
+        from .causal_reporting import compute_causal_reporting
+        causal = compute_causal_reporting(
+            unified_fold_results, risk_mgr, rrr, strategy.risk_params
+        )
+        del unified_fold_results
+        causal_ok = len(causal["causal_pnl"]) >= 10
+        if not causal_ok:
+            log(1, f"  Causal reporting: nur {len(causal['causal_pnl'])} kausale "
+                   f"Trades — Fallback auf naive (nicht-kausale) Metriken", sym)
+
         # === OVERFITTING METRICS (DSR + PBO) ===
         grid_results_by_fold = {}
         for gr in accumulated_grid_results:
@@ -718,20 +732,26 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             if fid is not None:
                 grid_results_by_fold.setdefault(fid, []).append(gr)
 
-        # Per-trade returns from actual pnl_raw (not binary Kelly).
-        # Scaled so avg loss return = -fk — consistent with what MC permutation test sees.
-        pnl_returns = pnl_to_returns(all_trades_pnl, fk)
-        pnl_returns_arr = np.array(pnl_returns)
-        non_ann_sr = float(np.mean(pnl_returns_arr) / np.std(pnl_returns_arr)) if len(pnl_returns_arr) > 1 and np.std(pnl_returns_arr) > 0 else 0.0
+        # Per-trade returns for reporting: kausal kalibriert (Fold i mit
+        # Prior-Fold-Sizing), Fallback auf naive fk-Skalierung wenn zu wenige
+        # kausale Trades vorhanden sind.
+        if causal_ok:
+            reporting_returns = causal["causal_returns"]
+            reporting_pnl = causal["causal_pnl"]
+        else:
+            reporting_returns = pnl_to_returns(all_trades_pnl, fk)
+            reporting_pnl = all_trades_pnl
+        reporting_returns_arr = np.array(reporting_returns)
+        non_ann_sr = float(np.mean(reporting_returns_arr) / np.std(reporting_returns_arr)) if len(reporting_returns_arr) > 1 and np.std(reporting_returns_arr) > 0 else 0.0
 
         from .overfitting import compute_overfitting_metrics
         try:
             overfitting = compute_overfitting_metrics(
-                trade_returns=pnl_returns,
+                trade_returns=reporting_returns,
                 observed_sr=non_ann_sr,
                 n_strategies=len(accumulated_grid_results),
                 grid_results_by_fold=grid_results_by_fold,
-                n_trades=total_trades,
+                n_trades=len(reporting_pnl),
             )
         except Exception as e:
             log(1, f"  Overfitting metrics failed: {e}", sym)
@@ -782,6 +802,14 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         )
         # Override total_trades with unified simulation count
         wf_summary["total_trades"] = total_trades
+        wf_summary["causal_reporting"] = {
+            "causal": causal_ok,
+            "fold_0_excluded": True,
+            "excluded_trades": causal["excluded_trades"],
+            "untraded_folds": causal["untraded_folds"],
+            "per_fold_risk": causal["per_fold_risk"],
+            "n_causal_trades": len(causal["causal_pnl"]),
+        }
         features_list = (unified_candidate.get("selected_features_long") or []) + (unified_candidate.get("selected_features_short") or [])
 
         # Trade analytics (MAE/MFE, SL potential, direction breakdown)
@@ -806,6 +834,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
         total_test_bars = sum(f.test_end - f.test_start for f in wf_folds)
         test_period_years = total_test_bars / bars_per_year if bars_per_year > 0 else 1
+        # Kausales Reporting bewertet nur Folds i>0 → Fold-0-Testbars ausnehmen
+        if causal_ok and len(wf_folds) > 1:
+            reporting_test_bars = sum(f.test_end - f.test_start for f in wf_folds[1:])
+        else:
+            reporting_test_bars = total_test_bars
 
         # === NO EDGE ===
         if fk <= 0:
@@ -851,8 +884,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         report_phase(sym, "Monte Carlo Validierung...")
 
         t_mc = time.time()
-        mc_perm = monte_carlo_permutation_test(all_trades_pnl, n_permutations=1000)
-        mc_equity = monte_carlo_equity_from_returns(pnl_returns, n_simulations=500)
+        mc_perm = monte_carlo_permutation_test(reporting_pnl, n_permutations=1000)
+        mc_equity = monte_carlo_equity_from_returns(reporting_returns, n_simulations=500)
 
         log(2, f"  Monte Carlo: p={mc_perm['p_value']:.3f}, "
                f"Equity median={mc_equity['median_equity']:.1f}, "
@@ -869,9 +902,49 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         }
 
         # Sharpe/Calmar (needed for both not_significant and ok paths)
-        actual_trades_per_year = total_trades * bars_per_year / total_test_bars if total_test_bars > 0 else total_trades
-        sharpe = calculate_sharpe_ratio(pnl_returns, trades_per_year=actual_trades_per_year)
-        calmar = calculate_calmar_from_returns(pnl_returns)
+        actual_trades_per_year = len(reporting_pnl) * bars_per_year / reporting_test_bars if reporting_test_bars > 0 else len(reporting_pnl)
+        sharpe = calculate_sharpe_ratio(reporting_returns, trades_per_year=actual_trades_per_year)
+        calmar = calculate_calmar_from_returns(reporting_returns)
+
+        # === TIME-BASED EQUITY REPLAY (Reporting) ===
+        # Statt Trade-Index-Kompoundierung (simulate_equity_from_pnl) werden
+        # die kausalen Returns chronologisch zu ihren echten Exit-Zeitpunkten
+        # über die komplette Historie replayed → zeitachsen-treue Equity-Kurve,
+        # Max-DD und Annual-Return aus realer Kalenderspanne.
+        detailed_aligned = (
+            len(all_trades_detailed) == total_trades
+            and all(t.get("exit_time") for t in all_trades_detailed)
+        )
+        reporting_equity = None
+        if causal_ok and detailed_aligned:
+            from fwbg.simulation.equity import simulate_equity_timeline
+            exit_times = [
+                all_trades_detailed[i]["exit_time"]
+                for i in causal["causal_trade_indices"]
+            ]
+            reporting_equity = simulate_equity_timeline(exit_times, causal["causal_returns"])
+            pts = reporting_equity["equity_points"]
+            if len(pts) > 2000:
+                step = len(pts) // 2000 + 1
+                reporting_equity["equity_points"] = pts[::step] + [pts[-1]]
+
+        reporting = {
+            "causal": causal_ok,
+            "n_trades": len(reporting_pnl),
+            "pnl_trace": reporting_pnl,
+            "equity": reporting_equity,
+        }
+        slim_trades_detailed = [
+            {
+                "entry_time": t.get("entry_time"),
+                "exit_time": t.get("exit_time"),
+                "direction": t.get("direction"),
+                "result": t.get("result"),
+                "pnl_raw": t.get("pnl_raw"),
+                "exit_reason": t.get("exit_reason"),
+            }
+            for t in all_trades_detailed
+        ] if len(all_trades_detailed) == total_trades else []
 
         ct_long, ct_short, ct_display = _parse_ct_value(b_config["ct"])
 
@@ -905,6 +978,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "overfitting": overfitting,
                 "feature_stability": feature_stability,
                 "trade_analytics": trade_analytics,
+                "reporting": reporting,
+                "trades_detailed": slim_trades_detailed,
                 "reason": f"Not statistically significant (p={mc_perm['p_value']:.3f})",
                 "grid_results": accumulated_grid_results,
             }
@@ -957,6 +1032,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "currencies": asset.currencies,
             "walk_forward": wf_summary,
             "monte_carlo": mc_summary,
+            "reporting": reporting,
+            "trades_detailed": slim_trades_detailed,
             "overfitting": overfitting,
             "feature_stability": feature_stability,
             "trade_analytics": trade_analytics,

@@ -345,8 +345,12 @@ def run_optimizer(
                 json.dump(trades_data, f, indent=2, cls=_SafeJsonEncoder)
 
         # --- unified_metrics.json: Metriken für alle abgeschlossenen Runs ---
-        # Quelle: tr_trace (Unified Simulation) oder Fold-Trades als Fallback
-        _trades = result.get("tr_trace")
+        # Quelle: kausales Reporting (Zeit-Replay über die Historie) wenn
+        # vorhanden; sonst tr_trace (Unified Simulation) oder Fold-Trades.
+        _rep = result.get("reporting") or {}
+        _rep_equity = _rep.get("equity")
+        _from_reporting = bool(_rep.get("causal") and _rep.get("pnl_trace"))
+        _trades = _rep.get("pnl_trace") if _from_reporting else result.get("tr_trace")
         if not _trades:
             # Fallback: PnL-Werte aus Fold test_trades_trace extrahieren
             wf = result.get("walk_forward", {})
@@ -362,10 +366,18 @@ def run_optimizer(
 
         if _trades:
             _risk = result.get("config", {}).get("risk_per_trade", 0.01)
-            _years = result.get("test_period_years", 1)
-            _eq_result = simulate_equity_from_pnl(_trades, fk=_risk)
-            _final_eq = _eq_result["final_equity"]
-            _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
+            if _from_reporting and _rep_equity and _rep_equity.get("equity_points"):
+                # Zeitbasierter Replay mit kausalem Sizing (kein Hindsight-fk)
+                _years = _rep_equity["years"]
+                _final_eq = _rep_equity["final_equity"]
+                _max_dd = _rep_equity["max_drawdown"]
+                _annual_return = _rep_equity["annual_return"]
+            else:
+                _years = result.get("test_period_years", 1)
+                _eq_result = simulate_equity_from_pnl(_trades, fk=_risk)
+                _final_eq = _eq_result["final_equity"]
+                _max_dd = _eq_result["max_drawdown"]
+                _annual_return = ((_final_eq / 100.0) ** (1 / _years) - 1) * 100 if _final_eq > 0 and _years > 0 else -100
 
             _wins = [p for p in _trades if p > 0]
             _losses = [abs(p) for p in _trades if p < 0]
@@ -393,9 +405,10 @@ def run_optimizer(
                 "trades": len(_trades),
                 "annual_return": round(_annual_return, 1),
                 "test_period_years": round(_years, 2),
-                "max_drawdown": round(_eq_result["max_drawdown"], 4),
+                "max_drawdown": round(_max_dd, 4),
                 "final_equity": round(_final_eq, 2),
                 "risk_per_trade": _risk,
+                "causal_reporting": _from_reporting,
                 "profit_factor": _profit_factor,
                 "avg_win": _avg_win,
                 "avg_loss": _avg_loss,
@@ -418,6 +431,9 @@ def run_optimizer(
 
         # --- Memory cleanup: strip heavy data now that it's on disk ---
         result.pop("grid_results", None)
+        result.pop("trades_detailed", None)
+        if isinstance(result.get("reporting"), dict):
+            result["reporting"].pop("pnl_trace", None)
         wf = result.get("walk_forward", {})
         for fold in wf.get("fold_details", []):
             # Replace full trade dicts with PnL-only values

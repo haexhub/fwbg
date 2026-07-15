@@ -74,6 +74,42 @@ def _validate_targets(
     return has_long, has_short
 
 
+def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
+    """Löst den ``sl_level``-Suffix aus exit_params in absolute SL-Preise auf.
+
+    Validiert den Suffix gegen die ``choices`` aus dem Plugin-Schema: ein
+    ungültiger Wert (z. B. "range") würde sonst per ``endswith``-Auto-Detect
+    eine Distanz-Spalte (Range-HÖHE, ~0.005) matchen und deren Werte als
+    absolute SL-PREISE verwenden — Shorts exiten dann sofort zu diesem
+    Phantompreis und buchen den vollen Entry-Preis als Gewinn.
+
+    Returns:
+        np.ndarray der Level-Preise oder None (sl_level nicht gesetzt/none
+        oder keine passende Spalte).
+
+    Raises:
+        ValueError: wenn der Suffix nicht in den Schema-Choices enthalten ist.
+    """
+    sl_level_suffix = exit_params.get("sl_level")
+    if not sl_level_suffix or sl_level_suffix == "none":
+        return None
+
+    schema = get_exit_strategy(ctx.exit_strategy).get_param_schema()
+    choices = (schema.get("sl_level") or {}).get("choices")
+    if choices is not None and sl_level_suffix not in choices:
+        raise ValueError(
+            f"Invalid sl_level '{sl_level_suffix}' for exit strategy "
+            f"'{ctx.exit_strategy}'; allowed: {choices}"
+        )
+    sl_col = next(
+        (c for c in df.columns if c.endswith(f"_{sl_level_suffix}")),
+        None,
+    )
+    if sl_col is None:
+        return None
+    return df[sl_col].values.astype(np.float64)
+
+
 def simulate_trades(
     df: pd.DataFrame,
     probs_long: Optional[np.ndarray],
@@ -141,16 +177,8 @@ def simulate_trades(
     # anchored to the structural price level from that column (e.g. OR midpoint)
     # instead of computed as entry ± sl_dist.
     # sl_level is a suffix like "or_midpoint" — auto-detect the full column name.
-    sl_levels = None
     exit_params = ctx.exit_params if ctx.exit_params else {}
-    sl_level_suffix = exit_params.get("sl_level")
-    if sl_level_suffix and sl_level_suffix != "none":
-        sl_col = next(
-            (c for c in df.columns if c.endswith(f"_{sl_level_suffix}")),
-            None,
-        )
-        if sl_col is not None:
-            sl_levels = df[sl_col].values.astype(np.float64)
+    sl_levels = resolve_sl_levels(df, ctx, exit_params)
 
     # Entry delay: 0 = entry at signal bar close (breakout stop-orders),
     # 1 = entry at next bar open (default, no look-ahead).
