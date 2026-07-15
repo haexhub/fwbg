@@ -56,6 +56,18 @@ def _spawn_cli_process(cmd: list[str], env: dict, run_dir) -> tuple:
     return process, stdout_path, stderr_path
 
 
+def _job_duration_seconds(job: dict) -> Optional[float]:
+    """Elapsed time since a job started, for still-running/just-finished jobs."""
+    started_at = job.get("started_at")
+    if not started_at:
+        return None
+    try:
+        start = datetime.fromisoformat(started_at)
+    except ValueError:
+        return None
+    return (datetime.now() - start).total_seconds()
+
+
 def _job_error_output(job: dict, limit: int = 500) -> str:
     """Tail of the CLI's stderr (or stdout) for failure messages."""
     from pathlib import Path
@@ -573,6 +585,7 @@ def list_runs(
             "started_at": job.get("started_at"),
             "is_active": job["status"] == "running",
             "error_message": job.get("error_message"),
+            "duration_seconds": _job_duration_seconds(job),
         })
 
     with _active_jobs_lock:
@@ -630,6 +643,14 @@ def list_runs(
                 strategy = json.loads(strategy_file.read_text())
                 run_info["strategy_name"] = strategy.get("name", "")
                 run_info["tags"] = strategy.get("tags", [])
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        progress_file = run_dir / "progress.json"
+        if progress_file.exists():
+            try:
+                progress = json.loads(progress_file.read_text())
+                run_info["duration_seconds"] = progress.get("elapsed_seconds")
             except (json.JSONDecodeError, IOError):
                 pass
 
