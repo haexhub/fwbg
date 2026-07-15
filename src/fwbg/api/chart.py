@@ -159,10 +159,14 @@ def _resolve_source(source: Optional[str]) -> str:
     names = list_data_sources()
     if len(names) == 1:
         return names[0]
+    if not names:
+        raise HTTPException(
+            422, "No 'source' specified and no data sources are configured."
+        )
     raise HTTPException(
         422,
         f"No 'source' specified and {len(names)} data sources are configured "
-        f"({names}); pass 'source' explicitly.",
+        f"({', '.join(names)}); pass 'source' explicitly.",
     )
 
 
