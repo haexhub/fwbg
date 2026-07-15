@@ -382,10 +382,17 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         entry = entry_price + spread + slippage  # Kaufe teurer
         tp = entry + tp_distance  # TP-Level (Trigger)
         sl = sl_level_abs if sl_level_abs is not None else entry - sl_distance
+        if sl_level_abs is not None and sl >= entry:
+            # Level auf der falschen Seite des Entry (z. B. Distanz-Spalte als
+            # Level missbraucht oder Gap über das Level) → Distanz-SL statt
+            # sofortigem Phantom-Exit.
+            sl = entry - sl_distance
     else:  # Short
         entry = entry_price - spread - slippage  # Verkaufe billiger
         tp = entry - tp_distance  # TP-Level (Trigger)
         sl = sl_level_abs if sl_level_abs is not None else entry + sl_distance
+        if sl_level_abs is not None and sl <= entry:
+            sl = entry + sl_distance
 
     # --- Scale-in preparation ---
     use_scale_in = scale_levels is not None and len(scale_levels) > 0
