@@ -396,3 +396,50 @@ class TestSchemaConsistency:
                     assert plugin_name in registered_names, (
                         f"Strategy '{strat_info['filename']}' references unknown plugin: {plugin_name}"
                     )
+
+
+# ──────────────────────────────────────────────
+# Chart source resolution
+# ──────────────────────────────────────────────
+
+
+class TestResolveSource:
+    """Tests for chart._resolve_source (optional 'source' param, Plan 010)."""
+
+    def test_explicit_source_is_passed_through(self):
+        from fwbg.api.chart import _resolve_source
+
+        assert _resolve_source("dukascopy") == "dukascopy"
+
+    def test_single_configured_source_is_used(self, monkeypatch):
+        import fwbg.core.data_sources as ds_mod
+        from fwbg.api.chart import _resolve_source
+
+        monkeypatch.setattr(ds_mod, "_DATA_SOURCES", {"only_one": object()})
+        assert _resolve_source(None) == "only_one"
+
+    def test_multiple_sources_raise_422_listing_names(self, monkeypatch):
+        from fastapi import HTTPException
+
+        import fwbg.core.data_sources as ds_mod
+        from fwbg.api.chart import _resolve_source
+
+        monkeypatch.setattr(
+            ds_mod, "_DATA_SOURCES", {"alpha": object(), "beta": object()}
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            _resolve_source(None)
+        assert exc_info.value.status_code == 422
+        assert "alpha" in exc_info.value.detail
+        assert "beta" in exc_info.value.detail
+
+    def test_no_sources_raise_422(self, monkeypatch):
+        from fastapi import HTTPException
+
+        import fwbg.core.data_sources as ds_mod
+        from fwbg.api.chart import _resolve_source
+
+        monkeypatch.setattr(ds_mod, "_DATA_SOURCES", {})
+        with pytest.raises(HTTPException) as exc_info:
+            _resolve_source(None)
+        assert exc_info.value.status_code == 422

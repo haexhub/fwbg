@@ -5,7 +5,7 @@ Persistenz über data/{name}/config.json — jede Quelle ist ein Verzeichnis.
 
 Struktur:
     data/
-      forexsb/
+      dukascopy/
         config.json          ← Quell-Konfiguration
         raw/                 ← originale Uploads
         datasource/          ← aufbereitete CSV-Dateien
