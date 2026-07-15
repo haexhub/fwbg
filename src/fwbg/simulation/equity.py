@@ -127,6 +127,83 @@ def simulate_equity_from_pnl(pnl_raw, fk, start_equity=100.0, compound_cap=1e6):
     }
 
 
+def simulate_equity_timeline(exit_times, returns, start_equity=100.0, compound_cap=1e6):
+    """Zeitbasierter Equity-Replay statt Trade-Index-Simulation.
+
+    Realisiert die Per-Trade-Returns chronologisch zu ihren echten
+    Exit-Zeitpunkten über die komplette Historie. Liefert damit eine
+    zeitachsen-treue Equity-Kurve und einen Annual-Return aus der realen
+    Kalenderspanne (statt aus der Fold-Bar-Summe).
+
+    Args:
+        exit_times: Exit-Timestamps (ISO-Strings oder datetime), parallel zu returns
+        returns: Per-Trade-Returns als Kapital-Fraktionen (z.B. kausal kalibriert)
+        start_equity: Startkapital (default: 100.0)
+        compound_cap: Ab diesem Equity-Wert wird nicht mehr kompoundiert
+
+    Returns:
+        dict mit:
+            - equity_points: [[iso_timestamp, equity], ...] chronologisch,
+              erster Punkt = Startkapital
+            - final_equity, max_drawdown
+            - start_time, end_time (ISO), years (Kalenderspanne)
+            - annual_return: annualisierter Return in Prozent
+    """
+    if not returns or len(exit_times) != len(returns):
+        return {
+            "equity_points": [],
+            "final_equity": start_equity,
+            "max_drawdown": 0.0,
+            "start_time": None,
+            "end_time": None,
+            "years": 0.0,
+            "annual_return": 0.0,
+        }
+
+    import pandas as pd
+
+    times = pd.to_datetime(list(exit_times))
+    order = times.argsort()
+
+    equity = start_equity
+    peak = equity
+    max_dd = 0.0
+    equity_points = [[times[order[0]].isoformat(), start_equity]]
+
+    for idx in order:
+        effective_equity = min(equity, compound_cap)
+        equity += effective_equity * returns[idx]
+        if equity <= 0:
+            equity = 0.0
+            max_dd = 1.0
+            equity_points.append([times[idx].isoformat(), 0.0])
+            break
+        equity_points.append([times[idx].isoformat(), equity])
+        if equity > peak:
+            peak = equity
+        dd = (peak - equity) / peak if peak > 0 else 0.0
+        if dd > max_dd:
+            max_dd = dd
+
+    start_time = times[order[0]]
+    end_time = times[order[-1]]
+    years = max((end_time - start_time).total_seconds() / (365.25 * 24 * 3600), 0.0)
+    if equity > 0 and years > 0:
+        annual_return = ((equity / start_equity) ** (1 / years) - 1) * 100
+    else:
+        annual_return = -100.0 if equity <= 0 else 0.0
+
+    return {
+        "equity_points": equity_points,
+        "final_equity": equity,
+        "max_drawdown": max_dd,
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "years": years,
+        "annual_return": annual_return,
+    }
+
+
 def filter_correlated_assets(results, threshold=CORR_THRESHOLD):
     """
     Filtert Assets mit zu hoher Währungskorrelation.
