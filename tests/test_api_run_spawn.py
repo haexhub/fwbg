@@ -12,7 +12,9 @@ import os
 import pytest
 import sys
 
-from fwbg.api.runs import _job_error_output, _spawn_cli_process
+from datetime import datetime, timedelta
+
+from fwbg.api.runs import _job_duration_seconds, _job_error_output, _spawn_cli_process
 
 
 def test_child_flooding_stdout_does_not_deadlock(tmp_path):
@@ -66,6 +68,18 @@ def test_job_error_output_falls_back_to_stdout_then_empty(tmp_path):
 
     assert _job_error_output({"stdout_path": str(tmp_path / "missing.log")}) == ""
     assert _job_error_output({}) == ""
+
+
+def test_job_duration_seconds_measures_since_started_at():
+    started = (datetime.now() - timedelta(seconds=30)).isoformat()
+    duration = _job_duration_seconds({"started_at": started})
+    assert duration is not None
+    assert 30 <= duration < 35
+
+
+def test_job_duration_seconds_missing_or_invalid_started_at():
+    assert _job_duration_seconds({}) is None
+    assert _job_duration_seconds({"started_at": "not-a-date"}) is None
 
 
 # ---------------------------------------------------------------------------
