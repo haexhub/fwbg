@@ -175,7 +175,7 @@ class SignalPreviewRequest(BaseModel):
     strategy_name: str
     symbol: str
     timeframe: str = "HOUR"
-    source: str = "forexsb"
+    source: str | None = None
     rules: dict  # {operator, conditions}
     direction: str = "long"
     limit: int = 5000
@@ -189,7 +189,7 @@ def preview_signal(req: SignalPreviewRequest) -> dict:
     requested symbol/timeframe data, then evaluates the rule tree.  Returns
     match count, total bars, and the matching timestamps.
     """
-    from fwbg.api.chart import _best_native_file, _resample_ohlcv
+    from fwbg.api.chart import _best_native_file, _resample_ohlcv, _resolve_source
     from fwbg.core.data_sources import get_data_source, CSVSourceConfig
     from fwbg.data.loader import load_data_aligned
     from fwbg.pipeline.features import compute_indicator_pool
@@ -221,13 +221,14 @@ def preview_signal(req: SignalPreviewRequest) -> dict:
         raise HTTPException(400, "Pipeline has no indicators configured")
 
     # --- Load OHLCV data (same pattern as chart.py GET /ohlcv) ---
+    source = _resolve_source(req.source)
     try:
-        ds = get_data_source(req.source)
+        ds = get_data_source(source)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
     if not isinstance(ds, CSVSourceConfig):
-        raise HTTPException(400, f"Source '{req.source}' is not a CSV source")
+        raise HTTPException(400, f"Source '{source}' is not a CSV source")
 
     path = ds.get_file_path(req.symbol, req.timeframe)
     native_tf = req.timeframe
@@ -236,7 +237,7 @@ def preview_signal(req: SignalPreviewRequest) -> dict:
         if not path:
             raise HTTPException(
                 404,
-                f"Data not found: {req.symbol}_{req.timeframe} in {req.source}",
+                f"Data not found: {req.symbol}_{req.timeframe} in {source}",
             )
 
     df = load_data_aligned(str(path))

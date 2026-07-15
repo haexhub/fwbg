@@ -752,6 +752,79 @@ def analyze_tp_potential(trades, closes, highs, lows, max_scan_bars=500):
             trade["continuation_mae"] = float(worst_after_tp - tp)
 
 
+def attach_regime_labels(trades, df):
+    """Enrich each trade dict in-place with vol_regime and trend_regime at entry.
+
+    Descriptive labels for post-hoc diagnostics (Plan 010 WP5) — like
+    analyze_sl_potential/analyze_tp_potential, these are computed from the
+    whole fold-test window's own distribution, not a rolling/expanding one,
+    since they're for post-hoc analysis rather than a trading decision.
+
+    - vol_regime: ATR tercile over the window ("low" / "medium" / "high").
+      Uses the "_atr"/"vol_atr" column if the volatility indicator plugin is
+      configured, else computes ATR(14) directly.
+    - trend_regime: ADX(14) bucket ("ranging" <20, "trending" 20-40,
+      "strong_trend" >=40 — standard interpretation). Uses "adx_14" if the
+      adx indicator plugin is configured, else computes it directly.
+
+    Args:
+        trades: list of trade dicts (modified in-place)
+        df: OHLC DataFrame for the fold's test window (same one trades were
+            simulated on — entry_idx indexes into it positionally)
+    """
+    if not trades:
+        return
+
+    atr_col = "_atr" if "_atr" in df.columns else ("vol_atr" if "vol_atr" in df.columns else None)
+    if atr_col:
+        atr = df[atr_col]
+    else:
+        import ta
+
+        atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
+
+    adx_col = "adx_14" if "adx_14" in df.columns else None
+    if adx_col:
+        adx = df[adx_col]
+    else:
+        import ta
+
+        adx = ta.trend.adx(df["H"], df["L"], df["C"], window=14)
+
+    atr_valid = atr.dropna()
+    vol_low, vol_high = (
+        (atr_valid.quantile(1 / 3), atr_valid.quantile(2 / 3)) if len(atr_valid) else (None, None)
+    )
+    atr_values = atr.values
+    adx_values = adx.values
+    n = len(df)
+
+    def _vol_regime(v):
+        if v is None or vol_low is None or (isinstance(v, float) and v != v):  # NaN check
+            return None
+        if v <= vol_low:
+            return "low"
+        if v <= vol_high:
+            return "medium"
+        return "high"
+
+    def _trend_regime(v):
+        if v is None or (isinstance(v, float) and v != v):
+            return None
+        if v < 20:
+            return "ranging"
+        if v < 40:
+            return "trending"
+        return "strong_trend"
+
+    for trade in trades:
+        idx = trade.get("entry_idx")
+        if not isinstance(idx, int) or not (0 <= idx < n):
+            continue
+        trade["vol_regime"] = _vol_regime(atr_values[idx])
+        trade["trend_regime"] = _trend_regime(adx_values[idx])
+
+
 def calculate_max_drawdown(returns, risk_per_trade, rrr):
     """Berechnet Maximum Drawdown aus Trade-Returns."""
     if not returns:

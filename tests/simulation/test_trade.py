@@ -29,6 +29,7 @@ from fwbg.simulation.trade import (
     adjust_risk_for_target_dd,
     find_optimal_circuit_breaker,
     pnl_to_returns,
+    attach_regime_labels,
 )
 
 
@@ -985,3 +986,59 @@ class TestSessionAwareSimulation:
         )
         # With narrow session, TP at 15:00 is skipped
         assert exit_idx2 != 19, "Narrow session should skip bar 19 (15:00 UTC)"
+
+
+class TestAttachRegimeLabels:
+    """Tests für attach_regime_labels (Plan 010 WP5)."""
+
+    def _df_with_precomputed_columns(self, n=30):
+        return pd.DataFrame({
+            "O": np.linspace(1.0, 1.3, n),
+            "H": np.linspace(1.01, 1.31, n),
+            "L": np.linspace(0.99, 1.29, n),
+            "C": np.linspace(1.0, 1.3, n),
+            "_atr": np.linspace(0.001, 0.01, n),  # rising volatility
+            "adx_14": np.linspace(10.0, 50.0, n),  # rising trend strength
+        })
+
+    def test_buckets_vol_and_trend_using_existing_columns(self):
+        n = 30
+        df = self._df_with_precomputed_columns(n)
+        trades = [
+            {"entry_idx": 0},
+            {"entry_idx": n // 2},
+            {"entry_idx": n - 1},
+        ]
+        attach_regime_labels(trades, df)
+
+        assert trades[0]["vol_regime"] == "low"
+        assert trades[0]["trend_regime"] == "ranging"
+        assert trades[-1]["vol_regime"] == "high"
+        assert trades[-1]["trend_regime"] == "strong_trend"
+
+    def test_empty_trades_list_is_noop(self):
+        df = self._df_with_precomputed_columns()
+        attach_regime_labels([], df)  # must not raise
+
+    def test_missing_or_out_of_range_entry_idx_is_skipped(self):
+        df = self._df_with_precomputed_columns()
+        trades = [{"no_entry_idx": True}, {"entry_idx": 9999}, {"entry_idx": -1}]
+        attach_regime_labels(trades, df)
+        for t in trades:
+            assert "vol_regime" not in t
+            assert "trend_regime" not in t
+
+    def test_falls_back_to_computed_atr_and_adx_when_columns_missing(self):
+        n = 60
+        rng = np.random.default_rng(42)
+        base = 1.0 + np.cumsum(rng.normal(0, 0.001, n))
+        df = pd.DataFrame({
+            "O": base,
+            "H": base + 0.002,
+            "L": base - 0.002,
+            "C": base,
+        })
+        trades = [{"entry_idx": 30}]
+        attach_regime_labels(trades, df)
+        assert trades[0]["vol_regime"] in ("low", "medium", "high")
+        assert trades[0]["trend_regime"] in ("ranging", "trending", "strong_trend")
