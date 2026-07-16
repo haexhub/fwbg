@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.17.0](https://github.com/haexhub/fwbg/compare/v2.16.0...v2.17.0) (2026-07-16)
+
+
+### Features
+
+* **bot:** record signal_price and assumed_spread in trade telemetry ([b9a251b](https://github.com/haexhub/fwbg/commit/b9a251b12010003178afca117acca253bca47ccd))
+* **bot:** record signal_price and assumed_spread in trade telemetry ([675ffdf](https://github.com/haexhub/fwbg/commit/675ffdfbf9c322052f7442d7889b9156abb19483))
+* **data:** data-quality report at Dukascopy download ([131a532](https://github.com/haexhub/fwbg/commit/131a5329ec9c13b830075762e8d5ce7ea85c3540))
+* **data:** write data-quality report at Dukascopy download ([f852890](https://github.com/haexhub/fwbg/commit/f852890079cf8710d1a57f954a989618aac322ec))
+
 ## [2.16.0](https://github.com/haexhub/fwbg/compare/v2.15.0...v2.16.0) (2026-07-15)
 
 
