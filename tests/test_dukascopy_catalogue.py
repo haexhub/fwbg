@@ -38,6 +38,33 @@ def test_groups_cover_known_asset_classes():
     assert {"Forex", "Krypto", "Rohstoffe", "Indizes"} <= groups
 
 
+def test_resolves_fwbg_canonical_index_names():
+    # data/assets.py names indices IG-style; the resolver must map them to the
+    # dukascopy ids (the library itself only knows legacy E_* constants).
+    assert resolve_instrument("SPX500") == "USA500.IDX/USD"
+    assert resolve_instrument("NAS100") == "USATECH.IDX/USD"
+    assert resolve_instrument("DAX") == "DEU.IDX/EUR"
+    assert resolve_instrument("FTSE100") == "GBR.IDX/GBP"
+    assert resolve_instrument("JP225") == "JPN.IDX/JPY"
+    assert resolve_instrument("GOLD") == "XAU/USD"
+
+
+def test_resolves_metadata_only_instruments():
+    # Index majors exist only in the bundled dukascopy-node metadata, not as
+    # library constants; they must resolve in every accepted spelling.
+    assert resolve_instrument("USA500.IDX/USD") == "USA500.IDX/USD"
+    assert resolve_instrument("USA500IDXUSD") == "USA500.IDX/USD"
+    assert resolve_instrument("usa500.idx/usd") == "USA500.IDX/USD"
+
+
+def test_catalogue_contains_index_majors():
+    by_id = {e["id"]: e for e in instrument_catalogue()}
+    for instrument_id in ("USA500.IDX/USD", "DEU.IDX/EUR", "JPN.IDX/JPY"):
+        entry = by_id[instrument_id]
+        assert entry["group"] == "Indizes"
+        assert entry["historyStart"]["daily"]
+
+
 def test_requests_get_gets_default_timeout():
     """dukascopy_python omits timeouts on its requests.get, so a stalled
     connection hangs forever. The module installs a proxy that injects a default
