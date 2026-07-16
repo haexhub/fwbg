@@ -72,7 +72,7 @@ TIMEFRAMES: dict[str, tuple[str, str]] = {
 }
 
 def _normalize(symbol: str) -> str:
-    return symbol.replace("/", "").replace("_", "").replace("-", "").upper()
+    return symbol.replace("/", "").replace("_", "").replace("-", "").replace(".", "").upper()
 
 
 def _build_instrument_index() -> dict[str, str]:
@@ -88,6 +88,35 @@ def _build_instrument_index() -> dict[str, str]:
 
 
 _INSTRUMENTS = _build_instrument_index()
+
+
+# fwbg canonical asset names (data/assets.py, IG-broker style) -> dukascopy
+# instrument ids. dukascopy-python only names the index majors via legacy
+# ``E_*`` constants (``E_SandP-500``, …) that are absent from the bundled
+# history metadata, so without this map neither the fwbg name nor the real
+# dukascopy id would resolve. Keys are pre-normalized (no separators).
+_ALIASES: dict[str, str] = {
+    "SPX500": "USA500.IDX/USD",
+    "NAS100": "USATECH.IDX/USD",
+    "DOW30": "USA30.IDX/USD",
+    "DAX": "DEU.IDX/EUR",
+    "FTSE100": "GBR.IDX/GBP",
+    "EU50": "EUS.IDX/EUR",
+    "CAC40": "FRA.IDX/EUR",
+    "JP225": "JPN.IDX/JPY",
+    "ASX200": "AUS.IDX/AUD",
+    "HK50": "HKG.IDX/HKD",
+    "GOLD": "XAU/USD",
+    "SILVER": "XAG/USD",
+    "BRENT": "BRENT.CMD/USD",
+}
+
+
+def _derive_instrument_id(meta_key: str) -> str:
+    """dukascopy-node metadata keys are ``<base><quote>`` with a 3-letter quote
+    currency (``USA500.IDXUSD``, ``AAPL.USUSD``, ``EURUSD``); the fetchable
+    instrument id re-inserts the slash: ``USA500.IDX/USD``."""
+    return f"{meta_key[:-3]}/{meta_key[-3:]}"
 
 
 # Asset-class label derived from the ``INSTRUMENT_<GROUP>_…`` constant-name prefix.
@@ -122,13 +151,28 @@ def _build_group_index() -> dict[str, str]:
 
 
 @lru_cache(maxsize=1)
+def _meta_instruments() -> dict[str, tuple[str, dict]]:
+    """Normalized symbol -> (instrument id, history metadata) for every entry
+    of the bundled dukascopy-node catalogue. The id comes from the installed
+    library's constant where one exists and is derived from the metadata key
+    otherwise — ``dk.fetch`` takes the id as a plain string, so instruments the
+    library doesn't name (notably the index majors like ``USA500.IDX/USD``)
+    are still fetchable."""
+    meta: dict = json.loads(_META_PATH.read_text())
+    out: dict[str, tuple[str, dict]] = {}
+    for raw_key, m in meta.items():
+        norm = _normalize(raw_key)
+        out[norm] = (_INSTRUMENTS.get(norm) or _derive_instrument_id(raw_key), m)
+    return out
+
+
+@lru_cache(maxsize=1)
 def instrument_catalogue() -> list[dict]:
     """Downloadable instruments joined with their per-timeframe history starts.
 
-    Returns only instruments that are *both* resolvable by the installed
-    ``dukascopy-python`` library and present in the bundled history metadata, so
-    the UI never offers something that can't be fetched or whose available range
-    is unknown. Each entry::
+    Returns every instrument of the bundled history metadata (the
+    dukascopy-node catalogue), so the UI never offers something whose available
+    range is unknown. Each entry::
 
         {
           "symbol": "EURUSD",            # ready to pass straight to download()
@@ -142,19 +186,24 @@ def instrument_catalogue() -> list[dict]:
     The three ``historyStart`` granularities map onto our timeframes: minute
     candles (MINUTE_*), hourly candles (HOUR_*) and daily candles (DAY_1).
     """
-    meta: dict = json.loads(_META_PATH.read_text())
     groups = _build_group_index()
     out: list[dict] = []
-    for norm_key, instrument_id in _INSTRUMENTS.items():
-        m = meta.get(norm_key)
-        if m is None:
-            continue  # no history metadata -> not adaptively selectable
+    for norm_key, (instrument_id, m) in _meta_instruments().items():
+        group = groups.get(norm_key)
+        if group is None:
+            # Metadata-only instrument (no library constant): label from the id.
+            if ".IDX" in instrument_id:
+                group = "Indizes"
+            elif ".CMD" in instrument_id:
+                group = "Rohstoffe"
+            else:
+                group = "Aktien"
         out.append(
             {
                 "symbol": norm_key,
                 "id": instrument_id,
                 "description": m.get("description") or instrument_id,
-                "group": groups.get(norm_key, "Aktien"),
+                "group": group,
                 "historyStart": {
                     "minute": m.get("minute"),
                     "hourly": m.get("hourly"),
@@ -171,11 +220,18 @@ def available_timeframes() -> list[str]:
 
 
 def resolve_instrument(symbol: str) -> str:
-    """Resolve a user symbol to a dukascopy instrument id. Accepts ``EURUSD``,
-    ``EUR/USD``, ``EUR_USD`` or the raw dukascopy id."""
+    """Resolve a user symbol to a dukascopy instrument id. Accepts fwbg
+    canonical asset names (``SPX500``), ``EURUSD``, ``EUR/USD``, ``EUR_USD``
+    or the raw dukascopy id."""
     key = _normalize(symbol)
+    alias = _ALIASES.get(key)
+    if alias is not None:
+        return alias
     if key in _INSTRUMENTS:
         return _INSTRUMENTS[key]
+    hit = _meta_instruments().get(key)
+    if hit is not None:
+        return hit[0]
     raise DukascopyError(f"unknown Dukascopy instrument: {symbol!r}")
 
 
