@@ -29,3 +29,6 @@ fwbg-sdk = "fwbg_sdk.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+fwbg_sdk = ["py.typed"]
