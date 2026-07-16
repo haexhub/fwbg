@@ -85,11 +85,23 @@ def create_app() -> FastAPI:
     )
 
     api_key = os.environ.get("FWBG_API_KEY", "").strip()
+    allow_unauth = os.environ.get("FWBG_ALLOW_UNAUTHENTICATED_API", "").strip().lower() in ("1", "true", "yes")
     if api_key:
         app.add_middleware(APIKeyMiddleware, api_key=api_key)
         log.info("API key authentication enabled")
+    elif allow_unauth:
+        log.warning(
+            "FWBG_API_KEY not set and FWBG_ALLOW_UNAUTHENTICATED_API is enabled — "
+            "API is UNAUTHENTICATED. Use only for local development, never on 0.0.0.0."
+        )
     else:
-        log.warning("FWBG_API_KEY not set — API is unauthenticated. Set FWBG_API_KEY for production.")
+        # Fail closed: the API can start optimizer subprocesses and register
+        # executable plugin code, so it must not run unauthenticated by accident.
+        raise RuntimeError(
+            "FWBG_API_KEY is not set. The API exposes mutating endpoints and "
+            "refuses to start unauthenticated. Set FWBG_API_KEY, or set "
+            "FWBG_ALLOW_UNAUTHENTICATED_API=1 for local-only development."
+        )
 
     app.include_router(exit_optimization_router, prefix="/api/exploration/exit-optimization")
     app.include_router(plugins_router, prefix="/api")
