@@ -49,6 +49,19 @@ def strategy_client(tmp_path):
 
 
 # ──────────────────────────────────────────────
+# Auth / fail-closed startup
+# ──────────────────────────────────────────────
+
+
+def test_create_app_fails_closed_without_key(monkeypatch):
+    """create_app() refuses to start unauthenticated unless dev bypass is set."""
+    monkeypatch.delenv("FWBG_API_KEY", raising=False)
+    monkeypatch.delenv("FWBG_ALLOW_UNAUTHENTICATED_API", raising=False)
+    with pytest.raises(RuntimeError, match="FWBG_API_KEY"):
+        create_app()
+
+
+# ──────────────────────────────────────────────
 # Plugin Endpoints
 # ──────────────────────────────────────────────
 
@@ -285,6 +298,41 @@ class TestStrategyEndpoints:
         client, _ = strategy_client
         resp = client.delete("/api/strategies/ghost")
         assert resp.status_code == 404
+
+    def test_create_rejects_traversal_name(self, strategy_client):
+        """A traversal name in the POST body is rejected and writes nothing outside tmp_dir."""
+        client, tmp_dir = strategy_client
+        resp = client.post("/api/strategies", json={"name": "../evil", "data": {}})
+        assert resp.status_code == 400
+        # No file escaped the strategies directory.
+        assert not (tmp_dir.parent / "evil.json").exists()
+        assert not (tmp_dir / "evil.json").exists()
+
+    def test_create_rejects_slashed_name(self, strategy_client):
+        """A name with path separators is rejected."""
+        client, _ = strategy_client
+        resp = client.post("/api/strategies", json={"name": "a/b/c", "data": {}})
+        assert resp.status_code == 400
+
+    def test_put_delete_reject_invalid_path_name(self, strategy_client):
+        """Invalid characters in the {name} path param are rejected by the handler.
+
+        Note: a literal ``../evil`` in the URL is normalized by the HTTP client
+        to ``/api/evil`` before it reaches the app (→ 404, still no traversal),
+        so we exercise the handler's own validation with an invalid single
+        path segment instead.
+        """
+        client, _ = strategy_client
+        assert client.put("/api/strategies/bad!name", json={}).status_code == 400
+        assert client.delete("/api/strategies/bad!name").status_code == 400
+
+    def test_create_valid_spaced_name(self, strategy_client):
+        """A normal name with spaces still lowercases to test_strategy.json."""
+        client, tmp_dir = strategy_client
+        resp = client.post("/api/strategies", json={"name": "Test Strategy", "data": {}})
+        assert resp.status_code == 200
+        assert resp.json()["filename"] == "test_strategy"
+        assert (tmp_dir / "test_strategy.json").exists()
 
 
 # ──────────────────────────────────────────────
