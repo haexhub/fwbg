@@ -44,6 +44,7 @@ from fwbg.adapters.broker import BrokerAdapter, OrderSide, BarData
 from fwbg.core import get_model
 from fwbg.pipeline import compute_indicator_pool
 from fwbg.data.loader import run_data_loading
+from fwbg.data.assets import get_asset
 
 logger = logging.getLogger(__name__)
 
@@ -581,17 +582,30 @@ class TradingBot:
             if result.success:
                 logger.info(f"✅ {symbol}: Order filled @ {result.fill_price}")
 
+                # Signal price: last known close at decision time. Reused
+                # below for slippage tracking (plan 016 — paper fidelity).
+                expected_price = self.ohlc_cache.get(symbol, pd.DataFrame()).get("C", pd.Series()).iloc[-1] if symbol in self.ohlc_cache else None
+
+                # Assumed spread for symbol, persisted at data-download time
+                # (fwbg.data.assets.save_asset_spread). Best-effort, never raises.
+                assumed_spread = None
+                try:
+                    assumed_spread = get_asset(symbol).spread
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"Failed to load assumed spread for {symbol}: {exc}")
+
                 # M6a — append the executed entry to the per-strategy trade log.
                 self._append_trade_entry(
                     symbol=symbol,
                     direction=direction,
                     size=size,
                     fill_price=result.fill_price,
+                    signal_price=float(expected_price) if expected_price is not None else None,
+                    assumed_spread=assumed_spread,
                 )
 
                 # Slippage tracken
                 if result.fill_price:
-                    expected_price = self.ohlc_cache.get(symbol, pd.DataFrame()).get("C", pd.Series()).iloc[-1] if symbol in self.ohlc_cache else None
                     if expected_price:
                         slippage = abs(result.fill_price - expected_price)
                         if slippage > 0:
@@ -819,10 +833,16 @@ class TradingBot:
         direction: OrderSide,
         size: float,
         fill_price: float,
+        signal_price: float | None = None,
+        assumed_spread: float | None = None,
     ) -> None:
         """Append one JSON line to ``trades.jsonl`` for a freshly-filled entry.
 
         Best-effort: failures are logged, never raised. No-op in legacy mode.
+
+        ``signal_price`` / ``assumed_spread`` (plan 016 — paper fidelity)
+        default to ``None`` so callers without this data keep working; the
+        JSONL format is append-only and schemaless.
         """
         if self.strategy_slug is None:
             return
@@ -842,6 +862,8 @@ class TradingBot:
                 "pnl_pct": None,
                 "quantity": float(size),
                 "fees": 0.0,
+                "signal_price": signal_price,
+                "assumed_spread": assumed_spread,
             }
             trades_file = telemetry_dir / "trades.jsonl"
             with open(trades_file, "a") as f:
