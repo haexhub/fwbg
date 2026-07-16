@@ -187,6 +187,57 @@ def test_execute_signal_with_strategy_slug_appends_trades_jsonl(tmp_path):
     assert "trade_id" in entry
 
 
+def test_execute_signal_records_signal_price_and_assumed_spread(tmp_path, monkeypatch):
+    """trades.jsonl entry carries signal_price (last close) and assumed_spread.
+
+    Plan 016 — paper fidelity telemetry.
+    """
+    from fwbg.data.assets import AssetConfig as DataAssetConfig
+
+    def _fake_get_asset(symbol):
+        return DataAssetConfig(
+            symbol=symbol,
+            asset_class="FOREX",
+            point=0.0001,
+            spread=0.00042,
+            currencies=["EUR", "USD"],
+        )
+
+    monkeypatch.setattr("fwbg.bot.get_asset", _fake_get_asset)
+
+    bot = _make_bot(tmp_path=tmp_path, strategy_slug="foo")
+    bot.ohlc_cache["EURUSD"] = bot.adapter.get_historical_bars("EURUSD")
+
+    cfg = bot.assets["EURUSD"]
+    bot._execute_signal("EURUSD", OrderSide.BUY, probability=0.7, cfg=cfg)
+
+    trades_file = tmp_path / "account-trades" / "foo" / "trades.jsonl"
+    entry = json.loads(trades_file.read_text().strip().splitlines()[0])
+    # Stub OHLC has a constant close of 1.08 (see _StubBrokerAdapter.get_historical_bars).
+    assert entry["signal_price"] == pytest.approx(1.08)
+    assert entry["assumed_spread"] == pytest.approx(0.00042)
+
+
+def test_execute_signal_spread_lookup_failure_defaults_to_none(tmp_path, monkeypatch):
+    """A failing spread lookup must not raise; assumed_spread falls back to None."""
+
+    def _boom(symbol):
+        raise RuntimeError("no asset meta")
+
+    monkeypatch.setattr("fwbg.bot.get_asset", _boom)
+
+    bot = _make_bot(tmp_path=tmp_path, strategy_slug="foo")
+    bot.ohlc_cache["EURUSD"] = bot.adapter.get_historical_bars("EURUSD")
+
+    cfg = bot.assets["EURUSD"]
+    bot._execute_signal("EURUSD", OrderSide.BUY, probability=0.7, cfg=cfg)  # must not raise
+
+    trades_file = tmp_path / "account-trades" / "foo" / "trades.jsonl"
+    entry = json.loads(trades_file.read_text().strip().splitlines()[0])
+    assert entry["assumed_spread"] is None
+    assert entry["signal_price"] == pytest.approx(1.08)
+
+
 def test_execute_signal_without_strategy_slug_writes_nothing(tmp_path):
     """Legacy mode (slug=None) writes nothing under account-trades/."""
     bot = _make_bot(tmp_path=tmp_path, strategy_slug=None)
