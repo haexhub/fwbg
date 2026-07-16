@@ -50,14 +50,20 @@ def _default_history_start(symbol: str, timeframe: str) -> str:
     e.g. EURUSD daily back to 1973, minute data back to 2003. Falls back to
     2020-01-01 when the catalogue has no entry for the symbol.
     """
-    from fwbg.data.dukascopy import instrument_catalogue
+    from fwbg.data.dukascopy import instrument_catalogue, resolve_instrument
 
     granularity = _TIMEFRAME_GRANULARITY.get(timeframe.split("_")[0])
     if granularity is None:
         return _FALLBACK_HISTORY_START
     try:
+        # Aliased symbols (e.g. SPX500 -> USA500.IDX/USD) are catalogued under
+        # the dukascopy id, so match on the resolved id as well as the symbol.
+        try:
+            target_id = resolve_instrument(symbol)
+        except Exception:
+            target_id = None
         for inst in instrument_catalogue():
-            if inst["symbol"] == symbol:
+            if inst["symbol"] == symbol or (target_id and inst["id"] == target_id):
                 start = (inst.get("historyStart") or {}).get(granularity)
                 if start:
                     return start
@@ -82,12 +88,13 @@ def ensure_data(req: EnsureRequest):
 
     - 200 "ready"      — file already present in a configured CSV source.
     - 202 "downloading" — download started; poll GET /api/data/ensure/{task_id}.
-    - 404              — symbol not covered by any adapter (non-FX instruments).
+    - 404              — symbol not known to Dukascopy (no download source).
     - 422              — unsupported timeframe or invalid date range.
     - 503              — no CSV datasource configured to store the download.
 
-    Currently only FX instruments are downloadable (Dukascopy). Non-FX symbols
-    must be uploaded manually via the datasource upload endpoints.
+    Downloadable instruments are everything Dukascopy serves (forex, indices,
+    commodities, crypto, stocks, ETFs); anything else must be uploaded
+    manually via the datasource upload endpoints.
     """
     from fwbg.data.dukascopy import DukascopyError, TIMEFRAMES, download, resolve_instrument
 
@@ -136,7 +143,7 @@ def ensure_data(req: EnsureRequest):
             detail=(
                 f"No data available for {symbol!r}. "
                 "Dukascopy does not list this instrument — "
-                "only FX instruments are currently supported for on-demand download."
+                "upload the data manually via the datasource upload endpoints."
             ),
         )
 
@@ -218,7 +225,7 @@ def ensure_status(task_id: str):
 
 def _normalize_symbol(raw: str) -> str:
     """Strip separators and uppercase — matches Dukascopy's internal normalization."""
-    return raw.replace("/", "").replace("_", "").replace("-", "").upper()
+    return raw.replace("/", "").replace("_", "").replace("-", "").replace(".", "").upper()
 
 
 def _csv_first_date(path: Path) -> str | None:
