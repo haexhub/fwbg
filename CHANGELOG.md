@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.17.2](https://github.com/haexhub/fwbg/compare/v2.17.1...v2.17.2) (2026-07-16)
+
+
+### Bug Fixes
+
+* **sdk:** ship py.typed marker ([229d14c](https://github.com/haexhub/fwbg/commit/229d14c9078d39deed5a602fc8ef9f242d1cb3ec))
+* **sdk:** ship py.typed so downstream type-checkers see fwbg-sdk types ([#129](https://github.com/haexhub/fwbg/issues/129)) ([b2d763b](https://github.com/haexhub/fwbg/commit/b2d763b52197ffafcc874deb27cfb83560056cd6))
+
 ## [2.17.1](https://github.com/haexhub/fwbg/compare/v2.17.0...v2.17.1) (2026-07-16)
 
 
