@@ -254,6 +254,7 @@ def download(
     import pandas as pd
 
     from fwbg.data.assets import save_asset_spread
+    from fwbg.data.quality import assess_bars
 
     if timeframe not in TIMEFRAMES:
         raise DukascopyError(
@@ -356,8 +357,28 @@ def download(
         if manual_spread and manual_spread > 0:
             save_asset_spread(clean, float(manual_spread), manual=True)
 
+        quality_df = pd.DataFrame(
+            {"O": mid["open"], "H": mid["high"], "L": mid["low"], "C": mid["close"], "V": volume},
+            index=ts,
+        )
+        report = assess_bars(quality_df, timeframe=timeframe, requested_start=start, requested_end=end)
+        report["spread_p90"] = spread
+        dest.with_suffix(".quality.json").write_text(json.dumps(report, indent=2))
+        for warning in report["warnings"]:
+            log.warning("dukascopy: %s: %s", clean, warning)
+
         log.info("dukascopy: wrote %s (%d bars, spread_p90=%.6g)", dest, len(out), spread)
-        result = {"symbol": clean, "file": filename, "rows": int(len(out)), "spread": spread}
+        result = {
+            "symbol": clean,
+            "file": filename,
+            "rows": int(len(out)),
+            "spread": spread,
+            "quality": {
+                "warnings": report["warnings"],
+                "coverage": report["coverage"],
+                "n_gaps": report["n_gaps"],
+            },
+        }
         if manual_spread and manual_spread > 0:
             result["manual_spread"] = float(manual_spread)
         results.append(result)
