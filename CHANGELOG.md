@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.17.1](https://github.com/haexhub/fwbg/compare/v2.17.0...v2.17.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* **data:** resolve Dukascopy index majors and fwbg canonical asset names ([#125](https://github.com/haexhub/fwbg/issues/125)) ([#126](https://github.com/haexhub/fwbg/issues/126)) ([8ea51ae](https://github.com/haexhub/fwbg/commit/8ea51aebe0d17974605a7d26f8bee3e1e61beb46))
+
 ## [2.17.0](https://github.com/haexhub/fwbg/compare/v2.16.0...v2.17.0) (2026-07-16)
 
 
