@@ -50,8 +50,19 @@ OPTIMIZER_LOG=2 fwbg --assets EURUSD
 ### API Server
 
 ```bash
-uvicorn fwbg.api:app --host 0.0.0.0 --port 8420 --reload
+# Local development on loopback:
+FWBG_ALLOW_UNAUTHENTICATED_API=1 uvicorn fwbg.api:app --host 127.0.0.1 --port 8420 --reload
+
+# Networked / production (binding 0.0.0.0):
+FWBG_API_KEY=$(openssl rand -hex 32) uvicorn fwbg.api:app --host 0.0.0.0 --port 8420
 ```
+
+The API exposes mutating endpoints (optimizer runs, strategy CRUD, plugin
+registration), so it **fails closed**: startup aborts unless either
+`FWBG_API_KEY` is set (X-API-Key enforced on every `/api` request) or
+`FWBG_ALLOW_UNAUTHENTICATED_API=1` is explicitly set for local-only use. Always
+set `FWBG_API_KEY` when binding to `0.0.0.0`. Clients (fwbg-agents) send the
+same key via the `X-API-Key` header.
 
 Interactive docs available at `http://localhost:8420/docs` after startup.
 
@@ -61,6 +72,9 @@ Interactive docs available at `http://localhost:8420/docs` after startup.
 |----------|---------|-------------|
 | `FWBG_STRATEGIES_DIR` | `strategies/configs` | Strategy JSON directory |
 | `FWBG_TEST_RESULTS_DIR` | `test_results` | Results directory |
+| `FWBG_API_KEY` | _(unset)_ | Required unless dev bypass is set; enforced as `X-API-Key` on `/api`. |
+| `FWBG_ALLOW_UNAUTHENTICATED_API` | _(unset)_ | Set to `1` for local-only dev to run without a key. |
+| `FWBG_MAX_CONCURRENT_RUNS` | `1` | Concurrent backtest subprocesses. Raise only with enough RAM/CPU and callers that tolerate parallel runs; fwbg-agents expects `429` when the slot is busy and waits. |
 
 **Endpoints:**
 

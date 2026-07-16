@@ -74,6 +74,16 @@ def client():
         yield c
 
 
+def test_api_rejects_requests_without_matching_key(monkeypatch):
+    """When FWBG_API_KEY is set, /api endpoints require a matching X-API-Key."""
+    monkeypatch.setenv("FWBG_API_KEY", "s3cret")
+    app = create_app()
+    with TestClient(app) as c:
+        assert c.get("/api/plugins").status_code == 401
+        assert c.get("/api/plugins", headers={"X-API-Key": "wrong"}).status_code == 401
+        assert c.get("/api/plugins", headers={"X-API-Key": "s3cret"}).status_code == 200
+
+
 def _register(client, slug="test_reg_indicator", kind="indicator", **kwargs):
     payload = {
         "slug": slug,
