@@ -112,6 +112,16 @@ class TestPluginEndpoints:
         assert p["phase"] == "indicators"
         assert len(p["param_schema"]) > 0
 
+    def test_plugin_exposes_depends_on(self, client):
+        """depends_on is exposed so agent tooling can validate it before authoring."""
+        resp = client.get("/api/plugins")
+        plugins = {p["fqn"]: p for p in resp.json()}
+        regime_cluster = plugins["fwbg-premium:regime_cluster"]
+        assert regime_cluster["depends_on"] == ["regime", "volatility"]
+        # Plugins without declared dependencies still expose the (empty) field.
+        adx = plugins["fwbg-core:adx"]
+        assert adx["depends_on"] == []
+
     def test_get_nonexistent_plugin(self, client):
         """Requesting unknown plugin returns 404."""
         resp = client.get("/api/plugins/fwbg-core:does_not_exist")

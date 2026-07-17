@@ -26,7 +26,7 @@ from fwbg.simulation.trade import (
 from fwbg.core import get_risk_manager
 from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log, start_log_capture, stop_log_capture
-from .robust_validation import create_walk_forward_folds
+from .robust_validation import create_walk_forward_folds, plan_walk_forward
 from .bias_checks import check_asset_bias
 from .process_fold import precompute_indicators, process_single_fold
 
@@ -469,10 +469,27 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 return result
 
         # === WALK-FORWARD FOLDS ERSTELLEN ===
-        n_folds = strategy.validation.folds
-        min_train = data_config.WINDOW_SIZE // 2
-        # OOS size: split all available data (after min training) into n_folds
-        oos_size = max(data_config.OOS_SIZE, (len(df) - min_train) // n_folds)
+        # Fold-Dimensionen adaptiv an die tatsächlich vorhandene Historie
+        # anpassen: die Test-Fenster füllen die verfügbaren Daten, bei knapper
+        # Historie werden Training/Fold-Zahl reduziert statt hart zu skippen.
+        target_folds = strategy.validation.folds
+        target_min_train = data_config.WINDOW_SIZE // 2
+        # OOS darf beliebig klein werden, muss aber je Fold aussagekräftig
+        # bleiben — Boden relativ zum Timeframe-Ziel.
+        min_oos = max(60, data_config.OOS_SIZE // 10)
+        plan = plan_walk_forward(len(df), target_folds, target_min_train, min_oos)
+        if plan is None:
+            reason = (
+                f"only {len(df)} bars — too little history for a valid "
+                f"walk-forward split (need at least "
+                f"~{min_oos * 3 + max(200, target_min_train // 4)})"
+            )
+            log(1, f"SKIP - {reason}", sym)
+            return {"symbol": sym, "status": "insufficient_data_for_folds", "error": reason}
+        n_folds, oos_size, min_train = plan
+        if n_folds < target_folds:
+            log(1, f"Adaptive folds: {n_folds} instead of {target_folds} "
+                   f"({len(df)} bars available)", sym)
         report_phase(sym, f"Creating {n_folds} walk-forward folds (oos_size={oos_size})...")
         try:
             wf_folds = create_walk_forward_folds(
