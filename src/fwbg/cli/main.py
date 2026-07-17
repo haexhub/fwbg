@@ -35,6 +35,7 @@ class _SafeJsonEncoder(json.JSONEncoder):
         return obj
 
 
+from fwbg_sdk.enums import Timeframe  # noqa: E402
 from fwbg.data import config as data_config  # noqa: E402
 from fwbg.core.config import StrategyConfig  # noqa: E402
 from fwbg.optimization.process import process_symbol  # noqa: E402
@@ -98,7 +99,12 @@ def run_optimizer(
 
     # Timeframe aus Strategy übernehmen (überschreibt Modul-Globals)
     if strategy.timeframe:
-        tf = strategy.timeframe
+        # Auf die kanonische Langform normalisieren (HOUR_1, DAY_1, …), damit
+        # Config-Lookup, Datei-Globbing und die Worker denselben String sehen.
+        # Eine unbekannte Bezeichnung soll laut scheitern statt still auf HOUR
+        # zurückzufallen (der frühere Fallback ließ DAY_1 mit oos_size=4000 laufen
+        # → 49500 Balken nötig → jeder Run brach als insufficient_data ab).
+        tf = Timeframe.from_str(strategy.timeframe).canonical
         # CRITICAL: also set the env var, not just the module globals. Optimizer
         # workers run in a ProcessPoolExecutor; on Python 3.14 the default start
         # method is "forkserver" (not "fork"), so workers re-import data_config
@@ -107,7 +113,7 @@ def run_optimizer(
         # re-import reads TIMEFRAME from the environment, so propagate it there.
         os.environ["TIMEFRAME"] = tf
         data_config.TIMEFRAME = tf
-        tf_cfg = data_config.TIMEFRAME_CONFIG.get(tf, data_config.TIMEFRAME_CONFIG["HOUR"])
+        tf_cfg = data_config.resolve_tf_config(tf)
         data_config.tf_cfg = tf_cfg
         data_config.OOS_SIZE = tf_cfg["oos_size"]
         data_config.WINDOW_SIZE = tf_cfg["window_size"]
