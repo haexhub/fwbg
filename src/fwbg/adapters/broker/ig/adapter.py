@@ -297,7 +297,12 @@ class IGBrokerAdapter(BrokerAdapter):
             return None
 
         self._rate_limit()
-        resolution = TIMEFRAME_TO_RESOLUTION.get(timeframe, "HOUR")
+        try:
+            resolution = TIMEFRAME_TO_RESOLUTION[timeframe]
+        except KeyError:
+            raise ValueError(
+                f"unsupported timeframe for IG resolution: {timeframe!r}"
+            ) from None
 
         max_retries = 3
         for attempt in range(max_retries):
@@ -365,8 +370,13 @@ class IGBrokerAdapter(BrokerAdapter):
             return None
 
         try:
-            yf_interval = TIMEFRAME_TO_YF_INTERVAL.get(timeframe, "1h")
+            yf_interval = TIMEFRAME_TO_YF_INTERVAL[timeframe]
+        except KeyError:
+            raise ValueError(
+                f"unsupported timeframe for yfinance interval: {timeframe!r}"
+            ) from None
 
+        try:
             if "m" in yf_interval:
                 minutes = int(yf_interval.replace("m", ""))
                 days_needed = min((limit * minutes // 60 // 24) + 5, 7)
