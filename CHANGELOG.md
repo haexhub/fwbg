@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.18.0](https://github.com/haexhub/fwbg/compare/v2.17.2...v2.18.0) (2026-07-17)
+
+
+### Features
+
+* **api:** expose depends_on on GET /api/plugins ([334cdd0](https://github.com/haexhub/fwbg/commit/334cdd095b9d3a370785b779269424f8a83b4e49))
+* **api:** expose depends_on on GET /api/plugins ([49962aa](https://github.com/haexhub/fwbg/commit/49962aa13273f1007e4607525e9c0f0001dc374a))
+
+
+### Bug Fixes
+
+* **broker:** fail-loud IG/yfinance timeframe mapping + collect legacy adapter tests in CI ([8eda269](https://github.com/haexhub/fwbg/commit/8eda2692105a741f7359a77bc7fc7cc8cc4d76fb))
+* **broker:** fail-loud IG/yfinance timeframe mapping instead of silent HOUR fallback ([0b4d1ee](https://github.com/haexhub/fwbg/commit/0b4d1eee096b84b675cafb0f69d2c4b1ebcb44e5))
+* **review:** normalize TIMEFRAME env to canonical, treat same-canonical MTF spellings as equal ([1a24ad0](https://github.com/haexhub/fwbg/commit/1a24ad0d419f990877df190feef711d3a7984a1a))
+* **timeframe:** canonical Timeframe enum + adaptive walk-forward folds ([557a636](https://github.com/haexhub/fwbg/commit/557a636440b7c95541398619767fc68a1715eb22))
+* **timeframe:** canonical Timeframe enum + adaptive walk-forward folds ([6a089bb](https://github.com/haexhub/fwbg/commit/6a089bbdf37fc784436701d8219db344f12832c6))
+
 ## [2.17.2](https://github.com/haexhub/fwbg/compare/v2.17.1...v2.17.2) (2026-07-16)
 
 
