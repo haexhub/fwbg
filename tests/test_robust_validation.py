@@ -22,9 +22,75 @@ sys.path.insert(0, os.path.dirname(__file__))  # Add tests directory to path
 
 from fwbg.optimization.robust_validation import (
     create_walk_forward_folds,
+    plan_walk_forward,
     RobustValidationResult,
 )
 from test_sample_bias_detection import SampleBiasDetector
+
+
+class TestPlanWalkForward:
+    """Adaptives Fold-Sizing: an vorhandene Historie anpassen statt skippen."""
+
+    def test_plentiful_data_matches_legacy_behaviour(self):
+        # Reichlich Historie: identisch zur früheren max()-Logik
+        # (target_folds, (total-min_train)//folds, target_min_train).
+        total, folds, min_train = 100_000, 8, 17_500
+        n, oos, mt = plan_walk_forward(total, folds, min_train, min_oos=400)
+        assert n == 8
+        assert mt == min_train
+        assert oos == (total - min_train) // folds
+
+    def test_day1_eurusd_regression(self):
+        # Der ursprüngliche Bug: DAY_1 mit HOUR-Fallback verlangte 49500 Balken.
+        # EURUSD/DAY_1 hat ~6746 — muss jetzt mit vollen Folds passen.
+        total = 6746
+        plan = plan_walk_forward(total, target_folds=8, target_min_train=1000, min_oos=60)
+        assert plan is not None
+        n, oos, mt = plan
+        assert n == 8
+        assert mt + n * oos <= total  # tatsächlich konstruierbar
+
+    def test_short_history_index_still_runs(self):
+        # Kurze Index-Historie (DAX/DAY_1 ~3180) lief früher auf Grund; jetzt OK.
+        total = 3180
+        plan = plan_walk_forward(total, target_folds=8, target_min_train=1000, min_oos=60)
+        assert plan is not None
+        n, oos, mt = plan
+        assert mt + n * oos <= total
+        assert oos >= 60
+
+    def test_reduces_folds_when_needed(self):
+        # Zu wenig für 8 Folds bei min_oos, aber genug für weniger Folds.
+        total = 700
+        plan = plan_walk_forward(total, target_folds=8, target_min_train=1000,
+                                 min_oos=60, min_folds=3)
+        assert plan is not None
+        n, oos, mt = plan
+        assert 3 <= n <= 8
+        assert mt + n * oos <= total
+
+    def test_returns_none_when_truly_insufficient(self):
+        assert plan_walk_forward(50, target_folds=8, target_min_train=1000,
+                                 min_oos=60) is None
+
+    def test_respects_user_lower_fold_count(self):
+        # target_folds < default min_folds darf nicht nach oben gedrückt werden.
+        plan = plan_walk_forward(10_000, target_folds=2, target_min_train=1000,
+                                 min_oos=100)
+        assert plan is not None
+        assert plan[0] == 2
+
+    def test_plan_is_constructible_by_create_folds(self):
+        # Ein Plan muss immer ohne ValueError in echte Folds übersetzbar sein.
+        total = 3180
+        n, oos, mt = plan_walk_forward(total, 8, 1000, min_oos=60)
+        df = pd.DataFrame({
+            "O": np.ones(total), "H": np.ones(total),
+            "L": np.ones(total), "C": np.ones(total),
+        })
+        folds = create_walk_forward_folds(df, n_folds=n, test_size=oos,
+                                          min_train_size=mt, anchored=True)
+        assert len(folds) == n
 
 
 class TestWalkForwardFolds:

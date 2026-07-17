@@ -158,7 +158,7 @@ class TestAccountTimeframeOverride:
 
         # Restore
         data_config.TIMEFRAME = original_tf
-        tf_cfg = data_config.TIMEFRAME_CONFIG.get(original_tf, data_config.TIMEFRAME_CONFIG["HOUR"])
+        tf_cfg = data_config.resolve_tf_config(original_tf)
         data_config.OOS_SIZE = tf_cfg["oos_size"]
 
 
@@ -336,10 +336,15 @@ class TestDataConfig:
 
     def test_timeframe_config(self):
         """Test: TIMEFRAME_CONFIG hat alle Timeframes."""
-        from fwbg.data.config import TIMEFRAME_CONFIG
+        from fwbg.data.config import TIMEFRAME_CONFIG, resolve_tf_config
 
-        expected = ["HOUR", "MINUTE_15", "MINUTE_5", "DAY"]
+        # Kanonische Keys (Timeframe.canonical)
+        expected = ["HOUR_1", "MINUTE_15", "MINUTE_5", "DAY_1"]
         for tf in expected:
             assert tf in TIMEFRAME_CONFIG, f"Timeframe {tf} fehlt"
             assert "oos_size" in TIMEFRAME_CONFIG[tf]
             assert "bars_per_hour" in TIMEFRAME_CONFIG[tf]
+
+        # Legacy-/Kurzformen werden über resolve_tf_config normalisiert
+        assert resolve_tf_config("HOUR") is TIMEFRAME_CONFIG["HOUR_1"]
+        assert resolve_tf_config("DAY") is TIMEFRAME_CONFIG["DAY_1"]

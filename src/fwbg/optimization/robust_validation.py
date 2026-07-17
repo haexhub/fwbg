@@ -102,6 +102,41 @@ class RobustValidationResult:
         return True
 
 
+def plan_walk_forward(
+    total_len: int,
+    target_folds: int,
+    target_min_train: int,
+    min_oos: int,
+    min_folds: int = 3,
+) -> tuple[int, int, int] | None:
+    """Größtes ``(n_folds, test_size, min_train)``, das in ``total_len`` passt.
+
+    Nutzt die gesamte verfügbare Historie: die Test-Fenster wachsen, um die Daten
+    jenseits des Trainings zu füllen — es gibt keinen fixen OOS-Zielwert, der bei
+    knapper Historie das Fold-Setup unmöglich macht (die frühere ``max(OOS_SIZE,
+    …)``-Logik verlangte z.B. für DAY_1 stets ≥4000 Balken/Fold und ließ daher
+    jeden Tages-Backtest an ``insufficient_data`` scheitern).
+
+    Reicht die Historie nicht für die Zielwerte, wird zuerst das Trainingsfenster
+    (bis zu einem Boden), dann die Fold-Zahl (bis ``min_folds``) reduziert. Passt
+    selbst der Boden nicht, wird ``None`` zurückgegeben (echt zu wenig Daten).
+
+    Für reichlich Historie liefert der Planer exakt dasselbe wie zuvor
+    ``(target_folds, (total_len - target_min_train)//target_folds, target_min_train)``,
+    d.h. das Verhalten funktionierender Läufe bleibt unverändert.
+    """
+    min_folds = min(min_folds, max(1, target_folds))
+    train_floor = max(200, target_min_train // 4)
+    for folds in range(target_folds, min_folds - 1, -1):
+        for min_train in (target_min_train, train_floor):
+            if total_len <= min_train:
+                continue
+            oos = (total_len - min_train) // folds
+            if oos >= min_oos:
+                return folds, oos, min_train
+    return None
+
+
 def create_walk_forward_folds(
     df: pd.DataFrame,
     n_folds: int = 5,
