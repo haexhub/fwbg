@@ -150,6 +150,7 @@ def _plugin_to_dict(fqn: str) -> dict:
         "group": getattr(plugin_cls, "group", "custom"),
         "stateful": plugin_cls.stateful,
         "cacheable": plugin_cls.cacheable,
+        "depends_on": list(plugin_cls.depends_on),
         "has_docs": plugin_cls.get_docs_dir() is not None,
         "param_schema": param_schema,
         "defaults": defaults,
