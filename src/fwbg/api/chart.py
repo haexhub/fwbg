@@ -295,6 +295,8 @@ def get_ohlcv_broker(body: BrokerOhlcvRequest) -> dict:
     try:
         adapter.connect()
         df = adapter.get_historical_bars(sym, tf, limit=body.limit)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(500, f"Broker data fetch failed: {e}")
     finally:
@@ -384,6 +386,8 @@ def compute_indicator(body: IndicatorRequest) -> dict:
         try:
             adapter.connect()
             df = adapter.get_historical_bars(sym, tf, limit=body.limit + body.offset)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         except Exception as e:
             raise HTTPException(500, f"Broker data fetch failed: {e}")
         finally:
