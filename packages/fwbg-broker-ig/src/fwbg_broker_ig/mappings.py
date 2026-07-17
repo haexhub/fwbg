@@ -169,8 +169,8 @@ SYMBOL_POINT_VALUE: Dict[Symbol, float] = {
 }
 
 # IG Resolution Mapping (IG API format)
-# Gültige Werte: SECOND, 1MINUTE, 2MINUTE, 3MINUTE, 5MINUTE, 10MINUTE,
-#                15MINUTE, 30MINUTE, HOUR, 2HOUR, 3HOUR, 4HOUR, DAY, WEEK, MONTH
+# Gültige Werte: SECOND, MINUTE, MINUTE_2, MINUTE_3, MINUTE_5, MINUTE_10,
+#                MINUTE_15, MINUTE_30, HOUR, HOUR_2, HOUR_3, HOUR_4, DAY, WEEK, MONTH
 TIMEFRAME_TO_RESOLUTION: Dict[Timeframe, str] = {
     Timeframe.M1: "MINUTE",
     Timeframe.M5: "MINUTE_5",
@@ -184,11 +184,14 @@ TIMEFRAME_TO_RESOLUTION: Dict[Timeframe, str] = {
 }
 
 # yfinance Interval Mapping
+# H2 bewusst nicht gemappt: yfinance kennt kein 2-Stunden-Intervall.
 TIMEFRAME_TO_YF_INTERVAL: Dict[Timeframe, str] = {
     Timeframe.M1: "1m",
     Timeframe.M5: "5m",
     Timeframe.M15: "15m",
+    Timeframe.M30: "30m",
     Timeframe.H1: "1h",
     Timeframe.H4: "4h",
     Timeframe.D1: "1d",
+    Timeframe.W1: "1wk",
 }
