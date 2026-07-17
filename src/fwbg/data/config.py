@@ -12,8 +12,11 @@ CORR_THRESHOLD = 0.75  # Für Asset-Währungskorrelation (Portfolio-Diversifikat
 TARGET_TZ = "Europe/Berlin"
 MIN_TRADES = 50  # Minimum Trades für statistische Signifikanz
 
-# Timeframe-abhängige Parameter
-TIMEFRAME = os.environ.get("TIMEFRAME", "HOUR")
+# Timeframe-abhängige Parameter. Direkt auf die kanonische Langform normalisieren:
+# TIMEFRAME speist Datei-Globbing (cli/main.py, cli/_analyze.py) und Results-
+# Metadaten — eine Legacy-Schreibweise aus der Umgebung ("HOUR") würde sonst an
+# kanonisch benannten Dateien (EURUSD_HOUR_1.csv) vorbei globben.
+TIMEFRAME = Timeframe.from_str(os.environ.get("TIMEFRAME", "HOUR")).canonical
 
 # Walk-Forward-Ziel-Dimensionen je Timeframe (nach kanonischem Namen, siehe
 # Timeframe.canonical). window_size = Trainingsfenster, oos_size = Out-of-Sample-

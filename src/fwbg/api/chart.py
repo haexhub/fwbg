@@ -393,9 +393,13 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     # --- MTF: load indicator-timeframe data if different from chart TF ---
     chart_df = None
     ind_tf = body.indicator_timeframe
+    ind_canon = _canon_tf(ind_tf) if ind_tf else None
+    if ind_canon is not None and ind_canon == _canon_tf(body.timeframe):
+        # Gleicher Timeframe in anderer Schreibweise ("HOUR" vs. "HOUR_1") —
+        # kein MTF nötig, normaler Single-TF-Pfad.
+        ind_tf = None
     if ind_tf and ind_tf != body.timeframe:
         chart_canon = _canon_tf(body.timeframe)
-        ind_canon = _canon_tf(ind_tf)
         chart_idx = _TIMEFRAME_ORDER.index(chart_canon) if chart_canon in _TIMEFRAME_ORDER else -1
         ind_idx = _TIMEFRAME_ORDER.index(ind_canon) if ind_canon in _TIMEFRAME_ORDER else -1
         if ind_idx < 0 or chart_idx < 0:

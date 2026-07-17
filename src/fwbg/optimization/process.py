@@ -467,7 +467,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if plan is None:
             reason = (
                 f"only {len(df)} bars — too little history for a valid "
-                f"walk-forward split (need at least ~{min_oos * 3 + target_min_train // 4})"
+                f"walk-forward split (need at least "
+                f"~{min_oos * 3 + max(200, target_min_train // 4)})"
             )
             log(1, f"SKIP - {reason}", sym)
             return {"symbol": sym, "status": "insufficient_data_for_folds", "error": reason}
