@@ -7,11 +7,21 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from fwbg_sdk.enums import Timeframe
+
 from fwbg.data.resample import (
     TIMEFRAME_ORDER as _TIMEFRAME_ORDER,
     resample_ohlcv as _resample_ohlcv,
     parse_symbol_timeframe as _parse_symbol_timeframe,
 )
+
+
+def _canon_tf(tf: str) -> str | None:
+    """Kanonische Timeframe-Langform oder None bei unbekannter Bezeichnung."""
+    try:
+        return Timeframe.from_str(tf).canonical
+    except ValueError:
+        return None
 
 router = APIRouter(prefix="/chart", tags=["chart"])
 
@@ -66,6 +76,7 @@ def _best_native_file(ds, symbol: str, target_tf: str):
     """Find the best native file to load for a given target timeframe.
     Prefers exact match, then the lowest available timeframe that can be
     resampled up to the target."""
+    target_tf = _canon_tf(target_tf) or target_tf
     # Try exact match first
     path = ds.get_file_path(symbol, target_tf)
     if path.exists():
@@ -264,19 +275,12 @@ class BrokerOhlcvRequest(BaseModel):
 @router.post("/ohlcv")
 def get_ohlcv_broker(body: BrokerOhlcvRequest) -> dict:
     """Load OHLCV data from a broker adapter using provided credentials."""
-    from fwbg_sdk import Symbol, Timeframe
+    from fwbg_sdk import Symbol
 
-    # Map timeframe string to Timeframe enum
-    tf_map = {
-        "MINUTE_1": Timeframe.M1,
-        "MINUTE_5": Timeframe.M5,
-        "MINUTE_15": Timeframe.M15,
-        "MINUTE_30": Timeframe.M30,
-        "HOUR": Timeframe.H1,
-        "DAY": Timeframe.D1,
-    }
-    tf = tf_map.get(body.timeframe)
-    if tf is None:
+    # Normalize timeframe string to Timeframe enum
+    try:
+        tf = Timeframe.from_str(body.timeframe)
+    except ValueError:
         raise HTTPException(400, f"Unsupported timeframe: {body.timeframe}")
 
     # Map symbol string to Symbol enum
@@ -366,14 +370,10 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     # --- Load OHLCV data ---
     if body.credentials and body.broker_type:
         # Broker source
-        from fwbg_sdk import Symbol, Timeframe
-        tf_map = {
-            "MINUTE_1": Timeframe.M1, "MINUTE_5": Timeframe.M5,
-            "MINUTE_15": Timeframe.M15, "MINUTE_30": Timeframe.M30,
-            "HOUR": Timeframe.H1, "DAY": Timeframe.D1,
-        }
-        tf = tf_map.get(body.timeframe)
-        if tf is None:
+        from fwbg_sdk import Symbol
+        try:
+            tf = Timeframe.from_str(body.timeframe)
+        except ValueError:
             raise HTTPException(400, f"Unsupported timeframe: {body.timeframe}")
         try:
             sym = Symbol[body.symbol]
@@ -420,9 +420,15 @@ def compute_indicator(body: IndicatorRequest) -> dict:
     # --- MTF: load indicator-timeframe data if different from chart TF ---
     chart_df = None
     ind_tf = body.indicator_timeframe
+    ind_canon = _canon_tf(ind_tf) if ind_tf else None
+    if ind_canon is not None and ind_canon == _canon_tf(body.timeframe):
+        # Gleicher Timeframe in anderer Schreibweise ("HOUR" vs. "HOUR_1") —
+        # kein MTF nötig, normaler Single-TF-Pfad.
+        ind_tf = None
     if ind_tf and ind_tf != body.timeframe:
-        chart_idx = _TIMEFRAME_ORDER.index(body.timeframe) if body.timeframe in _TIMEFRAME_ORDER else -1
-        ind_idx = _TIMEFRAME_ORDER.index(ind_tf) if ind_tf in _TIMEFRAME_ORDER else -1
+        chart_canon = _canon_tf(body.timeframe)
+        chart_idx = _TIMEFRAME_ORDER.index(chart_canon) if chart_canon in _TIMEFRAME_ORDER else -1
+        ind_idx = _TIMEFRAME_ORDER.index(ind_canon) if ind_canon in _TIMEFRAME_ORDER else -1
         if ind_idx < 0 or chart_idx < 0:
             raise HTTPException(400, f"Unknown timeframe: {ind_tf}")
         if ind_idx <= chart_idx:

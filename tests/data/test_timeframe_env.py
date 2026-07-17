@@ -43,7 +43,8 @@ def test_fresh_interpreter_derives_m15_from_env():
 
 
 def test_fresh_interpreter_defaults_to_hour_without_env():
-    # No TIMEFRAME in env → HOUR fallback (unchanged legacy behavior).
+    # No TIMEFRAME in env → HOUR fallback, normalisiert auf die kanonische
+    # Langform (Basis für Datei-Globbing und Results-Metadaten).
     env = {k: v for k, v in os.environ.items() if k != "TIMEFRAME"}
     r = subprocess.run(
         [sys.executable, "-c", "import fwbg.data.config as c; print(c.TIMEFRAME)"],
@@ -52,4 +53,13 @@ def test_fresh_interpreter_defaults_to_hour_without_env():
         text=True,
     )
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip() == "HOUR"
+    assert r.stdout.strip() == "HOUR_1"
+
+
+def test_fresh_interpreter_normalizes_legacy_env_spelling():
+    # Legacy-Schreibweise in der Umgebung → kanonische Form im Modul.
+    r = _reimport_with_timeframe("DAY")
+    assert r.returncode == 0, r.stderr
+    tf, bph, window, oos = r.stdout.split()
+    assert tf == "DAY_1"
+    assert oos == "500"
