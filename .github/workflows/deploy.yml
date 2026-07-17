@@ -36,7 +36,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e packages/fwbg-sdk
           pip install --no-deps -e packages/fwbg-premium
-          pip install -e ".[dev,api]"
+          pip install -e ".[dev,api,ig]"
 
       - name: Lint
         run: ruff check src/ packages/

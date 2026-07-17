@@ -124,6 +124,7 @@ ignore_missing_imports = true
 testpaths = [
     "tests",
     "src/fwbg/plugins",
+    "src/fwbg/adapters/broker/ig",
     "packages/fwbg-premium/src/fwbg_premium/plugins",
     "packages/fwbg-sdk/tests",
 ]
