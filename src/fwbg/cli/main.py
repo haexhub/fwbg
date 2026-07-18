@@ -59,6 +59,22 @@ from .commands import (  # noqa: E402
 warnings.filterwarnings("ignore")
 
 
+# Per-symbol statuses that mean a backtest actually executed (as opposed to
+# bailing out before evaluation: no_data, insufficient_data, no_signal_source,
+# no_successful_folds, missing_model_dependencies, error, ...).
+EXECUTED_STATUSES = frozenset({"ok", "no_edge", "not_significant", "no_unified_trades"})
+
+
+def _ran_real_backtest(raw_results) -> bool:
+    """True if at least one symbol actually executed a backtest.
+
+    A run where every symbol bailed out before evaluation is broken, not a
+    legitimate "no edge found" — the caller fails it loudly instead of
+    reporting a silently "completed" empty run.
+    """
+    return any(r and r.get("status") in EXECUTED_STATUSES for r in raw_results)
+
+
 def run_optimizer(
     description=None,
     save_results=True,
@@ -544,6 +560,10 @@ def run_optimizer(
     failed_results = [r for r in raw_results if r and r.get("status") != "ok"]
     none_results = sum(1 for r in raw_results if r is None)
 
+    # A run is only meaningful if at least one symbol actually executed a
+    # backtest (see the loud-fail below).
+    ran_real_backtest = _ran_real_backtest(raw_results)
+
     print(f"{len(successful_results)} Assets haben die Optimierung bestanden.")
 
     # Zeige übersprungene Assets immer an
@@ -558,6 +578,17 @@ def run_optimizer(
             )
         if none_results:
             print(f"  - {none_results}x Fehler (None zurückgegeben)")
+
+    # No symbol ran a real backtest → the run is broken. Return None so main()
+    # exits non-zero and the API records the run as "failed" instead of a
+    # silently "completed" few-second empty run.
+    if not ran_real_backtest:
+        print(
+            "\nFEHLER: Kein Symbol hat einen Backtest ausgeführt — alle Assets "
+            "brachen vor der Evaluierung ab (z.B. no_signal_source, no_data, "
+            "no_successful_folds). Run wird als fehlgeschlagen gewertet."
+        )
+        return None
 
     # Korrelationsfilter anwenden (nur auf erfolgreiche)
     filtered = filter_correlated_assets(successful_results, data_config.CORR_THRESHOLD)
