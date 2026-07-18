@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.18.1](https://github.com/haexhub/fwbg/compare/v2.18.0...v2.18.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **optimization:** fail loudly on signal strategies with no signal source ([8962a80](https://github.com/haexhub/fwbg/commit/8962a80a4be9bca0e68d96fae9e8ad857e320d5c))
+* **optimization:** fail loudly when a signal strategy has no signal source ([3049e0e](https://github.com/haexhub/fwbg/commit/3049e0e9835f289ee52d9c8af2bd48c540428494))
+
 ## [2.18.0](https://github.com/haexhub/fwbg/compare/v2.17.2...v2.18.0) (2026-07-17)
 
 
