@@ -454,6 +454,36 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 }
                 return result
 
+        # === SIGNAL SOURCE VALIDATION ===
+        # Signal models read their entry column from full_pool, which is
+        # required_features ∩ columns (signal_fold.py). That pool is only
+        # non-empty when signal_rules-with-conditions or time filters produce
+        # _composed_signal_*, or model.required_features names a real column.
+        # Without any of those, every fold is skipped with an empty pool and
+        # the run silently "completes" as no_successful_folds. Fail fast and
+        # loudly instead. (strategy.model.required_features, not ctx's, since
+        # ctx.required_features also carries the exit sl_dist_column.)
+        if ctx.model_type == "signal":
+            has_signal_rules = bool(ctx.signal_rules) and any(
+                (ctx.signal_rules.get(d) or {}).get("conditions")
+                for d in ("long", "short")
+            )
+            has_time_filter = bool(ctx.allowed_hours) or bool(ctx.allowed_days)
+            has_required_features = bool(strategy.model.required_features)
+            if not (has_signal_rules or has_time_filter or has_required_features):
+                log(1, "SKIP - Signal model has no entry-signal source", sym)
+                result = {
+                    "symbol": sym,
+                    "status": "no_signal_source",
+                    "error": (
+                        "Signal model has no entry-signal source: needs "
+                        "signal_rules with conditions, non-empty "
+                        "model.required_features, or an allowed_hours/"
+                        "allowed_days time filter."
+                    ),
+                }
+                return result
+
         # === WALK-FORWARD FOLDS ERSTELLEN ===
         n_folds = strategy.validation.folds
         min_train = data_config.WINDOW_SIZE // 2
