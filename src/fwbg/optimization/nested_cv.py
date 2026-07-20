@@ -221,23 +221,26 @@ def _generate_oof_predictions(
     features: List[str],
     ctx: SimulationContext,
     n_splits: int = 3,
+    label_horizon: Optional[int] = None,
 ) -> np.ndarray:
     """
     Generate out-of-fold probability predictions (AFML Ch. 3).
 
-    Uses time-series KFold (no shuffle) to avoid data leakage.
-    Each fold trains a reduced-param model and predicts on held-out bars.
+    Uses expanding, strictly-forward folds.  Training observations whose
+    labels can overlap validation are purged, followed by the configured
+    embargo.  The initial region for which no forward prediction exists is
+    represented by NaN rather than a synthetic probability.
 
     Returns:
         Array of shape (n,) with OOF win-probabilities for each bar.
     """
-    from sklearn.model_selection import KFold
-
     model_class = get_model(ctx.model_type)
-    oof_probs = np.zeros(len(df))
-    kf = KFold(n_splits=n_splits, shuffle=False)
+    oof_probs = np.full(len(df), np.nan, dtype=float)
+    horizon = _effective_label_horizon(len(df), ctx, label_horizon)
 
-    for train_idx, val_idx in kf.split(df[features].values):
+    for train_idx, val_idx in _forward_oof_splits(
+        len(df), n_splits, horizon, ctx.embargo_bars
+    ):
         if len(np.unique(targets[train_idx])) < 2:
             continue
 
@@ -251,6 +254,43 @@ def _generate_oof_predictions(
             oof_probs[val_idx] = model.predict_probability(df[features].iloc[val_idx])[:, win_idx]
 
     return oof_probs
+
+
+def _effective_label_horizon(
+    n_samples: int, ctx: SimulationContext, timeout_bars: Optional[int]
+) -> int:
+    """Return the maximum number of future bars used by active labels."""
+    limits = [
+        int(value)
+        for value in (timeout_bars, ctx.max_trade_bars)
+        if value is not None and int(value) > 0
+    ]
+    return min(limits) if limits else n_samples
+
+
+def _forward_oof_splits(
+    n_samples: int,
+    n_splits: int,
+    label_horizon: int,
+    embargo_bars: int = 0,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """Build deterministic expanding OOF splits with purge and embargo."""
+    if n_splits < 2:
+        raise ValueError("n_splits must be at least 2")
+    if label_horizon < 0 or embargo_bars < 0:
+        raise ValueError("label_horizon and embargo_bars must be non-negative")
+
+    blocks = np.array_split(np.arange(n_samples), n_splits + 1)
+    splits = []
+    for val_idx in blocks[1:]:
+        if len(val_idx) == 0:
+            continue
+        train_end = int(val_idx[0]) - label_horizon - embargo_bars
+        if train_end <= 0:
+            continue
+        train_idx = np.arange(train_end)
+        splits.append((train_idx, val_idx))
+    return splits
 
 
 def _train_meta_model(
@@ -271,8 +311,17 @@ def _train_meta_model(
     if len(np.unique(targets)) < 2:
         return None
 
+    available = np.isfinite(oof_probs)
+    if not np.any(available):
+        return None
+    available_targets = targets[available]
+    if np.count_nonzero(available_targets) < ctx.min_trades // 2:
+        return None
+    if len(np.unique(available_targets)) < 2:
+        return None
+
     X_meta = pd.DataFrame(
-        np.column_stack([df[features].values, oof_probs]),
+        np.column_stack([df.loc[available, features].values, oof_probs[available]]),
         columns=features + ["oof_prob"],
     )
 
@@ -280,7 +329,7 @@ def _train_meta_model(
     params = model_class.get_reduced_hyperparameters(ctx.model_hyperparameters.copy())
     meta_model = model_class()
     training_context = TrainingContext()
-    meta_model.train(X_meta, targets, training_context, **params)
+    meta_model.train(X_meta, available_targets, training_context, **params)
     return meta_model
 
 
@@ -367,10 +416,14 @@ def _evaluate_single_fold(
     meta_mod_short = None
     if ctx.meta_labeling:
         if mod_long is not None and feat_long:
-            oof_long = _generate_oof_predictions(train_df, targets_long, feat_long, ctx)
+            oof_long = _generate_oof_predictions(
+                train_df, targets_long, feat_long, ctx, label_horizon=timeout_bars
+            )
             meta_mod_long = _train_meta_model(train_df, targets_long, feat_long, oof_long, ctx)
         if mod_short is not None and feat_short:
-            oof_short = _generate_oof_predictions(train_df, targets_short, feat_short, ctx)
+            oof_short = _generate_oof_predictions(
+                train_df, targets_short, feat_short, ctx, label_horizon=timeout_bars
+            )
             meta_mod_short = _train_meta_model(train_df, targets_short, feat_short, oof_short, ctx)
 
     best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
