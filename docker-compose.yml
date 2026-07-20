@@ -129,7 +129,7 @@ services:
       - FWBG_REPO_ROOT=/fwbg-src
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://claude-proxy:8080}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-proxy-not-used-but-sdk-requires-it}
-      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-7}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-5}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - BRAVE_API_KEY=${BRAVE_API_KEY:-}
       - IG_DEMO_USERNAME=${IG_DEMO_USERNAME:-}
