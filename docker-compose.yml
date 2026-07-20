@@ -112,6 +112,12 @@ services:
     volumes:
       - fwbg-data:/app/fwbg-data
       - agents-data:/app/data
+      # Same workspace as the fwbg API: DSR snapshots read per-trade P&L
+      # from /root/fwbg/test_results before retention can prune those runs.
+      - type: volume
+        source: fwbg-workspace
+        target: /root/fwbg
+        read_only: true
       - .:/fwbg-src:ro
     environment:
       - TZ=Europe/Berlin
@@ -119,6 +125,7 @@ services:
       # Must match the api service's FWBG_API_KEY when auth is enabled.
       - FWBG_API_KEY=${FWBG_API_KEY:-}
       - FWBG_DATA_DIR=/app/fwbg-data
+      - FWBG_TEST_RESULTS_DIR=/root/fwbg/test_results
       - FWBG_REPO_ROOT=/fwbg-src
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://claude-proxy:8080}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-proxy-not-used-but-sdk-requires-it}
