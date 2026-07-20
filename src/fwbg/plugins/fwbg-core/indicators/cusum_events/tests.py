@@ -110,6 +110,18 @@ class TestCusumNoLookahead:
         # Events should only reflect info from previous bars
         assert events.iloc[0] == 0.0  # First non-NaN should be 0
 
+    def test_prefix_is_invariant_including_nan_positions(
+        self, indicator, random_walk_df
+    ):
+        split = 80
+        prefix = indicator.compute(random_walk_df.iloc[:split].copy())
+        full = indicator.compute(random_walk_df.copy()).iloc[:split]
+
+        for column in indicator.get_feature_columns():
+            pd.testing.assert_series_equal(
+                prefix[column], full[column], check_names=True
+            )
+
 
 class TestCusumEventDetection:
     """CUSUM correctly detects structural breaks."""

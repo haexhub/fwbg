@@ -108,12 +108,6 @@ class CusumEventsIndicator(BaseIndicator):
         expected = ret_series.rolling(lookback, min_periods=20).mean().values
         rolling_std = ret_series.rolling(lookback, min_periods=20).std().values
 
-        # Fill NaN warmup with global estimates
-        global_mean = np.nanmean(log_returns[1:])
-        global_std = np.nanstd(log_returns[1:])
-        expected = np.where(np.isnan(expected), global_mean, expected)
-        rolling_std = np.where(np.isnan(rolling_std), global_std, rolling_std)
-
         # Threshold = h * rolling_std
         h = threshold * rolling_std
 
