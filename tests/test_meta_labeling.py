@@ -107,6 +107,63 @@ class TestOOFPredictions:
             assert train_idx.max() < val_idx.min()
             assert train_idx.max() + 7 + 2 < val_idx.min()
 
+    def test_adaptive_atr_uses_maximum_dynamic_timeout(self):
+        from fwbg.optimization.nested_cv import (
+            _effective_label_horizon,
+            _forward_oof_splits,
+        )
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "atr_based"
+        ctx.embargo_bars = 3
+        ctx.exit_params = {
+            "adaptive_timeout": True,
+            "base_timeout": 48,
+            "min_timeout": 12,
+            "max_timeout": 96,
+        }
+
+        horizon = _effective_label_horizon(500, ctx, timeout_bars=8)
+        assert horizon == 96
+        splits = _forward_oof_splits(500, 3, horizon, ctx.embargo_bars)
+        assert splits
+        for train_idx, val_idx in splits:
+            assert train_idx.max() + horizon + ctx.embargo_bars < val_idx.min()
+
+    def test_max_trade_bars_caps_adaptive_atr_horizon(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "atr_based"
+        ctx.max_trade_bars = 40
+        ctx.exit_params = {
+            "adaptive_timeout": True,
+            "base_timeout": 48,
+            "min_timeout": 12,
+            "max_timeout": 96,
+        }
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=8) == 40
+
+    def test_modifier_precedence_restores_static_timeout(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "atr_based"
+        ctx.entry_modifier = "scale_in"
+        ctx.exit_params = {"adaptive_timeout": True, "max_timeout": 96}
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=8) == 8
+
+    def test_unknown_exit_semantics_fail_closed(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "third_party_exit"
+        ctx.max_trade_bars = 5
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 500
+
     def test_unbounded_labels_produce_no_oof_predictions(self):
         from fwbg.optimization.nested_cv import _generate_oof_predictions
 

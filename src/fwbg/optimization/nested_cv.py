@@ -259,12 +259,66 @@ def _generate_oof_predictions(
 def _effective_label_horizon(
     n_samples: int, ctx: SimulationContext, timeout_bars: Optional[int]
 ) -> int:
-    """Return the maximum number of future bars used by active labels."""
-    limits = [
-        int(value)
-        for value in (timeout_bars, ctx.max_trade_bars)
-        if value is not None and int(value) > 0
-    ]
+    """Return a conservative maximum future span for the active exit path.
+
+    Unknown plugin semantics fail closed by returning the entire training
+    window.  This prevents a newly installed exit plugin from silently
+    invalidating the purge calculation.
+    """
+    simple_timeout_strategies = {
+        "fixed",
+        "structural_rr",
+        "atr_trailing",
+        "orb_based",
+    }
+    known_entry_modifiers = {None, "scale_in"}
+    known_exit_modifiers = {None, "trailing_stop"}
+
+    strategy = ctx.exit_strategy
+    entry_modifier = ctx.entry_modifier
+    exit_modifier = ctx.exit_modifier
+    if (
+        entry_modifier not in known_entry_modifiers
+        or exit_modifier not in known_exit_modifiers
+    ):
+        return n_samples
+
+    def _positive_int(value: Any) -> Optional[int]:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return parsed if parsed > 0 else None
+
+    hard_cap = _positive_int(ctx.max_trade_bars)
+    exit_cap = None
+
+    if strategy in simple_timeout_strategies:
+        exit_cap = _positive_int(timeout_bars)
+    elif strategy == "atr_based":
+        exit_params = ctx.exit_params or {}
+        # Entry and exit modifiers take precedence over adaptive timeout in
+        # AtrExitStrategy.compute_targets and receive the static timeout.
+        adaptive_active = bool(exit_params.get("adaptive_timeout")) and not (
+            entry_modifier or exit_modifier
+        )
+        if adaptive_active:
+            adaptive_values = [
+                exit_params.get("base_timeout", 48),
+                exit_params.get("min_timeout", 12),
+                exit_params.get("max_timeout", 96),
+            ]
+            parsed = [_positive_int(value) for value in adaptive_values]
+            # A non-positive/invalid branch disables its timeout in the
+            # kernel, so only max_trade_bars can bound the labels.
+            if all(value is not None for value in parsed):
+                exit_cap = max(value for value in parsed if value is not None)
+        else:
+            exit_cap = _positive_int(timeout_bars)
+    else:
+        return n_samples
+
+    limits = [cap for cap in (hard_cap, exit_cap) if cap is not None]
     return min(limits) if limits else n_samples
 
 
