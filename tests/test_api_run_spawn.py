@@ -14,7 +14,20 @@ import sys
 
 from datetime import datetime, timedelta
 
-from fwbg.api.runs import _job_duration_seconds, _job_error_output, _spawn_cli_process
+from fwbg.api.runs import (
+    _job_duration_seconds,
+    _job_error_output,
+    _max_concurrent_runs_from_env,
+    _spawn_cli_process,
+)
+
+
+def test_max_concurrent_runs_default_is_one(monkeypatch):
+    """Unset env -> 1 slot; explicit override is honored."""
+    monkeypatch.delenv("FWBG_MAX_CONCURRENT_RUNS", raising=False)
+    assert _max_concurrent_runs_from_env() == 1
+    monkeypatch.setenv("FWBG_MAX_CONCURRENT_RUNS", "3")
+    assert _max_concurrent_runs_from_env() == 3
 
 
 def test_child_flooding_stdout_does_not_deadlock(tmp_path):
