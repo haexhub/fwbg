@@ -31,7 +31,19 @@ _active_jobs: dict[str, dict] = {}
 _active_jobs_lock = threading.Lock()
 
 # Limit concurrent CLI subprocesses to prevent resource exhaustion via spam.
-MAX_CONCURRENT_RUNS = int(os.environ.get("FWBG_MAX_CONCURRENT_RUNS", "10"))
+def _max_concurrent_runs_from_env() -> int:
+    """Read the backtest concurrency limit from the environment.
+
+    ``1`` is the safe default: optimizer runs are memory-heavy, and agent
+    orchestration (fwbg-agents) is built around a single slot — it expects a
+    ``429`` when the slot is busy and waits for it. Operators can raise
+    ``FWBG_MAX_CONCURRENT_RUNS`` deliberately when the machine has the RAM/CPU
+    headroom and the caller tolerates parallel runs.
+    """
+    return int(os.environ.get("FWBG_MAX_CONCURRENT_RUNS", "1"))
+
+
+MAX_CONCURRENT_RUNS = _max_concurrent_runs_from_env()
 
 
 def _spawn_cli_process(cmd: list[str], env: dict, run_dir) -> tuple:
@@ -94,7 +106,7 @@ class RunStartRequest(BaseModel):
     preview: Optional[bool] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    cost_multiplier: Optional[float] = None
+    cost_multiplier: Optional[float] = Field(default=None, gt=0)
 
 
 class PreviewRequest(BaseModel):

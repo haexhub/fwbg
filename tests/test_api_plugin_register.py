@@ -1,5 +1,4 @@
 """Tests for POST /api/plugins (agent-authored plugin registration)."""
-import importlib
 import json
 
 import pytest
@@ -74,6 +73,16 @@ def client():
         yield c
 
 
+def test_api_rejects_requests_without_matching_key(monkeypatch):
+    """When FWBG_API_KEY is set, /api endpoints require a matching X-API-Key."""
+    monkeypatch.setenv("FWBG_API_KEY", "s3cret")
+    app = create_app()
+    with TestClient(app) as c:
+        assert c.get("/api/plugins").status_code == 401
+        assert c.get("/api/plugins", headers={"X-API-Key": "wrong"}).status_code == 401
+        assert c.get("/api/plugins", headers={"X-API-Key": "s3cret"}).status_code == 200
+
+
 def _register(client, slug="test_reg_indicator", kind="indicator", **kwargs):
     payload = {
         "slug": slug,
@@ -86,6 +95,26 @@ def _register(client, slug="test_reg_indicator", kind="indicator", **kwargs):
 
 
 class TestRegisterPlugin:
+    @pytest.mark.parametrize(
+        "slug",
+        [
+            "../escape",
+            "foo/bar",
+            "foo\\bar",
+            "/absolute",
+            ".",
+            "..",
+            "Uppercase",
+            "has-hyphen",
+            "trailing_",
+            "a" * 65,
+        ],
+    )
+    def test_invalid_slug_is_rejected_before_writes(self, client, tmp_path, slug):
+        resp = _register(client, slug=slug)
+        assert resp.status_code == 422
+        assert list(tmp_path.rglob("*")) == []
+
     def test_valid_plugin_appears_in_list(self, client):
         resp = _register(client)
         assert resp.status_code == 200, resp.text
@@ -113,6 +142,32 @@ class TestRegisterPlugin:
         _register(client)
         resp = _register(client, overwrite=True)
         assert resp.status_code == 200
+
+    def test_symlink_escape_is_rejected_even_with_overwrite(self, client, tmp_path):
+        category_root = tmp_path / "agent-authored" / "indicators"
+        category_root.mkdir(parents=True)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (category_root / "test_reg_indicator").symlink_to(outside, target_is_directory=True)
+
+        resp = _register(client, overwrite=True)
+
+        assert resp.status_code == 422
+        assert list(outside.iterdir()) == []
+
+    def test_overwrite_stays_inside_category(self, client, tmp_path):
+        assert _register(client).status_code == 200
+        marker = tmp_path / "outside-marker"
+        marker.write_text("unchanged")
+
+        resp = _register(client, overwrite=True)
+
+        assert resp.status_code == 200
+        assert marker.read_text() == "unchanged"
+        plugin_dir = (
+            tmp_path / "agent-authored" / "indicators" / "test_reg_indicator"
+        )
+        assert (plugin_dir / "__init__.py").is_file()
 
     def test_invalid_code_returns_422(self, client):
         resp = client.post("/api/plugins", json={
