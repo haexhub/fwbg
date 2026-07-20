@@ -56,6 +56,12 @@ services:
       # Backtests are CPU-heavy: exactly one at a time, everything else
       # gets 429 and has to wait (the agents runner does).
       - FWBG_MAX_CONCURRENT_RUNS=1
+      # Auth: the API is only reachable on the internal compose network (no
+      # ports mapping). If FWBG_API_KEY is set in .env, X-API-Key is enforced;
+      # otherwise the dev bypass keeps the stack working. The key branch wins
+      # over the bypass, so both may be present.
+      - FWBG_API_KEY=${FWBG_API_KEY:-}
+      - FWBG_ALLOW_UNAUTHENTICATED_API=1
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     logging:
@@ -106,11 +112,20 @@ services:
     volumes:
       - fwbg-data:/app/fwbg-data
       - agents-data:/app/data
+      # Same workspace as the fwbg API: DSR snapshots read per-trade P&L
+      # from /root/fwbg/test_results before retention can prune those runs.
+      - type: volume
+        source: fwbg-workspace
+        target: /root/fwbg
+        read_only: true
       - .:/fwbg-src:ro
     environment:
       - TZ=Europe/Berlin
       - FWBG_API_URL=http://api:8420
+      # Must match the api service's FWBG_API_KEY when auth is enabled.
+      - FWBG_API_KEY=${FWBG_API_KEY:-}
       - FWBG_DATA_DIR=/app/fwbg-data
+      - FWBG_TEST_RESULTS_DIR=/root/fwbg/test_results
       - FWBG_REPO_ROOT=/fwbg-src
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://claude-proxy:8080}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-proxy-not-used-but-sdk-requires-it}

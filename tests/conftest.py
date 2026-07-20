@@ -19,6 +19,13 @@ def pytest_configure(config):
     if os.path.isdir(fixture_ws):
         os.environ.setdefault("FWBG_WORKSPACE", fixture_ws)
 
+    # create_app() now fails closed when no FWBG_API_KEY is set. `fwbg.api` is
+    # imported (and runs create_app() at module level) during collection, so
+    # the dev bypass must be set here — before any test module import — rather
+    # than in a per-test fixture. Tests that exercise auth override this
+    # explicitly via monkeypatch.
+    os.environ.setdefault("FWBG_ALLOW_UNAUTHENTICATED_API", "1")
+
     patterns = [
         os.path.join(project_root, "src", "**", "*.nbi"),
         os.path.join(project_root, "src", "**", "*.nbc"),

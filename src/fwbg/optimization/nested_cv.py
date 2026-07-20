@@ -221,23 +221,26 @@ def _generate_oof_predictions(
     features: List[str],
     ctx: SimulationContext,
     n_splits: int = 3,
+    label_horizon: Optional[int] = None,
 ) -> np.ndarray:
     """
     Generate out-of-fold probability predictions (AFML Ch. 3).
 
-    Uses time-series KFold (no shuffle) to avoid data leakage.
-    Each fold trains a reduced-param model and predicts on held-out bars.
+    Uses expanding, strictly-forward folds.  Training observations whose
+    labels can overlap validation are purged, followed by the configured
+    embargo.  The initial region for which no forward prediction exists is
+    represented by NaN rather than a synthetic probability.
 
     Returns:
         Array of shape (n,) with OOF win-probabilities for each bar.
     """
-    from sklearn.model_selection import KFold
-
     model_class = get_model(ctx.model_type)
-    oof_probs = np.zeros(len(df))
-    kf = KFold(n_splits=n_splits, shuffle=False)
+    oof_probs = np.full(len(df), np.nan, dtype=float)
+    horizon = _effective_label_horizon(len(df), ctx, label_horizon)
 
-    for train_idx, val_idx in kf.split(df[features].values):
+    for train_idx, val_idx in _forward_oof_splits(
+        len(df), n_splits, horizon, ctx.embargo_bars
+    ):
         if len(np.unique(targets[train_idx])) < 2:
             continue
 
@@ -251,6 +254,131 @@ def _generate_oof_predictions(
             oof_probs[val_idx] = model.predict_probability(df[features].iloc[val_idx])[:, win_idx]
 
     return oof_probs
+
+
+def _effective_label_horizon(
+    n_samples: int, ctx: SimulationContext, timeout_bars: Optional[int]
+) -> int:
+    """Return a conservative maximum future span for the active exit path.
+
+    Unknown plugin semantics fail closed by returning the entire training
+    window.  This prevents a newly installed exit plugin from silently
+    invalidating the purge calculation.
+    """
+    simple_timeout_strategies = {
+        "fixed",
+        "structural_rr",
+        "atr_trailing",
+    }
+    known_entry_modifiers = {None, "scale_in"}
+    known_exit_modifiers = {None, "trailing_stop"}
+
+    strategy = ctx.exit_strategy
+    entry_modifier = ctx.entry_modifier
+    exit_modifier = ctx.exit_modifier
+    if (
+        entry_modifier not in known_entry_modifiers
+        or exit_modifier not in known_exit_modifiers
+    ):
+        return n_samples
+
+    def _positive_int(value: Any) -> Optional[int]:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return parsed if parsed > 0 else None
+
+    hard_cap = _positive_int(ctx.max_trade_bars)
+    exit_cap = None
+
+    if strategy in simple_timeout_strategies:
+        exit_cap = _positive_int(timeout_bars)
+    elif strategy == "orb_based":
+        exit_params = ctx.exit_params or {}
+        # OrbExitStrategy dispatches scale-in before session handling.
+        if entry_modifier:
+            exit_cap = _positive_int(timeout_bars)
+        else:
+            try:
+                be_trigger = exit_params.get("breakeven_trigger", 0.0)
+                trail_pips = exit_params.get("trail_pips", 0)
+                if exit_modifier:
+                    modifier_params = ctx.exit_modifier_params or {}
+                    be_trigger = modifier_params.get("breakeven_trigger", 0.5)
+                    trail_atr_mult = modifier_params.get("trail_atr_mult", 0.5)
+                else:
+                    trail_atr_mult = 0.0
+                use_trailing = (
+                    be_trigger > 0.0
+                    or trail_pips > 0
+                    or trail_atr_mult > 0.0
+                )
+            except TypeError:
+                return n_samples
+
+            exit_start = ctx.exit_session_start_hour
+            if exit_start is None:
+                exit_start = ctx.session_start_hour
+            exit_end = ctx.exit_session_end_hour
+            if exit_end is None:
+                exit_end = ctx.session_end_hour
+            use_session = isinstance(exit_start, int) and isinstance(exit_end, int)
+
+            if use_trailing or not use_session:
+                exit_cap = _positive_int(timeout_bars)
+            # The session kernel counts timeout in in-session observations,
+            # not DataFrame rows.  It therefore provides no row-index cap.
+    elif strategy == "atr_based":
+        exit_params = ctx.exit_params or {}
+        # Entry and exit modifiers take precedence over adaptive timeout in
+        # AtrExitStrategy.compute_targets and receive the static timeout.
+        adaptive_active = bool(exit_params.get("adaptive_timeout")) and not (
+            entry_modifier or exit_modifier
+        )
+        if adaptive_active:
+            adaptive_values = [
+                exit_params.get("base_timeout", 48),
+                exit_params.get("min_timeout", 12),
+                exit_params.get("max_timeout", 96),
+            ]
+            parsed = [_positive_int(value) for value in adaptive_values]
+            # A non-positive/invalid branch disables its timeout in the
+            # kernel, so only max_trade_bars can bound the labels.
+            if all(value is not None for value in parsed):
+                exit_cap = max(value for value in parsed if value is not None)
+        else:
+            exit_cap = _positive_int(timeout_bars)
+    else:
+        return n_samples
+
+    limits = [cap for cap in (hard_cap, exit_cap) if cap is not None]
+    return min(limits) if limits else n_samples
+
+
+def _forward_oof_splits(
+    n_samples: int,
+    n_splits: int,
+    label_horizon: int,
+    embargo_bars: int = 0,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    """Build deterministic expanding OOF splits with purge and embargo."""
+    if n_splits < 2:
+        raise ValueError("n_splits must be at least 2")
+    if label_horizon < 0 or embargo_bars < 0:
+        raise ValueError("label_horizon and embargo_bars must be non-negative")
+
+    blocks = np.array_split(np.arange(n_samples), n_splits + 1)
+    splits = []
+    for val_idx in blocks[1:]:
+        if len(val_idx) == 0:
+            continue
+        train_end = int(val_idx[0]) - label_horizon - embargo_bars
+        if train_end <= 0:
+            continue
+        train_idx = np.arange(train_end)
+        splits.append((train_idx, val_idx))
+    return splits
 
 
 def _train_meta_model(
@@ -271,8 +399,17 @@ def _train_meta_model(
     if len(np.unique(targets)) < 2:
         return None
 
+    available = np.isfinite(oof_probs)
+    if not np.any(available):
+        return None
+    available_targets = targets[available]
+    if np.count_nonzero(available_targets) < ctx.min_trades // 2:
+        return None
+    if len(np.unique(available_targets)) < 2:
+        return None
+
     X_meta = pd.DataFrame(
-        np.column_stack([df[features].values, oof_probs]),
+        np.column_stack([df.loc[available, features].values, oof_probs[available]]),
         columns=features + ["oof_prob"],
     )
 
@@ -280,7 +417,7 @@ def _train_meta_model(
     params = model_class.get_reduced_hyperparameters(ctx.model_hyperparameters.copy())
     meta_model = model_class()
     training_context = TrainingContext()
-    meta_model.train(X_meta, targets, training_context, **params)
+    meta_model.train(X_meta, available_targets, training_context, **params)
     return meta_model
 
 
@@ -367,10 +504,14 @@ def _evaluate_single_fold(
     meta_mod_short = None
     if ctx.meta_labeling:
         if mod_long is not None and feat_long:
-            oof_long = _generate_oof_predictions(train_df, targets_long, feat_long, ctx)
+            oof_long = _generate_oof_predictions(
+                train_df, targets_long, feat_long, ctx, label_horizon=timeout_bars
+            )
             meta_mod_long = _train_meta_model(train_df, targets_long, feat_long, oof_long, ctx)
         if mod_short is not None and feat_short:
-            oof_short = _generate_oof_predictions(train_df, targets_short, feat_short, ctx)
+            oof_short = _generate_oof_predictions(
+                train_df, targets_short, feat_short, ctx, label_horizon=timeout_bars
+            )
             meta_mod_short = _train_meta_model(train_df, targets_short, feat_short, oof_short, ctx)
 
     best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(

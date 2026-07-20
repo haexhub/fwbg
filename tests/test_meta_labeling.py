@@ -7,8 +7,7 @@ The meta-model uses the primary model's probability as an additional feature.
 """
 import numpy as np
 import pandas as pd
-import pytest
-from fwbg_sdk.models import BaseModel, TrainingContext
+from fwbg_sdk.models import TrainingContext
 
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_model
@@ -79,21 +78,161 @@ class TestOOFPredictions:
     """Tests for out-of-fold prediction generation."""
 
     def test_generates_oof_probs(self):
-        """OOF predictions should be generated for all training samples."""
+        """OOF predictions leave the unavailable initial region missing."""
         from fwbg.optimization.nested_cv import _generate_oof_predictions
 
         ctx = _make_ctx()
         df, targets = _make_data(300)
         features = ["feat1", "feat2", "feat3"]
 
-        oof_probs = _generate_oof_predictions(df, targets, features, ctx)
+        oof_probs = _generate_oof_predictions(
+            df, targets, features, ctx, label_horizon=10
+        )
 
         assert oof_probs.shape == (300,)
         # OOF probs should be probabilities (0 to 1)
-        assert np.all(oof_probs >= 0)
-        assert np.all(oof_probs <= 1)
-        # Not all zeros (some predictions were made)
-        assert np.any(oof_probs > 0)
+        available = np.isfinite(oof_probs)
+        assert np.any(~available)
+        assert np.all(oof_probs[available] >= 0)
+        assert np.all(oof_probs[available] <= 1)
+        assert np.any(oof_probs[available] > 0)
+
+    def test_forward_splits_are_purged_and_embargoed(self):
+        from fwbg.optimization.nested_cv import _forward_oof_splits
+
+        splits = _forward_oof_splits(100, 3, label_horizon=7, embargo_bars=2)
+
+        assert splits
+        for train_idx, val_idx in splits:
+            assert train_idx.max() < val_idx.min()
+            assert train_idx.max() + 7 + 2 < val_idx.min()
+
+    def test_adaptive_atr_uses_maximum_dynamic_timeout(self):
+        from fwbg.optimization.nested_cv import (
+            _effective_label_horizon,
+            _forward_oof_splits,
+        )
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "atr_based"
+        ctx.embargo_bars = 3
+        ctx.exit_params = {
+            "adaptive_timeout": True,
+            "base_timeout": 48,
+            "min_timeout": 12,
+            "max_timeout": 96,
+        }
+
+        horizon = _effective_label_horizon(500, ctx, timeout_bars=8)
+        assert horizon == 96
+        splits = _forward_oof_splits(500, 3, horizon, ctx.embargo_bars)
+        assert splits
+        for train_idx, val_idx in splits:
+            assert train_idx.max() + horizon + ctx.embargo_bars < val_idx.min()
+
+    def test_max_trade_bars_caps_adaptive_atr_horizon(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "atr_based"
+        ctx.max_trade_bars = 40
+        ctx.exit_params = {
+            "adaptive_timeout": True,
+            "base_timeout": 48,
+            "min_timeout": 12,
+            "max_timeout": 96,
+        }
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=8) == 40
+
+    def test_modifier_precedence_restores_static_timeout(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "atr_based"
+        ctx.entry_modifier = "scale_in"
+        ctx.exit_params = {"adaptive_timeout": True, "max_timeout": 96}
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=8) == 8
+
+    def test_orb_session_timeout_is_not_a_dataframe_bar_cap(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.exit_session_start_hour = 8
+        ctx.exit_session_end_hour = None
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 500
+
+    def test_orb_session_is_bounded_by_max_trade_bars(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.max_trade_bars = 30
+        ctx.session_start_hour = 8
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 30
+
+    def test_orb_scale_in_precedes_session_timeout(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.entry_modifier = "scale_in"
+        ctx.session_start_hour = 8
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 2
+
+    def test_orb_trailing_precedes_session_timeout(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.exit_params = {"breakeven_trigger": 0.5}
+        ctx.session_start_hour = 8
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 2
+
+    def test_orb_legacy_trailing_modifier_precedes_session_timeout(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.exit_modifier = "trailing_stop"
+        ctx.exit_modifier_params = {
+            "breakeven_trigger": 0.0,
+            "trail_atr_mult": 0.5,
+        }
+        ctx.session_start_hour = 8
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 2
+
+    def test_unknown_exit_semantics_fail_closed(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "third_party_exit"
+        ctx.max_trade_bars = 5
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 500
+
+    def test_unbounded_labels_produce_no_oof_predictions(self):
+        from fwbg.optimization.nested_cv import _generate_oof_predictions
+
+        ctx = _make_ctx()
+        df, targets = _make_data(120)
+        result = _generate_oof_predictions(
+            df, targets, ["feat1", "feat2", "feat3"], ctx
+        )
+
+        assert np.isnan(result).all()
 
     def test_oof_probs_no_data_leakage(self):
         """OOF predictions on noise-only features should NOT be overly accurate."""
@@ -111,10 +250,14 @@ class TestOOFPredictions:
             "noise3": rng.standard_normal(n),
         }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
 
-        oof_probs = _generate_oof_predictions(df, targets, ["noise1", "noise2", "noise3"], ctx)
+        oof_probs = _generate_oof_predictions(
+            df, targets, ["noise1", "noise2", "noise3"], ctx,
+            label_horizon=10,
+        )
 
-        predicted = (oof_probs > 0.5).astype(float)
-        accuracy = np.mean(predicted == targets)
+        available = np.isfinite(oof_probs)
+        predicted = (oof_probs[available] > 0.5).astype(float)
+        accuracy = np.mean(predicted == targets[available])
         # Noise-only features: accuracy should be near 50% (chance level)
         assert accuracy < 0.65, f"Suspiciously high OOF accuracy on noise: {accuracy}"
 
@@ -235,10 +378,14 @@ class TestMetaLabelingEndToEnd:
         mod_short = train_model(train_df, targets_short[:350], features, 10, ctx)
 
         # Train meta-models
-        oof_long = _generate_oof_predictions(train_df, targets_long[:350], features, ctx)
+        oof_long = _generate_oof_predictions(
+            train_df, targets_long[:350], features, ctx, label_horizon=20
+        )
         meta_long = _train_meta_model(train_df, targets_long[:350], features, oof_long, ctx)
 
-        oof_short = _generate_oof_predictions(train_df, targets_short[:350], features, ctx)
+        oof_short = _generate_oof_predictions(
+            train_df, targets_short[:350], features, ctx, label_horizon=20
+        )
         meta_short = _train_meta_model(train_df, targets_short[:350], features, oof_short, ctx)
 
         # Evaluate WITH meta-labeling

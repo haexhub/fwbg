@@ -1,9 +1,11 @@
 """Strategy file endpoints."""
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from fwbg.api._paths import validate_id
 from fwbg.api.deps import get_strategies_dir
 from fwbg.api.git_utils import (
     commit_file, ensure_git_repo, file_at_commit, file_history,
@@ -12,6 +14,24 @@ from fwbg.api.git_utils import (
 from fwbg.core.config import _resolve_section
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
+
+
+def _strategy_file(name: str) -> tuple[str, Path]:
+    """Resolve a request name to a validated ``(filename, path)`` pair.
+
+    Applies the legacy ``spaces->_`` + lowercase normalization, then rejects
+    anything outside the safe-id charset and any path that escapes the
+    strategies directory. Single boundary for every strategy file endpoint.
+    """
+    filename = name.replace(" ", "_").lower()
+    validate_id(filename, "strategy name")
+    strategies_dir = get_strategies_dir().resolve()
+    path = (strategies_dir / f"{filename}.json").resolve()
+    try:
+        path.relative_to(strategies_dir)
+    except ValueError:
+        raise HTTPException(400, "Path traversal detected")
+    return filename, path
 
 # Strategy JSON field name → relative preset subdirectory
 SECTION_FIELD_DIRS: dict[str, str] = {
@@ -88,8 +108,7 @@ def set_identity(body: GitIdentityRequest) -> dict:
 @router.get("/{name}")
 def get_strategy(name: str) -> dict:
     """Load a strategy JSON file, resolving preset references."""
-    strategies_dir = get_strategies_dir()
-    filepath = strategies_dir / f"{name}.json"
+    _, filepath = _strategy_file(name)
 
     if not filepath.exists():
         raise HTTPException(404, f"Strategy not found: {name}")
@@ -120,8 +139,7 @@ def get_strategy(name: str) -> dict:
 def create_strategy(body: StrategyCreate) -> dict:
     """Create a new strategy file."""
     strategies_dir = get_strategies_dir()
-    filename = body.name.replace(" ", "_").lower()
-    filepath = strategies_dir / f"{filename}.json"
+    filename, filepath = _strategy_file(body.name)
 
     if filepath.exists():
         raise HTTPException(409, f"Strategy already exists: {filename}")
@@ -141,14 +159,13 @@ def create_strategy(body: StrategyCreate) -> dict:
 @router.put("/{name}")
 def update_strategy(name: str, body: dict) -> dict:
     """Update an existing strategy file (write only, no git commit)."""
-    strategies_dir = get_strategies_dir()
-    filepath = strategies_dir / f"{name}.json"
+    filename, filepath = _strategy_file(name)
 
     if not filepath.exists():
         raise HTTPException(404, f"Strategy not found: {name}")
 
     filepath.write_text(json.dumps(body, indent=2))
-    return {"filename": name, "status": "updated"}
+    return {"filename": filename, "status": "updated"}
 
 
 @router.post("/{name}/commit")
@@ -161,7 +178,7 @@ def commit_strategy(name: str, body: CommitRequest) -> dict:
     ``PUT /strategies/git/identity`` before retrying.
     """
     strategies_dir = get_strategies_dir()
-    filepath = strategies_dir / f"{name}.json"
+    filename, filepath = _strategy_file(name)
 
     if not filepath.exists():
         raise HTTPException(404, f"Strategy not found: {name}")
@@ -176,20 +193,20 @@ def commit_strategy(name: str, body: CommitRequest) -> dict:
             "current": identity,
         })
 
-    message = body.message.strip() or f"update: {name}"
+    message = body.message.strip() or f"update: {filename}"
     try:
-        commit_hash = commit_file(strategies_dir, f"{name}.json", message)
+        commit_hash = commit_file(strategies_dir, f"{filename}.json", message)
     except RuntimeError as e:
         raise HTTPException(500, f"Git commit failed: {e}")
 
-    return {"filename": name, "hash": commit_hash, "status": "committed"}
+    return {"filename": filename, "hash": commit_hash, "status": "committed"}
 
 
 @router.get("/{name}/history")
 def strategy_history(name: str) -> list[dict]:
     """Return git commit history for a strategy file."""
     strategies_dir = get_strategies_dir()
-    filepath = strategies_dir / f"{name}.json"
+    filename, filepath = _strategy_file(name)
 
     if not filepath.exists():
         raise HTTPException(404, f"Strategy not found: {name}")
@@ -197,19 +214,20 @@ def strategy_history(name: str) -> list[dict]:
     if not is_git_repo(strategies_dir):
         return []
 
-    return file_history(strategies_dir, f"{name}.json")
+    return file_history(strategies_dir, f"{filename}.json")
 
 
 @router.get("/{name}/version/{ref}")
 def strategy_version(name: str, ref: str) -> dict:
     """Load a specific git version of a strategy."""
     strategies_dir = get_strategies_dir()
+    filename, _ = _strategy_file(name)
 
     if not is_git_repo(strategies_dir):
         raise HTTPException(501, "Strategies directory is not a git repository")
 
     try:
-        raw = file_at_commit(strategies_dir, f"{name}.json", ref)
+        raw = file_at_commit(strategies_dir, f"{filename}.json", ref)
     except RuntimeError as e:
         raise HTTPException(404, f"Version not found: {e}")
 
@@ -222,11 +240,10 @@ def strategy_version(name: str, ref: str) -> dict:
 @router.delete("/{name}")
 def delete_strategy(name: str) -> dict:
     """Delete a strategy file."""
-    strategies_dir = get_strategies_dir()
-    filepath = strategies_dir / f"{name}.json"
+    filename, filepath = _strategy_file(name)
 
     if not filepath.exists():
         raise HTTPException(404, f"Strategy not found: {name}")
 
     filepath.unlink()
-    return {"filename": name, "status": "deleted"}
+    return {"filename": filename, "status": "deleted"}
