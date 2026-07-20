@@ -47,6 +47,19 @@ class TestCLIArgumentParsing:
         # Entweder gibt es Runs oder die "keine gefunden" Meldung
         assert "TEST-RUNS" in result.stdout or "Keine Test-Runs" in result.stdout
 
+    @pytest.mark.parametrize("bad_value", ["0", "-1"])
+    def test_cost_multiplier_rejects_non_positive(self, bad_value):
+        """Test: --cost-multiplier <= 0 wird mit klarem Fehler abgelehnt (Plan 014)."""
+        import subprocess
+        import sys
+        result = subprocess.run(
+            [sys.executable, "-m", "fwbg.cli", "--cost-multiplier", bad_value, "--no-save"],
+            capture_output=True, text=True,
+            env={**os.environ, "PYTHONPATH": "src"}
+        )
+        assert result.returncode != 0
+        assert "cost-multiplier" in result.stderr.lower()
+
 
 class TestStrategyLoading:
     """Tests für Strategy-Loading aus JSON."""

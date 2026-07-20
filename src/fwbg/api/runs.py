@@ -94,7 +94,7 @@ class RunStartRequest(BaseModel):
     preview: Optional[bool] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    cost_multiplier: Optional[float] = None
+    cost_multiplier: Optional[float] = Field(default=None, gt=0)
 
 
 class PreviewRequest(BaseModel):

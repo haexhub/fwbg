@@ -12,6 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
+import pandas as pd
 
 from fwbg.data import config as data_config
 from fwbg.core.config import StrategyConfig
@@ -370,6 +371,34 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
     return best_data
 
 
+def _apply_date_window(df: pd.DataFrame, start_date: str | None, end_date: str | None) -> pd.DataFrame:
+    """Restrict `df` (DatetimeIndex) to a half-open date window [start_date, end_date).
+
+    `start_date` is inclusive, `end_date` is exclusive — this keeps in-sample
+    and holdout windows that share a boundary date from overlapping. Either
+    bound may be omitted. Raises `ValueError` naming the bad value if a date
+    string cannot be parsed.
+    """
+    start = None
+    end = None
+    if start_date is not None:
+        try:
+            start = pd.Timestamp(start_date)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid start_date {start_date!r}: {exc}") from exc
+    if end_date is not None:
+        try:
+            end = pd.Timestamp(end_date)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid end_date {end_date!r}: {exc}") from exc
+
+    if start is not None and end is not None:
+        return df.loc[(df.index >= start) & (df.index < end)]
+    if start is not None:
+        return df.loc[df.index >= start]
+    return df.loc[df.index < end]
+
+
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     """
     Verarbeitet ein einzelnes Symbol mit Walk-Forward Optimierung.
@@ -377,6 +406,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     Args:
         csv_path: Pfad zur CSV-Datei
         strategy: StrategyConfig mit allen Strategie-Parametern
+
+    Note:
+        The configured backtest window (`strategy.start_date`/`end_date`) is
+        half-open: `start_date` is inclusive, `end_date` is exclusive. See
+        `_apply_date_window`.
     """
     sym = os.path.basename(csv_path).split("_")[0]
     t_start = time.time()
@@ -410,9 +444,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # The DatetimeIndex makes all downstream fold/holdout splitting (which is
         # purely positional) operate on the window automatically — no fold-logic
         # change needed. Used to reserve a holdout tail or run a holdout window.
+        # Half-open: start_date inclusive, end_date exclusive (see _apply_date_window).
         if strategy.start_date or strategy.end_date:
             n_before = len(df)
-            df = df.loc[strategy.start_date:strategy.end_date]
+            df = _apply_date_window(df, strategy.start_date, strategy.end_date)
             log(2, f"Datumsfenster {strategy.start_date}..{strategy.end_date}: "
                     f"{n_before} → {len(df)} Zeilen", sym)
             if df.empty:
