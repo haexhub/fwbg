@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fwbg.api.deps import get_plugin_registry
 from fwbg_sdk import BasePlugin, PluginPhase
@@ -45,7 +45,11 @@ _BUNDLE_MANIFEST = {
 
 
 class RegisterPluginPayload(BaseModel):
-    slug: str
+    slug: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$",
+    )
     python_code: str
     kind: str
     description: str = ""
@@ -53,6 +57,16 @@ class RegisterPluginPayload(BaseModel):
     tests_code: str = ""
     version: str = "1.0.0"
     overwrite: bool = False
+
+
+def _contained_plugin_dir(category_root: Path, slug: str) -> Path:
+    """Resolve a plugin target and reject escapes, including symlink escapes."""
+    root = category_root.resolve()
+    target = root / slug
+    resolved = target.resolve()
+    if not resolved.is_relative_to(root):
+        raise HTTPException(422, "Plugin target must remain within its category directory")
+    return target
 
 
 def _import_plugin_module(init_py: Path, slug: str) -> tuple[Optional[type], str]:
@@ -202,7 +216,8 @@ def register_plugin(payload: RegisterPluginPayload) -> dict:
         )
 
     fqn = f"{_AGENT_AUTHORED_NAMESPACE}:{payload.slug}"
-    target_dir = get_user_plugins_dir() / _AGENT_AUTHORED_NAMESPACE / category / payload.slug
+    category_root = get_user_plugins_dir() / _AGENT_AUTHORED_NAMESPACE / category
+    target_dir = _contained_plugin_dir(category_root, payload.slug)
 
     if target_dir.exists() and not payload.overwrite:
         raise HTTPException(409, f"Plugin '{fqn}' already registered. Set overwrite=true to replace.")
