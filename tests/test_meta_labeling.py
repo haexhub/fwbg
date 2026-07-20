@@ -155,6 +155,65 @@ class TestOOFPredictions:
 
         assert _effective_label_horizon(500, ctx, timeout_bars=8) == 8
 
+    def test_orb_session_timeout_is_not_a_dataframe_bar_cap(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.exit_session_start_hour = 8
+        ctx.exit_session_end_hour = None
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 500
+
+    def test_orb_session_is_bounded_by_max_trade_bars(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.max_trade_bars = 30
+        ctx.session_start_hour = 8
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 30
+
+    def test_orb_scale_in_precedes_session_timeout(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.entry_modifier = "scale_in"
+        ctx.session_start_hour = 8
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 2
+
+    def test_orb_trailing_precedes_session_timeout(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.exit_params = {"breakeven_trigger": 0.5}
+        ctx.session_start_hour = 8
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 2
+
+    def test_orb_legacy_trailing_modifier_precedes_session_timeout(self):
+        from fwbg.optimization.nested_cv import _effective_label_horizon
+
+        ctx = _make_ctx()
+        ctx.exit_strategy = "orb_based"
+        ctx.exit_modifier = "trailing_stop"
+        ctx.exit_modifier_params = {
+            "breakeven_trigger": 0.0,
+            "trail_atr_mult": 0.5,
+        }
+        ctx.session_start_hour = 8
+        ctx.session_end_hour = 17
+
+        assert _effective_label_horizon(500, ctx, timeout_bars=2) == 2
+
     def test_unknown_exit_semantics_fail_closed(self):
         from fwbg.optimization.nested_cv import _effective_label_horizon
 

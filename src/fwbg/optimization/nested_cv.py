@@ -269,7 +269,6 @@ def _effective_label_horizon(
         "fixed",
         "structural_rr",
         "atr_trailing",
-        "orb_based",
     }
     known_entry_modifiers = {None, "scale_in"}
     known_exit_modifiers = {None, "trailing_stop"}
@@ -295,6 +294,41 @@ def _effective_label_horizon(
 
     if strategy in simple_timeout_strategies:
         exit_cap = _positive_int(timeout_bars)
+    elif strategy == "orb_based":
+        exit_params = ctx.exit_params or {}
+        # OrbExitStrategy dispatches scale-in before session handling.
+        if entry_modifier:
+            exit_cap = _positive_int(timeout_bars)
+        else:
+            try:
+                be_trigger = exit_params.get("breakeven_trigger", 0.0)
+                trail_pips = exit_params.get("trail_pips", 0)
+                if exit_modifier:
+                    modifier_params = ctx.exit_modifier_params or {}
+                    be_trigger = modifier_params.get("breakeven_trigger", 0.5)
+                    trail_atr_mult = modifier_params.get("trail_atr_mult", 0.5)
+                else:
+                    trail_atr_mult = 0.0
+                use_trailing = (
+                    be_trigger > 0.0
+                    or trail_pips > 0
+                    or trail_atr_mult > 0.0
+                )
+            except TypeError:
+                return n_samples
+
+            exit_start = ctx.exit_session_start_hour
+            if exit_start is None:
+                exit_start = ctx.session_start_hour
+            exit_end = ctx.exit_session_end_hour
+            if exit_end is None:
+                exit_end = ctx.session_end_hour
+            use_session = isinstance(exit_start, int) and isinstance(exit_end, int)
+
+            if use_trailing or not use_session:
+                exit_cap = _positive_int(timeout_bars)
+            # The session kernel counts timeout in in-session observations,
+            # not DataFrame rows.  It therefore provides no row-index cap.
     elif strategy == "atr_based":
         exit_params = ctx.exit_params or {}
         # Entry and exit modifiers take precedence over adaptive timeout in
