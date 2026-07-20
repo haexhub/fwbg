@@ -937,6 +937,8 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         if args.end_date:
             strategy_metadata["end_date"] = args.end_date
         if args.cost_multiplier is not None:
+            if args.cost_multiplier <= 0:
+                parser.error(f"--cost-multiplier muss > 0 sein, war {args.cost_multiplier}")
             strategy_metadata["cost_multiplier"] = args.cost_multiplier
 
         # CLI --data-path hat höchste Priorität → wird in strategy_metadata injiziert
