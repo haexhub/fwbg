@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.19.0](https://github.com/haexhub/fwbg/compare/v2.18.1...v2.19.0) (2026-07-20)
+
+
+### Features
+
+* **api:** auth fail-closed, strategy path validation, run concurrency default ([#146](https://github.com/haexhub/fwbg/issues/146)) ([711e85c](https://github.com/haexhub/fwbg/commit/711e85c53569fa743b61f6851ec75065a4ef1cb9))
+
+
+### Bug Fixes
+
+* **api:** constrain agent plugin registration paths ([#145](https://github.com/haexhub/fwbg/issues/145)) ([1c6abbf](https://github.com/haexhub/fwbg/commit/1c6abbf5fa7bb9b9ecf184633d9a7c4cdab716f5))
+* default the agents service to claude-sonnet-5 ([a42cd69](https://github.com/haexhub/fwbg/commit/a42cd69f0119e6fa5b2e86885897c919d5bdd0f7))
+* **deploy:** share backtest artifacts with agents ([#147](https://github.com/haexhub/fwbg/issues/147)) ([1d8a539](https://github.com/haexhub/fwbg/commit/1d8a539611eb6cc068078fb0956e6daa5537ff19))
+* **optimization:** enforce valid half-open gate windows ([#144](https://github.com/haexhub/fwbg/issues/144)) ([ee68574](https://github.com/haexhub/fwbg/commit/ee6857408421c519013120821c4b04e6445833fd))
+* **validation:** remove temporal leakage from meta-labeling ([#148](https://github.com/haexhub/fwbg/issues/148)) ([2862cbb](https://github.com/haexhub/fwbg/commit/2862cbb7971580f41a15815ed835fc41c3a8fe71))
+
 ## [2.18.1](https://github.com/haexhub/fwbg/compare/v2.18.0...v2.18.1) (2026-07-18)
 
 
