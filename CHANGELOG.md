@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.20.0](https://github.com/haexhub/fwbg/compare/v2.19.0...v2.20.0) (2026-07-29)
+
+
+### Features
+
+* **compose:** enable the MCP tool bridge between agents and claude-proxy ([4b7acab](https://github.com/haexhub/fwbg/commit/4b7acab27b2b78c5389aafd582b93beacfae8ae6))
+* **compose:** enable the MCP tool bridge between agents and claude-proxy ([d185ced](https://github.com/haexhub/fwbg/commit/d185cedec0d391c9a4f7a73a4525d03decdf30b5))
+
 ## [2.19.0](https://github.com/haexhub/fwbg/compare/v2.18.1...v2.19.0) (2026-07-20)
 
 
