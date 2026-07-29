@@ -130,6 +130,12 @@ services:
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://claude-proxy:8080}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-proxy-not-used-but-sdk-requires-it}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-5}
+      # MCP tool bridge: without it the model reaches claude-proxy's `claude`
+      # CLI with the agents' own tools (lookup_prior_art, search_web) stripped,
+      # so the Researcher cannot run its anti-redundancy gate or web research.
+      # Shared secret for the callback the proxy POSTs tool calls to; must be
+      # set together with the proxy's PROXY_ALLOWED_CALLBACK_HOSTS below.
+      - INTERNAL_TOOL_EXEC_KEY=${INTERNAL_TOOL_EXEC_KEY:-}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - BRAVE_API_KEY=${BRAVE_API_KEY:-}
       - IG_DEMO_USERNAME=${IG_DEMO_USERNAME:-}
@@ -166,6 +172,11 @@ services:
       - PROXY_RESOLVER=file
       - PROXY_CREDENTIALS_HOME=/data
       - PROXY_SETUP_TOKEN=${PROXY_SETUP_TOKEN:-}
+      # Hosts the MCP tool bridge may POST tool calls back to — the agents
+      # service reaches itself under its container name (its SELF_BASE_URL
+      # default). Bridging stays off until the agents service also has
+      # INTERNAL_TOOL_EXEC_KEY set; callbacks to any other host are refused.
+      - PROXY_ALLOWED_CALLBACK_HOSTS=${PROXY_ALLOWED_CALLBACK_HOSTS:-fwbg-agents}
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     logging:
