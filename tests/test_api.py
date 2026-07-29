@@ -3,6 +3,10 @@
 Tests run against the real plugin registry and filesystem — no mocks.
 """
 
+import os
+import subprocess
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -59,6 +63,49 @@ def test_create_app_fails_closed_without_key(monkeypatch):
     monkeypatch.delenv("FWBG_ALLOW_UNAUTHENTICATED_API", raising=False)
     with pytest.raises(RuntimeError, match="FWBG_API_KEY"):
         create_app()
+
+
+def _run_without_api_env(code: str) -> subprocess.CompletedProcess:
+    """Run `code` in a fresh interpreter with both API auth vars removed."""
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("FWBG_API_KEY", "FWBG_ALLOW_UNAUTHENTICATED_API")
+    }
+    return subprocess.run(
+        [sys.executable, "-c", code], env=env, capture_output=True, text=True
+    )
+
+
+def test_importing_a_submodule_does_not_build_the_app():
+    """Importing from fwbg.api must not construct the app.
+
+    `python -m fwbg` (the trading bot, which serves no API) imports
+    get_accounts_dir from fwbg.api.workspace. While the app was built at import
+    time, that pulled in the fail-closed auth guard and crashlooped the bot with
+    "FWBG_API_KEY is not set".
+    """
+    result = _run_without_api_env(
+        "from fwbg.api.workspace import get_accounts_dir; assert get_accounts_dir"
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_app_attribute_still_resolves_for_uvicorn():
+    """`fwbg.api:app` is the api service's uvicorn target and must keep working."""
+    result = _run_without_api_env(
+        "import os; os.environ['FWBG_API_KEY'] = 's3cret'\n"
+        "from fwbg.api import app\n"
+        "assert app.title, 'app did not build'"
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_app_attribute_still_fails_closed():
+    """Deferring construction must not weaken the guard — only move it."""
+    result = _run_without_api_env("from fwbg.api import app")
+    assert result.returncode != 0
+    assert "FWBG_API_KEY" in result.stderr
 
 
 # ──────────────────────────────────────────────
