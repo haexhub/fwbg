@@ -122,10 +122,27 @@ def create_app() -> FastAPI:
     return app
 
 
-app = create_app()
+def __getattr__(name: str):
+    """Build the app on first access to `fwbg.api.app`, not on import.
+
+    `app = create_app()` ran at import time, so importing ANY submodule of this
+    package — `fwbg.api.workspace` for a path helper, say — constructed the
+    whole API and enforced its fail-closed auth guard. That crashlooped the
+    trading bot (`python -m fwbg`, which imports exactly that helper) with
+    "FWBG_API_KEY is not set", a component that serves no API at all.
+
+    PEP 562 keeps the `fwbg.api:app` uvicorn target working unchanged; the app
+    is now created when something actually asks for it, and cached so repeated
+    access is free.
+    """
+    if name == "app":
+        app = create_app()
+        globals()["app"] = app
+        return app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8420):
     """Start the API server."""
     import uvicorn
-    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=5)
+    uvicorn.run(create_app(), host=host, port=port, timeout_graceful_shutdown=5)
