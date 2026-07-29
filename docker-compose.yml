@@ -129,7 +129,9 @@ services:
       - FWBG_REPO_ROOT=/fwbg-src
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-http://claude-proxy:8080}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-proxy-not-used-but-sdk-requires-it}
-      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-5}
+      # Keep in sync with .env.example: a deployment without an override must
+      # land on the same model the template documents.
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-5}
       # MCP tool bridge: without it the model reaches claude-proxy's `claude`
       # CLI with the agents' own tools (lookup_prior_art, search_web) stripped,
       # so the Researcher cannot run its anti-redundancy gate or web research.
