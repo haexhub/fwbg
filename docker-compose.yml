@@ -87,6 +87,8 @@ services:
       - DATA_PATH=/app/data
       - ACCOUNTS_PATH=/app/accounts
       - FWBG_API_URL=http://api:8420
+      # Must match the api service's FWBG_API_KEY when auth is enabled.
+      - FWBG_API_KEY=${FWBG_API_KEY:-}
       - FWBG_AGENTS_API_URL=http://agents:8421
       - CLAUDE_PROXY_URL=http://claude-proxy:8080
       - CLAUDE_PROXY_SETUP_TOKEN=${PROXY_SETUP_TOKEN:-}
