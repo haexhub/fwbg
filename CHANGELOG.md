@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.20.2](https://github.com/haexhub/fwbg/compare/v2.20.1...v2.20.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* **compose:** wire FWBG_API_KEY into the dashboard service ([2a84bfe](https://github.com/haexhub/fwbg/commit/2a84bfe6f0a3c8ec7dc7039448c12aabcb772345))
+* **compose:** wire FWBG_API_KEY into the dashboard service ([f4a2a51](https://github.com/haexhub/fwbg/commit/f4a2a510717bc4aceb1387874dead9e6ba8352a7))
+
 ## [2.20.1](https://github.com/haexhub/fwbg/compare/v2.20.0...v2.20.1) (2026-07-29)
 
 
