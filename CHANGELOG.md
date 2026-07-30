@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.20.1](https://github.com/haexhub/fwbg/compare/v2.20.0...v2.20.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **api:** build the app on first access, not at import time ([c4726e6](https://github.com/haexhub/fwbg/commit/c4726e6c19de45789e3b371c53b844b64c40765f))
+* **api:** build the app on first access, not at import time ([b4dc9f9](https://github.com/haexhub/fwbg/commit/b4dc9f9005619cbc825edbd935b84b297e5d18a4))
+* **compose:** align the ANTHROPIC_MODEL fallback with the documented default ([19a4a41](https://github.com/haexhub/fwbg/commit/19a4a41c804ee84096859a82947fe9737b1e394e))
+* **env:** point ANTHROPIC_MODEL at a model claude-proxy serves ([35aaca1](https://github.com/haexhub/fwbg/commit/35aaca1c73be2ec960788e3db93a323b7b7622fb))
+* **env:** point ANTHROPIC_MODEL at a model claude-proxy serves ([975f87e](https://github.com/haexhub/fwbg/commit/975f87eff33d76ad07128692e55a61cb2adf1209))
+
 ## [2.20.0](https://github.com/haexhub/fwbg/compare/v2.19.0...v2.20.0) (2026-07-29)
 
 
