@@ -131,6 +131,7 @@ testpaths = [
     "src/fwbg/adapters/broker/ig",
     "packages/fwbg-premium/src/fwbg_premium/plugins",
     "packages/fwbg-sdk/tests",
+    "packages/fwbg-mcp/tests",
 ]
 python_files = ["test_*.py", "*.test.py", "tests.py"]
 python_functions = ["test_*"]

@@ -21,7 +21,8 @@ Add to `~/.claude/claude_desktop_config.json`:
     "fwbg": {
       "command": "/home/haex/Projekte/fwbg/.venv/bin/fwbg-mcp",
       "env": {
-        "FWBG_API_URL": "http://localhost:8420"
+        "FWBG_API_URL": "http://localhost:8420",
+        "FWBG_API_KEY": "your-api-key"
       }
     }
   }
@@ -37,7 +38,8 @@ Or if running from the venv directly:
       "command": "uv",
       "args": ["run", "--project", "/home/haex/Projekte/fwbg/packages/fwbg-mcp", "fwbg-mcp"],
       "env": {
-        "FWBG_API_URL": "http://localhost:8420"
+        "FWBG_API_URL": "http://localhost:8420",
+        "FWBG_API_KEY": "your-api-key"
       }
     }
   }
@@ -97,3 +99,5 @@ Or if running from the venv directly:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `FWBG_API_URL` | `http://localhost:8420` | FWBG API base URL |
+| `FWBG_API_KEY` | unset | Sent as the `X-API-Key` header on every API request |
+| `FWBG_STRATEGIES_DIR` | `./strategies` | Legacy local path; preset discovery uses `/api/presets` |
