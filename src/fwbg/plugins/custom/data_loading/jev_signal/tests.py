@@ -41,3 +41,21 @@ def test_missing_columns_produce_no_signal():
     JevSignalLoader().execute(ctx, provider="jev_official")
 
     assert (ctx.df["_composed_signal_long"].fillna(0) == 0).all()
+
+
+def test_rerunning_execute_does_not_duplicate_columns():
+    df = pd.DataFrame(
+        {
+            "jev_official_is_long_win": [0.9, 0.2, 0.7],
+            "jev_official_is_short_win": [0.1, 0.8, 0.3],
+        }
+    )
+    ctx = _Ctx(df)
+
+    loader = JevSignalLoader()
+    loader.execute(ctx, provider="jev_official")
+    loader.execute(ctx, provider="jev_official")
+
+    assert isinstance(ctx.df["_composed_signal_long"], pd.Series)
+    assert isinstance(ctx.df["_composed_signal_short"], pd.Series)
+    assert ctx.df["_composed_signal_long"].iloc[1] == 0.9

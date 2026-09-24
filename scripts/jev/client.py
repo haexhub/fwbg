@@ -7,6 +7,7 @@ other module in scripts/jev/ depends on ask()'s return value
 (dict[question_name] -> float), not on the raw response shape.
 """
 
+import math
 import os
 from dataclasses import dataclass, field
 
@@ -24,7 +25,13 @@ class JevProvider:
 
 def parse_response(raw: dict, question_names: list[str]) -> dict[str, float]:
     results = raw["results"]
-    return {name: float(results[name]["probability"]) for name in question_names}
+    parsed = {}
+    for name in question_names:
+        probability = float(results[name]["probability"])
+        if not math.isfinite(probability) or not (0.0 <= probability <= 1.0):
+            raise ValueError(f"invalid probability for {name!r}: {probability!r}")
+        parsed[name] = probability
+    return parsed
 
 
 def ask(provider: JevProvider, state: str, questions: dict) -> dict[str, float]:

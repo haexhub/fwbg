@@ -63,6 +63,14 @@ def test_ask_missing_api_key_env_raises(monkeypatch):
         ask(OFFICIAL, state="EURUSD @ 1.0850", questions={"is_long_win": {}})
 
 
+@pytest.mark.parametrize("bad_probability", [float("nan"), float("inf"), -0.1, 1.1])
+def test_parse_response_rejects_invalid_probability(bad_probability):
+    with pytest.raises(ValueError):
+        parse_response(
+            {"results": {"is_long_win": {"probability": bad_probability}}}, ["is_long_win"]
+        )
+
+
 def test_ask_raises_on_http_error(monkeypatch):
     monkeypatch.setenv("JEV_OFFICIAL_API_KEY", "test-key")
     fake_response = MagicMock()

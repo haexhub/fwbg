@@ -34,7 +34,8 @@ class JevSignalLoader(BaseDataLoader):
             "_composed_signal_short": short_values,
         }
         shifted = shift_features(features, ctx.df.index)
-        ctx.df = pd.concat([ctx.df, shifted], axis=1)
+        for col in shifted.columns:
+            ctx.df[col] = shifted[col]
         return ctx
 
     def get_default_params(self):

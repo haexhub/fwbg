@@ -20,11 +20,11 @@ def build_questions(tp_pips: float, sl_pips: float, horizon_bars: int) -> dict:
             "instructions": (
                 f"Opening a {direction} position now with take-profit "
                 f"{tp_pips} pips and stop-loss {sl_pips} pips: is take-profit "
-                f"reached before stop-loss or before {horizon_bars} bars pass?"
+                f"reached before stop-loss, within the next {horizon_bars} bars?"
             ),
             "criteria": {
-                "true": "Take-profit reached first",
-                "false": "Stop-loss reached first, or neither within the horizon",
+                "true": f"Take-profit reached before stop-loss, within {horizon_bars} bars",
+                "false": f"Stop-loss reached first, or neither reached within {horizon_bars} bars",
             },
         }
 

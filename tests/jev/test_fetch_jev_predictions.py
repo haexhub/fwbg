@@ -75,14 +75,15 @@ def test_run_batch_stops_cleanly_on_error_but_keeps_prior_progress(tmp_path, mon
     monkeypatch.setattr("scripts.fetch_jev_predictions.ask", flaky_ask)
 
     provider = JevProvider(name="fake", base_url="http://x", api_key_env="X")
-    run_batch(
-        df,
-        provider=provider,
-        tp_pips=20,
-        sl_pips=20,
-        horizon_bars=30,
-        cache_path=cache_path,
-    )
+    with pytest.raises(RuntimeError, match="simulated API failure"):
+        run_batch(
+            df,
+            provider=provider,
+            tp_pips=20,
+            sl_pips=20,
+            horizon_bars=30,
+            cache_path=cache_path,
+        )
 
     # bar 0 succeeded before bar 1 raised: its result must have survived.
     cached = pd.read_csv(cache_path, index_col=0)

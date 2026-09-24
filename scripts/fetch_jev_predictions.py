@@ -6,6 +6,7 @@ Usage:
 """
 
 import argparse
+from pathlib import Path
 
 import pandas as pd
 
@@ -58,7 +59,7 @@ def run_batch(
         except Exception as e:
             print(f"Error at {timestamp}: {e}")
             print(f"Stopping batch early; {i}/{len(pending)} bars completed this run.")
-            return
+            raise
         cache.append(timestamp, result)
 
 
@@ -89,8 +90,10 @@ def main():
 
     df = pd.read_csv(args.features_csv, index_col=0)
     provider = PROVIDERS[args.provider]
+    features_id = Path(args.features_csv).stem
     cache_path = (
-        f"data/jev_cache/{args.asset}_{provider.name}_tp{int(args.tp)}_sl{int(args.sl)}.csv"
+        f"data/jev_cache/{args.asset}_{provider.name}"
+        f"_tp{args.tp:g}_sl{args.sl:g}_h{args.horizon_bars}_{features_id}.csv"
     )
 
     asset = get_asset(args.asset)
