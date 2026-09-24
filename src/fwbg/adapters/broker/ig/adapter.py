@@ -36,6 +36,7 @@ from fwbg.adapters.broker import (
     OrderResult, Position, AccountInfo, BarData, BrokerUnavailableError,
     Symbol, Timeframe,
 )
+from fwbg.core.risk_state import ClosedTradeEvent
 from .mappings import (
     SYMBOL_TO_EPIC,
     SYMBOL_TO_YFINANCE,
@@ -787,6 +788,63 @@ class IGBrokerAdapter(BrokerAdapter):
             self.log_error(f"Failed to get account info: {e}")
 
         return AccountInfo(balance=0, equity=0, currency=self.currency)
+
+    def get_closed_trade_events(self, since=None, until=None):
+        """Return broker-confirmed closed deals from IG transaction history.
+
+        IG's ``profitAndLoss`` is the broker-reported net closed-trade result;
+        transaction fees are already reflected by that field. Cash transfers
+        and other non-deal transactions are deliberately ignored.
+        """
+        if not self._ig:
+            return None
+        try:
+            history = self._ig.fetch_transaction_history(
+                from_date=since,
+                to_date=until,
+                page_size=1000,
+            )
+            if history is None:
+                return None
+            if isinstance(history, pd.DataFrame):
+                rows = history.to_dict("records")
+            elif isinstance(history, dict):
+                rows = history.get("transactions", [])
+            else:
+                rows = history
+            events = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    return None
+                pnl_raw = row.get("profitAndLoss")
+                close_raw = row.get("dateUtc") or row.get("date")
+                transaction_type = str(row.get("transactionType", "")).upper()
+                # Deposits, withdrawals, and fees have no closed trade level.
+                if pnl_raw is None or close_raw is None:
+                    continue
+                if transaction_type and transaction_type not in {
+                    "DEAL", "TRADE", "POSITION"
+                } and row.get("closeLevel") is None:
+                    continue
+                event_id = row.get("reference") or row.get("dealId") or row.get("transactionId")
+                if not event_id:
+                    return None
+                try:
+                    closed_at = pd.Timestamp(close_raw).to_pydatetime()
+                    net_pnl = float(str(pnl_raw).replace(",", ""))
+                except (TypeError, ValueError):
+                    return None
+                events.append(
+                    ClosedTradeEvent(
+                        event_id=str(event_id),
+                        closed_at=closed_at,
+                        net_pnl=net_pnl,
+                    )
+                )
+            return events
+        except Exception as exc:  # noqa: BLE001
+            self.log_error(f"Failed to get closed trade history: {exc}")
+            return None
 
     # =========================================================================
     # Streaming
