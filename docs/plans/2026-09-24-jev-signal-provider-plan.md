@@ -14,8 +14,12 @@ for the full rationale. Summary: `scripts/fetch_jev_predictions.py` calls
 both providers per bar with an identical `state`+`questions` payload (two
 `noul` questions: `is_long_win`, `is_short_win` — mirroring exactly what
 `FixedExitStrategy.compute_targets()` / `compute_targets_numba()` already
-compute as `targets_long`/`targets_short`), caches results to CSV in the
-`{symbol}_{timeframe}.csv` shape `register_csv_source` expects, and a new
+compute as `targets_long`/`targets_short`), caches results to CSV (columns
+`is_long_win`/`is_short_win`, unprefixed — provider identity lives in the
+filename, `{asset}_{provider.name}_tp{tp}_sl{sl}.csv`; this is close to but
+not exactly the default `{symbol}_{timeframe}.csv` pattern `register_csv_source`
+expects out of the box — registering it needs a custom `file_pattern`, not
+zero-config compatibility), and a new
 `jev_signal` DataLoader plugin maps the cached probability columns to
 `_composed_signal_long`/`_composed_signal_short` (with the mandatory 1-bar
 shift). `models/signal` (already exists, unmodified) reads those columns.
@@ -871,5 +875,15 @@ git commit -m "feat: add jev_signal DataLoader plugin"
   this one data source. Not a config-only step; a small design decision of
   its own, deferred here on purpose (this plan's scope was proving out
   Jev's calibration signal, not building general external-signal ingestion).
+  **Second, separate gap found in the same final review**: the cache's raw
+  columns (`is_long_win`/`is_short_win`, unprefixed) don't match what
+  `jev_signal`'s `execute()` looks up (`{provider}_is_long_win`, e.g.
+  `jev_official_is_long_win`) — provider identity lives only in the cache
+  filename today. Whoever wires the DataSource needs a rename/prefix step
+  on top of solving the `Close`/`macro_` prefix problem above (needed
+  regardless, since both providers' predictions will eventually need to
+  coexist in the same `ctx.df`, disambiguated by prefix). `JevSignalLoader`'s
+  missing-column fallback is silent (returns an all-zero signal, no error),
+  so forgetting this step fails quietly, not loudly — worth remembering.
 - Any code for `jev_official`'s real base URL — placeholder in Task 6, fill
   in from TypeSafe's actual docs once you have API access.
