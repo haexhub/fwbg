@@ -37,7 +37,7 @@ from fwbg.adapters.broker import (
     OrderType,
     Position,
 )
-from fwbg.bot import AssetConfig, TradingBot
+from fwbg.bot import TradingBot
 
 
 # -----------------------------------------------------------------------------
