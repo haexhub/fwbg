@@ -1,7 +1,8 @@
 import pandas as pd
 
 
-def build_state_text(row: pd.Series, ohlc_window: pd.DataFrame | None) -> str:
+def build_state_text(row: pd.Series) -> str:
+    # ASSUMPTION: only single-bar state is sent today; no multi-bar OHLC window yet.
     parts = [f"O={row['O']:.5g} H={row['H']:.5g} L={row['L']:.5g} C={row['C']:.5g}"]
     for name, value in row.items():
         if name in ("O", "H", "L", "C"):

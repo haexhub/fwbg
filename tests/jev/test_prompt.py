@@ -14,7 +14,7 @@ def test_build_state_text_includes_ohlc_and_indicators():
             "trend_ema_21": 1.0830,
         }
     )
-    text = build_state_text(row, ohlc_window=None)
+    text = build_state_text(row)
     assert "1.0849" in text
     assert "mom_rsi_14=61.2" in text
     assert "trend_ema_21=1.083" in text
@@ -22,7 +22,7 @@ def test_build_state_text_includes_ohlc_and_indicators():
 
 def test_build_state_text_skips_nan_indicators():
     row = pd.Series({"O": 1.0, "H": 1.0, "L": 1.0, "C": 1.0, "mom_rsi_14": float("nan")})
-    text = build_state_text(row, ohlc_window=None)
+    text = build_state_text(row)
     assert "mom_rsi_14" not in text
 
 
