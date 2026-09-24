@@ -41,7 +41,7 @@ Exit strategy that sets TP and SL as constant distances equal to the context spr
 - AC-008: resolve_distances(df, tp, sl, ctx) returns two np.full arrays of length len(df) with values ctx.spread*tp and ctx.spread*sl.
 - AC-009: get_cache_key returns the string 'fixed_tp{int(tp)}_sl{int(sl)}_to{timeout_or_none}' where timeout_or_none is 'none' when timeout_bars is falsy.
 - AC-010: get_default_params returns {'tp': 30, 'sl': 20, 'timeout_bars': None}.
-- AC-011: When ctx.entry_modifier is a non-empty string, the registered entry modifier's compute_targets is invoked with the full constant tp_distances array (np.full(n, ctx.spread*tp)), the full constant sl_distances array (np.full(n, ctx.spread*sl)), a zeros_like trail_dist_arr, spread, slippage, max_bars, timeout_val, return_durations, and trailing params (breakeven_trigger, trail_tp_dist_arr) pulled from ctx.exit_modifier_params — passing full per-bar distance arrays matching the entry modifier contract (e.g. scale_in expects tp_dist_arr, sl_dist_arr, trail_dist_arr as full-length np.ndarrays, not scalar scalars).
+- AC-011: When ctx.entry_modifier is a non-empty string, the registered entry modifier's compute_targets is invoked with full per-bar `tp_dist_arr`, `sl_dist_arr`, `trail_dist_arr`, and `trail_tp_dist_arr` arrays, plus named spread/slippage/max_bars/timeout_val arguments and trailing parameters from ctx.exit_modifier_params. Scale-in therefore receives arrays matching its contract rather than scalar distances.
 - AC-012: Under an entry modifier, ATR is sourced from df['_atr'] if present, else df['vol_atr'] if present, else computed via ta.volatility.average_true_range with window=14; NaNs in the ATR array are replaced with 0.0.
 
 ## Edge Cases
@@ -60,7 +60,7 @@ Exit strategy that sets TP and SL as constant distances equal to the context spr
 - ctx.spread is a positive float used as the base pip size for scaling tp and sl.
 - df contains float-coercible columns 'O', 'H', 'L', 'C' aligned by index.
 - compute_targets_numba returns a 4-tuple (targets_long, targets_short, durations_long, durations_short).
-- Registered entry modifiers expose a compute_targets signature matching the positional and keyword arguments used here.
+- Registered entry modifiers expose a compute_targets signature matching the named array and scalar arguments used here.
 
 ## Needs Clarification
 

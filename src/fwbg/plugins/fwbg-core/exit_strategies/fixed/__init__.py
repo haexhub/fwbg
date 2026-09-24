@@ -92,19 +92,26 @@ class FixedExitStrategy(BaseExitStrategy):
             em_breakeven = modifier_params.get("breakeven_trigger", 0.0)
             em_trail = modifier_params.get("trail_atr_mult", 0.0)
             em_trail_tp = modifier_params.get("trail_tp_atr_mult", 0.0)
+            trail_distances = atr_v * em_trail
+            trail_tp_distances = atr_v * em_trail_tp
 
             # Fixed strategy: pass tp_mult/sl_mult=0 so min distances act as
             # the effective distances (max(atr*0, fixed_dist) = fixed_dist).
             return entry_mod.compute_targets(
-                opn_v, cls_v, hgh_v, low_v, atr_v,
-                0.0, 0.0,
-                ctx.spread, slippage,
-                tp_distances[0], sl_distances[0],
-                max_bars, timeout_val,
+                opens=opn_v,
+                closes=cls_v,
+                highs=hgh_v,
+                lows=low_v,
+                tp_dist_arr=tp_distances,
+                sl_dist_arr=sl_distances,
+                trail_dist_arr=trail_distances,
+                trail_tp_dist_arr=trail_tp_distances,
+                spread=ctx.spread,
+                slippage=slippage,
+                max_bars=max_bars,
+                timeout_val=timeout_val,
                 return_durations=return_durations,
                 breakeven_trigger=em_breakeven,
-                trail_atr_mult=em_trail,
-                trail_tp_atr_mult=em_trail_tp,
                 **entry_mod_params,
             )
 

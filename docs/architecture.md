@@ -24,6 +24,25 @@ The `PluginPhase` enum defines the execution order:
 
 Detailed per-phase documentation: [docs/phases/](phases/)
 
+## Simulation Contracts
+
+`simulate_pro_trade` receives completed TP/SL distances from the exit strategy.
+With the default `entry_delay=1`, the entry is the next bar's open and that bar
+is eligible for exits. With `entry_delay=0`, the entry is the signal bar's
+close; its OHLC range is already over, so exit checks begin on the following
+bar. This keeps close entries from using same-bar high/low movement that could
+not occur after the fill.
+
+`return_detailed` controls whether `trades_detailed` is included in the result.
+It does not change which entries are eligible: `_composed_signal_long` and
+`_composed_signal_short`, when present, are applied in both modes. This keeps
+inner-CV metrics and holdout reports on the same composed-signal contract.
+
+Exit strategies that dispatch to entry modifiers pass per-bar distance arrays
+using named arguments (`tp_dist_arr`, `sl_dist_arr`, `trail_dist_arr`, and
+`trail_tp_dist_arr`). A trailing distance is forwarded even when no separate
+breakeven trigger is configured, so trail-only configurations remain active.
+
 ---
 
 ## BasePlugin — The Plugin Interface

@@ -238,22 +238,20 @@ def simulate_trades(
 
     # Signal rules pre-filter: when _composed_signal_long/short columns exist,
     # only allow entries on bars where the signal is active (== 1.0).
-    # This lets signal_rules act as entry gates for ML models.
-    # Skipped when return_detailed=False during inner-CV evaluation (too few
-    # signal bars in small validation windows would starve the grid search).
+    # This lets signal_rules act as entry gates for ML models.  The filter is
+    # independent of return_detailed: that flag controls only extra output.
     signal_long = None
     signal_short = None
-    if return_detailed:
-        signal_long = (
-            df["_composed_signal_long"].values
-            if "_composed_signal_long" in df.columns
-            else None
-        )
-        signal_short = (
-            df["_composed_signal_short"].values
-            if "_composed_signal_short" in df.columns
-            else None
-        )
+    signal_long = (
+        df["_composed_signal_long"].values
+        if "_composed_signal_long" in df.columns
+        else None
+    )
+    signal_short = (
+        df["_composed_signal_short"].values
+        if "_composed_signal_short" in df.columns
+        else None
+    )
 
     # Signal event limiting: prevent re-entry into the same persistent signal.
     # A "signal event" is a contiguous run of bars where P(win) >= ct.
@@ -334,7 +332,7 @@ def simulate_trades(
                 sl_level_abs=sl_abs,
                 entry_delay=entry_delay,
                 breakeven_trigger=breakeven_trigger,
-                trail_distance=td if breakeven_trigger > 0.0 else 0.0,
+                trail_distance=td,
                 scale_levels=scale_levels,
                 scale_qty_mult=scale_qty_mult,
             )
