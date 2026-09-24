@@ -706,6 +706,9 @@ class TradingBot:
         Returns:
             True wenn Handel pausiert werden soll
         """
+        if not self.circuit_breaker_enabled:
+            return False
+
         if not self._refresh_risk_state():
             logger.warning(
                 "🚨 Circuit breaker: broker realized-PnL state is unknown or stale"
@@ -717,8 +720,6 @@ class TradingBot:
         self._consecutive_losses = self._risk_state.consecutive_losses
         self._pause_until = self._risk_state.pause_until
 
-        if not self.circuit_breaker_enabled:
-            return False
         if not self._risk_state.can_trade():
             if self._risk_state.unknown_reason:
                 logger.warning(

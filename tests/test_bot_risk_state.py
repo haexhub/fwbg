@@ -151,6 +151,17 @@ def test_bot_unknown_broker_state_blocks_new_order():
     adapter.submit_order.assert_not_called()
 
 
+def test_disabled_circuit_breaker_skips_unavailable_risk_state():
+    """Legacy disabled mode does not require the optional close-history feed."""
+    adapter = MagicMock()
+    bot = _make_bot(adapter)
+    bot.circuit_breaker_enabled = False
+
+    assert bot._check_circuit_breaker() is False
+    adapter.get_account_info.assert_not_called()
+    adapter.get_closed_trade_events.assert_not_called()
+
+
 def test_minimum_lot_is_not_allowed_to_exceed_risk_budget():
     adapter = MagicMock()
     adapter.get_account_info.return_value = AccountInfo(10, 10)
