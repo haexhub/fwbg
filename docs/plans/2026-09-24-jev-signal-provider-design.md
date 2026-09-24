@@ -84,26 +84,42 @@ freely sweepable against the same cached column.
 
 ### Prompt / question shape
 
-One `choice` question per bar covers both directions in a single call:
+**Updated during implementation** (this section originally described a single
+`choice` question; the implementation task found two independent `noul`
+questions to be the better match — see below for why): one bar produces two
+independent yes/no questions, mirroring `FixedExitStrategy.compute_targets()`'s
+own two independent `targets_long`/`targets_short` arrays (each direction is
+its own hypothetical trade from the same bar, not a single mutually-exclusive
+outcome — see `docs/plans/2026-09-24-jev-signal-provider-plan.md` Task 3 for
+the source-verified detail):
 
 ```json
 {
   "state": "<OHLC window + indicator values as text>",
   "questions": {
-    "barrier_outcome": {
-      "type": "choice",
-      "instructions": "Which barrier is reached first in the next N bars?",
-      "criteria": {
-        "up_first": "Price rises by at least X pips before falling Y pips",
-        "down_first": "Price falls by at least Y pips before rising X pips",
-        "neither": "Neither threshold is reached within the horizon"
-      }
+    "is_long_win": {
+      "type": "noul",
+      "instructions": "Opening a long position now with take-profit X pips and stop-loss Y pips: is take-profit reached before stop-loss or before N bars pass?",
+      "criteria": { "true": "Take-profit reached first", "false": "Stop-loss reached first, or neither within the horizon" }
+    },
+    "is_short_win": {
+      "type": "noul",
+      "instructions": "Opening a short position now with take-profit X pips and stop-loss Y pips: is take-profit reached before stop-loss or before N bars pass?",
+      "criteria": { "true": "Take-profit reached first", "false": "Stop-loss reached first, or neither within the horizon" }
     }
   }
 }
 ```
 
-`_composed_signal_long = P(up_first)`, `_composed_signal_short = P(down_first)`.
+`_composed_signal_long = P(is_long_win)`, `_composed_signal_short = P(is_short_win)`.
+
+X/Y here are **pips**, not fwbg's internal spread-multiplier convention —
+the batch script converts `tp`/`sl` (spread multiples, same unit
+`compute_labels()` uses) to actual pips via `get_asset(symbol).spread` /
+`.point` before building this prompt, so the barrier Jev is asked about
+matches the barrier the realized labels are computed against. (This
+conversion was originally missing — found and fixed during the final
+whole-branch review, see plan.md's commit history.)
 
 ## Scope (phase 1 / feasibility)
 
