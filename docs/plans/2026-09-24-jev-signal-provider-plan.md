@@ -856,8 +856,20 @@ git commit -m "feat: add jev_signal DataLoader plugin"
   quick look at `src/fwbg/pipeline/` before writing — deferred to keep this
   plan's Task 6 testable in isolation first.
 - **Registering the CSV DataSource + strategy JSON for a live Stage B run**
-  (`fwbg --assets EURUSD`) — mechanical once Tasks 1-7 are done and a real
-  batch run has produced cache files; not test-driven in the same sense, do
-  it as a manual follow-up once there's real data to point it at.
+  (`fwbg --assets EURUSD`) — **not mechanical, corrected after Task 7's code
+  review found a real gap**: the generic orchestrator every real run goes
+  through, `run_data_loading()` (`src/fwbg/data/loader.py:171-267`, used by
+  both live trading and backtesting), only proceeds if the raw source frame
+  has a `Close` column (`loader.py:226`) and hardcodes the output column
+  name as `f"macro_{prefix}"` (`loader.py:228`), plus applies daily→intraday
+  forward-fill alignment built for once-a-day macro series. Jev's cache
+  (`scripts/jev/cache.py`) is an already-bar-aligned, two-column
+  (`is_long_win`/`is_short_win`) series with no `Close` column and no
+  forward-fill need — this orchestrator cannot ingest that shape as-is.
+  Whoever picks this up needs to either extend `run_data_loading()` with a
+  second, non-macro ingestion path, or bypass it with a bespoke loader for
+  this one data source. Not a config-only step; a small design decision of
+  its own, deferred here on purpose (this plan's scope was proving out
+  Jev's calibration signal, not building general external-signal ingestion).
 - Any code for `jev_official`'s real base URL — placeholder in Task 6, fill
   in from TypeSafe's actual docs once you have API access.
