@@ -46,6 +46,18 @@ def _max_concurrent_runs_from_env() -> int:
 MAX_CONCURRENT_RUNS = _max_concurrent_runs_from_env()
 
 
+def _safe_strategy_file(strategy_name: str):
+    """Resolve a strategy file without allowing paths outside its root."""
+    _validate_id(strategy_name, "strategy_name")
+    strategies_dir = get_strategies_dir().resolve()
+    strategy_file = (strategies_dir / f"{strategy_name}.json").resolve()
+    try:
+        strategy_file.relative_to(strategies_dir)
+    except ValueError:
+        raise HTTPException(400, "Path traversal detected")
+    return strategy_file
+
+
 def _spawn_cli_process(cmd: list[str], env: dict, run_dir) -> tuple:
     """Start the CLI with stdout/stderr redirected to files in the run dir.
 
@@ -122,32 +134,13 @@ class PreviewRequest(BaseModel):
 @router.post("/start")
 def start_run(body: RunStartRequest) -> dict:
     """Start a strategy optimization run in the background."""
-    _validate_id(body.strategy_name, "strategy_name")
+    strategy_file = _safe_strategy_file(body.strategy_name)
     if body.assets:
         for a in body.assets:
             _validate_id(a, "asset")
     if body.asset_classes:
         for c in body.asset_classes:
             _validate_id(c, "asset_class")
-
-    with _active_jobs_lock:
-        # Refresh stale statuses first: a job whose process already exited
-        # must not occupy a slot. Statuses are otherwise only updated when a
-        # status endpoint happens to be polled — with a concurrency limit of
-        # 1 a stale "running" would block every future run.
-        for j in _active_jobs.values():
-            proc = j.get("process")
-            if j.get("status") == "running" and proc and proc.poll() is not None:
-                j["status"] = "completed" if proc.returncode == 0 else "failed"
-        running = sum(1 for j in _active_jobs.values() if j.get("status") == "running")
-    if running >= MAX_CONCURRENT_RUNS:
-        raise HTTPException(429, f"Too many active runs (limit {MAX_CONCURRENT_RUNS})")
-
-    strategies_dir = get_strategies_dir()
-    strategy_file = strategies_dir / f"{body.strategy_name}.json"
-
-    if not strategy_file.exists():
-        raise HTTPException(404, f"Strategy not found: {body.strategy_name}")
 
     # Build the fwbg CLI command
     cmd = [sys.executable, "-m", "fwbg.cli", "--strategy-file", str(strategy_file)]
@@ -170,14 +163,27 @@ def start_run(body: RunStartRequest) -> dict:
     cmd.extend(["--run-id", job_id])
 
     try:
-        from fwbg.api.workspace import get_workspace
-        env = os.environ.copy()
-        env.setdefault("FWBG_WORKSPACE", str(get_workspace()))
-        process, stdout_path, stderr_path = _spawn_cli_process(
-            cmd, env, get_test_results_dir() / job_id
-        )
-
         with _active_jobs_lock:
+            # Refresh stale statuses first: a job whose process already exited
+            # must not occupy a slot. Statuses are otherwise only updated when
+            # a status endpoint happens to be polled — with a concurrency limit
+            # of 1 a stale "running" would block every future run.
+            for j in _active_jobs.values():
+                proc = j.get("process")
+                if j.get("status") == "running" and proc and proc.poll() is not None:
+                    j["status"] = "completed" if proc.returncode == 0 else "failed"
+            running = sum(1 for j in _active_jobs.values() if j.get("status") == "running")
+            if running >= MAX_CONCURRENT_RUNS:
+                raise HTTPException(429, f"Too many active runs (limit {MAX_CONCURRENT_RUNS})")
+            if not strategy_file.exists():
+                raise HTTPException(404, f"Strategy not found: {body.strategy_name}")
+
+            from fwbg.api.workspace import get_workspace
+            env = os.environ.copy()
+            env.setdefault("FWBG_WORKSPACE", str(get_workspace()))
+            process, stdout_path, stderr_path = _spawn_cli_process(
+                cmd, env, get_test_results_dir() / job_id
+            )
             _active_jobs[job_id] = {
                 "job_id": job_id,
                 "pid": process.pid,
@@ -189,6 +195,8 @@ def start_run(body: RunStartRequest) -> dict:
                 "stdout_path": str(stdout_path),
                 "stderr_path": str(stderr_path),
             }
+    except HTTPException:
+        raise
     except Exception as e:
         log.exception("Failed to start run")
         raise HTTPException(500, "Failed to start run") from e
@@ -215,8 +223,7 @@ def preview_signals(body: PreviewRequest) -> dict:
     from fwbg.data.config import convert_numpy
     from fwbg.pipeline.features import compute_indicator_pool
 
-    strategies_dir = get_strategies_dir()
-    strategy_file = strategies_dir / f"{body.strategy_name}.json"
+    strategy_file = _safe_strategy_file(body.strategy_name)
     if not strategy_file.exists():
         raise HTTPException(404, f"Strategy not found: {body.strategy_name}")
 
@@ -445,13 +452,11 @@ class CompareRequest(BaseModel):
 @router.post("/compare")
 def compare_runs(body: CompareRequest) -> dict:
     """Compare multiple runs side-by-side with per-asset metrics."""
-    results_dir = get_test_results_dir()
-
     runs = []
     all_symbols: set[str] = set()
 
     for run_id in body.run_ids:
-        run_dir = results_dir / run_id
+        run_dir = _safe_results_path(run_id)
         if not run_dir.exists():
             continue
 
@@ -996,16 +1001,20 @@ def delete_run(run_id: str) -> dict:
     import shutil
 
     _validate_id(run_id, "run_id")
-    run_dir = _safe_results_path(run_id)
+    with _active_jobs_lock:
+        job = _active_jobs.get(run_id)
+        if job is not None and job.get("status") == "running":
+            raise HTTPException(409, f"Cannot delete active run: {run_id}")
 
-    if not run_dir.exists():
-        raise HTTPException(404, f"Run not found: {run_id}")
+        run_dir = _safe_results_path(run_id)
+        if not run_dir.exists():
+            raise HTTPException(404, f"Run not found: {run_id}")
 
-    try:
-        shutil.rmtree(run_dir)
-    except Exception as e:
-        log.exception("Failed to delete run %s", run_id)
-        raise HTTPException(500, "Failed to delete run") from e
+        try:
+            shutil.rmtree(run_dir)
+        except Exception as e:
+            log.exception("Failed to delete run %s", run_id)
+            raise HTTPException(500, "Failed to delete run") from e
 
     return {"run_id": run_id, "deleted": True}
 
