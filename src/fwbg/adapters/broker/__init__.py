@@ -58,6 +58,10 @@ class OrderStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class BrokerUnavailableError(RuntimeError):
+    """Raised when a broker query cannot establish a trustworthy result."""
+
+
 @dataclass
 class OrderResult:
     """Ergebnis einer Order-Ausführung."""
@@ -367,7 +371,14 @@ class BrokerAdapter(BaseAdapter):
             OrderResult
         """
         # Default-Implementation: Finde Position und erstelle Gegenorder
-        positions = self.get_positions()
+        try:
+            positions = self.get_positions()
+        except BrokerUnavailableError as exc:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"Unable to query positions: {exc}",
+            )
         for pos in positions:
             if pos.position_id == position_id:
                 close_direction = OrderSide.SELL if pos.direction == OrderSide.BUY else OrderSide.BUY
@@ -437,6 +448,7 @@ __all__ = [
     "OrderType",
     "OrderStatus",
     "OrderResult",
+    "BrokerUnavailableError",
     # Data types
     "Position",
     "AccountInfo",
