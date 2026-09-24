@@ -360,10 +360,14 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
     if entry_idx >= len(closes):
         return None
 
-    # max_bars bestimmt wie weit wir maximal simulieren
-    # None oder sehr hohe Werte = bis zum Ende der Daten
-    if max_bars is None or max_bars > len(closes) - entry_idx:
-        max_bars = len(closes) - entry_idx
+    # A close-entry is already complete at the signal bar.  OHLC values from
+    # that bar cannot describe what happened after the fill, so exits start on
+    # the following bar.  Keep ``max_bars`` as the number of bars evaluated
+    # after entry (and include the entry bar for next-open entries for
+    # backwards-compatible timeout semantics).
+    exit_start_idx = entry_idx + (1 if entry_delay == 0 else 0)
+    if max_bars is None or max_bars > len(closes) - exit_start_idx:
+        max_bars = len(closes) - exit_start_idx
 
     slippage = spread * 0.5
 
@@ -502,7 +506,7 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
     # When in_session is None, all bars are eligible for exits (original behavior).
     session_bars_elapsed = 0
 
-    for j in range(entry_idx, min(entry_idx + max_bars, len(closes))):
+    for j in range(exit_start_idx, min(exit_start_idx + max_bars, len(closes))):
         # --- Scale-in trigger check (before session/TP/SL checks) ---
         # Scale-in fills are price triggers, not time-dependent (fire on any bar).
         if use_scale_in:
