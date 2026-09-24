@@ -9,6 +9,7 @@ import argparse
 
 import pandas as pd
 
+from fwbg.data.assets import get_asset
 from scripts.jev.cache import PredictionCache
 from scripts.jev.client import JevProvider, ask
 from scripts.jev.prompt import build_questions, build_state_text
@@ -25,6 +26,15 @@ PROVIDERS = {
         api_key_env="LITELLM_API_KEY",
     ),
 }
+
+
+def spread_multiple_to_pips(asset, multiple: float) -> float:
+    """Convert an fwbg-native spread multiplier (the unit compute_labels()/
+    GridParams/FixedExitStrategy use, e.g. tp=20 means 20x the asset's spread)
+    into pips (the unit build_questions()'s prompt text describes). Both must
+    describe the same price distance: asset.spread * multiple == pips * asset.point.
+    """
+    return (asset.spread * multiple) / asset.point
 
 
 def run_batch(
@@ -56,8 +66,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", choices=PROVIDERS.keys(), required=True)
     parser.add_argument("--asset", default="EURUSD")
-    parser.add_argument("--tp", type=float, required=True, help="Take-profit, pips")
-    parser.add_argument("--sl", type=float, required=True, help="Stop-loss, pips")
+    parser.add_argument(
+        "--tp",
+        type=float,
+        required=True,
+        help="Take-profit, spread multiplier (fwbg-native convention, matches compute_labels)",
+    )
+    parser.add_argument(
+        "--sl",
+        type=float,
+        required=True,
+        help="Stop-loss, spread multiplier (fwbg-native convention, matches compute_labels)",
+    )
     parser.add_argument("--horizon-bars", type=int, required=True)
     parser.add_argument(
         "--features-csv",
@@ -72,7 +92,11 @@ def main():
     cache_path = (
         f"data/jev_cache/{args.asset}_{provider.name}_tp{int(args.tp)}_sl{int(args.sl)}.csv"
     )
-    run_batch(df, provider, args.tp, args.sl, args.horizon_bars, cache_path)
+
+    asset = get_asset(args.asset)
+    tp_pips = spread_multiple_to_pips(asset, args.tp)
+    sl_pips = spread_multiple_to_pips(asset, args.sl)
+    run_batch(df, provider, tp_pips, sl_pips, args.horizon_bars, cache_path)
 
 
 if __name__ == "__main__":

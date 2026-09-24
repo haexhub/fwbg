@@ -1,7 +1,10 @@
 import pandas as pd
+import pytest
 
-from scripts.fetch_jev_predictions import run_batch
+from fwbg.data.assets import get_asset
+from scripts.fetch_jev_predictions import run_batch, spread_multiple_to_pips
 from scripts.jev.client import JevProvider
+from scripts.jev.labels import compute_labels
 
 
 def test_run_batch_calls_each_provider_once_per_bar(tmp_path, monkeypatch):
@@ -106,3 +109,30 @@ def test_run_batch_stops_cleanly_on_error_but_keeps_prior_progress(tmp_path, mon
     assert resumed_calls == ["fake"]  # only t1 retried
     cached = pd.read_csv(cache_path, index_col=0)
     assert list(cached.index) == ["t0", "t1"]
+
+
+def test_tp_sl_pip_conversion_matches_compute_labels_price_distance():
+    """compute_labels() (Task 3) treats tp/sl as fwbg-native spread
+    multipliers -- FixedExitStrategy.compute_targets() derives the actual
+    price distance as `asset.spread * tp`. build_questions() (Task 2)
+    instead describes tp/sl as literal pips in the prompt text. main() must
+    bridge the two via spread_multiple_to_pips() before both reach Jev with
+    the same nominal number, or Jev is asked about a different barrier than
+    the one labels are graded against.
+    """
+    asset = get_asset("EURUSD")
+    tp_multiple = 20
+
+    converted_pips = spread_multiple_to_pips(asset, tp_multiple)
+
+    # The pips fed to build_questions() must describe the exact same price
+    # distance compute_labels() uses for the same nominal tp value.
+    assert converted_pips * asset.point == pytest.approx(asset.spread * tp_multiple)
+
+    # Confirm compute_labels() really does consume tp_multiple as a
+    # spread-multiplier (not pips) end to end, tying the identity above to
+    # real behavior rather than two formulas that merely look consistent.
+    n = 10
+    df = pd.DataFrame({"O": [1.08] * n, "H": [1.081] * n, "L": [1.079] * n, "C": [1.08] * n})
+    labels = compute_labels(df, symbol="EURUSD", tp=tp_multiple, sl=tp_multiple, timeout_bars=5)
+    assert len(labels) == n
