@@ -117,4 +117,3 @@ def test_empty_positions_is_distinct_from_positions_timeout():
     adapter._ig.fetch_open_positions.side_effect = TimeoutError("timed out")
     with pytest.raises(BrokerUnavailableError, match="positions query failed"):
         adapter.get_positions()
-
