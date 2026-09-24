@@ -104,55 +104,26 @@ def _plugin_to_dict(fqn: str) -> dict:
     namespace, plugin_name = fqn.split(":", 1)
     manifest = registry.get_plugin_manifest(fqn)
 
-    # Some plugins override get_default_params/get_param_schema as instance methods
-    try:
-        defaults = plugin_cls.get_default_params()
-    except TypeError:
-        defaults = plugin_cls().get_default_params()
-
-    try:
-        param_schema = plugin_cls.get_param_schema()
-    except TypeError:
-        param_schema = plugin_cls().get_param_schema()
+    defaults = plugin_cls.get_default_params()
+    param_schema = plugin_cls.get_param_schema()
+    plugin_instance = plugin_cls()
 
     # Get feature columns for indicator plugins
     feature_columns: list[str] = []
     signal_columns: list[str] = []
     plot_columns: list[str] = []
     if hasattr(plugin_cls, "get_feature_columns"):
-        try:
-            feature_columns = plugin_cls.get_feature_columns()
-        except TypeError:
-            try:
-                feature_columns = plugin_cls().get_feature_columns()
-            except Exception:
-                pass
+        feature_columns = plugin_instance.get_feature_columns()
     if hasattr(plugin_cls, "get_signal_columns"):
-        try:
-            signal_columns = plugin_cls.get_signal_columns()
-        except TypeError:
-            try:
-                signal_columns = plugin_cls().get_signal_columns()
-            except Exception:
-                pass
+        signal_columns = plugin_instance.get_signal_columns()
     if hasattr(plugin_cls, "get_plot_columns"):
-        try:
-            plot_columns = plugin_cls.get_plot_columns()
-        except TypeError:
-            try:
-                plot_columns = plugin_cls().get_plot_columns()
-            except Exception:
-                plot_columns = [c for c in feature_columns if c not in signal_columns]
+        plot_columns = plugin_instance.get_plot_columns()
+    elif feature_columns:
+        plot_columns = [c for c in feature_columns if c not in signal_columns]
 
     column_group_labels: dict[str, str] = {}
     if hasattr(plugin_cls, "get_column_group_labels"):
-        try:
-            column_group_labels = plugin_cls.get_column_group_labels()
-        except TypeError:
-            try:
-                column_group_labels = plugin_cls().get_column_group_labels()
-            except Exception:
-                pass
+        column_group_labels = plugin_instance.get_column_group_labels()
 
     return {
         "fqn": fqn,
@@ -543,15 +514,8 @@ def list_exit_modifiers_endpoint() -> list[dict]:
                 manifest = m
                 break
 
-        try:
-            defaults = cls.get_default_params()
-        except TypeError:
-            defaults = cls().get_default_params()
-
-        try:
-            param_schema = cls.get_param_schema()
-        except TypeError:
-            param_schema = cls().get_param_schema()
+        defaults = cls.get_default_params()
+        param_schema = cls.get_param_schema()
 
         result.append({
             "name": name,
@@ -581,15 +545,8 @@ def list_entry_modifiers_endpoint() -> list[dict]:
                 manifest = m
                 break
 
-        try:
-            defaults = cls.get_default_params()
-        except TypeError:
-            defaults = cls().get_default_params()
-
-        try:
-            param_schema = cls.get_param_schema()
-        except TypeError:
-            param_schema = cls().get_param_schema()
+        defaults = cls.get_default_params()
+        param_schema = cls.get_param_schema()
 
         result.append({
             "name": name,

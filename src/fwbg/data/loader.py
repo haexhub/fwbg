@@ -202,11 +202,12 @@ def run_data_loading(df, data_loading_configs):
         if not items and plugin_name:
             try:
                 cls = get_data_loader(plugin_name)
-                defaults = cls().get_default_params()
-                items = defaults.get("indicators", {})
-                params["indicators"] = items
             except ValueError:
                 pass
+            else:
+                defaults = cls.get_default_params()
+                items = defaults.get("indicators", {})
+                params["indicators"] = items
 
         # 1. Load raw data from DataSource
         if source_name and items:
@@ -259,10 +260,11 @@ def run_data_loading(df, data_loading_configs):
         if plugin_name:
             try:
                 cls = get_data_loader(plugin_name)
+            except ValueError:
+                log.debug(f"DataLoader plugin '{plugin_name}' not found, skipping")
+            else:
                 ctx = PipelineContext(df=df, symbol="", asset_class="")
                 ctx = cls().execute(ctx, **params)
                 df = ctx.df
-            except ValueError:
-                log.debug(f"DataLoader plugin '{plugin_name}' not found, skipping")
 
     return df
