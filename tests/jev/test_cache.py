@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -34,7 +36,8 @@ def test_append_failure_does_not_corrupt_existing_cache(tmp_path, monkeypatch):
     cache.append("t0", {"is_long_win": 0.6, "is_short_win": 0.1})
     original_content = path.read_text()
 
-    def boom(self, *args, **kwargs):
+    def boom(self, path, *args, **kwargs):
+        Path(path).write_text("CORRUPTED")
         raise OSError("simulated crash mid-write")
 
     monkeypatch.setattr(pd.DataFrame, "to_csv", boom)
