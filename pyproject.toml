@@ -55,6 +55,8 @@ dependencies = [
     "holidays>=0.70",
     # Historical data download (Dukascopy adapter)
     "dukascopy-python>=4.0",
+    # HTTP client (scripts/jev provider client)
+    "requests>=2.32",
 ]
 
 [project.optional-dependencies]
@@ -132,6 +134,10 @@ testpaths = [
     "packages/fwbg-premium/src/fwbg_premium/plugins",
     "packages/fwbg-sdk/tests",
 ]
+# Repo root on sys.path so tests can `from scripts.<pkg> import ...`
+# (--import-mode=importlib below doesn't add it automatically, unlike
+# plain `python -m pytest`).
+pythonpath = ["."]
 python_files = ["test_*.py", "*.test.py", "tests.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short --import-mode=importlib"
