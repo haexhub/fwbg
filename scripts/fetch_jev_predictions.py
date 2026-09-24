@@ -39,10 +39,16 @@ def run_batch(
     pending = cache.pending_timestamps(list(df.index))
     questions = build_questions(tp_pips=tp_pips, sl_pips=sl_pips, horizon_bars=horizon_bars)
 
-    for timestamp in pending:
+    for i, timestamp in enumerate(pending):
+        print(f"{i + 1}/{len(pending)} {timestamp}")
         row = df.loc[timestamp]
         state = build_state_text(row)
-        result = ask(provider, state=state, questions=questions)
+        try:
+            result = ask(provider, state=state, questions=questions)
+        except Exception as e:
+            print(f"Error at {timestamp}: {e}")
+            print(f"Stopping batch early; {i}/{len(pending)} bars completed this run.")
+            return
         cache.append(timestamp, result)
 
 
