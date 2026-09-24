@@ -104,6 +104,12 @@ Determines whether the plugin stores state learned from training data across cal
 
 - **`True`: Stateful.** The plugin has a `fit()` step that learns parameters from training data. These learned parameters are then reused in `execute()`/`transform()`. `fit()` is called per CV fold **only on training data** (lookahead bias protection). Between folds, `reset()` is called. Example: `fractional_diff` — learns the optimal d-value on training data, then applies it to train/test/OOS.
 
+Stateful indicators follow the same contract. Their fitted state is never
+placed in the globally precomputed raw pool: outer folds fit on outer-train
+rows, and nested inner folds fit again on each inner-train split. The
+`compute_indicator_pool` convenience helper requires `fit_df` when an
+explicit stateful indicator is requested.
+
 ### `cacheable` (bool, default: True)
 
 Determines whether results can be cached to avoid redundant computation across folds.
@@ -154,6 +160,8 @@ Determines whether an indicator is computed on preprocessed (stationary) or raw 
 │                                         → transform(test)             │
 │                                                                       │
 │  Stationary Indicators:  compute(preprocessed_data)  [per fold]       │
+│  Stateful Indicators:   fit(train) → transform(train/test)           │
+│                         refit(train) for each nested inner fold       │
 │  Raw Indicators:         (already precomputed once + cached)          │
 │                                                                       │
 │  Feature Selection:  select_features(X_train, y_train)                │

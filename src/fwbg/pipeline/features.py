@@ -137,6 +137,7 @@ def compute_indicator_pool(
     df: pd.DataFrame,
     indicators: Optional[List] = None,
     progress_callback=None,
+    fit_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """
     Compute indicators using the pipeline system.
@@ -146,6 +147,9 @@ def compute_indicator_pool(
         indicators: List of indicator configs (dicts or strings).
                    If None, uses all discovered indicator plugins.
         progress_callback: Optional callback(name, idx, total) for progress updates
+        fit_df: Training frame used to fit stateful indicators before running.
+                Stateful indicators explicitly listed without this frame are
+                rejected to prevent accidental full-series fitting.
 
     Returns:
         DataFrame with computed features
@@ -160,7 +164,13 @@ def compute_indicator_pool(
 
     # Determine which indicators to use
     if indicators is None:
-        indicator_names = registry.list_plugins(phase=PluginPhase.INDICATORS)
+        # Stateful indicators need a caller-owned training split.  Omitting
+        # them from the convenience "all indicators" path keeps dashboards
+        # and exploratory callers from fitting on an entire time series.
+        indicator_names = [
+            name for name in registry.list_plugins(phase=PluginPhase.INDICATORS)
+            if not registry.get(name).stateful
+        ]
     else:
         indicator_names = indicators
 
@@ -188,6 +198,22 @@ def compute_indicator_pool(
                 progress_callback(name, current, total)
 
     runner = PipelineRunner(registry, config, progress_callback=pipeline_progress)
+
+    stateful_names = [
+        config.name
+        for config in indicator_configs
+        if registry.get(config.name).stateful
+    ]
+    if stateful_names and fit_df is None:
+        raise ValueError(
+            "Stateful indicators require fit_df containing training data: "
+            + ", ".join(stateful_names)
+        )
+    if fit_df is not None and stateful_names:
+        fit_ctx = PipelineContext(
+            df=fit_df.copy(), symbol="", asset_class="FOREX"
+        )
+        runner.fit(fit_ctx)
 
     # Run pipeline
     ctx = PipelineContext(df=df.copy(), symbol="", asset_class="FOREX")
