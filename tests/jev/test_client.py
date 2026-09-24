@@ -1,4 +1,7 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
+import requests
 
 from scripts.jev.client import JevProvider, ask, parse_response
 
@@ -47,7 +50,24 @@ def test_ask_builds_correct_request(monkeypatch):
 
 
 def test_parse_response_missing_question_raises():
-    import pytest
+    with pytest.raises(KeyError):
+        parse_response(
+            {"results": {"is_long_win": {"probability": 0.5}}}, ["is_long_win", "is_short_win"]
+        )
+
+
+def test_ask_missing_api_key_env_raises(monkeypatch):
+    monkeypatch.delenv("JEV_OFFICIAL_API_KEY", raising=False)
 
     with pytest.raises(KeyError):
-        parse_response({"results": {"is_long_win": {"probability": 0.5}}}, ["is_long_win", "is_short_win"])
+        ask(OFFICIAL, state="EURUSD @ 1.0850", questions={"is_long_win": {}})
+
+
+def test_ask_raises_on_http_error(monkeypatch):
+    monkeypatch.setenv("JEV_OFFICIAL_API_KEY", "test-key")
+    fake_response = MagicMock()
+    fake_response.raise_for_status.side_effect = requests.HTTPError("500 Server Error")
+
+    with patch("scripts.jev.client.requests.post", return_value=fake_response):
+        with pytest.raises(requests.HTTPError):
+            ask(OFFICIAL, state="EURUSD @ 1.0850", questions={"is_long_win": {}})

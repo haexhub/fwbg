@@ -55,6 +55,8 @@ dependencies = [
     "holidays>=0.70",
     # Historical data download (Dukascopy adapter)
     "dukascopy-python>=4.0",
+    # HTTP client (scripts/jev provider client)
+    "requests>=2.32",
 ]
 
 [project.optional-dependencies]

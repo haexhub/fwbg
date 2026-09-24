@@ -841,7 +841,7 @@ wheels = [
 
 [[package]]
 name = "fwbg"
-version = "2.10.8"
+version = "2.20.2"
 source = { editable = "." }
 dependencies = [
     { name = "dukascopy-python" },
@@ -855,6 +855,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pywavelets" },
     { name = "pyyaml" },
+    { name = "requests" },
     { name = "ripser" },
     { name = "scikit-learn" },
     { name = "scipy" },
@@ -929,8 +930,9 @@ requires-dist = [
     { name = "python-multipart", marker = "extra == 'api'", specifier = ">=0.0.9" },
     { name = "pywavelets", specifier = ">=1.6" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "requests", specifier = ">=2.32" },
     { name = "ripser", specifier = ">=0.6" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.14,<0.16" },
     { name = "scikit-learn", specifier = ">=1.7" },
     { name = "scipy", specifier = ">=1.15" },
     { name = "seaborn", marker = "extra == 'analytics'", specifier = ">=0.13" },
@@ -949,7 +951,7 @@ provides-extras = ["dev", "analytics", "ig", "api", "full"]
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx2" },
-    { name = "ruff", specifier = ">=0.14.14" },
+    { name = "ruff", specifier = ">=0.14.14,<0.16" },
 ]
 
 [[package]]
