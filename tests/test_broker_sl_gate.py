@@ -6,7 +6,7 @@ kontaktieren. Exits (close_position) sind bewusst ausgenommen und übergeben
 _submit_order_impl direkt keinen Stop.
 """
 from typing import List, Optional
-from unittest.mock import MagicMock
+from unittest.mock import create_autospec
 
 import pandas as pd
 import pytest
@@ -164,10 +164,11 @@ def test_submit_order_override_is_forbidden():
 
 def _make_ig_adapter():
     pytest.importorskip("trading_ig", reason="trading-ig nicht installiert")
+    from trading_ig import IGService
     from fwbg.adapters.broker.ig.adapter import IGBrokerAdapter
 
     adapter = IGBrokerAdapter(username="u", password="p", api_key="k")
-    adapter._ig = MagicMock()
+    adapter._ig = create_autospec(IGService, instance=True)
     adapter._last_request_time = 0
     adapter._ig.create_open_position.return_value = {"dealReference": "D1"}
     adapter._ig.fetch_deal_by_deal_reference.return_value = {
