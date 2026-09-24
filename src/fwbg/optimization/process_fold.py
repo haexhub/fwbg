@@ -12,8 +12,19 @@ from fwbg.pipeline import (
 from fwbg.pipeline.features import split_indicators_by_stationarity
 from fwbg.utils.progress import report_phase, report_meta, report_progress
 from fwbg.utils.logging import log
-from .nested_cv import nested_cv_split, evaluate_on_holdout
+from .nested_cv import nested_cv_split, refit_stateful_features, evaluate_on_holdout
 from .grid_search import run_grid_search, select_features
+
+
+def _is_stateful_indicator(indicator) -> bool:
+    """Return whether a configured indicator requires train-only fitting."""
+    name = indicator.get("name", "") if isinstance(indicator, dict) else indicator
+    from fwbg.pipeline import get_registry
+    from fwbg.pipeline.features import normalize_plugin_name
+
+    registry = get_registry()
+    registry.auto_discover()
+    return registry.get(normalize_plugin_name(name)).stateful
 
 
 def _attach_regime_to_fold(
@@ -46,6 +57,30 @@ def precompute_indicators(df, strategy, sym):
         indicators, has_preprocessing=has_preprocessing
     )
 
+    # Stateful indicators must be fit on each fold's training frame.  Keep
+    # them out of the globally cached raw pool even when they advertise that
+    # they operate on raw (non-stationary) inputs.
+    stateful_indicators = [ind for ind in indicators if _is_stateful_indicator(ind)]
+    stateful_names = {
+        (ind.get("name", "") if isinstance(ind, dict) else ind)
+        for ind in stateful_indicators
+    }
+    raw_indicators = [
+        ind for ind in raw_indicators
+        if (ind.get("name", "") if isinstance(ind, dict) else ind)
+        not in stateful_names
+    ]
+    stationary_names = {
+        (ind.get("name", "") if isinstance(ind, dict) else ind)
+        for ind in stationary_indicators
+    }
+    fold_indicators = [
+        *stationary_indicators,
+        *[ind for ind in stateful_indicators
+          if (ind.get("name", "") if isinstance(ind, dict) else ind)
+          not in stationary_names],
+    ]
+
     precomputed_raw_df = None
     if raw_indicators:
         t0 = time.time()
@@ -67,7 +102,10 @@ def precompute_indicators(df, strategy, sym):
         log(1, f"Precomputed {len(raw_indicators)} raw indicators: "
                f"{len(raw_feature_cols)} features ({time.time()-t0:.1f}s)", sym)
 
-    fold_indicators = stationary_indicators if has_preprocessing else []
+    if not has_preprocessing:
+        fold_indicators = [
+            ind for ind in fold_indicators if _is_stateful_indicator(ind)
+        ]
     total_indicators = len(raw_indicators) + len(fold_indicators)
     log(2, f"Per-fold indicators: {len(fold_indicators)}, Precomputed: {len(raw_indicators)}", sym)
     report_meta(sym, indicator_count=total_indicators)
@@ -126,13 +164,15 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
         log(2, f"  Preprocessing: Train {len(fold.train_df)}→{len(pp_train_raw)}, "
                f"Test {len(fold.test_df)}→{len(pp_test_raw)}", sym)
 
-    if fold_indicators:
+    fold_stateful = [ind for ind in fold_indicators if _is_stateful_indicator(ind)]
+    fold_stateless = [ind for ind in fold_indicators if not _is_stateful_indicator(ind)]
+    if fold_stateless:
         train_df = compute_indicator_pool(
-            pp_train_raw, indicators=fold_indicators,
+            pp_train_raw, indicators=fold_stateless,
             progress_callback=indicator_progress_callback,
         )
         test_df = compute_indicator_pool(
-            pp_test_raw, indicators=fold_indicators, progress_callback=None
+            pp_test_raw, indicators=fold_stateless, progress_callback=None
         )
     else:
         train_df = pp_train_raw.copy()
@@ -145,6 +185,32 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
         test_df = pd.concat(
             [test_df, precomputed_raw_df.reindex(test_df.index)], axis=1
         )
+
+    stateful_output_columns = []
+    if fold_stateful:
+        train_before_stateful = set(train_df.columns)
+        train_df = compute_indicator_pool(
+            train_df,
+            indicators=fold_stateful,
+            fit_df=train_df,
+            progress_callback=indicator_progress_callback,
+        )
+        test_df = compute_indicator_pool(
+            test_df,
+            indicators=fold_stateful,
+            fit_df=train_df.drop(
+                columns=[c for c in train_df.columns if c not in train_before_stateful],
+                errors="ignore",
+            ),
+            progress_callback=None,
+        )
+        stateful_output_columns = [
+            c for c in train_df.columns if c not in train_before_stateful
+        ]
+        train_df.attrs["fwbg_stateful_indicator_configs"] = fold_stateful
+        test_df.attrs["fwbg_stateful_indicator_configs"] = fold_stateful
+        train_df.attrs["fwbg_stateful_output_columns"] = stateful_output_columns
+        test_df.attrs["fwbg_stateful_output_columns"] = stateful_output_columns
 
     # Feature pool cleaning: identify columns to drop (inf, >10% NaN)
     full_pool = get_feature_columns(train_df)
@@ -350,7 +416,7 @@ def process_single_fold(
     # === NESTED CV: Inner Folds erstellen (auf Train-Daten dieses Folds) ===
     report_phase(sym, f"Fold {fold.fold_id + 1}/{n_folds}: Grid-Search...")
     cv_split = nested_cv_split(train_df, holdout_ratio=0.0, n_inner_folds=ctx.n_inner_folds, embargo_bars=ctx.embargo_bars)
-    inner_folds = cv_split["inner_folds"]
+    inner_folds = refit_stateful_features(cv_split["inner_folds"])
 
     log(2, f"  Fold {fold.fold_id + 1}: Nested CV with {len(inner_folds)} inner folds", sym)
 

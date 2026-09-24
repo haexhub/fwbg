@@ -225,13 +225,18 @@ class PipelineRunner:
         """
         self._initialize()
 
+        fit_ctx = ctx
         for plugin_config, instance in self._execution_order:
+            plugin_cls = type(instance)
+            merged_params = self._merge_params(
+                plugin_cls, plugin_config.params, global_params
+            )
             if instance.stateful:
-                plugin_cls = type(instance)
-                merged_params = self._merge_params(
-                    plugin_cls, plugin_config.params, global_params
-                )
-                instance.fit(ctx, **merged_params)
+                instance.fit(fit_ctx, **merged_params)
+            # Execute each plugin on the fitting frame so later stateful
+            # plugins see the features produced by earlier plugins.  This is
+            # also the fit/transform behavior used by the fold pipeline.
+            fit_ctx = instance.execute(fit_ctx, **merged_params)
 
     def run(
         self,
