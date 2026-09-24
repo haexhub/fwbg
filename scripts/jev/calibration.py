@@ -2,6 +2,7 @@ import pandas as pd
 
 
 def brier_score(predicted: pd.Series, actual: pd.Series) -> float:
+    """Return mean squared probability error over aligned, nonmissing rows."""
     predicted, actual = predicted.align(actual, join="inner")
     valid = predicted.notna() & actual.notna()
     return float(((predicted[valid] - actual[valid]) ** 2).mean())
@@ -10,6 +11,7 @@ def brier_score(predicted: pd.Series, actual: pd.Series) -> float:
 def accuracy_vs_baseline(
     predicted: pd.Series, actual: pd.Series, threshold: float
 ) -> dict[str, float]:
+    """Compare thresholded prediction accuracy with the majority-class baseline."""
     predicted, actual = predicted.align(actual, join="inner")
     valid = predicted.notna() & actual.notna()
     predicted, actual = predicted[valid], actual[valid]
@@ -22,6 +24,7 @@ def accuracy_vs_baseline(
 
 
 def agreement_rate(provider_a: pd.Series, provider_b: pd.Series, threshold: float) -> float:
+    """Return the fraction of aligned, nonmissing provider decisions that agree."""
     provider_a, provider_b = provider_a.align(provider_b, join="inner")
     valid = provider_a.notna() & provider_b.notna()
     provider_a, provider_b = provider_a[valid], provider_b[valid]

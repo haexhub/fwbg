@@ -46,6 +46,10 @@ def run_batch(
     horizon_bars: int,
     cache_path,
 ) -> None:
+    """Request uncached bar predictions and persist each successful response.
+
+    Raise the first request error after saving earlier responses for a later run.
+    """
     cache = PredictionCache(cache_path)
     pending = cache.pending_timestamps(list(df.index))
     questions = build_questions(tp_pips=tp_pips, sl_pips=sl_pips, horizon_bars=horizon_bars)
@@ -64,6 +68,7 @@ def run_batch(
 
 
 def main():
+    """Parse batch options, convert barrier units, and run the selected provider."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", choices=PROVIDERS.keys(), required=True)
     parser.add_argument("--asset", default="EURUSD")

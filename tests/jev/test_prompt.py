@@ -4,6 +4,7 @@ from scripts.jev.prompt import build_questions, build_state_text
 
 
 def test_build_state_text_includes_ohlc_and_indicators():
+    """State text includes OHLC prices and available indicator values."""
     row = pd.Series(
         {
             "O": 1.0845,
@@ -21,12 +22,14 @@ def test_build_state_text_includes_ohlc_and_indicators():
 
 
 def test_build_state_text_skips_nan_indicators():
+    """Missing indicator values are omitted from state text."""
     row = pd.Series({"O": 1.0, "H": 1.0, "L": 1.0, "C": 1.0, "mom_rsi_14": float("nan")})
     text = build_state_text(row)
     assert "mom_rsi_14" not in text
 
 
 def test_build_questions_shape():
+    """Long and short questions carry the requested barriers and horizon."""
     questions = build_questions(tp_pips=20, sl_pips=20, horizon_bars=30)
     assert set(questions) == {"is_long_win", "is_short_win"}
     assert questions["is_long_win"]["type"] == "noul"

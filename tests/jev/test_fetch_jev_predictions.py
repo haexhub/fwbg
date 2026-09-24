@@ -8,6 +8,7 @@ from scripts.jev.labels import compute_labels
 
 
 def test_run_batch_calls_each_provider_once_per_bar(tmp_path, monkeypatch):
+    """Batching requests one answer per bar and writes both to the CSV cache."""
     df = pd.DataFrame(
         {"O": [1.08, 1.081], "H": [1.082, 1.083], "L": [1.079, 1.080], "C": [1.081, 1.082]},
         index=["t0", "t1"],
@@ -15,6 +16,7 @@ def test_run_batch_calls_each_provider_once_per_bar(tmp_path, monkeypatch):
     calls = []
 
     def fake_ask(provider, state, questions):
+        """Record each request and return fixed long and short predictions."""
         calls.append(provider.name)
         return {"is_long_win": 0.5, "is_short_win": 0.5}
 
@@ -36,6 +38,7 @@ def test_run_batch_calls_each_provider_once_per_bar(tmp_path, monkeypatch):
 
 
 def test_run_batch_skips_already_cached_bars(tmp_path, monkeypatch):
+    """A bar present in the cache triggers no provider request."""
     df = pd.DataFrame({"O": [1.0], "H": [1.0], "L": [1.0], "C": [1.0]}, index=["t0"])
     (tmp_path / "out.csv").write_text("timestamp,is_long_win,is_short_win\nt0,0.9,0.1\n")
 
@@ -59,6 +62,7 @@ def test_run_batch_skips_already_cached_bars(tmp_path, monkeypatch):
 
 
 def test_run_batch_stops_cleanly_on_error_but_keeps_prior_progress(tmp_path, monkeypatch):
+    """A failed request preserves earlier answers and permits resumption."""
     df = pd.DataFrame(
         {"O": [1.08, 1.081], "H": [1.082, 1.083], "L": [1.079, 1.080], "C": [1.081, 1.082]},
         index=["t0", "t1"],
@@ -67,6 +71,7 @@ def test_run_batch_stops_cleanly_on_error_but_keeps_prior_progress(tmp_path, mon
     calls = []
 
     def flaky_ask(provider, state, questions):
+        """Succeed for the first bar and fail on the second."""
         calls.append(provider.name)
         if len(calls) == 1:
             return {"is_long_win": 0.5, "is_short_win": 0.5}
@@ -93,6 +98,7 @@ def test_run_batch_stops_cleanly_on_error_but_keeps_prior_progress(tmp_path, mon
     resumed_calls = []
 
     def healthy_ask(provider, state, questions):
+        """Record retry requests and return a successful prediction."""
         resumed_calls.append(provider.name)
         return {"is_long_win": 0.1, "is_short_win": 0.2}
 

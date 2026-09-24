@@ -18,6 +18,7 @@ class JevSignalLoader(BaseDataLoader):
     version = "1.0.0"
 
     def execute(self, ctx, **params):
+        """Shift cached provider probabilities into the composed signal columns."""
         provider = params.get("provider", "jev_official")
         long_col = f"{provider}_is_long_win"
         short_col = f"{provider}_is_short_win"
@@ -39,12 +40,14 @@ class JevSignalLoader(BaseDataLoader):
         return ctx
 
     def get_default_params(self):
+        """Select the official Jev cache when no provider is specified."""
         return {
             "provider": "jev_official",
         }
 
     @classmethod
     def get_param_schema(cls) -> dict:
+        """Describe the supported provider choices for plugin configuration."""
         return {
             "provider": {
                 "type": "choice",
