@@ -7,6 +7,7 @@ from scripts.jev.labels import compute_labels
 def test_compute_labels_matches_fixed_exit_strategy_directly():
     # Small synthetic OHLC series: price ramps up steadily, so a long
     # entry near the start should win, a short entry should lose.
+    """An upward price series produces long wins and short losses."""
     n = 50
     close = 1.0800 + np.linspace(0, 0.0100, n)  # steady uptrend, 100 pips over 50 bars
     df = pd.DataFrame(
@@ -30,6 +31,7 @@ def test_compute_labels_matches_fixed_exit_strategy_directly():
 def test_compute_labels_uses_asset_spread():
     # Different assets have different spreads; this just checks the function
     # doesn't hardcode EURUSD's spread internally in a way that breaks lookup.
+    """Different asset spreads change barrier outcomes for the same prices."""
     from fwbg.data.assets import get_asset
 
     asset = get_asset("EURUSD")

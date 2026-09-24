@@ -13,6 +13,7 @@ OFFICIAL = JevProvider(
 
 
 def test_ask_builds_correct_request(monkeypatch):
+    """Provider requests include auth, state, questions, and parsed answers."""
     monkeypatch.setenv("JEV_OFFICIAL_API_KEY", "test-key")
     fake_response = MagicMock()
     fake_response.json.return_value = {
@@ -50,6 +51,7 @@ def test_ask_builds_correct_request(monkeypatch):
 
 
 def test_parse_response_missing_question_raises():
+    """Parsing fails when the response omits a requested question."""
     with pytest.raises(KeyError):
         parse_response(
             {"results": {"is_long_win": {"probability": 0.5}}}, ["is_long_win", "is_short_win"]
@@ -57,6 +59,7 @@ def test_parse_response_missing_question_raises():
 
 
 def test_ask_missing_api_key_env_raises(monkeypatch):
+    """Requests fail before sending when the configured API key is absent."""
     monkeypatch.delenv("JEV_OFFICIAL_API_KEY", raising=False)
 
     with pytest.raises(KeyError):
@@ -65,6 +68,7 @@ def test_ask_missing_api_key_env_raises(monkeypatch):
 
 @pytest.mark.parametrize("bad_probability", [float("nan"), float("inf"), -0.1, 1.1])
 def test_parse_response_rejects_invalid_probability(bad_probability):
+    """Reject nonfinite and out-of-range provider probabilities."""
     with pytest.raises(ValueError):
         parse_response(
             {"results": {"is_long_win": {"probability": bad_probability}}}, ["is_long_win"]
@@ -72,6 +76,7 @@ def test_parse_response_rejects_invalid_probability(bad_probability):
 
 
 def test_ask_raises_on_http_error(monkeypatch):
+    """HTTP failures propagate to the caller for batch error handling."""
     monkeypatch.setenv("JEV_OFFICIAL_API_KEY", "test-key")
     fake_response = MagicMock()
     fake_response.raise_for_status.side_effect = requests.HTTPError("500 Server Error")

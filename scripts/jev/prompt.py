@@ -3,6 +3,7 @@ import pandas as pd
 
 def build_state_text(row: pd.Series) -> str:
     # ASSUMPTION: only single-bar state is sent today; no multi-bar OHLC window yet.
+    """Format one OHLC bar and its nonmissing indicators as Jev state text."""
     parts = [f"O={row['O']:.5g} H={row['H']:.5g} L={row['L']:.5g} C={row['C']:.5g}"]
     for name, value in row.items():
         if name in ("O", "H", "L", "C"):
@@ -14,7 +15,9 @@ def build_state_text(row: pd.Series) -> str:
 
 
 def build_questions(tp_pips: float, sl_pips: float, horizon_bars: int) -> dict:
+    """Build matching long and short barrier questions using pip distances."""
     def _question(direction: str) -> dict:
+        """Describe one trade direction and its win criterion."""
         return {
             "type": "noul",
             "instructions": (

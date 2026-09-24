@@ -6,6 +6,7 @@ from fwbg.plugins.custom.data_loading.jev_signal import JevSignalLoader
 
 class _Ctx:
     def __init__(self, df):
+        """Hold the DataFrame passed to the loader under test."""
         self.df = df
 
 
@@ -18,6 +19,7 @@ def test_plugin_registered():
 
 
 def test_maps_raw_probability_columns_with_shift():
+    """Cached probabilities become composed signals one bar later."""
     df = pd.DataFrame(
         {
             "jev_official_is_long_win": [0.9, 0.2, 0.7],
@@ -35,6 +37,7 @@ def test_maps_raw_probability_columns_with_shift():
 
 
 def test_missing_columns_produce_no_signal():
+    """Absent provider columns produce zero-valued signals after the shift."""
     df = pd.DataFrame({"C": [1.0, 1.1]})
     ctx = _Ctx(df)
 
@@ -44,6 +47,7 @@ def test_missing_columns_produce_no_signal():
 
 
 def test_rerunning_execute_does_not_duplicate_columns():
+    """Repeated execution replaces signal values without duplicate columns."""
     df = pd.DataFrame(
         {
             "jev_official_is_long_win": [0.9, 0.2, 0.7],

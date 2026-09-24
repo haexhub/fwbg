@@ -24,6 +24,7 @@ class JevProvider:
 
 
 def parse_response(raw: dict, question_names: list[str]) -> dict[str, float]:
+    """Extract each requested probability from a Jev-shaped response."""
     results = raw["results"]
     parsed = {}
     for name in question_names:
@@ -35,6 +36,7 @@ def parse_response(raw: dict, question_names: list[str]) -> dict[str, float]:
 
 
 def ask(provider: JevProvider, state: str, questions: dict) -> dict[str, float]:
+    """Submit a state and questions using the provider's configured credentials."""
     api_key = os.environ[provider.api_key_env]
     headers = {
         "Authorization": f"Bearer {api_key}",
