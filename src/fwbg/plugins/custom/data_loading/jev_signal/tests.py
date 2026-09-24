@@ -1,11 +1,20 @@
 import pandas as pd
 
+from fwbg.core.registry import get_data_loader
 from fwbg.plugins.custom.data_loading.jev_signal import JevSignalLoader
 
 
 class _Ctx:
     def __init__(self, df):
         self.df = df
+
+
+def test_plugin_registered():
+    """jev_signal should be discoverable via the real registry (manifest.json
+    + @register_data_loader wiring), not just importable directly."""
+    cls = get_data_loader("jev_signal")
+    assert cls is not None
+    assert cls.name == "jev_signal"
 
 
 def test_maps_raw_probability_columns_with_shift():

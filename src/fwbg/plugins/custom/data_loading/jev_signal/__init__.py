@@ -36,3 +36,19 @@ class JevSignalLoader(BaseDataLoader):
         shifted = shift_features(features, ctx.df.index)
         ctx.df = pd.concat([ctx.df, shifted], axis=1)
         return ctx
+
+    def get_default_params(self):
+        return {
+            "provider": "jev_official",
+        }
+
+    @classmethod
+    def get_param_schema(cls) -> dict:
+        return {
+            "provider": {
+                "type": "choice",
+                "default": "jev_official",
+                "description": "Which cached Jev provider's probability columns to read.",
+                "choices": ["jev_official", "jev_semif"],
+            },
+        }
