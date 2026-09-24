@@ -69,7 +69,8 @@ class COTPositioningLoader(BaseDataLoader):
         ctx.df = df
         return ctx
 
-    def get_default_params(self):
+    @classmethod
+    def get_default_params(cls):
         return {
             "indicators": DEFAULT_COT_INDICATORS,
             "lookbacks_weeks": DEFAULT_LOOKBACKS_WEEKS,

@@ -141,9 +141,14 @@ class MultiTimeframeIndicators(BaseIndicator):
         # === Trend Alignment ===
         h1_ema_21 = ta.trend.ema_indicator(df["C"], window=21)
         h1_trend = safe_divide(df["C"] - h1_ema_21, df["C"])
-        h4_trend = features["mtf_h4_ema20_dist"]
-        d1_trend = features["mtf_d1_ema20_dist"]
-        w1_trend = features["mtf_w1_ema20_dist"]
+        # Alignment always uses EMA(20), independently of which EMA feature
+        # periods the caller requested for output.
+        h4_alignment_ema20 = ta.trend.ema_indicator(df["C"], window=20 * h4_bars)
+        d1_alignment_ema20 = ta.trend.ema_indicator(df["C"], window=20 * d1_bars)
+        w1_alignment_ema20 = ta.trend.ema_indicator(df["C"], window=20 * w1_bars)
+        h4_trend = safe_divide(df["C"] - h4_alignment_ema20, df["C"])
+        d1_trend = safe_divide(df["C"] - d1_alignment_ema20, df["C"])
+        w1_trend = safe_divide(df["C"] - w1_alignment_ema20, df["C"])
 
         features["mtf_trend_alignment_h1h4"] = (np.sign(h1_trend) == np.sign(h4_trend)).astype(int)
         features["mtf_trend_alignment_h4d1"] = (np.sign(h4_trend) == np.sign(d1_trend)).astype(int)
