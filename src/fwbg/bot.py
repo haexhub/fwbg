@@ -31,7 +31,7 @@ import time
 import uuid
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Any, List
 from dataclasses import dataclass, field
@@ -45,6 +45,7 @@ from fwbg.core import get_model
 from fwbg.pipeline import compute_indicator_pool
 from fwbg.data.loader import run_data_loading
 from fwbg.data.assets import get_asset
+from fwbg.core.risk_state import RiskState
 
 logger = logging.getLogger(__name__)
 
@@ -185,8 +186,20 @@ class TradingBot:
         self._daily_pnl = 0.0
         self._daily_start_balance = 0.0
         self._consecutive_losses = 0
+        self._rejection_count = 0
         self._pause_until: datetime = None
         self._last_day: int = -1
+        self._risk_state = RiskState(
+            account_timezone=account_config.get(
+                "account_timezone", account_config.get("timezone", "UTC")
+            ),
+            max_daily_loss_percent=self.max_daily_loss_percent,
+            pause_after_consecutive_losses=self.pause_after_consecutive_losses,
+            pause_duration_minutes=self.pause_duration_minutes,
+            max_observation_age_seconds=account_config.get(
+                "risk_state_max_age_seconds", 300
+            ),
+        )
 
         # M6a — per-strategy equity tracking (sampled by `_write_status`).
         # `starting_equity` is captured on the first observation; the curve is
@@ -563,7 +576,14 @@ class TradingBot:
             risk_cash = min(balance * cfg.risk_per_trade, balance * self.max_risk_percent)
             sl_dist = max(10, int((atr * cfg.sl_mult) / cfg.point_value))
             tp_dist = int((atr * cfg.tp_mult) / cfg.point_value)
-            size = max(self.min_lot_size, round(risk_cash / sl_dist, 2))
+            requested_size = round(risk_cash / sl_dist, 2)
+            if requested_size < self.min_lot_size:
+                logger.warning(
+                    f"⚠️ {symbol}: Minimum lot {self.min_lot_size} exceeds risk budget "
+                    f"({risk_cash:.2f} / {sl_dist})"
+                )
+                return
+            size = max(self.min_lot_size, requested_size)
 
             logger.info(
                 f"🎯 {symbol} SIGNAL: {direction.value} "
@@ -618,8 +638,9 @@ class TradingBot:
                             })
             else:
                 logger.warning(f"⚠️ {symbol}: Order rejected - {result.message}")
-                # Rejected order als Loss für Circuit Breaker zählen
-                self._consecutive_losses += 1
+                # Rejections are diagnostics, never realized losses.
+                self._rejection_count += 1
+                self._risk_state.count_rejection()
 
         except Exception as e:
             logger.error(f"❌ {symbol}: Signal execution failed: {e}")
@@ -685,47 +706,55 @@ class TradingBot:
         Returns:
             True wenn Handel pausiert werden soll
         """
+        if not self._refresh_risk_state():
+            logger.warning(
+                "🚨 Circuit breaker: broker realized-PnL state is unknown or stale"
+            )
+            return True
+
+        self._daily_pnl = self._risk_state.daily_pnl
+        self._daily_start_balance = self._risk_state.daily_start_balance
+        self._consecutive_losses = self._risk_state.consecutive_losses
+        self._pause_until = self._risk_state.pause_until
+
         if not self.circuit_breaker_enabled:
             return False
-
-        now = datetime.now()
-
-        # Reset tägliche Statistik um Mitternacht
-        if now.day != self._last_day:
-            self._last_day = now.day
-            self._daily_pnl = 0.0
-            try:
-                account = self.adapter.get_account_info()
-                self._daily_start_balance = account.balance
-            except Exception:
-                pass
-
-        # Prüfe ob Pause noch aktiv
-        if self._pause_until and now < self._pause_until:
-            return True
-
-        # Prüfe täglichen Verlust
-        if self._daily_start_balance > 0:
-            daily_loss_percent = -self._daily_pnl / self._daily_start_balance
-            if daily_loss_percent >= self.max_daily_loss_percent:
+        if not self._risk_state.can_trade():
+            if self._risk_state.unknown_reason:
                 logger.warning(
-                    f"🚨 Circuit breaker: Daily loss limit reached "
-                    f"({daily_loss_percent:.1%} >= {self.max_daily_loss_percent:.1%})"
+                    f"🚨 Circuit breaker: {self._risk_state.unknown_reason}"
                 )
-                self._pause_until = now.replace(hour=23, minute=59, second=59)
-                return True
-
-        # Prüfe consecutive losses
-        if self._consecutive_losses >= self.pause_after_consecutive_losses:
-            logger.warning(
-                f"🚨 Circuit breaker: {self._consecutive_losses} consecutive losses, "
-                f"pausing for {self.pause_duration_minutes} minutes"
-            )
-            self._pause_until = now + pd.Timedelta(minutes=self.pause_duration_minutes)
-            self._consecutive_losses = 0
+            elif self._risk_state.consecutive_losses >= self.pause_after_consecutive_losses:
+                logger.warning(
+                    f"🚨 Circuit breaker: {self._risk_state.consecutive_losses} "
+                    f"consecutive realized losses"
+                )
+            else:
+                logger.warning("🚨 Circuit breaker: realized daily loss limit reached")
+            self._pause_until = self._risk_state.pause_until
             return True
-
         return False
+
+    def _refresh_risk_state(self) -> bool:
+        """Synchronize confirmed closed trades; return False on unknown state."""
+        now = datetime.now(timezone.utc)
+        try:
+            account = self.adapter.get_account_info()
+            balance = float(getattr(account, "balance", 0.0) or 0.0)
+            events = self.adapter.get_closed_trade_events(
+                since=now - timedelta(days=2),
+                until=now,
+            )
+            valid = self._risk_state.observe(
+                balance=balance,
+                events=events,
+                observed_at=now,
+                now=now,
+            )
+            return bool(valid)
+        except Exception as exc:  # noqa: BLE001
+            self._risk_state.mark_unknown(f"risk state refresh failed: {exc}")
+            return False
 
     def _check_position_limits(self, symbol: str) -> bool:
         """

@@ -283,6 +283,17 @@ class BrokerAdapter(BaseAdapter):
         """
         pass
 
+    def get_closed_trade_events(self, since=None, until=None):
+        """Return confirmed closed-trade events for circuit-breaker accounting.
+
+        Concrete adapters with a transaction-history endpoint should return an
+        iterable of ``fwbg.core.risk_state.ClosedTradeEvent`` objects. ``None``
+        means the broker cannot provide a trustworthy snapshot and callers must
+        fail closed. This optional method preserves compatibility for existing
+        adapters while making unsupported risk state explicit.
+        """
+        return None
+
     @abstractmethod
     def get_broker_symbol(self, symbol: Symbol) -> Optional[str]:
         """
