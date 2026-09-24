@@ -34,3 +34,22 @@ def test_compute_labels_uses_asset_spread():
 
     asset = get_asset("EURUSD")
     assert asset.spread == 0.00018
+
+    # GBPUSD's spread (0.00058) is much wider than EURUSD's (0.00018), so the
+    # same tp/sl multipliers translate to different price distances. On the
+    # same synthetic uptrend, that must change when targets_long flips from
+    # win (1.0) to timeout (0.0) -- proving get_asset().spread actually flows
+    # into compute_targets() rather than being ignored.
+    n = 50
+    close = 1.0800 + np.linspace(0, 0.0100, n)
+    df = pd.DataFrame(
+        {
+            "O": close,
+            "H": close + 0.0002,
+            "L": close - 0.0002,
+            "C": close,
+        }
+    )
+    eurusd_labels = compute_labels(df, symbol="EURUSD", tp=20, sl=20, timeout_bars=30)
+    gbpusd_labels = compute_labels(df, symbol="GBPUSD", tp=20, sl=20, timeout_bars=30)
+    assert not eurusd_labels["targets_long"].equals(gbpusd_labels["targets_long"])
