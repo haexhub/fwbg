@@ -20,7 +20,16 @@ def test_list_plugins_skips_plugin_with_broken_metadata(monkeypatch):
     monkeypatch.setattr(plugins, "get_plugin_registry", lambda: Registry())
     monkeypatch.setattr(plugins, "_plugin_to_dict", plugin_to_dict)
 
-    assert plugins.list_plugins(phase=None, namespace=None) == [{"fqn": "fwbg-core:healthy"}]
+    assert plugins.list_plugins(phase=None, namespace=None) == [
+        {
+            "fqn": "fwbg-core:broken",
+            "name": "broken",
+            "namespace": "fwbg-core",
+            "broken": True,
+            "metadata_error": "broken metadata",
+        },
+        {"fqn": "fwbg-core:healthy"},
+    ]
 
 
 def test_get_plugin_returns_404_for_lookup_failure(monkeypatch):

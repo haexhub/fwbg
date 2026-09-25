@@ -283,8 +283,18 @@ def list_plugins(
     for fqn in sorted(fqns):
         try:
             result.append(_plugin_to_dict(fqn))
-        except Exception:
+        except Exception as exc:
             logger.exception("Plugin metadata failed: %s", fqn)
+            namespace, _, plugin_name = fqn.partition(":")
+            result.append(
+                {
+                    "fqn": fqn,
+                    "name": plugin_name or fqn,
+                    "namespace": namespace,
+                    "broken": True,
+                    "metadata_error": str(exc),
+                }
+            )
     return result
 
 
