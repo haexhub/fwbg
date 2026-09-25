@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi import HTTPException
+from fwbg_sdk import PluginPhase
 
 import fwbg.api.plugins as plugins
 from fwbg.pipeline.registry import PluginNotFoundError
@@ -12,6 +13,17 @@ def test_list_plugins_skips_plugin_with_broken_metadata(monkeypatch):
         def list_plugins(self, **kwargs):
             return ["fwbg-core:broken", "fwbg-core:healthy"]
 
+        def get(self, fqn):
+            class BrokenPlugin:
+                phase = PluginPhase.INDICATORS
+                version = "1.0.0"
+                stateful = False
+                cacheable = True
+                depends_on = []
+                group = "custom"
+
+            return BrokenPlugin
+
     def plugin_to_dict(fqn):
         if fqn.endswith(":broken"):
             raise RuntimeError("broken metadata")
@@ -20,16 +32,15 @@ def test_list_plugins_skips_plugin_with_broken_metadata(monkeypatch):
     monkeypatch.setattr(plugins, "get_plugin_registry", lambda: Registry())
     monkeypatch.setattr(plugins, "_plugin_to_dict", plugin_to_dict)
 
-    assert plugins.list_plugins(phase=None, namespace=None) == [
-        {
-            "fqn": "fwbg-core:broken",
-            "name": "broken",
-            "namespace": "fwbg-core",
-            "broken": True,
-            "metadata_error": "broken metadata",
-        },
-        {"fqn": "fwbg-core:healthy"},
+    result = plugins.list_plugins(phase=None, namespace=None)
+    assert [plugin["fqn"] for plugin in result] == [
+        "fwbg-core:broken",
+        "fwbg-core:healthy",
     ]
+    assert result[0]["broken"] is True
+    assert result[0]["metadata_error"] == "broken metadata"
+    assert result[0]["phase"] == "indicators"
+    assert result[0]["param_schema"] == result[0]["defaults"] == {}
 
 
 def test_get_plugin_returns_404_for_lookup_failure(monkeypatch):
