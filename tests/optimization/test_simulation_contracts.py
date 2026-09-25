@@ -70,6 +70,36 @@ def test_fixed_scale_in_supports_array_contract_and_durations(
     assert durations[0] == 2
 
 
+def test_fixed_scale_in_withholds_unsupported_trailing_tp(monkeypatch):
+    """Scale-in targets must not use trailing TP until evaluation supports it."""
+    captured = {}
+
+    class FakeEntryModifier:
+        def compute_targets(self, **kwargs):
+            captured["trail_tp_dist_arr"] = kwargs["trail_tp_dist_arr"]
+            return np.zeros(len(kwargs["tp_dist_arr"])), np.zeros(len(kwargs["tp_dist_arr"]))
+
+    monkeypatch.setattr(
+        "fwbg.core.registry.get_entry_modifier",
+        lambda name: FakeEntryModifier,
+    )
+    ctx = _scale_context()
+    ctx.exit_modifier_params = {"trail_tp_atr_mult": 2.0}
+    df = pd.DataFrame(
+        {
+            "O": [100.0, 100.0],
+            "H": [101.0, 101.0],
+            "L": [99.0, 99.0],
+            "C": [100.0, 100.0],
+            "_atr": [1.0, 1.0],
+        }
+    )
+
+    FixedExitStrategy().compute_targets(df, ctx, params=GridParams(tp_value=5, sl_value=5))
+
+    np.testing.assert_array_equal(captured["trail_tp_dist_arr"], np.zeros(len(df)))
+
+
 def test_trailing_only_modifier_is_active_without_breakeven():
     """A trail distance is honored when breakeven_trigger is zero."""
     n = 5
@@ -116,6 +146,27 @@ def test_trailing_only_modifier_is_active_without_breakeven():
     assert trade["exit_idx"] == 2
     assert trade["exit_price"] == pytest.approx(104.0)
     assert trade["result"] == 1.0
+
+
+def test_trailing_stop_from_current_bar_applies_on_next_bar():
+    """A new trailing stop must not exit against the bar that created it."""
+    from fwbg.simulation.trade import simulate_pro_trade
+
+    trade = simulate_pro_trade(
+        closes=np.array([100.0, 104.0, 103.0]),
+        highs=np.array([100.0, 105.0, 104.0]),
+        lows=np.array([100.0, 99.0, 102.0]),
+        opens=np.array([100.0, 100.0, 103.0]),
+        idx=0,
+        direction=1,
+        tp_distance=20.0,
+        sl_distance=10.0,
+        spread=0.0,
+        trail_distance=2.0,
+    )
+
+    assert trade["exit_idx"] == 2
+    assert trade["exit_price"] == pytest.approx(103.0)
 
 
 def test_return_detailed_only_changes_output_shape():

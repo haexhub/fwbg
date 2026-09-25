@@ -2,6 +2,7 @@
 import importlib.util
 import inspect
 import json
+import logging
 import mimetypes
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from fwbg.api.deps import get_plugin_registry
+from fwbg.pipeline.registry import PluginNotFoundError
 from fwbg_sdk import BasePlugin, PluginPhase
 from fwbg_sdk.registry import ENTRY_MODIFIER_REGISTRY, EXIT_MODIFIER_REGISTRY
 
@@ -22,6 +24,7 @@ exit_modifiers_router = APIRouter(prefix="/exit-modifiers", tags=["exit-modifier
 entry_modifiers_router = APIRouter(prefix="/entry-modifiers", tags=["entry-modifiers"])
 
 _AGENT_AUTHORED_NAMESPACE = "agent-authored"
+logger = logging.getLogger(__name__)
 
 # Singular PluginKind (fwbg-agents) → plural category dir (fwbg registry)
 _KIND_TO_CATEGORY: dict[str, str] = {
@@ -276,7 +279,13 @@ def list_plugins(
             raise HTTPException(400, f"Invalid phase: {phase}")
 
     fqns = registry.list_plugins(phase=phase_filter, namespace=namespace)
-    return [_plugin_to_dict(fqn) for fqn in sorted(fqns)]
+    result = []
+    for fqn in sorted(fqns):
+        try:
+            result.append(_plugin_to_dict(fqn))
+        except Exception:
+            logger.exception("Plugin metadata failed: %s", fqn)
+    return result
 
 
 # --- Docs endpoints (must be before the catch-all GET /{fqn:path}) ---
@@ -490,11 +499,12 @@ def run_plugin_tests(fqn: str) -> dict:
 @router.get("/{fqn:path}")
 def get_plugin(fqn: str) -> dict:
     """Get plugin details by fully qualified name."""
-    _registry = get_plugin_registry()
+    registry = get_plugin_registry()
     try:
-        return _plugin_to_dict(fqn)
-    except Exception:
-        raise HTTPException(404, f"Plugin not found: {fqn}")
+        registry.get(fqn)
+    except (PluginNotFoundError, ValueError) as exc:
+        raise HTTPException(404, f"Plugin not found: {fqn}") from exc
+    return _plugin_to_dict(fqn)
 
 
 # --- Exit Modifiers ---

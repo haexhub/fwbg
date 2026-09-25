@@ -572,40 +572,6 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             trade_result["timeout_bars"] = timeout_bars
             return trade_result
 
-        # --- Trailing stop logic ---
-        if use_trailing:
-            # Track best price
-            if direction == 1:
-                if highs[j] > best_price:
-                    best_price = highs[j]
-            else:
-                if lows[j] < best_price:
-                    best_price = lows[j]
-
-            # Breakeven trigger check
-            if not trailing_active and breakeven_trigger > 0.0:
-                if direction == 1 and best_price >= be_trigger_price:
-                    trailing_active = True
-                    be_ref = avg_price if use_scale_in else entry
-                    if be_ref > sl:
-                        sl = be_ref
-                elif direction == -1 and best_price <= be_trigger_price:
-                    trailing_active = True
-                    be_ref = avg_price if use_scale_in else entry
-                    if be_ref < sl:
-                        sl = be_ref
-
-            # Trail SL behind best price
-            if trailing_active and trail_distance > 0.0:
-                if direction == 1:
-                    new_sl = best_price - trail_distance
-                    if new_sl > sl:
-                        sl = new_sl
-                else:
-                    new_sl = best_price + trail_distance
-                    if new_sl < sl:
-                        sl = new_sl
-
         # --- TP/SL hit detection ---
         # For SL result with scale-in, compare sl vs avg_price instead of entry
         sl_ref = avg_price if use_scale_in else entry
@@ -646,6 +612,39 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             elif sl_hit:
                 sl_result = 1.0 if sl < sl_ref else -1.0
                 return make_result(sl_result, j, sl)
+
+        # Apply trailing updates after this bar has been checked against the
+        # stop that was active at its start. OHLC data has no intrabar ordering,
+        # so a newly calculated stop cannot retroactively exit this same bar.
+        if use_trailing:
+            if direction == 1:
+                if highs[j] > best_price:
+                    best_price = highs[j]
+            else:
+                if lows[j] < best_price:
+                    best_price = lows[j]
+
+            if not trailing_active and breakeven_trigger > 0.0:
+                if direction == 1 and best_price >= be_trigger_price:
+                    trailing_active = True
+                    be_ref = avg_price if use_scale_in else entry
+                    if be_ref > sl:
+                        sl = be_ref
+                elif direction == -1 and best_price <= be_trigger_price:
+                    trailing_active = True
+                    be_ref = avg_price if use_scale_in else entry
+                    if be_ref < sl:
+                        sl = be_ref
+
+            if trailing_active and trail_distance > 0.0:
+                if direction == 1:
+                    new_sl = best_price - trail_distance
+                    if new_sl > sl:
+                        sl = new_sl
+                else:
+                    new_sl = best_price + trail_distance
+                    if new_sl < sl:
+                        sl = new_sl
 
     # Kein Exit (weder TP/SL noch Timeout innerhalb max_bars)
     return None

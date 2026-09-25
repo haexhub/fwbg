@@ -34,6 +34,31 @@ def test_http_helpers_send_x_api_key(monkeypatch):
     assert all("synthetic-key" not in str(call.url) for call in calls)
 
 
+@pytest.mark.parametrize("api_url", [
+    "http://example.com:8420/api",
+    "http://192.0.2.10:8420/api",
+])
+def test_api_key_is_rejected_for_remote_http(api_url, monkeypatch):
+    monkeypatch.setenv("FWBG_API_KEY", "synthetic-key")
+    monkeypatch.setattr(server, "API_URL", api_url)
+
+    with pytest.raises(ValueError, match="HTTPS|loopback"):
+        server._api_headers()
+
+
+@pytest.mark.parametrize("api_url", [
+    "http://localhost:8420/api",
+    "http://127.0.0.1:8420/api",
+    "http://[::1]:8420/api",
+    "https://api.example.com/api",
+])
+def test_api_key_is_allowed_for_loopback_http_and_https(api_url, monkeypatch):
+    monkeypatch.setenv("FWBG_API_KEY", "synthetic-key")
+    monkeypatch.setattr(server, "API_URL", api_url)
+
+    assert server._api_headers() == {"X-API-Key": "synthetic-key"}
+
+
 def test_save_strategy_creates_missing_strategy_with_post(monkeypatch):
     monkeypatch.setenv("FWBG_API_KEY", "synthetic-key")
     calls = []
@@ -105,6 +130,18 @@ def test_wait_for_run_handles_cancelled_status(monkeypatch):
         server.wait_for_run("run-123", timeout_minutes=1)
 
 
+def test_wait_for_run_polls_while_run_is_starting(monkeypatch):
+    responses = iter([
+        {"status": "starting"},
+        {"status": "completed"},
+    ])
+    monkeypatch.setattr(server, "_get", lambda path, **params: next(responses))
+    monkeypatch.setattr(server, "get_run_results", lambda run_id: {"run_id": run_id})
+    monkeypatch.setattr(server.time, "sleep", lambda seconds: None)
+
+    assert server.wait_for_run("run-123", timeout_minutes=1) == {"run_id": "run-123"}
+
+
 def test_wait_for_run_logs_progress_to_stderr(monkeypatch, capsys):
     responses = iter(
         [
@@ -133,3 +170,15 @@ def test_list_presets_uses_api_endpoint(monkeypatch):
 
     assert server.list_presets("pipelines") == ["pipeline_v1"]
     assert calls == [("/presets/pipelines", {})]
+
+
+def test_list_presets_rejects_unknown_api_sections_before_request(monkeypatch):
+    calls = []
+    monkeypatch.setattr(server, "_get", lambda *args, **kwargs: calls.append(args))
+
+    with pytest.raises(ValueError, match="exit_params|risk_params"):
+        server.list_presets("grids")
+
+    with pytest.raises(ValueError):
+        server.list_presets("not-a-section")
+    assert calls == []

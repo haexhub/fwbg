@@ -53,6 +53,42 @@ def test_data_loader_getter_accepts_fqn_and_unambiguous_short_name():
     assert get_data_loader("macro_data") is canonical
 
 
+def test_data_loader_falls_back_to_sdk_registry_when_name_is_ambiguous(monkeypatch):
+    from fwbg.core import registry as core_registry
+    from fwbg.pipeline import registry as pipeline_registry
+    from fwbg_sdk import BaseDataLoader, PluginPhase
+
+    class LegacyLoader(BaseDataLoader):
+        name = "shared_loader"
+        phase = PluginPhase.DATA_LOADING
+
+        def execute(self, ctx, **params):
+            return ctx
+
+    class PipelineLoaderA(BaseDataLoader):
+        name = "shared_loader"
+        phase = PluginPhase.DATA_LOADING
+
+        def execute(self, ctx, **params):
+            return ctx
+
+    class PipelineLoaderB(BaseDataLoader):
+        name = "shared_loader"
+        phase = PluginPhase.DATA_LOADING
+
+        def execute(self, ctx, **params):
+            return ctx
+
+    fake_registry = pipeline_registry.PluginRegistry()
+    fake_registry.register(PipelineLoaderA, "package-a")
+    fake_registry.register(PipelineLoaderB, "package-b")
+    monkeypatch.setattr(pipeline_registry, "get_registry", lambda: fake_registry)
+    monkeypatch.setattr(core_registry, "_ensure_plugins_loaded", lambda: None)
+    monkeypatch.setitem(core_registry.DATA_LOADER_REGISTRY, "shared_loader", LegacyLoader)
+
+    assert core_registry.get_data_loader("shared_loader") is LegacyLoader
+
+
 def test_data_loading_orchestrator_executes_fqn_loader(premium_registry, tmp_path):
     from fwbg.core.data_sources import _DATA_SOURCES, register_csv_source
     from fwbg.data.loader import run_data_loading

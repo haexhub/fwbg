@@ -94,6 +94,10 @@ class FixedExitStrategy(BaseExitStrategy):
             em_trail_tp = modifier_params.get("trail_tp_atr_mult", 0.0)
             trail_distances = atr_v * em_trail
             trail_tp_distances = atr_v * em_trail_tp
+            if entry_modifier_name == "scale_in":
+                # Evaluation currently models trailing SLs but not trailing TPs.
+                # Keep scale-in training targets on the same supported contract.
+                trail_tp_distances = np.zeros_like(trail_tp_distances)
 
             # Fixed strategy: pass tp_mult/sl_mult=0 so min distances act as
             # the effective distances (max(atr*0, fixed_dist) = fixed_dist).
