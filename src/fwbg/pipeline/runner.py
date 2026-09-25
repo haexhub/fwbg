@@ -225,7 +225,11 @@ class PipelineRunner:
         """
         self._initialize()
 
-        fit_ctx = ctx
+        # Clone so the fitting pass (which executes every plugin to build up
+        # cumulative features) never mutates the caller's ctx.df in place —
+        # callers commonly run fit(ctx) followed by run(ctx) on the same
+        # object, and PipelineContext/execute() mutate ctx.df by reference.
+        fit_ctx = ctx.clone()
         for plugin_config, instance in self._execution_order:
             plugin_cls = type(instance)
             merged_params = self._merge_params(
