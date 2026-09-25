@@ -98,7 +98,12 @@ class TestRunIdPassthrough:
         )
 
     def test_job_id_format_matches_cli_pattern(self, client_with_strategy):
-        """Die job_id hat das CLI-Format: YYYYMMDD_HHMMSS_[6-hex]."""
+        """Die job_id hat das Format YYYYMMDD_HHMMSS_[microseconds]_[12-hex].
+
+        Mikrosekunden- und UUID-Anteil machen Job-IDs bei gleichzeitigen
+        Requests innerhalb derselben Sekunde eindeutig (siehe RunService._new_id);
+        das sortierbare Zeitstempel-Präfix bleibt für bestehende Clients erhalten.
+        """
         client, _ = client_with_strategy
 
         with patch("fwbg.api.runs.subprocess.Popen") as mock_popen:
@@ -110,8 +115,9 @@ class TestRunIdPassthrough:
 
         job_id = resp.json()["job_id"]
         import re
-        assert re.match(r"^\d{8}_\d{6}_[0-9a-f]{6}$", job_id), (
-            f"job_id '{job_id}' entspricht nicht dem Format YYYYMMDD_HHMMSS_[6-hex]"
+        assert re.match(r"^\d{8}_\d{6}_\d{6}_[0-9a-f]{12}$", job_id), (
+            "job_id '{}' entspricht nicht dem Format "
+            "YYYYMMDD_HHMMSS_[microseconds]_[12-hex]".format(job_id)
         )
 
     def test_assets_parameter_passes_assets_flag(self, client_with_strategy):
