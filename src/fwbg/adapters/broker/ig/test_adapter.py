@@ -489,17 +489,17 @@ class TestIGBrokerAdapterPositions:
         assert positions == []
 
     def test_get_positions_not_connected(self):
-        """get_positions ohne Verbindung sollte leere Liste zurückgeben."""
+        """get_positions ohne Verbindung muss Verfügbarkeit explizit melden."""
         from .adapter import IGBrokerAdapter
+        from fwbg.adapters.broker import BrokerUnavailableError
 
         adapter = IGBrokerAdapter(
             username="u", password="p", api_key="k"
         )
         adapter._ig = None
 
-        positions = adapter.get_positions()
-
-        assert positions == []
+        with pytest.raises(BrokerUnavailableError, match="not connected"):
+            adapter.get_positions()
 
 
 class TestIGBrokerAdapterAccountInfo:
