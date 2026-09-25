@@ -2,11 +2,9 @@
 import json
 import logging
 import os
-import signal
 import statistics
 import subprocess
 import sys
-import hashlib
 import threading
 from datetime import datetime
 from typing import Optional
@@ -20,6 +18,7 @@ from fwbg.api._paths import (
     safe_results_path as _safe_results_path,
     validate_id as _validate_id,
 )
+from fwbg.api.run_service import RunCapacityError, RunService
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +43,19 @@ def _max_concurrent_runs_from_env() -> int:
 
 
 MAX_CONCURRENT_RUNS = _max_concurrent_runs_from_env()
+_run_service = RunService()
+
+
+def _safe_strategy_file(strategy_name: str):
+    """Resolve a strategy file without allowing paths outside its root."""
+    _validate_id(strategy_name, "strategy_name")
+    strategies_dir = get_strategies_dir().resolve()
+    strategy_file = (strategies_dir / f"{strategy_name}.json").resolve()
+    try:
+        strategy_file.relative_to(strategies_dir)
+    except ValueError as exc:
+        raise HTTPException(400, "Path traversal detected") from exc
+    return strategy_file
 
 
 def _spawn_cli_process(cmd: list[str], env: dict, run_dir) -> tuple:
@@ -122,7 +134,7 @@ class PreviewRequest(BaseModel):
 @router.post("/start")
 def start_run(body: RunStartRequest) -> dict:
     """Start a strategy optimization run in the background."""
-    _validate_id(body.strategy_name, "strategy_name")
+    strategy_file = _safe_strategy_file(body.strategy_name)
     if body.assets:
         for a in body.assets:
             _validate_id(a, "asset")
@@ -130,23 +142,21 @@ def start_run(body: RunStartRequest) -> dict:
         for c in body.asset_classes:
             _validate_id(c, "asset_class")
 
-    with _active_jobs_lock:
-        # Refresh stale statuses first: a job whose process already exited
-        # must not occupy a slot. Statuses are otherwise only updated when a
-        # status endpoint happens to be polled — with a concurrency limit of
-        # 1 a stale "running" would block every future run.
-        for j in _active_jobs.values():
-            proc = j.get("process")
-            if j.get("status") == "running" and proc and proc.poll() is not None:
-                j["status"] = "completed" if proc.returncode == 0 else "failed"
-        running = sum(1 for j in _active_jobs.values() if j.get("status") == "running")
-    if running >= MAX_CONCURRENT_RUNS:
-        raise HTTPException(429, f"Too many active runs (limit {MAX_CONCURRENT_RUNS})")
-
-    strategies_dir = get_strategies_dir()
-    strategy_file = strategies_dir / f"{body.strategy_name}.json"
+    results_dir = get_test_results_dir()
+    try:
+        reservation = _run_service.reserve(
+            _active_jobs,
+            _active_jobs_lock,
+            results_dir,
+            MAX_CONCURRENT_RUNS,
+            body.strategy_name,
+        )
+    except RunCapacityError as e:
+        raise HTTPException(429, str(e)) from e
+    job_id = reservation["job_id"]
 
     if not strategy_file.exists():
+        _run_service.release(_active_jobs, _active_jobs_lock, results_dir, job_id)
         raise HTTPException(404, f"Strategy not found: {body.strategy_name}")
 
     # Build the fwbg CLI command
@@ -164,9 +174,6 @@ def start_run(body: RunStartRequest) -> dict:
         cmd.extend(["--end-date", body.end_date])
     if body.cost_multiplier is not None:
         cmd.extend(["--cost-multiplier", str(body.cost_multiplier)])
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    short_hash = hashlib.md5(timestamp.encode()).hexdigest()[:6]
-    job_id = f"{timestamp}_{short_hash}"
     cmd.extend(["--run-id", job_id])
 
     try:
@@ -174,23 +181,27 @@ def start_run(body: RunStartRequest) -> dict:
         env = os.environ.copy()
         env.setdefault("FWBG_WORKSPACE", str(get_workspace()))
         process, stdout_path, stderr_path = _spawn_cli_process(
-            cmd, env, get_test_results_dir() / job_id
+            cmd, env, results_dir / job_id
         )
-
-        with _active_jobs_lock:
-            _active_jobs[job_id] = {
-                "job_id": job_id,
-                "pid": process.pid,
-                "process": process,
-                "strategy_name": body.strategy_name,
-                "status": "running",
-                "started_at": datetime.now().isoformat(),
-                "cmd": cmd,
-                "stdout_path": str(stdout_path),
-                "stderr_path": str(stderr_path),
-            }
+        _run_service.attach(
+            _active_jobs,
+            _active_jobs_lock,
+            results_dir,
+            job_id,
+            process,
+            stdout_path,
+            stderr_path,
+            cmd,
+        )
     except Exception as e:
         log.exception("Failed to start run")
+        _run_service.fail_spawn(
+            _active_jobs,
+            _active_jobs_lock,
+            results_dir,
+            job_id,
+            "Failed to start run",
+        )
         raise HTTPException(500, "Failed to start run") from e
 
     return {
@@ -215,8 +226,7 @@ def preview_signals(body: PreviewRequest) -> dict:
     from fwbg.data.config import convert_numpy
     from fwbg.pipeline.features import compute_indicator_pool
 
-    strategies_dir = get_strategies_dir()
-    strategy_file = strategies_dir / f"{body.strategy_name}.json"
+    strategy_file = _safe_strategy_file(body.strategy_name)
     if not strategy_file.exists():
         raise HTTPException(404, f"Strategy not found: {body.strategy_name}")
 
@@ -445,13 +455,11 @@ class CompareRequest(BaseModel):
 @router.post("/compare")
 def compare_runs(body: CompareRequest) -> dict:
     """Compare multiple runs side-by-side with per-asset metrics."""
-    results_dir = get_test_results_dir()
-
     runs = []
     all_symbols: set[str] = set()
 
     for run_id in body.run_ids:
-        run_dir = results_dir / run_id
+        run_dir = _safe_results_path(run_id)
         if not run_dir.exists():
             continue
 
@@ -569,73 +577,65 @@ def list_runs(
     results_dir = get_test_results_dir()
     runs = []
 
-    # Active jobs — reap finished processes (snapshot under lock to avoid
-    # mutating the dict while iterating from another thread).
-    finished_ids = []
-    with _active_jobs_lock:
-        jobs_snapshot = list(_active_jobs.items())
+    jobs_snapshot = _run_service.snapshot(_active_jobs, _active_jobs_lock, results_dir)
+    active_ids = set(jobs_snapshot)
 
-    for job_id, job in jobs_snapshot:
-        proc = job.get("process")
-        if proc and proc.poll() is not None:
-            if proc.returncode == 0:
-                job["status"] = "completed"
-            else:
-                job["status"] = "failed"
-                if "error_message" not in job:
-                    output = _job_error_output(job)
-                    job["error_message"] = output or f"Process exited with code {proc.returncode}"
-
-            if (results_dir / job_id).exists():
-                finished_ids.append(job_id)
-                continue
-
+    for job_id, job in sorted(
+        jobs_snapshot.items(),
+        key=lambda item: (item[1].get("status") not in {"starting", "running"}, item[0]),
+    ):
         runs.append({
             "run_id": job_id,
             "status": job["status"],
             "strategy_name": job.get("strategy_name"),
             "started_at": job.get("started_at"),
-            "is_active": job["status"] == "running",
+            "is_active": job["status"] in {"starting", "running"},
             "error_message": job.get("error_message"),
             "duration_seconds": _job_duration_seconds(job),
         })
 
-    with _active_jobs_lock:
-        for jid in finished_ids:
-            _active_jobs.pop(jid, None)
-        active_ids = set(_active_jobs.keys())
-
-    # Collect completed run directory names (cheap: no file reads yet)
-    completed_ids: list[str] = []
+    # A result directory alone carries no lifecycle meaning.  Only the
+    # service state file is authoritative; legacy directories are surfaced as
+    # unknown rather than silently reported as completed.
+    disk_runs: list[dict] = []
     if results_dir.exists():
-        completed_ids = sorted(
-            (d.name for d in results_dir.iterdir()
-             if d.is_dir() and d.name not in active_ids),
-            reverse=True,
-        )
-
-    total = len(runs) + len(completed_ids)
+        for directory in results_dir.iterdir():
+            if not directory.is_dir() or directory.name in active_ids:
+                continue
+            state = _run_service.disk_state(results_dir, directory.name)
+            if state is None:
+                disk_runs.append({"run_id": directory.name, "status": "unknown", "is_active": False})
+                continue
+            disk_runs.append({
+                "run_id": directory.name,
+                "status": state.get("status", "unknown"),
+                "strategy_name": state.get("strategy_name"),
+                "started_at": state.get("started_at"),
+                "is_active": state.get("status") in {"starting", "running"},
+                "error_message": state.get("error_message"),
+                "duration_seconds": _job_duration_seconds(state),
+            })
+    runs.extend(sorted(disk_runs, key=lambda item: item["run_id"], reverse=True))
+    total = len(runs)
 
     # Paginate: active jobs come first, then completed runs by name (desc)
-    active_count = len(runs)
+    active_count = sum(1 for run in runs if run.get("is_active"))
     if offset < active_count:
-        # Page starts within active jobs
-        remaining = limit - (active_count - offset)
-        runs = runs[offset:]
-        if remaining > 0:
-            completed_ids = completed_ids[:remaining]
-        else:
-            completed_ids = []
+        active = [run for run in runs if run.get("is_active")]
+        inactive = [run for run in runs if not run.get("is_active")]
+        page = active[offset:offset + limit]
+        page.extend(inactive[: max(0, limit - len(page))])
+        runs = page
     else:
-        # Page starts within completed runs
-        runs = []
-        skip = offset - active_count
-        completed_ids = completed_ids[skip:skip + limit]
+        inactive = [run for run in runs if not run.get("is_active")]
+        runs = inactive[offset - active_count:offset - active_count + limit]
 
-    # Only read JSON files for the paginated completed runs
-    for run_id in completed_ids:
+    # Only read JSON files for the paginated completed runs.
+    for run_info in list(runs):
+        run_id = run_info["run_id"]
+        if run_info.get("status") not in {"completed", "failed", "cancelled", "unknown"}:
+            continue
         run_dir = results_dir / run_id
-        run_info: dict = {"run_id": run_id, "status": "completed"}
 
         config_file = run_dir / "config.json"
         if config_file.exists():
@@ -683,7 +683,8 @@ def list_runs(
                         pass
             run_info["profitable_count"] = profitable
 
-        runs.append(run_info)
+        # Existing result metadata enriches the lifecycle record; it does not
+        # decide the status.
 
     return {"items": runs, "total": total}
 
@@ -721,23 +722,33 @@ def get_run(run_id: str) -> dict:
     _validate_id(run_id, "run_id")
     run_dir = _safe_results_path(run_id)
 
+    results_dir = get_test_results_dir()
+    jobs_snapshot = _run_service.snapshot(_active_jobs, _active_jobs_lock, results_dir)
+    known_job = jobs_snapshot.get(run_id)
+    state = _run_service.disk_state(results_dir, run_id)
+
     if not run_dir.exists():
-        # Check active jobs
-        with _active_jobs_lock:
-            job = _active_jobs.get(run_id)
-            if job is not None:
-                proc = job.get("process")
-                if proc and proc.poll() is not None:
-                    job["status"] = "completed" if proc.returncode == 0 else "failed"
-                return {
-                    "run_id": run_id,
-                    "status": job["status"],
-                    "strategy_name": job.get("strategy_name"),
-                    "started_at": job.get("started_at"),
-                }
+        if known_job is not None:
+            job = known_job
+            return {
+                "run_id": run_id,
+                "status": job["status"],
+                "strategy_name": job.get("strategy_name"),
+                "started_at": job.get("started_at"),
+            }
+        if state is not None:
+            return {
+                "run_id": run_id,
+                "status": state.get("status", "unknown"),
+                "strategy_name": state.get("strategy_name"),
+                "started_at": state.get("started_at"),
+            }
         raise HTTPException(404, f"Run not found: {run_id}")
 
-    result: dict = {"run_id": run_id, "status": "completed"}
+    result: dict = {
+        "run_id": run_id,
+        "status": (known_job or state or {}).get("status", "unknown"),
+    }
 
     # Load config
     config_file = run_dir / "config.json"
@@ -887,48 +898,29 @@ def get_run_progress(run_id: str) -> dict:
     Falls back to basic job info if no progress file exists.
     """
     _validate_id(run_id, "run_id")
+    results_dir = get_test_results_dir()
+    jobs_snapshot = _run_service.snapshot(_active_jobs, _active_jobs_lock, results_dir)
+    known_job = jobs_snapshot.get(run_id)
+    state = known_job or _run_service.disk_state(results_dir, run_id)
 
     # Try reading progress.json from run directory
     progress_file = _safe_results_path(run_id, "progress.json")
     if progress_file.exists():
         try:
             data = json.loads(progress_file.read_text())
-            # Stale "running" detection: if status is running but no active job
-            # and progress.json hasn't been updated in >2 minutes, the process
-            # has exited without writing a "completed" status (e.g. killed).
-            with _active_jobs_lock:
-                run_active = run_id in _active_jobs
-            if data.get("status") == "running" and not run_active:
-                updated_at_str = data.get("updated_at")
-                if updated_at_str:
-                    from datetime import datetime, timezone, timedelta
-                    try:
-                        updated_at = datetime.fromisoformat(updated_at_str)
-                        if updated_at.tzinfo is None:
-                            # Legacy progress files wrote naive timestamps (UTC)
-                            updated_at = updated_at.replace(tzinfo=timezone.utc)
-                        if datetime.now(timezone.utc) - updated_at > timedelta(minutes=2):
-                            data["status"] = "completed"
-                            data["stale_status_recovered"] = True
-                    except ValueError:
-                        pass
+            if state is not None:
+                data["status"] = state.get("status", data.get("status", "unknown"))
+                if state.get("error_message"):
+                    data["message"] = state["error_message"]
+            elif data.get("status") in {"starting", "running"}:
+                data["status"] = "failed"
+                data["message"] = "Run process state unavailable"
             return data
         except (json.JSONDecodeError, IOError):
             pass
 
-    # Fallback: check active jobs
-    with _active_jobs_lock:
-        job = _active_jobs.get(run_id)
-    if job is not None:
-        proc = job.get("process")
-        if proc and proc.poll() is not None:
-            if proc.returncode == 0:
-                job["status"] = "completed"
-            else:
-                job["status"] = "failed"
-                if "error_message" not in job:
-                    output = _job_error_output(job)
-                    job["error_message"] = output or f"Process exited with code {proc.returncode}"
+    if state is not None:
+        job = state
         result = {
             "job_id": run_id,
             "status": job["status"],
@@ -996,16 +988,20 @@ def delete_run(run_id: str) -> dict:
     import shutil
 
     _validate_id(run_id, "run_id")
-    run_dir = _safe_results_path(run_id)
+    with _active_jobs_lock:
+        job = _active_jobs.get(run_id)
+        if job is not None and job.get("status") in {"starting", "running"}:
+            raise HTTPException(409, f"Cannot delete active run: {run_id}")
 
-    if not run_dir.exists():
-        raise HTTPException(404, f"Run not found: {run_id}")
+        run_dir = _safe_results_path(run_id)
+        if not run_dir.exists():
+            raise HTTPException(404, f"Run not found: {run_id}")
 
-    try:
-        shutil.rmtree(run_dir)
-    except Exception as e:
-        log.exception("Failed to delete run %s", run_id)
-        raise HTTPException(500, "Failed to delete run") from e
+        try:
+            shutil.rmtree(run_dir)
+        except Exception as e:
+            log.exception("Failed to delete run %s", run_id)
+            raise HTTPException(500, "Failed to delete run") from e
 
     return {"run_id": run_id, "deleted": True}
 
@@ -1014,19 +1010,14 @@ def delete_run(run_id: str) -> dict:
 def cancel_run(run_id: str) -> dict:
     """Cancel an active run."""
     _validate_id(run_id, "run_id")
-    with _active_jobs_lock:
-        job = _active_jobs.get(run_id)
-        if job is None:
-            raise HTTPException(404, f"No active job: {run_id}")
-        proc = job.get("process")
-        if proc and proc.poll() is None:
-            try:
-                os.kill(proc.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                # Process exited between poll() and kill — treat as already
-                # finished and fall through to the normal status response.
-                pass
-            else:
-                job["status"] = "cancelled"
-                return {"job_id": run_id, "status": "cancelled"}
-        return {"job_id": run_id, "status": job["status"], "message": "Job already finished"}
+    result = _run_service.cancel(
+        _active_jobs,
+        _active_jobs_lock,
+        get_test_results_dir(),
+        run_id,
+    )
+    if result is None:
+        raise HTTPException(404, f"No active job: {run_id}")
+    if result.get("status") == "cancelled":
+        return {"job_id": run_id, "status": "cancelled"}
+    return {"job_id": run_id, "status": result["status"], "message": "Job already finished"}

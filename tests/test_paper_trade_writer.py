@@ -37,7 +37,7 @@ from fwbg.adapters.broker import (
     OrderType,
     Position,
 )
-from fwbg.bot import AssetConfig, TradingBot
+from fwbg.bot import TradingBot
 
 
 # -----------------------------------------------------------------------------
@@ -60,7 +60,8 @@ class _StubBrokerAdapter(BrokerAdapter):
         super().__init__()
         self._connected = True
         self._positions = positions or []
-        self._account = account or AccountInfo(balance=10_000.0, equity=10_000.0)
+        # Keep the configured minimum lot within the normal risk budget.
+        self._account = account or AccountInfo(balance=100_000.0, equity=100_000.0)
         self._order_result = order_result or OrderResult(
             success=True, status=OrderStatus.FILLED, fill_price=1.0823, filled_quantity=1000.0
         )
@@ -106,6 +107,10 @@ class _StubBrokerAdapter(BrokerAdapter):
 
     def get_account_info(self) -> AccountInfo:
         return self._account
+
+    def get_closed_trade_events(self, since=None, until=None):
+        """The offline test broker exposes a known-empty close history."""
+        return []
 
     def get_broker_symbol(self, symbol) -> Optional[str]:
         return str(symbol)

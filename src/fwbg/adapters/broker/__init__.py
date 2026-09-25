@@ -58,6 +58,10 @@ class OrderStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class BrokerUnavailableError(RuntimeError):
+    """Raised when a broker query cannot establish a trustworthy result."""
+
+
 @dataclass
 class OrderResult:
     """Ergebnis einer Order-Ausführung."""
@@ -279,6 +283,17 @@ class BrokerAdapter(BaseAdapter):
         """
         pass
 
+    def get_closed_trade_events(self, since=None, until=None):
+        """Return confirmed closed-trade events for circuit-breaker accounting.
+
+        Concrete adapters with a transaction-history endpoint should return an
+        iterable of ``fwbg.core.risk_state.ClosedTradeEvent`` objects. ``None``
+        means the broker cannot provide a trustworthy snapshot and callers must
+        fail closed. This optional method preserves compatibility for existing
+        adapters while making unsupported risk state explicit.
+        """
+        return None
+
     @abstractmethod
     def get_broker_symbol(self, symbol: Symbol) -> Optional[str]:
         """
@@ -367,7 +382,14 @@ class BrokerAdapter(BaseAdapter):
             OrderResult
         """
         # Default-Implementation: Finde Position und erstelle Gegenorder
-        positions = self.get_positions()
+        try:
+            positions = self.get_positions()
+        except BrokerUnavailableError as exc:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"Unable to query positions: {exc}",
+            )
         for pos in positions:
             if pos.position_id == position_id:
                 close_direction = OrderSide.SELL if pos.direction == OrderSide.BUY else OrderSide.BUY
@@ -437,6 +459,7 @@ __all__ = [
     "OrderType",
     "OrderStatus",
     "OrderResult",
+    "BrokerUnavailableError",
     # Data types
     "Position",
     "AccountInfo",

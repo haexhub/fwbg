@@ -308,6 +308,33 @@ class TestComputeTargetsNumba:
 class TestSimulateProTrade:
     """Tests für simulate_pro_trade (High-Level Wrapper)."""
 
+    @pytest.mark.parametrize("direction", [1, -1])
+    def test_close_entry_ignores_signal_bar_range(self, direction):
+        """A close entry cannot exit on the already-completed signal bar."""
+        closes = np.array([100.0, 100.0, 100.0])
+        highs = np.array([120.0, 101.0, 111.0])
+        lows = np.array([99.0, 99.0, 100.0])
+        if direction == -1:
+            highs = np.array([101.0, 101.0, 100.0])
+            lows = np.array([80.0, 99.0, 89.0])
+
+        trade = simulate_pro_trade(
+            closes=closes,
+            highs=highs,
+            lows=lows,
+            idx=0,
+            direction=direction,
+            tp_distance=10.0,
+            sl_distance=10.0,
+            spread=0.0,
+            entry_delay=0,
+        )
+
+        assert trade is not None
+        assert trade["entry_idx"] == 0
+        assert trade["exit_idx"] == 2
+        assert trade["pnl_raw"] == pytest.approx(10.0)
+
     def test_basic_trade(self):
         """Test: Grundlegender Trade mit Metadaten."""
         closes = np.array([100.0, 100.5, 101.0, 101.5, 102.0])

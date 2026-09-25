@@ -117,7 +117,8 @@ class MacroDataLoader(BaseDataLoader):
         ctx.df = df
         return ctx
 
-    def get_default_params(self):
+    @classmethod
+    def get_default_params(cls):
         return {
             "indicators": DEFAULT_INDICATORS,
             "lookbacks_hours": DEFAULT_LOOKBACKS_HOURS,

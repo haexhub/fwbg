@@ -6,12 +6,16 @@ Agents can autonomously: discover indicators → build strategy configs → star
 
 Environment variables:
   FWBG_API_URL         Base URL of the FWBG API (default: http://localhost:8420)
+  FWBG_API_KEY         API key sent as the X-API-Key header when configured
   FWBG_STRATEGIES_DIR  Path to the strategies/ directory (default: ./strategies)
 """
 
 import os
+import sys
 import time
+import ipaddress
 from typing import Optional
+from urllib.parse import urlsplit
 
 import httpx
 from fastmcp import FastMCP
@@ -41,21 +45,40 @@ mcp = FastMCP(
 
 
 def _get(path: str, **params) -> dict | list:
-    r = httpx.get(f"{API_URL}{path}", params=params, timeout=30)
+    r = httpx.get(f"{API_URL}{path}", params=params, headers=_api_headers(), timeout=30)
     r.raise_for_status()
     return r.json()
 
 
 def _post(path: str, body: dict) -> dict:
-    r = httpx.post(f"{API_URL}{path}", json=body, timeout=30)
+    r = httpx.post(f"{API_URL}{path}", json=body, headers=_api_headers(), timeout=30)
     r.raise_for_status()
     return r.json()
 
 
 def _put(path: str, body: dict) -> dict:
-    r = httpx.put(f"{API_URL}{path}", json=body, timeout=30)
+    r = httpx.put(f"{API_URL}{path}", json=body, headers=_api_headers(), timeout=30)
     r.raise_for_status()
     return r.json()
+
+
+def _api_headers() -> dict[str, str]:
+    """Build request headers without exposing the key in logs or tool output."""
+    api_key = os.environ.get("FWBG_API_KEY", "").strip()
+    if api_key:
+        parsed_url = urlsplit(API_URL)
+        hostname = parsed_url.hostname
+        is_loopback = hostname == "localhost"
+        if not is_loopback and hostname:
+            try:
+                is_loopback = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = False
+        if parsed_url.scheme == "http" and not is_loopback:
+            raise ValueError(
+                "FWBG_API_KEY requires HTTPS for non-loopback FWBG_API_URL"
+            )
+    return {"X-API-Key": api_key} if api_key else {}
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +129,14 @@ def save_strategy(name: str, config: dict) -> dict:
       "optimization": {"regime_filter_grid": {...}, "indicator_grid": {...}}
     }
     """
+    try:
+        _get(f"/strategies/{name}")
+    except httpx.HTTPStatusError as exc:
+        response = exc.response
+        if response is None or response.status_code != 404:
+            raise
+        # The API's create contract is POST /strategies with a name + data.
+        return _post("/strategies", {"name": name, "data": config})
     return _put(f"/strategies/{name}", config)
 
 
@@ -135,7 +166,12 @@ def start_run(
         body["assets"] = assets
     if description:
         body["description"] = description
-    return _post("/runs/start", body)
+    result = _post("/runs/start", body)
+    # The REST API historically called this field job_id. Keep that field for
+    # compatibility while normalizing the MCP contract to run_id.
+    if "run_id" not in result and "job_id" in result:
+        result = {**result, "run_id": result["job_id"]}
+    return result
 
 
 @mcp.tool()
@@ -159,15 +195,20 @@ def wait_for_run(run_id: str, timeout_minutes: int = 120) -> dict:
         if status == "completed":
             return get_run_results(run_id)
 
-        if status == "failed":
+        if status in {"failed", "cancelled", "canceled"}:
             raise RuntimeError(
-                f"Run {run_id} failed: {progress.get('message', 'unknown error')}"
+                f"Run {run_id} {status}: {progress.get('message', 'no further details')}"
             )
+        if status not in {"starting", "running", "queued", "pending"}:
+            raise RuntimeError(f"Run {run_id} returned unknown status: {status}")
 
         # Log current stage for observability
         current_stage = progress.get("current_stage", "")
         fraction = progress.get("progress_fraction", 0)
-        print(f"[fwbg-mcp] {run_id}: {status} – {current_stage} ({fraction:.0%})")
+        print(
+            f"[fwbg-mcp] {run_id}: {status} – {current_stage} ({fraction:.0%})",
+            file=sys.stderr,
+        )
 
         time.sleep(poll_interval)
 
@@ -206,8 +247,9 @@ def get_run_results(run_id: str) -> dict:
         for symbol in asset_symbols:
             details[symbol] = _get(f"/runs/{run_id}/grid_details/{symbol}")
         run["grid_details"] = details
-    except httpx.HTTPStatusError:
-        pass
+    except httpx.HTTPStatusError as exc:
+        if exc.response is None or exc.response.status_code != 404:
+            raise
 
     return run
 
@@ -326,28 +368,22 @@ def list_presets(preset_type: str) -> list[str]:
     """List available preset names for a given type.
 
     Args:
-        preset_type: One of: "pipelines", "models", "validations",
-                     "filters", "resources", "grids", "regime_filters".
+        preset_type: One of the API preset sections: "pipelines", "exit_params",
+                     "models", "validations", "filters", "resources",
+                     "regime_filters", or "risk_params".
 
     Returns list of preset names (use as string values in strategy config,
     e.g. `"pipeline": "sr_trend_v1"`).
     """
-    import pathlib
-
     allowed = {
-        "pipelines", "models", "validations", "filters",
-        "resources", "grids", "regime_filters",
+        "pipelines", "exit_params", "models", "validations", "filters",
+        "resources", "regime_filters", "risk_params",
     }
     if preset_type not in allowed:
         raise ValueError(f"Invalid preset_type {preset_type!r}; expected one of {sorted(allowed)}")
 
-    strategies_dir = pathlib.Path(
-        os.environ.get("FWBG_STRATEGIES_DIR", "strategies")
-    )
-    preset_dir = strategies_dir / preset_type
-    if not preset_dir.exists():
-        return []
-    return sorted(p.stem for p in preset_dir.glob("*.json"))
+    presets = _get(f"/presets/{preset_type}")
+    return [p.get("id", p.get("name", "")) for p in presets]
 
 
 # ---------------------------------------------------------------------------

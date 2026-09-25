@@ -110,7 +110,14 @@ def _ensure_plugins_loaded():
     """Trigger full plugin discovery if not yet completed."""
     global _plugins_fully_loaded
     if _plugins_fully_loaded:
-        return
+        # Tests and API refreshes can reset the canonical registry singleton
+        # after discovery.  Re-check it so an FQN lookup never falls back to
+        # the short SDK registry merely because the old flag stayed set.
+        from fwbg.pipeline.registry import get_registry
+
+        if get_registry().list_plugins():
+            return
+        _plugins_fully_loaded = False
     try:
         from fwbg.pipeline.registry import get_registry
         registry = get_registry()
@@ -235,12 +242,35 @@ def list_risk_managers() -> list:
 
 def get_data_loader(name: str) -> Type["BaseDataLoader"]:
     """Get data loader class by name, auto-discovering if needed."""
-    if not DATA_LOADER_REGISTRY:
-        _ensure_plugins_loaded()
-    if name not in DATA_LOADER_REGISTRY:
-        available = list(DATA_LOADER_REGISTRY.keys())
-        raise ValueError(f"Unknown data loader: '{name}'. Available: {available}")
-    return DATA_LOADER_REGISTRY[name]
+    # PipelineRegistry is the canonical namespaced registry.  Keep the SDK
+    # registry as a compatibility fallback for loaders registered directly by
+    # decorators (including applications' short-name plugins).
+    _ensure_plugins_loaded()
+    from fwbg.pipeline.registry import PluginNotFoundError, get_registry
+
+    registry = get_registry()
+    try:
+        resolved = registry.resolve_name(name)
+    except ValueError:
+        if name in DATA_LOADER_REGISTRY:
+            return DATA_LOADER_REGISTRY[name]
+        raise
+    if ":" in resolved:
+        try:
+            plugin_cls = registry.get(resolved)
+        except PluginNotFoundError:
+            plugin_cls = None
+        if plugin_cls is not None:
+            from fwbg_sdk import PluginPhase
+
+            if plugin_cls.phase == PluginPhase.DATA_LOADING:
+                return plugin_cls
+
+    if name in DATA_LOADER_REGISTRY:
+        return DATA_LOADER_REGISTRY[name]
+
+    available = list(DATA_LOADER_REGISTRY.keys())
+    raise ValueError(f"Unknown data loader: '{name}'. Available: {available}")
 
 
 def list_data_loaders() -> list:
