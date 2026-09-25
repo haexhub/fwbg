@@ -149,14 +149,39 @@ def build_state_text(df: pd.DataFrame, i: int, window: int) -> str:
 
 
 def build_question(entry_price: float, tp_dist: float, sl_dist: float,
-                    horizon_bars: int) -> dict:
+                    horizon_bars: int, reverse_order: bool = False) -> dict:
     """Explizite Ziel-/Stop-Preise + Pip-Angabe statt roher Deltas -- ein
     Choice-Logit-Readout-Modell soll den Referenzpreis nicht selbst aus dem
-    OHLC-Fenster inferieren muessen."""
+    OHLC-Fenster inferieren muessen.
+
+    reverse_order: fuer den Positions-Bias-Diagnosetest -- vertauscht die
+    Reihenfolge der criteria-Keys (down_first vor up_first), um zu pruefen
+    ob jev_official's ~95%-down_first-Bias an der Frage/Formulierung haengt
+    oder an der reinen Positionierung im JSON."""
     target = entry_price + tp_dist
     stop = entry_price - sl_dist
     tp_pips = tp_dist / EURUSD_POINT
     sl_pips = sl_dist / EURUSD_POINT
+    criteria = {
+        "up_first": (
+            f"Price rises to at least {target:.5f} "
+            f"(+{tp_pips:.1f} pips) before falling to {stop:.5f}"
+        ),
+        "down_first": (
+            f"Price falls to at least {stop:.5f} "
+            f"(-{sl_pips:.1f} pips) before rising to {target:.5f}"
+        ),
+        "neither": (
+            f"Neither {target:.5f} nor {stop:.5f} is reached "
+            f"within the horizon"
+        ),
+    }
+    if reverse_order:
+        criteria = {
+            "down_first": criteria["down_first"],
+            "up_first": criteria["up_first"],
+            "neither": criteria["neither"],
+        }
     return {
         "barrier_outcome": {
             "type": "choice",
@@ -164,20 +189,125 @@ def build_question(entry_price: float, tp_dist: float, sl_dist: float,
                 f"Current EUR/USD price is {entry_price:.5f}. "
                 f"Which barrier is reached first in the next {horizon_bars} bars?"
             ),
-            "criteria": {
-                "up_first": (
-                    f"Price rises to at least {target:.5f} "
-                    f"(+{tp_pips:.1f} pips) before falling to {stop:.5f}"
-                ),
-                "down_first": (
-                    f"Price falls to at least {stop:.5f} "
-                    f"(-{sl_pips:.1f} pips) before rising to {target:.5f}"
-                ),
-                "neither": (
-                    f"Neither {target:.5f} nor {stop:.5f} is reached "
-                    f"within the horizon"
-                ),
-            },
+            "criteria": criteria,
+        }
+    }
+
+
+def _session_for(ts) -> str:
+    hour = ts.tz_convert("UTC").hour
+    if 0 <= hour < 7:
+        return "Asian session (typically quiet)"
+    if 7 <= hour < 12:
+        return "London session"
+    if 12 <= hour < 16:
+        return "London/New York overlap (high liquidity)"
+    if 16 <= hour < 21:
+        return "New York session"
+    return "late New York / pre-Asian (thin liquidity)"
+
+
+def _rsi_desc(rsi: float) -> str:
+    if rsi < 30:
+        return "oversold"
+    if rsi < 45:
+        return "bearish-leaning"
+    if rsi < 55:
+        return "neutral"
+    if rsi < 70:
+        return "bullish-leaning"
+    return "overbought"
+
+
+def _vol_desc(pct_rank: float) -> str:
+    if pct_rank < 0.33:
+        return "low"
+    if pct_rank < 0.66:
+        return "normal"
+    return "elevated"
+
+
+def build_state_text_narrative(df: pd.DataFrame, i: int, window: int) -> str:
+    """Kuratierte, semantisch beschriebene Zusammenfassung statt rohem
+    59-Spalten-Dump -- Hypothese: Jev ist auf kompakte, textartige
+    Zustandsbeschreibungen trainiert (Routing/Klassifikation-artige Tasks),
+    nicht auf dichte quantitative Finanz-Feature-Vektoren mit 5 Nachkommastellen."""
+    row = df.iloc[i]
+    start = max(0, i - window + 1)
+    window_df = df.iloc[start:i + 1]
+    net_pips = (row["C"] - window_df["C"].iloc[0]) / EURUSD_POINT
+    window_high = window_df["H"].max()
+    window_low = window_df["L"].min()
+    last_closes = ", ".join(f"{c:.5f}" for c in window_df["C"].iloc[-5:])
+
+    trend_desc = "uptrend" if row["st_direction"] == 1 else "downtrend"
+    structure = row["pa_trend_structure"]
+    rsi = row["mom_rsi_14"]
+    vol_pct = row["vol_atr_pct_14_rank"]
+
+    if row["pa_bullish_streak"] > 0:
+        streak_desc = f"{int(row['pa_bullish_streak'])} consecutive bullish candles"
+    elif row["pa_bearish_streak"] > 0:
+        streak_desc = f"{int(row['pa_bearish_streak'])} consecutive bearish candles"
+    else:
+        streak_desc = "no clear candle streak"
+
+    return (
+        f"EUR/USD is trading at {row['C']:.5f}, during the {_session_for(df.index[i])}. "
+        f"Over the last {len(window_df)} hours price moved from {window_df['C'].iloc[0]:.5f} "
+        f"to {row['C']:.5f} ({net_pips:+.1f} pips), ranging between {window_low:.5f} and "
+        f"{window_high:.5f}. Last 5 closes: {last_closes}. "
+        f"Short-term trend (Supertrend): {trend_desc}. "
+        f"Medium-term structure score: {structure:+.0f}/10 "
+        f"(net higher-highs/higher-lows vs. lower-highs/lower-lows over the "
+        f"recent window; positive favors bullish structure). "
+        f"Momentum: RSI(14)={rsi:.0f}, {_rsi_desc(rsi)}. "
+        f"Volatility: {_vol_desc(vol_pct)} (current ATR at the {vol_pct*100:.0f}th percentile "
+        f"of the last 14 periods). "
+        f"Price action: {streak_desc}, sitting at {row['pa_range_pos']*100:.0f}% of the "
+        f"recent trading range."
+    )
+
+
+def build_question_qualitative(horizon_bars: int, reverse_order: bool = False) -> dict:
+    """Keine Preis-Arithmetik mehr im Prompt (kein Ziel-/Stop-Preisvergleich) --
+    reine qualitative Richtungseinschaetzung. Barrieren-Ground-Truth wird
+    weiterhin extern berechnet (triple_barrier_labels), nur nicht mehr dem
+    Modell als Vergleichswert vorgegeben.
+
+    reverse_order: siehe build_question() -- der orderbias-Diagnosetest zeigt
+    einen massiven Positions-Bias bei jev_official (dominante Antwort = Key
+    an Position 2, unabhaengig vom Inhalt). Aufrufer sollten dies alternierend
+    pro Bar setzen (z.B. i % 2 == 0), damit der Bias sich in der Aggregat-
+    statistik aufhebt statt ein Ergebnis systematisch zu verzerren."""
+    criteria = {
+        "up_first": (
+            "A clear sustained upward move is more likely than a "
+            "downward move or a range-bound/sideways market"
+        ),
+        "down_first": (
+            "A clear sustained downward move is more likely than an "
+            "upward move or a range-bound/sideways market"
+        ),
+        "neither": (
+            "Price is more likely to stay range-bound with no clear "
+            "sustained directional move"
+        ),
+    }
+    if reverse_order:
+        criteria = {
+            "down_first": criteria["down_first"],
+            "up_first": criteria["up_first"],
+            "neither": criteria["neither"],
+        }
+    return {
+        "directional_bias": {
+            "type": "choice",
+            "instructions": (
+                f"Over the next {horizon_bars} hours, which is the more "
+                f"likely price behavior for EUR/USD?"
+            ),
+            "criteria": criteria,
         }
     }
 
@@ -219,9 +349,9 @@ def call_official(official_key: str, state: str, questions: dict) -> dict:
     )
 
 
-def load_cache() -> pd.DataFrame:
-    if os.path.exists(CACHE_FILE):
-        return pd.read_csv(CACHE_FILE, parse_dates=["timestamp"])
+def load_cache(cache_file: str) -> pd.DataFrame:
+    if os.path.exists(cache_file):
+        return pd.read_csv(cache_file, parse_dates=["timestamp"])
     return pd.DataFrame(columns=[
         "timestamp", "provider", "window", "label", "choice",
         "prob_up_first", "prob_down_first", "prob_neither",
@@ -229,15 +359,27 @@ def load_cache() -> pd.DataFrame:
     ])
 
 
-def append_cache_row(row: dict) -> None:
+def append_cache_row(cache_file: str, row: dict) -> None:
     df_row = pd.DataFrame([row])
-    write_header = not os.path.exists(CACHE_FILE)
-    df_row.to_csv(CACHE_FILE, mode="a", header=write_header, index=False)
+    write_header = not os.path.exists(cache_file)
+    df_row.to_csv(cache_file, mode="a", header=write_header, index=False)
 
 
 def run_batch(df: pd.DataFrame, labels: list, bar_indices: list, windows: list,
-              semif_key: str, official_key: str) -> None:
-    cache = load_cache()
+              semif_key: str, official_key: str, *, cache_file: str = CACHE_FILE,
+              question_key: str = "barrier_outcome",
+              build_state_fn=build_state_text,
+              build_question_fn=None) -> None:
+    """build_question_fn(df, i) -> questions dict; defaults to the ATR-based
+    explicit-price barrier question. question_key must match the top-level
+    key of that dict (the provider echoes it back in `answers`)."""
+    if build_question_fn is None:
+        def build_question_fn(df, i):
+            entry_price = df["C"].iloc[i]
+            barrier_dist = ATR_MULT * df["_atr"].iloc[i]
+            return build_question(entry_price, barrier_dist, barrier_dist, TIMEOUT_BARS)
+
+    cache = load_cache(cache_file)
     already = set(
         zip(cache["timestamp"].astype(str), cache["provider"], cache["window"])
     )
@@ -249,12 +391,10 @@ def run_batch(df: pd.DataFrame, labels: list, bar_indices: list, windows: list,
         label = labels[i]
         if label is None:
             continue
-        entry_price = df["C"].iloc[i]
-        barrier_dist = ATR_MULT * df["_atr"].iloc[i]
-        questions = build_question(entry_price, barrier_dist, barrier_dist, TIMEOUT_BARS)
+        questions = build_question_fn(df, i)
 
         for window in windows:
-            state = build_state_text(df, i, window)
+            state = build_state_fn(df, i, window)
 
             for provider_name, key, call_fn in (
                 ("jev_semif", semif_key, call_semif),
@@ -276,7 +416,7 @@ def run_batch(df: pd.DataFrame, labels: list, bar_indices: list, windows: list,
                 if result.get("error"):
                     row["error"] = f"{result.get('status')}: {result.get('body')}"
                 else:
-                    answer = result["answers"]["barrier_outcome"]
+                    answer = result["answers"][question_key]
                     probs = answer["probabilities"]
                     usage = result.get("usage", {})
                     row.update({
@@ -289,7 +429,7 @@ def run_batch(df: pd.DataFrame, labels: list, bar_indices: list, windows: list,
                         "output_tokens": usage.get("output_tokens"),
                         "cost": usage.get("cost"),
                     })
-                append_cache_row(row)
+                append_cache_row(cache_file, row)
                 print(f"  [{done}/{total}] {ts} {provider_name} w={window} -> "
                       f"{row['choice'] or row['error']}")
 
@@ -308,12 +448,35 @@ if __name__ == "__main__":
 
     valid_indices = [i for i, l in enumerate(labels) if l is not None]
 
+    sample = valid_indices[::max(1, len(valid_indices) // 40)][:40]
+
     if mode == "sensitivity":
         # ~40 gleichmaessig verteilte Bars, 3 Fenstergroessen, beide Provider
-        sample = valid_indices[::max(1, len(valid_indices) // 40)][:40]
         run_batch(features, labels, sample, [10, 20, 50], semif_key, official_key)
     elif mode == "full":
         window = int(sys.argv[2]) if len(sys.argv) > 2 else 20
         run_batch(features, labels, valid_indices, [window], semif_key, official_key)
+    elif mode == "orderbias":
+        # Diagnose: vertauscht nur die criteria-Key-Reihenfolge, alles
+        # andere (Bars, Fenster, Frage-Inhalt) identisch zu config 3.
+        def reversed_question(df, i):
+            entry_price = df["C"].iloc[i]
+            barrier_dist = ATR_MULT * df["_atr"].iloc[i]
+            return build_question(entry_price, barrier_dist, barrier_dist,
+                                   TIMEOUT_BARS, reverse_order=True)
+        run_batch(features, labels, sample, [20], semif_key, official_key,
+                  cache_file=f"{CACHE_DIR}/eurusd_h1_results_orderbias.csv",
+                  build_question_fn=reversed_question)
+    elif mode == "narrative":
+        # Kuratierte narrative State-Beschreibung + rein qualitative Frage
+        # (keine Ziel-/Stop-Preis-Arithmetik mehr im Prompt).
+        def qualitative_question(df, i):
+            return build_question_qualitative(TIMEOUT_BARS, reverse_order=(i % 2 == 0))
+        run_batch(features, labels, sample, [10, 20, 50], semif_key, official_key,
+                  cache_file=f"{CACHE_DIR}/eurusd_h1_results_narrative.csv",
+                  question_key="directional_bias",
+                  build_state_fn=build_state_text_narrative,
+                  build_question_fn=qualitative_question)
     else:
-        print(f"Unknown mode: {mode} (use 'sensitivity' or 'full <window>')")
+        print(f"Unknown mode: {mode} (use 'sensitivity', 'full <window>', "
+              f"'orderbias' or 'narrative')")

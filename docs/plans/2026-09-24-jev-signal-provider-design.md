@@ -1,30 +1,51 @@
 # Jev Signal Provider
 
-## Status: Stage A failed — not pursued further (2026-09-25)
+## Status: Stage A failed — not pursued further (2026-09-25, revised)
 
 Feasibility check (Evaluation Stage A/A0 below) ran against real EUR/USD H1
-data (`scripts/jev_batch_query.py`, 720 live calls across 3 independent
-configurations, 0 API errors). Result: both providers perform **at or below
-random-chance level**, not just below the majority-class baseline.
+data (`scripts/jev_batch_query.py`, ~1040 live calls across 5 configurations,
+0 API errors). Result: both providers perform **at or below random-chance
+level** on every configuration tested — including after fixing a real
+confound found partway through (see below).
 
-| Config | Barriers | Ground truth split | `jev_official` acc. | `jev_semif` acc. |
+| Config | Setup | Ground truth split | `jev_official` acc. | `jev_semif` acc. |
 |---|---|---|---|---|
-| 1 | Fixed 54p/36p (spread-mult defaults), raw price deltas in prompt | 88/8/5 (neither-heavy) | 30–40% | 7.5–10% |
-| 2 | Same barriers, explicit target/stop prices + pip count in prompt | 88/8/5 | 27.5–32.5% | 10–27.5% |
-| 3 | Symmetric 1.5×ATR(14), 8h horizon (tuned for class balance) | 40/35/25 (balanced) | 27.5% | 27.5–30% |
+| 1 | Fixed 54p/36p (spread-mult defaults), raw price deltas in prompt | 88/8/5 | 30–40% | 7.5–10% |
+| 2 | Same barriers, explicit target/stop prices + pip count | 88/8/5 | 27.5–32.5% | 10–27.5% |
+| 3 | Symmetric 1.5×ATR(14), 8h horizon (tuned for class balance) | 40/35/25 | 27.5% | 27.5–30% |
+| 4 | Curated narrative state (5-8 semantic signals, session context) + qualitative directional question (no price arithmetic), criteria order alternated per bar | 40/35/25 | 27.5–30% | 32.5% |
 
-Config 3 rules out the two most likely confounds (unrealistic barrier width,
-under-specified prompt) — `jev_official` still answers `down_first` in
-90–98% of cases regardless of the (now symmetric) input, i.e. it behaves
-close to a constant classifier rather than responding to state. Not pursued
-further: three independently-varied configurations landing at/below chance
-is treated as a robust negative, not a setup artifact. Cost was never the
-constraint (whole check <$0.05); calibration quality was.
+**Important correction to configs 1-3's `jev_official` numbers:** a
+dedicated diagnostic (`orderbias` mode) found `jev_official`'s `choice`
+answer is dominated by **JSON key position**, not content — swapping
+`criteria` key order (down_first before up_first) flipped the dominant
+answer from `down_first` (90%) to `up_first` (55%), in both cases the key
+in position 2. Configs 1-3 always used the same key order, so their
+`jev_official` accuracy numbers reflect this positional artifact, not
+genuine (mis)calibration. Config 4 alternates key order per bar to cancel
+this out — its number is the first trustworthy `jev_official` result, and
+it's still at chance (27.5-30%, vs. ~33% random / 40% majority-baseline).
+
+`jev_semif` doesn't show the same clean positional flip (65%→75% down_first
+across the swap, i.e. real but weaker order-sensitivity) but shows an
+equally concerning **format-sensitivity**: it answered `neither` on 2% of
+bars under the arithmetic price-threshold framing (config 3) vs. 92% of
+bars under the narrative/qualitative framing (config 4) — for the *same*
+underlying bars. Its choice tracks prompt style more than market state.
+
+Taken together: not a setup artifact anymore. Five configurations addressing
+barrier width, class balance, price-framing clarity, indicator density/
+format, question type (arithmetic vs. qualitative), and JSON positional bias
+all land at/below chance, and both providers show answer patterns driven
+more by surface prompt structure than by input content. Cost was never the
+constraint (whole check <$0.10 total); calibration quality was.
 
 Kept for traceability — see `## Open unknowns` (now resolved) and the raw
-per-config caches under `data/jev_cache/eurusd_h1_results_v*.csv` for the
-full per-bar breakdown if this is revisited later (e.g. with a different
-question formulation, a different indicator subset, or a different asset).
+per-config caches under `data/jev_cache/eurusd_h1_results*.csv` for the
+full per-bar breakdown if this is revisited later (e.g. a fundamentally
+different question mechanism such as decomposed independent `noul`
+questions, a different asset/timeframe, or moving to a reasoning-capable
+model instead of a "System 1" typed-decision one).
 
 ## Problem
 
