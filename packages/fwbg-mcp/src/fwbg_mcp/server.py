@@ -13,7 +13,9 @@ Environment variables:
 import os
 import sys
 import time
+import ipaddress
 from typing import Optional
+from urllib.parse import urlsplit
 
 import httpx
 from fastmcp import FastMCP
@@ -63,6 +65,19 @@ def _put(path: str, body: dict) -> dict:
 def _api_headers() -> dict[str, str]:
     """Build request headers without exposing the key in logs or tool output."""
     api_key = os.environ.get("FWBG_API_KEY", "").strip()
+    if api_key:
+        parsed_url = urlsplit(API_URL)
+        hostname = parsed_url.hostname
+        is_loopback = hostname == "localhost"
+        if not is_loopback and hostname:
+            try:
+                is_loopback = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = False
+        if parsed_url.scheme == "http" and not is_loopback:
+            raise ValueError(
+                "FWBG_API_KEY requires HTTPS for non-loopback FWBG_API_URL"
+            )
     return {"X-API-Key": api_key} if api_key else {}
 
 
@@ -184,7 +199,7 @@ def wait_for_run(run_id: str, timeout_minutes: int = 120) -> dict:
             raise RuntimeError(
                 f"Run {run_id} {status}: {progress.get('message', 'no further details')}"
             )
-        if status not in {"running", "queued", "pending"}:
+        if status not in {"starting", "running", "queued", "pending"}:
             raise RuntimeError(f"Run {run_id} returned unknown status: {status}")
 
         # Log current stage for observability
@@ -353,15 +368,16 @@ def list_presets(preset_type: str) -> list[str]:
     """List available preset names for a given type.
 
     Args:
-        preset_type: One of: "pipelines", "models", "validations",
-                     "filters", "resources", "grids", "regime_filters".
+        preset_type: One of the API preset sections: "pipelines", "exit_params",
+                     "models", "validations", "filters", "resources",
+                     "regime_filters", or "risk_params".
 
     Returns list of preset names (use as string values in strategy config,
     e.g. `"pipeline": "sr_trend_v1"`).
     """
     allowed = {
-        "pipelines", "models", "validations", "filters",
-        "resources", "grids", "regime_filters",
+        "pipelines", "exit_params", "models", "validations", "filters",
+        "resources", "regime_filters", "risk_params",
     }
     if preset_type not in allowed:
         raise ValueError(f"Invalid preset_type {preset_type!r}; expected one of {sorted(allowed)}")

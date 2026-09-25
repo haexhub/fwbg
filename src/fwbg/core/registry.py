@@ -249,7 +249,12 @@ def get_data_loader(name: str) -> Type["BaseDataLoader"]:
     from fwbg.pipeline.registry import PluginNotFoundError, get_registry
 
     registry = get_registry()
-    resolved = registry.resolve_name(name)
+    try:
+        resolved = registry.resolve_name(name)
+    except ValueError:
+        if name in DATA_LOADER_REGISTRY:
+            return DATA_LOADER_REGISTRY[name]
+        raise
     if ":" in resolved:
         try:
             plugin_cls = registry.get(resolved)
