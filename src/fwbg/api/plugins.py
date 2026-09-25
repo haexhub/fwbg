@@ -286,11 +286,32 @@ def list_plugins(
         except Exception as exc:
             logger.exception("Plugin metadata failed: %s", fqn)
             namespace, _, plugin_name = fqn.partition(":")
+            try:
+                plugin_cls = registry.get(fqn)
+            except Exception:
+                plugin_cls = None
+            phase = getattr(plugin_cls, "phase", "unknown")
+            if isinstance(phase, PluginPhase):
+                phase = phase.value
             result.append(
                 {
                     "fqn": fqn,
                     "name": plugin_name or fqn,
                     "namespace": namespace,
+                    "phase": str(phase),
+                    "version": getattr(plugin_cls, "version", "unknown"),
+                    "param_schema": {},
+                    "defaults": {},
+                    "description": "",
+                    "group": getattr(plugin_cls, "group", "custom"),
+                    "stateful": getattr(plugin_cls, "stateful", False),
+                    "cacheable": getattr(plugin_cls, "cacheable", True),
+                    "depends_on": list(getattr(plugin_cls, "depends_on", [])),
+                    "has_docs": False,
+                    "feature_columns": [],
+                    "signal_columns": [],
+                    "plot_columns": [],
+                    "column_group_labels": {},
                     "broken": True,
                     "metadata_error": str(exc),
                 }
