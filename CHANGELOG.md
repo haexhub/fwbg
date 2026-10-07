@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.20.3](https://github.com/haexhub/fwbg/compare/v2.20.2...v2.20.3) (2026-09-24)
+
+
+### Documentation
+
+* add Jev signal provider design ([6663b53](https://github.com/haexhub/fwbg/commit/6663b533ed7b723949b01be8e2097f95479f0877))
+
 ## [2.20.2](https://github.com/haexhub/fwbg/compare/v2.20.1...v2.20.2) (2026-07-30)
 
 
