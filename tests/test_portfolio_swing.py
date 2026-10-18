@@ -20,6 +20,7 @@ from fwbg.portfolio.swing_study import worst_p
 
 
 def bars_from_close(close):
+    """Expand a close series into identical bid/ask OHLC bars with zero spread."""
     return pd.DataFrame(
         {
             f"{side}_{field}": close
@@ -31,10 +32,12 @@ def bars_from_close(close):
 
 @pytest.fixture
 def flat_bars():
+    """Provide flat daily bars with enough warm-up history for swing indicators."""
     return bars_from_close(pd.Series(100.0, index=pd.bdate_range("2018-01-01", "2019-02-28")))
 
 
 def test_leverage_target_is_self_financed_after_bidask_and_fees():
+    """Purchases and sales achieve target leverage after spreads and commissions."""
     cash, q, delta, fill, fee = rebalance(10000.0, 0.0, 100.0, 102.0, 1.5, 0.001)
     assert fill == 102
     assert cash == pytest.approx(10000 - q * 102 - fee)
@@ -47,6 +50,7 @@ def test_leverage_target_is_self_financed_after_bidask_and_fees():
 
 
 def test_buy_hold_uses_ask_and_cash_has_no_yield(flat_bars):
+    """Buy-and-hold pays the ask and fees once while idle cash earns nothing."""
     for field in ("open", "high", "low", "close"):
         flat_bars[f"ask_{field}"] += 2
     settings = SwingSettings("buy_hold", end="2019-01-31", cost_bps=10)
@@ -60,6 +64,7 @@ def test_buy_hold_uses_ask_and_cash_has_no_yield(flat_bars):
 
 
 def test_financing_charges_actual_borrow_for_weekend_calendar_days(flat_bars):
+    """Monday funding includes three calendar days of actual borrowed cash."""
     settings = SwingSettings(
         "buy_hold", start="2019-01-04", end="2019-01-08", leverage=1.5, cost_bps=0, borrow_rate=0.08
     )
@@ -71,6 +76,7 @@ def test_financing_charges_actual_borrow_for_weekend_calendar_days(flat_bars):
 
 
 def test_new_high_cannot_raise_stop_retroactively_within_same_bar(flat_bars):
+    """A bar's new high updates only the next bar's stop, including opening gaps."""
     flat_bars.loc["2019-01-04", ["bid_high", "ask_high"]] = 120
     flat_bars.loc["2019-01-04", ["bid_low", "ask_low"]] = 99
     flat_bars.loc["2019-01-04", ["bid_close", "ask_close"]] = 110
@@ -88,6 +94,7 @@ def test_new_high_cannot_raise_stop_retroactively_within_same_bar(flat_bars):
 
 
 def test_entry_bar_can_hit_initial_stop_and_cannot_capture_opening_jump(flat_bars):
+    """An opening entry misses the prior jump and can hit its initial stop that day."""
     flat_bars.loc["2019-01-04"] = 200
     flat_bars.loc["2019-01-04", ["bid_low", "ask_low"]] = 190
     features = indicators(flat_bars)
@@ -105,6 +112,7 @@ def test_entry_bar_can_hit_initial_stop_and_cannot_capture_opening_jump(flat_bar
 
 
 def test_rsi_time_exit_is_at_next_open_after_ten_sessions(flat_bars):
+    """Ten held sessions schedule an RSI time exit at the following session's open."""
     features = indicators(flat_bars)
     features["rsi_entry"] = False
     features.loc["2019-01-03", "rsi_entry"] = True
@@ -120,6 +128,7 @@ def test_rsi_time_exit_is_at_next_open_after_ten_sessions(flat_bars):
 @pytest.mark.parametrize("rule", RULES)
 @pytest.mark.parametrize("leverage", [1.0, 1.5])
 def test_future_bars_cannot_change_prior_results(rule, leverage):
+    """Future quote changes preserve earlier equity and orders at either leverage."""
     dates = pd.bdate_range("2018-01-01", "2020-06-30")
     rng = np.random.default_rng(39)
     bars = bars_from_close(
@@ -139,6 +148,7 @@ def test_future_bars_cannot_change_prior_results(rule, leverage):
 
 
 def test_bankruptcy_cannot_disappear_from_returns(flat_bars):
+    """A leveraged crash leaves bankruptcy and subsequent zero equity visible."""
     flat_bars.loc["2019-01-07":] = 1.0
     result = run_swing(
         flat_bars,
@@ -149,6 +159,7 @@ def test_bankruptcy_cannot_disappear_from_returns(flat_bars):
 
 
 def test_corporate_split_is_not_mistaken_for_a_crash():
+    """Published splits normalize prices while unrelated reference errors fail."""
     dates = pd.bdate_range("2020-01-01", periods=3)
     bars = bars_from_close(pd.Series([200.0, 202.0, 102.0], index=dates))
     reference = pd.DataFrame(
@@ -168,12 +179,14 @@ def test_corporate_split_is_not_mistaken_for_a_crash():
 
 
 def test_bad_quotes_fail_closed(flat_bars):
+    """A negative opening or closing spread fails bar validation."""
     flat_bars.loc[flat_bars.index[-1], ["ask_open", "ask_high", "ask_low", "ask_close"]] = 99
     with pytest.raises(ValueError, match="negative"):
         validate_bars(flat_bars)
 
 
 def test_monte_carlo_noise_cannot_beat_exact_sign_probability_floor():
+    """Estimated block p-values cannot beat the exact sign-test probability floor."""
     check = {
         "status": "evaluated",
         "monte_carlo": {"p_value": 0.0001},

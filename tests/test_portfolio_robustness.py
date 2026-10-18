@@ -16,6 +16,7 @@ from fwbg.simulation.trade import monte_carlo_permutation_test
 
 @pytest.fixture(scope="module")
 def long_history():
+    """Provide seeded daily prices and a portfolio run spanning fourteen years."""
     dates = pd.bdate_range("2000-01-03", "2013-12-31")
     rng = np.random.default_rng(812)
     prices = pd.DataFrame(
@@ -31,6 +32,7 @@ def long_history():
 
 
 def test_monthly_returns_preserve_initial_cost_and_exclude_partial_month():
+    """Monthly compounding retains initial costs and drops partial endpoint months."""
     dates = pd.to_datetime(["2020-12-31", "2021-01-04", "2021-01-29", "2021-02-01", "2021-02-15"])
     equity = pd.DataFrame({"trend": [100, 99, 110, 112, 115]}, index=dates)
     monthly = monthly_returns(equity)
@@ -42,6 +44,7 @@ def test_monthly_returns_preserve_initial_cost_and_exclude_partial_month():
 
 
 def test_shared_native_filters_are_used_on_months_not_order_counts(long_history):
+    """Native statistics use monthly observations and fixed-rule chronological folds."""
     prices, settings, result = long_history
     with (
         patch.object(
@@ -88,6 +91,7 @@ def test_shared_native_filters_are_used_on_months_not_order_counts(long_history)
 
 
 def test_profitable_strategy_can_fail_benchmark_outperformance():
+    """Positive absolute returns can pass while excess returns fail native checks."""
     dates = pd.date_range("2000-01-31", periods=240, freq="ME")
     benchmark = pd.Series(0.02 + 0.01 * np.sin(np.arange(240)), index=dates)
     strategy = benchmark / 2
@@ -100,6 +104,7 @@ def test_profitable_strategy_can_fail_benchmark_outperformance():
 
 
 def test_block_test_preserves_compounding_and_pairs_same_benchmark_periods():
+    """Block tests compare compounded returns over matching benchmark periods."""
     dates = pd.date_range("2000-01-31", periods=25, freq="ME")
     strategy = pd.Series(np.tile([0.2, -0.1, 0.0, 0.03, -0.04], 5), index=dates)
     benchmark = pd.Series(0.02, index=dates)
@@ -120,6 +125,7 @@ def test_block_test_preserves_compounding_and_pairs_same_benchmark_periods():
 
 
 def test_flat_or_short_samples_cannot_pass_robustness(long_history):
+    """Short histories and zero-return samples cannot satisfy robustness gates."""
     prices, settings, _ = long_history
     short = run_portfolio(prices.loc[:"2001-06-29"], settings)
     report, _, folds = assess_robustness(
@@ -135,9 +141,11 @@ def test_flat_or_short_samples_cannot_pass_robustness(long_history):
 
 
 def test_failed_prefix_check_prevents_a_robustness_pass(long_history):
+    """A historical-prefix mismatch prevents a positive robustness summary."""
     prices, settings, result = long_history
 
     def altered_prefix(*args, **kwargs):
+        """Perturb the last prefix valuation to simulate a causality failure."""
         prefix = run_portfolio(*args, **kwargs)
         prefix.equity.iloc[-1, 0] += 1
         return prefix
@@ -151,6 +159,7 @@ def test_failed_prefix_check_prevents_a_robustness_pass(long_history):
 
 
 def test_fixed_seed_reproduces_statistics():
+    """Repeated native checks with the same seed produce identical results."""
     sample = pd.Series(np.random.default_rng(1).normal(0.004, 0.03, 240))
     one = _check_series(sample, permutations=199, seed=42)
     two = _check_series(sample, permutations=199, seed=42)

@@ -36,6 +36,7 @@ class SwingSettings:
     borrow_rate: float = 0.08
 
     def validate(self) -> None:
+        """Reject unsupported rules, leverage, capital, costs, funding and dates."""
         if self.rule not in RULES:
             raise ValueError("unknown swing rule")
         if self.leverage not in (1, 1.5):
@@ -66,6 +67,7 @@ class SwingResult:
 
 
 def validate_bars(bars: pd.DataFrame) -> None:
+    """Require valid daily bid/ask OHLC, nonnegative open/close spreads and gaps <=7 days."""
     validate_daily_index(bars.index, "swing bars")
     columns = [
         f"{side}_{field}" for side in ("bid", "ask") for field in ("open", "high", "low", "close")
@@ -89,6 +91,7 @@ def validate_bars(bars: pd.DataFrame) -> None:
 
 
 def indicators(bars: pd.DataFrame) -> pd.DataFrame:
+    """Compute causal indicators and entry/exit signals from completed bid bars."""
     close = bars.bid_close
     frame = pd.DataFrame(index=bars.index)
     for period in (5, 200):
@@ -135,6 +138,11 @@ def rebalance(
 
 
 def run_swing(bars: pd.DataFrame, settings: SwingSettings) -> SwingResult:
+    """Simulate a daily long-only rule with bid/ask fills and margin borrowing.
+
+    Execute prior-bar signals at the next open, apply stops before updating
+    trails, and return equity, orders, signals, positions and bankruptcy status.
+    """
     settings.validate()
     bars = bars.loc[: settings.end]
     validate_bars(bars)

@@ -20,10 +20,15 @@ from .swing import SwingSettings, indicators, run_swing, validate_bars
 
 
 def metrics(equity: pd.Series) -> dict:
+    """Summarize strategy equity against a constant cash benchmark earning zero."""
     return summarize(pd.DataFrame({"strategy": equity, "cash": 10000.0}))["strategy"]
 
 
 def worst_p(checks: list[dict]) -> float:
+    """Return the largest sign-test p-value, respecting exact block-test floors.
+
+    Unevaluated checks return 1.0 so missing evidence cannot pass a gate.
+    """
     values = []
     for check in checks:
         if check.get("status") != "evaluated":
@@ -37,6 +42,11 @@ def worst_p(checks: list[dict]) -> float:
 
 
 def run_swing_study(protocol_path: Path, output: Path) -> dict:
+    """Run the frozen daily study on fingerprinted data and save every trial.
+
+    Compare matched buy-and-hold benchmarks across cost/leverage scenarios,
+    check historical prefixes, and return the summary with PBO and Holm gates.
+    """
     protocol = json.loads(protocol_path.read_text())
     if (
         protocol["schema_version"] != 1
