@@ -144,7 +144,9 @@ def run_swing(bars: pd.DataFrame, settings: SwingSettings) -> SwingResult:
     trails, and return equity, orders, signals, positions and bankruptcy status.
     """
     settings.validate()
-    bars = bars.loc[: settings.end]
+    end = settings.end
+    if end is not None:
+        bars = bars.loc[bars.index <= pd.Timestamp(end)]
     validate_bars(bars)
     features = indicators(bars)
     eligible = np.flatnonzero(
@@ -278,6 +280,15 @@ def run_swing(bars: pd.DataFrame, settings: SwingSettings) -> SwingResult:
         pd.DataFrame(
             ledger,
             columns=["date", "reason", "quantity_change", "fill", "commission", "spread_cost"],
+        ).astype(
+            {
+                "date": "datetime64[ns]",
+                "reason": object,
+                "quantity_change": float,
+                "fill": float,
+                "commission": float,
+                "spread_cost": float,
+            }
         ),
         pd.DataFrame(signal_rows),
         pd.DataFrame(positions),

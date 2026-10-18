@@ -152,7 +152,8 @@ def test_search_writes_all_trials_and_native_pbo(tmp_path):
         "split_date": "2008-01-01",
     }
     (tmp_path / "base.json").write_text(json.dumps(config))
-    protocol = json.loads(Path("examples/portfolio/search_v1.json").read_text())
+    root = Path(__file__).resolve().parents[1]
+    protocol = json.loads((root / "examples/portfolio/search_v1.json").read_text())
     protocol.update(
         base_config="base.json",
         candidates=protocol["candidates"][:2],

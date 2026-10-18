@@ -111,6 +111,24 @@ def test_entry_bar_can_hit_initial_stop_and_cannot_capture_opening_jump(flat_bar
     assert result.equity.iloc[-1] == pytest.approx(9700)
 
 
+def test_empty_prefix_ledger_matches_typed_filtered_ledger(flat_bars):
+    features = indicators(flat_bars)
+    features["breakout_entry"] = False
+    features.loc["2019-01-10", "breakout_entry"] = True
+    features["breakout_channel_exit"] = False
+    with patch("fwbg.portfolio.swing.indicators", return_value=features):
+        full = run_swing(
+            flat_bars,
+            SwingSettings("breakout_channel", start="2019-01-04", end="2019-02-28"),
+        )
+        prefix = run_swing(
+            flat_bars,
+            SwingSettings("breakout_channel", start="2019-01-04", end="2019-01-09"),
+        )
+    filtered = full.ledger.loc[full.ledger.date <= pd.Timestamp("2019-01-09")]
+    assert prefix.ledger.equals(filtered)
+
+
 def test_rsi_time_exit_is_at_next_open_after_ten_sessions(flat_bars):
     """Ten held sessions schedule an RSI time exit at the following session's open."""
     features = indicators(flat_bars)
