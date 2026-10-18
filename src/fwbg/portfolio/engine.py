@@ -120,8 +120,9 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
     if prices.columns.has_duplicates or set(prices.columns) != set(assets):
         raise ValueError("prices columns must exactly match weights")
     prices = prices.loc[:, assets].astype(float)
-    if settings.end:
-        prices = prices.loc[: settings.end]
+    end = settings.end
+    if end is not None:
+        prices = prices.loc[prices.index <= pd.Timestamp(end)]
     if len(prices) < 2 or not np.isfinite(prices.to_numpy()).all() or (prices <= 0).any().any():
         raise ValueError("prices must contain positive finite daily prices without missing values")
     if (prices.index.to_series().diff().dt.days.dropna() > 7).any():

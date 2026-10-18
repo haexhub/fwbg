@@ -61,7 +61,12 @@ def prepare_swing_data(protocol_path: Path) -> dict:
     Validate ETF adjustments against Yahoo references, remove flat weekend
     placeholders, and record each market's files or download error on disk.
     """
-    from fwbg.data.dukascopy import _fetch_with_progress, dk, resolve_instrument
+    from fwbg.data.dukascopy import (
+        DukascopyError,
+        _fetch_with_progress,
+        dk,
+        resolve_instrument,
+    )
 
     protocol = json.loads(protocol_path.read_text())
     output = (protocol_path.parent / protocol["data_directory"]).resolve()
@@ -133,7 +138,7 @@ def prepare_swing_data(protocol_path: Path) -> dict:
                 "files": {p.name: file_fingerprint(p) for p in folder.glob("*.csv")},
             }
             print(f"Prepared {symbol}: {len(bars)} bars", flush=True)
-        except Exception as error:
+        except (DukascopyError, ImportError, KeyError, OSError, TypeError, ValueError) as error:
             manifest["errors"][symbol] = f"{type(error).__name__}: {error}"
             print(f"DATA EXCLUDED {symbol}: {error}", flush=True)
         (output / "manifest.json").write_text(
