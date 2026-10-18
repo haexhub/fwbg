@@ -29,6 +29,7 @@ class PortfolioSettings:
     defensive_asset: str | None = None
 
     def validate(self) -> None:
+        """Reject invalid allocation weights, strategy parameters, costs and dates."""
         if not self.weights or not all(
             isinstance(k, str) and k and math.isfinite(v) and v > 0 for k, v in self.weights.items()
         ):
@@ -78,6 +79,7 @@ class PortfolioResult:
 
 
 def validate_daily_index(index: pd.Index, label: str) -> None:
+    """Require nonempty, sorted, unique, timezone-free daily date labels."""
     if not isinstance(index, pd.DatetimeIndex) or index.empty:
         raise ValueError(f"{label}: a nonempty daily DatetimeIndex is required")
     if index.hasnans or index.has_duplicates or not index.is_monotonic_increasing:

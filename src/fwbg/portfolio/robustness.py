@@ -49,6 +49,7 @@ def monthly_returns(equity: pd.DataFrame) -> pd.DataFrame:
 
 
 def _blocked_returns(values: np.ndarray, horizon: int) -> np.ndarray:
+    """Compound consecutive fixed-length return blocks, discarding the tail."""
     count = len(values) // horizon
     return np.asarray((1 + values[: count * horizon].reshape(count, horizon)).prod(axis=1) - 1)
 
@@ -60,6 +61,11 @@ def _check_series(
     seed: int,
     benchmark: pd.Series | None = None,
 ) -> dict:
+    """Assess monthly returns with native sign, Sharpe and compounded block tests.
+
+    An optional aligned benchmark produces active returns; fewer than 24
+    observations yield an insufficient-data result that cannot pass checks.
+    """
     original = returns.to_numpy(dtype=float)
     reference = benchmark.to_numpy(dtype=float) if benchmark is not None else None
     observed = original if reference is None else original - reference
@@ -120,6 +126,7 @@ def _check_series(
 
 
 def _checks(frame: pd.DataFrame, permutations: int, seed: int) -> dict:
+    """Check each portfolio's returns and the trend-minus-static comparison."""
     checks = {
         name: _check_series(frame[name], permutations=permutations, seed=seed)
         for name in PORTFOLIOS
@@ -264,6 +271,7 @@ def assess_robustness(
 
 
 def format_robustness(report: dict) -> str:
+    """Render robustness results, gates and statistical limitations as Markdown."""
     lines = [
         "## Robustness (shared FWBG implementations)",
         "Uninvested cash return: **0%**. Tests use non-overlapping months, not order counts.",

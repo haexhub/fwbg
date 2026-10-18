@@ -11,6 +11,7 @@ from .engine import PortfolioSettings, validate_daily_index
 
 
 def read_daily_csv(path: Path) -> pd.DataFrame:
+    """Read numeric CSV columns indexed by sorted, unique, timezone-free dates."""
     frame = pd.read_csv(path)
     if "date" not in frame:
         raise ValueError(f"{path}: missing date column")
@@ -21,10 +22,16 @@ def read_daily_csv(path: Path) -> pd.DataFrame:
 
 
 def file_fingerprint(path: Path) -> dict:
+    """Return the resolved file path and SHA-256 digest of its contents."""
     return {"path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
 def load_inputs(config_path: Path) -> tuple[dict, PortfolioSettings, pd.DataFrame, dict]:
+    """Validate a config and load settings, prices and provenance for a backtest.
+
+    Resolve input paths relative to the config file and require explicit
+    total-return prices and a base currency matching any supplied metadata.
+    """
     config = json.loads(config_path.read_text())
     allowed = {f.name for f in fields(PortfolioSettings)} | {
         "schema_version",

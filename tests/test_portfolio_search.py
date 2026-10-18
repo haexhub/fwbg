@@ -15,6 +15,7 @@ from fwbg.portfolio.search import holm_adjust, joint_p, run_search
 
 
 def test_fixed_rules_on_known_returns_and_cash_slots():
+    """Known momentum paths select the expected assets and preserve cash slots."""
     assets = ["SPY", "EFA", "EEM", "IEF", "GLD"]
     settings = PortfolioSettings(
         dict.fromkeys(assets, 0.2),
@@ -47,6 +48,7 @@ def test_fixed_rules_on_known_returns_and_cash_slots():
 
 
 def test_inverse_volatility_uses_returns_not_price_levels():
+    """Inverse-volatility weights use return dispersion and exclude flat assets."""
     settings = PortfolioSettings(
         {"A": 0.5, "B": 0.5}, "A", strategy="inverse_volatility", lookback_months=2
     )
@@ -59,6 +61,7 @@ def test_inverse_volatility_uses_returns_not_price_levels():
 
 
 def test_twelve_month_signal_requires_thirteen_closes_and_delays_entry():
+    """Twelve-month momentum needs thirteen closes and buys after the opening jump."""
     dates = pd.bdate_range("2020-01-01", "2021-03-31")
     prices = pd.DataFrame({"A": 100.0}, index=dates)
     prices.loc[:"2020-01-31", "A"] = 50
@@ -77,6 +80,7 @@ def test_twelve_month_signal_requires_thirteen_closes_and_delays_entry():
 
 @pytest.mark.parametrize("strategy", sorted(STRATEGIES))
 def test_all_rules_are_causal_unlevered_and_zero_cash_yield(strategy):
+    """Every rule preserves past results, nonnegative weights and zero cash yield."""
     dates = pd.bdate_range("2019-01-01", "2022-06-30")
     assets = ["SPY", "EFA", "EEM", "IEF", "GLD"]
     random = np.random.default_rng(17)
@@ -111,6 +115,7 @@ def test_all_rules_are_causal_unlevered_and_zero_cash_yield(strategy):
 
 
 def test_holm_and_joint_test_do_not_select_only_favorable_pvalues():
+    """Holm adjusts the full family and joint tests retain the least favorable p."""
     assert holm_adjust({"a": 0.01, "b": 0.02, "c": 0.03}) == {"a": 0.03, "b": 0.04, "c": 0.04}
     check = {
         "status": "evaluated",
@@ -125,6 +130,7 @@ def test_holm_and_joint_test_do_not_select_only_favorable_pvalues():
 
 
 def test_search_writes_all_trials_and_native_pbo(tmp_path):
+    """Search saves every cost trial, native PBO and selection using earlier data."""
     dates = pd.bdate_range("2000-01-03", "2013-12-31")
     random = np.random.default_rng(55)
     prices = pd.DataFrame(

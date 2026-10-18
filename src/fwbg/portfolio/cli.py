@@ -15,6 +15,7 @@ from .robustness import assess_robustness, format_robustness
 
 
 def _metrics_table(metrics):
+    """Format portfolio performance metrics as a Markdown table."""
     rows = [
         "| Portfolio | CAGR | Max. drawdown | Volatility | Sharpe vs cash |",
         "|---|---:|---:|---:|---:|",
@@ -32,6 +33,11 @@ def _metrics_table(metrics):
 
 
 def run_experiment(config_path: Path, output: Path, cost_multiplier: float = 1.0) -> dict:
+    """Run a configured monthly backtest and write artifacts to a new directory.
+
+    Scale transaction costs by a positive finite multiplier and return the
+    report containing performance metrics, robustness checks and provenance.
+    """
     import math
 
     if not math.isfinite(cost_multiplier) or cost_multiplier <= 0:
@@ -128,6 +134,7 @@ def run_experiment(config_path: Path, output: Path, cost_multiplier: float = 1.0
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse portfolio subcommands and report supported errors with exit code 2."""
     parser = argparse.ArgumentParser(description="FWBG monthly portfolio research")
     commands = parser.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="Run a frozen experiment from local CSV inputs")

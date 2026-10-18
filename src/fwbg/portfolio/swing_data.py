@@ -56,6 +56,11 @@ def adjust_etf(bars: pd.DataFrame, reference: pd.DataFrame) -> tuple[pd.DataFram
 
 
 def prepare_swing_data(protocol_path: Path) -> dict:
+    """Freeze protocol markets' Dukascopy bars and return their data manifest.
+
+    Validate ETF adjustments against Yahoo references, remove flat weekend
+    placeholders, and record each market's files or download error on disk.
+    """
     from fwbg.data.dukascopy import _fetch_with_progress, dk, resolve_instrument
 
     protocol = json.loads(protocol_path.read_text())

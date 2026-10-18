@@ -31,6 +31,7 @@ ECB_SERIES = {
 
 
 def _ecb_series(key: str, start: str, end: str, raw_path: Path):
+    """Save an ECB response and return its finite, non-holiday series and URL."""
     url = (
         "https://data-api.ecb.europa.eu/service/data/"
         + key
@@ -90,6 +91,7 @@ def prepare_example(output: Path, start: str, end: str) -> dict:
 
 
 def _prepare_example(output: Path, start: str, end: str) -> dict:
+    """Write adjusted ETF prices in EUR, raw sources and metadata to a new bundle."""
     import yfinance as yf
 
     start_date, end_date = pd.Timestamp(start), pd.Timestamp(end)

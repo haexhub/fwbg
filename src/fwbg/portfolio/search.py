@@ -44,6 +44,11 @@ def joint_p(robustness: dict, comparison: str) -> float:
 
 
 def run_search(protocol_path: Path, output: Path) -> dict:
+    """Evaluate declared monthly candidates at every cost stress and save results.
+
+    Require matching benchmarks and histories, retain every trial, and return
+    the summary with native PBO, Holm gates and chronological selection.
+    """
     protocol = json.loads(protocol_path.read_text())
     if protocol.get("schema_version") != 1:
         raise ValueError("search schema_version must be 1")

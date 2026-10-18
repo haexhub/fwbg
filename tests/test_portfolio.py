@@ -25,6 +25,7 @@ from fwbg.portfolio.engine import PortfolioSettings, run_portfolio, summarize
 
 @pytest.fixture
 def market():
+    """Provide rising and flat synthetic assets with zero-cost monthly settings."""
     dates = pd.bdate_range("2020-01-01", "2020-06-30")
     prices = pd.DataFrame({"A": 100.0 + np.arange(len(dates)), "B": 100.0}, index=dates)
     settings = PortfolioSettings(
@@ -37,6 +38,7 @@ def market():
 
 
 def test_signal_executes_next_session_and_cannot_earn_execution_day_jump(market):
+    """A month-end decision buys after the next session's price jump."""
     prices, settings = market
     prices.loc["2020-03-02":, "A"] *= 10
     result = run_portfolio(prices, settings)
@@ -50,6 +52,7 @@ def test_signal_executes_next_session_and_cannot_earn_execution_day_jump(market)
 
 
 def test_future_prices_cannot_change_prior_signals_positions_or_returns(market):
+    """Changing future prices preserves all earlier equity, signals and weights."""
     prices, settings = market
     original = run_portfolio(prices, settings)
     changed = prices.copy()
@@ -69,6 +72,7 @@ def test_future_prices_cannot_change_prior_signals_positions_or_returns(market):
 
 
 def test_truncating_history_does_not_treat_partial_month_as_month_end(market):
+    """A shortened price history cannot manufacture a new month-end signal."""
     prices, settings = market
     full = run_portfolio(prices, settings)
     short = run_portfolio(prices.loc[:"2020-04-15"], settings)
@@ -77,6 +81,7 @@ def test_truncating_history_does_not_treat_partial_month_as_month_end(market):
 
 
 def test_trend_exit_carries_execution_day_loss_before_selling(market):
+    """Existing holdings incur execution-day losses before an exit reaches cash."""
     prices, settings = market
     prices.loc["2020-03-31", "A"] = 20
     prices.loc["2020-04-01":, "A"] = 10
@@ -95,6 +100,7 @@ def test_trend_exit_carries_execution_day_loss_before_selling(market):
 
 
 def test_costs_are_self_financed_and_buy_hold_does_not_rebalance(market):
+    """Fees reduce invested capital without borrowing or repeated buy-hold trades."""
     prices, settings = market
     prices.loc[:, :] = 100
     settings = replace(settings, one_way_cost_bps=100)
@@ -110,6 +116,7 @@ def test_costs_are_self_financed_and_buy_hold_does_not_rebalance(market):
 
 
 def test_inactive_sleeves_remain_cash_not_redistributed(market):
+    """A sleeve failing its trend rule keeps its original allocation in cash."""
     prices, settings = market
     result = run_portfolio(prices, settings)
     weights = result.weights.query("portfolio == 'trend'").iloc[0]
@@ -119,6 +126,7 @@ def test_inactive_sleeves_remain_cash_not_redistributed(market):
 
 
 def test_drawdown_includes_losses_inside_a_month(market):
+    """Daily drawdown captures an intramonth loss even when prices recover."""
     prices, settings = market
     prices.loc[:, :] = 100
     prices.loc["2020-03-16", :] = 50
@@ -129,6 +137,7 @@ def test_drawdown_includes_losses_inside_a_month(market):
 
 
 def test_cash_stays_constant_and_earns_no_return(market):
+    """Cash and inactive trend portfolios earn zero on flat prices."""
     prices, settings = market
     prices.loc[:, :] = 100
     result = run_portfolio(prices, settings)
@@ -139,6 +148,7 @@ def test_cash_stays_constant_and_earns_no_return(market):
 
 @pytest.mark.parametrize("kind", ["nan", "zero", "duplicate", "gap", "missing_asset"])
 def test_bad_price_data_fail_closed(market, kind):
+    """Reject missing, nonpositive, duplicated, gapped or incomplete price inputs."""
     prices, settings = market
     if kind == "nan":
         prices.iloc[55, 0] = np.nan
@@ -155,6 +165,7 @@ def test_bad_price_data_fail_closed(market, kind):
 
 
 def test_fx_uses_division_and_never_backfills_from_future():
+    """EUR conversion divides by the latest available USD-per-EUR fixing."""
     dates = pd.to_datetime(["2020-01-03", "2020-01-06"])
     prices = pd.DataFrame({"A": [120, 120]}, index=dates)
     fx = pd.Series([1.2, 1.5], index=pd.to_datetime(["2020-01-02", "2020-01-06"]))
@@ -164,6 +175,7 @@ def test_fx_uses_division_and_never_backfills_from_future():
 
 
 def test_start_and_end_control_evaluation_without_losing_warmup(market):
+    """Evaluation bounds retain earlier warm-up prices and reject short histories."""
     prices, settings = market
     result = run_portfolio(prices, replace(settings, start="2020-04-01", end="2020-05-15"))
     assert result.equity.index[0] == pd.Timestamp("2020-03-31")
@@ -174,6 +186,7 @@ def test_start_and_end_control_evaluation_without_losing_warmup(market):
 
 
 def test_zero_cost_benchmark_matches_analytical_buy_hold(market):
+    """The equity benchmark follows price ratios from its first execution close."""
     prices, settings = market
     result = run_portfolio(prices, settings)
     execution = result.equity.index[1]
@@ -182,6 +195,7 @@ def test_zero_cost_benchmark_matches_analytical_buy_hold(market):
 
 
 def _write_inputs(tmp_path, market):
+    """Write synthetic prices and a split-date config, returning its path and data."""
     prices, _ = market
     prices.rename_axis("date").to_csv(tmp_path / "prices.csv")
     config = {
@@ -202,6 +216,7 @@ def _write_inputs(tmp_path, market):
 
 
 def test_report_roundtrip_provenance_cost_stress_and_chronological_split(tmp_path, market):
+    """Reports retain fingerprints, stressed costs, split returns and all artifacts."""
     path, _ = _write_inputs(tmp_path, market)
     output = tmp_path / "result"
     report = run_experiment(path, output, cost_multiplier=2)
@@ -234,6 +249,7 @@ def test_report_roundtrip_provenance_cost_stress_and_chronological_split(tmp_pat
 
 
 def test_config_typo_and_unadjusted_prices_fail_closed(tmp_path, market):
+    """Unknown config fields and a raw price basis fail input validation."""
     path, config = _write_inputs(tmp_path, market)
     config["lookbak_months"] = 10
     path.write_text(json.dumps(config))
@@ -247,6 +263,7 @@ def test_config_typo_and_unadjusted_prices_fail_closed(tmp_path, market):
 
 
 def test_old_cash_interest_config_is_rejected_instead_of_silently_applied(tmp_path, market):
+    """A legacy cash-interest field fails explicitly under the zero-yield contract."""
     path, config = _write_inputs(tmp_path, market)
     config["cash_rates"] = "rates.csv"
     path.write_text(json.dumps(config))
@@ -255,6 +272,7 @@ def test_old_cash_interest_config_is_rejected_instead_of_silently_applied(tmp_pa
 
 
 def test_existing_cli_dispatches_portfolio_help():
+    """The public CLI routes portfolio help to the portfolio subcommand parser."""
     root = Path(__file__).resolve().parents[1]
     completed = subprocess.run(
         [sys.executable, "-m", "fwbg.cli", "portfolio", "--help"],
@@ -269,6 +287,7 @@ def test_existing_cli_dispatches_portfolio_help():
 
 
 def test_ecb_holidays_are_not_prices_but_unmarked_missing_data_fail(tmp_path, monkeypatch):
+    """Ignore missing ECB holiday observations and reject other missing fixings."""
     from fwbg.portfolio import download
 
     payload = (
@@ -283,9 +302,11 @@ def test_ecb_holidays_are_not_prices_but_unmarked_missing_data_fail(tmp_path, mo
 
 
 def test_failed_download_leaves_no_usable_partial_bundle(tmp_path, monkeypatch):
+    """A provider failure removes staged files and leaves no destination bundle."""
     from fwbg.portfolio import download
 
     def fail(output, start, end):
+        """Simulate a provider error after creating an incomplete staged bundle."""
         output.mkdir()
         (output / "partial.csv").write_text("partial")
         raise ValueError("provider failure")
@@ -299,6 +320,7 @@ def test_failed_download_leaves_no_usable_partial_bundle(tmp_path, monkeypatch):
 
 
 def test_full_example_preparation_retains_inception_and_data_provenance(tmp_path, monkeypatch):
+    """Prepared bundles preserve inception limits, FX conversion and raw provenance."""
     from fwbg.portfolio import download
 
     dates = pd.bdate_range("2019-09-02", "2019-10-31")
@@ -312,6 +334,7 @@ def test_full_example_preparation_retains_inception_and_data_provenance(tmp_path
     )
 
     def fake_ecb(key, start, end, raw_path):
+        """Save a synthetic FX source and return constant USD-per-EUR fixings."""
         raw_path.write_text("raw source snapshot")
         assert key.startswith("EXR"), "interest rates must not be downloaded"
         result = pd.Series(1.2, index=dates)
