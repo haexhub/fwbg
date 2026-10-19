@@ -139,12 +139,24 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
     has_reason = _has_text(request.reason)
     if request.holdout:
         denials.extend(_holdout_denials(card, own_trials, has_reason))
-    try:
-        run_fingerprint: str | None = fingerprint(metadata, request.symbols)
-    except (ValueError, TypeError) as exc:
-        # ValueError: unresolved preset names, NaN; TypeError: values JSON cannot encode.
-        denials.append(Denial(DenialCode.INVALID_CONFIG, f"configuration cannot be hashed: {exc}"))
-        run_fingerprint = None
+    run_fingerprint: str | None = None
+    if not request.symbols:
+        # An empty CLI asset filter means "all assets"; hashing () would make
+        # whatever assets exist today one configuration.
+        denials.append(
+            Denial(
+                DenialCode.INVALID_CONFIG,
+                "no symbols resolved; a run must name at least one symbol",
+            )
+        )
+    else:
+        try:
+            run_fingerprint = fingerprint(metadata, request.symbols)
+        except (ValueError, TypeError) as exc:
+            # ValueError: unresolved preset names, NaN; TypeError: values JSON cannot encode.
+            denials.append(
+                Denial(DenialCode.INVALID_CONFIG, f"configuration cannot be hashed: {exc}")
+            )
     if run_fingerprint is not None and not has_reason:
         denials.extend(_duplicate_denials(run_fingerprint, trials))
     return Decision(tuple(denials), kind, metadata, run_fingerprint)
