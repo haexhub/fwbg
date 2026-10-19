@@ -1,19 +1,42 @@
+import json
+import os
 import subprocess
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 
 import pytest
+import yaml
 
-from fwbg.research.backfill import BackfillError, apply_mapping, draft_mapping, parse_mapping
-from fwbg.research.card import Status, load_card
+from fwbg.research.backfill import (
+    BackfillError,
+    apply_mapping,
+    draft_mapping,
+    load_mapping,
+    parse_mapping,
+)
+from fwbg.research.card import (
+    ResearchCard,
+    Status,
+    criteria_hash,
+    load_card,
+    parse_card,
+    write_card,
+)
 from fwbg.research.gate import DenialCode, RunRequest, check
-from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, read_trials
+from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, TrialStatus, read_trials
 from fwbg.research.legacy import scan_runs
-from fwbg.research.repo import init_research_repo
-from tests.research.factories import make_run
+from fwbg.research.repo import ResearchRepoError, commit_register, init_research_repo
+from tests.research.factories import make_card, make_run
 
 CRITERIA = {"min_sharpe": 1.0, "min_trades": 100.0}
 TODAY = date(2026, 10, 20)
+STUDY = {
+    "variant": "config-4",
+    "symbols": ["eurusd"],
+    "date": date(2026, 2, 1),
+    "note": "narrative state",
+}
 
 
 @pytest.fixture
@@ -45,6 +68,25 @@ def git_log(path):
     ).stdout.splitlines()
 
 
+def git_status(path):
+    return subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=path,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def register_files(path):
+    """Every file of the register outside ``.git``, with its content."""
+    return {
+        file.relative_to(path).as_posix(): file.read_bytes()
+        for file in sorted(path.rglob("*"))
+        if file.is_file() and ".git" not in file.relative_to(path).parts
+    }
+
+
 def test_draft_proposes_one_parked_card_per_name_in_order_of_first_run(runs):
     cards = draft_mapping(runs)["cards"]
     assert [(c["id"], c["title"], c["runs"]) for c in cards] == [
@@ -70,7 +112,7 @@ def test_apply_writes_cards_trials_configs_and_one_commit(runs, register):
     assert all(t.criteria_hash == card.criteria_hash for t in trials)
     # Names are not part of the fingerprint: all three runs share one stored config.
     assert len(list((register / "configs").glob("*.json"))) == 1
-    assert git_log(register)[0].startswith("chore: backfill legacy research (2 cards, 3 trials)")
+    assert git_log(register)[0] == "chore: backfill legacy research"
 
 
 def test_applying_again_adds_nothing(runs, register):
@@ -108,7 +150,8 @@ def test_criteria_override_and_rejected_status(runs, register):
     apply_mapping(plans, runs, register, CRITERIA, TODAY)
     card = load_card(register, "S-0001")
     assert card.status is Status.REJECTED
-    assert dict(card.success_criteria) == {"max_drawdown": 0.6}
+    assert dict(card.success_criteria) == {**CRITERIA, "max_drawdown": 0.6}
+    assert dict(load_card(register, "S-0002").success_criteria) == CRITERIA
 
 
 def test_study_trials_are_recorded_once_with_a_synthetic_fingerprint(runs, register):
@@ -160,8 +203,32 @@ def test_study_trials_are_recorded_once_with_a_synthetic_fingerprint(runs, regis
             },
             "finite",
         ),
+        ({"criteria": {"min_sharpe": float("inf")}}, "finite"),
+        ({"criteria": {"min_trades": 10**400}}, "out of range"),
+        ({"studies": [{**STUDY, "date": datetime(2026, 2, 1, 10)}]}, r"studies\[1\]\.date"),
+        ({"studies": [{**STUDY, "note": "   "}]}, "one line"),
+        ({"studies": [{**STUDY, "note": "trailing break\n"}]}, "one line"),
+        ({"studies": [{**STUDY, "metrics": {"a": {"x": 1}, "A": {"y": 2}}}]}, "ignoring case"),
+        ({"tags": ["ok", 3]}, r"S-0001\.tags: .*\['ok', 3\]"),
     ],
-    ids=["id", "status", "slug", "empty", "criteria", "unknown", "date", "note", "nan"],
+    ids=[
+        "id",
+        "status",
+        "slug",
+        "empty",
+        "criteria",
+        "unknown",
+        "date",
+        "note",
+        "nan",
+        "inf-criterion",
+        "huge-criterion",
+        "datetime",
+        "blank-note",
+        "note-break",
+        "symbol-case",
+        "tags",
+    ],
 )
 def test_parse_mapping_rejects_invalid_cards(runs, change, fragment):
     data = draft_mapping(runs)
@@ -210,3 +277,237 @@ def test_open_ended_legacy_runs_differ_from_clamped_iterations(runs, register):
         note="clamped re-run",
     )
     assert check(card, request, read_trials(register / LEDGER_FILENAME)).allowed
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        lambda cards: cards[1].update(criteria={"max_drawdown": float("inf")}),
+        lambda cards: cards[1].update(criteria={"min_trades": 10**400}),
+        lambda cards: cards[1].update(studies=[{**STUDY, "date": datetime(2026, 3, 1, 10)}]),
+        lambda cards: cards.append(
+            {
+                "id": "S-0003",
+                "title": "study only",
+                "studies": [{**STUDY, "date": datetime(2026, 3, 1, 10)}],
+            }
+        ),
+    ],
+    ids=["inf-criterion", "huge-criterion", "datetime-study", "study-only-datetime"],
+)
+def test_a_defect_in_a_later_card_leaves_the_register_untouched(runs, register, spoil):
+    data = draft_mapping(runs)
+    spoil(data["cards"])
+    before = register_files(register)
+    with pytest.raises(BackfillError):
+        apply_mapping(parse_mapping(data), runs, register, CRITERIA, TODAY)
+    assert register_files(register) == before
+    assert git_status(register) == ""
+
+
+def test_a_trial_the_ledger_cannot_store_is_refused_before_writing(runs, register):
+    # json.loads accepts NaN, so a run's config.json can carry one into the trial.
+    spoiled = [replace(r, code={"dirty": float("nan")}) if r.run_id == "r2" else r for r in runs]
+    before = register_files(register)
+    with pytest.raises(BackfillError, match="r2"):
+        apply_mapping(mapping_for(spoiled), spoiled, register, CRITERIA, TODAY)
+    assert register_files(register) == before
+
+
+def test_a_conflicting_existing_card_is_found_before_writing(runs, register):
+    existing = make_card(id="S-0002", status=Status.PARKED, holdout_cutoff=date(2026, 1, 1))
+    write_card(register, existing, "orb-test")
+    commit_register(register, ["strategies"], "test: existing card")
+    before = register_files(register)
+    with pytest.raises(BackfillError, match="S-0002 exists with a different cutoff"):
+        apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
+    assert register_files(register) == before
+    assert git_status(register) == ""
+
+
+def test_existing_cards_keep_their_criteria(runs, register):
+    apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
+    with pytest.raises(BackfillError, match="S-0001 exists with a different cutoff or criteria"):
+        apply_mapping(mapping_for(runs), runs, register, {**CRITERIA, "min_sharpe": 1.5}, TODAY)
+
+
+def test_dates_after_today_are_refused(runs, register):
+    future_study = mapping_for(
+        runs, **{"S-0001": {"studies": [{**STUDY, "date": date(2062, 9, 25)}]}}
+    )
+    with pytest.raises(BackfillError, match=r"S-0001: dated after today .*study:S-0001:config-4"):
+        apply_mapping(future_study, runs, register, CRITERIA, TODAY)
+    with pytest.raises(BackfillError, match=r"S-0002: dated after today \(2026-03-05\): r2$"):
+        apply_mapping(mapping_for(runs), runs, register, CRITERIA, date(2026, 3, 5))
+    assert read_trials(register / LEDGER_FILENAME) == []
+
+
+def test_load_mapping_reads_a_yaml_draft(runs):
+    text = yaml.safe_dump(draft_mapping(runs), sort_keys=False, allow_unicode=True)
+    assert load_mapping(text) == parse_mapping(draft_mapping(runs))
+
+
+@pytest.mark.parametrize(
+    ("text", "fragment"),
+    [
+        (
+            "cards:\n"
+            "- id: S-0001\n"
+            "  title: jev\n"
+            "  studies:\n"
+            "  - {variant: a, symbols: [EURUSD], date: 2026-09-25, note: first}\n"
+            "  studies:\n"
+            "  - {variant: b, symbols: [EURUSD], date: 2026-09-26, note: second}\n",
+            "line 6, column 3: duplicate key 'studies'",
+        ),
+        ("cards:\n- {id: S-0001, title: x, studies: [{date: 2026-02-30}]}\n", "out of range"),
+        ("cards: [\n", "line 2, column 1"),
+    ],
+    ids=["duplicate-key", "impossible-date", "syntax"],
+)
+def test_load_mapping_reports_yaml_errors(text, fragment):
+    with pytest.raises(BackfillError, match=fragment):
+        load_mapping(text)
+
+
+def test_trials_record_what_each_run_left(tmp_path, register):
+    workspace = tmp_path / "workspace"
+    (workspace / "configs").mkdir(parents=True)
+    (workspace / "pipelines").mkdir()
+    (workspace / "pipelines" / "orb_simple_v1.json").write_text(
+        json.dumps({"indicators": [{"name": "opening_range"}]}), encoding="utf-8"
+    )
+    results = tmp_path / "results"
+    moved = {"pipeline": "orb_simple_v1", "_strategy_dir": "/nonexistent/configs"}
+    make_run(
+        results,
+        "ok",
+        name="pdh retest",
+        timestamp="2026-02-01T08:00:00",
+        symbols={"GOLD": {"unified": {"sharpe": 0.5, "trades": 40}}},
+        strategy_extra={**moved, "end_date": "2026-01-31"},
+    )
+    make_run(
+        results,
+        "failed",
+        name="pdh retest",
+        timestamp="2026-02-02T08:00:00",
+        symbols={"GOLD": None},
+    )
+    make_run(results, "smoke", name="m3_smoke_1", timestamp="2026-02-03T08:00:00")
+    make_run(
+        results,
+        "unres",
+        name="pdh retest",
+        timestamp="2026-02-04T08:00:00",
+        strategy_extra={**moved, "pipeline": "missing_preset"},
+    )
+    runs = scan_runs(results, workspace)
+    apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
+
+    trials = {t.run_id: t for t in read_trials(register / LEDGER_FILENAME)}
+    assert list(trials) == ["ok", "failed", "unres", "smoke"]
+    contents = {
+        run_id: (t.strategy, t.kind, t.status, t.counted, t.ts, dict(t.window), dict(t.code))
+        for run_id, t in trials.items()
+    }
+    code = {"commit": "abc123", "branch": "main", "dirty": True}
+    open_window = {"start": None, "end": None}
+    assert contents == {
+        "ok": (
+            "S-0001",
+            TrialKind.LEGACY,
+            TrialStatus.OK,
+            True,
+            "2026-02-01T08:00:00",
+            {"start": None, "end": "2026-01-31"},
+            code,
+        ),
+        "failed": (
+            "S-0001",
+            TrialKind.LEGACY,
+            TrialStatus.FAILED,
+            False,
+            "2026-02-02T08:00:00",
+            open_window,
+            code,
+        ),
+        "unres": (
+            "S-0001",
+            TrialKind.LEGACY,
+            TrialStatus.OK,
+            True,
+            "2026-02-04T08:00:00",
+            open_window,
+            code,
+        ),
+        "smoke": (
+            "S-0002",
+            TrialKind.SMOKE,
+            TrialStatus.OK,
+            False,
+            "2026-02-03T08:00:00",
+            open_window,
+            code,
+        ),
+    }
+    assert trials["ok"].note == "legacy run: pdh retest (presets resolved from the workspace)"
+    assert trials["failed"].note == "legacy run: pdh retest"
+    assert trials["unres"].note.startswith("legacy run: pdh retest (configuration unresolvable: ")
+    assert "missing_preset" in trials["unres"].note
+    assert trials["smoke"].note == "legacy run: m3_smoke_1"
+    assert trials["ok"].metrics == {
+        "GOLD": {"sharpe": 0.5, "trades": 40, "p_value": None, "fold_stability": None}
+    }
+    assert trials["failed"].metrics == {}
+    for run in runs:
+        assert trials[run.run_id].fingerprint == run.fingerprint
+
+    stored = {path.stem for path in (register / "configs").glob("*.json")}
+    unresolvable = next(run for run in runs if run.run_id == "unres")
+    assert unresolvable.fingerprint.removeprefix("sha256:") not in stored
+    assert stored == {
+        run.fingerprint.removeprefix("sha256:") for run in runs if run.config is not None
+    }
+
+    strategies = register / "strategies"
+    assert sorted(p.name for p in strategies.iterdir()) == [
+        "S-0001-pdh-retest.md",
+        "S-0002-m3-smoke-1.md",
+    ]
+    card = parse_card((strategies / "S-0001-pdh-retest.md").read_text(encoding="utf-8"))
+    assert card == ResearchCard(
+        id="S-0001",
+        title="pdh retest",
+        status=Status.PARKED,
+        tags=(),
+        created=TODAY,
+        holdout_cutoff=date(2026, 2, 5),
+        holdout_contaminated=False,
+        success_criteria=CRITERIA,
+        registered_criteria_hash=criteria_hash(CRITERIA),
+        criteria_amendments=(),
+        body="## Hypothesis\n\n## Verdict\n\nNo conclusion documented.\n",
+    )
+
+
+def test_a_failed_commit_is_completed_by_applying_the_same_mapping_again(tmp_path, runs, register):
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    (hooks / "pre-commit").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    (hooks / "pre-commit").chmod(0o755)
+    git_config = Path(os.environ["GIT_CONFIG_GLOBAL"])
+    git_config.write_text(f"[core]\n\thooksPath = {hooks}\n", encoding="utf-8")
+    plans = mapping_for(runs)
+    with pytest.raises(ResearchRepoError, match="commit"):
+        apply_mapping(plans, runs, register, CRITERIA, TODAY)
+
+    git_config.write_text("", encoding="utf-8")
+    result = apply_mapping(plans, runs, register, CRITERIA, TODAY)
+    assert (result.cards_written, result.trials_appended, result.committed) == (0, 0, True)
+    assert [t.run_id for t in read_trials(register / LEDGER_FILENAME)] == ["r3", "r1", "r2"]
+    assert git_status(register) == ""
+    assert git_log(register) == [
+        "chore: backfill legacy research",
+        "chore: initialise research register",
+    ]

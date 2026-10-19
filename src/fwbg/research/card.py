@@ -86,7 +86,7 @@ def parse_card(text: str) -> ResearchCard:
     if match is None:
         raise CardError("card has no YAML front matter")
     try:
-        meta = yaml.load(match.group(1), Loader=_UniqueKeyLoader)
+        meta = yaml.load(match.group(1), Loader=UniqueKeyLoader)
     except (yaml.YAMLError, ValueError) as exc:
         # PyYAML raises a plain ValueError for impossible dates such as 2025-04-31.
         raise CardError(f"invalid YAML front matter: {exc}") from exc
@@ -137,7 +137,7 @@ def load_card(research_dir: Path, card_id: str) -> ResearchCard | None:
     return card
 
 
-class _UniqueKeyLoader(yaml.SafeLoader):
+class UniqueKeyLoader(yaml.SafeLoader):
     """Safe loader that refuses duplicate mapping keys instead of keeping the last one."""
 
     def construct_mapping(self, node: Any, deep: bool = False) -> dict[Any, Any]:
