@@ -59,11 +59,29 @@ def test_append_refuses_trials_that_already_have_an_id(ledger):
         append_trial(ledger, make_trial(trial_id="T-000009"))
 
 
-@pytest.mark.parametrize("separator", [" ", " ", "\x85"], ids=["LS", "PS", "NEL"])
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\x85"], ids=["LS", "PS", "NEL"])
 def test_notes_with_unicode_line_breaks_round_trip_as_ascii(ledger, separator):
     stored = append_trial(ledger, make_trial(note=f"first{separator}second"))
     assert read_trials(ledger) == [stored]
     assert ledger.read_bytes().isascii()
+
+
+def test_raw_unicode_line_break_inside_a_line_does_not_split_it(ledger):
+    line = _line(note="first\u2028second")
+    ledger.write_text(line.replace("\\u2028", "\u2028") + "\n", encoding="utf-8")
+    assert "\u2028".encode() in ledger.read_bytes()
+    assert [trial.note for trial in read_trials(ledger)] == ["first\u2028second"]
+
+
+def test_null_metric_round_trips(ledger):
+    stored = append_trial(ledger, make_trial(metrics={"GOLD": {"sharpe": None}}))
+    assert read_trials(ledger) == [stored]
+
+
+def test_append_refuses_values_that_change_in_a_round_trip(ledger):
+    with pytest.raises(ValueError, match="unchanged"):
+        append_trial(ledger, make_trial(code={"x": (1,)}))
+    assert ledger.read_bytes() == b""
 
 
 def test_append_refuses_a_trial_that_would_not_read_back(ledger):
@@ -100,6 +118,13 @@ def test_malformed_line_is_reported_with_its_number(ledger):
         read_trials(ledger)
 
 
+def test_malformed_line_before_the_last_is_not_reported_as_torn(ledger):
+    ledger.write_text("{not json\n" + _line(), encoding="utf-8")
+    with pytest.raises(LedgerError, match="line 1") as excinfo:
+        read_trials(ledger)
+    assert "interrupted" not in str(excinfo.value)
+
+
 def test_malformed_holdout_cutoff_is_a_ledger_error(tmp_path):
     ledger = tmp_path / "trials.jsonl"
     line = make_trial(trial_id="T-000001").to_json().replace("2025-04-30", "someday", 1)
@@ -116,11 +141,14 @@ def test_malformed_holdout_cutoff_is_a_ledger_error(tmp_path):
         pytest.param(_line(trial="T-000002", extra=1), id="unknown-key"),
         pytest.param(_line(trial="T-000002", strategy=7), id="strategy-not-an-id"),
         pytest.param(_line(trial="X-1"), id="bad-trial-id"),
+        pytest.param(_line(trial="T-1"), id="short-trial-id"),
         pytest.param(_line(trial="T-000002", run_id=3), id="run-id-not-text"),
         pytest.param(_line(trial="T-000002", kind="exotic"), id="unknown-kind"),
         pytest.param(_line(trial="T-000002", ts=5), id="ts-not-text"),
+        pytest.param(_line(trial="T-000002", ts=""), id="empty-ts"),
         pytest.param(_line(trial="T-000002", fingerprint="sha256:abc"), id="short-fingerprint"),
         pytest.param(_line(trial="T-000002", fingerprint_version="1"), id="version-as-text"),
+        pytest.param(_line(trial="T-000002", fingerprint_version=True), id="version-as-bool"),
         pytest.param(_line(trial="T-000002", holdout_cutoff=20250430), id="cutoff-not-text"),
         pytest.param(_line(trial="T-000002", code=[]), id="code-not-an-object"),
         pytest.param(_line(trial="T-000002", window="all"), id="window-not-an-object"),
@@ -129,6 +157,7 @@ def test_malformed_holdout_cutoff_is_a_ledger_error(tmp_path):
             id="window-extra-key",
         ),
         pytest.param(_line(trial="T-000002", metrics={"GOLD": "x"}), id="metrics-not-nested"),
+        pytest.param(_line(trial="T-000002", metrics={"GOLD": {"sharpe": True}}), id="bool-metric"),
         pytest.param(
             _line(trial="T-000002", metrics={"GOLD": {"sharpe": float("nan")}}), id="nan-metric"
         ),
