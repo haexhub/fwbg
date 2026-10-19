@@ -33,9 +33,10 @@ except ImportError:
 
 from fwbg.adapters.broker import (
     BrokerAdapter, OrderSide, OrderType, OrderStatus,
-    OrderResult, Position, AccountInfo, BarData,
+    OrderResult, Position, AccountInfo, BarData, BrokerUnavailableError,
     Symbol, Timeframe,
 )
+from fwbg.core.risk_state import ClosedTradeEvent
 from .mappings import (
     SYMBOL_TO_EPIC,
     SYMBOL_TO_YFINANCE,
@@ -551,61 +552,57 @@ class IGBrokerAdapter(BrokerAdapter):
                 f"Size={size} SL={sl_dist} TP={tp_dist}"
             )
 
+            # trading-ig 0.0.24 requires all of these fields, even when an
+            # order uses market execution and distance-based SL/TP levels.
             # Stop-Loss wird atomar im selben Request mit dem Entry gesendet.
             response = self._ig.create_open_position(
                 currency_code=self.currency,
                 direction=direction.value,
                 epic=epic,
                 expiry="DFB",
+                force_open=True,
+                level=None,
                 order_type=order_type.value,
                 size=size,
                 guaranteed_stop=False,
                 stop_distance=sl_dist,
                 limit_distance=tp_dist,
+                limit_level=None,
+                quote_id=None,
+                stop_level=None,
+                trailing_stop=False,
+                trailing_stop_increment=None,
             )
 
-            if response and "dealReference" in response:
+            if response and response.get("dealStatus") == "ACCEPTED":
+                return self._deal_result(response, size=size)
+
+            if response and response.get("dealStatus") is None and response.get("dealReference"):
+                # Older test doubles and older trading-ig releases return only
+                # a deal reference here. Resolve it before claiming success.
                 deal_ref = response["dealReference"]
                 time.sleep(0.5)
                 self._rate_limit()
                 confirmation = self._ig.fetch_deal_by_deal_reference(deal_ref)
 
                 if confirmation:
-                    deal_status = confirmation.get("dealStatus")
-                    if deal_status == "ACCEPTED":
-                        fill_price = confirmation.get("level") or confirmation.get("openLevel") or 0.0
-                        return OrderResult(
-                            success=True,
-                            order_id=deal_ref,
-                            status=OrderStatus.FILLED,
-                            fill_price=float(fill_price),
-                            filled_quantity=size,
-                            message="Order filled",
-                            raw_response=confirmation,
-                        )
-                    else:
-                        reason = confirmation.get("reason", "Unknown rejection")
-                        return OrderResult(
-                            success=False,
-                            order_id=deal_ref,
-                            status=OrderStatus.REJECTED,
-                            message=reason,
-                            raw_response=confirmation,
-                        )
-                else:
-                    return OrderResult(
-                        success=True,
-                        order_id=deal_ref,
-                        status=OrderStatus.PENDING,
-                        message="Order sent, awaiting confirmation",
-                        raw_response=response,
-                    )
-            else:
+                    return self._deal_result(confirmation, size=size, fallback_id=deal_ref)
+
+            if response:
+                reason = response.get("reason", "Order was not confirmed")
                 return OrderResult(
                     success=False,
+                    order_id=str(response.get("dealReference", "")),
                     status=OrderStatus.REJECTED,
-                    message=str(response),
+                    message=reason,
+                    raw_response=response,
                 )
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message="Order was not confirmed",
+                raw_response=response or {},
+            )
 
         except Exception as e:
             self.log_error(f"Order error: {e}")
@@ -615,6 +612,39 @@ class IGBrokerAdapter(BrokerAdapter):
                 message=str(e),
             )
 
+    @staticmethod
+    def _deal_result(
+        response: Dict[str, Any],
+        *,
+        size: float,
+        fallback_id: str = "",
+    ) -> OrderResult:
+        """Convert an explicit IG deal confirmation to an OrderResult."""
+        deal_id = str(
+            response.get("dealId")
+            or response.get("dealReference")
+            or fallback_id
+            or ""
+        )
+        if response.get("dealStatus") == "ACCEPTED":
+            fill_price = response.get("level") or response.get("openLevel") or 0.0
+            return OrderResult(
+                success=True,
+                order_id=deal_id,
+                status=OrderStatus.FILLED,
+                fill_price=float(fill_price),
+                filled_quantity=size,
+                message="Order filled",
+                raw_response=response,
+            )
+        return OrderResult(
+            success=False,
+            order_id=deal_id,
+            status=OrderStatus.REJECTED,
+            message=response.get("reason", "Order was not accepted"),
+            raw_response=response,
+        )
+
     # =========================================================================
     # Position Management
     # =========================================================================
@@ -622,7 +652,7 @@ class IGBrokerAdapter(BrokerAdapter):
     def get_positions(self) -> List[Position]:
         """Ruft offene Positionen ab."""
         if not self._ig:
-            return []
+            raise BrokerUnavailableError("IG service is not connected")
 
         self._rate_limit()
 
@@ -659,13 +689,78 @@ class IGBrokerAdapter(BrokerAdapter):
 
         except Exception as e:
             self.log_error(f"Failed to get positions: {e}")
-            return []
+            raise BrokerUnavailableError("IG positions query failed") from e
+
+    def close_position(self, position_id: str) -> OrderResult:
+        """Close one IG position by its deal ID using the IG close endpoint."""
+        try:
+            positions = self.get_positions()
+        except BrokerUnavailableError as exc:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"Unable to query positions: {exc}",
+            )
+
+        position = next((p for p in positions if p.position_id == position_id), None)
+        if position is None:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"Position {position_id} not found",
+            )
+        if not self._ig:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message="Not connected to IG",
+            )
+
+        epic = SYMBOL_TO_EPIC.get(position.symbol)
+        if not epic:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"No EPIC mapping for position {position_id}",
+            )
+        close_direction = OrderSide.SELL if position.direction == OrderSide.BUY else OrderSide.BUY
+        try:
+            self._rate_limit()
+            response = self._ig.close_open_position(
+                deal_id=position_id,
+                direction=close_direction.value,
+                epic=epic,
+                expiry="DFB",
+                level=None,
+                order_type=OrderType.MARKET.value,
+                quote_id=None,
+                size=position.size,
+            )
+            if not response or response.get("dealStatus") != "ACCEPTED":
+                return OrderResult(
+                    success=False,
+                    order_id=str(response.get("dealReference", "")) if response else "",
+                    status=OrderStatus.REJECTED,
+                    message=(response or {}).get("reason", "Close order was not confirmed"),
+                    raw_response=response or {},
+                )
+            result = self._deal_result(response, size=position.size, fallback_id=position_id)
+            result.message = "Position closed"
+            return result
+        except Exception as e:
+            self.log_error(f"Close order error: {e}")
+            return OrderResult(
+                success=False,
+                order_id=position_id,
+                status=OrderStatus.REJECTED,
+                message=str(e),
+            )
 
     def _epic_to_symbol(self, epic: str) -> str:
         """Konvertiert IG Epic zurück zu Symbol-String."""
         for sym, ep in SYMBOL_TO_EPIC.items():
             if ep == epic:
-                return str(sym)
+                return sym
         return epic
 
     # =========================================================================
@@ -693,6 +788,63 @@ class IGBrokerAdapter(BrokerAdapter):
             self.log_error(f"Failed to get account info: {e}")
 
         return AccountInfo(balance=0, equity=0, currency=self.currency)
+
+    def get_closed_trade_events(self, since=None, until=None):
+        """Return broker-confirmed closed deals from IG transaction history.
+
+        IG's ``profitAndLoss`` is the broker-reported net closed-trade result;
+        transaction fees are already reflected by that field. Cash transfers
+        and other non-deal transactions are deliberately ignored.
+        """
+        if not self._ig:
+            return None
+        try:
+            history = self._ig.fetch_transaction_history(
+                from_date=since,
+                to_date=until,
+                page_size=1000,
+            )
+            if history is None:
+                return None
+            if isinstance(history, pd.DataFrame):
+                rows = history.to_dict("records")
+            elif isinstance(history, dict):
+                rows = history.get("transactions", [])
+            else:
+                rows = history
+            events = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    return None
+                pnl_raw = row.get("profitAndLoss")
+                close_raw = row.get("dateUtc") or row.get("date")
+                transaction_type = str(row.get("transactionType", "")).upper()
+                # Deposits, withdrawals, and fees have no closed trade level.
+                if pnl_raw is None or close_raw is None:
+                    continue
+                if transaction_type and transaction_type not in {
+                    "DEAL", "TRADE", "POSITION"
+                } and row.get("closeLevel") is None:
+                    continue
+                event_id = row.get("reference") or row.get("dealId") or row.get("transactionId")
+                if not event_id:
+                    return None
+                try:
+                    closed_at = pd.Timestamp(close_raw).to_pydatetime()
+                    net_pnl = float(str(pnl_raw).replace(",", ""))
+                except (TypeError, ValueError):
+                    return None
+                events.append(
+                    ClosedTradeEvent(
+                        event_id=str(event_id),
+                        closed_at=closed_at,
+                        net_pnl=net_pnl,
+                    )
+                )
+            return events
+        except Exception as exc:  # noqa: BLE001
+            self.log_error(f"Failed to get closed trade history: {exc}")
+            return None
 
     # =========================================================================
     # Streaming

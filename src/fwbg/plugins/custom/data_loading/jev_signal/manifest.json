@@ -1,0 +1,6 @@
+{
+  "name": "jev_signal",
+  "version": "1.0.0",
+  "description": "Maps cached Jev provider probabilities to composed signal columns",
+  "phase": "data_loading"
+}

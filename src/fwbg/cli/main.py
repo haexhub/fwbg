@@ -832,6 +832,12 @@ def main():
     import faulthandler
     faulthandler.enable()  # Dump Python traceback on SIGSEGV/SIGABRT (C-level crashes)
 
+    if len(sys.argv) > 1 and sys.argv[1] == "portfolio":
+        from fwbg.portfolio.cli import main as portfolio_main
+
+        portfolio_main(sys.argv[2:])
+        return
+
     # Handle 'data' subcommand (ETL: raw → datasource)
     if len(sys.argv) > 1 and sys.argv[1] == "data":
         _run_data_command(sys.argv[2:])
@@ -858,6 +864,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Beispiele:
+  python -m fwbg.cli portfolio --help                  # Monthly portfolio research
   python -m fwbg.cli                                    # Standard-Run
   python -m fwbg.cli -d "Test mit neuen Makros"        # Mit Beschreibung
   python -m fwbg.cli --strategy                        # Interaktive Strategie-Eingabe

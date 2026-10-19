@@ -47,6 +47,30 @@ fwbg --strategy-file strategies/exploration.json --asset-classes FOREX
 OPTIMIZER_LOG=2 fwbg --assets EURUSD
 ```
 
+### Monthly portfolio research
+
+Test a ten-month trend filter against static allocation, equity buy-and-hold and
+cash with daily portfolio valuation, next-session execution, EUR total-return
+data and explicit transaction costs. Uninvested cash earns 0%. Each run also
+uses FWBG's Monte Carlo/Sharpe routines and chronological robustness checks:
+
+```bash
+fwbg portfolio download-example --output data/portfolio_example --end 2026-01-01
+fwbg portfolio run --config examples/portfolio/trend_10m.json
+fwbg portfolio search --protocol examples/portfolio/search_v1.json --output test_results/portfolio/search_v1
+```
+
+The optional downloader uses `yfinance` (included in `fwbg[ig]`) and ECB data.
+See [portfolio research documentation](docs/portfolio-backtest.md) for the frozen
+experiment, input format, cost stress test and data/model limitations.
+The predeclared search compares seven fixed rules at three cost levels, with
+native PBO and a Holm correction across all candidates. Cash earns zero in every run.
+
+For daily RSI pullbacks, breakouts and EMA pullbacks, see the
+[entry/exit study](docs/swing-study.md). It compares 1x/1.5x exposure on eight
+Dukascopy markets, including transaction costs, borrowing costs and all failed
+trials. The report distinguishes numerical return targets from statistical validation.
+
 ### API Server
 
 ```bash

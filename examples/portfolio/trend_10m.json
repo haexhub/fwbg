@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "name": "Five-asset monthly 10-month trend filter",
+  "base_currency": "EUR",
+  "price_basis": "total_return",
+  "prices": "../../data/portfolio_example/prices_eur.csv",
+  "metadata": "../../data/portfolio_example/metadata.json",
+  "weights": {
+    "SPY": 0.2,
+    "EFA": 0.2,
+    "EEM": 0.2,
+    "IEF": 0.2,
+    "GLD": 0.2
+  },
+  "equity_benchmark": "SPY",
+  "lookback_months": 10,
+  "initial_capital": 10000,
+  "one_way_cost_bps": 5,
+  "start": "2006-01-01",
+  "end": "2025-12-31",
+  "split_date": "2016-01-01"
+}

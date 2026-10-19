@@ -4,7 +4,7 @@
 
 ## Capability
 
-Extracts low-dimensional PCA latent features, per-row reconstruction error, and cumulative explained variance from all numeric non-OHLCV indicator columns.
+Extracts low-dimensional PCA latent features, per-row reconstruction error, and cumulative explained variance from all numeric non-OHLCV indicator columns. PCA state is fitted on training data and reused for later transforms.
 
 ## Summary
 
@@ -38,6 +38,8 @@ A PCA-based indicator that compresses all numeric feature columns (excluding OHL
 - AC-009: Only columns with dtype float64, float32, int64, or int32 are eligible as PCA inputs.
 - AC-010: get_default_params returns {'n_components': 8, 'exclude_prefixes': ['ae_']}.
 - AC-011: get_feature_columns returns the 8 ae_latent_i names plus ae_reconstruction_error and ae_explained_variance, matching the default n_components=8 configuration.
+- AC-012: Imputation medians, StandardScaler, and PCA are fitted only by `fit()` on a training frame; `compute()` transforms with that state and never refits on evaluation rows.
+- AC-013: The plugin is stateful and non-cacheable; fold orchestration fits it independently for outer and inner training folds.
 
 ## Edge Cases
 
@@ -52,7 +54,8 @@ A PCA-based indicator that compresses all numeric feature columns (excluding OHL
 
 - The fwbg pipeline invokes shift_features correctly so that returned ae_* columns represent information available strictly before the current bar.
 - sklearn's PCA and StandardScaler are deterministic for a given standardized input matrix (no external random_state is set here).
+- Direct `compute()` callers retain backwards compatibility through a lazy fit on the supplied frame; CV callers must use `PipelineRunner.fit()` or `compute_indicator_pool(..., fit_df=training_frame)`.
 
-## Needs Clarification
+## Training boundary
 
-- [NEEDS CLARIFICATION: PCA is fit on the entire provided DataFrame in a single call (no rolling/expanding window). Whether callers are expected to pass only historical/training data or the full series is not enforced by this plugin; downstream lookahead safety relies on shift_features.]
+PCA is fit once per training fold (no rolling/expanding window). Stateful indicators are excluded from globally precomputed raw feature pools and are refit for each inner and outer fold.
