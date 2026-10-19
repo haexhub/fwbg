@@ -6,7 +6,9 @@ Verifies:
 2. StrategyConfig.from_dict resolves all section presets
 3. Backward compatibility with all-inline format
 4. from_json_file resolves presets relative to strategy file directory
+5. resolve_presets replaces preset references without mutating its input
 """
+import copy
 import json
 import os
 import pytest
@@ -18,7 +20,7 @@ from fwbg.core.config import (
     StrategyConfig,
     ValidationConfig,
 )
-from fwbg.core.presets import _resolve_section
+from fwbg.core.presets import _resolve_section, resolve_presets
 
 
 def _write_json(path, data):
@@ -316,3 +318,76 @@ class TestBackwardCompatibility:
         assert config.name == "FilePresetTest"
         assert config.pipeline == pipeline_data
         assert config.model.hyperparameters["max_depth"] == 7
+
+
+# ============================================================
+# TestResolvePresets
+# ============================================================
+
+
+class TestResolvePresets:
+    """Tests for resolve_presets, the single place preset references are resolved."""
+
+    def test_string_references_are_replaced_by_file_content(self, tmp_path):
+        """pipeline and regime_filter names load <base>/strategies/<section_dir>/<name>.json."""
+        pipeline_data = {"indicators": [{"name": "trend", "params": {"period": 14}}]}
+        regime_data = {"conditions": [{"column": "adx_14", "operator": ">=", "value": 25}]}
+        _write_json(str(tmp_path / "strategies" / "pipelines" / "exploration.json"), pipeline_data)
+        _write_json(str(tmp_path / "strategies" / "regime_filters" / "trending.json"), regime_data)
+
+        resolved = resolve_presets({
+            "pipeline": "exploration",
+            "regime_filter": "trending",
+            "_strategy_dir": str(tmp_path / "strategies" / "configs"),
+        })
+
+        assert resolved["pipeline"] == pipeline_data
+        assert resolved["regime_filter"] == regime_data
+
+    def test_inline_dicts_pass_through_as_deep_copies(self):
+        """Inline sections keep their contents but share no objects with the input."""
+        data = {
+            "pipeline": {"indicators": [{"name": "ema", "params": {}}]},
+            "model": {"type": "xgboost", "hyperparameters": {"max_depth": 5}},
+        }
+
+        resolved = resolve_presets(data)
+
+        assert resolved == data
+        assert resolved["pipeline"] is not data["pipeline"]
+        assert resolved["pipeline"]["indicators"] is not data["pipeline"]["indicators"]
+        assert resolved["model"]["hyperparameters"] is not data["model"]["hyperparameters"]
+
+    def test_keys_outside_preset_sections_are_untouched(self):
+        """Non-preset keys, string-valued or not, are passed on as they are."""
+        exit_strategies = [{"name": "atr_based", "params": {"atr_period": 14}}]
+        data = {
+            "name": "exploration",
+            "timeframe": "DAY_1",
+            "exit_params": "atr_default",
+            "exit_strategies": exit_strategies,
+            "_cli_data_path": "/data/other",
+        }
+
+        resolved = resolve_presets(data)
+
+        assert resolved == data
+        assert resolved["exit_strategies"] is exit_strategies
+
+    def test_input_is_not_mutated(self, tmp_path):
+        """Neither resolving nor mutating the result changes the caller's mapping."""
+        _write_json(
+            str(tmp_path / "strategies" / "pipelines" / "exploration.json"),
+            {"indicators": [{"name": "trend", "params": {}}]},
+        )
+        data = {
+            "pipeline": "exploration",
+            "model": {"type": "xgboost", "hyperparameters": {"max_depth": 5}},
+            "_strategy_dir": str(tmp_path / "strategies" / "configs"),
+        }
+        snapshot = copy.deepcopy(data)
+
+        resolved = resolve_presets(data)
+        resolved["model"]["hyperparameters"]["max_depth"] = 9
+
+        assert data == snapshot

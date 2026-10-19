@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional
 import json
 import os
 
-from fwbg.core.presets import _resolve_section
+from fwbg.core.presets import resolve_presets
 
 
 @dataclass
@@ -389,19 +389,18 @@ class StrategyConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StrategyConfig":
         """Erstellt StrategyConfig aus Dictionary (z.B. aus JSON-Datei)."""
-        strategy_dir = data.get("_strategy_dir")
-
         # Resolve sections: string loads preset file, dict/None passes through
-        pipeline = _resolve_section(data.get("pipeline", {}), "pipelines", strategy_dir)
-        model_data = _resolve_section(data.get("model", {}), "models", strategy_dir)
-        validation_data = _resolve_section(data.get("validation", {}), "validations", strategy_dir)
-        filters_data = _resolve_section(data.get("filters", {}), "filters", strategy_dir)
-        resources_data = _resolve_section(data.get("resources"), "resources", strategy_dir)
-        risk_params = _resolve_section(data.get("risk_params", {}), "risk_params", strategy_dir)
+        resolved = resolve_presets(data)
+        pipeline = resolved.get("pipeline", {})
+        model_data = resolved.get("model", {})
+        validation_data = resolved.get("validation", {})
+        filters_data = resolved.get("filters", {})
+        resources_data = resolved.get("resources")
+        risk_params = resolved.get("risk_params", {})
         optimization = OptimizationConfig.from_dict(data.get("optimization"))
 
         # Resolve regime_filter: string → preset, dict → inline, None → empty
-        regime_data = _resolve_section(data.get("regime_filter"), "regime_filters", strategy_dir)
+        regime_data = resolved.get("regime_filter")
         regime_filter = RegimeFilterConfig()
         if isinstance(regime_data, dict):
             if "condition_grids" in regime_data:
