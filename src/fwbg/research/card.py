@@ -33,6 +33,7 @@ _FIELDS = frozenset(
         "criteria_amendments",
     }
 )
+_AMENDMENT_FIELDS = frozenset({"date", "reason", "criteria_hash"})
 
 
 class CardError(Exception):
@@ -233,6 +234,9 @@ def _amendments(value: object) -> tuple[CriteriaAmendment, ...]:
 def _amendment(value: object) -> CriteriaAmendment:
     if not isinstance(value, Mapping):
         raise CardError(f"criteria_amendments: expected a mapping, got {value!r}")
+    unknown = sorted(str(key) for key in value.keys() - _AMENDMENT_FIELDS)
+    if unknown:
+        raise CardError(f"criteria_amendments: unknown keys: {', '.join(unknown)}")
     try:
         return CriteriaAmendment(
             date=_as_date(value["date"], "criteria_amendments.date"),
