@@ -838,6 +838,11 @@ def main():
         portfolio_main(sys.argv[2:])
         return
 
+    if len(sys.argv) > 1 and sys.argv[1] == "research":
+        from fwbg.research.cli import main as research_main
+
+        raise SystemExit(research_main(sys.argv[2:]))
+
     # Handle 'data' subcommand (ETL: raw → datasource)
     if len(sys.argv) > 1 and sys.argv[1] == "data":
         _run_data_command(sys.argv[2:])
