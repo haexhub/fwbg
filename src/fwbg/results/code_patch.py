@@ -60,7 +60,8 @@ def write_code_patch(run_dir: str | os.PathLike[str]) -> str | None:
     """Write ``code.patch`` for the repository in the current directory into *run_dir*.
 
     Returns the file name, or ``None`` when the tree is clean or no patch could
-    be captured (no git, not a repository) — a missing patch must never fail a run.
+    be captured or written (no git, not a repository, a full disk) — a missing patch
+    must never fail a run.
     """
     try:
         patch = capture_code_patch(Path.cwd())
@@ -69,7 +70,11 @@ def write_code_patch(run_dir: str | os.PathLike[str]) -> str | None:
         return None
     if not patch:
         return None
-    (Path(run_dir) / PATCH_FILENAME).write_bytes(patch)
+    try:
+        (Path(run_dir) / PATCH_FILENAME).write_bytes(patch)
+    except OSError as exc:
+        log.warning("could not write %s: %s", PATCH_FILENAME, exc)
+        return None
     return PATCH_FILENAME
 
 
