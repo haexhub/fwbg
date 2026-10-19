@@ -10,10 +10,11 @@ from pathlib import Path
 import yaml
 
 from fwbg.api.workspace import get_research_dir, get_strategies_dir, get_test_results_dir
-from fwbg.research.backfill import BackfillError, apply_mapping, draft_mapping, parse_mapping
+from fwbg.research.backfill import apply_mapping
 from fwbg.research.card import CardError
 from fwbg.research.ledger import LedgerError
 from fwbg.research.legacy import LegacyRun, LegacyRunError, scan_runs
+from fwbg.research.mapping import BackfillError, draft_mapping, parse_mapping
 from fwbg.research.repo import CRITERIA_TEMPLATE, ResearchRepoError, init_research_repo
 
 

@@ -11,6 +11,14 @@ from typing import Any
 from fwbg.research.card import ResearchCard, Status, criteria_hash
 from fwbg.research.ledger import Trial, TrialKind, TrialStatus, append_trial
 
+# A documented study trial as a backfill mapping states it.
+STUDY = {
+    "variant": "config-4",
+    "symbols": ["eurusd"],
+    "date": date(2026, 2, 1),
+    "note": "narrative state",
+}
+
 
 def make_card(**overrides: Any) -> ResearchCard:
     values: dict[str, Any] = {
