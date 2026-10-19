@@ -44,16 +44,26 @@ def make_dirty(root: Path) -> None:
     (root / "notes.txt").write_text("scratch\n", encoding="utf-8")
 
 
+def apply_to_clone(repo: Path, patch: bytes, workdir: Path) -> Path:
+    """Apply *patch* with ``git apply`` to a fresh clone of *repo* and return the clone."""
+    patch_file = workdir / PATCH_FILENAME
+    patch_file.write_bytes(patch)
+    clone = workdir / "clone"
+    git(workdir, "clone", "--quiet", str(repo), str(clone))
+    git(clone, "apply", str(patch_file))
+    return clone
+
+
 def test_clean_repo_has_empty_patch(repo):
-    assert capture_code_patch(repo) == ""
+    assert capture_code_patch(repo) == b""
 
 
 def test_patch_covers_tracked_changes_and_untracked_sources_only(repo):
     make_dirty(repo)
     patch = capture_code_patch(repo)
-    assert "src/tracked.py" in patch
-    assert "src/new_module.py" in patch
-    assert "notes.txt" not in patch
+    assert b"src/tracked.py" in patch
+    assert b"src/new_module.py" in patch
+    assert b"notes.txt" not in patch
 
 
 def test_git_local_env_vars_do_not_distort_the_capture(repo, tmp_path, monkeypatch):
@@ -61,22 +71,16 @@ def test_git_local_env_vars_do_not_distort_the_capture(repo, tmp_path, monkeypat
     expected = capture_code_patch(repo)
     monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "bogus" / "index"))
     patch = capture_code_patch(repo)
-    assert "src/new_module.py" in patch
-    assert "-VALUE = 1\n+VALUE = 2\n" in patch
+    assert b"src/new_module.py" in patch
+    assert b"-VALUE = 1\n+VALUE = 2\n" in patch
     assert patch == expected
 
 
 def test_patch_reproduces_the_working_tree(repo, tmp_path):
     make_dirty(repo)
-    patch_file = tmp_path / PATCH_FILENAME
-    patch_file.write_text(capture_code_patch(repo / "src"), encoding="utf-8")
-    clone = tmp_path / "clone"
-    git(tmp_path, "clone", "--quiet", str(repo), str(clone))
-    git(clone, "apply", str(patch_file))
+    clone = apply_to_clone(repo, capture_code_patch(repo / "src"), tmp_path)
     for name in ("src/tracked.py", "src/new_module.py"):
-        assert (clone / name).read_text(encoding="utf-8") == (repo / name).read_text(
-            encoding="utf-8"
-        )
+        assert (clone / name).read_bytes() == (repo / name).read_bytes()
 
 
 def test_non_utf8_changes_are_kept_byte_for_byte(repo, tmp_path, monkeypatch):
@@ -86,10 +90,51 @@ def test_non_utf8_changes_are_kept_byte_for_byte(repo, tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     assert write_code_patch(run_dir) == PATCH_FILENAME
-    clone = tmp_path / "clone"
-    git(tmp_path, "clone", "--quiet", str(repo), str(clone))
-    git(clone, "apply", str(run_dir / PATCH_FILENAME))
+    clone = apply_to_clone(repo, (run_dir / PATCH_FILENAME).read_bytes(), tmp_path)
     assert (clone / "src" / "legacy.py").read_bytes() == legacy
+
+
+def test_non_ascii_untracked_name_round_trips(repo, tmp_path):
+    name = "src/ä_modul.py"
+    (repo / name).write_text("UMLAUT = 1\n", encoding="utf-8")
+    clone = apply_to_clone(repo, capture_code_patch(repo), tmp_path)
+    assert (clone / name).read_bytes() == (repo / name).read_bytes()
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("diff.noprefix", "true"),
+        ("diff.external", "echo junk"),
+        ("color.diff", "always"),
+        ("diff.upper.textconv", "tr a-z A-Z <"),
+    ],
+)
+def test_user_git_config_cannot_break_the_patch(repo, tmp_path, key, value):
+    git(repo, "config", "--global", key, value)
+    # Routes .py diffs through the "upper" driver; only the textconv case defines it.
+    (repo / ".gitattributes").write_text("*.py diff=upper\n", encoding="utf-8")
+    # Lowercase content, so an uppercasing textconv would change what the patch says.
+    (repo / "src" / "tracked.py").write_text("value = 2\n", encoding="utf-8")
+    (repo / "src" / "new_module.py").write_text("name = 'new'\n", encoding="utf-8")
+    clone = apply_to_clone(repo, capture_code_patch(repo), tmp_path)
+    for name in ("src/tracked.py", "src/new_module.py"):
+        assert (clone / name).read_bytes() == (repo / name).read_bytes()
+
+
+def test_nested_repository_fails_loudly(repo, tmp_path, monkeypatch, caplog):
+    nested = repo / "src" / "vendored"
+    nested.mkdir()
+    (nested / "lib.py").write_text("LIB = 1\n", encoding="utf-8")
+    git(nested, "init", "--quiet")
+    with pytest.raises(CodePatchError):
+        capture_code_patch(repo)
+    monkeypatch.chdir(repo)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    assert write_code_patch(run_dir) is None
+    assert not (run_dir / PATCH_FILENAME).exists()
+    assert f"could not capture {PATCH_FILENAME}" in caplog.text
 
 
 def test_outside_a_repository_raises(no_repo):
@@ -105,9 +150,10 @@ def test_write_code_patch_skips_clean_trees(repo, tmp_path, monkeypatch):
     assert not (run_dir / PATCH_FILENAME).exists()
 
 
-def test_write_code_patch_outside_a_repository_returns_none(no_repo, monkeypatch):
+def test_write_code_patch_outside_a_repository_returns_none(no_repo, monkeypatch, caplog):
     monkeypatch.chdir(no_repo)
     assert write_code_patch(no_repo) is None
+    assert f"could not capture {PATCH_FILENAME}" in caplog.text
 
 
 def test_dirty_run_directory_records_the_patch(repo, tmp_path, monkeypatch):
