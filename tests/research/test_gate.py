@@ -197,6 +197,20 @@ def test_every_own_trial_pins_the_cutoff():
     assert codes(check(make_card(), request(), trials)) == {DenialCode.CUTOFF_MOVED}
 
 
+def test_a_later_own_trial_also_pins_the_cutoff():
+    trials = [
+        make_trial(trial_id="T-000001"),
+        make_trial(
+            trial_id="T-000002",
+            holdout_cutoff=date(2025, 1, 31),
+            kind=TrialKind.HOLDOUT,
+            status=TrialStatus.FAILED,
+            fingerprint=OTHER_FINGERPRINT,
+        ),
+    ]
+    assert codes(check(make_card(), request(), trials)) == {DenialCode.CUTOFF_MOVED}
+
+
 def test_another_cards_cutoff_does_not_affect_this_card():
     trials = [
         make_trial(trial_id="T-000001"),
@@ -345,6 +359,13 @@ def test_holdout_must_end_after_the_cutoff(end):
 def test_contaminated_holdout_is_refused_even_with_a_reason(reason):
     card = make_card(holdout_contaminated=True)
     decision = check(card, request(holdout=True, reason=reason), [])
+    assert codes(decision) == {DenialCode.HOLDOUT_CONTAMINATED}
+
+
+def test_contaminated_holdout_is_reported_once_after_an_earlier_look():
+    card = make_card(holdout_contaminated=True)
+    used = [make_trial(trial_id="T-000001", kind=TrialKind.HOLDOUT, fingerprint=OTHER_FINGERPRINT)]
+    decision = check(card, request(holdout=True), used)
     assert codes(decision) == {DenialCode.HOLDOUT_CONTAMINATED}
 
 
