@@ -3,6 +3,7 @@ import copy
 import glob
 import json
 import os
+from collections.abc import Mapping
 from typing import Any, Dict, Optional, Union
 
 
@@ -73,3 +74,28 @@ def _resolve_section(
         base = os.path.dirname(strategy_dir) if strategy_dir else os.getcwd()
         return _load_json_preset(value, os.path.join(base, section_dir))
     return value
+
+
+PRESET_SECTIONS: dict[str, str] = {
+    "pipeline": "pipelines",
+    "model": "models",
+    "validation": "validations",
+    "filters": "filters",
+    "resources": "resources",
+    "risk_params": "risk_params",
+    "regime_filter": "regime_filters",
+}
+
+
+def resolve_presets(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a copy of strategy *data* with every preset reference replaced by its content.
+
+    This is the resolution ``StrategyConfig.from_dict`` applies, so a run's
+    result depends on preset content, never on a preset's name.
+    """
+    strategy_dir = data.get("_strategy_dir")
+    resolved = dict(data)
+    for key, section_dir in PRESET_SECTIONS.items():
+        if key in resolved:
+            resolved[key] = _resolve_section(resolved[key], section_dir, strategy_dir)
+    return resolved
