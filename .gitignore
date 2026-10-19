@@ -59,6 +59,10 @@ graphify-out/
 # local-only compose override (API server workaround)
 docker-compose.override.yml
 
+# local API keys/secrets (never commit)
+/env
+/keys.json
+
 # spaex
 .spaex/manifest.json.lock
 .spaex/composer.log
