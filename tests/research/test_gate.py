@@ -426,6 +426,14 @@ def test_unhashable_config_is_a_request_error(metadata):
     assert decision.fingerprint is None
 
 
+def test_run_without_symbols_is_a_request_error():
+    decision = check(make_card(), request(symbols=()), [])
+    assert codes(decision) == {DenialCode.INVALID_CONFIG}
+    assert decision.denials[0].code.http_status == 422
+    assert "at least one symbol" in decision.denials[0].message
+    assert decision.fingerprint is None
+
+
 def test_card_must_match_the_requested_research_id():
     decision = check(make_card(id="S-0008"), request(), [])
     assert codes(decision) == {DenialCode.CARD_NOT_FOUND}
