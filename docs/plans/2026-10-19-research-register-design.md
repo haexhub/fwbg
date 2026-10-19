@@ -213,13 +213,16 @@ Checks, in order:
    equal the one recorded by the last trial or to be carried by a
    `criteria_amendments` entry → else deny (409). Criteria edits go through
    `fwbg research amend --reason`.
-4. Effective `end_date`: missing → set to `holdout_cutoff`; later than the
+4. The card's `holdout_cutoff` is not later than the earliest cutoff
+   recorded by its trials (each trial records the cutoff it ran under)
+   → else deny (409). Moving the cutoff earlier stays allowed.
+5. Effective `end_date`: missing → set to `holdout_cutoff`; later than the
    cutoff → deny unless `--holdout`.
-5. `--holdout`: the first holdout trial per strategy is free; every further
+6. `--holdout`: the first holdout trial per strategy is free; every further
    one requires `--reason` and is counted.
-6. Fingerprint already in the ledger → deny (409), listing the earlier
+7. Fingerprint already in the ledger → deny (409), listing the earlier
    trials (run id, date, key metrics), unless `--reason` is given.
-7. `--note` (one line: what changed, why) is required (422). The diff to
+8. `--note` (one line: what changed, why) is required (422). The diff to
    the previous iteration is computed automatically.
 
 `--no-save` runs are gated and recorded like any other run: the operator

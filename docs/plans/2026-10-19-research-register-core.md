@@ -47,10 +47,14 @@ and the design doc has been updated to match.
    gate can read them without parsing prose. Before the first trial, the
    current hash must match the registration hash or an amendment; later it
    must match the last trial or an amendment.
-3. **Ledger locking.** `append_trial` takes an exclusive `flock` on the
+3. **Holdout cutoff anchor.** Every trial records the `holdout_cutoff` it
+   ran under. The gate refuses a card whose cutoff is later than the
+   earliest cutoff recorded by its trials (`CUTOFF_MOVED`); moving it
+   earlier only shrinks what iterations may see and stays allowed.
+4. **Ledger locking.** `append_trial` takes an exclusive `flock` on the
    ledger file itself and assigns the trial id under that lock. Serialising
    the research-repo commit is step 3's concern.
-4. **`code.patch` module.** `src/fwbg/results/storage.py` is already over
+5. **`code.patch` module.** `src/fwbg/results/storage.py` is already over
    the 500-line limit, so the capture logic goes into its own module and
    `storage.py` gains only a two-line hook. Splitting `storage.py` is a
    separate change.
@@ -631,6 +635,7 @@ def make_trial(**overrides: Any) -> Trial:
         "fingerprint": "sha256:" + "0" * 64,
         "fingerprint_version": 1,
         "criteria_hash": make_card().criteria_hash,
+        "holdout_cutoff": date(2025, 4, 30),
         "code": {"commit": "abc123", "dirty": False, "patch": None},
         "window": {"start": None, "end": "2025-04-30"},
         "note": "baseline",
@@ -683,6 +688,14 @@ def test_malformed_line_is_reported_with_its_number(tmp_path):
     with ledger.open("a", encoding="utf-8") as handle:
         handle.write("{not json\n")
     with pytest.raises(LedgerError, match="line 2"):
+        read_trials(ledger)
+
+
+def test_malformed_holdout_cutoff_is_a_ledger_error(tmp_path):
+    ledger = tmp_path / "trials.jsonl"
+    line = make_trial(trial_id="T-000001").to_json().replace("2025-04-30", "someday", 1)
+    ledger.write_text(line + "\n", encoding="utf-8")
+    with pytest.raises(LedgerError, match="line 1"):
         read_trials(ledger)
 
 
@@ -743,6 +756,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from datetime import date
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -781,6 +795,7 @@ class Trial:
     fingerprint: str
     fingerprint_version: int
     criteria_hash: str
+    holdout_cutoff: date
     code: Mapping[str, Any]
     window: Mapping[str, str | None]
     note: str | None
@@ -804,6 +819,7 @@ class Trial:
             "fingerprint": self.fingerprint,
             "fingerprint_version": self.fingerprint_version,
             "criteria_hash": self.criteria_hash,
+            "holdout_cutoff": self.holdout_cutoff.isoformat(),
             "code": dict(self.code),
             "window": dict(self.window),
             "note": self.note,
@@ -825,6 +841,7 @@ class Trial:
             fingerprint=record["fingerprint"],
             fingerprint_version=record["fingerprint_version"],
             criteria_hash=record["criteria_hash"],
+            holdout_cutoff=date.fromisoformat(record["holdout_cutoff"]),
             code=record["code"],
             window=record["window"],
             note=record["note"],
@@ -886,7 +903,7 @@ Metrics must not contain NaN (`allow_nan=False`); step 3 converts NaN to
 **Step 4: Run to verify pass**
 
 Run: `PYTHONPATH=src $PY -m pytest tests/research/test_ledger.py -q`
-Expected: 11 passed.
+Expected: 12 passed.
 
 **Step 5: Commit**
 
@@ -1065,6 +1082,18 @@ def test_amended_criteria_are_accepted_before_the_first_trial():
     assert check(amended, request(), []).allowed
 
 
+def test_moving_the_cutoff_later_after_trials_is_refused():
+    moved = make_card(holdout_cutoff=date(2025, 6, 30))
+    assert codes(check(moved, request(), [make_trial(trial_id="T-000001")])) == {
+        DenialCode.CUTOFF_MOVED
+    }
+
+
+def test_moving_the_cutoff_earlier_is_allowed():
+    moved = make_card(holdout_cutoff=date(2025, 1, 31))
+    assert check(moved, request(), [make_trial(trial_id="T-000001")]).allowed
+
+
 def test_note_must_be_one_line():
     assert codes(check(make_card(), request(note="baseline\nextra"), [])) == {
         DenialCode.MISSING_NOTE
@@ -1115,6 +1144,7 @@ class DenialCode(str, Enum):
     INVALID_WINDOW = "invalid_window"
     NOT_ACTIVE = "not_active"
     CRITERIA_CHANGED = "criteria_changed"
+    CUTOFF_MOVED = "cutoff_moved"
     AFTER_CUTOFF = "after_cutoff"
     HOLDOUT_REPEAT = "holdout_repeat"
     DUPLICATE_FINGERPRINT = "duplicate_fingerprint"
@@ -1202,6 +1232,7 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
             )
         )
     denials.extend(_criteria_denials(card, own_trials))
+    denials.extend(_cutoff_denials(card, own_trials))
     window_denial = _apply_window(card, metadata, request.holdout)
     if window_denial is not None:
         denials.append(window_denial)
@@ -1250,6 +1281,22 @@ def _criteria_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[D
             DenialCode.CRITERIA_CHANGED,
             f"success criteria of {card.id} differ from those of {last.trial_id} "
             "and no amendment records the change",
+        )
+    ]
+
+
+def _cutoff_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[Denial]:
+    """The holdout may shrink after trials ran, never grow into data they could not see."""
+    if not own_trials:
+        return []
+    earliest = min(trial.holdout_cutoff for trial in own_trials)
+    if card.holdout_cutoff <= earliest:
+        return []
+    return [
+        Denial(
+            DenialCode.CUTOFF_MOVED,
+            f"holdout cutoff of {card.id} moved to {card.holdout_cutoff} after trials ran "
+            f"with {earliest}; it may only move earlier",
         )
     ]
 
@@ -1314,7 +1361,7 @@ def _duplicate_denials(run_fingerprint: str, trials: Sequence[Trial]) -> list[De
 **Step 4: Run to verify pass**
 
 Run: `PYTHONPATH=src $PY -m pytest tests/research/test_gate.py -q`
-Expected: 25 passed.
+Expected: 27 passed.
 
 **Step 5: Commit**
 
@@ -1756,7 +1803,7 @@ PYTHONPATH=src ../../.venv/bin/mypy src/fwbg/research src/fwbg/results/code_patc
 PYTHONPATH=src $PY -m pytest tests/research tests/test_code_patch.py -q
 PYTHONPATH=src $PY -m pytest tests/test_preview_run.py tests/test_cli.py tests/test_api_result_paths.py tests/test_api_run_spawn.py -q
 ```
-Expected: ruff clean, mypy clean for the new modules, 78 research/patch tests
+Expected: ruff clean, mypy clean for the new modules, research/patch tests (count as reported by the run)
 passed, the regression subset (50 tests) unchanged. Then run the full suite once
 (`PYTHONPATH=src $PY -m pytest -q`) and compare against `origin/develop` if
 anything fails, to tell new failures from pre-existing ones.
@@ -1784,6 +1831,10 @@ git commit -m "docs: mark research register core as implemented"
 ---
 
 ## Notes for later steps
+
+- Step 3 records the card's `holdout_cutoff` in every trial it appends.
+- The verdict step must reject unknown success-criteria names (a typo such
+  as `min_sharp` would otherwise be ignored silently).
 
 - Step 3 must pass the **same** preset-resolved dict to `fingerprint` and to
   `run_optimizer`, so a preset edited between gate and run cannot diverge,
