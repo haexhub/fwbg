@@ -1,3 +1,4 @@
+import errno
 from datetime import date, datetime
 from pathlib import Path
 
@@ -343,6 +344,37 @@ def test_write_card_never_overwrites_an_existing_file(tmp_path, monkeypatch):
     with pytest.raises(CardError, match="never overwritten"):
         write_card(tmp_path, make_card(), "cusum-continuation")
     assert target.read_text(encoding="utf-8") == "x"
+
+
+def test_write_card_removes_a_partial_file_after_a_failed_write(tmp_path, monkeypatch):
+    real_open = Path.open
+
+    class DiskFull:
+        """Writes a few bytes, then fails like a full disk."""
+
+        def __init__(self, handle):
+            self.handle = handle
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            self.handle.close()
+
+        def write(self, text):
+            self.handle.write(text[:4])
+            self.handle.flush()
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+    def open_disk_full(path, mode="r", *args, **kwargs):
+        handle = real_open(path, mode, *args, **kwargs)
+        return DiskFull(handle) if mode == "x" else handle
+
+    monkeypatch.setattr(Path, "open", open_disk_full)
+    (tmp_path / "strategies").mkdir()
+    with pytest.raises(OSError, match="No space left"):
+        write_card(tmp_path, make_card(), "cusum-continuation")
+    assert list((tmp_path / "strategies").iterdir()) == []
 
 
 @pytest.mark.parametrize(

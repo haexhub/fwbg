@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
 import re
 from collections.abc import Mapping
@@ -306,8 +307,15 @@ def write_card(research_dir: Path, card: ResearchCard, slug: str) -> Path:
     text = render_card(card)
     path = research_dir / "strategies" / f"{card.id}-{slug}.md"
     try:
-        with path.open("x", encoding="utf-8") as handle:
-            handle.write(text)
+        handle = path.open("x", encoding="utf-8")
     except FileExistsError as exc:
         raise CardError(f"{card.id} already exists; cards are never overwritten") from exc
+    try:
+        with handle:
+            handle.write(text)
+    except OSError:
+        # A truncated card would make every later load of this id fail.
+        with contextlib.suppress(OSError):
+            path.unlink(missing_ok=True)
+        raise
     return path
