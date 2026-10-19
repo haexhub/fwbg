@@ -225,6 +225,14 @@ def test_load_card_names_file_of_malformed_card(tmp_path):
         load_card(tmp_path, "S-0007")
 
 
+def test_load_card_refuses_non_utf8_file(tmp_path):
+    folder = tmp_path / "strategies"
+    folder.mkdir()
+    (folder / "S-0007-x.md").write_bytes(b"\xff\xfe---")
+    with pytest.raises(CardError, match=r"^S-0007-x\.md: not valid UTF-8"):
+        load_card(tmp_path, "S-0007")
+
+
 def test_load_card_refuses_malformed_id(tmp_path):
     with pytest.raises(CardError, match="invalid research id"):
         load_card(tmp_path, "../S-0007")

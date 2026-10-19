@@ -123,6 +123,10 @@ def load_card(research_dir: Path, card_id: str) -> ResearchCard | None:
         raise CardError(f"ambiguous research id {card_id}: {[p.name for p in paths]}")
     try:
         card = parse_card(paths[0].read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError as exc:
+        raise CardError(
+            f"{paths[0].name}: not valid UTF-8 ({exc.reason} at byte {exc.start})"
+        ) from exc
     except CardError as exc:
         raise CardError(f"{paths[0].name}: {exc}") from exc
     if card.id != card_id:
