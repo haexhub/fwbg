@@ -1373,11 +1373,13 @@ CRITERIA_TEMPLATE = Path("templates") / "criteria-default.yaml"
 _DIRECTORIES = ("strategies", "configs", "templates", "reports")
 
 DEFAULT_CRITERIA_YAML = """\
-# Default success criteria for new research cards.
-# Hand-curated and conservative; never derive these values from past results.
+# Starting values for the success criteria of new research cards.
+# Hand-curated; never derive these values from past results.
+# Each card sets its own values at registration — max_drawdown in particular
+# depends on the strategy and its position sizing.
 min_sharpe: 1.0
 min_trades: 100
-max_drawdown: 0.25
+max_drawdown: 0.40
 min_fold_stability: 0.6
 max_p_value: 0.05
 """
@@ -1419,9 +1421,11 @@ def _git(cwd: Path, *args: str) -> None:
         raise ResearchRepoError(f"git {args[0]} failed: {exc}") from exc
 ```
 
-The default criteria values are a proposal. **The operator must confirm or
-change them before step 2**, because the backfill freezes them into every
-legacy card.
+The template holds starting values, not a policy: every card carries its
+own `success_criteria`. `max_drawdown` defaults to 0.40, the operator's
+drawdown target from the swing study, and is expected to be set per
+strategy. The step 2 backfill mapping therefore needs a per-card criteria
+override, so legacy cards do not all inherit the template unchanged.
 
 **Step 5: Run to verify pass**
 
