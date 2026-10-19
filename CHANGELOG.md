@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.20.4](https://github.com/haexhub/fwbg/compare/v2.20.3...v2.20.4) (2026-10-18)
+
+
+### Documentation
+
+* close out Jev signal provider feasibility check (Stage A fail) ([2b69962](https://github.com/haexhub/fwbg/commit/2b6996219bf0d0c5851e52a64a15830e7c2f5876))
+* find and correct for a positional bias in the Jev feasibility check ([1cc4714](https://github.com/haexhub/fwbg/commit/1cc4714653b775553d599a3aef94424776fa9650))
+
 ## [2.20.3](https://github.com/haexhub/fwbg/compare/v2.20.2...v2.20.3) (2026-09-24)
 
 
