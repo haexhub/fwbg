@@ -79,6 +79,19 @@ def test_patch_reproduces_the_working_tree(repo, tmp_path):
         )
 
 
+def test_non_utf8_changes_are_kept_byte_for_byte(repo, tmp_path, monkeypatch):
+    legacy = b"NAME = '\xe9'\n"
+    (repo / "src" / "legacy.py").write_bytes(legacy)
+    monkeypatch.chdir(repo)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    assert write_code_patch(run_dir) == PATCH_FILENAME
+    clone = tmp_path / "clone"
+    git(tmp_path, "clone", "--quiet", str(repo), str(clone))
+    git(clone, "apply", str(run_dir / PATCH_FILENAME))
+    assert (clone / "src" / "legacy.py").read_bytes() == legacy
+
+
 def test_outside_a_repository_raises(no_repo):
     with pytest.raises(CodePatchError):
         capture_code_patch(no_repo)
