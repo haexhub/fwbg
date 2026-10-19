@@ -27,7 +27,12 @@ METRIC_KEYS = (
     "profit_factor",
     "rrr",
 )
-_SMOKE_NAME_RE = re.compile(r"m[0-9]+_smoke")
+# A symbol with one of these statuses ran to a result and counts towards N
+# (conservatively, whether or not it found an edge).
+EVALUATED_STATUSES = frozenset({"ok", "no_edge", "not_significant", "no_unified_trades"})
+NOT_EVALUATED_STATUSES = frozenset({"error", "no_successful_folds"})
+_SMOKE_NAME_RE = re.compile(r"m[0-9]+_smoke.*")
+_DATE_PREFIX_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _GIT_KEYS = ("commit", "branch", "dirty", "patch")
 
 
@@ -50,45 +55,66 @@ class LegacyRun:
     config: Mapping[str, Any] | None
     fingerprint: str
     unresolved: str | None
+    presets_from_workspace: bool
     code: Mapping[str, Any]
     window: Mapping[str, str | None]
+
+
+@dataclass(frozen=True)
+class _SymbolFiles:
+    """Where one symbol's results live, under the name the run stored it with."""
+
+    result: Path
+    # The symbol directory (holding unified_metrics.json and fold_results.json);
+    # None for February runs, which wrote a single grid_details/<SYMBOL>.json.
+    folder: Path | None
+
+
+@dataclass(frozen=True)
+class _Configuration:
+    canonical: dict[str, Any] | None
+    unresolved: str | None
+    from_workspace: bool
 
 
 def scan_runs(results_dir: Path, preset_base: Path) -> list[LegacyRun]:
     """Read every run directory under *results_dir* that has a ``strategy.json``.
 
-    *preset_base* is the workspace strategies directory; it stands in for a
-    run's recorded ``_strategy_dir`` when that location no longer holds the
-    presets the run referenced.
+    Symlinked run directories are skipped. *preset_base* is the workspace
+    strategies directory; it stands in for a run's recorded ``_strategy_dir``
+    when that location no longer holds the presets the run referenced.
     """
+    if not results_dir.is_dir():
+        raise LegacyRunError(f"{results_dir}: not a directory")
     return [
         load_run(run_dir, preset_base)
-        for run_dir in sorted(p for p in results_dir.iterdir() if p.is_dir())
-        if (run_dir / "strategy.json").exists()
+        for run_dir in sorted(results_dir.iterdir())
+        if run_dir.is_dir() and not run_dir.is_symlink() and (run_dir / "strategy.json").exists()
     ]
 
 
 def load_run(run_dir: Path, preset_base: Path) -> LegacyRun:
     """Read one run directory; raise :class:`LegacyRunError` if its files are unusable."""
-    strategy = _read_object(run_dir / "strategy.json")
-    config = _read_object(run_dir / "config.json")
+    strategy = _read_object(run_dir / "strategy.json", run_dir)
+    config = _read_object(run_dir / "config.json", run_dir)
     ts = config.get("timestamp")
-    if not isinstance(ts, str) or len(ts) < 10:
-        raise LegacyRunError(f"{run_dir.name}: config.json has no timestamp")
+    if not isinstance(ts, str) or not _DATE_PREFIX_RE.match(ts):
+        raise LegacyRunError(f"{run_dir.name}/config.json: no usable timestamp ({ts!r})")
     try:
         run_date = date.fromisoformat(ts[:10])
     except ValueError as exc:
-        raise LegacyRunError(f"{run_dir.name}: bad timestamp {ts!r}") from exc
+        raise LegacyRunError(f"{run_dir.name}/config.json: bad timestamp {ts!r}") from exc
     name = strategy.get("name")
     name = name if isinstance(name, str) and name.strip() else run_dir.name
-    symbols = _symbols(run_dir)
-    metrics = _metrics(run_dir, symbols)
-    canonical, unresolved = _canonical(strategy, config, symbols, preset_base)
+    files = _symbol_files(run_dir)
+    symbols = tuple(sorted(files))
+    metrics = _metrics(run_dir, files)
+    configuration = _configuration(strategy, config, symbols, preset_base)
     # An unresolvable run still counts as a trial, under a stand-in that never
     # matches a real configuration.
     fingerprint = (
-        digest(canonical)
-        if canonical is not None
+        digest(configuration.canonical)
+        if configuration.canonical is not None
         else digest({"unresolvable_legacy_run": run_dir.name})
     )
     return LegacyRun(
@@ -96,62 +122,126 @@ def load_run(run_dir: Path, preset_base: Path) -> LegacyRun:
         ts=ts,
         run_date=run_date,
         name=name,
-        kind=TrialKind.SMOKE if _SMOKE_NAME_RE.match(name) else TrialKind.LEGACY,
+        kind=TrialKind.SMOKE if _SMOKE_NAME_RE.fullmatch(name) else TrialKind.LEGACY,
         status=TrialStatus.OK if metrics else TrialStatus.FAILED,
         symbols=symbols,
         metrics=metrics,
-        config=canonical,
+        config=configuration.canonical,
         fingerprint=fingerprint,
-        unresolved=unresolved,
+        unresolved=configuration.unresolved,
+        presets_from_workspace=configuration.from_workspace,
         code=_code(config),
         window=_window(strategy),
     )
 
 
-def _read_object(path: Path) -> dict[str, Any]:
+def _read_object(path: Path, run_dir: Path) -> dict[str, Any]:
+    where = f"{run_dir.name}/{path.relative_to(run_dir).as_posix()}"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise LegacyRunError(f"{path.parent.name}/{path.name}: {exc}") from exc
+        raise LegacyRunError(f"{where}: {exc}") from exc
     if not isinstance(data, dict):
-        raise LegacyRunError(f"{path.parent.name}/{path.name}: expected a JSON object")
+        raise LegacyRunError(f"{where}: expected a JSON object")
     return data
 
 
-def _symbols(run_dir: Path) -> tuple[str, ...]:
+def _optional_object(path: Path, run_dir: Path) -> dict[str, Any] | None:
+    return _read_object(path, run_dir) if path.exists() else None
+
+
+def _symbol_files(run_dir: Path) -> dict[str, _SymbolFiles]:
+    """Recorded (upper-case) symbol -> its files, for directories and February files."""
     details = run_dir / "grid_details"
     if not details.is_dir():
-        return ()
-    return tuple(sorted(p.name.upper() for p in details.iterdir() if p.is_dir()))
-
-
-def _metrics(run_dir: Path, symbols: tuple[str, ...]) -> dict[str, dict[str, float | int | None]]:
-    """Per-symbol metrics for every evaluated symbol (not only the reported elite)."""
-    elite = _elite_by_symbol(run_dir / "results.json")
-    metrics: dict[str, dict[str, float | int | None]] = {}
-    for symbol in symbols:
-        path = run_dir / "grid_details" / symbol / "unified_metrics.json"
-        if not path.exists():
+        return {}
+    files: dict[str, _SymbolFiles] = {}
+    for entry in sorted(details.iterdir()):
+        if entry.is_symlink():
             continue
-        values = {
-            key: _number(raw) for key, raw in _read_object(path).items() if key in METRIC_KEYS
-        }
-        extra = elite.get(symbol, {})
-        values["p_value"] = _number(extra.get("monte_carlo", {}).get("p_value"))
-        values["fold_stability"] = _number(extra.get("fold_stability"))
-        metrics[symbol] = values
+        if entry.is_dir():
+            files[entry.name.upper()] = _SymbolFiles(result=entry / "config.json", folder=entry)
+        elif entry.is_file() and entry.suffix == ".json":
+            # A directory for the same symbol wins over a February-format file.
+            files.setdefault(entry.stem.upper(), _SymbolFiles(result=entry, folder=None))
+    return files
+
+
+def _metrics(
+    run_dir: Path, files: Mapping[str, _SymbolFiles]
+) -> dict[str, dict[str, float | int | None]]:
+    """Per-symbol metrics for every evaluated symbol (not only the reported elite)."""
+    elite = _elite_by_symbol(run_dir)
+    metrics: dict[str, dict[str, float | int | None]] = {}
+    for symbol, source in files.items():
+        if not source.result.exists():
+            continue
+        result = _read_object(source.result, run_dir)
+        if _evaluated(result.get("status"), run_dir.name, symbol):
+            metrics[symbol] = _symbol_metrics(run_dir, source, result, elite.get(symbol, {}))
     return metrics
 
 
-def _elite_by_symbol(path: Path) -> dict[str, dict[str, Any]]:
-    if not path.exists():
+def _evaluated(status: object, run_id: str, symbol: str) -> bool:
+    if isinstance(status, str) and status in EVALUATED_STATUSES:
+        return True
+    if isinstance(status, str) and status in NOT_EVALUATED_STATUSES:
+        return False
+    # Fail closed: whether such a symbol counts towards N is the operator's call.
+    raise LegacyRunError(f"{run_id}: symbol {symbol} has unknown status {status!r}")
+
+
+def _symbol_metrics(
+    run_dir: Path,
+    source: _SymbolFiles,
+    result: Mapping[str, Any],
+    elite: Mapping[str, Any],
+) -> dict[str, float | int | None]:
+    unified = fold = None
+    if source.folder is not None:
+        unified = _optional_object(source.folder / "unified_metrics.json", run_dir)
+        fold = _optional_object(source.folder / "fold_results.json", run_dir)
+    candidates = (
+        unified,
+        result.get("metrics"),
+        result.get("holdout_metrics"),
+        result.get("selected_metrics"),
+    )
+    base = next((c for c in candidates if isinstance(c, Mapping)), {})
+    values = {key: _number(raw) for key, raw in base.items() if key in METRIC_KEYS}
+    walk_forward = _mapping(result.get("walk_forward"))
+    fold_walk_forward = _mapping(_mapping(fold).get("walk_forward"))
+    if values.get("trades") is None:
+        trades = _first_number(
+            walk_forward.get("total_trades"), fold_walk_forward.get("total_trades")
+        )
+        if trades is not None:
+            values["trades"] = trades
+    values["p_value"] = _first_number(
+        _mapping(result.get("monte_carlo")).get("p_value"),
+        _mapping(elite.get("monte_carlo")).get("p_value"),
+    )
+    values["fold_stability"] = _first_number(
+        fold_walk_forward.get("fold_stability"),
+        walk_forward.get("fold_stability"),
+        elite.get("fold_stability"),
+    )
+    return values
+
+
+def _elite_by_symbol(run_dir: Path) -> dict[str, Mapping[str, Any]]:
+    entries = (_optional_object(run_dir / "results.json", run_dir) or {}).get("elite_results")
+    if not isinstance(entries, list):
         return {}
-    entries = _read_object(path).get("elite_results") or []
     return {
-        str(entry["symbol"]).upper(): entry
+        entry["symbol"].upper(): entry
         for entry in entries
         if isinstance(entry, dict) and isinstance(entry.get("symbol"), str)
     }
+
+
+def _mapping(value: object) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 def _number(value: object) -> float | int | None:
@@ -163,17 +253,23 @@ def _number(value: object) -> float | int | None:
     return value
 
 
-def _canonical(
+def _first_number(*values: object) -> float | int | None:
+    for value in values:
+        number = _number(value)
+        if number is not None:
+            return number
+    return None
+
+
+def _configuration(
     strategy: Mapping[str, Any],
     config: Mapping[str, Any],
     symbols: tuple[str, ...],
     preset_base: Path,
-) -> tuple[dict[str, Any] | None, str | None]:
-    """The fingerprinted configuration (presets resolved, canonical timeframe).
-
-    Returns ``(None, reason)`` when the run's configuration cannot be rebuilt.
-    """
+) -> _Configuration:
+    """The fingerprinted configuration (presets resolved, canonical timeframe)."""
     metadata = dict(strategy)
+    from_workspace = False
     try:
         timeframe = metadata.get("timeframe") or config.get("timeframe")
         if timeframe:
@@ -181,14 +277,19 @@ def _canonical(
         try:
             resolved = resolve_presets(metadata)
         except FileNotFoundError:
-            # Presets moved since the run: resolve against the workspace instead.
+            # ponytail: presets moved since the run, so all of them re-resolve from the
+            # workspace (even if only one is missing) with today's content, not the
+            # content the run used; flagged per run. Upgrade: store preset content
+            # (or its hash) with each run.
             moved = {**metadata, "_strategy_dir": str(preset_base / "configs")}
             resolved = resolve_presets(moved)
+            from_workspace = True
         canonical = canonical_config(resolved, symbols)
         digest(canonical)
-        return canonical, None
     except (OSError, ValueError, TypeError) as exc:
-        return None, f"configuration unresolvable: {exc}".replace("\n", " ")
+        reason = f"configuration unresolvable: {exc}".replace("\n", " ")
+        return _Configuration(canonical=None, unresolved=reason, from_workspace=False)
+    return _Configuration(canonical=canonical, unresolved=None, from_workspace=from_workspace)
 
 
 def _code(config: Mapping[str, Any]) -> dict[str, Any]:
