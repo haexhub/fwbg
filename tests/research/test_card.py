@@ -139,6 +139,13 @@ def test_success_criteria_are_immutable():
             CARD.replace(AMENDMENTS, "criteria_amendments:\n  - foo\n"),
             "criteria_amendments.*'foo'",
         ),
+        (
+            CARD.replace(
+                "    reason: daily needs fewer trades\n",
+                "    reason: daily needs fewer trades\n    note: x\n",
+            ),
+            "criteria_amendments.*note",
+        ),
         (CARD.replace("    reason: daily needs fewer trades\n", ""), "reason"),
         (CARD.replace("reason: daily needs fewer trades", 'reason: ""'), "reason"),
         (CARD.replace(AMENDED_HASH, "sha256:abc"), "criteria_amendments.criteria_hash"),
@@ -170,6 +177,7 @@ def test_success_criteria_are_immutable():
         "scalar-amendments",
         "mapping-amendments",
         "scalar-amendment-item",
+        "amendment-unknown-key",
         "amendment-without-reason",
         "amendment-empty-reason",
         "amendment-short-hash",
