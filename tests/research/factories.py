@@ -62,11 +62,20 @@ def make_run(
     name: str = "orb-test",
     timestamp: str = "2026-03-05T10:00:00",
     timeframe: str | None = "MINUTE_15",
+    config_timeframe: str | None = None,
     symbols: Mapping[str, Mapping[str, Any] | None] | None = None,
+    legacy_files: Mapping[str, Mapping[str, Any]] | None = None,
     strategy_extra: Mapping[str, Any] | None = None,
     elite: Sequence[Mapping[str, Any]] = (),
 ) -> Path:
-    """Write a minimal legacy run directory; ``symbols`` maps symbol -> unified metrics."""
+    """Write a minimal legacy run directory.
+
+    ``symbols`` maps a ``grid_details/<SYMBOL>/`` directory to ``None`` (no result
+    file) or to optional ``status`` (default ``ok``; ``None`` leaves it out),
+    ``result`` (extra ``config.json`` content), ``unified`` and ``fold`` (content of
+    ``unified_metrics.json`` and ``fold_results.json``). ``legacy_files`` maps a
+    symbol to the content of a February-format ``grid_details/<SYMBOL>.json``.
+    """
     run_dir = results_dir / run_id
     run_dir.mkdir(parents=True)
     strategy: dict[str, Any] = {"name": name, "pipeline": {"indicators": []}, "model": {}}
@@ -77,15 +86,28 @@ def make_run(
     config = {
         "run_id": run_id,
         "timestamp": timestamp,
-        "timeframe": timeframe or "HOUR_1",
+        "timeframe": config_timeframe or timeframe or "HOUR_1",
         "git": {"commit": "abc123", "branch": "main", "dirty": True, "last_commit_message": "x"},
     }
     (run_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
-    for symbol, metrics in (symbols if symbols is not None else {"GOLD": {"sharpe": 0.5}}).items():
-        folder = run_dir / "grid_details" / symbol
-        folder.mkdir(parents=True)
-        if metrics is not None:
-            (folder / "unified_metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
+    details = run_dir / "grid_details"
+    details.mkdir()
+    default = {"GOLD": {"unified": {"sharpe": 0.5}}}
+    for symbol, spec in (symbols if symbols is not None else default).items():
+        folder = details / symbol
+        folder.mkdir()
+        if spec is None:
+            continue
+        result: dict[str, Any] = {"symbol": symbol}
+        if spec.get("status", "ok") is not None:
+            result["status"] = spec.get("status", "ok")
+        result.update(spec.get("result", {}))
+        (folder / "config.json").write_text(json.dumps(result), encoding="utf-8")
+        for key, filename in (("unified", "unified_metrics.json"), ("fold", "fold_results.json")):
+            if key in spec:
+                (folder / filename).write_text(json.dumps(spec[key]), encoding="utf-8")
+    for symbol, content in (legacy_files or {}).items():
+        (details / f"{symbol}.json").write_text(json.dumps(content), encoding="utf-8")
     if elite:
         (run_dir / "results.json").write_text(
             json.dumps({"elite_results": list(elite)}), encoding="utf-8"
