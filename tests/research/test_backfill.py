@@ -212,6 +212,7 @@ def test_study_trials_are_recorded_once_with_a_synthetic_fingerprint(runs, regis
         ({"studies": [{**STUDY, "metrics": {"a": {"x": 1}, "A": {"y": 2}}}]}, "ignoring case"),
         ({"tags": ["ok", 3]}, r"S-0001\.tags: .*\['ok', 3\]"),
         ({"studies": [STUDY, {**STUDY, "note": "copy"}]}, "duplicate study variants: config-4"),
+        ({"title": "!!!", "slug": None}, "S-0001: title '!!!' gives an empty slug"),
     ],
     ids=[
         "id",
@@ -231,6 +232,7 @@ def test_study_trials_are_recorded_once_with_a_synthetic_fingerprint(runs, regis
         "symbol-case",
         "tags",
         "variant-twice",
+        "unusable-title",
     ],
 )
 def test_parse_mapping_rejects_invalid_cards(runs, change, fragment):
