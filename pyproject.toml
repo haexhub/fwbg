@@ -64,11 +64,9 @@ dependencies = [
 dev = [
     "pytest>=9.0",
     "pytest-cov>=7.0",
-    # Upper bound because the repo has no [tool.ruff] rule selection, so the
-    # lint gate is whatever ruff's defaults happen to be: 0.16.0 widened them
-    # to 415 rules and CI broke on 1995 pre-existing findings. Raising this
-    # ceiling means fixing those first (or selecting rules explicitly).
-    "ruff>=0.14.14,<0.16",
+    # Keep Ruff's historical default rule set explicit so upgrades do not
+    # turn newly enabled rules into a large unrelated lint migration.
+    "ruff>=0.14.14,<0.18",
     "black>=26.0",
     "isort>=7.0",
     "mypy>=1.15",
@@ -143,6 +141,9 @@ python_files = ["test_*.py", "*.test.py", "tests.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short --import-mode=importlib"
 
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [tool.uv.sources]
 fwbg-sdk = { path = "packages/fwbg-sdk", editable = true }
 fwbg-premium = { path = "packages/fwbg-premium", editable = true }
@@ -151,5 +152,5 @@ fwbg-premium = { path = "packages/fwbg-premium", editable = true }
 dev = [
     "httpx2",
     # Keep in sync with the dev extra's bound above.
-    "ruff>=0.14.14,<0.16",
+    "ruff>=0.14.14,<0.18",
 ]
