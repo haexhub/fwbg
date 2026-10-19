@@ -1,9 +1,19 @@
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
 
-from fwbg.research.card import CardError, Status, criteria_hash, load_card, parse_card
+from fwbg.research.card import (
+    CardError,
+    Status,
+    criteria_hash,
+    load_card,
+    parse_card,
+    render_card,
+    slugify,
+    write_card,
+)
+from tests.research.factories import make_card
 
 REGISTERED_HASH = "sha256:5272a26ad425169031b39ae95c05abe1e2c3ebb664faaae0508eef108b989970"
 AMENDED_HASH = "sha256:c22558e72bca2f92a641914684ced8140937d9fe44d872db8f2526a71139f7e2"
@@ -199,59 +209,59 @@ def test_criteria_hash_ignores_key_order_but_not_values():
     assert criteria_hash({"a": 1.0, "b": 2.0}) != criteria_hash({"a": 2.0, "b": 1.0})
 
 
-def write_card(research_dir: Path, filename: str, text: str = CARD) -> None:
+def write_card_file(research_dir: Path, filename: str, text: str = CARD) -> None:
     folder = research_dir / "strategies"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / filename).write_text(text, encoding="utf-8")
 
 
 def test_load_card_by_id(tmp_path):
-    write_card(tmp_path, "S-0007-cusum-continuation.md")
+    write_card_file(tmp_path, "S-0007-cusum-continuation.md")
     assert load_card(tmp_path, "S-0007").title == "CUSUM event continuation"
 
 
 def test_load_card_without_slug(tmp_path):
-    write_card(tmp_path, "S-0007.md")
+    write_card_file(tmp_path, "S-0007.md")
     assert load_card(tmp_path, "S-0007").id == "S-0007"
 
 
 def test_load_card_tolerates_byte_order_mark(tmp_path):
-    write_card(tmp_path, "S-0007.md", "\ufeff" + CARD)
+    write_card_file(tmp_path, "S-0007.md", "\ufeff" + CARD)
     assert load_card(tmp_path, "S-0007").id == "S-0007"
 
 
 def test_load_card_returns_none_when_absent(tmp_path):
-    write_card(tmp_path, "S-0007-cusum-continuation.md")
+    write_card_file(tmp_path, "S-0007-cusum-continuation.md")
     assert load_card(tmp_path, "S-0008") is None
 
 
 def test_load_card_does_not_match_longer_ids(tmp_path):
-    write_card(tmp_path, "S-00071-other.md")
+    write_card_file(tmp_path, "S-00071-other.md")
     assert load_card(tmp_path, "S-0007") is None
 
 
 def test_load_card_refuses_ambiguous_ids(tmp_path):
-    write_card(tmp_path, "S-0007-a.md")
-    write_card(tmp_path, "S-0007-b.md")
+    write_card_file(tmp_path, "S-0007-a.md")
+    write_card_file(tmp_path, "S-0007-b.md")
     with pytest.raises(CardError, match="ambiguous"):
         load_card(tmp_path, "S-0007")
 
 
 def test_load_card_refuses_bare_and_slugged_file_for_same_id(tmp_path):
-    write_card(tmp_path, "S-0007.md")
-    write_card(tmp_path, "S-0007-x.md")
+    write_card_file(tmp_path, "S-0007.md")
+    write_card_file(tmp_path, "S-0007-x.md")
     with pytest.raises(CardError, match="ambiguous"):
         load_card(tmp_path, "S-0007")
 
 
 def test_load_card_refuses_mismatched_id(tmp_path):
-    write_card(tmp_path, "S-0008-copy.md")
+    write_card_file(tmp_path, "S-0008-copy.md")
     with pytest.raises(CardError, match="declares id S-0007"):
         load_card(tmp_path, "S-0008")
 
 
 def test_load_card_names_file_of_malformed_card(tmp_path):
-    write_card(tmp_path, "S-0007-broken.md", CARD.replace("status: active", "status: maybe"))
+    write_card_file(tmp_path, "S-0007-broken.md", CARD.replace("status: active", "status: maybe"))
     with pytest.raises(CardError, match=r"^S-0007-broken\.md: "):
         load_card(tmp_path, "S-0007")
 
@@ -270,24 +280,52 @@ def test_load_card_refuses_malformed_id(tmp_path):
 
 
 def test_render_round_trips_through_parse():
-    from fwbg.research.card import render_card
-
     card = parse_card(CARD)
     assert parse_card(render_card(card)) == card
 
 
 def test_render_round_trips_awkward_titles_and_no_amendments():
-    from fwbg.research.card import render_card
-    from tests.research.factories import make_card
-
     card = make_card(title='ORB: 15m ä "quoted" #1', tags=(), body="")
     assert parse_card(render_card(card)) == card
 
 
-def test_write_card_writes_once_and_never_overwrites(tmp_path):
-    from fwbg.research.card import write_card
-    from tests.research.factories import make_card
+def test_render_writes_the_committed_card_layout():
+    card = make_card(title="ORB ä", tags=("a",), body="## Hypothesis\n")
+    assert render_card(card) == (
+        "---\n"
+        "id: S-0007\n"
+        "title: ORB ä\n"
+        "status: active\n"
+        "tags:\n"
+        "- a\n"
+        "created: 2026-10-19\n"
+        "holdout_cutoff: 2025-04-30\n"
+        "holdout_contaminated: false\n"
+        "success_criteria:\n"
+        "  min_sharpe: 1.0\n"
+        "  min_trades: 100.0\n"
+        f"registered_criteria_hash: {REGISTERED_HASH}\n"
+        "---\n"
+        "## Hypothesis\n"
+    )
 
+
+def test_render_keeps_long_titles_on_one_line():
+    title = " ".join(["word"] * 40)
+    assert f"\ntitle: {title}\n" in render_card(make_card(title=title))
+
+
+def test_render_refuses_a_card_that_would_not_read_back():
+    with pytest.raises(CardError, match="would not read back"):
+        render_card(make_card(created=datetime(2026, 10, 19, 10, 0)))
+
+
+def test_render_refuses_carriage_returns_in_the_body():
+    with pytest.raises(CardError, match="carriage return"):
+        render_card(make_card(body="## Hypothesis\r\nnotes\r\n"))
+
+
+def test_write_card_writes_once_and_never_overwrites(tmp_path):
     card = make_card()
     (tmp_path / "research" / "strategies").mkdir(parents=True)
     path = write_card(tmp_path / "research", card, "cusum-continuation")
@@ -297,12 +335,36 @@ def test_write_card_writes_once_and_never_overwrites(tmp_path):
         write_card(tmp_path / "research", card, "other-slug")
 
 
-def test_write_card_rejects_invalid_slug(tmp_path):
-    from fwbg.research.card import write_card
-    from tests.research.factories import make_card
+def test_write_card_never_overwrites_an_existing_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("fwbg.research.card.load_card", lambda *_: None)
+    target = tmp_path / "strategies" / "S-0007-cusum-continuation.md"
+    target.parent.mkdir()
+    target.write_text("x", encoding="utf-8")
+    with pytest.raises(CardError, match="never overwritten"):
+        write_card(tmp_path, make_card(), "cusum-continuation")
+    assert target.read_text(encoding="utf-8") == "x"
 
+
+@pytest.mark.parametrize(
+    "slug",
+    ["", "-a", "a-", "a--b", "a_b", "a/b", "../x", "a.b", "a" * 61, "Not A Slug"],
+    ids=[
+        "empty",
+        "leading-hyphen",
+        "trailing-hyphen",
+        "double-hyphen",
+        "underscore",
+        "slash",
+        "parent-dir",
+        "dot",
+        "61-chars",
+        "spaces-and-capitals",
+    ],
+)
+def test_write_card_rejects_invalid_slug(tmp_path, slug):
+    (tmp_path / "strategies").mkdir()
     with pytest.raises(CardError, match="invalid slug"):
-        write_card(tmp_path, make_card(), "Not A Slug")
+        write_card(tmp_path, make_card(), slug)
 
 
 @pytest.mark.parametrize(
@@ -314,13 +376,13 @@ def test_write_card_rejects_invalid_slug(tmp_path):
     ],
 )
 def test_slugify(title, slug):
-    from fwbg.research.card import slugify
-
     assert slugify(title) == slug
 
 
-def test_slugify_refuses_titles_without_ascii_words():
-    from fwbg.research.card import slugify
+def test_slugify_caps_at_60_characters_without_a_trailing_hyphen():
+    assert slugify("a" * 59 + " bc") == "a" * 59
 
+
+def test_slugify_refuses_titles_without_ascii_words():
     with pytest.raises(CardError, match="empty slug"):
         slugify("äöü")
