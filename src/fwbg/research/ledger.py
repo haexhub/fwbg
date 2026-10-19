@@ -4,22 +4,50 @@ from __future__ import annotations
 
 import fcntl
 import json
+import math
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn, TypeVar
+
+from fwbg.research.card import CARD_ID_RE
+from fwbg.research.fingerprint import DIGEST_RE
 
 LEDGER_FILENAME = "trials.jsonl"
 TRIAL_ID_PREFIX = "T-"
+TRIAL_ID_RE = re.compile(r"T-[0-9]{6,}")
+_FIELDS = frozenset(
+    {
+        "trial",
+        "strategy",
+        "run_id",
+        "kind",
+        "status",
+        "ts",
+        "fingerprint",
+        "fingerprint_version",
+        "criteria_hash",
+        "holdout_cutoff",
+        "code",
+        "window",
+        "note",
+        "reason",
+        "metrics",
+    }
+)
+_WINDOW_FIELDS = frozenset({"start", "end"})
 
 Metrics = Mapping[str, Mapping[str, float | int | None]]
 
+_E = TypeVar("_E", bound=Enum)
+
 
 class LedgerError(Exception):
-    """The ledger contains a line that is not a valid trial."""
+    """The ledger is missing, unreadable or contains a line that is not a valid trial."""
 
 
 class TrialKind(str, Enum):
@@ -77,71 +105,233 @@ class Trial:
             "reason": self.reason,
             "metrics": {symbol: dict(values) for symbol, values in self.metrics.items()},
         }
-        return json.dumps(record, ensure_ascii=False, allow_nan=False)
+        # ASCII only: raw U+2028/U+2029/NEL would be line breaks to other readers.
+        return json.dumps(record, allow_nan=False)
 
     @classmethod
     def from_json(cls, line: str) -> Trial:
-        record = json.loads(line)
+        """Parse one stored ledger line; raise :class:`LedgerError` on any defect."""
+        try:
+            record = json.loads(line, parse_constant=_reject_constant)
+        except ValueError as exc:
+            raise LedgerError(f"not valid JSON: {exc}") from exc
+        if not isinstance(record, dict):
+            raise LedgerError(f"expected a JSON object, got {type(record).__name__}")
+        unknown = sorted(record.keys() - _FIELDS)
+        if unknown:
+            raise LedgerError(f"unknown keys: {', '.join(unknown)}")
+        missing = sorted(_FIELDS - record.keys())
+        if missing:
+            raise LedgerError(f"missing keys: {', '.join(missing)}")
         return cls(
-            trial_id=record["trial"],
-            strategy=record["strategy"],
-            run_id=record["run_id"],
-            kind=TrialKind(record["kind"]),
-            status=TrialStatus(record["status"]),
-            ts=record["ts"],
-            fingerprint=record["fingerprint"],
-            fingerprint_version=record["fingerprint_version"],
-            criteria_hash=record["criteria_hash"],
-            holdout_cutoff=date.fromisoformat(record["holdout_cutoff"]),
-            code=record["code"],
-            window=record["window"],
-            note=record["note"],
-            reason=record.get("reason"),
-            metrics=record.get("metrics", {}),
+            trial_id=_trial_id(record["trial"]),
+            strategy=_strategy(record["strategy"]),
+            run_id=_optional_text(record["run_id"], "run_id"),
+            kind=_choice(TrialKind, record["kind"], "kind"),
+            status=_choice(TrialStatus, record["status"], "status"),
+            ts=_text(record["ts"], "ts"),
+            fingerprint=_digest(record["fingerprint"], "fingerprint"),
+            fingerprint_version=_integer(record["fingerprint_version"], "fingerprint_version"),
+            criteria_hash=_digest(record["criteria_hash"], "criteria_hash"),
+            holdout_cutoff=_iso_date(record["holdout_cutoff"], "holdout_cutoff"),
+            code=_object(record["code"], "code"),
+            window=_window(record["window"]),
+            note=_optional_text(record["note"], "note"),
+            reason=_optional_text(record["reason"], "reason"),
+            metrics=_metrics(record["metrics"]),
         )
 
 
 def read_trials(ledger_path: Path) -> list[Trial]:
-    """All trials in ledger order; a ledger that does not exist yet has none."""
-    if not ledger_path.exists():
-        return []
-    with ledger_path.open(encoding="utf-8") as handle:
-        fcntl.flock(handle, fcntl.LOCK_SH)
-        return _parse(handle.read())
+    """All trials in ledger order; a missing ledger is an error, not an empty history."""
+    try:
+        with ledger_path.open("rb") as handle:
+            fcntl.flock(handle, fcntl.LOCK_SH)
+            data = handle.read()
+    except FileNotFoundError as exc:
+        raise _missing_ledger(ledger_path) from exc
+    return _parse(_decode(data))
 
 
 def append_trial(ledger_path: Path, trial: Trial) -> Trial:
-    """Assign the next trial id and append *trial*; safe across processes."""
+    """Assign the next trial id and append *trial*; safe across processes.
+
+    The ledger must already exist. Callers that also commit the research repo
+    must serialise with a separate lock file (e.g. ``.register.lock``), never by
+    locking ``trials.jsonl`` themselves: a second ``flock`` on this file from
+    the same process deadlocks. Metrics must not contain NaN; convert NaN to
+    ``None`` before building the :class:`Trial`.
+    """
     if trial.trial_id is not None:
         raise ValueError("append_trial assigns trial ids; got a trial that already has one")
+    try:
+        descriptor = os.open(ledger_path, os.O_RDWR | os.O_APPEND)
+    except FileNotFoundError as exc:
+        raise _missing_ledger(ledger_path) from exc
     # ponytail: re-reads the whole ledger under one exclusive lock to find the
     # next id — O(n) per append, fine for thousands of trials; switch to a
-    # counter file if the ledger grows far beyond that.
-    with ledger_path.open("a+", encoding="utf-8") as handle:
+    # counter file if the ledger grows far beyond that. The first append does
+    # not fsync the directory either; add that if a crash right after
+    # initialising the register must not lose the ledger file.
+    with os.fdopen(descriptor, "r+b") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
-        handle.seek(0)
-        text = handle.read()
+        text = _decode(handle.read())
         stored = replace(trial, trial_id=_next_id(_parse(text)))
-        if text and not text.endswith("\n"):
-            handle.write("\n")
-        handle.write(stored.to_json() + "\n")
+        line = _readable_line(stored)
+        repair = "\n" if text and not text.endswith("\n") else ""
+        handle.write((repair + line + "\n").encode("ascii"))
         handle.flush()
         os.fsync(handle.fileno())
     return stored
 
 
+def _readable_line(trial: Trial) -> str:
+    """Serialise *trial*, refusing anything the reader would not read back unchanged."""
+    line = trial.to_json()
+    try:
+        read_back = Trial.from_json(line)
+    except LedgerError as exc:
+        raise ValueError(f"trial would be stored as an unreadable line: {exc}") from exc
+    if read_back != trial:
+        raise ValueError("trial would not read back unchanged from the ledger")
+    return line
+
+
+def _missing_ledger(ledger_path: Path) -> LedgerError:
+    return LedgerError(
+        f"ledger {ledger_path} does not exist; initialise the research register first"
+    )
+
+
+def _decode(data: bytes) -> str:
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise LedgerError(
+            f"{LEDGER_FILENAME} is not valid UTF-8 ({exc.reason} at byte {exc.start})"
+        ) from exc
+
+
 def _parse(text: str) -> list[Trial]:
-    trials = []
-    for number, line in enumerate(text.splitlines(), start=1):
+    # Split on "\n" only: str.splitlines() also breaks on U+2028, U+2029 and NEL.
+    lines = text.split("\n")
+    trials: list[Trial] = []
+    seen: set[str | None] = set()
+    for number, line in enumerate(lines, start=1):
         if not line.strip():
             continue
         try:
-            trials.append(Trial.from_json(line))
-        except (KeyError, TypeError, ValueError) as exc:
-            raise LedgerError(f"{LEDGER_FILENAME} line {number}: {exc!r}") from exc
+            trial = Trial.from_json(line)
+        except LedgerError as exc:
+            message = f"{LEDGER_FILENAME} line {number}: {exc}"
+            if number == len(lines):
+                message += (
+                    "; the line has no trailing newline, so the last append was probably"
+                    " interrupted: repair the line before any further append"
+                )
+            raise LedgerError(message) from exc
+        if trial.trial_id in seen:
+            raise LedgerError(
+                f"{LEDGER_FILENAME} line {number}: duplicate trial id {trial.trial_id}"
+            )
+        seen.add(trial.trial_id)
+        trials.append(trial)
     return trials
 
 
 def _next_id(trials: list[Trial]) -> str:
     numbers = [int(t.trial_id.removeprefix(TRIAL_ID_PREFIX)) for t in trials if t.trial_id]
     return f"{TRIAL_ID_PREFIX}{max(numbers, default=0) + 1:06d}"
+
+
+def _reject_constant(name: str) -> NoReturn:
+    raise ValueError(f"non-finite number {name} is not allowed")
+
+
+def _trial_id(value: object) -> str:
+    if not isinstance(value, str) or not TRIAL_ID_RE.fullmatch(value):
+        raise LedgerError(f"trial: invalid trial id {value!r} (expected T-NNNNNN)")
+    return value
+
+
+def _strategy(value: object) -> str:
+    if not isinstance(value, str) or not CARD_ID_RE.fullmatch(value):
+        raise LedgerError(f"strategy: invalid research id {value!r} (expected S-NNNN)")
+    return value
+
+
+def _text(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise LedgerError(f"{field_name}: expected non-empty text, got {value!r}")
+    return value
+
+
+def _optional_text(value: object, field_name: str) -> str | None:
+    if value is None or isinstance(value, str):
+        return value
+    raise LedgerError(f"{field_name}: expected text or null, got {value!r}")
+
+
+def _choice(enum: type[_E], value: object, field_name: str) -> _E:
+    try:
+        return enum(value)
+    except ValueError as exc:
+        valid = ", ".join(str(member.value) for member in enum)
+        raise LedgerError(
+            f"{field_name}: invalid value {value!r} (expected one of {valid})"
+        ) from exc
+
+
+def _digest(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not DIGEST_RE.fullmatch(value):
+        raise LedgerError(f"{field_name}: expected sha256:<64 hex digits>, got {value!r}")
+    return value
+
+
+def _integer(value: object, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise LedgerError(f"{field_name}: expected an integer, got {value!r}")
+    return value
+
+
+def _iso_date(value: object, field_name: str) -> date:
+    if not isinstance(value, str):
+        raise LedgerError(f"{field_name}: expected an ISO date, got {value!r}")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise LedgerError(f"{field_name}: not an ISO date: {value!r}") from exc
+
+
+def _object(value: object, field_name: str) -> dict[str, Any]:
+    # JSON object keys are always strings.
+    if not isinstance(value, dict):
+        raise LedgerError(f"{field_name}: expected an object, got {value!r}")
+    return value
+
+
+def _window(value: object) -> dict[str, str | None]:
+    window = _object(value, "window")
+    if window.keys() != _WINDOW_FIELDS:
+        raise LedgerError(f"window: expected exactly start and end, got {sorted(window)}")
+    return {key: _optional_text(bound, f"window.{key}") for key, bound in window.items()}
+
+
+def _metrics(value: object) -> dict[str, dict[str, float | int | None]]:
+    symbols = _object(value, "metrics")
+    return {
+        symbol: _metric_values(values, f"metrics.{symbol}") for symbol, values in symbols.items()
+    }
+
+
+def _metric_values(value: object, field_name: str) -> dict[str, float | int | None]:
+    values = _object(value, field_name)
+    for name, number in values.items():
+        if number is None:
+            continue
+        if isinstance(number, bool) or not isinstance(number, (int, float)):
+            raise LedgerError(f"{field_name}.{name}: expected a number or null, got {number!r}")
+        # Ints are always finite; a float literal such as 1e400 parses to inf.
+        if isinstance(number, float) and not math.isfinite(number):
+            raise LedgerError(f"{field_name}.{name}: expected a finite number, got {number!r}")
+    return values
