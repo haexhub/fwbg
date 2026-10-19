@@ -2,19 +2,37 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
+from types import MappingProxyType
+from typing import Any
 
 import yaml
 
 from fwbg.research.fingerprint import digest
 
-CARD_ID_RE = re.compile(r"S-\d{4}")
-_FRONT_MATTER_RE = re.compile(r"\A---\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
+CARD_ID_RE = re.compile(r"S-[0-9]{4}")
+_HASH_RE = re.compile(r"sha256:[0-9a-f]{64}")
+_FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
+_FIELDS = frozenset(
+    {
+        "id",
+        "title",
+        "status",
+        "tags",
+        "created",
+        "holdout_cutoff",
+        "holdout_contaminated",
+        "success_criteria",
+        "registered_criteria_hash",
+        "criteria_amendments",
+    }
+)
 
 
 class CardError(Exception):
@@ -65,31 +83,33 @@ def parse_card(text: str) -> ResearchCard:
     if match is None:
         raise CardError("card has no YAML front matter")
     try:
-        meta = yaml.safe_load(match.group(1))
-    except yaml.YAMLError as exc:
+        meta = yaml.load(match.group(1), Loader=_UniqueKeyLoader)
+    except (yaml.YAMLError, ValueError) as exc:
+        # PyYAML raises a plain ValueError for impossible dates such as 2025-04-31.
         raise CardError(f"invalid YAML front matter: {exc}") from exc
     if not isinstance(meta, Mapping):
         raise CardError("front matter must be a mapping")
+    unknown = sorted(str(key) for key in meta.keys() - _FIELDS)
+    if unknown:
+        raise CardError(f"unknown front matter keys: {', '.join(unknown)}")
     try:
         return ResearchCard(
             id=_card_id(meta["id"]),
-            title=str(meta["title"]),
-            status=Status(meta["status"]),
+            title=_text(meta["title"], "title"),
+            status=_status(meta["status"]),
             tags=_tags(meta.get("tags")),
             created=_as_date(meta["created"], "created"),
             holdout_cutoff=_as_date(meta["holdout_cutoff"], "holdout_cutoff"),
-            holdout_contaminated=bool(meta.get("holdout_contaminated", False)),
+            holdout_contaminated=_flag(meta["holdout_contaminated"], "holdout_contaminated"),
             success_criteria=_criteria(meta["success_criteria"]),
-            registered_criteria_hash=str(meta["registered_criteria_hash"]),
-            criteria_amendments=tuple(
-                _amendment(item) for item in meta.get("criteria_amendments") or ()
+            registered_criteria_hash=_hash(
+                meta["registered_criteria_hash"], "registered_criteria_hash"
             ),
+            criteria_amendments=_amendments(meta.get("criteria_amendments")),
             body=match.group(2),
         )
     except KeyError as exc:
         raise CardError(f"missing field: {exc.args[0]}") from exc
-    except ValueError as exc:
-        raise CardError(str(exc)) from exc
 
 
 def load_card(research_dir: Path, card_id: str) -> ResearchCard | None:
@@ -101,10 +121,29 @@ def load_card(research_dir: Path, card_id: str) -> ResearchCard | None:
         return None
     if len(paths) > 1:
         raise CardError(f"ambiguous research id {card_id}: {[p.name for p in paths]}")
-    card = parse_card(paths[0].read_text(encoding="utf-8"))
+    try:
+        card = parse_card(paths[0].read_text(encoding="utf-8-sig"))
+    except CardError as exc:
+        raise CardError(f"{paths[0].name}: {exc}") from exc
     if card.id != card_id:
         raise CardError(f"{paths[0].name} declares id {card.id}, expected {card_id}")
     return card
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe loader that refuses duplicate mapping keys instead of keeping the last one."""
+
+    def construct_mapping(self, node: Any, deep: bool = False) -> dict[Any, Any]:
+        mapping: dict[Any, Any] = super().construct_mapping(node, deep=deep)
+        seen: set[Any] = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"duplicate key {key!r}", key_node.start_mark
+                )
+            seen.add(key)
+        return mapping
 
 
 def _card_id(value: object) -> str:
@@ -113,12 +152,38 @@ def _card_id(value: object) -> str:
     return value
 
 
+def _text(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise CardError(f"{field_name}: expected non-empty text, got {value!r}")
+    return value
+
+
+def _hash(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not _HASH_RE.fullmatch(value):
+        raise CardError(f"{field_name}: expected sha256:<64 hex digits>, got {value!r}")
+    return value
+
+
+def _flag(value: object, field_name: str) -> bool:
+    if not isinstance(value, bool):
+        raise CardError(f"{field_name}: expected true or false, got {value!r}")
+    return value
+
+
+def _status(value: object) -> Status:
+    try:
+        return Status(value)
+    except ValueError as exc:
+        valid = ", ".join(status.value for status in Status)
+        raise CardError(f"status: invalid value {value!r} (expected one of {valid})") from exc
+
+
 def _tags(value: object) -> tuple[str, ...]:
     if value is None:
         return ()
-    if not isinstance(value, list):
-        raise CardError(f"tags must be a list, got {value!r}")
-    return tuple(str(tag) for tag in value)
+    if not isinstance(value, list) or not all(isinstance(tag, str) for tag in value):
+        raise CardError(f"tags must be a list of strings, got {value!r}")
+    return tuple(value)
 
 
 def _as_date(value: object, field_name: str) -> date:
@@ -134,15 +199,31 @@ def _as_date(value: object, field_name: str) -> date:
     raise CardError(f"{field_name}: expected a date, got {value!r}")
 
 
-def _criteria(value: object) -> dict[str, float]:
+def _criteria(value: object) -> Mapping[str, float]:
     if not isinstance(value, Mapping) or not value:
         raise CardError("success_criteria must be a non-empty mapping")
     criteria: dict[str, float] = {}
     for key, threshold in value.items():
+        if not isinstance(key, str):
+            raise CardError(f"success_criteria: keys must be text, got {key!r}")
         if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
             raise CardError(f"success_criteria.{key}: expected a number, got {threshold!r}")
-        criteria[str(key)] = float(threshold)
-    return criteria
+        try:
+            number = float(threshold)
+        except OverflowError as exc:
+            raise CardError(f"success_criteria.{key}: number out of range") from exc
+        if not math.isfinite(number):
+            raise CardError(f"success_criteria.{key}: expected a finite number, got {threshold!r}")
+        criteria[key] = number
+    return MappingProxyType(criteria)
+
+
+def _amendments(value: object) -> tuple[CriteriaAmendment, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise CardError(f"criteria_amendments must be a list, got {value!r}")
+    return tuple(_amendment(item) for item in value)
 
 
 def _amendment(value: object) -> CriteriaAmendment:
@@ -151,8 +232,8 @@ def _amendment(value: object) -> CriteriaAmendment:
     try:
         return CriteriaAmendment(
             date=_as_date(value["date"], "criteria_amendments.date"),
-            reason=str(value["reason"]),
-            criteria_hash=str(value["criteria_hash"]),
+            reason=_text(value["reason"], "criteria_amendments.reason"),
+            criteria_hash=_hash(value["criteria_hash"], "criteria_amendments.criteria_hash"),
         )
     except KeyError as exc:
         raise CardError(f"criteria_amendments: missing {exc.args[0]}") from exc
