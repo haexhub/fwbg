@@ -137,16 +137,8 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
     if window_denial is not None:
         denials.append(window_denial)
     has_reason = _has_text(request.reason)
-    if request.holdout and card.holdout_contaminated:
-        denials.append(
-            Denial(
-                DenialCode.HOLDOUT_CONTAMINATED,
-                f"{card.id} has no clean historical holdout; "
-                "confirm with forward data or paper trading",
-            )
-        )
-    if request.holdout and not has_reason:
-        denials.extend(_holdout_denials(card, own_trials))
+    if request.holdout:
+        denials.extend(_holdout_denials(card, own_trials, has_reason))
     try:
         run_fingerprint: str | None = fingerprint(metadata, request.symbols)
     except (ValueError, TypeError) as exc:
@@ -259,7 +251,21 @@ def _apply_window(card: ResearchCard, metadata: dict[str, Any], holdout: bool) -
     return None
 
 
-def _holdout_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[Denial]:
+def _holdout_denials(
+    card: ResearchCard, own_trials: Sequence[Trial], has_reason: bool
+) -> list[Denial]:
+    if card.holdout_contaminated:
+        # ponytail: like a hand-written criteria amendment, clearing the
+        # holdout_contaminated flag is only protected by the research repo's git history.
+        return [
+            Denial(
+                DenialCode.HOLDOUT_CONTAMINATED,
+                f"{card.id} has no clean historical holdout; "
+                "confirm with forward data or paper trading",
+            )
+        ]
+    if has_reason:
+        return []
     # Any look counts, failed ones too: a failed run may already have shown results.
     used = [str(trial.trial_id) for trial in own_trials if trial.kind is TrialKind.HOLDOUT]
     if not used:
