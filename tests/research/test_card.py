@@ -267,3 +267,60 @@ def test_load_card_refuses_non_utf8_file(tmp_path):
 def test_load_card_refuses_malformed_id(tmp_path):
     with pytest.raises(CardError, match="invalid research id"):
         load_card(tmp_path, "../S-0007")
+
+
+def test_render_round_trips_through_parse():
+    from fwbg.research.card import render_card
+
+    card = parse_card(CARD)
+    assert parse_card(render_card(card)) == card
+
+
+def test_render_round_trips_awkward_titles_and_no_amendments():
+    from fwbg.research.card import render_card
+    from tests.research.factories import make_card
+
+    card = make_card(title='ORB: 15m ä "quoted" #1', tags=(), body="")
+    assert parse_card(render_card(card)) == card
+
+
+def test_write_card_writes_once_and_never_overwrites(tmp_path):
+    from fwbg.research.card import write_card
+    from tests.research.factories import make_card
+
+    card = make_card()
+    (tmp_path / "research" / "strategies").mkdir(parents=True)
+    path = write_card(tmp_path / "research", card, "cusum-continuation")
+    assert path.name == "S-0007-cusum-continuation.md"
+    assert load_card(tmp_path / "research", "S-0007") == card
+    with pytest.raises(CardError, match="never overwritten"):
+        write_card(tmp_path / "research", card, "other-slug")
+
+
+def test_write_card_rejects_invalid_slug(tmp_path):
+    from fwbg.research.card import write_card
+    from tests.research.factories import make_card
+
+    with pytest.raises(CardError, match="invalid slug"):
+        write_card(tmp_path, make_card(), "Not A Slug")
+
+
+@pytest.mark.parametrize(
+    ("title", "slug"),
+    [
+        ("FWBG creative CUSUM event continuation", "fwbg-creative-cusum-event-continuation"),
+        ("ORB + PDH/PDL Scalping", "orb-pdh-pdl-scalping"),
+        ("m3_smoke_20260623", "m3-smoke-20260623"),
+    ],
+)
+def test_slugify(title, slug):
+    from fwbg.research.card import slugify
+
+    assert slugify(title) == slug
+
+
+def test_slugify_refuses_titles_without_ascii_words():
+    from fwbg.research.card import slugify
+
+    with pytest.raises(CardError, match="empty slug"):
+        slugify("äöü")
