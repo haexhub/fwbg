@@ -1205,7 +1205,7 @@ def _has_text(value: str | None) -> bool:
 
 
 def _valid_note(note: str | None) -> bool:
-    return _has_text(note) and "\n" not in note and "\r" not in note
+    return note is not None and _has_text(note) and "\n" not in note and "\r" not in note
 
 
 def _refuse(code: DenialCode, message: str, kind: TrialKind, metadata: dict[str, Any]) -> Decision:
@@ -1300,7 +1300,7 @@ def _duplicate_denials(run_fingerprint: str, trials: Sequence[Trial]) -> list[De
 **Step 4: Run to verify pass**
 
 Run: `PYTHONPATH=src $PY -m pytest tests/research/test_gate.py -q`
-Expected: 21 passed.
+Expected: 25 passed.
 
 **Step 5: Commit**
 
@@ -1742,7 +1742,7 @@ PYTHONPATH=src ../../.venv/bin/mypy src/fwbg/research src/fwbg/results/code_patc
 PYTHONPATH=src $PY -m pytest tests/research tests/test_code_patch.py -q
 PYTHONPATH=src $PY -m pytest tests/test_preview_run.py tests/test_cli.py tests/test_api_result_paths.py tests/test_api_run_spawn.py -q
 ```
-Expected: ruff clean, mypy clean for the new modules, 74 research/patch tests
+Expected: ruff clean, mypy clean for the new modules, 78 research/patch tests
 passed, the regression subset (50 tests) unchanged. Then run the full suite once
 (`PYTHONPATH=src $PY -m pytest -q`) and compare against `origin/develop` if
 anything fails, to tell new failures from pre-existing ones.
