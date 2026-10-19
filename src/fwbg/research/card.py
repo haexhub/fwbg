@@ -14,10 +14,9 @@ from typing import Any
 
 import yaml
 
-from fwbg.research.fingerprint import digest
+from fwbg.research.fingerprint import DIGEST_RE, digest
 
 CARD_ID_RE = re.compile(r"S-[0-9]{4}")
-_HASH_RE = re.compile(r"sha256:[0-9a-f]{64}")
 _FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
 _FIELDS = frozenset(
     {
@@ -164,7 +163,7 @@ def _text(value: object, field_name: str) -> str:
 
 
 def _hash(value: object, field_name: str) -> str:
-    if not isinstance(value, str) or not _HASH_RE.fullmatch(value):
+    if not isinstance(value, str) or not DIGEST_RE.fullmatch(value):
         raise CardError(f"{field_name}: expected sha256:<64 hex digits>, got {value!r}")
     return value
 
