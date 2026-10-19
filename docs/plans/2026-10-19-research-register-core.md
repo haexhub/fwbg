@@ -1400,6 +1400,20 @@ git commit -m "feat(research): add pre-run gate"
 
 ### Task 5: Research directory and repository
 
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review found that a failed first commit left the register
+> "initialised" forever, that re-running init silently recreated a deleted
+> ledger (resetting the trial history), that `git add --all` committed
+> whatever already sat in the directory, and that inherited `GIT_DIR` /
+> `GIT_INDEX_FILE` (exported by git hooks) made init write into another
+> repository. The merged `init_research_repo` decides by "has a commit",
+> retries a failed first commit, refuses to recreate a missing ledger in an
+> initialised register, stages only `.gitignore`, the template and
+> `trials.jsonl`, uses `--initial-branch=main`, and strips git's
+> repository-local environment variables (`GIT_LOCAL_ENV_VARS`) from every
+> git call; the `git_env` fixture strips them too. The source of truth is
+> the code on the branch.
+
 **Files:**
 - Modify: `src/fwbg/api/workspace.py` (module docstring list; new `get_research_dir()` after `get_test_results_dir()`)
 - Create: `src/fwbg/research/repo.py`
@@ -1864,6 +1878,14 @@ git commit -m "docs: mark research register core as implemented"
   spend the free look.
 - Treat any exception from `load_card` / `read_trials` as a denial (fail
   closed), not only `CardError` / `LedgerError`.
+- Step 4 (API in Docker) needs decisions before the container can write the
+  register: install `git` in the image (`python:3.14-slim` ships without
+  it), choose a committer identity for register commits, and decide whether
+  register commits follow the operator's `commit.gpgsign` setting.
+- If init is ever called implicitly (CLI/API), hold `.register.lock` around
+  it; concurrent first inits race today.
+- Every register git call must strip `GIT_LOCAL_ENV_VARS` like
+  `fwbg.research.repo._git` does.
 
 - Step 3 records the card's `holdout_cutoff` in every trial it appends;
   step 2 (`backfill --apply`) and `reconcile` must do the same for legacy
