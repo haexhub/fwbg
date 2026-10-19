@@ -1,15 +1,21 @@
+import fcntl
 import subprocess
 
 import pytest
 import yaml
 
 from fwbg.api.workspace import get_research_dir
+from fwbg.research.fingerprint import canonical_config, canonical_json, digest
 from fwbg.research.ledger import LEDGER_FILENAME
 from fwbg.research.repo import (
     CRITERIA_TEMPLATE,
     DEFAULT_CRITERIA_YAML,
+    REGISTER_LOCK,
     ResearchRepoError,
+    commit_register,
     init_research_repo,
+    register_lock,
+    store_config,
 )
 
 REGISTER_FILES = [".gitignore", "templates/criteria-default.yaml", "trials.jsonl"]
@@ -26,6 +32,10 @@ def commit_count(path) -> int:
 
 def committed_files(path) -> list[str]:
     return git(path, "ls-tree", "-r", "--name-only", "HEAD").splitlines()
+
+
+def staged_files(path) -> list[str]:
+    return git(path, "diff", "--cached", "--name-only").splitlines()
 
 
 def test_init_creates_layout_template_ledger_and_repo(tmp_path, git_env):
@@ -176,51 +186,167 @@ def test_research_dir_env_override(tmp_path, monkeypatch):
     assert get_research_dir() == tmp_path / "elsewhere"
 
 
-def test_commit_register_commits_only_named_paths(tmp_path, git_env):
-    from fwbg.research.repo import commit_register
-
+def test_commit_register_commits_only_changes_under_named_paths(tmp_path, git_env):
     research = tmp_path / "research"
     init_research_repo(research)
+    (research / "reports" / "x.md").write_text("operator draft\n", encoding="utf-8")
+    git(research, "add", "reports/x.md")
     (research / "strategies" / "S-0001-x.md").write_text("card\n", encoding="utf-8")
     (research / "notes.txt").write_text("private scratch\n", encoding="utf-8")
     assert commit_register(research, ["strategies"], "chore: add card") is True
-    files = subprocess.run(
-        ["git", "ls-tree", "-r", "--name-only", "HEAD"],
-        cwd=research,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split()
-    assert "strategies/S-0001-x.md" in files
-    assert "notes.txt" not in files
+    assert set(committed_files(research)) == {*REGISTER_FILES, "strategies/S-0001-x.md"}
+    assert staged_files(research) == ["reports/x.md"]
+    assert git(research, "ls-files", "notes.txt") == ""
     assert commit_register(research, ["strategies"], "chore: nothing") is False
 
 
-def test_register_lock_creates_an_ignored_lock_file(tmp_path, git_env):
-    from fwbg.research.repo import REGISTER_LOCK, register_lock
+def test_commit_register_accepts_empty_and_missing_named_paths(tmp_path, git_env):
+    research = tmp_path / "research"
+    init_research_repo(research)
+    (research / "reports").rmdir()
+    (research / "strategies" / "S-0001-x.md").write_text("card\n", encoding="utf-8")
+    paths = ["strategies", "configs", "reports", LEDGER_FILENAME]
+    assert commit_register(research, paths, "chore: add card") is True
+    assert "strategies/S-0001-x.md" in committed_files(research)
 
+
+def test_commit_register_commits_renames_and_deletions(tmp_path, git_env):
+    research = tmp_path / "research"
+    init_research_repo(research)
+    cards = research / "strategies"
+    (cards / "S-0001-old.md").write_text("card\n", encoding="utf-8")
+    (cards / "S-0002-gone.md").write_text("other card\n", encoding="utf-8")
+    commit_register(research, ["strategies"], "chore: add cards")
+    (cards / "S-0001-old.md").rename(cards / "S-0001-new.md")
+    (cards / "S-0002-gone.md").unlink()
+    assert commit_register(research, ["strategies"], "chore: rename card") is True
+    assert set(committed_files(research)) == {*REGISTER_FILES, "strategies/S-0001-new.md"}
+    assert staged_files(research) == []
+
+
+def test_commit_register_keeps_register_ignored_files_out(tmp_path, git_env):
+    research = tmp_path / "research"
+    init_research_repo(research)
+    for staging in (research / ".staging" / "run-1", research / "strategies" / ".staging"):
+        staging.mkdir(parents=True)
+        (staging / "x.json").write_text("{}", encoding="utf-8")
+    (research / "strategies" / "S-0001-x.md").write_text("card\n", encoding="utf-8")
+    assert commit_register(research, ["strategies"], "chore: add card") is True
+    assert set(committed_files(research)) == {*REGISTER_FILES, "strategies/S-0001-x.md"}
+    with pytest.raises(ResearchRepoError, match="git add"):
+        commit_register(research, [".staging"], "chore: add staging")
+    assert set(committed_files(research)) == {*REGISTER_FILES, "strategies/S-0001-x.md"}
+
+
+def test_commit_register_ignores_global_excludes(tmp_path, git_env):
+    excludes = tmp_path / "global-excludes"
+    excludes.write_text("*.json\n", encoding="utf-8")
+    git(tmp_path, "config", "--global", "core.excludesFile", str(excludes))
+    research = tmp_path / "research"
+    init_research_repo(research)
+    config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
+    path = store_config(research, digest(config), config)
+    assert commit_register(research, ["configs"], "chore: add config") is True
+    assert f"configs/{path.name}" in committed_files(research)
+
+
+def test_commit_register_without_paths_raises(tmp_path, git_env):
+    research = tmp_path / "research"
+    init_research_repo(research)
+    (research / "reports" / "x.md").write_text("operator draft\n", encoding="utf-8")
+    git(research, "add", "reports/x.md")
+    with pytest.raises(ValueError, match="path"):
+        commit_register(research, [], "chore: everything")
+    assert commit_count(research) == 1
+
+
+def test_git_timeout_leaves_no_lock_behind(tmp_path, git_env, monkeypatch):
+    research = tmp_path / "research"
+    init_research_repo(research)
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    (hooks / "pre-commit").write_text("#!/bin/sh\nsleep 5\n", encoding="utf-8")
+    (hooks / "pre-commit").chmod(0o755)
+    git(tmp_path, "config", "--global", "core.hooksPath", str(hooks))
+    monkeypatch.setattr("fwbg.research.repo._GIT_TIMEOUT", 1.0)
+    (research / "strategies" / "S-0001-x.md").write_text("card\n", encoding="utf-8")
+    with pytest.raises(ResearchRepoError, match="git commit"):
+        commit_register(research, ["strategies"], "chore: add card")
+    assert list((research / ".git").glob("*.lock")) == []
+
+
+def flock_shared_nonblocking(path) -> None:
+    """Take and release a shared lock through a second open file.
+
+    Raises ``BlockingIOError`` only while another holder has an exclusive lock.
+    """
+    with path.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+
+
+def test_register_lock_is_exclusive_until_released(tmp_path):
+    lock = tmp_path / REGISTER_LOCK
+    with register_lock(tmp_path):
+        with pytest.raises(BlockingIOError):
+            flock_shared_nonblocking(lock)
+    flock_shared_nonblocking(lock)
+    with pytest.raises(RuntimeError, match="boom"), register_lock(tmp_path):
+        raise RuntimeError("boom")
+    flock_shared_nonblocking(lock)
+
+
+def test_register_lock_file_is_ignored_by_git(tmp_path, git_env):
     research = tmp_path / "research"
     init_research_repo(research)
     with register_lock(research):
         assert (research / REGISTER_LOCK).exists()
-    status = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=research, capture_output=True, text=True, check=True
-    ).stdout
-    assert REGISTER_LOCK not in status
+        assert git(research, "status", "--porcelain") == ""
 
 
-def test_store_config_is_content_addressed_and_verified(tmp_path):
-    from fwbg.research.fingerprint import canonical_config, digest
-    from fwbg.research.repo import store_config
+def config_path(research_dir, fingerprint):
+    return research_dir / "configs" / f"{fingerprint.removeprefix('sha256:')}.json"
 
+
+def test_store_config_writes_canonical_json_under_its_digest(tmp_path):
     (tmp_path / "configs").mkdir()
     config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
     fingerprint = digest(config)
     path = store_config(tmp_path, fingerprint, config)
-    assert path.name == fingerprint.removeprefix("sha256:") + ".json"
+    assert path == config_path(tmp_path, fingerprint)
+    assert path.read_text(encoding="utf-8") == canonical_json(config) + "\n"
     assert store_config(tmp_path, fingerprint, config) == path
-    with pytest.raises(ValueError, match="not the fingerprint"):
-        store_config(tmp_path, fingerprint, canonical_config({"timeframe": "HOUR_1"}, ("GOLD",)))
-    path.write_text("tampered\n", encoding="utf-8")
+    assert list((tmp_path / "configs").iterdir()) == [path]
+
+
+def test_store_config_refuses_a_config_that_is_not_the_fingerprint(tmp_path):
+    (tmp_path / "configs").mkdir()
+    config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
+    other = canonical_config({"timeframe": "HOUR_1"}, ("GOLD",))
+    for fingerprint in (digest(other), "sha256:not-a-digest"):
+        with pytest.raises(ValueError, match="not the fingerprint"):
+            store_config(tmp_path, fingerprint, config)
+    assert list((tmp_path / "configs").iterdir()) == []
+
+
+@pytest.mark.parametrize("existing", [b"tampered\n", b"\xff\xfe not utf-8\n"])
+def test_store_config_refuses_a_different_existing_file(tmp_path, existing):
+    (tmp_path / "configs").mkdir()
+    config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
+    path = config_path(tmp_path, digest(config))
+    path.write_bytes(existing)
     with pytest.raises(ResearchRepoError, match="different content"):
-        store_config(tmp_path, fingerprint, config)
+        store_config(tmp_path, digest(config), config)
+    assert path.read_bytes() == existing
+
+
+def test_store_config_leaves_nothing_behind_when_the_write_fails(tmp_path, monkeypatch):
+    (tmp_path / "configs").mkdir()
+    config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
+
+    def fail(*_args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("fwbg.research.repo.os.replace", fail)
+    with pytest.raises(OSError, match="disk full"):
+        store_config(tmp_path, digest(config), config)
+    assert list((tmp_path / "configs").iterdir()) == []
