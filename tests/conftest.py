@@ -46,7 +46,7 @@ def pytest_configure(config):
 def git_env(tmp_path_factory, monkeypatch):
     """Deterministic git: fixed identity, no user or system configuration."""
     # Lazy: importing fwbg before pytest_configure sets FWBG_WORKSPACE pins the real data dir.
-    from fwbg.research.repo import GIT_LOCAL_ENV_VARS
+    from fwbg.core.git_env import GIT_LOCAL_ENV_VARS
 
     config = tmp_path_factory.mktemp("gitconfig") / "config"
     config.write_text("", encoding="utf-8")
