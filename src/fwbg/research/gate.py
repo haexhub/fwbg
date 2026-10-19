@@ -7,6 +7,7 @@ and starts the run with ``Decision.effective_metadata`` only if
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -23,11 +24,13 @@ class DenialCode(str, Enum):
     CARD_NOT_FOUND = "card_not_found"
     MISSING_NOTE = "missing_note"
     INVALID_WINDOW = "invalid_window"
+    INVALID_CONFIG = "invalid_config"
     NOT_ACTIVE = "not_active"
     CRITERIA_CHANGED = "criteria_changed"
     CUTOFF_MOVED = "cutoff_moved"
     AFTER_CUTOFF = "after_cutoff"
     HOLDOUT_REPEAT = "holdout_repeat"
+    HOLDOUT_CONTAMINATED = "holdout_contaminated"
     DUPLICATE_FINGERPRINT = "duplicate_fingerprint"
 
     @property
@@ -42,8 +45,12 @@ _REQUEST_ERRORS = frozenset(
         DenialCode.CARD_NOT_FOUND,
         DenialCode.MISSING_NOTE,
         DenialCode.INVALID_WINDOW,
+        DenialCode.INVALID_CONFIG,
     }
 )
+
+# A plain calendar date; ``date.fromisoformat`` alone also accepts "20250430" and week dates.
+_ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
 @dataclass(frozen=True)
@@ -84,7 +91,12 @@ class Decision:
 
 
 def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial]) -> Decision:
-    """Decide whether *request* may run, given its card and the whole ledger."""
+    """Decide whether *request* may run, given its card and the whole ledger.
+
+    *trials* must be in ledger order (append order); ``Trial.ts`` is not used.
+    ``end_date`` is exclusive: iterations see ``[.., cutoff)``, a holdout run
+    ``[cutoff, ..)``.
+    """
     kind = TrialKind.HOLDOUT if request.holdout else TrialKind.ITERATION
     metadata = dict(request.strategy_metadata)
     if not request.research_id:
@@ -94,6 +106,13 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
     if card is None:
         return _refuse(
             DenialCode.CARD_NOT_FOUND, f"no research card {request.research_id}", kind, metadata
+        )
+    if card.id != request.research_id:
+        return _refuse(
+            DenialCode.CARD_NOT_FOUND,
+            f"research card {card.id} was loaded for research id {request.research_id}",
+            kind,
+            metadata,
         )
 
     own_trials = [trial for trial in trials if trial.strategy == card.id]
@@ -118,10 +137,23 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
     if window_denial is not None:
         denials.append(window_denial)
     has_reason = _has_text(request.reason)
+    if request.holdout and card.holdout_contaminated:
+        denials.append(
+            Denial(
+                DenialCode.HOLDOUT_CONTAMINATED,
+                f"{card.id} has no clean historical holdout; "
+                "confirm with forward data or paper trading",
+            )
+        )
     if request.holdout and not has_reason:
         denials.extend(_holdout_denials(card, own_trials))
-    run_fingerprint = fingerprint(metadata, request.symbols)
-    if not has_reason:
+    try:
+        run_fingerprint: str | None = fingerprint(metadata, request.symbols)
+    except (ValueError, TypeError) as exc:
+        # ValueError: unresolved preset names, NaN; TypeError: values JSON cannot encode.
+        denials.append(Denial(DenialCode.INVALID_CONFIG, f"configuration cannot be hashed: {exc}"))
+        run_fingerprint = None
+    if run_fingerprint is not None and not has_reason:
         denials.extend(_duplicate_denials(run_fingerprint, trials))
     return Decision(tuple(denials), kind, metadata, run_fingerprint)
 
@@ -131,7 +163,8 @@ def _has_text(value: str | None) -> bool:
 
 
 def _valid_note(note: str | None) -> bool:
-    return note is not None and _has_text(note) and "\n" not in note and "\r" not in note
+    # One line: no line break of any kind (\r, \v, \f, NEL, U+2028, ...), trailing ones included.
+    return note is not None and _has_text(note) and note.splitlines() == [note]
 
 
 def _refuse(code: DenialCode, message: str, kind: TrialKind, metadata: dict[str, Any]) -> Decision:
@@ -140,74 +173,95 @@ def _refuse(code: DenialCode, message: str, kind: TrialKind, metadata: dict[str,
 
 def _criteria_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[Denial]:
     current = card.criteria_hash
-    if not own_trials:
-        if current == card.registered_criteria_hash:
-            return []
-        if any(amendment.criteria_hash == current for amendment in card.criteria_amendments):
-            return []
+    if card.criteria_amendments:
+        # ponytail: a hand-written amendment entry passes this check; the research
+        # repo's git history is the audit trail.
+        expected, source = card.criteria_amendments[-1].criteria_hash, "the latest amendment"
+    else:
+        expected, source = card.registered_criteria_hash, "the registration"
+    if current != expected:
         return [
             Denial(
                 DenialCode.CRITERIA_CHANGED,
-                f"success criteria of {card.id} differ from the registration baseline "
+                f"success criteria of {card.id} differ from {source}; "
+                "record the change as a new criteria amendment",
+            )
+        ]
+    # Guards a hand-edited registration hash.
+    if not card.criteria_amendments and own_trials and own_trials[-1].criteria_hash != current:
+        return [
+            Denial(
+                DenialCode.CRITERIA_CHANGED,
+                f"success criteria of {card.id} differ from those of {own_trials[-1].trial_id} "
                 "and no amendment records the change",
             )
         ]
-    last = own_trials[-1]
-    if current == last.criteria_hash:
-        return []
-    if any(amendment.criteria_hash == current for amendment in card.criteria_amendments):
-        return []
-    return [
-        Denial(
-            DenialCode.CRITERIA_CHANGED,
-            f"success criteria of {card.id} differ from those of {last.trial_id} "
-            "and no amendment records the change",
-        )
-    ]
+    return []
 
 
 def _cutoff_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[Denial]:
-    """The holdout may shrink after trials ran, never grow into data they could not see."""
-    if not own_trials:
-        return []
-    earliest = min(trial.holdout_cutoff for trial in own_trials)
-    if card.holdout_cutoff <= earliest:
+    """The holdout cutoff is frozen once trials ran.
+
+    Moving it earlier would put data the trials already saw into the holdout;
+    moving it later would tune on holdout data, possibly after a holdout look.
+    """
+    moved = next(
+        (trial for trial in own_trials if trial.holdout_cutoff != card.holdout_cutoff), None
+    )
+    if moved is None:
         return []
     return [
         Denial(
             DenialCode.CUTOFF_MOVED,
-            f"holdout cutoff of {card.id} moved to {card.holdout_cutoff} after trials ran "
-            f"with {earliest}; it may only move earlier",
+            f"holdout cutoff of {card.id} changed from {moved.holdout_cutoff} "
+            f"to {card.holdout_cutoff}; it is frozen once trials ran",
         )
     ]
 
 
-def _apply_window(card: ResearchCard, metadata: dict[str, Any], holdout: bool) -> Denial | None:
-    """Clamp an open-ended iteration to the holdout cutoff; refuse windows past it."""
-    end = metadata.get("end_date")
-    if end is None:
-        if not holdout:
-            metadata["end_date"] = card.holdout_cutoff.isoformat()
+def _iso_day(value: object) -> date | None:
+    if not isinstance(value, str) or not _ISO_DATE.fullmatch(value):
         return None
     try:
-        end_day = date.fromisoformat(str(end)[:10])
+        return date.fromisoformat(value)
     except ValueError:
-        return Denial(DenialCode.INVALID_WINDOW, f"end_date {end!r} is not an ISO date")
-    if end_day > card.holdout_cutoff and not holdout:
+        return None
+
+
+def _apply_window(card: ResearchCard, metadata: dict[str, Any], holdout: bool) -> Denial | None:
+    """Check the run window against the split; clamp an open-ended iteration to the cutoff."""
+    cutoff = card.holdout_cutoff
+    raw_start, raw_end = metadata.get("start_date"), metadata.get("end_date")
+    start, end = _iso_day(raw_start), _iso_day(raw_end)
+    for key, raw, day in (("start_date", raw_start, start), ("end_date", raw_end, end)):
+        if raw is not None and day is None:
+            return Denial(DenialCode.INVALID_WINDOW, f"{key} {raw!r} is not a YYYY-MM-DD date")
+    if end is None and not holdout:
+        end = cutoff
+        metadata["end_date"] = cutoff.isoformat()
+    if end is None:
+        return None
+    if not holdout and end > cutoff:
         return Denial(
             DenialCode.AFTER_CUTOFF,
-            f"end_date {end_day} lies after the holdout cutoff {card.holdout_cutoff} "
+            f"end_date {end} lies after the holdout cutoff {cutoff} "
             f"of {card.id}; only a holdout run may see that data",
+        )
+    if holdout and end <= cutoff:
+        return Denial(
+            DenialCode.INVALID_WINDOW,
+            f"a holdout run must include data after the cutoff {cutoff}; end_date is {end}",
+        )
+    if start is not None and start >= end:
+        return Denial(
+            DenialCode.INVALID_WINDOW, f"start_date {start} must lie before end_date {end}"
         )
     return None
 
 
 def _holdout_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[Denial]:
-    used = [
-        str(trial.trial_id)
-        for trial in own_trials
-        if trial.kind is TrialKind.HOLDOUT and trial.status is TrialStatus.OK
-    ]
+    # Any look counts, failed ones too: a failed run may already have shown results.
+    used = [str(trial.trial_id) for trial in own_trials if trial.kind is TrialKind.HOLDOUT]
     if not used:
         return []
     return [
@@ -220,6 +274,8 @@ def _holdout_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[De
 
 
 def _duplicate_denials(run_fingerprint: str, trials: Sequence[Trial]) -> list[Denial]:
+    # ponytail: a FINGERPRINT_VERSION bump stops matching older trials; upgrade path:
+    # re-fingerprint the stored configs/<fp>.json files on a bump.
     earlier = [
         trial
         for trial in trials
