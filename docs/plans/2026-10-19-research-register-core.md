@@ -52,8 +52,10 @@ and the design doc has been updated to match.
    earliest cutoff recorded by its trials (`CUTOFF_MOVED`); moving it
    earlier only shrinks what iterations may see and stays allowed.
 4. **Ledger locking.** `append_trial` takes an exclusive `flock` on the
-   ledger file itself and assigns the trial id under that lock. Serialising
-   the research-repo commit is step 3's concern.
+   ledger file itself and assigns the trial id under that lock. Step 3 must
+   serialise ledger append plus research-repo commit with a **separate**
+   lock file (e.g. `.register.lock`); locking `trials.jsonl` itself from the
+   same process would deadlock against `append_trial`.
 5. **`code.patch` module.** `src/fwbg/results/storage.py` is already over
    the 500-line limit, so the capture logic goes into its own module and
    `storage.py` gains only a two-line hook. Splitting `storage.py` is a
@@ -585,6 +587,18 @@ git commit -m "feat(research): parse and load research cards"
 ---
 
 ### Task 3: Trial ledger
+
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review found that `ensure_ascii=False` plus `str.splitlines()`
+> let a note containing U+2028/U+2029/NEL make the ledger permanently
+> unreadable, and that most record fields were not validated on read. The
+> merged result writes pure-ASCII lines and splits on `"\n"` only, refuses a
+> trial that would not read back unchanged before writing, validates every
+> field of every stored line (exact key set, `T-NNNNNN` ids unique, card id,
+> `DIGEST_RE` hashes shared with `card.py`, finite metrics, no NaN literals),
+> turns decoding errors and torn last lines into `LedgerError`, and treats a
+> **missing ledger as an error** (appends never create the file;
+> `init_research_repo` does). The source of truth is the code on the branch.
 
 **Files:**
 - Create: `src/fwbg/research/ledger.py`
@@ -1809,7 +1823,7 @@ passed, the regression subset (50 tests) unchanged. Then run the full suite once
 anything fails, to tell new failures from pre-existing ones.
 
 Sanity check that the tests can fail: temporarily change `_next_id` to
-`max(numbers, default=0)` (no `+ 1`), confirm three ledger tests fail,
+`max(numbers, default=0)` (no `+ 1`), confirm four ledger tests fail,
 revert.
 
 **Step 2: Update the design doc status**
