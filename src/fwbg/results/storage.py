@@ -9,6 +9,7 @@ from datetime import datetime
 
 from fwbg.data import config as data_config
 from fwbg.data.config import convert_numpy
+from fwbg.results.code_patch import write_code_patch
 
 
 def _get_results_base_path() -> str:
@@ -264,6 +265,8 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
 
     # Git-Info für Reproduzierbarkeit
     git_info = get_git_info()
+    if git_info.get("dirty"):
+        git_info["patch"] = write_code_patch(run_path)
 
     # Technische Konfiguration
     config = {
