@@ -17,6 +17,7 @@ import yaml
 from fwbg.research.fingerprint import DIGEST_RE, digest
 
 CARD_ID_RE = re.compile(r"S-[0-9]{4}")
+SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 _FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
 _FIELDS = frozenset(
     {
@@ -244,3 +245,55 @@ def _amendment(value: object) -> CriteriaAmendment:
         )
     except KeyError as exc:
         raise CardError(f"criteria_amendments: missing {exc.args[0]}") from exc
+
+
+def render_card(card: ResearchCard) -> str:
+    """Serialise *card* so that :func:`parse_card` reads it back unchanged."""
+    meta: dict[str, Any] = {
+        "id": card.id,
+        "title": card.title,
+        "status": card.status.value,
+        "tags": list(card.tags),
+        "created": card.created,
+        "holdout_cutoff": card.holdout_cutoff,
+        "holdout_contaminated": card.holdout_contaminated,
+        "success_criteria": dict(card.success_criteria),
+        "registered_criteria_hash": card.registered_criteria_hash,
+    }
+    if card.criteria_amendments:
+        meta["criteria_amendments"] = [
+            {"date": item.date, "reason": item.reason, "criteria_hash": item.criteria_hash}
+            for item in card.criteria_amendments
+        ]
+    front = yaml.safe_dump(meta, sort_keys=False, allow_unicode=True, default_flow_style=False)
+    text = f"---\n{front}---\n{card.body}"
+    if parse_card(text) != card:
+        raise CardError(f"{card.id} would not read back unchanged")
+    return text
+
+
+def slugify(title: str) -> str:
+    """File-name slug for a card title: lowercase ASCII words joined by hyphens."""
+    words = re.findall(r"[a-z0-9]+", title.lower())
+    slug = "-".join(words)[:60].strip("-")
+    if not slug:
+        raise CardError(f"title {title!r} gives an empty slug")
+    return slug
+
+
+def write_card(research_dir: Path, card: ResearchCard, slug: str) -> Path:
+    """Write *card* to ``strategies/<id>-<slug>.md``; an existing card is never overwritten.
+
+    The register must be initialised (``strategies/`` exists); filesystem errors
+    (``OSError``) pass through.
+
+    Raises:
+        CardError: the slug is invalid, or a card with this id already exists.
+    """
+    if not SLUG_RE.fullmatch(slug):
+        raise CardError(f"invalid slug {slug!r}")
+    if load_card(research_dir, card.id) is not None:
+        raise CardError(f"{card.id} already exists; cards are never overwritten")
+    path = research_dir / "strategies" / f"{card.id}-{slug}.md"
+    path.write_text(render_card(card), encoding="utf-8")
+    return path
