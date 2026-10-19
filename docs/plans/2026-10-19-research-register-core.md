@@ -1614,6 +1614,19 @@ git commit -m "feat(research): add research directory and repository setup"
 
 ### Task 6: `code.patch` for runs with uncommitted changes
 
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review found that porcelain `git diff` follows user config
+> (`diff.external`, `diff.noprefix`, `color.diff`, textconv) and silently
+> wrote unappliable patches, that quoted names and `--no-index` exit codes
+> dropped untracked files without a warning, and that git could take the
+> index lock during a run. The merged module diffs with `--binary
+> --no-ext-diff --no-textconv --no-color --src-prefix=a/ --dst-prefix=b/`,
+> lists untracked files with `-z`, fails loudly on an empty per-file diff,
+> works on bytes end to end, and runs git through the shared
+> `fwbg.core.git_env.isolated_git_env()` (no repository-local variables,
+> `GIT_OPTIONAL_LOCKS=0`), which `fwbg.research.repo` uses too. The source
+> of truth is the code on the branch.
+
 **Files:**
 - Create: `src/fwbg/results/code_patch.py`
 - Modify: `src/fwbg/results/storage.py` (`create_run_directory`, right after `git_info = get_git_info()`)
@@ -1884,8 +1897,18 @@ git commit -m "docs: mark research register core as implemented"
   register commits follow the operator's `commit.gpgsign` setting.
 - If init is ever called implicitly (CLI/API), hold `.register.lock` around
   it; concurrent first inits race today.
-- Every register git call must strip `GIT_LOCAL_ENV_VARS` like
-  `fwbg.research.repo._git` does.
+- Every git call must use `fwbg.core.git_env.isolated_git_env()`, as
+  `fwbg.research.repo` and `fwbg.results.code_patch` do.
+- `get_git_info` and `capture_code_patch` both follow the current working
+  directory. Before trials record code state, anchor both to the fwbg source
+  tree (e.g. the repository containing `fwbg.__file__`) and change them
+  together, so commit and patch always come from the same repository.
+- `write_code_patch` returns `None` both for "nothing under src/packages
+  changed" and for "capture failed". Trials must distinguish the two (e.g.
+  record a capture error) so a run without reproducible code state is
+  visible.
+- When the CLI exists, point the ledger's missing-file message at the CLI
+  command instead of the Python function `init_research_repo`.
 
 - Step 3 records the card's `holdout_cutoff` in every trial it appends;
   step 2 (`backfill --apply`) and `reconcile` must do the same for legacy
