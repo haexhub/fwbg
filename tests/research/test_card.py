@@ -49,6 +49,8 @@ def test_parses_front_matter_and_body():
     assert card.criteria_amendments[0].criteria_hash == (
         "sha256:c22558e72bca2f92a641914684ced8140937d9fe44d872db8f2526a71139f7e2"
     )
+    assert card.criteria_amendments[0].date == date(2026, 10, 20)
+    assert card.criteria_amendments[0].reason == "daily needs fewer trades"
     assert card.body.startswith("## Hypothesis")
 
 
@@ -85,10 +87,15 @@ def test_success_criteria_are_immutable():
         (CARD.replace("---\nid", "id", 1), "front matter"),
         (CARD.replace("title: CUSUM event continuation\n", ""), "title"),
         (CARD.replace("title: CUSUM event continuation", "title:"), "title"),
-        (CARD.replace("status: active", "status: maybe"), "maybe"),
+        (CARD.replace("title: CUSUM event continuation", 'title: "   "'), "title"),
+        (CARD.replace("status: active", "status: maybe"), "status.*maybe.*active"),
         (
             CARD.replace("status: active", "status: active\nstatus: rejected"),
             "duplicate key 'status'",
+        ),
+        (
+            CARD.replace("  min_sharpe: 1.0\n", "  min_sharpe: 1.0\n  min_sharpe: 2.0\n"),
+            "duplicate key 'min_sharpe'",
         ),
         (CARD.replace('holdout_cutoff: "2025-04-30"', "holdout_cutoff: someday"), "holdout_cutoff"),
         (
@@ -113,7 +120,13 @@ def test_success_criteria_are_immutable():
         ),
         (CARD.replace("min_trades: 100", "min_trades: yes"), "min_trades"),
         (CARD.replace("min_sharpe: 1.0", "min_sharpe: .nan"), "min_sharpe"),
+        (
+            CARD.replace("min_trades: 100", "min_trades: 1" + "0" * 400),
+            "min_trades.*out of range",
+        ),
+        (CARD.replace("min_trades: 100", "1: 5"), "success_criteria.*key"),
         (CARD.replace("tags: [event, daily]", "tags: event"), "tags"),
+        (CARD.replace("tags: [event, daily]", "tags: [2026]"), "tags"),
         (CARD.replace("id: S-0007", "id: 7"), "invalid research id"),
         (CARD.replace("id: S-0007", "id: S-\u0660\u0660\u0660\u0667"), "invalid research id"),
         (CARD.replace(REGISTERED_HASH, "123"), "registered_criteria_hash"),
@@ -121,6 +134,10 @@ def test_success_criteria_are_immutable():
         (
             CARD.replace(AMENDMENTS, "criteria_amendments:\n  date: 2026-10-20\n  reason: x\n"),
             "criteria_amendments",
+        ),
+        (
+            CARD.replace(AMENDMENTS, "criteria_amendments:\n  - foo\n"),
+            "criteria_amendments.*'foo'",
         ),
         (CARD.replace("    reason: daily needs fewer trades\n", ""), "reason"),
         (CARD.replace("reason: daily needs fewer trades", 'reason: ""'), "reason"),
@@ -130,8 +147,10 @@ def test_success_criteria_are_immutable():
         "no-front-matter",
         "missing-title",
         "null-title",
+        "blank-title",
         "unknown-status",
         "duplicate-key",
+        "nested-duplicate-key",
         "non-date-cutoff",
         "impossible-date",
         "missing-contaminated",
@@ -141,12 +160,16 @@ def test_success_criteria_are_immutable():
         "empty-criteria",
         "bool-criterion",
         "nan-criterion",
+        "overflowing-criterion",
+        "non-string-criterion-key",
         "scalar-tags",
+        "non-string-tag",
         "numeric-id",
         "non-ascii-digit-id",
         "numeric-registered-hash",
         "scalar-amendments",
         "mapping-amendments",
+        "scalar-amendment-item",
         "amendment-without-reason",
         "amendment-empty-reason",
         "amendment-short-hash",
