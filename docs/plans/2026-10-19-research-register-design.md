@@ -1,6 +1,6 @@
 # Research Register
 
-## Status: Design approved (2026-10-19) — not implemented
+## Status: Design approved (2026-10-19) — step 1 (core) implemented
 
 ## Problem
 
