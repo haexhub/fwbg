@@ -9,6 +9,12 @@ trade_history.csv
 stats_export/
 test_results/
 
+# Research results belong in the private research register
+# ($FWBG_WORKSPACE/research), not in this public repo
+/plans/
+/strategies/
+docs/alternative-data-study.md
+
 # Account data (sensitive!)
 accounts/
 
