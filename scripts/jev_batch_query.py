@@ -18,21 +18,21 @@ Ablauf:
    beide Provider abfragen, Ergebnis nach data/jev_cache/*.csv cachen
    (resumable: bereits gecachte (timestamp, provider, window) werden geskippt)
 """
+
 import json
-import os
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable, Mapping
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import requests
+import requests  # type: ignore[import-untyped]
 import yfinance as yf
 
 from fwbg.core.registry import get_indicator
 
-CACHE_DIR = "./data/jev_cache"
-os.makedirs(CACHE_DIR, exist_ok=True)
-CACHE_FILE = f"{CACHE_DIR}/eurusd_h1_results.csv"
+CACHE_DIR = Path("data/jev_cache")
+CACHE_FILE = CACHE_DIR / "eurusd_h1_results.csv"
 
 YF_TICKER = "EURUSD=X"
 YF_INTERVAL = "1h"
@@ -41,7 +41,9 @@ YF_PERIOD = "60d"  # yfinance max lookback for hourly bars
 EURUSD_SPREAD = 0.00018  # src/fwbg/data/assets.py DEFAULT_ASSETS["EURUSD"]
 EURUSD_POINT = 0.0001
 ATR_MULT = 1.5  # barrier distance = ATR_MULT * ATR(14) at entry bar
-TIMEOUT_BARS = 8  # horizon in H1 bars; empirically ~29/34/37% class split at ATR_MULT=1.5
+TIMEOUT_BARS = (
+    8  # horizon in H1 bars; empirically ~29/34/37% class split at ATR_MULT=1.5
+)
 
 SEMIF_URL = "https://llms.itemis.cloud/typesafe/v1/systemone"
 OFFICIAL_URL = "https://openrouter.ai/api/v1/systemone"
@@ -50,24 +52,36 @@ OFFICIAL_MODEL = "typesafe/jev-1.13"
 INDICATOR_PLUGINS = ["momentum", "volatility", "price_action", "supertrend"]
 
 
-def _load_keys() -> dict:
-    with open("keys.json") as f:
-        return json.load(f)
+def _load_keys(path: Path = Path("keys.json")) -> dict[str, str]:
+    with path.open(encoding="utf-8") as handle:
+        raw = json.load(handle)
+    if not isinstance(raw, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in raw.items()
+    ):
+        raise ValueError(
+            f"{path} must contain a JSON object with string keys and values"
+        )
+    return raw
 
 
-def load_semif_key() -> str:
-    return _load_keys()["semif-itemis"]
+def load_semif_key(path: Path = Path("keys.json")) -> str:
+    return _load_keys(path)["semif-itemis"]
 
 
-def load_official_key() -> str:
-    return _load_keys()["openrouter"]
+def load_official_key(path: Path = Path("keys.json")) -> str:
+    return _load_keys(path)["openrouter"]
 
 
 def fetch_ohlc() -> pd.DataFrame:
     """EUR/USD H1 OHLC, letzte 60 Tage (yfinance-Limit fuer Stundenbars)."""
     print(f"Loading {YF_TICKER} {YF_INTERVAL} ({YF_PERIOD})...")
-    df = yf.download(YF_TICKER, period=YF_PERIOD, interval=YF_INTERVAL,
-                      progress=False, auto_adjust=True)
+    df = yf.download(
+        YF_TICKER,
+        period=YF_PERIOD,
+        interval=YF_INTERVAL,
+        progress=False,
+        auto_adjust=True,
+    )
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df = df.rename(columns={"Open": "O", "High": "H", "Low": "L", "Close": "C"})
@@ -90,8 +104,9 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def triple_barrier_labels(df: pd.DataFrame, atr_mult: float,
-                          timeout_bars: int) -> list:
+def triple_barrier_labels(
+    df: pd.DataFrame, atr_mult: float, timeout_bars: int
+) -> list[str | None]:
     """Ground truth pro Bar: welche Barriere (Close[i] +/- atr_mult*ATR[i])
     wird zuerst in den naechsten timeout_bars Bars beruehrt. Barrieren sind
     pro Bar dynamisch (aktuelle Vola), nicht fix -- sonst dominiert "neither"
@@ -103,7 +118,7 @@ def triple_barrier_labels(df: pd.DataFrame, atr_mult: float,
     lows = df["L"].values
     closes = df["C"].values
     atr = df["_atr"].values
-    labels = [None] * n
+    labels: list[str | None] = [None] * n
 
     for i in range(n - timeout_bars):
         if np.isnan(atr[i]) or atr[i] == 0:
@@ -116,8 +131,9 @@ def triple_barrier_labels(df: pd.DataFrame, atr_mult: float,
             up_hit = highs[j] >= upper
             down_hit = lows[j] <= lower
             if up_hit and down_hit:
-                # both touched in the same bar: resolve via close-proximity
-                label = "up_first" if abs(highs[j] - upper) <= abs(lower - lows[j]) else "down_first"
+                # Match the native simulator's conservative stop-loss rule
+                # when no sub-bar data is available to establish an order.
+                label = "down_first"
                 break
             if up_hit:
                 label = "up_first"
@@ -132,7 +148,7 @@ def triple_barrier_labels(df: pd.DataFrame, atr_mult: float,
 def build_state_text(df: pd.DataFrame, i: int, window: int) -> str:
     """Rohes OHLC-Fenster (letzte `window` Bars) + aktueller Indikator-Snapshot."""
     start = max(0, i - window + 1)
-    recent = df.iloc[start:i + 1]
+    recent = df.iloc[start : i + 1]
     bars_txt = ", ".join(
         f"{ts.strftime('%m-%d %H:%M')}: O={r.O:.5f} H={r.H:.5f} L={r.L:.5f} C={r.C:.5f}"
         for ts, r in recent.iterrows()
@@ -148,8 +164,13 @@ def build_state_text(df: pd.DataFrame, i: int, window: int) -> str:
     )
 
 
-def build_question(entry_price: float, tp_dist: float, sl_dist: float,
-                    horizon_bars: int, reverse_order: bool = False) -> dict:
+def build_question(
+    entry_price: float,
+    tp_dist: float,
+    sl_dist: float,
+    horizon_bars: int,
+    reverse_order: bool = False,
+) -> dict[str, object]:
     """Explizite Ziel-/Stop-Preise + Pip-Angabe statt roher Deltas -- ein
     Choice-Logit-Readout-Modell soll den Referenzpreis nicht selbst aus dem
     OHLC-Fenster inferieren muessen.
@@ -172,8 +193,7 @@ def build_question(entry_price: float, tp_dist: float, sl_dist: float,
             f"(-{sl_pips:.1f} pips) before rising to {target:.5f}"
         ),
         "neither": (
-            f"Neither {target:.5f} nor {stop:.5f} is reached "
-            f"within the horizon"
+            f"Neither {target:.5f} nor {stop:.5f} is reached within the horizon"
         ),
     }
     if reverse_order:
@@ -194,7 +214,7 @@ def build_question(entry_price: float, tp_dist: float, sl_dist: float,
     }
 
 
-def _session_for(ts) -> str:
+def _session_for(ts: pd.Timestamp) -> str:
     hour = ts.tz_convert("UTC").hour
     if 0 <= hour < 7:
         return "Asian session (typically quiet)"
@@ -234,7 +254,7 @@ def build_state_text_narrative(df: pd.DataFrame, i: int, window: int) -> str:
     nicht auf dichte quantitative Finanz-Feature-Vektoren mit 5 Nachkommastellen."""
     row = df.iloc[i]
     start = max(0, i - window + 1)
-    window_df = df.iloc[start:i + 1]
+    window_df = df.iloc[start : i + 1]
     net_pips = (row["C"] - window_df["C"].iloc[0]) / EURUSD_POINT
     window_high = window_df["H"].max()
     window_low = window_df["L"].min()
@@ -262,14 +282,16 @@ def build_state_text_narrative(df: pd.DataFrame, i: int, window: int) -> str:
         f"(net higher-highs/higher-lows vs. lower-highs/lower-lows over the "
         f"recent window; positive favors bullish structure). "
         f"Momentum: RSI(14)={rsi:.0f}, {_rsi_desc(rsi)}. "
-        f"Volatility: {_vol_desc(vol_pct)} (current ATR at the {vol_pct*100:.0f}th percentile "
+        f"Volatility: {_vol_desc(vol_pct)} (current ATR at the {vol_pct * 100:.0f}th percentile "
         f"of the last 14 periods). "
-        f"Price action: {streak_desc}, sitting at {row['pa_range_pos']*100:.0f}% of the "
+        f"Price action: {streak_desc}, sitting at {row['pa_range_pos'] * 100:.0f}% of the "
         f"recent trading range."
     )
 
 
-def build_question_qualitative(horizon_bars: int, reverse_order: bool = False) -> dict:
+def build_question_qualitative(
+    horizon_bars: int, reverse_order: bool = False
+) -> dict[str, object]:
     """Keine Preis-Arithmetik mehr im Prompt (kein Ziel-/Stop-Preisvergleich) --
     reine qualitative Richtungseinschaetzung. Barrieren-Ground-Truth wird
     weiterhin extern berechnet (triple_barrier_labels), nur nicht mehr dem
@@ -312,13 +334,25 @@ def build_question_qualitative(horizon_bars: int, reverse_order: bool = False) -
     }
 
 
-def _post_with_retry(url: str, headers: dict, payload: dict, retries: int = 3) -> dict:
+def _post_with_retry(
+    url: str,
+    headers: Mapping[str, str],
+    payload: Mapping[str, object],
+    retries: int = 3,
+) -> dict[str, object]:
     delay = 2.0
     for attempt in range(retries):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=30)
             if resp.status_code == 200:
-                return resp.json()
+                result = resp.json()
+                if not isinstance(result, dict):
+                    return {
+                        "error": True,
+                        "status": 200,
+                        "body": "response is not a JSON object",
+                    }
+                return result
             if resp.status_code == 429 and attempt < retries - 1:
                 time.sleep(delay)
                 delay *= 2
@@ -333,7 +367,9 @@ def _post_with_retry(url: str, headers: dict, payload: dict, retries: int = 3) -
     return {"error": True, "status": None, "body": "exhausted retries"}
 
 
-def call_semif(semif_key: str, state: str, questions: dict) -> dict:
+def call_semif(
+    semif_key: str, state: str, questions: Mapping[str, object]
+) -> dict[str, object]:
     return _post_with_retry(
         SEMIF_URL,
         {"Authorization": f"Bearer {semif_key}", "Content-Type": "application/json"},
@@ -341,7 +377,9 @@ def call_semif(semif_key: str, state: str, questions: dict) -> dict:
     )
 
 
-def call_official(official_key: str, state: str, questions: dict) -> dict:
+def call_official(
+    official_key: str, state: str, questions: Mapping[str, object]
+) -> dict[str, object]:
     return _post_with_retry(
         OFFICIAL_URL,
         {"Authorization": f"Bearer {official_key}", "Content-Type": "application/json"},
@@ -349,32 +387,54 @@ def call_official(official_key: str, state: str, questions: dict) -> dict:
     )
 
 
-def load_cache(cache_file: str) -> pd.DataFrame:
-    if os.path.exists(cache_file):
+def load_cache(cache_file: Path) -> pd.DataFrame:
+    if cache_file.exists():
         return pd.read_csv(cache_file, parse_dates=["timestamp"])
-    return pd.DataFrame(columns=[
-        "timestamp", "provider", "window", "label", "choice",
-        "prob_up_first", "prob_down_first", "prob_neither",
-        "confidence", "input_tokens", "output_tokens", "cost", "error",
-    ])
+    return pd.DataFrame(
+        columns=[
+            "timestamp",
+            "provider",
+            "window",
+            "label",
+            "choice",
+            "prob_up_first",
+            "prob_down_first",
+            "prob_neither",
+            "confidence",
+            "input_tokens",
+            "output_tokens",
+            "cost",
+            "error",
+        ]
+    )
 
 
-def append_cache_row(cache_file: str, row: dict) -> None:
+def append_cache_row(cache_file: Path, row: Mapping[str, object]) -> None:
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
     df_row = pd.DataFrame([row])
-    write_header = not os.path.exists(cache_file)
+    write_header = not cache_file.exists()
     df_row.to_csv(cache_file, mode="a", header=write_header, index=False)
 
 
-def run_batch(df: pd.DataFrame, labels: list, bar_indices: list, windows: list,
-              semif_key: str, official_key: str, *, cache_file: str = CACHE_FILE,
-              question_key: str = "barrier_outcome",
-              build_state_fn=build_state_text,
-              build_question_fn=None) -> None:
+def run_batch(
+    df: pd.DataFrame,
+    labels: list[str | None],
+    bar_indices: list[int],
+    windows: list[int],
+    semif_key: str,
+    official_key: str,
+    *,
+    cache_file: Path = CACHE_FILE,
+    question_key: str = "barrier_outcome",
+    build_state_fn: Callable[[pd.DataFrame, int, int], str] = build_state_text,
+    build_question_fn: Callable[[pd.DataFrame, int], dict[str, object]] | None = None,
+) -> None:
     """build_question_fn(df, i) -> questions dict; defaults to the ATR-based
     explicit-price barrier question. question_key must match the top-level
     key of that dict (the provider echoes it back in `answers`)."""
     if build_question_fn is None:
-        def build_question_fn(df, i):
+
+        def build_question_fn(df: pd.DataFrame, i: int) -> dict[str, object]:
             entry_price = df["C"].iloc[i]
             barrier_dist = ATR_MULT * df["_atr"].iloc[i]
             return build_question(entry_price, barrier_dist, barrier_dist, TIMEOUT_BARS)
@@ -407,36 +467,76 @@ def run_batch(df: pd.DataFrame, labels: list, bar_indices: list, windows: list,
 
                 result = call_fn(key, state, questions)
                 row = {
-                    "timestamp": ts, "provider": provider_name, "window": window,
-                    "label": label, "choice": None,
-                    "prob_up_first": None, "prob_down_first": None, "prob_neither": None,
-                    "confidence": None, "input_tokens": None, "output_tokens": None,
-                    "cost": None, "error": None,
+                    "timestamp": ts,
+                    "provider": provider_name,
+                    "window": window,
+                    "label": label,
+                    "choice": None,
+                    "prob_up_first": None,
+                    "prob_down_first": None,
+                    "prob_neither": None,
+                    "confidence": None,
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "cost": None,
+                    "error": None,
                 }
                 if result.get("error"):
                     row["error"] = f"{result.get('status')}: {result.get('body')}"
                 else:
-                    answer = result["answers"][question_key]
-                    probs = answer["probabilities"]
+                    answers = result.get("answers")
+                    if not isinstance(answers, dict):
+                        raise ValueError("provider response has no answers object")
+                    answer = answers.get(question_key)
+                    if not isinstance(answer, dict):
+                        raise ValueError(
+                            f"provider response has no {question_key!r} answer"
+                        )
+                    choice = answer.get("choice")
+                    probs = answer.get("probabilities")
+                    if not isinstance(choice, str) or not isinstance(probs, dict):
+                        raise ValueError(
+                            "provider answer has an invalid choice/probabilities shape"
+                        )
+                    probability_values = {
+                        name: probs.get(name)
+                        for name in ("up_first", "down_first", "neither")
+                    }
+                    if any(
+                        not isinstance(value, (int, float))
+                        or not np.isfinite(value)
+                        or not 0 <= value <= 1
+                        for value in probability_values.values()
+                    ):
+                        raise ValueError(
+                            "provider answer contains invalid probabilities"
+                        )
                     usage = result.get("usage", {})
-                    row.update({
-                        "choice": answer["choice"],
-                        "prob_up_first": probs.get("up_first"),
-                        "prob_down_first": probs.get("down_first"),
-                        "prob_neither": probs.get("neither"),
-                        "confidence": answer.get("confidence"),
-                        "input_tokens": usage.get("input_tokens"),
-                        "output_tokens": usage.get("output_tokens"),
-                        "cost": usage.get("cost"),
-                    })
+                    if not isinstance(usage, dict):
+                        usage = {}
+                    row.update(
+                        {
+                            "choice": choice,
+                            "prob_up_first": probability_values["up_first"],
+                            "prob_down_first": probability_values["down_first"],
+                            "prob_neither": probability_values["neither"],
+                            "confidence": answer.get("confidence"),
+                            "input_tokens": usage.get("input_tokens"),
+                            "output_tokens": usage.get("output_tokens"),
+                            "cost": usage.get("cost"),
+                        }
+                    )
                 append_cache_row(cache_file, row)
-                print(f"  [{done}/{total}] {ts} {provider_name} w={window} -> "
-                      f"{row['choice'] or row['error']}")
+                print(
+                    f"  [{done}/{total}] {ts} {provider_name} w={window} -> "
+                    f"{row['choice'] or row['error']}"
+                )
 
 
 if __name__ == "__main__":
     import sys
 
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     mode = sys.argv[1] if len(sys.argv) > 1 else "sensitivity"
 
     semif_key = load_semif_key()
@@ -446,9 +546,9 @@ if __name__ == "__main__":
     features = compute_features(ohlc)
     labels = triple_barrier_labels(features, ATR_MULT, TIMEOUT_BARS)
 
-    valid_indices = [i for i, l in enumerate(labels) if l is not None]
+    valid_indices = [i for i, label in enumerate(labels) if label is not None]
 
-    sample = valid_indices[::max(1, len(valid_indices) // 40)][:40]
+    sample = valid_indices[:: max(1, len(valid_indices) // 40)][:40]
 
     if mode == "sensitivity":
         # ~40 gleichmaessig verteilte Bars, 3 Fenstergroessen, beide Provider
@@ -462,21 +562,50 @@ if __name__ == "__main__":
         def reversed_question(df, i):
             entry_price = df["C"].iloc[i]
             barrier_dist = ATR_MULT * df["_atr"].iloc[i]
-            return build_question(entry_price, barrier_dist, barrier_dist,
-                                   TIMEOUT_BARS, reverse_order=True)
-        run_batch(features, labels, sample, [20], semif_key, official_key,
-                  cache_file=f"{CACHE_DIR}/eurusd_h1_results_orderbias.csv",
-                  build_question_fn=reversed_question)
+            return build_question(
+                entry_price,
+                barrier_dist,
+                barrier_dist,
+                TIMEOUT_BARS,
+                reverse_order=True,
+            )
+
+        run_batch(
+            features,
+            labels,
+            sample,
+            [20],
+            semif_key,
+            official_key,
+            cache_file=CACHE_DIR / "eurusd_h1_results_orderbias.csv",
+            build_question_fn=reversed_question,
+        )
     elif mode == "narrative":
         # Kuratierte narrative State-Beschreibung + rein qualitative Frage
         # (keine Ziel-/Stop-Preis-Arithmetik mehr im Prompt).
-        def qualitative_question(df, i):
-            return build_question_qualitative(TIMEOUT_BARS, reverse_order=(i % 2 == 0))
-        run_batch(features, labels, sample, [10, 20, 50], semif_key, official_key,
-                  cache_file=f"{CACHE_DIR}/eurusd_h1_results_narrative.csv",
-                  question_key="directional_bias",
-                  build_state_fn=build_state_text_narrative,
-                  build_question_fn=qualitative_question)
+        sample_order = {
+            index: position % 2 == 0 for position, index in enumerate(sample)
+        }
+
+        def qualitative_question(df: pd.DataFrame, i: int) -> dict[str, object]:
+            return build_question_qualitative(
+                TIMEOUT_BARS, reverse_order=sample_order[i]
+            )
+
+        run_batch(
+            features,
+            labels,
+            sample,
+            [10, 20, 50],
+            semif_key,
+            official_key,
+            cache_file=CACHE_DIR / "eurusd_h1_results_narrative.csv",
+            question_key="directional_bias",
+            build_state_fn=build_state_text_narrative,
+            build_question_fn=qualitative_question,
+        )
     else:
-        print(f"Unknown mode: {mode} (use 'sensitivity', 'full <window>', "
-              f"'orderbias' or 'narrative')")
+        print(
+            f"Unknown mode: {mode} (use 'sensitivity', 'full <window>', "
+            f"'orderbias' or 'narrative')"
+        )
