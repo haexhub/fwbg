@@ -17,7 +17,8 @@ import yaml
 from fwbg.research.fingerprint import DIGEST_RE, digest
 
 CARD_ID_RE = re.compile(r"S-[0-9]{4}")
-SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+# At most 60 characters, the length slugify cuts a title to.
+SLUG_RE = re.compile(r"(?=.{1,60}\Z)[a-z0-9]+(?:-[a-z0-9]+)*")
 _FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
 _FIELDS = frozenset(
     {
@@ -249,6 +250,9 @@ def _amendment(value: object) -> CriteriaAmendment:
 
 def render_card(card: ResearchCard) -> str:
     """Serialise *card* so that :func:`parse_card` reads it back unchanged."""
+    # Reading a card file translates newlines, so a carriage return would not survive.
+    if "\r" in card.body:
+        raise CardError(f"{card.id}: body contains a carriage return")
     meta: dict[str, Any] = {
         "id": card.id,
         "title": card.title,
@@ -265,7 +269,9 @@ def render_card(card: ResearchCard) -> str:
             {"date": item.date, "reason": item.reason, "criteria_hash": item.criteria_hash}
             for item in card.criteria_amendments
         ]
-    front = yaml.safe_dump(meta, sort_keys=False, allow_unicode=True, default_flow_style=False)
+    front = yaml.safe_dump(
+        meta, sort_keys=False, allow_unicode=True, default_flow_style=False, width=1000
+    )
     text = f"---\n{front}---\n{card.body}"
     if parse_card(text) != card:
         raise CardError(f"{card.id} would not read back unchanged")
@@ -285,15 +291,23 @@ def write_card(research_dir: Path, card: ResearchCard, slug: str) -> Path:
     """Write *card* to ``strategies/<id>-<slug>.md``; an existing card is never overwritten.
 
     The register must be initialised (``strategies/`` exists); filesystem errors
-    (``OSError``) pass through.
+    (``OSError``) pass through. Callers that may run concurrently must hold
+    :func:`fwbg.research.repo.register_lock`: the exclusive create only stops a
+    second write of the same file, not the same id under another slug.
 
     Raises:
-        CardError: the slug is invalid, or a card with this id already exists.
+        CardError: the slug is invalid, the card cannot be rendered, or a card
+            with this id already exists.
     """
     if not SLUG_RE.fullmatch(slug):
         raise CardError(f"invalid slug {slug!r}")
     if load_card(research_dir, card.id) is not None:
         raise CardError(f"{card.id} already exists; cards are never overwritten")
+    text = render_card(card)
     path = research_dir / "strategies" / f"{card.id}-{slug}.md"
-    path.write_text(render_card(card), encoding="utf-8")
+    try:
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(text)
+    except FileExistsError as exc:
+        raise CardError(f"{card.id} already exists; cards are never overwritten") from exc
     return path
