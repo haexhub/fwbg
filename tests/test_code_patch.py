@@ -159,13 +159,16 @@ def test_write_code_patch_outside_a_repository_returns_none(no_repo, monkeypatch
 def test_unwritable_patch_does_not_fail_the_run(repo, tmp_path, monkeypatch, caplog):
     make_dirty(repo)
     monkeypatch.chdir(repo)
+    write_bytes = Path.write_bytes
 
     def disk_full(self, data):
+        write_bytes(self, data[:5])
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(Path, "write_bytes", disk_full)
     assert write_code_patch(tmp_path) is None
     assert f"could not write {PATCH_FILENAME}" in caplog.text
+    assert not (tmp_path / PATCH_FILENAME).exists()
 
 
 def test_dirty_run_directory_records_the_patch(repo, tmp_path, monkeypatch):

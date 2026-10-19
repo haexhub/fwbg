@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -74,6 +75,9 @@ def write_code_patch(run_dir: str | os.PathLike[str]) -> str | None:
         (Path(run_dir) / PATCH_FILENAME).write_bytes(patch)
     except OSError as exc:
         log.warning("could not write %s: %s", PATCH_FILENAME, exc)
+        # config.json will record no patch, so a truncated file must not stay behind.
+        with contextlib.suppress(OSError):
+            (Path(run_dir) / PATCH_FILENAME).unlink(missing_ok=True)
         return None
     return PATCH_FILENAME
 
