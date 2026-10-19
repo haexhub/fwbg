@@ -52,6 +52,8 @@ _CARD_KEYS = frozenset(
     {"id", "title", "slug", "status", "tags", "criteria", "body", "runs", "studies"}
 )
 _STUDY_KEYS = frozenset({"variant", "symbols", "date", "note", "metrics"})
+_BACKFILL_KINDS = frozenset({TrialKind.LEGACY, TrialKind.SMOKE})
+_STUDY_PREFIX = "study:"
 
 
 class BackfillError(Exception):
@@ -222,6 +224,9 @@ def _card_plan(item: object, index: int) -> CardPlan:
     )
     if not runs and not studies:
         raise BackfillError(f"{where}: a card needs at least one run or study trial")
+    variants = _repeated(study.variant for study in studies)
+    if variants:
+        raise BackfillError(f"{where}: duplicate study variants: {', '.join(variants)}")
     body = item.get("body", "")
     if not isinstance(body, str):
         raise BackfillError(f"{where}: body must be text")
@@ -349,7 +354,9 @@ def _prepare(
     today: date,
 ) -> _Writes:
     """Build and check every card, config and trial of the apply; write nothing."""
-    recorded = {trial.run_id for trial in read_trials(research_dir / LEDGER_FILENAME)}
+    recorded = _recorded(read_trials(research_dir / LEDGER_FILENAME))
+    _check_ledger(plans, recorded)
+    done = set(recorded)
     cards: list[tuple[ResearchCard, str]] = []
     configs: dict[str, Mapping[str, Any]] = {}
     trials: list[Trial] = []
@@ -360,23 +367,82 @@ def _prepare(
         if card is None:
             card = _new_card(plan, cutoff, criteria, today)
             cards.append((card, plan.slug))
-        elif card.holdout_cutoff != cutoff or card.criteria_hash != criteria_hash(criteria):
-            raise BackfillError(
-                f"{plan.id} exists with a different cutoff or criteria; "
-                "legacy cards are frozen once written"
-            )
+        else:
+            _check_existing(card, plan, cutoff, criteria, research_dir)
         for run_id in plan.runs:
-            if run_id in recorded:
-                continue
             run = runs_by_id[run_id]
+            # Recorded runs too: the register never names a fingerprint without its config.
             if run.config is not None:
                 configs[run.fingerprint] = run.config
-            trials.append(_storable(_legacy_trial(card, run)))
+            if run_id not in done:
+                trials.append(_storable(_legacy_trial(card, run)))
+                done.add(run_id)
         for study in plan.studies:
             study_run_id = _study_run_id(card.id, study.variant)
-            if study_run_id not in recorded:
+            if study_run_id not in done:
                 trials.append(_storable(_study_trial(card, study, study_run_id)))
+                done.add(study_run_id)
     return _Writes(tuple(cards), configs, tuple(trials))
+
+
+def _recorded(trials: Sequence[Trial]) -> dict[str, str]:
+    """Run id -> card of every trial an earlier backfill wrote."""
+    return {
+        trial.run_id: trial.strategy
+        for trial in trials
+        if trial.run_id is not None
+        and (trial.kind in _BACKFILL_KINDS or trial.run_id.startswith(_STUDY_PREFIX))
+    }
+
+
+def _check_ledger(plans: Sequence[CardPlan], recorded: Mapping[str, str]) -> None:
+    """Every trial an earlier apply recorded must stay in the mapping, on the same card."""
+    mapped = {run_id: plan.id for plan in plans for run_id in plan.runs}
+    mapped.update(
+        {_study_run_id(plan.id, study.variant): plan.id for plan in plans for study in plan.studies}
+    )
+    problems = []
+    for run_id, card_id in sorted(recorded.items()):
+        target = mapped.get(run_id)
+        if target is None:
+            problems.append(f"{run_id} is recorded on {card_id} but missing from the mapping")
+        elif target != card_id:
+            problems.append(f"{run_id} is recorded on {card_id} but mapped to {target}")
+    if problems:
+        raise BackfillError(
+            "; ".join(problems) + "; the ledger keeps the grouping of the first apply: "
+            "reset the register (it is not pushed yet) if the grouping really changes"
+        )
+
+
+def _check_existing(
+    card: ResearchCard,
+    plan: CardPlan,
+    cutoff: date,
+    criteria: Mapping[str, float],
+    research_dir: Path,
+) -> None:
+    """An existing card is kept as written, so the mapping must agree with it."""
+    if card.holdout_cutoff != cutoff or card.criteria_hash != criteria_hash(criteria):
+        raise BackfillError(
+            f"{plan.id} exists with a different cutoff or criteria; "
+            "legacy cards are frozen once written"
+        )
+    # load_card found exactly one file for the id, so this path exists only if the slug agrees.
+    slug_kept = (research_dir / "strategies" / f"{plan.id}-{plan.slug}.md").exists()
+    agreement = {
+        "title": card.title == plan.title,
+        "slug": slug_kept,
+        "status": card.status is plan.status,
+        "tags": card.tags == plan.tags,
+        "body": card.body == plan.body,
+    }
+    changed = [name for name, agrees in agreement.items() if not agrees]
+    if changed:
+        raise BackfillError(
+            f"{plan.id}: the mapping changes the {', '.join(changed)} of the existing card; "
+            "card files, not the mapping, hold these after the first apply"
+        )
 
 
 def _cutoff(plan: CardPlan, runs_by_id: Mapping[str, LegacyRun], today: date) -> date:

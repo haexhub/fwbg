@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import subprocess
@@ -210,6 +211,7 @@ def test_study_trials_are_recorded_once_with_a_synthetic_fingerprint(runs, regis
         ({"studies": [{**STUDY, "note": "trailing break\n"}]}, "one line"),
         ({"studies": [{**STUDY, "metrics": {"a": {"x": 1}, "A": {"y": 2}}}]}, "ignoring case"),
         ({"tags": ["ok", 3]}, r"S-0001\.tags: .*\['ok', 3\]"),
+        ({"studies": [STUDY, {**STUDY, "note": "copy"}]}, "duplicate study variants: config-4"),
     ],
     ids=[
         "id",
@@ -228,6 +230,7 @@ def test_study_trials_are_recorded_once_with_a_synthetic_fingerprint(runs, regis
         "note-break",
         "symbol-case",
         "tags",
+        "variant-twice",
     ],
 )
 def test_parse_mapping_rejects_invalid_cards(runs, change, fragment):
@@ -285,6 +288,8 @@ def test_open_ended_legacy_runs_differ_from_clamped_iterations(runs, register):
         lambda cards: cards[1].update(criteria={"max_drawdown": float("inf")}),
         lambda cards: cards[1].update(criteria={"min_trades": 10**400}),
         lambda cards: cards[1].update(studies=[{**STUDY, "date": datetime(2026, 3, 1, 10)}]),
+        # A card file is read with newline translation, so a carriage return cannot survive.
+        lambda cards: cards[1].update(body="## Verdict\r\n"),
         lambda cards: cards.append(
             {
                 "id": "S-0003",
@@ -293,7 +298,13 @@ def test_open_ended_legacy_runs_differ_from_clamped_iterations(runs, register):
             }
         ),
     ],
-    ids=["inf-criterion", "huge-criterion", "datetime-study", "study-only-datetime"],
+    ids=[
+        "inf-criterion",
+        "huge-criterion",
+        "datetime-study",
+        "carriage-return",
+        "study-only-datetime",
+    ],
 )
 def test_a_defect_in_a_later_card_leaves_the_register_untouched(runs, register, spoil):
     data = draft_mapping(runs)
@@ -511,3 +522,73 @@ def test_a_failed_commit_is_completed_by_applying_the_same_mapping_again(tmp_pat
         "chore: backfill legacy research",
         "chore: initialise research register",
     ]
+
+
+@pytest.mark.parametrize(
+    ("changes", "fragment"),
+    [
+        (
+            {0: {"runs": ["r3", "r1"]}, 1: {"runs": ["r2"]}},
+            "r1 is recorded on S-0002 but mapped to S-0001",
+        ),
+        ({1: {"id": "S-0050"}}, "r1 is recorded on S-0002 but mapped to S-0050"),
+        (
+            {0: {"studies": []}, 1: {"studies": [STUDY]}},
+            "study:S-0001:config-4 is recorded on S-0001 but missing from the mapping",
+        ),
+        (
+            {0: {"studies": [{**STUDY, "variant": "config-4b"}]}},
+            "study:S-0001:config-4 is recorded on S-0001 but missing from the mapping",
+        ),
+    ],
+    ids=["move-run", "renumber-card", "move-study", "rename-variant"],
+)
+def test_regrouping_after_an_apply_is_refused(runs, register, changes, fragment):
+    first = draft_mapping(runs)
+    first["cards"][0]["studies"] = [STUDY]
+    apply_mapping(parse_mapping(first), runs, register, CRITERIA, TODAY)
+    regrouped = copy.deepcopy(first)
+    for index, change in changes.items():
+        regrouped["cards"][index].update(change)
+    before = register_files(register)
+    with pytest.raises(BackfillError, match=fragment) as excinfo:
+        apply_mapping(parse_mapping(regrouped), runs, register, CRITERIA, TODAY)
+    assert "reset the register" in str(excinfo.value)
+    assert register_files(register) == before
+
+
+def test_a_recorded_run_cannot_leave_the_mapping(runs, register):
+    apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
+    remaining = [run for run in runs if run.run_id != "r1"]
+    with pytest.raises(
+        BackfillError, match="r1 is recorded on S-0002 but missing from the mapping"
+    ):
+        apply_mapping(mapping_for(remaining), remaining, register, CRITERIA, TODAY)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"title": "pdh retest v2"},
+        {"slug": "pdh-v2"},
+        {"status": "rejected"},
+        {"tags": ["pdh"]},
+        {"body": "## Verdict\n\nNo edge.\n"},
+    ],
+    ids=["title", "slug", "status", "tags", "body"],
+)
+def test_existing_cards_are_not_edited_through_the_mapping(runs, register, change):
+    apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
+    field = next(iter(change))
+    with pytest.raises(BackfillError, match=f"S-0001: the mapping changes the {field} "):
+        apply_mapping(mapping_for(runs, **{"S-0001": change}), runs, register, CRITERIA, TODAY)
+
+
+def test_configs_of_recorded_runs_are_stored_again(runs, register):
+    plans = mapping_for(runs)
+    apply_mapping(plans, runs, register, CRITERIA, TODAY)
+    (stored,) = (register / "configs").glob("*.json")
+    content = stored.read_bytes()
+    stored.unlink()
+    apply_mapping(plans, runs, register, CRITERIA, TODAY)
+    assert stored.read_bytes() == content
