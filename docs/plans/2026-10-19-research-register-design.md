@@ -338,14 +338,13 @@ Full backfill of all existing runs and studies:
    Strategies with a documented conclusion get that verdict; strategies
    without one become `parked` ("no conclusion documented"), never
    `rejected`.
-4. **Legacy holdout:** cutoff = the day after the latest data end of the
-   strategy's runs (`end_date` is exclusive, so the last day a legacy run
-   saw must stay out of the holdout); data from the cutoff on is a clean
-   forward holdout. Every legacy trial records the **card's** cutoff, not
-   its own data end — the gate freezes the cutoff at whatever the card's
-   trials recorded. Strategies whose runs reach the present get
-   `holdout_contaminated: true` — confirmation then needs forward data or
-   paper trading.
+4. **Legacy holdout (forward holdout, operator decision 2026-10-19):**
+   cutoff = the day after the latest run (or study) date of the card
+   (`end_date` is exclusive, so the last day a legacy run saw stays out of
+   the holdout); `holdout_contaminated: false`. No run has seen data after
+   the cutoff, so that data is a clean holdout that grows over time. Every
+   legacy trial records the **card's** cutoff — the gate freezes the cutoff
+   at whatever the card's trials recorded.
 5. **Repo cleanup:** move runs that exist only in the repo-local
    `test_results/` into the workspace; remove byte-identical duplicates
    after a diff check and operator confirmation; keep `test_results/`
