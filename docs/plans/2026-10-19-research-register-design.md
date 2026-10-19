@@ -56,7 +56,7 @@ holdout.
 | Research strategy | Long-lived idea with hypothesis, mechanism, frozen success criteria, holdout cutoff and status. Identified as `S-NNNN`. Named "research" to avoid clashing with fwbg's strategy config JSON and fwbg-agents' `Strategy` row. |
 | Trial | One evaluation recorded in the ledger. A normal backtest run is an `iteration`; the final look at the holdout is `holdout`. |
 | Fingerprint | SHA-256 over the canonical, resolved run configuration. Used to block identical re-runs. |
-| Holdout cutoff | Date fixed at registration. Iterations only see data up to it. |
+| Holdout cutoff | Date fixed at registration and frozen once trials ran. Iterations only see data before it. |
 | Verdict | Deliberate status change with reasoning, auto-computed statistics and a reopen condition. |
 
 Status values: `active`, `parked`, `rejected`, `candidate`.
@@ -204,26 +204,35 @@ asset set.
 
 Checks, in order:
 
-1. `--research-id` given and card exists → else deny (422).
-2. Card parses and `status == active` → else deny (409), quoting status,
-   date and verdict reason.
-3. Before the first trial, require the hash of the card's
-   `success_criteria` to equal `registered_criteria_hash` or a hash recorded
-   by a `criteria_amendments` entry. After the first trial, require it to
-   equal the one recorded by the last trial or to be carried by a
-   `criteria_amendments` entry → else deny (409). Criteria edits go through
-   `fwbg research amend --reason`.
-4. The card's `holdout_cutoff` is not later than the earliest cutoff
-   recorded by its trials (each trial records the cutoff it ran under)
-   → else deny (409). Moving the cutoff earlier stays allowed.
-5. Effective `end_date`: missing → set to `holdout_cutoff`; later than the
-   cutoff → deny unless `--holdout`.
-6. `--holdout`: the first holdout trial per strategy is free; every further
-   one requires `--reason` and is counted.
-7. Fingerprint already in the ledger → deny (409), listing the earlier
-   trials (run id, date, key metrics), unless `--reason` is given.
-8. `--note` (one line: what changed, why) is required (422). The diff to
-   the previous iteration is computed automatically.
+Data split: `end_date` is exclusive when fwbg slices data, so iterations
+see `[.., cutoff)` and the holdout is `[cutoff, ..)`. `trials` are passed in
+ledger (append) order.
+
+1. `--research-id` given, card exists and declares that id → else deny (422).
+2. Card parses and `status == active` → else deny (409), quoting the status.
+3. Criteria: the hash of the card's `success_criteria` must equal the
+   **latest** `criteria_amendments` entry's hash, or `registered_criteria_hash`
+   when there are no amendments; without amendments it must also equal the
+   hash recorded by the card's last trial → else deny (409). Criteria edits
+   go through `fwbg research amend --reason`; a hand-written amendment is only
+   caught by the research repo's git history.
+4. The card's `holdout_cutoff` equals the cutoff recorded by every earlier
+   trial of the card — it is **frozen once trials ran**, in both directions
+   (earlier would put seen data into the holdout; later after a holdout look
+   would tune on seen holdout results) → else deny (409).
+5. Window: `start_date`/`end_date` must be strict `YYYY-MM-DD` with
+   start < end → else deny (422). Iteration: missing end → set to the
+   cutoff; end after the cutoff → deny (409). Holdout run: end may be open;
+   an end on or before the cutoff → deny (422).
+6. `--holdout`: denied on a card with `holdout_contaminated: true` (409). The
+   first holdout trial per strategy is free; any earlier holdout trial
+   (whatever its status) makes a further look require `--reason`.
+7. Fingerprint already recorded by a successful trial (any card) → deny
+   (409), listing the earlier trials (trial, card, run, date), unless
+   `--reason` is given. A config that cannot be fingerprinted (unresolved
+   preset, NaN, non-JSON value) → deny (422).
+8. `--note` (exactly one line: what changed, why) is required (422). The
+   diff to the previous iteration is computed automatically.
 
 `--no-save` runs are gated and recorded like any other run: the operator
 still saw the result. They skip normal `test_results` output, but the
