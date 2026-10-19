@@ -4,8 +4,6 @@ import os
 
 import pytest
 
-from fwbg.research.repo import GIT_LOCAL_ENV_VARS
-
 
 def pytest_configure(config):
     """Set up test workspace + clear stale Numba caches.
@@ -47,6 +45,9 @@ def pytest_configure(config):
 @pytest.fixture
 def git_env(tmp_path_factory, monkeypatch):
     """Deterministic git: fixed identity, no user or system configuration."""
+    # Lazy: importing fwbg before pytest_configure sets FWBG_WORKSPACE pins the real data dir.
+    from fwbg.research.repo import GIT_LOCAL_ENV_VARS
+
     config = tmp_path_factory.mktemp("gitconfig") / "config"
     config.write_text("", encoding="utf-8")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
