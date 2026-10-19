@@ -12,12 +12,20 @@ from fwbg.research.repo import (
     init_research_repo,
 )
 
+REGISTER_FILES = [".gitignore", "templates/criteria-default.yaml", "trials.jsonl"]
+
+
+def git(path, *args) -> str:
+    result = subprocess.run(["git", *args], cwd=path, capture_output=True, text=True, check=True)
+    return result.stdout.strip()
+
 
 def commit_count(path) -> int:
-    result = subprocess.run(
-        ["git", "rev-list", "--count", "HEAD"], cwd=path, capture_output=True, text=True, check=True
-    )
-    return int(result.stdout.strip())
+    return int(git(path, "rev-list", "--count", "HEAD"))
+
+
+def committed_files(path) -> list[str]:
+    return git(path, "ls-tree", "-r", "--name-only", "HEAD").splitlines()
 
 
 def test_init_creates_layout_template_ledger_and_repo(tmp_path, git_env):
@@ -28,6 +36,83 @@ def test_init_creates_layout_template_ledger_and_repo(tmp_path, git_env):
     assert (research / CRITERIA_TEMPLATE).read_text(encoding="utf-8") == DEFAULT_CRITERIA_YAML
     assert (research / LEDGER_FILENAME).read_text(encoding="utf-8") == ""
     assert commit_count(research) == 1
+    assert committed_files(research) == REGISTER_FILES
+    assert git(research, "branch", "--show-current") == "main"
+
+
+def test_register_ignores_staging_and_lock(tmp_path, git_env):
+    research = tmp_path / "research"
+    init_research_repo(research)
+    (research / ".staging").mkdir()
+    (research / ".staging" / "run.json").write_text("{}", encoding="utf-8")
+    (research / ".register.lock").write_text("", encoding="utf-8")
+    assert git(research, "status", "--porcelain") == ""
+
+
+def test_init_commits_only_register_files(tmp_path, git_env):
+    research = tmp_path / "research"
+    (research / "accounts").mkdir(parents=True)
+    (research / "accounts" / "secret.json").write_text('{"api_key": "x"}', encoding="utf-8")
+    assert init_research_repo(research) is True
+    assert committed_files(research) == REGISTER_FILES
+
+
+def test_failed_first_commit_is_retried(tmp_path, git_env, monkeypatch):
+    research = tmp_path / "research"
+    config = tmp_path / "no-identity.gitconfig"
+    config.write_text("[user]\n\tuseConfigOnly = true\n", encoding="utf-8")
+    with monkeypatch.context() as no_identity:
+        no_identity.setenv("GIT_CONFIG_GLOBAL", str(config))
+        for role in ("AUTHOR", "COMMITTER"):
+            no_identity.delenv(f"GIT_{role}_NAME")
+            no_identity.delenv(f"GIT_{role}_EMAIL")
+        with pytest.raises(ResearchRepoError, match="git commit"):
+            init_research_repo(research)
+    assert init_research_repo(research) is True
+    assert commit_count(research) == 1
+
+
+def test_init_completes_a_repository_without_commit(tmp_path, git_env):
+    research = tmp_path / "research"
+    research.mkdir()
+    git(research, "init", "--quiet")
+    assert init_research_repo(research) is True
+    assert commit_count(research) == 1
+
+
+def test_missing_ledger_in_initialised_register_is_not_recreated(tmp_path, git_env):
+    research = tmp_path / "research"
+    init_research_repo(research)
+    (research / LEDGER_FILENAME).unlink()
+    with pytest.raises(ResearchRepoError, match="restore"):
+        init_research_repo(research)
+    assert not (research / LEDGER_FILENAME).exists()
+
+
+@pytest.mark.parametrize(
+    ("variable", "target"), [("GIT_DIR", ".git"), ("GIT_INDEX_FILE", ".git/index")]
+)
+def test_inherited_git_variables_cannot_redirect_init(
+    tmp_path, git_env, monkeypatch, variable, target
+):
+    outer = tmp_path / "outer"
+    outer.mkdir()
+    git(outer, "init", "--quiet")
+    (outer / "a.txt").write_text("a", encoding="utf-8")
+    git(outer, "add", "a.txt")
+    git(outer, "commit", "--quiet", "--message", "outer")
+    index_before = (outer / ".git" / "index").read_bytes()
+    log_before = git(outer, "log", "--format=%H")
+    research = tmp_path / "research"
+
+    monkeypatch.setenv(variable, str(outer / target))
+    assert init_research_repo(research) is True
+    monkeypatch.delenv(variable)
+
+    assert (research / ".git").is_dir()
+    assert committed_files(research) == REGISTER_FILES
+    assert (outer / ".git" / "index").read_bytes() == index_before
+    assert git(outer, "log", "--format=%H") == log_before
 
 
 def test_init_is_idempotent_and_keeps_edits(tmp_path, git_env):
