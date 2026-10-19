@@ -51,7 +51,7 @@ def _load_json_preset(name: str, presets_dir: str) -> dict:
         resolved = valid[-1]  # highest lexicographic = highest version
 
     with open(resolved, "r") as f:
-        data = json.load(f)
+        data: dict = json.load(f)
     data.pop("_meta", None)  # strip embedded metadata before returning content
     return data
 
