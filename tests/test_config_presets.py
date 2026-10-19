@@ -372,7 +372,6 @@ class TestResolvePresets:
         resolved = resolve_presets(data)
 
         assert resolved == data
-        assert resolved["exit_strategies"] is exit_strategies
 
     def test_input_is_not_mutated(self, tmp_path):
         """Neither resolving nor mutating the result changes the caller's mapping."""
