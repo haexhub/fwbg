@@ -4,6 +4,8 @@ import os
 
 import pytest
 
+from fwbg.research.repo import GIT_LOCAL_ENV_VARS
+
 
 def pytest_configure(config):
     """Set up test workspace + clear stale Numba caches.
@@ -49,6 +51,8 @@ def git_env(tmp_path_factory, monkeypatch):
     config.write_text("", encoding="utf-8")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for name in GIT_LOCAL_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
     for role in ("AUTHOR", "COMMITTER"):
         monkeypatch.setenv(f"GIT_{role}_NAME", "fwbg tests")
         monkeypatch.setenv(f"GIT_{role}_EMAIL", "tests@fwbg.invalid")
