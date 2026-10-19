@@ -102,15 +102,22 @@ success_criteria:            # hand-curated, from templates/criteria-default.yam
   min_sharpe: …
   min_trades: …
   max_drawdown: …
+registered_criteria_hash: sha256:…  # written by the tool at registration
 criteria_amendments:         # written by `fwbg research amend`
   - date: 2026-11-02
     reason: …
     criteria_hash: sha256:…  # hash of the amended success_criteria
 ```
 
-The criteria hash is computed from `success_criteria`, never stored by hand.
-Body sections: `## Hypothesis`, `## Mechanism` (why should this work?),
-`## History` (reopenings and other notes in prose), `## Verdict`.
+The criteria hash is computed from `success_criteria`; the tool writes the
+registration value to `registered_criteria_hash` and never accepts a
+hand-edited value. At registration, that persisted hash is the frozen
+baseline for the first trial; it does not need a separate
+`criteria_amendments` entry. A later criteria change is valid only when
+`fwbg research amend` records the new hash in `criteria_amendments` together
+with its reason. Body sections:
+`## Hypothesis`, `## Mechanism` (why should this work?), `## History`
+(reopenings and other notes in prose), `## Verdict`.
 
 Default `holdout_cutoff` is 18 months before registration, overridable.
 Default criteria come from the template; values are hand-curated, never
@@ -184,14 +191,25 @@ Enforcement points:
   of a process that dies. `RunStartRequest` gains `research_id`, `note`,
   `reason`, `holdout`.
 
+Before either gate call, the CLI and API resolve `--assets` and
+`--asset-classes` through the same `AssetRegistry`, canonicalise the result
+to an uppercase, sorted symbol tuple, and pass that resolved tuple as
+`request.symbols`. The gate never fingerprints unresolved class names or a
+caller-supplied symbol list; an empty or failed resolution is rejected before
+the run starts. This keeps CLI and API fingerprints identical for the same
+asset set.
+
 Checks, in order:
 
 1. `--research-id` given and card exists → else deny (422).
 2. Card parses and `status == active` → else deny (409), quoting status,
    date and verdict reason.
-3. The hash of the card's `success_criteria` equals the one recorded by its
-   last trial, or a `criteria_amendments` entry carries it → else deny
-   (409). Criteria edits go through `fwbg research amend --reason`.
+3. Before the first trial, require the hash of the card's
+   `success_criteria` to equal `registered_criteria_hash` or a hash recorded
+   by a `criteria_amendments` entry. After the first trial, require it to
+   equal the one recorded by the last trial or to be carried by a
+   `criteria_amendments` entry → else deny (409). Criteria edits go through
+   `fwbg research amend --reason`.
 4. Effective `end_date`: missing → set to `holdout_cutoff`; later than the
    cutoff → deny unless `--holdout`.
 5. `--holdout`: the first holdout trial per strategy is free; every further
@@ -202,7 +220,11 @@ Checks, in order:
    the previous iteration is computed automatically.
 
 `--no-save` runs are gated and recorded like any other run: the operator
-still saw the result.
+still saw the result. They skip normal `test_results` output, but the
+research integration creates a staging directory under
+`$FWBG_RESEARCH_DIR/.staging/<run_id>` for the trial's `config.json` and
+`code.patch`; that staging data is retained until the ledger and research-repo
+commit succeed, then cleaned up. `reconcile` repairs abandoned staging data.
 
 `FWBG_RESEARCH_GATE=off` disables the gate for the test suite only. It
 prints a warning on every run and is never set in `docker-compose.yml`.
@@ -233,7 +255,7 @@ not by code.
 | `verdict S-NNNN <status> --reason … --reopen-if …` | Write verdict, set status. |
 | `reopen S-NNNN --reason …` | `parked`/`rejected` → `active`. |
 | `backfill --plan OUT.yaml` / `--apply MAPPING.yaml` | Legacy import (see Migration). |
-| `reconcile` | Index runs missing from the ledger; idempotent. |
+| `reconcile` | Repair uncommitted register data and index runs missing from the ledger; idempotent. |
 
 **Coverage view** (`show`): from the canonical configs of all trials,
 list every config path whose value varied, with the set or range of
@@ -297,7 +319,14 @@ Full backfill of all existing runs and studies:
 ## Error handling
 
 - Ledger append or research-repo commit fails after a successful run →
-  warning, the run is not failed; `reconcile` picks it up later.
+  warning, the run is not failed. `reconcile` first validates the ledger and
+  detects register files changed since the last research-repo commit. It
+  stages only the register paths (`strategies/`, `trials.jsonl`, `configs/`
+  and `reports/`) and creates a recovery commit for that already-appended
+  trial, leaving unrelated research-repo changes untouched. It then indexes
+  any workspace runs missing from the ledger and commits those changes too.
+  If validation or the recovery commit fails again, it leaves the data in
+  place, reports the failure, and remains safe to retry.
 - Unparseable card or ledger → the gate denies (fail closed).
 - Concurrent runs → serialized by the file lock.
 

@@ -38,10 +38,14 @@ and the design doc has been updated to match.
    definition, so there is a single `fingerprint_version: 1`.
    Known ceiling: defaults are not resolved, so a config that spells out a
    default and one that omits it hash differently.
-2. **Criteria hash.** Not stored in the card; computed from
-   `success_criteria`. Amendments live in the front matter as
-   `criteria_amendments: [{date, reason, criteria_hash}]` so the gate can
-   read them without parsing prose.
+2. **Criteria hash.** The card stores
+   `registered_criteria_hash`, written by the registration command from
+   `success_criteria` and never accepted as a hand-edited value. The current
+   hash is computed from `success_criteria`; amendments live in the front
+   matter as `criteria_amendments: [{date, reason, criteria_hash}]` so the
+   gate can read them without parsing prose. Before the first trial, the
+   current hash must match the registration hash or an amendment; later it
+   must match the last trial or an amendment.
 3. **Ledger locking.** `append_trial` takes an exclusive `flock` on the
    ledger file itself and assigns the trial id under that lock. Serialising
    the research-repo commit is step 3's concern.
@@ -286,10 +290,11 @@ holdout_cutoff: "2025-04-30"
 success_criteria:
   min_sharpe: 1.0
   min_trades: 100
+registered_criteria_hash: sha256:5272a26ad425169031b39ae95c05abe1e2c3ebb664faaae0508eef108b989970
 criteria_amendments:
   - date: 2026-10-20
     reason: daily needs fewer trades
-    criteria_hash: sha256:abc
+    criteria_hash: sha256:c22558e72bca2f92a641914684ced8140937d9fe44d872db8f2526a71139f7e2
 ---
 ## Hypothesis
 Structural breaks continue.
@@ -305,7 +310,12 @@ def test_parses_front_matter_and_body():
     assert card.holdout_cutoff == date(2025, 4, 30)
     assert card.holdout_contaminated is False
     assert card.success_criteria == {"min_sharpe": 1.0, "min_trades": 100.0}
-    assert card.criteria_amendments[0].criteria_hash == "sha256:abc"
+    assert card.registered_criteria_hash == (
+        "sha256:5272a26ad425169031b39ae95c05abe1e2c3ebb664faaae0508eef108b989970"
+    )
+    assert card.criteria_amendments[0].criteria_hash == (
+        "sha256:c22558e72bca2f92a641914684ced8140937d9fe44d872db8f2526a71139f7e2"
+    )
     assert card.body.startswith("## Hypothesis")
 
 
@@ -427,6 +437,7 @@ class ResearchCard:
     holdout_cutoff: date
     holdout_contaminated: bool
     success_criteria: Mapping[str, float]
+    registered_criteria_hash: str
     criteria_amendments: tuple[CriteriaAmendment, ...]
     body: str
 
@@ -461,6 +472,7 @@ def parse_card(text: str) -> ResearchCard:
             holdout_cutoff=_as_date(meta["holdout_cutoff"], "holdout_cutoff"),
             holdout_contaminated=bool(meta.get("holdout_contaminated", False)),
             success_criteria=_criteria(meta["success_criteria"]),
+            registered_criteria_hash=str(meta["registered_criteria_hash"]),
             criteria_amendments=tuple(
                 _amendment(item) for item in meta.get("criteria_amendments") or ()
             ),
@@ -575,7 +587,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from fwbg.research.card import ResearchCard, Status
+from fwbg.research.card import ResearchCard, Status, criteria_hash
 from fwbg.research.ledger import Trial, TrialKind, TrialStatus, append_trial
 
 
@@ -589,6 +601,7 @@ def make_card(**overrides: Any) -> ResearchCard:
         "holdout_cutoff": date(2025, 4, 30),
         "holdout_contaminated": False,
         "success_criteria": {"min_sharpe": 1.0, "min_trades": 100.0},
+        "registered_criteria_hash": criteria_hash({"min_sharpe": 1.0, "min_trades": 100.0}),
         "criteria_amendments": (),
         "body": "",
     }
@@ -1022,6 +1035,36 @@ def test_amended_criteria_are_accepted():
     amendment = CriteriaAmendment(date(2026, 10, 20), "too strict", criteria_hash(new_criteria))
     amended = make_card(success_criteria=new_criteria, criteria_amendments=(amendment,))
     assert check(amended, request(), [make_trial(trial_id="T-000001")]).allowed
+
+
+def test_first_trial_uses_the_registered_criteria_hash():
+    changed = make_card(registered_criteria_hash="sha256:other")
+    assert codes(check(changed, request(), [])) == {DenialCode.CRITERIA_CHANGED}
+
+
+def test_amended_criteria_are_accepted_before_the_first_trial():
+    new_criteria = {"min_sharpe": 0.5, "min_trades": 100.0}
+    amendment = CriteriaAmendment(date(2026, 10, 20), "too strict", criteria_hash(new_criteria))
+    amended = make_card(
+        success_criteria=new_criteria,
+        registered_criteria_hash="sha256:old",
+        criteria_amendments=(amendment,),
+    )
+    assert check(amended, request(), []).allowed
+
+
+def test_note_must_be_one_line():
+    assert codes(check(make_card(), request(note="baseline\nextra"), [])) == {
+        DenialCode.MISSING_NOTE
+    }
+
+
+def test_blank_reason_does_not_bypass_duplicate_protection():
+    first = check(make_card(), request(), [])
+    earlier = [make_trial(trial_id="T-000001", fingerprint=first.fingerprint)]
+    assert codes(check(make_card(), request(reason=" "), earlier)) == {
+        DenialCode.DUPLICATE_FINGERPRINT
+    }
 ```
 
 **Step 2: Run to verify failure**
@@ -1088,7 +1131,12 @@ class Denial:
 
 @dataclass(frozen=True)
 class RunRequest:
-    """A run as the caller wants to start it, after overrides and asset resolution."""
+    """A run after overrides and shared, canonical asset resolution.
+
+    ``symbols`` contains the uppercase, sorted concrete symbols produced by
+    ``AssetRegistry``. CLI/API wiring must resolve asset classes before
+    constructing this request; unresolved names never reach the gate.
+    """
 
     research_id: str | None
     strategy_metadata: Mapping[str, Any]
@@ -1125,9 +1173,12 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
 
     own_trials = [trial for trial in trials if trial.strategy == card.id]
     denials: list[Denial] = []
-    if not (request.note and request.note.strip()):
+    if not _valid_note(request.note):
         denials.append(
-            Denial(DenialCode.MISSING_NOTE, "every run needs a one-line note: what changed and why")
+            Denial(
+                DenialCode.MISSING_NOTE,
+                "every run needs a non-empty one-line note: what changed and why",
+            )
         )
     if card.status is not Status.ACTIVE:
         denials.append(
@@ -1140,12 +1191,21 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
     window_denial = _apply_window(card, metadata, request.holdout)
     if window_denial is not None:
         denials.append(window_denial)
-    if request.holdout and not request.reason:
+    has_reason = _has_text(request.reason)
+    if request.holdout and not has_reason:
         denials.extend(_holdout_denials(card, own_trials))
     run_fingerprint = fingerprint(metadata, request.symbols)
-    if not request.reason:
+    if not has_reason:
         denials.extend(_duplicate_denials(run_fingerprint, trials))
     return Decision(tuple(denials), kind, metadata, run_fingerprint)
+
+
+def _has_text(value: str | None) -> bool:
+    return bool(value and value.strip())
+
+
+def _valid_note(note: str | None) -> bool:
+    return _has_text(note) and "\n" not in note and "\r" not in note
 
 
 def _refuse(code: DenialCode, message: str, kind: TrialKind, metadata: dict[str, Any]) -> Decision:
@@ -1153,10 +1213,20 @@ def _refuse(code: DenialCode, message: str, kind: TrialKind, metadata: dict[str,
 
 
 def _criteria_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[Denial]:
-    if not own_trials:
-        return []
-    last = own_trials[-1]
     current = card.criteria_hash
+    if not own_trials:
+        if current == card.registered_criteria_hash:
+            return []
+        if any(amendment.criteria_hash == current for amendment in card.criteria_amendments):
+            return []
+        return [
+            Denial(
+                DenialCode.CRITERIA_CHANGED,
+                f"success criteria of {card.id} differ from the registration baseline "
+                "and no amendment records the change",
+            )
+        ]
+    last = own_trials[-1]
     if current == last.criteria_hash:
         return []
     if any(amendment.criteria_hash == current for amendment in card.criteria_amendments):
@@ -1639,6 +1709,14 @@ and in `create_run_directory`, directly after `git_info = get_git_info()`:
     if git_info.get("dirty"):
         git_info["patch"] = write_code_patch(run_path)
 ```
+
+This hook covers ordinary saved runs. The research integration must call the
+same `write_code_patch` function for a `--no-save` run's staging directory
+(`$FWBG_RESEARCH_DIR/.staging/<run_id>`); do not make registration of the
+trial or its code state depend on `save_results=True`. Normal `test_results`
+artefacts remain disabled for `--no-save`, while the research staging data is
+kept until the ledger and repository commit succeed and is recoverable by
+`reconcile` if either step fails.
 
 **Step 4: Run to verify pass**
 
