@@ -180,3 +180,16 @@ def test_dirty_run_directory_records_the_patch(repo, tmp_path, monkeypatch):
     assert config["git"]["dirty"] is True
     assert config["git"]["patch"] == PATCH_FILENAME
     assert "src/new_module.py" in (run_path / PATCH_FILENAME).read_text(encoding="utf-8")
+
+
+def test_git_info_isolated_and_detects_untracked_source(repo, tmp_path, monkeypatch):
+    make_dirty(repo)
+    expected_commit = git(repo, "rev-parse", "HEAD").strip()
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "other.git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path / "other-tree"))
+
+    git_info = storage.get_git_info()
+
+    assert git_info["commit"] == expected_commit
+    assert git_info["dirty"] is True
