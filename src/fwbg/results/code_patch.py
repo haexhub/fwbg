@@ -50,7 +50,7 @@ def write_code_patch(run_dir: str | os.PathLike[str]) -> str | None:
         return None
     if not patch:
         return None
-    (Path(run_dir) / PATCH_FILENAME).write_text(patch, encoding="utf-8")
+    (Path(run_dir) / PATCH_FILENAME).write_text(patch, encoding="utf-8", errors="surrogateescape")
     return PATCH_FILENAME
 
 
@@ -58,8 +58,15 @@ def _git(cwd: Path, *args: str, ok_codes: tuple[int, ...] = (0,)) -> str:
     # A hook's GIT_DIR or GIT_INDEX_FILE must not redirect or distort the capture.
     env = {k: v for k, v in os.environ.items() if k not in GIT_LOCAL_ENV_VARS}
     try:
+        # surrogateescape round-trips non-UTF-8 bytes into code.patch unchanged.
         result = subprocess.run(
-            ["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=30
+            ["git", *args],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise CodePatchError(f"git {args[0]} failed: {exc}") from exc
