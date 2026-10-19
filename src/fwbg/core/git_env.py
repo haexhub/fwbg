@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 
-# Git hooks export GIT_DIR and GIT_INDEX_FILE; inheriting them would write private
-# research data into another repository (list: `git rev-parse --local-env-vars`).
+# Git hooks export GIT_DIR and GIT_INDEX_FILE; inheriting them would make git act on
+# another repository, e.g. write private data into the public fwbg repository
+# (list: `git rev-parse --local-env-vars`).
 GIT_LOCAL_ENV_VARS = (
     "GIT_DIR",
     "GIT_WORK_TREE",
