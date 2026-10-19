@@ -89,6 +89,18 @@ def test_missing_ledger_in_initialised_register_is_not_recreated(tmp_path, git_e
     assert not (research / LEDGER_FILENAME).exists()
 
 
+def make_repo_with_commit(path) -> None:
+    path.mkdir()
+    git(path, "init", "--quiet")
+    (path / "a.txt").write_text("a", encoding="utf-8")
+    git(path, "add", "a.txt")
+    git(path, "commit", "--quiet", "--message", "outer")
+
+
+def repo_state(path) -> tuple[bytes, str]:
+    return (path / ".git" / "index").read_bytes(), git(path, "log", "--format=%H")
+
+
 @pytest.mark.parametrize(
     ("variable", "target"), [("GIT_DIR", ".git"), ("GIT_INDEX_FILE", ".git/index")]
 )
@@ -96,13 +108,8 @@ def test_inherited_git_variables_cannot_redirect_init(
     tmp_path, git_env, monkeypatch, variable, target
 ):
     outer = tmp_path / "outer"
-    outer.mkdir()
-    git(outer, "init", "--quiet")
-    (outer / "a.txt").write_text("a", encoding="utf-8")
-    git(outer, "add", "a.txt")
-    git(outer, "commit", "--quiet", "--message", "outer")
-    index_before = (outer / ".git" / "index").read_bytes()
-    log_before = git(outer, "log", "--format=%H")
+    make_repo_with_commit(outer)
+    before = repo_state(outer)
     research = tmp_path / "research"
 
     monkeypatch.setenv(variable, str(outer / target))
@@ -111,8 +118,30 @@ def test_inherited_git_variables_cannot_redirect_init(
 
     assert (research / ".git").is_dir()
     assert committed_files(research) == REGISTER_FILES
-    assert (outer / ".git" / "index").read_bytes() == index_before
-    assert git(outer, "log", "--format=%H") == log_before
+    assert repo_state(outer) == before
+
+
+def test_damaged_register_repository_raises_without_using_enclosing_repo(tmp_path, git_env):
+    outer = tmp_path / "outer"
+    make_repo_with_commit(outer)
+    research = outer / "research"
+    init_research_repo(research)
+    (research / ".git" / "HEAD").unlink()
+    before = repo_state(outer)
+    with pytest.raises(ResearchRepoError, match="git rev-parse"):
+        init_research_repo(research)
+    assert repo_state(outer) == before
+
+
+def test_init_commits_register_files_despite_global_excludes(tmp_path, git_env, monkeypatch):
+    excludes = tmp_path / "global-excludes"
+    excludes.write_text("*\n", encoding="utf-8")
+    config = tmp_path / "excludes.gitconfig"
+    config.write_text(f'[core]\n\texcludesFile = "{excludes}"\n', encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    research = tmp_path / "research"
+    assert init_research_repo(research) is True
+    assert committed_files(research) == REGISTER_FILES
 
 
 def test_init_is_idempotent_and_keeps_edits(tmp_path, git_env):

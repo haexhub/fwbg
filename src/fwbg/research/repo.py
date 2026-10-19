@@ -80,7 +80,16 @@ def init_research_repo(research_dir: Path) -> bool:
         return False
     _write_if_missing(research_dir / _GITIGNORE, _GITIGNORE_TEXT)
     ledger.touch()
-    _git(research_dir, "add", "--", CRITERIA_TEMPLATE.as_posix(), LEDGER_FILENAME, _GITIGNORE)
+    # --force: a user's global excludes must not keep register files out; named paths only.
+    _git(
+        research_dir,
+        "add",
+        "--force",
+        "--",
+        CRITERIA_TEMPLATE.as_posix(),
+        LEDGER_FILENAME,
+        _GITIGNORE,
+    )
     _git(research_dir, "commit", "--quiet", "--message", "chore: initialise research register")
     return True
 
@@ -91,25 +100,24 @@ def _write_if_missing(path: Path, text: str) -> None:
 
 
 def _has_commit(research_dir: Path) -> bool:
-    """Only call once ``research_dir/.git`` exists, so no enclosing repository answers."""
-    result = _git(research_dir, "rev-parse", "--verify", "--quiet", "HEAD", check=False)
+    """Exit code 1 means no commit yet; any other failure (a broken repository) raises."""
+    result = _git(research_dir, "rev-parse", "--verify", "--quiet", "HEAD", ok_codes=(0, 1))
     return result.returncode == 0
 
 
-def _git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+def _git(
+    cwd: Path, *args: str, ok_codes: tuple[int, ...] = (0,)
+) -> subprocess.CompletedProcess[str]:
     env = {name: value for name, value in os.environ.items() if name not in GIT_LOCAL_ENV_VARS}
+    # Never search above the register: a damaged .git must not fall back to an enclosing repo.
+    env["GIT_CEILING_DIRECTORIES"] = str(cwd.resolve().parent)
     try:
-        return subprocess.run(
-            ["git", *args],
-            cwd=cwd,
-            env=env,
-            check=check,
-            capture_output=True,
-            text=True,
-            timeout=30,
+        result = subprocess.run(
+            ["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=30
         )
-    except subprocess.CalledProcessError as exc:
-        detail = exc.stderr.strip() or exc.stdout.strip()
-        raise ResearchRepoError(f"git {args[0]} failed: {detail}") from exc
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ResearchRepoError(f"git {args[0]} failed: {exc}") from exc
+    if result.returncode not in ok_codes:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise ResearchRepoError(f"git {args[0]} failed: {detail}")
+    return result
