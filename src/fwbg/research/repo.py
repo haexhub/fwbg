@@ -2,36 +2,16 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
+from fwbg.core.git_env import isolated_git_env
 from fwbg.research.ledger import LEDGER_FILENAME
 
 CRITERIA_TEMPLATE = Path("templates") / "criteria-default.yaml"
 _DIRECTORIES = ("strategies", "configs", "templates", "reports")
 _GITIGNORE = ".gitignore"
 _GITIGNORE_TEXT = ".staging/\n.register.lock\n"
-
-# Git hooks export GIT_DIR and GIT_INDEX_FILE; inheriting them would write private
-# research data into another repository (list: `git rev-parse --local-env-vars`).
-GIT_LOCAL_ENV_VARS = (
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_COMMON_DIR",
-    "GIT_PREFIX",
-    "GIT_CONFIG",
-    "GIT_CONFIG_PARAMETERS",
-    "GIT_CONFIG_COUNT",
-    "GIT_GRAFT_FILE",
-    "GIT_IMPLICIT_WORK_TREE",
-    "GIT_NO_REPLACE_OBJECTS",
-    "GIT_REPLACE_REF_BASE",
-    "GIT_SHALLOW_FILE",
-)
 
 DEFAULT_CRITERIA_YAML = """\
 # Starting values for the success criteria of new research cards.
@@ -108,7 +88,7 @@ def _has_commit(research_dir: Path) -> bool:
 def _git(
     cwd: Path, *args: str, ok_codes: tuple[int, ...] = (0,)
 ) -> subprocess.CompletedProcess[str]:
-    env = {name: value for name, value in os.environ.items() if name not in GIT_LOCAL_ENV_VARS}
+    env = isolated_git_env()
     # Never search above the register: a damaged .git must not fall back to an enclosing repo.
     env["GIT_CEILING_DIRECTORIES"] = str(cwd.resolve().parent)
     try:

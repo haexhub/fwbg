@@ -7,7 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from fwbg.research.repo import GIT_LOCAL_ENV_VARS
+from fwbg.core.git_env import isolated_git_env
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def write_code_patch(run_dir: str | os.PathLike[str]) -> str | None:
 
 def _git(cwd: Path, *args: str, ok_codes: tuple[int, ...] = (0,)) -> str:
     # A hook's GIT_DIR or GIT_INDEX_FILE must not redirect or distort the capture.
-    env = {k: v for k, v in os.environ.items() if k not in GIT_LOCAL_ENV_VARS}
+    env = isolated_git_env()
     try:
         # surrogateescape round-trips non-UTF-8 bytes into code.patch unchanged.
         result = subprocess.run(
