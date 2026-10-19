@@ -7,15 +7,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pytest
-import yaml
 
-from fwbg.research.backfill import (
-    BackfillError,
-    apply_mapping,
-    draft_mapping,
-    load_mapping,
-    parse_mapping,
-)
+from fwbg.research.backfill import apply_mapping
 from fwbg.research.card import (
     ResearchCard,
     Status,
@@ -27,17 +20,12 @@ from fwbg.research.card import (
 from fwbg.research.gate import DenialCode, RunRequest, check
 from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, TrialStatus, read_trials
 from fwbg.research.legacy import scan_runs
+from fwbg.research.mapping import BackfillError, draft_mapping, parse_mapping
 from fwbg.research.repo import ResearchRepoError, commit_register, init_research_repo
-from tests.research.factories import make_card, make_run
+from tests.research.factories import STUDY, make_card, make_run
 
 CRITERIA = {"min_sharpe": 1.0, "min_trades": 100.0}
 TODAY = date(2026, 10, 20)
-STUDY = {
-    "variant": "config-4",
-    "symbols": ["eurusd"],
-    "date": date(2026, 2, 1),
-    "note": "narrative state",
-}
 
 
 @pytest.fixture
@@ -45,15 +33,6 @@ def register(tmp_path, git_env):
     research = tmp_path / "research"
     init_research_repo(research)
     return research
-
-
-@pytest.fixture
-def runs(tmp_path):
-    results = tmp_path / "results"
-    make_run(results, "r1", name="orb-test", timestamp="2026-03-05T10:00:00")
-    make_run(results, "r2", name="orb-test", timestamp="2026-03-06T09:00:00")
-    make_run(results, "r3", name="pdh retest", timestamp="2026-02-22T08:00:00")
-    return scan_runs(results, tmp_path / "presets")
 
 
 def mapping_for(runs, **card_overrides):
@@ -86,16 +65,6 @@ def register_files(path):
         for file in sorted(path.rglob("*"))
         if file.is_file() and ".git" not in file.relative_to(path).parts
     }
-
-
-def test_draft_proposes_one_parked_card_per_name_in_order_of_first_run(runs):
-    cards = draft_mapping(runs)["cards"]
-    assert [(c["id"], c["title"], c["runs"]) for c in cards] == [
-        ("S-0001", "pdh retest", ["r3"]),
-        ("S-0002", "orb-test", ["r1", "r2"]),
-    ]
-    assert {c["status"] for c in cards} == {"parked"}
-    assert cards[0]["slug"] == "pdh-retest"
 
 
 def test_apply_writes_cards_trials_configs_and_one_commit(runs, register):
@@ -170,83 +139,6 @@ def test_study_trials_are_recorded_once_with_a_synthetic_fingerprint(runs, regis
     assert [t.run_id for t in trials] == ["study:S-0001:config-4"]
     assert trials[0].metrics == {"EURUSD": {"accuracy": 0.29}}
     assert load_card(register, "S-0001").holdout_cutoff == date(2026, 9, 26)
-
-
-@pytest.mark.parametrize(
-    ("change", "fragment"),
-    [
-        ({"id": "X-1"}, "invalid id"),
-        ({"status": "active"}, "parked or rejected"),
-        ({"slug": "Bad Slug"}, "invalid slug"),
-        ({"runs": [], "studies": []}, "at least one run"),
-        ({"criteria": {"min_sharpe": "high"}}, "must be a number"),
-        ({"extra": 1}, "unknown keys: extra"),
-        ({"studies": [{"variant": "v", "symbols": ["A"], "date": "soon", "note": "n"}]}, "date"),
-        (
-            {
-                "studies": [
-                    {"variant": "v", "symbols": ["A"], "date": date(2026, 1, 1), "note": "a\nb"}
-                ]
-            },
-            "one line",
-        ),
-        (
-            {
-                "studies": [
-                    {
-                        "variant": "v",
-                        "symbols": ["A"],
-                        "date": date(2026, 1, 1),
-                        "note": "n",
-                        "metrics": {"A": {"x": float("nan")}},
-                    }
-                ]
-            },
-            "finite",
-        ),
-        ({"criteria": {"min_sharpe": float("inf")}}, "finite"),
-        ({"criteria": {"min_trades": 10**400}}, "out of range"),
-        ({"studies": [{**STUDY, "date": datetime(2026, 2, 1, 10)}]}, r"studies\[1\]\.date"),
-        ({"studies": [{**STUDY, "note": "   "}]}, "one line"),
-        ({"studies": [{**STUDY, "note": "trailing break\n"}]}, "one line"),
-        ({"studies": [{**STUDY, "metrics": {"a": {"x": 1}, "A": {"y": 2}}}]}, "ignoring case"),
-        ({"tags": ["ok", 3]}, r"S-0001\.tags: .*\['ok', 3\]"),
-        ({"studies": [STUDY, {**STUDY, "note": "copy"}]}, "duplicate study variants: config-4"),
-        ({"title": "!!!", "slug": None}, "S-0001: title '!!!' gives an empty slug"),
-    ],
-    ids=[
-        "id",
-        "status",
-        "slug",
-        "empty",
-        "criteria",
-        "unknown",
-        "date",
-        "note",
-        "nan",
-        "inf-criterion",
-        "huge-criterion",
-        "datetime",
-        "blank-note",
-        "note-break",
-        "symbol-case",
-        "tags",
-        "variant-twice",
-        "unusable-title",
-    ],
-)
-def test_parse_mapping_rejects_invalid_cards(runs, change, fragment):
-    data = draft_mapping(runs)
-    data["cards"][0].update(change)
-    with pytest.raises(BackfillError, match=fragment):
-        parse_mapping(data)
-
-
-def test_duplicate_card_ids_are_rejected(runs):
-    data = draft_mapping(runs)
-    data["cards"][1]["id"] = "S-0001"
-    with pytest.raises(BackfillError, match="duplicate card ids: S-0001"):
-        parse_mapping(data)
 
 
 def test_gate_recognises_a_backfilled_config_with_the_same_window(tmp_path, git_env):
@@ -353,34 +245,6 @@ def test_dates_after_today_are_refused(runs, register):
     with pytest.raises(BackfillError, match=r"S-0002: dated after today \(2026-03-05\): r2$"):
         apply_mapping(mapping_for(runs), runs, register, CRITERIA, date(2026, 3, 5))
     assert read_trials(register / LEDGER_FILENAME) == []
-
-
-def test_load_mapping_reads_a_yaml_draft(runs):
-    text = yaml.safe_dump(draft_mapping(runs), sort_keys=False, allow_unicode=True)
-    assert load_mapping(text) == parse_mapping(draft_mapping(runs))
-
-
-@pytest.mark.parametrize(
-    ("text", "fragment"),
-    [
-        (
-            "cards:\n"
-            "- id: S-0001\n"
-            "  title: jev\n"
-            "  studies:\n"
-            "  - {variant: a, symbols: [EURUSD], date: 2026-09-25, note: first}\n"
-            "  studies:\n"
-            "  - {variant: b, symbols: [EURUSD], date: 2026-09-26, note: second}\n",
-            "line 6, column 3: duplicate key 'studies'",
-        ),
-        ("cards:\n- {id: S-0001, title: x, studies: [{date: 2026-02-30}]}\n", "out of range"),
-        ("cards: [\n", "line 2, column 1"),
-    ],
-    ids=["duplicate-key", "impossible-date", "syntax"],
-)
-def test_load_mapping_reports_yaml_errors(text, fragment):
-    with pytest.raises(BackfillError, match=fragment):
-        load_mapping(text)
 
 
 def test_trials_record_what_each_run_left(tmp_path, register):
