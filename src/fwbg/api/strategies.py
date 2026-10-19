@@ -11,7 +11,7 @@ from fwbg.api.git_utils import (
     commit_file, ensure_git_repo, file_at_commit, file_history,
     get_git_identity, is_git_repo, set_git_identity,
 )
-from fwbg.core.config import _resolve_section
+from fwbg.core.presets import _resolve_section
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
 
