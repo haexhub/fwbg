@@ -208,7 +208,12 @@ def _card_plan(item: object, index: int) -> CardPlan:
     title = item.get("title")
     if not isinstance(title, str) or not title.strip():
         raise BackfillError(f"{where}: title must be non-empty text")
-    slug = item.get("slug") or slugify(title)
+    slug = item.get("slug")
+    if not slug:
+        try:
+            slug = slugify(title)
+        except CardError as exc:
+            raise BackfillError(f"{where}: {exc}") from exc
     if not isinstance(slug, str) or not SLUG_RE.fullmatch(slug):
         raise BackfillError(f"{where}: invalid slug {slug!r}")
     try:
