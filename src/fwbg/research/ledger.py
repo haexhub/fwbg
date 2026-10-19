@@ -19,7 +19,8 @@ from fwbg.research.fingerprint import DIGEST_RE
 
 LEDGER_FILENAME = "trials.jsonl"
 TRIAL_ID_PREFIX = "T-"
-TRIAL_ID_RE = re.compile(r"T-[0-9]{6,}")
+# Canonical ids only (as _next_id writes them): six digits, more only without padding.
+TRIAL_ID_RE = re.compile(r"T-(?:[0-9]{6}|[1-9][0-9]{6,})")
 _FIELDS = frozenset(
     {
         "trial",
@@ -113,7 +114,7 @@ class Trial:
         """Parse one stored ledger line; raise :class:`LedgerError` on any defect."""
         try:
             record = json.loads(line, parse_constant=_reject_constant)
-        except ValueError as exc:
+        except (ValueError, RecursionError) as exc:
             raise LedgerError(f"not valid JSON: {exc}") from exc
         if not isinstance(record, dict):
             raise LedgerError(f"expected a JSON object, got {type(record).__name__}")
@@ -161,6 +162,11 @@ def append_trial(ledger_path: Path, trial: Trial) -> Trial:
     locking ``trials.jsonl`` themselves: a second ``flock`` on this file from
     the same process deadlocks. Metrics must not contain NaN; convert NaN to
     ``None`` before building the :class:`Trial`.
+
+    Raises:
+        ValueError: If *trial* already has an id or cannot be stored as one
+            ledger line that reads back unchanged; nothing is written.
+        LedgerError: If the ledger is missing or unreadable.
     """
     if trial.trial_id is not None:
         raise ValueError("append_trial assigns trial ids; got a trial that already has one")
@@ -187,7 +193,12 @@ def append_trial(ledger_path: Path, trial: Trial) -> Trial:
 
 def _readable_line(trial: Trial) -> str:
     """Serialise *trial*, refusing anything the reader would not read back unchanged."""
-    line = trial.to_json()
+    try:
+        line = trial.to_json()
+    except (TypeError, AttributeError, ValueError) as exc:
+        raise ValueError(f"trial cannot be serialised: {exc}") from exc
+    if "\n" in line:
+        raise ValueError("trial would be stored as more than one line")
     try:
         read_back = Trial.from_json(line)
     except LedgerError as exc:
