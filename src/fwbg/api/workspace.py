@@ -13,6 +13,7 @@ Individual subdirectories can be further overridden:
   FWBG_DATA_DIR         → overrides {workspace}/data
   FWBG_ACCOUNTS_DIR     → overrides {workspace}/accounts
   FWBG_LOGS_DIR         → overrides {workspace}/logs
+  FWBG_RESEARCH_DIR     → overrides {workspace}/research
 """
 import logging
 import os
@@ -46,6 +47,11 @@ def get_strategies_dir() -> Path:
 def get_test_results_dir() -> Path:
     """Return the test results directory."""
     return _workspace_subdir("FWBG_TEST_RESULTS_DIR", "test_results")
+
+
+def get_research_dir() -> Path:
+    """Return the research register directory (a private git repository)."""
+    return _workspace_subdir("FWBG_RESEARCH_DIR", "research")
 
 
 def get_data_dir() -> Path:

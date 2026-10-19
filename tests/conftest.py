@@ -2,6 +2,8 @@
 import glob
 import os
 
+import pytest
+
 
 def pytest_configure(config):
     """Set up test workspace + clear stale Numba caches.
@@ -38,3 +40,15 @@ def pytest_configure(config):
             removed += 1
     if removed > 0:
         print(f"\n[conftest] {removed} stale Numba cache files removed")
+
+
+@pytest.fixture
+def git_env(tmp_path_factory, monkeypatch):
+    """Deterministic git: fixed identity, no user or system configuration."""
+    config = tmp_path_factory.mktemp("gitconfig") / "config"
+    config.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for role in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{role}_NAME", "fwbg tests")
+        monkeypatch.setenv(f"GIT_{role}_EMAIL", "tests@fwbg.invalid")
