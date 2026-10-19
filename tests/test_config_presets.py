@@ -17,8 +17,8 @@ from fwbg.core.config import (
     ResourceConfig,
     StrategyConfig,
     ValidationConfig,
-    _resolve_section,
 )
+from fwbg.core.presets import _resolve_section
 
 
 def _write_json(path, data):
