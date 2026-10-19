@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import fcntl
+import os
 import subprocess
+import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from fwbg.core.git_env import isolated_git_env
-from fwbg.research.fingerprint import DIGEST_RE, canonical_json, digest
+from fwbg.research.fingerprint import canonical_json, digest
 from fwbg.research.ledger import LEDGER_FILENAME
 
 CRITERIA_TEMPLATE = Path("templates") / "criteria-default.yaml"
@@ -18,6 +20,8 @@ _DIRECTORIES = ("strategies", "configs", "templates", "reports")
 _GITIGNORE = ".gitignore"
 REGISTER_LOCK = ".register.lock"
 _GITIGNORE_TEXT = f".staging/\n{REGISTER_LOCK}\n"
+_GIT_TIMEOUT = 30.0
+_GIT_STOP_GRACE = 2.0
 
 DEFAULT_CRITERIA_YAML = """\
 # Starting values for the success criteria of new research cards.
@@ -33,7 +37,7 @@ max_p_value: 0.05
 
 
 class ResearchRepoError(Exception):
-    """The research register could not be initialised."""
+    """A research-register git or storage operation failed."""
 
 
 def init_research_repo(research_dir: Path) -> bool:
@@ -85,40 +89,68 @@ def register_lock(research_dir: Path) -> Iterator[None]:
     """Serialise register writes (ledger appends plus their commit) across processes.
 
     Separate from the ``flock`` that ``append_trial`` takes on the ledger itself:
-    locking ``trials.jsonl`` again from the same process would deadlock.
+    locking ``trials.jsonl`` again from the same process would deadlock. Not
+    re-entrant either: a nested ``register_lock`` in the same process blocks forever.
     """
     with (research_dir / REGISTER_LOCK).open("a", encoding="utf-8") as handle:
+        # ponytail: waits without bound or feedback while another writer holds the lock;
+        # poll with LOCK_NB and report the wait if writers ever run long.
         fcntl.flock(handle, fcntl.LOCK_EX)
         yield
 
 
 def commit_register(research_dir: Path, paths: Sequence[str], message: str) -> bool:
-    """Commit exactly *paths* (relative to the register); ``False`` if nothing changed."""
-    # --force: global excludes must not hide register files; only the named paths are added.
-    _git(research_dir, "add", "--force", "--", *paths)
-    staged = _git(research_dir, "diff", "--cached", "--quiet", "--", *paths, ok_codes=(0, 1))
-    if staged.returncode == 0:
+    """Commit the changes under *paths* (relative to the register); ``False`` if none.
+
+    Only the changed files under *paths* are committed: other staged work stays
+    staged, and named paths that do not exist are skipped. The register's own
+    ``.gitignore`` applies, the user's global excludes do not.
+
+    Raises:
+        ValueError: *paths* is empty (git would take that as the whole index).
+        ResearchRepoError: git failed.
+    """
+    if not paths:
+        raise ValueError("commit_register needs at least one path")
+    existing = [path for path in paths if (research_dir / path).exists()]
+    if existing:
+        # Global excludes (e.g. *.json) must not hide register files.
+        _git(research_dir, "add", "--all", "--", *existing, config=["core.excludesFile=/dev/null"])
+    # --no-renames: a rename must list both names, or its deletion stays uncommitted.
+    diff = _git(research_dir, "diff", "--cached", "--no-renames", "--name-only", "-z", "--", *paths)
+    changed = [name for name in diff.stdout.split("\0") if name]
+    if not changed:
         return False
-    _git(research_dir, "commit", "--quiet", "--message", message, "--", *paths)
+    # Only the changed names: a named directory without tracked files fails as a pathspec.
+    _git(research_dir, "commit", "--quiet", "--message", message, "--", *changed)
     return True
 
 
 def store_config(research_dir: Path, fingerprint: str, config: Mapping[str, Any]) -> Path:
     """Store the fingerprinted *config* as ``configs/<hex>.json`` (content-addressed).
 
+    Call it under :func:`register_lock`. The file is replaced atomically, so a crash
+    never leaves a partial config. Filesystem errors (``OSError``, e.g. a missing
+    ``configs/``) pass through.
+
     Raises:
         ValueError: *fingerprint* is malformed or is not the digest of *config*.
         ResearchRepoError: a different file already exists under that name.
     """
-    if not DIGEST_RE.fullmatch(fingerprint) or digest(config) != fingerprint:
+    if digest(config) != fingerprint:
         raise ValueError(f"{fingerprint!r} is not the fingerprint of the given config")
     path = research_dir / "configs" / f"{fingerprint.removeprefix('sha256:')}.json"
-    text = canonical_json(config) + "\n"
+    data = (canonical_json(config) + "\n").encode("utf-8")
     if path.exists():
-        if path.read_text(encoding="utf-8") != text:
+        if path.read_bytes() != data:
             raise ResearchRepoError(f"{path.name} exists with different content")
         return path
-    path.write_text(text, encoding="utf-8")
+    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp.write_bytes(data)
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
     return path
 
 
@@ -134,18 +166,44 @@ def _has_commit(research_dir: Path) -> bool:
 
 
 def _git(
-    cwd: Path, *args: str, ok_codes: tuple[int, ...] = (0,)
+    cwd: Path, *args: str, ok_codes: tuple[int, ...] = (0,), config: Sequence[str] = ()
 ) -> subprocess.CompletedProcess[str]:
+    """Run ``git <args>`` with ``-c`` *config* overrides; errors name the subcommand."""
     env = isolated_git_env()
     # Never search above the register: a damaged .git must not fall back to an enclosing repo.
     env["GIT_CEILING_DIRECTORIES"] = str(cwd.resolve().parent)
+    overrides = [option for setting in config for option in ("-c", setting)]
     try:
-        result = subprocess.run(
-            ["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=30
-        )
+        with subprocess.Popen(
+            ["git", *overrides, *args],
+            cwd=cwd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ) as process:
+            try:
+                stdout, stderr = process.communicate(timeout=_GIT_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                _stop(process)
+                raise
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ResearchRepoError(f"git {args[0]} failed: {exc}") from exc
-    if result.returncode not in ok_codes:
-        detail = result.stderr.strip() or result.stdout.strip()
+    if process.returncode not in ok_codes:
+        detail = stderr.strip() or stdout.strip()
         raise ResearchRepoError(f"git {args[0]} failed: {detail}")
-    return result
+    return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+
+
+def _stop(process: subprocess.Popen[str]) -> None:
+    """SIGTERM first, so git removes its own ``index.lock``; SIGKILL only as a fallback.
+
+    Waits for git alone, not for its output: a hook that git leaves running
+    still holds the pipes open.
+    """
+    process.terminate()
+    try:
+        process.wait(timeout=_GIT_STOP_GRACE)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
