@@ -4,13 +4,13 @@ StrategyConfig - Zentrale Konfigurationsklasse für Trading-Strategien.
 Plugin-basierte Struktur mit Pipeline-Format.
 Alle Config-Klassen sind hier definiert - keine Duplikate in anderen Modulen.
 """
-import copy
 import dataclasses
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Union
-import glob
+from typing import List, Dict, Any, Optional
 import json
 import os
+
+from fwbg.core.presets import resolve_presets
 
 
 @dataclass
@@ -325,75 +325,6 @@ class ResourceConfig:
         )
 
 
-def _load_json_preset(name: str, presets_dir: str) -> dict:
-    """Load a JSON preset file from the given directory.
-
-    Tries ``{name}.json`` first; if not found, falls back to the highest-version
-    ``{name}_v*.json`` file (versioned naming scheme).
-
-    The preset name must be a simple identifier (no path separators) and the
-    resolved file path must stay inside ``presets_dir`` even after following
-    symlinks — this protects against ``../etc/passwd``-style traversal and
-    symlink-race attacks.
-    """
-    # Reject obviously hostile names early; presets are simple identifiers.
-    if not name or "/" in name or "\\" in name or name in (".", "..") or "\x00" in name:
-        raise ValueError(f"Invalid preset name: {name!r}")
-
-    real_dir = os.path.realpath(presets_dir)
-    real_dir_prefix = real_dir.rstrip(os.sep) + os.sep
-
-    def _safe_resolve(candidate: str) -> Optional[str]:
-        resolved = os.path.realpath(candidate)
-        if resolved == real_dir or resolved.startswith(real_dir_prefix):
-            return resolved
-        return None
-
-    path = os.path.join(presets_dir, f"{name}.json")
-    resolved = _safe_resolve(path)
-    if resolved is None:
-        raise ValueError(f"Preset name '{name}' resolves outside allowed directory")
-
-    if not os.path.isfile(resolved):
-        # Fall back to versioned filename. Filter the glob output through the
-        # realpath check inside the loop so a symlink injected between glob and
-        # realpath cannot escape the presets directory.
-        matches = sorted(glob.glob(os.path.join(presets_dir, f"{name}_v*.json")))
-        valid: list[str] = []
-        for m in matches:
-            safe = _safe_resolve(m)
-            if safe is not None and os.path.isfile(safe):
-                valid.append(safe)
-        if not valid:
-            raise FileNotFoundError(f"Preset '{name}' not found at {path}")
-        resolved = valid[-1]  # highest lexicographic = highest version
-
-    with open(resolved, "r") as f:
-        data = json.load(f)
-    data.pop("_meta", None)  # strip embedded metadata before returning content
-    return data
-
-
-def _resolve_section(
-    value: "Optional[Union[str, Dict[str, Any]]]",
-    section_dir: str,
-    strategy_dir: Optional[str],
-) -> "Optional[Dict[str, Any]]":
-    """Resolve a config section: string loads preset file, dict/None passes through.
-
-    Dicts are deep-copied so that downstream mutation of the returned object
-    cannot leak back into the caller's strategy data structure.
-    """
-    if value is None:
-        return value
-    if isinstance(value, dict):
-        return copy.deepcopy(value)
-    if isinstance(value, str):
-        base = os.path.dirname(strategy_dir) if strategy_dir else os.getcwd()
-        return _load_json_preset(value, os.path.join(base, section_dir))
-    return value
-
-
 @dataclass
 class StrategyConfig:
     """
@@ -458,19 +389,18 @@ class StrategyConfig:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StrategyConfig":
         """Erstellt StrategyConfig aus Dictionary (z.B. aus JSON-Datei)."""
-        strategy_dir = data.get("_strategy_dir")
-
         # Resolve sections: string loads preset file, dict/None passes through
-        pipeline = _resolve_section(data.get("pipeline", {}), "pipelines", strategy_dir)
-        model_data = _resolve_section(data.get("model", {}), "models", strategy_dir)
-        validation_data = _resolve_section(data.get("validation", {}), "validations", strategy_dir)
-        filters_data = _resolve_section(data.get("filters", {}), "filters", strategy_dir)
-        resources_data = _resolve_section(data.get("resources"), "resources", strategy_dir)
-        risk_params = _resolve_section(data.get("risk_params", {}), "risk_params", strategy_dir)
+        resolved = resolve_presets(data)
+        pipeline = resolved.get("pipeline", {})
+        model_data = resolved.get("model", {})
+        validation_data = resolved.get("validation", {})
+        filters_data = resolved.get("filters", {})
+        resources_data = resolved.get("resources")
+        risk_params = resolved.get("risk_params", {})
         optimization = OptimizationConfig.from_dict(data.get("optimization"))
 
         # Resolve regime_filter: string → preset, dict → inline, None → empty
-        regime_data = _resolve_section(data.get("regime_filter"), "regime_filters", strategy_dir)
+        regime_data = resolved.get("regime_filter")
         regime_filter = RegimeFilterConfig()
         if isinstance(regime_data, dict):
             if "condition_grids" in regime_data:

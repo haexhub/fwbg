@@ -31,11 +31,12 @@ and the design doc has been updated to match.
 1. **Fingerprint input.** The CLI already merges every override
    (`timeframe`, `start_date`, `end_date`, `cost_multiplier`,
    `_cli_data_path`) into `strategy_metadata` before calling
-   `run_optimizer` (`src/fwbg/cli/main.py`, `main()`), and
-   `create_run_directory` stores exactly that dict as `strategy.json`. The
-   fingerprint therefore hashes that dict minus descriptive keys, plus the
-   resolved symbol list. Legacy runs can be fingerprinted with the same
-   definition, so there is a single `fingerprint_version: 1`.
+   `run_optimizer` (`src/fwbg/cli/main.py`, `main()`). The fingerprint hashes
+   that dict **after preset resolution** (`fwbg.core.presets.resolve_presets`,
+   the same resolution `StrategyConfig.from_dict` uses), minus descriptive,
+   scheduling, location (`_strategy_dir`) and bookkeeping (`_refs`) keys,
+   plus the resolved symbols. Unresolved preset names are refused. There is
+   a single `fingerprint_version: 1`.
    Known ceiling: defaults are not resolved, so a config that spells out a
    default and one that omits it hash differently.
 2. **Criteria hash.** The card stores
@@ -43,13 +44,21 @@ and the design doc has been updated to match.
    `success_criteria` and never accepted as a hand-edited value. The current
    hash is computed from `success_criteria`; amendments live in the front
    matter as `criteria_amendments: [{date, reason, criteria_hash}]` so the
-   gate can read them without parsing prose. Before the first trial, the
-   current hash must match the registration hash or an amendment; later it
-   must match the last trial or an amendment.
-3. **Ledger locking.** `append_trial` takes an exclusive `flock` on the
-   ledger file itself and assigns the trial id under that lock. Serialising
-   the research-repo commit is step 3's concern.
-4. **`code.patch` module.** `src/fwbg/results/storage.py` is already over
+   gate can read them without parsing prose. The current hash must equal
+   the **latest** amendment's hash, or the registration hash when there are
+   no amendments; without amendments it must also equal the hash recorded
+   by the card's last trial.
+3. **Holdout cutoff anchor.** Every trial records the `holdout_cutoff` it
+   ran under, and the gate refuses any card whose cutoff differs from the
+   one its trials recorded (`CUTOFF_MOVED`): the cutoff is frozen once
+   trials ran. (A first version allowed moving it earlier — wrong, since
+   that puts already-seen data into the holdout; fixed after review.)
+4. **Ledger locking.** `append_trial` takes an exclusive `flock` on the
+   ledger file itself and assigns the trial id under that lock. Step 3 must
+   serialise ledger append plus research-repo commit with a **separate**
+   lock file (e.g. `.register.lock`); locking `trials.jsonl` itself from the
+   same process would deadlock against `append_trial`.
+5. **`code.patch` module.** `src/fwbg/results/storage.py` is already over
    the 500-line limit, so the capture logic goes into its own module and
    `storage.py` gains only a two-line hook. Splitting `storage.py` is a
    separate change.
@@ -71,6 +80,17 @@ and the design doc has been updated to match.
 ---
 
 ### Task 1: Package and config fingerprint
+
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review showed that hashing the raw CLI dict depends on file
+> location (`_strategy_dir`) and on preset *names* rather than content. The
+> merged result differs: preset loading moved to `fwbg.core.presets`, which
+> gained `PRESET_SECTIONS` and `resolve_presets()` (also used by
+> `StrategyConfig.from_dict`); `fingerprint.py` excludes `_strategy_dir` and
+> `_refs`, refuses unresolved preset names, hashes
+> `{"strategy": …, "symbols": […]}` with `symbols: tuple[str, ...]`, and is
+> pinned by a golden digest test. The source of truth is the code on the
+> branch, not these blocks.
 
 **Files:**
 - Create: `src/fwbg/research/__init__.py`
@@ -570,6 +590,18 @@ git commit -m "feat(research): parse and load research cards"
 
 ### Task 3: Trial ledger
 
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review found that `ensure_ascii=False` plus `str.splitlines()`
+> let a note containing U+2028/U+2029/NEL make the ledger permanently
+> unreadable, and that most record fields were not validated on read. The
+> merged result writes pure-ASCII lines and splits on `"\n"` only, refuses a
+> trial that would not read back unchanged before writing, validates every
+> field of every stored line (exact key set, `T-NNNNNN` ids unique, card id,
+> `DIGEST_RE` hashes shared with `card.py`, finite metrics, no NaN literals),
+> turns decoding errors and torn last lines into `LedgerError`, and treats a
+> **missing ledger as an error** (appends never create the file;
+> `init_research_repo` does). The source of truth is the code on the branch.
+
 **Files:**
 - Create: `src/fwbg/research/ledger.py`
 - Create: `tests/research/factories.py`
@@ -619,6 +651,7 @@ def make_trial(**overrides: Any) -> Trial:
         "fingerprint": "sha256:" + "0" * 64,
         "fingerprint_version": 1,
         "criteria_hash": make_card().criteria_hash,
+        "holdout_cutoff": date(2025, 4, 30),
         "code": {"commit": "abc123", "dirty": False, "patch": None},
         "window": {"start": None, "end": "2025-04-30"},
         "note": "baseline",
@@ -671,6 +704,14 @@ def test_malformed_line_is_reported_with_its_number(tmp_path):
     with ledger.open("a", encoding="utf-8") as handle:
         handle.write("{not json\n")
     with pytest.raises(LedgerError, match="line 2"):
+        read_trials(ledger)
+
+
+def test_malformed_holdout_cutoff_is_a_ledger_error(tmp_path):
+    ledger = tmp_path / "trials.jsonl"
+    line = make_trial(trial_id="T-000001").to_json().replace("2025-04-30", "someday", 1)
+    ledger.write_text(line + "\n", encoding="utf-8")
+    with pytest.raises(LedgerError, match="line 1"):
         read_trials(ledger)
 
 
@@ -731,6 +772,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from datetime import date
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -769,6 +811,7 @@ class Trial:
     fingerprint: str
     fingerprint_version: int
     criteria_hash: str
+    holdout_cutoff: date
     code: Mapping[str, Any]
     window: Mapping[str, str | None]
     note: str | None
@@ -792,6 +835,7 @@ class Trial:
             "fingerprint": self.fingerprint,
             "fingerprint_version": self.fingerprint_version,
             "criteria_hash": self.criteria_hash,
+            "holdout_cutoff": self.holdout_cutoff.isoformat(),
             "code": dict(self.code),
             "window": dict(self.window),
             "note": self.note,
@@ -813,6 +857,7 @@ class Trial:
             fingerprint=record["fingerprint"],
             fingerprint_version=record["fingerprint_version"],
             criteria_hash=record["criteria_hash"],
+            holdout_cutoff=date.fromisoformat(record["holdout_cutoff"]),
             code=record["code"],
             window=record["window"],
             note=record["note"],
@@ -874,7 +919,7 @@ Metrics must not contain NaN (`allow_nan=False`); step 3 converts NaN to
 **Step 4: Run to verify pass**
 
 Run: `PYTHONPATH=src $PY -m pytest tests/research/test_ledger.py -q`
-Expected: 11 passed.
+Expected: 12 passed.
 
 **Step 5: Commit**
 
@@ -886,6 +931,17 @@ git commit -m "feat(research): add append-only trial ledger"
 ---
 
 ### Task 4: Pre-run gate
+
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review found fail-open gaps: the cutoff rule ran the wrong way,
+> `end_date` was checked on its first ten characters only, any historical
+> amendment satisfied the criteria check, and most behaviour had no pinning
+> test. The merged gate freezes the cutoff, requires strict `YYYY-MM-DD`
+> windows (start < end; holdout runs must end after the cutoff), accepts only
+> the latest amendment, counts every holdout trial as a look, denies holdout
+> runs on contaminated cards (`HOLDOUT_CONTAMINATED`), turns unhashable
+> configs into `INVALID_CONFIG` (422) and checks card/request id agreement.
+> The source of truth is the code on the branch.
 
 **Files:**
 - Create: `src/fwbg/research/gate.py`
@@ -1053,6 +1109,18 @@ def test_amended_criteria_are_accepted_before_the_first_trial():
     assert check(amended, request(), []).allowed
 
 
+def test_moving_the_cutoff_later_after_trials_is_refused():
+    moved = make_card(holdout_cutoff=date(2025, 6, 30))
+    assert codes(check(moved, request(), [make_trial(trial_id="T-000001")])) == {
+        DenialCode.CUTOFF_MOVED
+    }
+
+
+def test_moving_the_cutoff_earlier_is_allowed():
+    moved = make_card(holdout_cutoff=date(2025, 1, 31))
+    assert check(moved, request(), [make_trial(trial_id="T-000001")]).allowed
+
+
 def test_note_must_be_one_line():
     assert codes(check(make_card(), request(note="baseline\nextra"), [])) == {
         DenialCode.MISSING_NOTE
@@ -1103,6 +1171,7 @@ class DenialCode(str, Enum):
     INVALID_WINDOW = "invalid_window"
     NOT_ACTIVE = "not_active"
     CRITERIA_CHANGED = "criteria_changed"
+    CUTOFF_MOVED = "cutoff_moved"
     AFTER_CUTOFF = "after_cutoff"
     HOLDOUT_REPEAT = "holdout_repeat"
     DUPLICATE_FINGERPRINT = "duplicate_fingerprint"
@@ -1131,11 +1200,13 @@ class Denial:
 
 @dataclass(frozen=True)
 class RunRequest:
-    """A run after overrides and shared, canonical asset resolution.
+    """A run after overrides, preset resolution and canonical asset resolution.
 
-    ``symbols`` contains the uppercase, sorted concrete symbols produced by
-    ``AssetRegistry``. CLI/API wiring must resolve asset classes before
-    constructing this request; unresolved names never reach the gate.
+    ``strategy_metadata`` must already be passed through
+    ``fwbg.core.presets.resolve_presets`` (the fingerprint refuses unresolved
+    preset names). ``symbols`` contains the uppercase, sorted concrete symbols
+    produced by ``AssetRegistry``. CLI/API wiring must resolve asset classes
+    before constructing this request; unresolved names never reach the gate.
     """
 
     research_id: str | None
@@ -1188,6 +1259,7 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
             )
         )
     denials.extend(_criteria_denials(card, own_trials))
+    denials.extend(_cutoff_denials(card, own_trials))
     window_denial = _apply_window(card, metadata, request.holdout)
     if window_denial is not None:
         denials.append(window_denial)
@@ -1205,7 +1277,7 @@ def _has_text(value: str | None) -> bool:
 
 
 def _valid_note(note: str | None) -> bool:
-    return _has_text(note) and "\n" not in note and "\r" not in note
+    return note is not None and _has_text(note) and "\n" not in note and "\r" not in note
 
 
 def _refuse(code: DenialCode, message: str, kind: TrialKind, metadata: dict[str, Any]) -> Decision:
@@ -1236,6 +1308,22 @@ def _criteria_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[D
             DenialCode.CRITERIA_CHANGED,
             f"success criteria of {card.id} differ from those of {last.trial_id} "
             "and no amendment records the change",
+        )
+    ]
+
+
+def _cutoff_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[Denial]:
+    """The holdout may shrink after trials ran, never grow into data they could not see."""
+    if not own_trials:
+        return []
+    earliest = min(trial.holdout_cutoff for trial in own_trials)
+    if card.holdout_cutoff <= earliest:
+        return []
+    return [
+        Denial(
+            DenialCode.CUTOFF_MOVED,
+            f"holdout cutoff of {card.id} moved to {card.holdout_cutoff} after trials ran "
+            f"with {earliest}; it may only move earlier",
         )
     ]
 
@@ -1300,7 +1388,7 @@ def _duplicate_denials(run_fingerprint: str, trials: Sequence[Trial]) -> list[De
 **Step 4: Run to verify pass**
 
 Run: `PYTHONPATH=src $PY -m pytest tests/research/test_gate.py -q`
-Expected: 21 passed.
+Expected: 27 passed.
 
 **Step 5: Commit**
 
@@ -1312,6 +1400,20 @@ git commit -m "feat(research): add pre-run gate"
 ---
 
 ### Task 5: Research directory and repository
+
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review found that a failed first commit left the register
+> "initialised" forever, that re-running init silently recreated a deleted
+> ledger (resetting the trial history), that `git add --all` committed
+> whatever already sat in the directory, and that inherited `GIT_DIR` /
+> `GIT_INDEX_FILE` (exported by git hooks) made init write into another
+> repository. The merged `init_research_repo` decides by "has a commit",
+> retries a failed first commit, refuses to recreate a missing ledger in an
+> initialised register, stages only `.gitignore`, the template and
+> `trials.jsonl`, uses `--initial-branch=main`, and strips git's
+> repository-local environment variables (`GIT_LOCAL_ENV_VARS`) from every
+> git call; the `git_env` fixture strips them too. The source of truth is
+> the code on the branch.
 
 **Files:**
 - Modify: `src/fwbg/api/workspace.py` (module docstring list; new `get_research_dir()` after `get_test_results_dir()`)
@@ -1512,6 +1614,19 @@ git commit -m "feat(research): add research directory and repository setup"
 ---
 
 ### Task 6: `code.patch` for runs with uncommitted changes
+
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review found that porcelain `git diff` follows user config
+> (`diff.external`, `diff.noprefix`, `color.diff`, textconv) and silently
+> wrote unappliable patches, that quoted names and `--no-index` exit codes
+> dropped untracked files without a warning, and that git could take the
+> index lock during a run. The merged module diffs with `--binary
+> --no-ext-diff --no-textconv --no-color --src-prefix=a/ --dst-prefix=b/`,
+> lists untracked files with `-z`, fails loudly on an empty per-file diff,
+> works on bytes end to end, and runs git through the shared
+> `fwbg.core.git_env.isolated_git_env()` (no repository-local variables,
+> `GIT_OPTIONAL_LOCKS=0`), which `fwbg.research.repo` uses too. The source
+> of truth is the code on the branch.
 
 **Files:**
 - Create: `src/fwbg/results/code_patch.py`
@@ -1742,13 +1857,13 @@ PYTHONPATH=src ../../.venv/bin/mypy src/fwbg/research src/fwbg/results/code_patc
 PYTHONPATH=src $PY -m pytest tests/research tests/test_code_patch.py -q
 PYTHONPATH=src $PY -m pytest tests/test_preview_run.py tests/test_cli.py tests/test_api_result_paths.py tests/test_api_run_spawn.py -q
 ```
-Expected: ruff clean, mypy clean for the new modules, 74 research/patch tests
+Expected: ruff clean, mypy clean for the new modules, research/patch tests (count as reported by the run)
 passed, the regression subset (50 tests) unchanged. Then run the full suite once
 (`PYTHONPATH=src $PY -m pytest -q`) and compare against `origin/develop` if
 anything fails, to tell new failures from pre-existing ones.
 
 Sanity check that the tests can fail: temporarily change `_next_id` to
-`max(numbers, default=0)` (no `+ 1`), confirm three ledger tests fail,
+`max(numbers, default=0)` (no `+ 1`), confirm four ledger tests fail,
 revert.
 
 **Step 2: Update the design doc status**
@@ -1768,6 +1883,66 @@ git commit -m "docs: mark research register core as implemented"
 ```
 
 ---
+
+## Notes for later steps
+
+- Do not expose `--holdout` in the CLI/API before step 5 defines how a
+  holdout trial trains up to the cutoff and evaluates only after it; until
+  then a holdout run would be an ordinary walk-forward over all data and
+  spend the free look.
+- Treat any exception from `load_card` / `read_trials` as a denial (fail
+  closed), not only `CardError` / `LedgerError`.
+- Step 4 (API in Docker) needs decisions before the container can write the
+  register: install `git` in the image (`python:3.14-slim` ships without
+  it), choose a committer identity for register commits, and decide whether
+  register commits follow the operator's `commit.gpgsign` setting.
+- If init is ever called implicitly (CLI/API), hold `.register.lock` around
+  it; concurrent first inits race today.
+- Every git call must use `fwbg.core.git_env.isolated_git_env()`, as
+  `fwbg.research.repo` and `fwbg.results.code_patch` do.
+- `get_git_info` and `capture_code_patch` both follow the current working
+  directory. Before trials record code state, anchor both to the fwbg source
+  tree (e.g. the repository containing `fwbg.__file__`) and change them
+  together, so commit and patch always come from the same repository.
+- `write_code_patch` returns `None` both for "nothing under src/packages
+  changed" and for "capture failed". Trials must distinguish the two (e.g.
+  record a capture error) so a run without reproducible code state is
+  visible.
+- When the CLI exists, point the ledger's missing-file message at the CLI
+  command instead of the Python function `init_research_repo`.
+
+- Step 3 records the card's `holdout_cutoff` in every trial it appends;
+  step 2 (`backfill --apply`) and `reconcile` must do the same for legacy
+  and re-indexed runs, otherwise the frozen cutoff locks the card.
+- The verdict step must reject unknown success-criteria names (a typo such
+  as `min_sharp` would otherwise be ignored silently).
+
+- Step 3 must pass the **same** preset-resolved dict to `fingerprint` and to
+  `run_optimizer`, so a preset edited between gate and run cannot diverge,
+  and should store that resolved dict with the run.
+- Step 3 must turn a relative `--data-path` into an absolute path where the
+  CLI merges it into `_cli_data_path`; otherwise the same string can point at
+  different data.
+
+- Canonicalise the timeframe before gating:
+  `metadata["timeframe"] = Timeframe.from_str(metadata.get("timeframe") or data_config.TIMEFRAME).canonical`,
+  so aliases and the environment default cannot bypass duplicate detection.
+- The gate reads a ledger snapshot; the trial is appended minutes later.
+  Re-check the duplicate and holdout rules under `.register.lock` when
+  appending, so two concurrent identical runs (or two concurrent "free"
+  holdout looks) cannot both pass. Required before `--holdout` ships.
+- Pass metrics through `fwbg.data.config.convert_numpy` (and NaN → `None`)
+  before building a `Trial`; numpy scalars make `append_trial` refuse it.
+- The API preflight must fingerprint `resolve_presets(raw strategy file +
+  overrides)`, never the dashboard loader's output: `api/strategies.py`
+  resolves `exit_params` but not `regime_filter`, the opposite of
+  `PRESET_SECTIONS`, so CLI and API fingerprints would diverge.
+- Decide together with the signing question whether register commits run
+  the operator's global git hooks (`core.hooksPath`) or use `--no-verify`.
+- `code.patch` covers the whole repository (`git diff HEAD`), so a modified
+  tracked data file is copied into every dirty run directory; revisit if
+  that becomes a size problem (script changes outside `src/` matter, so do
+  not simply limit it to source directories).
 
 ## Next steps
 

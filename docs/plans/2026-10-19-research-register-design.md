@@ -1,6 +1,6 @@
 # Research Register
 
-## Status: Design approved (2026-10-19) — not implemented
+## Status: Design approved (2026-10-19) — step 1 (core) implemented
 
 ## Problem
 
@@ -56,7 +56,7 @@ holdout.
 | Research strategy | Long-lived idea with hypothesis, mechanism, frozen success criteria, holdout cutoff and status. Identified as `S-NNNN`. Named "research" to avoid clashing with fwbg's strategy config JSON and fwbg-agents' `Strategy` row. |
 | Trial | One evaluation recorded in the ledger. A normal backtest run is an `iteration`; the final look at the holdout is `holdout`. |
 | Fingerprint | SHA-256 over the canonical, resolved run configuration. Used to block identical re-runs. |
-| Holdout cutoff | Date fixed at registration. Iterations only see data up to it. |
+| Holdout cutoff | Date fixed at registration and frozen once trials ran. Iterations only see data before it. |
 | Verdict | Deliberate status change with reasoning, auto-computed statistics and a reopen condition. |
 
 Status values: `active`, `parked`, `rejected`, `candidate`.
@@ -131,13 +131,17 @@ One JSON object per line:
 {"trial": "T-000231", "strategy": "S-0007", "run_id": "…",
  "kind": "iteration", "status": "ok", "ts": "2026-10-19T10:12:00",
  "fingerprint": "sha256:…", "fingerprint_version": 1,
- "criteria_hash": "sha256:…",
+ "criteria_hash": "sha256:…", "holdout_cutoff": "2025-04-30",
  "code": {"commit": "…", "dirty": true, "patch": "code.patch"},
  "window": {"start": null, "end": "2025-04-30"},
  "note": "threshold 1.5 → 2.0", "reason": null,
  "metrics": {"<SYMBOL>": {"sharpe": …, "trades": …, "max_dd": …, "p_value": …}}}
 ```
 
+- Every key shown is required on a stored line (`reason` may be `null`,
+  `metrics` may be `{}`); unknown keys are refused.
+- `holdout_cutoff`: the card's cutoff at the time of the trial (also for
+  legacy and re-indexed trials); the gate freezes the cutoff against it.
 - `kind`: `iteration | holdout | legacy | smoke`.
 - `status`: `ok | failed`. Failed and smoke trials are recorded but not
   counted towards N.
@@ -146,24 +150,30 @@ One JSON object per line:
 
 ### Fingerprint
 
-`sha256(canonical_json(config))` where `config` is the strategy metadata
-exactly as the CLI passes it to `run_optimizer` and stores it as
-`strategy.json` — every CLI/API override (`timeframe`, `start_date`,
-`end_date` after cutoff clamping, `cost_multiplier`, `_cli_data_path`) is
-already merged into it — plus the resolved symbol list:
+`sha256(canonical_json({"strategy": config, "symbols": symbols}))` where
+`config` is the strategy metadata as the CLI passes it to `run_optimizer` —
+every CLI/API override (`timeframe`, `start_date`, `end_date` after cutoff
+clamping, `cost_multiplier`, `_cli_data_path`) is already merged into it —
+**after preset resolution** (`fwbg.core.presets.resolve_presets`, the same
+resolution `StrategyConfig.from_dict` applies), and `symbols` is the sorted
+list of resolved symbols:
 
 - included: everything that determines the result (datasource, timeframe,
   window, costs, pipeline, model, signal rules, exits, risk, validation,
-  filters) and the symbols (asset classes expanded);
+  filters — preset content, never preset names);
 - excluded: descriptive keys (`name`, `description`, `category`, `tags`,
-  `hypothesis`, `expected_outcome`, `baseline_run`, `changes`) and
-  `resources`.
+  `hypothesis`, `expected_outcome`, `baseline_run`, `changes`),
+  `resources`, the file location `_strategy_dir` and the dashboard
+  bookkeeping `_refs`.
 
-Canonical JSON: sorted keys, no whitespace, integral floats written as
-integers. Because stored `strategy.json` files use the same shape, legacy
-runs are fingerprinted with the same definition (`fingerprint_version: 1`).
-Known ceiling: defaults are not resolved, so a config that spells out a
-default and one that omits it hash differently.
+Unresolved preset names are refused rather than hashed. Canonical JSON:
+sorted keys, no whitespace, integral floats written as integers; a golden
+test pins the digest, so any serialisation change forces a
+`fingerprint_version` bump. Known ceiling: values are hashed as written, not
+as the run interprets them — a spelled-out default vs. an omitted one, or a
+timeframe alias (`DAY` vs. `DAY_1`, or an omitted timeframe falling back to
+the `TIMEFRAME` environment variable), hash differently. The wiring
+canonicalises the timeframe before gating (see the plan's notes).
 
 The code state is deliberately not part of the fingerprint: re-running the
 same config after a bugfix is legitimate and only needs `--reason`.
@@ -177,9 +187,12 @@ git capture lives in `src/fwbg/results/storage.py:123`.
 
 ## Gate
 
-`fwbg.research.gate.check(card, resolved_config, flags) -> Decision` is a
-pure function returning allow/deny, reasons and the effective overrides
-(e.g. the clamped `end_date`).
+`fwbg.research.gate.check(card, request, trials) -> Decision` is a pure
+function. `request` is a `RunRequest` (research id, preset-resolved strategy
+metadata with overrides, canonical symbols, note, reason, holdout flag);
+`trials` is the whole ledger in append order. The `Decision` carries every
+denial (with its HTTP status), the trial kind, the `effective_metadata` the
+run must use (e.g. with the clamped `end_date`) and the fingerprint.
 
 Enforcement points:
 
@@ -199,25 +212,38 @@ caller-supplied symbol list; an empty or failed resolution is rejected before
 the run starts. This keeps CLI and API fingerprints identical for the same
 asset set.
 
-Checks, in order:
+Checks (a missing research id or card stops immediately; after that every
+denial is collected, so one refusal lists all problems):
 
-1. `--research-id` given and card exists → else deny (422).
-2. Card parses and `status == active` → else deny (409), quoting status,
-   date and verdict reason.
-3. Before the first trial, require the hash of the card's
-   `success_criteria` to equal `registered_criteria_hash` or a hash recorded
-   by a `criteria_amendments` entry. After the first trial, require it to
-   equal the one recorded by the last trial or to be carried by a
-   `criteria_amendments` entry → else deny (409). Criteria edits go through
-   `fwbg research amend --reason`.
-4. Effective `end_date`: missing → set to `holdout_cutoff`; later than the
-   cutoff → deny unless `--holdout`.
-5. `--holdout`: the first holdout trial per strategy is free; every further
-   one requires `--reason` and is counted.
-6. Fingerprint already in the ledger → deny (409), listing the earlier
-   trials (run id, date, key metrics), unless `--reason` is given.
-7. `--note` (one line: what changed, why) is required (422). The diff to
-   the previous iteration is computed automatically.
+Data split: `end_date` is exclusive when fwbg slices data, so iterations
+see `[.., cutoff)` and the holdout is `[cutoff, ..)`. `trials` are passed in
+ledger (append) order.
+
+1. `--research-id` given, card exists and declares that id → else deny (422).
+2. Card parses and `status == active` → else deny (409), quoting the status.
+3. Criteria: the hash of the card's `success_criteria` must equal the
+   **latest** `criteria_amendments` entry's hash, or `registered_criteria_hash`
+   when there are no amendments; without amendments it must also equal the
+   hash recorded by the card's last trial → else deny (409). Criteria edits
+   go through `fwbg research amend --reason`; a hand-written amendment is only
+   caught by the research repo's git history.
+4. The card's `holdout_cutoff` equals the cutoff recorded by every earlier
+   trial of the card — it is **frozen once trials ran**, in both directions
+   (earlier would put seen data into the holdout; later after a holdout look
+   would tune on seen holdout results) → else deny (409).
+5. Window: `start_date`/`end_date` must be strict `YYYY-MM-DD` with
+   start < end → else deny (422). Iteration: missing end → set to the
+   cutoff; end after the cutoff → deny (409). Holdout run: end may be open;
+   an end on or before the cutoff → deny (422).
+6. `--holdout`: denied on a card with `holdout_contaminated: true` (409). The
+   first holdout trial per strategy is free; any earlier holdout trial
+   (whatever its status) makes a further look require `--reason`.
+7. Fingerprint already recorded by a successful trial (any card) → deny
+   (409), listing the earlier trials (trial, card, run, date), unless
+   `--reason` is given. A config that cannot be fingerprinted (unresolved
+   preset, NaN, non-JSON value) → deny (422).
+8. `--note` (exactly one line: what changed, why) is required (422). The
+   diff to the previous iteration is computed automatically.
 
 `--no-save` runs are gated and recorded like any other run: the operator
 still saw the result. They skip normal `test_results` output, but the
@@ -233,7 +259,9 @@ A missing research directory does **not** disable the gate.
 After the run, the CLI appends the trial to the ledger, writes
 `configs/<fingerprint>.json`, adds a `research` block (id, trial,
 fingerprint, note, reason, kind) to the run's `config.json`, and commits
-in the research repo. Ledger append and commit share one `fcntl` file lock.
+in the research repo. `append_trial` locks `trials.jsonl` itself; append
+plus commit are serialised by a separate `.register.lock` (locking
+`trials.jsonl` again from the same process would deadlock).
 
 ### Scripts outside the run system
 
@@ -251,7 +279,7 @@ not by code.
 | `list [--status S] [--tag T]` | Id, title, status, iterations, best development result, holdout used. |
 | `show S-NNNN` | Card, iteration timeline, coverage. |
 | `check <strategy-file> [overrides]` | Dry run of the gate. |
-| `amend S-NNNN --criteria … --reason …` | Change success criteria, recorded in `History`. |
+| `amend S-NNNN --criteria … --reason …` | Change success criteria; appends a `criteria_amendments` entry (date, reason, new hash) to the front matter. |
 | `verdict S-NNNN <status> --reason … --reopen-if …` | Write verdict, set status. |
 | `reopen S-NNNN --reason …` | `parked`/`rejected` → `active`. |
 | `backfill --plan OUT.yaml` / `--apply MAPPING.yaml` | Legacy import (see Migration). |
@@ -293,9 +321,14 @@ Full backfill of all existing runs and studies:
 
 1. **Index:** `fwbg research backfill --plan mapping.yaml` scans the
    workspace and the repo-local `test_results/`, computes fingerprints from
-   the stored `strategy.json` and the run's symbols (same definition as new
-   runs), and classifies runs without `results.json` as `failed` and agent
-   smoke runs as `smoke`.
+   the stored `strategy.json` (presets resolved) and the run's symbols, and
+   classifies runs without `results.json` as `failed` and agent smoke runs
+   as `smoke`. Stored `strategy.json` files keep preset *names*, so legacy
+   fingerprints are an approximation: presets resolve against today's
+   files. Many legacy runs point their `_strategy_dir` at a directory whose
+   preset folders no longer exist; the backfill must handle these
+   deliberately (remap the old base directory to the workspace, or record
+   the run as unresolvable) and must never fall back to hashing names.
 2. **Grouping:** an AI session groups runs into proposed cards (by name
    family and config similarity) and fills `mapping.yaml` (run → S-ID).
    Studies outside the run system get one card each, with trials counted as
@@ -305,10 +338,14 @@ Full backfill of all existing runs and studies:
    Strategies with a documented conclusion get that verdict; strategies
    without one become `parked` ("no conclusion documented"), never
    `rejected`.
-4. **Legacy holdout:** cutoff = latest data end of the strategy's runs;
-   data after it is a clean forward holdout. Strategies whose runs reach
-   the present get `holdout_contaminated: true` — confirmation then needs
-   forward data or paper trading.
+4. **Legacy holdout:** cutoff = the day after the latest data end of the
+   strategy's runs (`end_date` is exclusive, so the last day a legacy run
+   saw must stay out of the holdout); data from the cutoff on is a clean
+   forward holdout. Every legacy trial records the **card's** cutoff, not
+   its own data end — the gate freezes the cutoff at whatever the card's
+   trials recorded. Strategies whose runs reach the present get
+   `holdout_contaminated: true` — confirmation then needs forward data or
+   paper trading.
 5. **Repo cleanup:** move runs that exist only in the repo-local
    `test_results/` into the workspace; remove byte-identical duplicates
    after a diff check and operator confirmation; keep `test_results/`
