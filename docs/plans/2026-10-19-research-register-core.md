@@ -1865,7 +1865,9 @@ git commit -m "docs: mark research register core as implemented"
 - Treat any exception from `load_card` / `read_trials` as a denial (fail
   closed), not only `CardError` / `LedgerError`.
 
-- Step 3 records the card's `holdout_cutoff` in every trial it appends.
+- Step 3 records the card's `holdout_cutoff` in every trial it appends;
+  step 2 (`backfill --apply`) and `reconcile` must do the same for legacy
+  and re-indexed runs, otherwise the frozen cutoff locks the card.
 - The verdict step must reject unknown success-criteria names (a typo such
   as `min_sharp` would otherwise be ignored silently).
 
