@@ -174,3 +174,53 @@ def test_research_dir_defaults_to_workspace(tmp_path, monkeypatch):
 def test_research_dir_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("FWBG_RESEARCH_DIR", str(tmp_path / "elsewhere"))
     assert get_research_dir() == tmp_path / "elsewhere"
+
+
+def test_commit_register_commits_only_named_paths(tmp_path, git_env):
+    from fwbg.research.repo import commit_register
+
+    research = tmp_path / "research"
+    init_research_repo(research)
+    (research / "strategies" / "S-0001-x.md").write_text("card\n", encoding="utf-8")
+    (research / "notes.txt").write_text("private scratch\n", encoding="utf-8")
+    assert commit_register(research, ["strategies"], "chore: add card") is True
+    files = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", "HEAD"],
+        cwd=research,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert "strategies/S-0001-x.md" in files
+    assert "notes.txt" not in files
+    assert commit_register(research, ["strategies"], "chore: nothing") is False
+
+
+def test_register_lock_creates_an_ignored_lock_file(tmp_path, git_env):
+    from fwbg.research.repo import REGISTER_LOCK, register_lock
+
+    research = tmp_path / "research"
+    init_research_repo(research)
+    with register_lock(research):
+        assert (research / REGISTER_LOCK).exists()
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=research, capture_output=True, text=True, check=True
+    ).stdout
+    assert REGISTER_LOCK not in status
+
+
+def test_store_config_is_content_addressed_and_verified(tmp_path):
+    from fwbg.research.fingerprint import canonical_config, digest
+    from fwbg.research.repo import store_config
+
+    (tmp_path / "configs").mkdir()
+    config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
+    fingerprint = digest(config)
+    path = store_config(tmp_path, fingerprint, config)
+    assert path.name == fingerprint.removeprefix("sha256:") + ".json"
+    assert store_config(tmp_path, fingerprint, config) == path
+    with pytest.raises(ValueError, match="not the fingerprint"):
+        store_config(tmp_path, fingerprint, canonical_config({"timeframe": "HOUR_1"}, ("GOLD",)))
+    path.write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(ResearchRepoError, match="different content"):
+        store_config(tmp_path, fingerprint, config)
