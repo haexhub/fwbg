@@ -44,9 +44,10 @@ and the design doc has been updated to match.
    `success_criteria` and never accepted as a hand-edited value. The current
    hash is computed from `success_criteria`; amendments live in the front
    matter as `criteria_amendments: [{date, reason, criteria_hash}]` so the
-   gate can read them without parsing prose. Before the first trial, the
-   current hash must match the registration hash or an amendment; later it
-   must match the last trial or an amendment.
+   gate can read them without parsing prose. The current hash must equal
+   the **latest** amendment's hash, or the registration hash when there are
+   no amendments; without amendments it must also equal the hash recorded
+   by the card's last trial.
 3. **Holdout cutoff anchor.** Every trial records the `holdout_cutoff` it
    ran under, and the gate refuses any card whose cutoff differs from the
    one its trials recorded (`CUTOFF_MOVED`): the cutoff is frozen once
@@ -1922,6 +1923,26 @@ git commit -m "docs: mark research register core as implemented"
 - Step 3 must turn a relative `--data-path` into an absolute path where the
   CLI merges it into `_cli_data_path`; otherwise the same string can point at
   different data.
+
+- Canonicalise the timeframe before gating:
+  `metadata["timeframe"] = Timeframe.from_str(metadata.get("timeframe") or data_config.TIMEFRAME).canonical`,
+  so aliases and the environment default cannot bypass duplicate detection.
+- The gate reads a ledger snapshot; the trial is appended minutes later.
+  Re-check the duplicate and holdout rules under `.register.lock` when
+  appending, so two concurrent identical runs (or two concurrent "free"
+  holdout looks) cannot both pass. Required before `--holdout` ships.
+- Pass metrics through `fwbg.data.config.convert_numpy` (and NaN → `None`)
+  before building a `Trial`; numpy scalars make `append_trial` refuse it.
+- The API preflight must fingerprint `resolve_presets(raw strategy file +
+  overrides)`, never the dashboard loader's output: `api/strategies.py`
+  resolves `exit_params` but not `regime_filter`, the opposite of
+  `PRESET_SECTIONS`, so CLI and API fingerprints would diverge.
+- Decide together with the signing question whether register commits run
+  the operator's global git hooks (`core.hooksPath`) or use `--no-verify`.
+- `code.patch` covers the whole repository (`git diff HEAD`), so a modified
+  tracked data file is copied into every dirty run directory; revisit if
+  that becomes a size problem (script changes outside `src/` matter, so do
+  not simply limit it to source directories).
 
 ## Next steps
 
