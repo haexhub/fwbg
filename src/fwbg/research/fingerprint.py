@@ -13,12 +13,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from typing import Any
 
 from fwbg.core.presets import PRESET_SECTIONS
 
 FINGERPRINT_VERSION = 1
+
+# The format :func:`digest` produces.
+DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
 
 # Never change a result: descriptive text, scheduling, file location, dashboard bookkeeping.
 EXCLUDED_KEYS = frozenset(
