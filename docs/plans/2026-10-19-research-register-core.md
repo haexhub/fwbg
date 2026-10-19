@@ -48,9 +48,10 @@ and the design doc has been updated to match.
    current hash must match the registration hash or an amendment; later it
    must match the last trial or an amendment.
 3. **Holdout cutoff anchor.** Every trial records the `holdout_cutoff` it
-   ran under. The gate refuses a card whose cutoff is later than the
-   earliest cutoff recorded by its trials (`CUTOFF_MOVED`); moving it
-   earlier only shrinks what iterations may see and stays allowed.
+   ran under, and the gate refuses any card whose cutoff differs from the
+   one its trials recorded (`CUTOFF_MOVED`): the cutoff is frozen once
+   trials ran. (A first version allowed moving it earlier — wrong, since
+   that puts already-seen data into the holdout; fixed after review.)
 4. **Ledger locking.** `append_trial` takes an exclusive `flock` on the
    ledger file itself and assigns the trial id under that lock. Step 3 must
    serialise ledger append plus research-repo commit with a **separate**
@@ -929,6 +930,17 @@ git commit -m "feat(research): add append-only trial ledger"
 ---
 
 ### Task 4: Pre-run gate
+
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review found fail-open gaps: the cutoff rule ran the wrong way,
+> `end_date` was checked on its first ten characters only, any historical
+> amendment satisfied the criteria check, and most behaviour had no pinning
+> test. The merged gate freezes the cutoff, requires strict `YYYY-MM-DD`
+> windows (start < end; holdout runs must end after the cutoff), accepts only
+> the latest amendment, counts every holdout trial as a look, denies holdout
+> runs on contaminated cards (`HOLDOUT_CONTAMINATED`), turns unhashable
+> configs into `INVALID_CONFIG` (422) and checks card/request id agreement.
+> The source of truth is the code on the branch.
 
 **Files:**
 - Create: `src/fwbg/research/gate.py`
@@ -1845,6 +1857,13 @@ git commit -m "docs: mark research register core as implemented"
 ---
 
 ## Notes for later steps
+
+- Do not expose `--holdout` in the CLI/API before step 5 defines how a
+  holdout trial trains up to the cutoff and evaluates only after it; until
+  then a holdout run would be an ordinary walk-forward over all data and
+  spend the free look.
+- Treat any exception from `load_card` / `read_trials` as a denial (fail
+  closed), not only `CardError` / `LedgerError`.
 
 - Step 3 records the card's `holdout_cutoff` in every trial it appends.
 - The verdict step must reject unknown success-criteria names (a typo such
