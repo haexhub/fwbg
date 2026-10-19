@@ -1,10 +1,18 @@
 import json
 import multiprocessing
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
-from fwbg.research.ledger import LedgerError, TrialKind, TrialStatus, append_trial, read_trials
+from fwbg.research.ledger import (
+    LedgerError,
+    Trial,
+    TrialKind,
+    TrialStatus,
+    append_trial,
+    read_trials,
+)
 from tests.research.factories import append_many, make_trial
 
 
@@ -93,6 +101,20 @@ def test_append_refuses_a_trial_that_would_not_read_back(ledger):
     assert ledger.read_bytes() == before
 
 
+def test_append_refuses_a_trial_that_cannot_be_serialised(ledger):
+    with pytest.raises(ValueError, match="cannot be serialised"):
+        append_trial(ledger, make_trial(code={"patch": Path("fix.patch")}))
+    assert ledger.read_bytes() == b""
+
+
+def test_append_refuses_a_serialisation_spanning_several_lines(ledger, monkeypatch):
+    to_json = Trial.to_json
+    monkeypatch.setattr(Trial, "to_json", lambda trial: to_json(trial).replace(", ", ",\n", 1))
+    with pytest.raises(ValueError, match="more than one line"):
+        append_trial(ledger, make_trial())
+    assert ledger.read_bytes() == b""
+
+
 def test_append_refuses_nan_metrics(ledger):
     with pytest.raises(ValueError, match="JSON"):
         append_trial(ledger, make_trial(metrics={"GOLD": {"sharpe": float("nan")}}))
@@ -142,6 +164,7 @@ def test_malformed_holdout_cutoff_is_a_ledger_error(tmp_path):
         pytest.param(_line(trial="T-000002", strategy=7), id="strategy-not-an-id"),
         pytest.param(_line(trial="X-1"), id="bad-trial-id"),
         pytest.param(_line(trial="T-1"), id="short-trial-id"),
+        pytest.param(_line(trial="T-0000005"), id="padded-trial-id"),
         pytest.param(_line(trial="T-000002", run_id=3), id="run-id-not-text"),
         pytest.param(_line(trial="T-000002", kind="exotic"), id="unknown-kind"),
         pytest.param(_line(trial="T-000002", ts=5), id="ts-not-text"),
@@ -169,6 +192,7 @@ def test_malformed_holdout_cutoff_is_a_ledger_error(tmp_path):
             _line(trial="T-000002", code={"commit": "abc123", "speed": float("nan")}),
             id="nan-literal-anywhere",
         ),
+        pytest.param("[" * 100_000 + "]" * 100_000, id="deep-nesting"),
     ],
 )
 def test_malformed_records_are_ledger_errors(ledger, line):
