@@ -131,13 +131,17 @@ One JSON object per line:
 {"trial": "T-000231", "strategy": "S-0007", "run_id": "…",
  "kind": "iteration", "status": "ok", "ts": "2026-10-19T10:12:00",
  "fingerprint": "sha256:…", "fingerprint_version": 1,
- "criteria_hash": "sha256:…",
+ "criteria_hash": "sha256:…", "holdout_cutoff": "2025-04-30",
  "code": {"commit": "…", "dirty": true, "patch": "code.patch"},
  "window": {"start": null, "end": "2025-04-30"},
  "note": "threshold 1.5 → 2.0", "reason": null,
  "metrics": {"<SYMBOL>": {"sharpe": …, "trades": …, "max_dd": …, "p_value": …}}}
 ```
 
+- Every key shown is required on a stored line (`reason` may be `null`,
+  `metrics` may be `{}`); unknown keys are refused.
+- `holdout_cutoff`: the card's cutoff at the time of the trial (also for
+  legacy and re-indexed trials); the gate freezes the cutoff against it.
 - `kind`: `iteration | holdout | legacy | smoke`.
 - `status`: `ok | failed`. Failed and smoke trials are recorded but not
   counted towards N.
@@ -165,8 +169,11 @@ list of resolved symbols:
 Unresolved preset names are refused rather than hashed. Canonical JSON:
 sorted keys, no whitespace, integral floats written as integers; a golden
 test pins the digest, so any serialisation change forces a
-`fingerprint_version` bump. Known ceiling: defaults are not resolved, so a
-config that spells out a default and one that omits it hash differently.
+`fingerprint_version` bump. Known ceiling: values are hashed as written, not
+as the run interprets them — a spelled-out default vs. an omitted one, or a
+timeframe alias (`DAY` vs. `DAY_1`, or an omitted timeframe falling back to
+the `TIMEFRAME` environment variable), hash differently. The wiring
+canonicalises the timeframe before gating (see the plan's notes).
 
 The code state is deliberately not part of the fingerprint: re-running the
 same config after a bugfix is legitimate and only needs `--reason`.
@@ -180,9 +187,12 @@ git capture lives in `src/fwbg/results/storage.py:123`.
 
 ## Gate
 
-`fwbg.research.gate.check(card, resolved_config, flags) -> Decision` is a
-pure function returning allow/deny, reasons and the effective overrides
-(e.g. the clamped `end_date`).
+`fwbg.research.gate.check(card, request, trials) -> Decision` is a pure
+function. `request` is a `RunRequest` (research id, preset-resolved strategy
+metadata with overrides, canonical symbols, note, reason, holdout flag);
+`trials` is the whole ledger in append order. The `Decision` carries every
+denial (with its HTTP status), the trial kind, the `effective_metadata` the
+run must use (e.g. with the clamped `end_date`) and the fingerprint.
 
 Enforcement points:
 
@@ -202,7 +212,8 @@ caller-supplied symbol list; an empty or failed resolution is rejected before
 the run starts. This keeps CLI and API fingerprints identical for the same
 asset set.
 
-Checks, in order:
+Checks (a missing research id or card stops immediately; after that every
+denial is collected, so one refusal lists all problems):
 
 Data split: `end_date` is exclusive when fwbg slices data, so iterations
 see `[.., cutoff)` and the holdout is `[cutoff, ..)`. `trials` are passed in
@@ -248,7 +259,9 @@ A missing research directory does **not** disable the gate.
 After the run, the CLI appends the trial to the ledger, writes
 `configs/<fingerprint>.json`, adds a `research` block (id, trial,
 fingerprint, note, reason, kind) to the run's `config.json`, and commits
-in the research repo. Ledger append and commit share one `fcntl` file lock.
+in the research repo. `append_trial` locks `trials.jsonl` itself; append
+plus commit are serialised by a separate `.register.lock` (locking
+`trials.jsonl` again from the same process would deadlock).
 
 ### Scripts outside the run system
 
@@ -266,7 +279,7 @@ not by code.
 | `list [--status S] [--tag T]` | Id, title, status, iterations, best development result, holdout used. |
 | `show S-NNNN` | Card, iteration timeline, coverage. |
 | `check <strategy-file> [overrides]` | Dry run of the gate. |
-| `amend S-NNNN --criteria … --reason …` | Change success criteria, recorded in `History`. |
+| `amend S-NNNN --criteria … --reason …` | Change success criteria; appends a `criteria_amendments` entry (date, reason, new hash) to the front matter. |
 | `verdict S-NNNN <status> --reason … --reopen-if …` | Write verdict, set status. |
 | `reopen S-NNNN --reason …` | `parked`/`rejected` → `active`. |
 | `backfill --plan OUT.yaml` / `--apply MAPPING.yaml` | Legacy import (see Migration). |
