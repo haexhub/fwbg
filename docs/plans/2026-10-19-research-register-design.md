@@ -99,15 +99,18 @@ created: 2026-10-19
 holdout_cutoff: 2025-04-30
 holdout_contaminated: false
 success_criteria:            # hand-curated, from templates/criteria-default.yaml
-  min_sharpe_net: …
+  min_sharpe: …
   min_trades: …
   max_drawdown: …
-criteria_hash: sha256:…      # written by the tool, never by hand
+criteria_amendments:         # written by `fwbg research amend`
+  - date: 2026-11-02
+    reason: …
+    criteria_hash: sha256:…  # hash of the amended success_criteria
 ```
 
+The criteria hash is computed from `success_criteria`, never stored by hand.
 Body sections: `## Hypothesis`, `## Mechanism` (why should this work?),
-`## History` (criteria amendments, reopenings — each entry carries a date,
-reason and, for amendments, the new `criteria_hash`), `## Verdict`.
+`## History` (reopenings and other notes in prose), `## Verdict`.
 
 Default `holdout_cutoff` is 18 months before registration, overridable.
 Default criteria come from the template; values are hand-curated, never
@@ -136,19 +139,27 @@ One JSON object per line:
 
 ### Fingerprint
 
-`sha256(canonical_json(resolved_config))` where `resolved_config` is the
-strategy config JSON after applying every CLI/API override:
+`sha256(canonical_json(config))` where `config` is the strategy metadata
+exactly as the CLI passes it to `run_optimizer` and stores it as
+`strategy.json` — every CLI/API override (`timeframe`, `start_date`,
+`end_date` after cutoff clamping, `cost_multiplier`, `_cli_data_path`) is
+already merged into it — plus the resolved symbol list:
 
-- included: datasource, timeframe, resolved symbol list (asset classes
-  expanded), effective `start_date`/`end_date` (after cutoff clamping),
-  `cost_multiplier`, pipeline, model, signal rules, exits, risk, validation,
-  filters;
-- excluded: `name`, `description`, `tags`, `resources`.
+- included: everything that determines the result (datasource, timeframe,
+  window, costs, pipeline, model, signal rules, exits, risk, validation,
+  filters) and the symbols (asset classes expanded);
+- excluded: descriptive keys (`name`, `description`, `category`, `tags`,
+  `hypothesis`, `expected_outcome`, `baseline_run`, `changes`) and
+  `resources`.
 
-Canonical JSON: sorted keys, no whitespace, floats in `repr` form.
-`fingerprint_version` allows the definition to evolve. The code state is
-deliberately not part of the fingerprint: re-running the same config after
-a bugfix is legitimate and only needs `--reason`.
+Canonical JSON: sorted keys, no whitespace, integral floats written as
+integers. Because stored `strategy.json` files use the same shape, legacy
+runs are fingerprinted with the same definition (`fingerprint_version: 1`).
+Known ceiling: defaults are not resolved, so a config that spells out a
+default and one that omits it hash differently.
+
+The code state is deliberately not part of the fingerprint: re-running the
+same config after a bugfix is legitimate and only needs `--reason`.
 
 ### Code state
 
@@ -178,9 +189,9 @@ Checks, in order:
 1. `--research-id` given and card exists → else deny (422).
 2. Card parses and `status == active` → else deny (409), quoting status,
    date and verdict reason.
-3. Card `criteria_hash` equals the hash of the last trial, or a `History`
-   entry records the change → else deny (409). Criteria edits go through
-   `fwbg research amend --reason`.
+3. The hash of the card's `success_criteria` equals the one recorded by its
+   last trial, or a `criteria_amendments` entry carries it → else deny
+   (409). Criteria edits go through `fwbg research amend --reason`.
 4. Effective `end_date`: missing → set to `holdout_cutoff`; later than the
    cutoff → deny unless `--holdout`.
 5. `--holdout`: the first holdout trial per strategy is free; every further
@@ -260,9 +271,9 @@ Full backfill of all existing runs and studies:
 
 1. **Index:** `fwbg research backfill --plan mapping.yaml` scans the
    workspace and the repo-local `test_results/`, computes fingerprints from
-   stored `strategy.json`/`config.json`/`assets.json`
-   (`fingerprint_version: legacy-1`), and classifies runs without
-   `results.json` as `failed` and agent smoke runs as `smoke`.
+   the stored `strategy.json` and the run's symbols (same definition as new
+   runs), and classifies runs without `results.json` as `failed` and agent
+   smoke runs as `smoke`.
 2. **Grouping:** an AI session groups runs into proposed cards (by name
    family and config similarity) and fills `mapping.yaml` (run → S-ID).
    Studies outside the run system get one card each, with trials counted as
@@ -330,9 +341,9 @@ Each step is usable on its own.
   Needs investigation before step 5.
 - **`/api/runs/preview`.** Counts as a trial only if it reports
   performance metrics; decide during step 4.
-- **Legacy fingerprints** may not match fingerprints of the same config
-  computed today, because code defaults changed. Accepted: legacy entries
-  still catch identical stored configs.
+- **Legacy symbols.** Old runs record their symbols only indirectly
+  (`grid_details/<SYMBOL>/`, `results.json`); the backfill plan must pick
+  the reliable source.
 
 ## Alternatives considered
 
