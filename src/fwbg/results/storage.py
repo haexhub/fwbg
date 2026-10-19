@@ -7,8 +7,10 @@ import hashlib
 import subprocess
 from datetime import datetime
 
+from fwbg.core.git_env import isolated_git_env
 from fwbg.data import config as data_config
 from fwbg.data.config import convert_numpy
+from fwbg.results.code_patch import write_code_patch
 
 
 def _get_results_base_path() -> str:
@@ -97,11 +99,15 @@ STRATEGY_SCHEMA = {
 def get_git_info():
     """Holt Git-Informationen für Reproduzierbarkeit."""
     git_info = {}
+    env = isolated_git_env()
     try:
         # Aktueller Commit
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             git_info["commit"] = result.stdout.strip()
@@ -109,15 +115,21 @@ def get_git_info():
         # Branch
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=5
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             git_info["branch"] = result.stdout.strip()
 
         # Dirty status
         result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True, text=True, timeout=5
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             git_info["dirty"] = len(result.stdout.strip()) > 0
@@ -125,7 +137,10 @@ def get_git_info():
         # Letzte Commit-Message
         result = subprocess.run(
             ["git", "log", "-1", "--pretty=%B"],
-            capture_output=True, text=True, timeout=5
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             git_info["last_commit_message"] = result.stdout.strip()[:100]
@@ -264,6 +279,8 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
 
     # Git-Info für Reproduzierbarkeit
     git_info = get_git_info()
+    if git_info.get("dirty"):
+        git_info["patch"] = write_code_patch(run_path)
 
     # Technische Konfiguration
     config = {
