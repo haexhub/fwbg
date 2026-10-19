@@ -1,12 +1,12 @@
 """Config fingerprints for the research register.
 
-A fingerprint identifies what a run evaluated: the strategy metadata as the
-CLI hands it to ``run_optimizer`` (and stores it as ``strategy.json``),
-including CLI overrides, plus the resolved symbol list. The metadata must be
-preset-resolved (``fwbg.core.presets.resolve_presets``), so an edited preset
-changes the fingerprint and a preset's name does not. Descriptive, location
-and bookkeeping keys are excluded, so renaming, re-tagging or moving a config
-does not make it look new.
+A fingerprint identifies what a run evaluated: the CLI's run metadata (CLI
+overrides included), preset-resolved before hashing
+(``fwbg.core.presets.resolve_presets``), plus the resolved symbol list. An
+edited preset therefore changes the fingerprint and a preset's name does not;
+unresolved preset names are refused. Descriptive, location and bookkeeping
+keys are excluded, so renaming, re-tagging or moving a config does not make it
+look new.
 """
 
 from __future__ import annotations
@@ -15,6 +15,8 @@ import hashlib
 import json
 from collections.abc import Mapping
 from typing import Any
+
+from fwbg.core.presets import PRESET_SECTIONS
 
 FINGERPRINT_VERSION = 1
 
@@ -67,6 +69,13 @@ def canonical_config(
     strategy_metadata: Mapping[str, Any], symbols: tuple[str, ...]
 ) -> dict[str, Any]:
     """Return the part of a run configuration that determines its result."""
+    # Resolution loads every preset name or raises, so a string left here is unresolved.
+    unresolved = [key for key in PRESET_SECTIONS if isinstance(strategy_metadata.get(key), str)]
+    if unresolved:
+        raise ValueError(
+            f"Unresolved preset reference in {', '.join(unresolved)}; "
+            "call fwbg.core.presets.resolve_presets first"
+        )
     return {
         "strategy": {
             key: value for key, value in strategy_metadata.items() if key not in EXCLUDED_KEYS

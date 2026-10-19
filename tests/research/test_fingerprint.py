@@ -104,6 +104,11 @@ def test_nan_is_rejected():
         fingerprint({**BASE, "cost_multiplier": float("nan")}, SYMBOLS)
 
 
+def test_unresolved_preset_reference_is_refused():
+    with pytest.raises(ValueError, match="pipeline"):
+        fingerprint({"pipeline": "orb_simple_v1"}, ("GOLD",))
+
+
 def test_fingerprint_format():
     value = fingerprint(BASE, SYMBOLS)
     assert value.startswith("sha256:")
@@ -113,14 +118,16 @@ def test_fingerprint_format():
 def test_golden_fingerprint():
     # A serialisation change breaks this on purpose: bump FINGERPRINT_VERSION, then update.
     assert FINGERPRINT_VERSION == 1
+    params = {"threshold": 1.5, "note": "Überschneidung"}
     metadata = {
         "name": "golden",
         "timeframe": "DAY_1",
         "cost_multiplier": 2.0,
-        "pipeline": {"indicators": [{"name": "cusum_events", "params": {"threshold": 1.5}}]},
+        "pipeline": {"indicators": [{"name": "cusum_events", "params": params}]},
     }
-    assert fingerprint(metadata, ("gold", "EURUSD")) == (
-        "sha256:8b36d1b1d1d79b8d14688911678553592dd9bdc2382960d9429f1dd37221fe2c"
+    symbols = ("gold", "US500", "EURUSD", "XAGUSD", "BTCUSD")
+    assert fingerprint(metadata, symbols) == (
+        "sha256:aa4e15489ff50814f1079002301d2aa52b6e5b53d2b58b404e1bd6110693134b"
     )
 
 
