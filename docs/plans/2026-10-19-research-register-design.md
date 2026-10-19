@@ -146,24 +146,27 @@ One JSON object per line:
 
 ### Fingerprint
 
-`sha256(canonical_json(config))` where `config` is the strategy metadata
-exactly as the CLI passes it to `run_optimizer` and stores it as
-`strategy.json` — every CLI/API override (`timeframe`, `start_date`,
-`end_date` after cutoff clamping, `cost_multiplier`, `_cli_data_path`) is
-already merged into it — plus the resolved symbol list:
+`sha256(canonical_json({"strategy": config, "symbols": symbols}))` where
+`config` is the strategy metadata as the CLI passes it to `run_optimizer` —
+every CLI/API override (`timeframe`, `start_date`, `end_date` after cutoff
+clamping, `cost_multiplier`, `_cli_data_path`) is already merged into it —
+**after preset resolution** (`fwbg.core.presets.resolve_presets`, the same
+resolution `StrategyConfig.from_dict` applies), and `symbols` is the sorted
+list of resolved symbols:
 
 - included: everything that determines the result (datasource, timeframe,
   window, costs, pipeline, model, signal rules, exits, risk, validation,
-  filters) and the symbols (asset classes expanded);
+  filters — preset content, never preset names);
 - excluded: descriptive keys (`name`, `description`, `category`, `tags`,
-  `hypothesis`, `expected_outcome`, `baseline_run`, `changes`) and
-  `resources`.
+  `hypothesis`, `expected_outcome`, `baseline_run`, `changes`),
+  `resources`, the file location `_strategy_dir` and the dashboard
+  bookkeeping `_refs`.
 
-Canonical JSON: sorted keys, no whitespace, integral floats written as
-integers. Because stored `strategy.json` files use the same shape, legacy
-runs are fingerprinted with the same definition (`fingerprint_version: 1`).
-Known ceiling: defaults are not resolved, so a config that spells out a
-default and one that omits it hash differently.
+Unresolved preset names are refused rather than hashed. Canonical JSON:
+sorted keys, no whitespace, integral floats written as integers; a golden
+test pins the digest, so any serialisation change forces a
+`fingerprint_version` bump. Known ceiling: defaults are not resolved, so a
+config that spells out a default and one that omits it hash differently.
 
 The code state is deliberately not part of the fingerprint: re-running the
 same config after a bugfix is legitimate and only needs `--reason`.
@@ -293,9 +296,14 @@ Full backfill of all existing runs and studies:
 
 1. **Index:** `fwbg research backfill --plan mapping.yaml` scans the
    workspace and the repo-local `test_results/`, computes fingerprints from
-   the stored `strategy.json` and the run's symbols (same definition as new
-   runs), and classifies runs without `results.json` as `failed` and agent
-   smoke runs as `smoke`.
+   the stored `strategy.json` (presets resolved) and the run's symbols, and
+   classifies runs without `results.json` as `failed` and agent smoke runs
+   as `smoke`. Stored `strategy.json` files keep preset *names*, so legacy
+   fingerprints are an approximation: presets resolve against today's
+   files. Many legacy runs point their `_strategy_dir` at a directory whose
+   preset folders no longer exist; the backfill must handle these
+   deliberately (remap the old base directory to the workspace, or record
+   the run as unresolvable) and must never fall back to hashing names.
 2. **Grouping:** an AI session groups runs into proposed cards (by name
    family and config similarity) and fills `mapping.yaml` (run → S-ID).
    Studies outside the run system get one card each, with trials counted as

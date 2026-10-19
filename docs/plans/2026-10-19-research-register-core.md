@@ -31,11 +31,12 @@ and the design doc has been updated to match.
 1. **Fingerprint input.** The CLI already merges every override
    (`timeframe`, `start_date`, `end_date`, `cost_multiplier`,
    `_cli_data_path`) into `strategy_metadata` before calling
-   `run_optimizer` (`src/fwbg/cli/main.py`, `main()`), and
-   `create_run_directory` stores exactly that dict as `strategy.json`. The
-   fingerprint therefore hashes that dict minus descriptive keys, plus the
-   resolved symbol list. Legacy runs can be fingerprinted with the same
-   definition, so there is a single `fingerprint_version: 1`.
+   `run_optimizer` (`src/fwbg/cli/main.py`, `main()`). The fingerprint hashes
+   that dict **after preset resolution** (`fwbg.core.presets.resolve_presets`,
+   the same resolution `StrategyConfig.from_dict` uses), minus descriptive,
+   scheduling, location (`_strategy_dir`) and bookkeeping (`_refs`) keys,
+   plus the resolved symbols. Unresolved preset names are refused. There is
+   a single `fingerprint_version: 1`.
    Known ceiling: defaults are not resolved, so a config that spells out a
    default and one that omits it hash differently.
 2. **Criteria hash.** The card stores
@@ -71,6 +72,17 @@ and the design doc has been updated to match.
 ---
 
 ### Task 1: Package and config fingerprint
+
+> **Amended after code review (done).** The code blocks below are the first
+> iteration. Review showed that hashing the raw CLI dict depends on file
+> location (`_strategy_dir`) and on preset *names* rather than content. The
+> merged result differs: preset loading moved to `fwbg.core.presets`, which
+> gained `PRESET_SECTIONS` and `resolve_presets()` (also used by
+> `StrategyConfig.from_dict`); `fingerprint.py` excludes `_strategy_dir` and
+> `_refs`, refuses unresolved preset names, hashes
+> `{"strategy": …, "symbols": […]}` with `symbols: tuple[str, ...]`, and is
+> pinned by a golden digest test. The source of truth is the code on the
+> branch, not these blocks.
 
 **Files:**
 - Create: `src/fwbg/research/__init__.py`
@@ -1131,11 +1143,13 @@ class Denial:
 
 @dataclass(frozen=True)
 class RunRequest:
-    """A run after overrides and shared, canonical asset resolution.
+    """A run after overrides, preset resolution and canonical asset resolution.
 
-    ``symbols`` contains the uppercase, sorted concrete symbols produced by
-    ``AssetRegistry``. CLI/API wiring must resolve asset classes before
-    constructing this request; unresolved names never reach the gate.
+    ``strategy_metadata`` must already be passed through
+    ``fwbg.core.presets.resolve_presets`` (the fingerprint refuses unresolved
+    preset names). ``symbols`` contains the uppercase, sorted concrete symbols
+    produced by ``AssetRegistry``. CLI/API wiring must resolve asset classes
+    before constructing this request; unresolved names never reach the gate.
     """
 
     research_id: str | None
@@ -1768,6 +1782,15 @@ git commit -m "docs: mark research register core as implemented"
 ```
 
 ---
+
+## Notes for later steps
+
+- Step 3 must pass the **same** preset-resolved dict to `fingerprint` and to
+  `run_optimizer`, so a preset edited between gate and run cannot diverge,
+  and should store that resolved dict with the run.
+- Step 3 must turn a relative `--data-path` into an absolute path where the
+  CLI merges it into `_cli_data_path`; otherwise the same string can point at
+  different data.
 
 ## Next steps
 
