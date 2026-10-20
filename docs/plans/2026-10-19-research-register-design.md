@@ -284,11 +284,11 @@ ledger, writes `configs/<fingerprint>.json`, adds a `research` block (id,
 trial, fingerprint, note, reason, kind) to the run's `config.json`, commits
 in the research repo and deletes the marker. A run that never reaches its
 own recording — Ctrl-C (the worker pool's handler ends the process through
-`os._exit`), SIGKILL, OOM — leaves its marker behind; the next register
-write (gated run, `--check`, refused run, `verdict`) finds the marker with a
-dead process and records the trial. `append_trial` locks `trials.jsonl`
-itself; append plus commit are serialised by a separate `.register.lock`
-(locking `trials.jsonl` again from the same process would deadlock).
+`os._exit`), SIGKILL, OOM — leaves its marker behind; once its process is
+gone, the next gated run, `--check` or `verdict` records it. `append_trial`
+locks `trials.jsonl` itself; append plus commit are serialised by a separate
+`.register.lock` (locking `trials.jsonl` again from the same process would
+deadlock).
 
 ### Scripts outside the run system
 
@@ -306,7 +306,7 @@ not by code.
 | `list [--status S] [--tag T]` | Id, title, status, iterations, best development result, holdout used. |
 | `show S-NNNN` | Card, iteration timeline, coverage. |
 | `python -m fwbg.cli --check --strategy-file … [overrides]` | Dry run of the gate (a flag of the run command, not a `research` subcommand: it needs the run's overrides and asset selection). |
-| `amend S-NNNN --criteria … --reason …` | Change success criteria; appends a `criteria_amendments` entry (date, reason, new hash) to the front matter. Only on `active` cards; refused when the card's criteria do not match the recorded registration/amendments. |
+| `amend S-NNNN --set NAME=VALUE … --reason …` | Change success criteria; appends a `criteria_amendments` entry (date, reason, new hash) to the front matter. Only on `active` cards; refused when the card's criteria do not match the recorded registration/amendments. |
 | `verdict S-NNNN <status> --reason … --reopen-if …` | Write verdict, set status. Refused while the card has pending (running) runs. |
 | `reopen S-NNNN --reason …` | `parked`/`rejected` → `active`. |
 | `init` | Create the register (idempotent). |
@@ -395,8 +395,8 @@ Full backfill of all existing runs and studies:
 
 - Ledger append or research-repo commit fails after a successful run →
   warning, the run is not failed. The pending marker stays and the next
-  register write records it; every register commit stages all register
-  paths, so it also picks up an earlier failed commit. `reconcile` first
+  gated run, `--check` or `verdict` records it; every register commit stages
+  all register paths, so it also picks up an earlier failed commit. `reconcile` first
   validates the ledger and detects register files changed since the last
   research-repo commit. It stages only the register paths (`strategies/`,
   `trials.jsonl`, `configs/` and `reports/`) and creates a recovery commit
