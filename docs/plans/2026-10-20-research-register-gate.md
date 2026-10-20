@@ -1637,6 +1637,29 @@ private research register in `$FWBG_WORKSPACE/research`.
 
 **Commit:** `docs: document the research gate for AI sessions`
 
+## Implementation notes (step 3)
+
+- `legacy.run_outcome(run_dir, *, lenient=False)`: the plan's
+  `count_unknown` is named `lenient`; live runs (`pending.finish`) count an
+  unknown status or unreadable symbol file as evaluated.
+- `pending.recover_stale` finishes each stale marker on its own; one that
+  fails stays and is logged. Markers carry the writing `host`; markers from
+  another host count as alive.
+- Run ids are used once: a run id in the ledger, with `config.json` or
+  `grid_details/`, or with a marker is refused (`RUN_ID_IN_USE`); a
+  malformed one is `INVALID_RUN_ID`; an unreadable card or ledger is
+  `REGISTER_UNREADABLE`.
+- `--check` and refused runs write nothing about the checked run but may
+  record other runs' stale markers (recovery runs first).
+- The gate also denies `CRITERIA_CHANGED` when any of the card's trials ran
+  under a criteria hash that is neither the registration nor an amendment.
+- `amend` works only on `active` cards and refuses when the card's
+  criteria do not match the recorded registration/amendments; `verdict`
+  refuses while the card has pending runs.
+- `add_section_entry` ignores `## ` lines in fenced code blocks and raises
+  `CardError` on a duplicated target section.
+- Coverage keys list items by their `name`, `[*]` otherwise.
+
 ## Notes for later steps
 
 - Step 4 passes `research_id`, `note`, `reason` from `RunStartRequest` to the
