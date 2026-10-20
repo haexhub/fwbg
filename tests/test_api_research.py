@@ -1,5 +1,6 @@
 """The research register over HTTP: list, show, register and status changes."""
 
+import logging
 import subprocess
 from dataclasses import replace
 from datetime import date
@@ -10,10 +11,10 @@ from fastapi.testclient import TestClient
 from fwbg.api import create_app
 from fwbg.research import commands
 from fwbg.research.card import Status, load_card, replace_card
-from fwbg.research.ledger import LEDGER_FILENAME, append_trial
+from fwbg.research.ledger import LEDGER_FILENAME, append_trial, read_trials
 from fwbg.research.pending import STAGING, write_pending
 from fwbg.research.repo import ResearchRepoError, init_research_repo
-from tests.research.factories import make_pending, make_trial
+from tests.research.factories import dead_pid, make_pending, make_trial
 
 NEW = {
     "title": "CUSUM event continuation",
@@ -347,3 +348,38 @@ def test_an_uncommitted_verdict_succeeds_with_a_warning(client, card_id, registe
     assert response.json()["card"]["status"] == "parked"
     assert "was updated on disk but not committed" in response.json()["warning"]
     assert load_card(register, card_id).status is Status.PARKED
+
+
+@pytest.fixture
+def gate_on(monkeypatch):
+    monkeypatch.setattr("fwbg.research.runs.gate_enabled", lambda: True)
+
+
+def test_startup_records_interrupted_runs(register, tmp_path, gate_on):
+    """A run killed with the old container is recorded when the API starts again."""
+    write_pending(register, make_pending(tmp_path / "run-1", pid=dead_pid()))
+    create_app()
+    assert [trial.run_id for trial in read_trials(register / LEDGER_FILENAME)] == ["run-1"]
+    assert not (register / STAGING / "run-1.json").exists()
+    assert git(register, "status", "--porcelain") == ""
+
+
+def test_startup_leaves_markers_alone_with_the_gate_off(register, tmp_path):
+    write_pending(register, make_pending(tmp_path / "run-1", pid=dead_pid()))
+    create_app()
+    assert (register / STAGING / "run-1.json").exists()
+
+
+def test_startup_survives_an_unreadable_register(register, gate_on, caplog):
+    bad_marker(register)
+    with caplog.at_level(logging.WARNING, logger="fwbg.api"):
+        create_app()
+    assert "run-9.json" in caplog.text
+
+
+def test_startup_without_a_register_creates_none(tmp_path, monkeypatch, gate_on):
+    monkeypatch.setenv("FWBG_WORKSPACE", str(tmp_path / "ws"))
+    monkeypatch.setenv("FWBG_STRATEGIES_DIR", str(tmp_path / "ws" / "strategies"))
+    monkeypatch.setenv("FWBG_RESEARCH_DIR", str(tmp_path / "research"))
+    create_app()
+    assert not (tmp_path / "research").exists()
