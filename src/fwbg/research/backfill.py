@@ -41,7 +41,8 @@ from fwbg.research.repo import commit_register, register_lock, store_config
 COMMIT_MESSAGE = "chore: backfill legacy research"
 _BACKFILL_KINDS = frozenset({TrialKind.LEGACY, TrialKind.SMOKE})
 _GATED_KINDS = frozenset({TrialKind.ITERATION, TrialKind.HOLDOUT})
-_STUDY_PREFIX = "study:"
+# Run ids of backfilled study trials; register_trial refuses them.
+STUDY_PREFIX = "study:"
 
 
 @dataclass(frozen=True)
@@ -186,7 +187,7 @@ def _recorded(trials: Sequence[Trial]) -> dict[str, str]:
         trial.run_id: trial.strategy
         for trial in trials
         if trial.run_id is not None
-        and (trial.kind in _BACKFILL_KINDS or trial.run_id.startswith(_STUDY_PREFIX))
+        and (trial.kind in _BACKFILL_KINDS or trial.run_id.startswith(STUDY_PREFIX))
     }
 
 
@@ -280,7 +281,7 @@ def _new_card(
 
 def _study_run_id(card_id: str, variant: str) -> str:
     """Identify a study trial by its card and variant for repeatable imports."""
-    return f"study:{card_id}:{variant}"
+    return f"{STUDY_PREFIX}{card_id}:{variant}"
 
 
 def _storable(trial: Trial) -> Trial:

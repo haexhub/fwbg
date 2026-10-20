@@ -39,9 +39,11 @@ def create_app() -> FastAPI:
     from fwbg.api.plugins import (
         entry_modifiers_router,
         exit_modifiers_router,
-        router as plugins_router,
     )
-    from fwbg.api.presets import migrate_presets, migrate_strategy_refs, router as presets_router
+    from fwbg.api.plugins import router as plugins_router
+    from fwbg.api.presets import migrate_presets, migrate_strategy_refs
+    from fwbg.api.presets import router as presets_router
+    from fwbg.api.research import router as research_router
     from fwbg.api.runs import router as runs_router
     from fwbg.api.signal_composer import router as signal_composer_router
     from fwbg.api.strategies import router as strategies_router
@@ -80,6 +82,7 @@ def create_app() -> FastAPI:
     seed_workspace_presets()
     migrate_presets()
     migrate_strategy_refs()
+    _record_interrupted_runs()
 
     app = FastAPI(
         title="FWBG API",
@@ -90,7 +93,10 @@ def create_app() -> FastAPI:
     # CORS: wildcard origins are incompatible with credentials. Configure
     # FWBG_CORS_ORIGINS as a comma-separated list of trusted origins for
     # browser deployments. Default keeps the dashboard origins.
-    cors_env = os.environ.get("FWBG_CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173")
+    cors_env = os.environ.get(
+        "FWBG_CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173",
+    )
     cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
@@ -101,7 +107,11 @@ def create_app() -> FastAPI:
     )
 
     api_key = os.environ.get("FWBG_API_KEY", "").strip()
-    allow_unauth = os.environ.get("FWBG_ALLOW_UNAUTHENTICATED_API", "").strip().lower() in ("1", "true", "yes")
+    allow_unauth = os.environ.get("FWBG_ALLOW_UNAUTHENTICATED_API", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if api_key:
         app.add_middleware(APIKeyMiddleware, api_key=api_key)
         log.info("API key authentication enabled")
@@ -134,8 +144,36 @@ def create_app() -> FastAPI:
     app.include_router(signal_composer_router, prefix="/api")
     app.include_router(analysis_router, prefix="/api")
     app.include_router(discovery_router, prefix="/api")
+    app.include_router(research_router, prefix="/api")
 
     return app
+
+
+def _record_interrupted_runs() -> None:
+    """Record the gated runs a previous API process left behind (best effort).
+
+    A container restart kills its runs; their pending markers name this host
+    (``hostname: fwbg-api``), so only this process can tell they are dead.
+    Never fails startup: a register problem is logged and left for
+    ``research reconcile``.
+    """
+    from fwbg.api.workspace import get_research_dir
+    from fwbg.research.ledger import LEDGER_FILENAME, LedgerError
+    from fwbg.research.pending import PendingError
+    from fwbg.research.repo import ResearchRepoError, register_lock
+    from fwbg.research.runs import gate_enabled, record_stale
+
+    if not gate_enabled():
+        return
+    research_dir = get_research_dir(create=False)
+    try:
+        # Inside the try: is_file() raises PermissionError on an unreadable register.
+        if not (research_dir / LEDGER_FILENAME).is_file():
+            return
+        with register_lock(research_dir):
+            record_stale(research_dir)
+    except (OSError, ValueError, LedgerError, PendingError, ResearchRepoError) as exc:
+        log.warning("research register: interrupted runs not recorded at startup: %s", exc)
 
 
 def __getattr__(name: str):
@@ -161,4 +199,5 @@ def __getattr__(name: str):
 def run_server(host: str = "0.0.0.0", port: int = 8420):
     """Start the API server."""
     import uvicorn
+
     uvicorn.run(create_app(), host=host, port=port, timeout_graceful_shutdown=5)

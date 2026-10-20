@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -23,7 +24,14 @@ from fwbg.core.presets import resolve_presets
 from fwbg.research.card import CARD_ID_RE, CardError, ResearchCard, load_card
 from fwbg.research.fingerprint import FINGERPRINT_VERSION, canonical_config
 from fwbg.research.gate import Decision, Denial, DenialCode, RunRequest, check
-from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, Trial, TrialStatus, read_trials
+from fwbg.research.ledger import (
+    LEDGER_FILENAME,
+    LedgerError,
+    Trial,
+    TrialKind,
+    TrialStatus,
+    read_trials,
+)
 from fwbg.research.legacy import LegacyRunError, run_window
 from fwbg.research.pending import (
     STAGING,
@@ -40,6 +48,8 @@ from fwbg.research.pending import (
 from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register, register_lock
 
 GATE_ENV = "FWBG_RESEARCH_GATE"
+# ``--check-json`` prints its result as one stdout line with this prefix.
+CHECK_PREFIX = "RESEARCH_CHECK "
 
 BeforeRun = Callable[[Mapping[str, Any], Sequence[str]], dict[str, Any]]
 
@@ -77,6 +87,11 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     group.add_argument("--reason", help="why an identical configuration runs again")
     group.add_argument(
         "--check", action="store_true", help="check the run against the register; do not run it"
+    )
+    group.add_argument(
+        "--check-json",
+        action="store_true",
+        help="like --check; also print the result as one JSON line",
     )
 
 
@@ -138,11 +153,7 @@ class ResearchRun:
             raise GateDenied([Denial(DenialCode.REGISTER_UNREADABLE, message)]) from exc
 
     def _gate(self, request: RunRequest, symbols: tuple[str, ...]) -> dict[str, Any]:
-        if recover_stale(self.research_dir):
-            try:
-                commit_register(self.research_dir, REGISTER_PATHS, "trial: record interrupted runs")
-            except ResearchRepoError as exc:
-                _warn_uncommitted("interrupted runs", exc)
+        record_stale(self.research_dir)
         card: ResearchCard | None = None
         if self.research_id is not None and CARD_ID_RE.fullmatch(self.research_id):
             card = load_card(self.research_dir, self.research_id)
@@ -184,42 +195,10 @@ class ResearchRun:
 
     def _run_denials(self, decision: Decision, trials: Sequence[Trial]) -> list[Denial]:
         """A run id is used once; an identical configuration must not run twice at once."""
-        if not valid_run_id(self.run_id):
-            # Checked first: every check below uses the run id as a file name.
-            message = f"invalid run id {self.run_id!r}; use a plain name without '/'"
-            return [Denial(DenialCode.INVALID_RUN_ID, message)]
-        denials = []
-        if (self.run_dir / "config.json").exists() or (self.run_dir / "grid_details").exists():
-            denials.append(
-                Denial(DenialCode.RUN_ID_IN_USE, f"run id {self.run_id} already holds a run")
-            )
-        recorded = [trial.trial_id for trial in trials if trial.run_id == self.run_id]
-        if recorded:
-            denials.append(
-                Denial(
-                    DenialCode.RUN_ID_IN_USE,
-                    f"run id {self.run_id} is already recorded ({', '.join(map(str, recorded))})",
-                )
-            )
-        # Every marker, not only live ones: a stale marker that could not be recorded keeps its id.
-        if any(run.run_id == self.run_id for run in read_pending(self.research_dir)):
-            denials.append(
-                Denial(
-                    DenialCode.RUN_ID_IN_USE,
-                    f"run {self.run_id} is pending (running or unrecorded)",
-                )
-            )
-        running = live_runs(self.research_dir)
-        if decision.fingerprint is not None and not (self.reason and self.reason.strip()):
-            same = [run.run_id for run in running if run.trial.fingerprint == decision.fingerprint]
-            if same:
-                denials.append(
-                    Denial(
-                        DenialCode.DUPLICATE_FINGERPRINT,
-                        f"identical configuration is running now (run {', '.join(same)}); "
-                        "pass a reason to run it again",
-                    )
-                )
+        denials = run_id_denials(self.research_dir, self.run_id, trials, run_dir=self.run_dir)
+        if any(denial.code is DenialCode.INVALID_RUN_ID for denial in denials):
+            return denials
+        denials.extend(running_duplicates(self.research_dir, decision.fingerprint, self.reason))
         return denials
 
     def record(self) -> Trial | None:
@@ -240,7 +219,7 @@ class ResearchRun:
                         f"trial {trial.trial_id}: {trial.strategy} run {self.run_id}",
                     )
                 except ResearchRepoError as exc:
-                    _warn_uncommitted(str(trial.trial_id), exc)
+                    warn_uncommitted(str(trial.trial_id), exc)
         except (
             OSError,
             TypeError,
@@ -268,10 +247,13 @@ class ResearchRun:
         return trial
 
 
-def run_gated(research: ResearchRun, run: Callable[[BeforeRun], Any]) -> Any:
+def run_gated(
+    research: ResearchRun, run: Callable[[BeforeRun], Any], *, as_json: bool = False
+) -> Any:
     """Run *run* behind the gate and record it.
 
-    Exits with 2 on a refusal and 0 after ``--check``. Any other exception is
+    Exits with 2 on a refusal and 0 after ``--check``; *as_json* also prints
+    either result as a :data:`CHECK_PREFIX` line. Any other exception is
     recorded (outcome from the run directory) and re-raised. A process ended
     by ``os._exit`` (the pool's Ctrl-C handler) or SIGKILL keeps its pending
     marker and is recorded by the next gated run.
@@ -282,9 +264,14 @@ def run_gated(research: ResearchRun, run: Callable[[BeforeRun], Any]) -> Any:
         print("Research gate refused the run:", file=sys.stderr)
         for denial in exc.denials:
             print(f"  - [{denial.code.value}] {denial.message}", file=sys.stderr)
+        if as_json:
+            print(CHECK_PREFIX + json.dumps(check_result(exc.denials)), flush=True)
         raise SystemExit(2) from None
     except GateChecked as exc:
         _print_check(exc.decision, exc.symbols)
+        if as_json:
+            payload = check_result(decision=exc.decision, symbols=exc.symbols)
+            print(CHECK_PREFIX + json.dumps(payload), flush=True)
         raise SystemExit(0) from None
     except BaseException:
         research.record()
@@ -298,7 +285,152 @@ def run_gated(research: ResearchRun, run: Callable[[BeforeRun], Any]) -> Any:
     return result
 
 
-def _warn_uncommitted(what: str, exc: ResearchRepoError) -> None:
+def check_result(
+    denials: Sequence[Denial] = (),
+    decision: Decision | None = None,
+    symbols: Sequence[str] = (),
+) -> dict[str, Any]:
+    """The ``--check-json`` payload: allowed with kind, fingerprint, symbols and window,
+    or refused with every denial and its HTTP status."""
+    if denials:
+        return {
+            "allowed": False,
+            "denials": [
+                {"code": d.code.value, "status": d.code.http_status, "message": d.message}
+                for d in denials
+            ],
+        }
+    assert decision is not None
+    return {
+        "allowed": True,
+        "kind": decision.kind.value,
+        "fingerprint": decision.fingerprint,
+        "symbols": list(symbols),
+        "window": run_window(decision.effective_metadata),
+        "denials": [],
+    }
+
+
+def parse_check_output(stdout: str, returncode: int) -> dict[str, Any] | None:
+    """The ``--check-json`` payload in *stdout*: the last prefixed line, which must be
+    valid and match the exit code; ``None`` otherwise.
+
+    An allowed payload needs exit 0, a refusal exit 2: a line from a CLI that failed
+    before its gate, or one a plugin forged, never counts as a gate result.
+    """
+    for line in reversed(stdout.splitlines()):
+        if line.startswith(CHECK_PREFIX):
+            try:
+                payload = json.loads(line.removeprefix(CHECK_PREFIX))
+            except ValueError:
+                return None
+            if not isinstance(payload, dict):
+                return None
+            allowed = payload.get("allowed")
+            consistent = (allowed is True and returncode == 0) or (
+                allowed is False and returncode == 2
+            )
+            return payload if consistent and _valid_check_payload(payload) else None
+    return None
+
+
+def _valid_check_payload(payload: Mapping[str, Any]) -> bool:
+    """Validate the complete machine-readable gate result before trusting it."""
+    if payload.get("allowed") is True:
+        return (
+            payload.get("kind") in {kind.value for kind in TrialKind}
+            and isinstance(payload.get("fingerprint"), str)
+            and bool(payload["fingerprint"])
+            and isinstance(payload.get("symbols"), list)
+            and all(isinstance(symbol, str) for symbol in payload["symbols"])
+            and _valid_window(payload.get("window"))
+            and payload.get("denials") == []
+        )
+    denials = payload.get("denials")
+    return (
+        payload.get("allowed") is False
+        and isinstance(denials, list)
+        and bool(denials)
+        and all(
+            isinstance(denial, dict)
+            and isinstance(denial.get("code"), str)
+            and denial.get("status") in (409, 422)
+            and isinstance(denial.get("message"), str)
+            and bool(denial["message"])
+            for denial in denials
+        )
+    )
+
+
+def _valid_window(window: object) -> bool:
+    """Check the stable window shape emitted by :func:`check_result`."""
+    return (
+        isinstance(window, dict)
+        and set(window) == {"start", "end"}
+        and all(value is None or isinstance(value, str) for value in window.values())
+    )
+
+
+def run_id_denials(
+    research_dir: Path, run_id: str, trials: Sequence[Trial], *, run_dir: Path | None = None
+) -> list[Denial]:
+    """A run id must be a plain name used once: not in the ledger, not pending, and
+    (with *run_dir*) not holding a run already."""
+    if not valid_run_id(run_id):
+        # Checked first: every check below uses the run id as a file name.
+        message = f"invalid run id {run_id!r}; use a plain name without '/'"
+        return [Denial(DenialCode.INVALID_RUN_ID, message)]
+    denials = []
+    if run_dir is not None and (
+        (run_dir / "config.json").exists() or (run_dir / "grid_details").exists()
+    ):
+        denials.append(Denial(DenialCode.RUN_ID_IN_USE, f"run id {run_id} already holds a run"))
+    recorded = [trial.trial_id for trial in trials if trial.run_id == run_id]
+    if recorded:
+        denials.append(
+            Denial(
+                DenialCode.RUN_ID_IN_USE,
+                f"run id {run_id} is already recorded ({', '.join(map(str, recorded))})",
+            )
+        )
+    # Every marker, not only live ones: a stale marker that could not be recorded keeps its id.
+    if any(run.run_id == run_id for run in read_pending(research_dir)):
+        denials.append(
+            Denial(DenialCode.RUN_ID_IN_USE, f"run {run_id} is pending (running or unrecorded)")
+        )
+    return denials
+
+
+def running_duplicates(
+    research_dir: Path, run_fingerprint: str | None, reason: str | None
+) -> list[Denial]:
+    """An identical configuration must not run twice at once, unless *reason* says why."""
+    if run_fingerprint is None or (reason and reason.strip()):
+        return []
+    same = [
+        run.run_id for run in live_runs(research_dir) if run.trial.fingerprint == run_fingerprint
+    ]
+    if not same:
+        return []
+    return [
+        Denial(
+            DenialCode.DUPLICATE_FINGERPRINT,
+            f"identical configuration is running now (run {', '.join(same)}); "
+            "pass a reason to run it again",
+        )
+    ]
+
+
+def record_stale(research_dir: Path) -> None:
+    """Record the runs whose process is gone and commit them; call under the lock."""
+    if recover_stale(research_dir):
+        try:
+            commit_register(research_dir, REGISTER_PATHS, "trial: record interrupted runs")
+        except ResearchRepoError as exc:
+            warn_uncommitted("interrupted runs", exc)
+
+
+def warn_uncommitted(what: str, exc: ResearchRepoError) -> None:
     print(
         f"Warning: {what} not committed yet ({exc}); the next register commit includes it",
         file=sys.stderr,

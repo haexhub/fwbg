@@ -321,7 +321,8 @@ def _duplicate_denials(run_fingerprint: str, trials: Sequence[Trial]) -> list[De
     if not earlier:
         return []
     listed = ", ".join(
-        f"{trial.trial_id} ({trial.strategy}, run {trial.run_id}, {trial.ts[:10]})"
+        f"{trial.trial_id} ({trial.strategy}, "
+        f"{f'run {trial.run_id}' if trial.run_id else 'no run'}, {trial.ts[:10]})"
         for trial in earlier
     )
     return [

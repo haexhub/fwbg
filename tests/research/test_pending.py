@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import socket
-import subprocess
 from dataclasses import replace
 
 import pytest
@@ -21,7 +20,6 @@ from fwbg.research.legacy import LegacyRunError
 from fwbg.research.pending import (
     STAGING,
     PendingError,
-    PendingRun,
     finish,
     live_runs,
     read_pending,
@@ -29,9 +27,7 @@ from fwbg.research.pending import (
     write_pending,
 )
 from fwbg.research.repo import init_research_repo
-from tests.research.factories import make_run, make_trial
-
-CONFIG = {"name": "orb-test", "timeframe": "MINUTE_15"}
+from tests.research.factories import CONFIG, dead_pid, make_pending, make_run, make_trial
 
 
 @pytest.fixture
@@ -40,35 +36,6 @@ def register(tmp_path, git_env):
     research = tmp_path / "research"
     init_research_repo(research)
     return research
-
-
-def dead_pid() -> int:
-    """The pid of a process that has already ended and been reaped."""
-    with subprocess.Popen(["true"]) as process:
-        process.wait()
-    return process.pid
-
-
-def make_pending(
-    run_dir, *, run_id="run-1", pid=None, strategy="S-0007", ts="2026-10-19T10:00:00"
-) -> PendingRun:
-    """A pending run whose trial matches CONFIG's fingerprint and has no outcome yet."""
-    trial = make_trial(
-        strategy=strategy,
-        run_id=run_id,
-        ts=ts,
-        status=TrialStatus.FAILED,
-        fingerprint=digest(CONFIG),
-        code={},
-        metrics={},
-    )
-    return PendingRun(
-        run_id=run_id,
-        run_dir=run_dir,
-        pid=os.getpid() if pid is None else pid,
-        trial=trial,
-        config=CONFIG,
-    )
 
 
 def ledger(register) -> list[Trial]:

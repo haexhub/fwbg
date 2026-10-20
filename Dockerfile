@@ -7,8 +7,10 @@ ENV PYTHONUNBUFFERED=1
 
 # System-Abhängigkeiten installieren
 # libgomp1 ist zwingend erforderlich für XGBoost!
+# git: das Research-Register (Bind-Mount) wird per git geschrieben.
 RUN apt-get update && apt-get install -y \
     libgomp1 \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Arbeitsverzeichnis erstellen
