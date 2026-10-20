@@ -396,7 +396,12 @@ host register (`${FWBG_RESEARCH_HOST_DIR:-$HOME/fwbg/research}`) at
   register's owner is the operator, who controls Docker anyway.
 - `hostname: fwbg-api`: pending markers carry the host name, and a marker
   from another host always looks alive. A stable name lets a restarted
-  container record its own interrupted runs.
+  container record its own interrupted runs: `create_app` records stale
+  markers at startup (best effort, only with the gate on and an existing
+  register; a register error is logged, never fails startup). If that did
+  not happen, run `docker exec fwbg-api python -m fwbg.cli research
+  reconcile`; a reconcile on the host cannot clear markers written by the
+  container, because they name the host `fwbg-api`.
 - A container killed while it holds the register lock can leave root-owned
   files (e.g. `.git/objects/xx/`) until its next register write. Fix at once
   with `sudo chown -R "$USER": ~/fwbg/research`.
