@@ -13,7 +13,7 @@ from typing import Any
 
 from fwbg_sdk.enums import Timeframe
 
-from fwbg.core.presets import resolve_presets
+from fwbg.core.presets import PRESET_SECTIONS, resolve_presets
 from fwbg.research.fingerprint import canonical_config, digest
 from fwbg.research.ledger import Metrics, TrialKind, TrialStatus
 
@@ -274,6 +274,10 @@ def _configuration(
         timeframe = metadata.get("timeframe") or config.get("timeframe")
         if timeframe:
             metadata["timeframe"] = Timeframe.from_str(str(timeframe)).canonical
+        if not metadata.get("_strategy_dir"):
+            # Without a recorded directory, presets would resolve against the current one.
+            metadata["_strategy_dir"] = str(preset_base / "configs")
+            from_workspace = any(isinstance(metadata.get(key), str) for key in PRESET_SECTIONS)
         try:
             resolved = resolve_presets(metadata)
         except FileNotFoundError:

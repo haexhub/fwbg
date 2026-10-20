@@ -303,6 +303,21 @@ def test_presets_resolve_from_the_workspace_when_the_old_directory_is_gone(tmp_p
     assert run.presets_from_workspace is True
 
 
+def test_presets_without_a_recorded_directory_ignore_the_working_directory(
+    tmp_path, preset_base, monkeypatch
+):
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "pipelines").mkdir(parents=True)
+    (elsewhere / "pipelines" / "orb_simple_v1.json").write_text(
+        json.dumps({"indicators": [{"name": "cwd_range"}]}), encoding="utf-8"
+    )
+    monkeypatch.chdir(elsewhere)
+    run_dir = make_run(tmp_path / "results", "run-1", strategy_extra={"pipeline": "orb_simple_v1"})
+    run = load_run(run_dir, preset_base)
+    assert run.config["strategy"]["pipeline"] == {"indicators": [{"name": "opening_range"}]}
+    assert run.presets_from_workspace is True
+
+
 def test_unresolvable_presets_get_a_unique_stand_in(tmp_path, preset_base):
     extra = {"pipeline": "missing_preset", "_strategy_dir": "/nonexistent/configs"}
     a = load_run(make_run(tmp_path, "run-a", strategy_extra=extra), preset_base)
