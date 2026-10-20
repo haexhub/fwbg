@@ -26,7 +26,7 @@ from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, TrialKind, TrialS
 from fwbg.research.legacy import LegacyRun, LegacyRunError, scan_runs
 from fwbg.research.mapping import BackfillError, draft_mapping, load_mapping
 from fwbg.research.pending import PendingError
-from fwbg.research.reconcile import reconcile, runs_in_progress
+from fwbg.research.reconcile import repair, runs_in_progress, unindexed_runs
 from fwbg.research.repo import CRITERIA_TEMPLATE, ResearchRepoError, init_research_repo
 from fwbg.research.views import list_lines, show_text
 
@@ -232,13 +232,18 @@ _CARD_COMMANDS = {
 
 
 def _reconcile(research_dir: Path, results_dir: Path) -> int:
-    """Reconcile the register and report what it did and which runs it lacks."""
-    result = reconcile(research_dir, results_dir)
-    for trial_id in result.recovered:
-        print(f"recovered {trial_id}")
-    print("committed" if result.committed else "nothing to commit")
-    if result.unindexed:
-        print(f"{len(result.unindexed)} runs not in the ledger: {', '.join(result.unindexed)}")
+    """Repair the register and report it, then report the runs the ledger lacks."""
+    recovered, committed = repair(research_dir)
+    for trial in recovered:
+        print(f"recovered {trial.trial_id}")
+    print("committed" if committed else "nothing to commit", flush=True)
+    for run_id in runs_in_progress(results_dir):
+        print(f"Warning: not checked, may still be running: {run_id}", file=sys.stderr)
+    unindexed = unindexed_runs(research_dir, results_dir)
+    if unindexed:
+        print(f"{len(unindexed)} runs not in the ledger:")
+        for run_id in unindexed:
+            print(f"  {run_id}")
         print("map them with: python -m fwbg.cli research backfill scan --out mapping.yaml")
     return 0
 
