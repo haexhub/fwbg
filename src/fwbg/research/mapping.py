@@ -107,6 +107,9 @@ def parse_mapping(data: object) -> list[CardPlan]:
     """Validate a mapping document; raise :class:`BackfillError` on any defect."""
     if not isinstance(data, Mapping) or not isinstance(data.get("cards"), list):
         raise BackfillError("mapping must be a mapping with a 'cards' list")
+    unknown = sorted(str(key) for key in data.keys() - {"cards"})
+    if unknown:
+        raise BackfillError(f"unknown top-level keys: {', '.join(unknown)}")
     plans = [_card_plan(item, index) for index, item in enumerate(data["cards"], start=1)]
     duplicates = _repeated(plan.id for plan in plans)
     if duplicates:
