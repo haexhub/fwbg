@@ -19,7 +19,8 @@ CRITERIA_TEMPLATE = Path("templates") / "criteria-default.yaml"
 _DIRECTORIES = ("strategies", "configs", "templates", "reports")
 _GITIGNORE = ".gitignore"
 REGISTER_LOCK = ".register.lock"
-_GITIGNORE_TEXT = f".staging/\n{REGISTER_LOCK}\n"
+# *.tmp: store_config writes through temporary files that must never be committed.
+_GITIGNORE_TEXT = f".staging/\n{REGISTER_LOCK}\n*.tmp\n"
 _GIT_TIMEOUT = 30.0
 _GIT_STOP_GRACE = 2.0
 
