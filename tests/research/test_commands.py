@@ -283,6 +283,37 @@ def test_reopen_refuses_active_and_candidate_cards(gate_register, status):
         reopen(gate_register, "S-0007", "x", TODAY)
 
 
+# --- actor -------------------------------------------------------------------
+
+
+def test_verdict_records_its_actor_after_the_reopen_condition(gate_register):
+    write_verdict(gate_register, "S-0007", Status.PARKED, "paused", "time", TODAY, actor="agent-7")
+    assert "Reopen if: time\nBy: agent-7\nTrials: " in card(gate_register).body
+
+
+def test_verdict_without_an_actor_names_none(gate_register):
+    write_verdict(gate_register, "S-0007", Status.PARKED, "paused", "time", TODAY)
+    assert "By:" not in card(gate_register).body
+
+
+def test_reopen_records_its_actor(gate_register):
+    set_card(gate_register, status=Status.PARKED, body="## History\n")
+    reopen(gate_register, "S-0007", "new data", TODAY, actor="agent-7")
+    assert card(gate_register).body == (
+        "## History\n\n- 2026-10-20: reopened from parked by agent-7: new data\n"
+    )
+
+
+@pytest.mark.parametrize("actor", ["", "  ", "a\nb"])
+def test_verdict_and_reopen_refuse_a_blank_or_multi_line_actor(gate_register, actor):
+    with pytest.raises(CommandError, match="actor must be one non-empty line"):
+        write_verdict(gate_register, "S-0007", Status.PARKED, "x", "y", TODAY, actor=actor)
+    set_card(gate_register, status=Status.PARKED)
+    with pytest.raises(CommandError, match="actor must be one non-empty line"):
+        reopen(gate_register, "S-0007", "x", TODAY, actor=actor)
+    assert card(gate_register).status is Status.PARKED
+
+
 # --- review fixes ------------------------------------------------------------
 
 

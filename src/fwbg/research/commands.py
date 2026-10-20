@@ -141,11 +141,23 @@ def amend_criteria(
 
 
 def write_verdict(
-    research_dir: Path, card_id: str, status: Status, reason: str, reopen_if: str, today: date
+    research_dir: Path,
+    card_id: str,
+    status: Status,
+    reason: str,
+    reopen_if: str,
+    today: date,
+    *,
+    actor: str | None = None,
 ) -> ResearchCard:
-    """Close an active card with a verdict and the statistics it rests on."""
+    """Close an active card with a verdict and the statistics it rests on.
+
+    *actor* names who decided (an API caller); the CLI passes none.
+    """
     _one_line(reason, "reason")
     _one_line(reopen_if, "reopen condition")
+    if actor is not None:
+        _one_line(actor, "actor")
     if status not in VERDICT_STATUSES:
         raise CommandError(f"a verdict sets parked, rejected or candidate, not {status.value}")
     with register_lock(research_dir):
@@ -171,21 +183,28 @@ def write_verdict(
                 f"{card_id} has runs that could not be recorded ({names}); see the warning above"
             )
         trials = read_trials(research_dir / LEDGER_FILENAME)
-        entry = verdict_entry(card, trials, status, reason, reopen_if, today, len(pending))
+        entry = verdict_entry(
+            card, trials, status, reason, reopen_if, today, len(pending), actor=actor
+        )
         updated = replace(card, status=status, body=add_section_entry(card.body, "Verdict", entry))
         replace_card(research_dir, updated)
         _commit(research_dir, card_id, f"research: verdict {card_id} {status.value}")
     return updated
 
 
-def reopen(research_dir: Path, card_id: str, reason: str, today: date) -> ResearchCard:
-    """Turn a parked or rejected card active again, recording why."""
+def reopen(
+    research_dir: Path, card_id: str, reason: str, today: date, *, actor: str | None = None
+) -> ResearchCard:
+    """Turn a parked or rejected card active again, recording why (and who, if given)."""
     _one_line(reason, "reason")
+    if actor is not None:
+        _one_line(actor, "actor")
     with register_lock(research_dir):
         card = _require(research_dir, card_id)
         if card.status not in (Status.PARKED, Status.REJECTED):
             raise CommandError(f"{card_id} is {card.status.value}; only parked or rejected reopen")
-        entry = f"- {today.isoformat()}: reopened from {card.status.value}: {reason}"
+        by = f" by {actor}" if actor is not None else ""
+        entry = f"- {today.isoformat()}: reopened from {card.status.value}{by}: {reason}"
         body = add_section_entry(card.body, "History", entry, before=("Verdict",))
         updated = replace(card, status=Status.ACTIVE, body=body)
         replace_card(research_dir, updated)
@@ -201,10 +220,13 @@ def verdict_entry(
     reopen_if: str,
     today: date,
     pending: int = 0,
+    *,
+    actor: str | None = None,
 ) -> str:
     """The dated verdict text: reasoning plus the statistics it rests on.
 
-    *pending* is the number of pending runs (of other cards) not yet in *trials*.
+    *pending* is the number of pending runs (of other cards) not yet in *trials*;
+    *actor*, if given, is recorded after the reopen condition.
     """
     own = [trial for trial in trials if trial.strategy == card.id]
     looks = [str(trial.trial_id) for trial in own if trial.kind is TrialKind.HOLDOUT]
@@ -215,6 +237,7 @@ def verdict_entry(
         "",
         f"Reason: {reason}",
         f"Reopen if: {reopen_if}",
+        *([f"By: {actor}"] if actor is not None else []),
         f"Trials: {sum(t.counted for t in own)} counted on {card.id} "
         f"({evaluations(own)} symbol evaluations); {sum(t.counted for t in trials)} counted "
         f"in the register ({evaluations(trials)} symbol evaluations){excluded}.",
