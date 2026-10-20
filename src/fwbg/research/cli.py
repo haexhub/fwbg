@@ -14,7 +14,7 @@ import yaml
 from fwbg.api.run_service import ACTIVE_STATUSES
 from fwbg.api.workspace import get_research_dir, get_strategies_dir, get_test_results_dir
 from fwbg.research.backfill import apply_mapping
-from fwbg.research.card import CardError
+from fwbg.research.card import CardError, UniqueKeyLoader
 from fwbg.research.ledger import LedgerError, TrialKind, TrialStatus
 from fwbg.research.legacy import LegacyRun, LegacyRunError, scan_runs
 from fwbg.research.mapping import BackfillError, draft_mapping, load_mapping
@@ -115,7 +115,12 @@ def _apply(results_dir: Path, mapping_path: Path, research_dir: Path) -> int:
         return 1
     plans = load_mapping(mapping_path.read_text(encoding="utf-8"))
     runs = _scan_runs(results_dir)
-    template = yaml.safe_load(template_path.read_text(encoding="utf-8"))
+    try:
+        template = yaml.load(template_path.read_text(encoding="utf-8"), Loader=UniqueKeyLoader)
+    except (yaml.YAMLError, ValueError) as exc:
+        # PyYAML raises a plain ValueError for impossible dates such as 2026-02-30.
+        print(f"Error: {CRITERIA_TEMPLATE}: {exc}", file=sys.stderr)
+        return 1
     if not isinstance(template, dict):
         print(f"Error: {CRITERIA_TEMPLATE} must be a mapping of criteria", file=sys.stderr)
         return 1
