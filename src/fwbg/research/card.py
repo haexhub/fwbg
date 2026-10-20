@@ -274,7 +274,11 @@ def render_card(card: ResearchCard) -> str:
         meta, sort_keys=False, allow_unicode=True, default_flow_style=False, width=1000
     )
     text = f"---\n{front}---\n{card.body}"
-    if parse_card(text) != card:
+    try:
+        read_back = parse_card(text)
+    except CardError as exc:
+        raise CardError(f"{card.id} would not read back: {exc}") from exc
+    if read_back != card:
         raise CardError(f"{card.id} would not read back unchanged")
     return text
 

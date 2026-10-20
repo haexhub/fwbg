@@ -248,7 +248,8 @@ def _new_card(
     try:
         render_card(card)
     except CardError as exc:
-        raise BackfillError(f"{plan.id}: {exc}") from exc
+        # render_card's errors name the card already.
+        raise BackfillError(str(exc)) from exc
     return card
 
 
