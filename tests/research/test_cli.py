@@ -3,12 +3,14 @@ import json
 import os
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
 import yaml
 
 from fwbg.cli.main import main as fwbg_main
+from fwbg.research.card import Status, load_card
 from fwbg.research.cli import main
 from fwbg.research.ledger import LEDGER_FILENAME, read_trials
 from fwbg.research.mapping import load_mapping
@@ -208,3 +210,53 @@ def test_fwbg_routes_research_commands(monkeypatch, capsys):
         fwbg_main()
     assert exit_info.value.code == 2
     assert "fwbg research backfill" in capsys.readouterr().err
+
+
+def test_card_commands_end_to_end(gate_register, capsys):
+    """Register, amend, close and reopen cards through the research CLI."""
+    args = ["new", "Opening range breakout", "--tags", "orb,session", "--set", "min_sharpe=0.8"]
+    assert main([*args, "--cutoff", "2025-01-31", "--hypothesis", "Breakouts persist."]) == 0
+    path = gate_register / "strategies" / "S-0008-opening-range-breakout.md"
+    assert capsys.readouterr().out == f"Registered S-0008: {path}\n"
+    created = load_card(gate_register, "S-0008")
+    assert created is not None and created.tags == ("orb", "session")
+    assert created.holdout_cutoff == date(2025, 1, 31)
+    assert created.success_criteria["min_sharpe"] == 0.8
+
+    assert main(["amend", "S-0008", "--set", "min_trades=50", "--reason", "short sample"]) == 0
+    assert capsys.readouterr().out == "Amended S-0008 (amendment 1)\n"
+
+    verdict = ["verdict", "S-0008", "rejected", "--reason", "no edge", "--reopen-if", "new data"]
+    assert main(verdict) == 0
+    assert capsys.readouterr().out == "S-0008 is now rejected\n"
+
+    assert main(["reopen", "S-0008", "--reason", "new data"]) == 0
+    assert capsys.readouterr().out == "S-0008 is active again\n"
+    reopened = load_card(gate_register, "S-0008")
+    assert reopened is not None and reopened.status is Status.ACTIVE
+
+
+def test_card_command_errors_are_reported_without_traceback(gate_register, capsys):
+    """An unknown criterion is an operator error, not a crash."""
+    assert main(["new", "x", "--tags", "a", "--set", "min_sharp=1"]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("Error: ") and "min_sharp" in err
+    assert "Traceback" not in err
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["new", "x", "--tags", "a", "--cutoff", "2026-13-01"],
+        ["new", "x", "--tags", "a", "--cutoff", "20250101"],
+        ["new", "x", "--tags", "a", "--set", "min_sharpe"],
+        ["new", "x", "--tags", "a", "--set", "min_sharpe=high"],
+        ["amend", "S-0007", "--reason", "nothing to set"],
+        ["verdict", "S-0007", "active", "--reason", "x", "--reopen-if", "y"],
+    ],
+)
+def test_card_commands_refuse_malformed_arguments(gate_register, capsys, args):
+    """Malformed dates, criteria and statuses are argparse errors (exit 2)."""
+    with pytest.raises(SystemExit) as exit_info:
+        main(args)
+    assert exit_info.value.code == 2
