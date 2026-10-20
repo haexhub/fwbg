@@ -9,15 +9,17 @@
 the research register, so the trial count N, duplicate detection and the
 per-strategy holdout start from the full history instead of from zero.
 
-**Architecture:** Three new modules in `fwbg.research` plus small additions to
+**Architecture:** Four new modules in `fwbg.research` plus small additions to
 the step-1 modules. `legacy.py` reads run directories into `LegacyRun`
-records (pure apart from reading files). `backfill.py` drafts a mapping of
-runs to cards, validates the operator-reviewed mapping and applies it:
-cards are written once, legacy trials are appended, configurations are
-stored content-addressed, and everything is committed in one research-repo
-commit under the register lock. `cli.py` exposes `fwbg research init` and
-`fwbg research backfill scan|apply`. Re-applying a mapping only adds what is
-new.
+records (pure apart from reading files). `mapping.py` drafts a mapping of
+runs to cards and loads/validates the operator-reviewed mapping.
+`backfill.py` applies it: it validates everything first, then writes cards
+once, appends legacy trials, stores configurations content-addressed and
+commits everything in one research-repo commit under the register lock.
+`cli.py` exposes `fwbg research init` and `fwbg research backfill
+scan|apply`. Re-applying a mapping only adds what is new. (The split of
+mapping parsing out of `backfill.py` happened after review; the code blocks
+below show the first iteration.)
 
 **Tech stack:** Python ≥ 3.11, stdlib, PyYAML, `fwbg_sdk.enums.Timeframe`,
 pytest. No new dependencies.
@@ -278,8 +280,8 @@ index 51cd596..5ff8d99 100644
 **Files:** Modify `src/fwbg/research/repo.py`, `tests/research/test_repo.py`.
 
 `register_lock` serialises register writes with `.register.lock` (separate
-from the ledger's own `flock`); `commit_register` commits exactly the named
-paths (`--force`, isolated git env) and reports whether anything changed;
+from the ledger's own `flock`); `commit_register` commits the changed files
+under the named paths (isolated git env) and reports whether anything changed;
 `store_config` writes `configs/<hex>.json` after checking that the content
 is the fingerprinted configuration.
 
@@ -861,7 +863,9 @@ def _window(strategy: Mapping[str, Any]) -> dict[str, str | None]:
 > `fwbg.research.mapping` (`load_mapping` refuses duplicate YAML keys);
 > `backfill.py` keeps `apply_mapping`.
 
-**Files:** Create `src/fwbg/research/backfill.py`, `tests/research/test_backfill.py`.
+**Files:** Create `src/fwbg/research/backfill.py`, `tests/research/test_backfill.py`
+(after review also `src/fwbg/research/mapping.py`, `tests/research/test_mapping.py`,
+`tests/research/conftest.py`).
 
 **Step 1: Write the failing tests** (`tests/research/test_backfill.py`):
 
