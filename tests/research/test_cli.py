@@ -1,6 +1,9 @@
 import faulthandler
 import json
+import os
+import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 import yaml
@@ -42,6 +45,37 @@ def test_init_twice_reports_an_existing_register(git_env, capsys):
     capsys.readouterr()
     assert main(["init"]) == 0
     assert "Already initialised" in capsys.readouterr().out
+
+
+def test_research_cli_import_does_not_require_the_api_extra():
+    code = """
+import importlib.abc
+import sys
+
+
+class BlockFastAPI(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "fastapi" or fullname.startswith("fastapi."):
+            raise ModuleNotFoundError("blocked fastapi for optional-dependency test")
+        return None
+
+
+sys.meta_path.insert(0, BlockFastAPI())
+import fwbg.research.cli  # noqa: F401,E402
+assert "fastapi" not in sys.modules
+"""
+    env = os.environ.copy()
+    source = Path(__file__).parents[2] / "src"
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(source), env.get("PYTHONPATH"))))
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).parents[2],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_scan_refuses_to_overwrite_a_mapping_before_scanning(tmp_path, capsys):

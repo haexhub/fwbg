@@ -16,6 +16,7 @@ from fwbg_sdk.enums import Timeframe
 from fwbg.core.presets import PRESET_SECTIONS, resolve_presets
 from fwbg.research.fingerprint import canonical_config, digest
 from fwbg.research.ledger import Metrics, TrialKind, TrialStatus
+from fwbg.statuses import EXECUTED_STATUSES
 
 METRIC_KEYS = (
     "sharpe",
@@ -29,8 +30,10 @@ METRIC_KEYS = (
 )
 # A symbol with one of these statuses ran to a result and counts towards N
 # (conservatively, whether or not it found an edge).
-EVALUATED_STATUSES = frozenset({"ok", "no_edge", "not_significant", "no_unified_trades"})
-NOT_EVALUATED_STATUSES = frozenset({"error", "no_successful_folds"})
+EVALUATED_STATUSES = EXECUTED_STATUSES
+NOT_EVALUATED_STATUSES = frozenset(
+    {"error", "no_successful_folds", "insufficient_data", "no_data", "no_signal_source"}
+)
 _SMOKE_NAME_RE = re.compile(r"m[0-9]+_smoke.*")
 _DATE_PREFIX_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _GIT_KEYS = ("commit", "branch", "dirty", "patch")

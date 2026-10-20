@@ -159,6 +159,26 @@ def test_only_evaluated_symbols_get_metrics_but_all_are_fingerprinted(tmp_path, 
     assert run.config["symbols"] == ["DAX", "GOLD"]
 
 
+@pytest.mark.parametrize(
+    "status",
+    ["insufficient_data", "no_data", "no_signal_source"],
+)
+def test_known_non_evaluated_statuses_are_ignored(tmp_path, preset_base, status):
+    run = load_run(
+        make_run(
+            tmp_path,
+            "run-1",
+            symbols={
+                "GOLD": {"unified": {"sharpe": 0.5}},
+                "DAX": {"status": status},
+            },
+        ),
+        preset_base,
+    )
+    assert run.status is TrialStatus.OK
+    assert set(run.metrics) == {"GOLD"}
+
+
 def test_no_unified_trades_counts_as_evaluated(tmp_path, preset_base):
     run_dir = make_run(tmp_path, "run-1", symbols={"DAX": {"status": "no_unified_trades"}})
     run = load_run(run_dir, preset_base)
