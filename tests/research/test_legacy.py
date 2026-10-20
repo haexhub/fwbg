@@ -459,18 +459,46 @@ def test_run_outcome_counts_evaluated_symbols_only(tmp_path):
 
 
 def test_run_outcome_refuses_an_unknown_status_by_default(tmp_path):
-    """Without count_unknown an unclassified status stays a legacy error."""
+    """In strict mode an unclassified status stays a legacy error."""
     run_dir = make_run(tmp_path, "run-1", symbols={"GOLD": {"status": "mystery"}})
     with pytest.raises(LegacyRunError, match="run-1.*GOLD"):
         run_outcome(run_dir)
 
 
-def test_run_outcome_counts_an_unknown_status_as_evaluated_when_asked(tmp_path):
-    """Live runs never drop a trial over a classification gap."""
+def test_lenient_run_outcome_counts_an_unknown_status_as_evaluated(tmp_path):
+    """Live runs never drop a trial over an unknown symbol status."""
     run_dir = make_run(tmp_path, "run-1", symbols={"GOLD": {"status": "mystery"}})
-    status, metrics = run_outcome(run_dir, count_unknown=True)
+    status, metrics = run_outcome(run_dir, lenient=True)
     assert status is TrialStatus.OK
     assert set(metrics) == {"GOLD"}
+
+
+@pytest.mark.parametrize("filename", ["config.json", "unified_metrics.json"])
+def test_lenient_run_outcome_counts_an_unreadable_symbol_as_evaluated(tmp_path, filename):
+    """A killed run may leave a truncated symbol file; it was looked at, so it counts."""
+    run_dir = make_run(
+        tmp_path,
+        "run-1",
+        symbols={"GOLD": {"unified": {"sharpe": 0.5}}, "DAX": {"unified": {"sharpe": 0.1}}},
+    )
+    (run_dir / "grid_details" / "DAX" / filename).write_text('{"status": "o', encoding="utf-8")
+    with pytest.raises(LegacyRunError, match="run-1/grid_details/DAX"):
+        run_outcome(run_dir)
+    status, metrics = run_outcome(run_dir, lenient=True)
+    assert status is TrialStatus.OK
+    assert metrics["DAX"] == {}
+    assert metrics["GOLD"]["sharpe"] == 0.5
+
+
+def test_lenient_run_outcome_ignores_an_unreadable_elite_list(tmp_path):
+    """A truncated results.json only loses the elite values, not the trial."""
+    run_dir = make_run(tmp_path, "run-1", symbols={"GOLD": {"unified": {"sharpe": 0.5}}})
+    (run_dir / "results.json").write_text('{"elite_results": [', encoding="utf-8")
+    with pytest.raises(LegacyRunError, match="results.json"):
+        run_outcome(run_dir)
+    status, metrics = run_outcome(run_dir, lenient=True)
+    assert status is TrialStatus.OK
+    assert metrics["GOLD"]["sharpe"] == 0.5
 
 
 def test_run_outcome_without_symbol_results_is_failed(tmp_path):

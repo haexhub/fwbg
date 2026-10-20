@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import subprocess
 from dataclasses import replace
@@ -15,6 +16,7 @@ from fwbg.research.ledger import (
     append_trial,
     read_trials,
 )
+from fwbg.research.legacy import LegacyRunError
 from fwbg.research.pending import (
     STAGING,
     PendingError,
@@ -157,6 +159,27 @@ def test_recover_stale_records_dead_runs_and_keeps_live_ones(register, tmp_path)
     assert [run.run_id for run in live_runs(register, "S-0007")] == ["run-live"]
     assert [run.run_id for run in live_runs(register)] == ["run-live"]
     assert live_runs(register, "S-0008") == []
+
+
+def test_one_broken_stale_marker_does_not_block_the_others(register, tmp_path, monkeypatch, caplog):
+    results = tmp_path / "results"
+    for run_id in ("run-a", "run-b"):
+        write_pending(register, make_pending(results / run_id, run_id=run_id, pid=dead_pid()))
+    real_finish = pending_module.finish
+
+    def finish_failing_for_run_a(research_dir, run):
+        if run.run_id == "run-a":
+            raise LegacyRunError("run-a: broken")
+        return real_finish(research_dir, run)
+
+    monkeypatch.setattr(pending_module, "finish", finish_failing_for_run_a)
+    with caplog.at_level(logging.WARNING, logger=pending_module.__name__):
+        recovered = recover_stale(register)
+    assert [trial.run_id for trial in recovered] == ["run-b"]
+    assert ledger(register) == recovered
+    assert marker(register, "run-a").exists()
+    assert not marker(register, "run-b").exists()
+    assert "run-a" in caplog.text and "broken" in caplog.text
 
 
 def test_marker_survives_a_failing_append_for_later_recovery(register, tmp_path, monkeypatch):

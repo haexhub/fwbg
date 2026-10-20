@@ -107,14 +107,16 @@ def _gated(run_dir: Path) -> bool:
     return isinstance(config, dict) and "research" in config
 
 
-def run_outcome(run_dir: Path, *, count_unknown: bool = False) -> tuple[TrialStatus, Metrics]:
+def run_outcome(run_dir: Path, *, lenient: bool = False) -> tuple[TrialStatus, Metrics]:
     """Status and per-symbol metrics of a run directory, by the ledger's rule.
 
-    ``ok`` iff at least one symbol was evaluated. An unknown symbol status
-    raises :class:`LegacyRunError`, or counts as evaluated with
-    *count_unknown* (live runs: never drop a trial over a classification gap).
+    ``ok`` iff at least one symbol was evaluated. An unknown symbol status or
+    an unreadable result file raises :class:`LegacyRunError`; with *lenient*
+    such a symbol counts as evaluated (with empty metrics if its files cannot
+    be read) and an unreadable elite list is ignored (live runs: never drop a
+    trial over an unreadable or unknown symbol).
     """
-    metrics = _metrics(run_dir, _symbol_files(run_dir), count_unknown)
+    metrics = _metrics(run_dir, _symbol_files(run_dir), lenient)
     return (TrialStatus.OK if metrics else TrialStatus.FAILED), metrics
 
 
@@ -194,27 +196,38 @@ def _symbol_files(run_dir: Path) -> dict[str, _SymbolFiles]:
 
 
 def _metrics(
-    run_dir: Path, files: Mapping[str, _SymbolFiles], count_unknown: bool = False
+    run_dir: Path, files: Mapping[str, _SymbolFiles], lenient: bool = False
 ) -> dict[str, dict[str, float | int | None]]:
     """Per-symbol metrics for every evaluated symbol (not only the reported elite)."""
-    elite = _elite_by_symbol(run_dir)
+    try:
+        elite = _elite_by_symbol(run_dir)
+    except LegacyRunError:
+        if not lenient:
+            raise
+        elite = {}
     metrics: dict[str, dict[str, float | int | None]] = {}
     for symbol, source in files.items():
         if not source.result.exists():
             continue
-        result = _read_object(source.result, run_dir)
-        if _evaluated(result.get("status"), run_dir.name, symbol, count_unknown):
-            metrics[symbol] = _symbol_metrics(run_dir, source, result, elite.get(symbol, {}))
+        try:
+            result = _read_object(source.result, run_dir)
+            if _evaluated(result.get("status"), run_dir.name, symbol, lenient):
+                metrics[symbol] = _symbol_metrics(run_dir, source, result, elite.get(symbol, {}))
+        except LegacyRunError:
+            if not lenient:
+                raise
+            # A killed run can leave a truncated file; the symbol was still looked at.
+            metrics[symbol] = {}
     return metrics
 
 
-def _evaluated(status: object, run_id: str, symbol: str, count_unknown: bool = False) -> bool:
-    """Classify known symbol statuses; unknown ones count with *count_unknown*, else raise."""
+def _evaluated(status: object, run_id: str, symbol: str, lenient: bool = False) -> bool:
+    """Classify known symbol statuses; unknown ones count with *lenient*, else raise."""
     if isinstance(status, str) and status in EVALUATED_STATUSES:
         return True
     if isinstance(status, str) and status in NOT_EVALUATED_STATUSES:
         return False
-    if count_unknown:
+    if lenient:
         return True
     # Fail closed: whether such a symbol counts towards N is the operator's call.
     raise LegacyRunError(f"{run_id}: symbol {symbol} has unknown status {status!r}")

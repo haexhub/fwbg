@@ -10,6 +10,7 @@ records it once its process is gone.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from collections.abc import Mapping
@@ -26,10 +27,12 @@ from fwbg.research.ledger import (
     append_trial,
     read_trials,
 )
-from fwbg.research.legacy import run_code, run_outcome
-from fwbg.research.repo import store_config
+from fwbg.research.legacy import LegacyRunError, run_code, run_outcome
+from fwbg.research.repo import ResearchRepoError, store_config
 
 STAGING = ".staging"
+
+log = logging.getLogger(__name__)
 
 
 class PendingError(Exception):
@@ -109,7 +112,7 @@ def finish(research_dir: Path, pending: PendingRun) -> Trial:
     metrics: Metrics = {}
     code: Mapping[str, Any] = {}
     if pending.run_dir.is_dir():
-        status, metrics = run_outcome(pending.run_dir, count_unknown=True)
+        status, metrics = run_outcome(pending.run_dir, lenient=True)
         code = _recorded_code(pending.run_dir)
     trial = replace(pending.trial, status=status, metrics=metrics, code=code)
     # Config first: the ledger must never name a fingerprint without its config.
@@ -120,8 +123,20 @@ def finish(research_dir: Path, pending: PendingRun) -> Trial:
 
 
 def recover_stale(research_dir: Path) -> list[Trial]:
-    """Record every pending run whose process is gone; call under the lock."""
-    return [finish(research_dir, run) for run in read_pending(research_dir) if not _alive(run.pid)]
+    """Record every pending run whose process is gone; call under the lock.
+
+    A marker that cannot be recorded stays for a later attempt and does not
+    keep the others from being recorded. Returns the recorded trials.
+    """
+    recorded = []
+    for run in read_pending(research_dir):
+        if _alive(run.pid):
+            continue
+        try:
+            recorded.append(finish(research_dir, run))
+        except (OSError, ValueError, LedgerError, LegacyRunError, ResearchRepoError) as exc:
+            log.warning("pending run %s stays unrecorded: %s", run.run_id, exc)
+    return recorded
 
 
 def live_runs(research_dir: Path, card_id: str | None = None) -> list[PendingRun]:
