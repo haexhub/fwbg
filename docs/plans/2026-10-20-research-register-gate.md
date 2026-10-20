@@ -12,8 +12,8 @@ are known (a `before_run` callback), and at that moment writes a *pending
 marker* (`.staging/<run_id>.json`) that already holds the whole trial except
 its outcome. Recording the finished run turns the marker into a ledger line.
 A run that never reaches its own recording (Ctrl-C ends the process through
-`os._exit`, SIGKILL, OOM) is recorded by the next register write that finds
-its marker with a dead process. Card writes go through new helpers in
+`os._exit`, SIGKILL, OOM) is recorded by the next gated run, `--check` or
+`verdict` that finds its marker with a dead process. Card writes go through new helpers in
 `fwbg.research.card`; write commands live in `fwbg.research.commands`,
 read-only views in `fwbg.research.views`, shared statistics in
 `fwbg.research.stats`. Design: `docs/plans/2026-10-19-research-register-design.md`;
