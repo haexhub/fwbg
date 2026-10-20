@@ -14,7 +14,7 @@ import yaml
 
 from fwbg.api.run_service import ACTIVE_STATUSES
 from fwbg.api.workspace import get_research_dir, get_strategies_dir, get_test_results_dir
-from fwbg.research.backfill import apply_mapping
+from fwbg.research.backfill import apply_mapping, ungated_runs
 from fwbg.research.card import CARD_FILE_RE, CRITERIA_NAMES, CardError, Status, UniqueKeyLoader
 from fwbg.research.commands import (
     VERDICT_STATUSES,
@@ -24,7 +24,7 @@ from fwbg.research.commands import (
     reopen,
     write_verdict,
 )
-from fwbg.research.ledger import LedgerError, TrialKind, TrialStatus
+from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, TrialKind, TrialStatus
 from fwbg.research.legacy import LegacyRun, LegacyRunError, scan_runs
 from fwbg.research.mapping import BackfillError, draft_mapping, load_mapping
 from fwbg.research.pending import PendingError
@@ -233,6 +233,11 @@ def _scan(results_dir: Path, out: Path) -> int:
         print(f"Error: {out} exists; refusing to overwrite a mapping", file=sys.stderr)
         return 1
     runs = _scan_runs(results_dir)
+    # The scan never creates the register; without one no run went through the gate.
+    research_dir = get_research_dir(create=False)
+    if (research_dir / LEDGER_FILENAME).exists():
+        # The same set apply_mapping expects in the mapping.
+        runs = ungated_runs(runs, research_dir)
     draft = draft_mapping(runs)
     text = yaml.dump(draft, Dumper=_MappingDumper, sort_keys=False, allow_unicode=True)
     with open(out, "x", encoding="utf-8") as handle:

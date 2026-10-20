@@ -35,10 +35,12 @@ from fwbg.research.ledger import (
 )
 from fwbg.research.legacy import LegacyRun
 from fwbg.research.mapping import BackfillError, CardPlan, StudyTrial, parse_criteria
+from fwbg.research.pending import STAGING
 from fwbg.research.repo import commit_register, register_lock, store_config
 
 COMMIT_MESSAGE = "chore: backfill legacy research"
 _BACKFILL_KINDS = frozenset({TrialKind.LEGACY, TrialKind.SMOKE})
+_GATED_KINDS = frozenset({TrialKind.ITERATION, TrialKind.HOLDOUT})
 _STUDY_PREFIX = "study:"
 
 
@@ -69,8 +71,8 @@ def apply_mapping(
 ) -> BackfillResult:
     """Write the mapped cards, their legacy and study trials and the runs' configs.
 
-    Every scanned run must be mapped exactly once, and no run or study may be
-    dated after *today*. A card's criteria are *default_criteria* with the
+    Every scanned run outside the gate's record (see :func:`ungated_runs`)
+    must be mapped exactly once, and no run or study may be dated after *today*. A card's criteria are *default_criteria* with the
     card's own criteria applied on top. Every card and trial is built and
     checked before the register is touched, so a defect raises
     :class:`BackfillError` without writing anything. Cards that already exist
@@ -82,12 +84,10 @@ def apply_mapping(
     rest is written and committed.
     """
     template = parse_criteria(default_criteria, "criteria template")
-    runs_by_id = {run.run_id: run for run in runs}
-    _check_coverage(plans, runs_by_id)
-    _prepare(plans, runs_by_id, research_dir, template, today)
+    _prepare(plans, runs, research_dir, template, today)
     with register_lock(research_dir):
         # Again under the lock: another writer may have changed the register meanwhile.
-        writes = _prepare(plans, runs_by_id, research_dir, template, today)
+        writes = _prepare(plans, runs, research_dir, template, today)
         for card, slug in writes.cards:
             write_card(research_dir, card, slug)
         for fingerprint, config in writes.configs.items():
@@ -99,6 +99,26 @@ def apply_mapping(
             research_dir, ["strategies", "configs", LEDGER_FILENAME], COMMIT_MESSAGE
         )
     return BackfillResult(len(writes.cards), len(writes.trials), committed)
+
+
+def ungated_runs(runs: Sequence[LegacyRun], research_dir: Path) -> list[LegacyRun]:
+    """*runs* without the gated ones, which are on record already.
+
+    A gated run is in the ledger as an iteration or holdout, or still has its
+    pending marker, even when tagging its ``config.json`` failed.
+    """
+    return _ungated(runs, research_dir, read_trials(research_dir / LEDGER_FILENAME))
+
+
+def _ungated(
+    runs: Sequence[LegacyRun], research_dir: Path, trials: Sequence[Trial]
+) -> list[LegacyRun]:
+    gated = {trial.run_id for trial in trials if trial.kind in _GATED_KINDS}
+    return [
+        run
+        for run in runs
+        if run.run_id not in gated and not (research_dir / STAGING / f"{run.run_id}.json").exists()
+    ]
 
 
 def _check_coverage(plans: Sequence[CardPlan], runs_by_id: Mapping[str, LegacyRun]) -> None:
@@ -120,13 +140,16 @@ def _check_coverage(plans: Sequence[CardPlan], runs_by_id: Mapping[str, LegacyRu
 
 def _prepare(
     plans: Sequence[CardPlan],
-    runs_by_id: Mapping[str, LegacyRun],
+    runs: Sequence[LegacyRun],
     research_dir: Path,
     template: Mapping[str, float],
     today: date,
 ) -> _Writes:
     """Build and check every card, config and trial of the apply; write nothing."""
-    recorded = _recorded(read_trials(research_dir / LEDGER_FILENAME))
+    ledger = read_trials(research_dir / LEDGER_FILENAME)
+    runs_by_id = {run.run_id: run for run in _ungated(runs, research_dir, ledger)}
+    _check_coverage(plans, runs_by_id)
+    recorded = _recorded(ledger)
     _check_ledger(plans, recorded)
     done = set(recorded)
     cards: list[tuple[ResearchCard, str]] = []

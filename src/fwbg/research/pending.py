@@ -153,10 +153,42 @@ def recover_stale(research_dir: Path) -> list[Trial]:
         if _alive(run):
             continue
         try:
-            recorded.append(finish(research_dir, run))
+            trial = finish(research_dir, run)
         except (OSError, ValueError, LedgerError, LegacyRunError, ResearchRepoError) as exc:
             log.warning("pending run %s stays unrecorded: %s", run.run_id, exc)
+            continue
+        recorded.append(trial)
+        try:
+            tag_run(run.run_dir, trial)
+        except (OSError, ValueError, TypeError) as exc:
+            log.warning("could not tag run %s with %s: %s", run.run_id, trial.trial_id, exc)
     return recorded
+
+
+def tag_run(run_dir: Path, trial: Trial) -> None:
+    """Add the ``research`` block to the run's config.json, so the run names its trial.
+
+    The block also keeps the run out of the legacy backfill. A run that failed
+    before writing its config.json has nothing to tag.
+    """
+    path = run_dir / "config.json"
+    if not path.is_file():
+        return
+    config = json.loads(path.read_text(encoding="utf-8"))
+    config["research"] = {
+        "id": trial.strategy,
+        "trial": trial.trial_id,
+        "fingerprint": trial.fingerprint,
+        "kind": trial.kind.value,
+        "note": trial.note,
+        "reason": trial.reason,
+    }
+    temp = path.with_name(f".{path.name}.tmp")
+    try:
+        temp.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def live_runs(research_dir: Path, card_id: str | None = None) -> list[PendingRun]:

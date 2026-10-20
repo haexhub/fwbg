@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import json
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -33,6 +32,7 @@ from fwbg.research.pending import (
     finish,
     live_runs,
     recover_stale,
+    tag_run,
     valid_run_id,
     write_pending,
 )
@@ -230,15 +230,13 @@ class ResearchRun:
                 file=sys.stderr,
             )
             return None
-        # A run that failed before writing its config.json has nothing to tag.
-        if (self.run_dir / "config.json").is_file():
-            try:
-                _tag_run(self.run_dir, trial)
-            except (OSError, ValueError, TypeError) as exc:
-                print(
-                    f"Warning: could not tag run {self.run_id} with {trial.trial_id}: {exc}",
-                    file=sys.stderr,
-                )
+        try:
+            tag_run(self.run_dir, trial)
+        except (OSError, ValueError, TypeError) as exc:
+            print(
+                f"Warning: could not tag run {self.run_id} with {trial.trial_id}: {exc}",
+                file=sys.stderr,
+            )
         return trial
 
 
@@ -277,26 +275,6 @@ def _warn_uncommitted(what: str, exc: ResearchRepoError) -> None:
         f"Warning: {what} not committed yet ({exc}); the next register commit includes it",
         file=sys.stderr,
     )
-
-
-def _tag_run(run_dir: Path, trial: Trial) -> None:
-    """Add the ``research`` block to the run's config.json, so the run names its trial."""
-    path = run_dir / "config.json"
-    config = json.loads(path.read_text(encoding="utf-8"))
-    config["research"] = {
-        "id": trial.strategy,
-        "trial": trial.trial_id,
-        "fingerprint": trial.fingerprint,
-        "kind": trial.kind.value,
-        "note": trial.note,
-        "reason": trial.reason,
-    }
-    temp = path.with_name(f".{path.name}.tmp")
-    try:
-        temp.write_text(json.dumps(config, indent=2), encoding="utf-8")
-        os.replace(temp, path)
-    finally:
-        temp.unlink(missing_ok=True)
 
 
 def _print_check(decision: Decision, symbols: tuple[str, ...]) -> None:
