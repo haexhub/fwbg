@@ -92,7 +92,7 @@ def test_scan_warns_about_runs_in_progress(tmp_path, capsys):
     assert "r2" not in err
 
 
-def test_apply_before_init_writes_nothing(tmp_path, capsys):
+def test_apply_before_init_reports_not_initialised(tmp_path, capsys):
     make_run(tmp_path / "results", "r1")
     mapping = tmp_path / "mapping.yaml"
     mapping.write_text("cards: []\n", encoding="utf-8")
