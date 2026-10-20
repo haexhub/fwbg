@@ -158,9 +158,10 @@ def _record_interrupted_runs() -> None:
     if not gate_enabled():
         return
     research_dir = get_research_dir(create=False)
-    if not (research_dir / LEDGER_FILENAME).is_file():
-        return
     try:
+        # Inside the try: is_file() raises PermissionError on an unreadable register.
+        if not (research_dir / LEDGER_FILENAME).is_file():
+            return
         with register_lock(research_dir):
             record_stale(research_dir)
     except (OSError, ValueError, LedgerError, PendingError, ResearchRepoError) as exc:
