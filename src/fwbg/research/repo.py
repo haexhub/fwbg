@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import logging
 import os
 import subprocess
 import uuid
@@ -14,6 +15,8 @@ from typing import Any
 from fwbg.core.git_env import isolated_git_env
 from fwbg.research.fingerprint import canonical_json, digest
 from fwbg.research.ledger import LEDGER_FILENAME
+
+log = logging.getLogger(__name__)
 
 CRITERIA_TEMPLATE = Path("templates") / "criteria-default.yaml"
 _DIRECTORIES = ("strategies", "configs", "templates", "reports")
@@ -95,12 +98,41 @@ def register_lock(research_dir: Path) -> Iterator[None]:
     Separate from the ``flock`` that ``append_trial`` takes on the ledger itself:
     locking ``trials.jsonl`` again from the same process would deadlock. Not
     re-entrant either: a nested ``register_lock`` in the same process blocks forever.
+
+    On exit, files a root process created are handed to the register's owner
+    (:func:`restore_owner`).
     """
     with (research_dir / REGISTER_LOCK).open("a", encoding="utf-8") as handle:
         # ponytail: waits without bound or feedback while another writer holds the lock;
         # poll with LOCK_NB and report the wait if writers ever run long.
         fcntl.flock(handle, fcntl.LOCK_EX)
-        yield
+        try:
+            yield
+        finally:
+            restore_owner(research_dir)
+
+
+def restore_owner(research_dir: Path) -> None:
+    """Give what a root process created in the register to the register directory's owner.
+
+    The API container runs as root on the register bind-mounted from the host;
+    root-owned files (``.git/objects`` above all) would lock the host user out of
+    their own register. Never raises: a failure is logged and the next write retries.
+    """
+    if os.geteuid() != 0:
+        return
+    try:
+        uid, gid = _owner(research_dir)
+        if uid == 0:
+            return
+        for root, dirs, files in os.walk(research_dir):
+            for name in (*dirs, *files):
+                path = os.path.join(root, name)
+                status = os.lstat(path)
+                if (status.st_uid, status.st_gid) != (uid, gid):
+                    os.chown(path, uid, gid, follow_symlinks=False)
+    except OSError as exc:
+        log.warning("could not hand register files back to their owner: %s", exc)
 
 
 def commit_register(research_dir: Path, paths: Sequence[str], message: str) -> bool:
@@ -161,6 +193,11 @@ def store_config(research_dir: Path, fingerprint: str, config: Mapping[str, Any]
     return path
 
 
+def _owner(path: Path) -> tuple[int, int]:
+    status = path.stat()
+    return status.st_uid, status.st_gid
+
+
 def _write_if_missing(path: Path, text: str) -> None:
     if not path.exists():
         path.write_text(text, encoding="utf-8")
@@ -184,7 +221,10 @@ def _git(
     env = isolated_git_env()
     # Never search above the register: a damaged .git must not fall back to an enclosing repo.
     env["GIT_CEILING_DIRECTORIES"] = str(cwd.resolve().parent)
-    overrides = [option for setting in config for option in ("-c", setting)]
+    # The API container (root) works on a register its host user owns; git refuses that
+    # without an explicit safe.directory, which only protected config (here: -c) may set.
+    settings = (f"safe.directory={cwd.resolve()}", *config)
+    overrides = [option for setting in settings for option in ("-c", setting)]
     try:
         with subprocess.Popen(
             ["git", *overrides, *args],
