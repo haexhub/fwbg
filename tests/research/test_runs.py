@@ -6,6 +6,7 @@ import pytest
 from fwbg.research.gate import DenialCode
 from fwbg.research.ledger import LEDGER_FILENAME, TrialStatus, append_trial, read_trials
 from fwbg.research.pending import STAGING, read_pending
+from fwbg.research.repo import ResearchRepoError
 from fwbg.research.runs import (
     GATE_ENV,
     GateChecked,
@@ -284,3 +285,71 @@ def test_gate_is_on_unless_switched_off(monkeypatch):
     assert gate_enabled()
     monkeypatch.setenv(GATE_ENV, " OFF ")
     assert not gate_enabled()
+
+
+def test_failed_marker_write_refuses_and_records_nothing(gate_register, results, monkeypatch):
+    def broken(*_):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr("fwbg.research.runs.write_pending", broken)
+    run = ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "x")
+    with pytest.raises(GateDenied) as denied:
+        run.before_run(METADATA, ["EURUSD"])
+    assert denial_codes(denied) == [DenialCode.REGISTER_UNREADABLE]
+    assert run.record() is None
+    assert read_trials(gate_register / LEDGER_FILENAME) == []
+
+
+def test_mutating_the_returned_metadata_does_not_break_recording(gate_register, results):
+    run = ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "x")
+    effective = run.before_run(METADATA, ["EURUSD"])
+    effective["pipeline"]["indicators"].append({"name": "added_by_the_run"})
+    trial = run.record()
+    assert trial is not None and trial.trial_id == "T-000001"
+    assert git_status(gate_register) == ""
+
+
+def test_failed_recovery_commit_only_warns(gate_register, results, monkeypatch, capsys):
+    ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "a").before_run(
+        METADATA, ["EURUSD"]
+    )
+    rewrite_marker_pid(gate_register, "run-1", dead_pid())
+
+    def broken(*_):
+        raise ResearchRepoError("git commit failed: index.lock exists")
+
+    monkeypatch.setattr("fwbg.research.runs.commit_register", broken)
+    ResearchRun(gate_register, "run-2", results / "run-2", "S-0007", "b").before_run(
+        {**METADATA, "model": {"x": 1}}, ["EURUSD"]
+    )
+    assert "not committed yet" in capsys.readouterr().err
+    assert [t.run_id for t in read_trials(gate_register / LEDGER_FILENAME)] == ["run-1"]
+    assert [p.run_id for p in read_pending(gate_register)] == ["run-2"]
+
+
+def test_unreadable_marker_tells_the_operator_where_to_look(gate_register, results):
+    (gate_register / STAGING).mkdir(exist_ok=True)
+    (gate_register / STAGING / "run-0.json").write_text("{", encoding="utf-8")
+    run = ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "x")
+    with pytest.raises(GateDenied) as denied:
+        run.before_run(METADATA, ["EURUSD"])
+    assert denial_codes(denied) == [DenialCode.REGISTER_UNREADABLE]
+    assert str(gate_register / STAGING) in denied.value.denials[0].message
+
+
+def test_run_that_bypasses_the_gate_is_reported(gate_register, results, capsys):
+    research = ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "x")
+    assert run_gated(research, lambda before_run: "done") == "done"
+    assert "never passed the research gate" in capsys.readouterr().err
+    assert read_trials(gate_register / LEDGER_FILENAME) == []
+
+
+def test_record_twice_records_once(gate_register, results):
+    run = ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "x")
+    run.before_run(METADATA, ["EURUSD"])
+    make_run(results, "run-1", symbols={"EURUSD": {"unified": {"sharpe": 0.4}}})
+    first, second = run.record(), run.record()
+    assert first is not None and second is not None
+    assert first.trial_id == second.trial_id == "T-000001"
+    assert len(read_trials(gate_register / LEDGER_FILENAME)) == 1
+    assert git_status(gate_register) == ""

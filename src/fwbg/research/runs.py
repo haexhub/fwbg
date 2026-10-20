@@ -26,7 +26,15 @@ from fwbg.research.fingerprint import FINGERPRINT_VERSION, canonical_config
 from fwbg.research.gate import Decision, Denial, DenialCode, RunRequest, check
 from fwbg.research.ledger import LEDGER_FILENAME, Trial, TrialStatus, read_trials
 from fwbg.research.legacy import run_window
-from fwbg.research.pending import PendingRun, finish, live_runs, recover_stale, write_pending
+from fwbg.research.pending import (
+    STAGING,
+    PendingError,
+    PendingRun,
+    finish,
+    live_runs,
+    recover_stale,
+    write_pending,
+)
 from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register, register_lock
 
 GATE_ENV = "FWBG_RESEARCH_GATE"
@@ -110,13 +118,17 @@ class ResearchRun:
         except (GateDenied, GateChecked):
             raise
         except Exception as exc:  # fail closed: an unreadable register never lets a run through
-            raise GateDenied(
-                [Denial(DenialCode.REGISTER_UNREADABLE, f"research register: {exc}")]
-            ) from exc
+            message = f"research register: {exc}"
+            if isinstance(exc, PendingError):
+                message += f"; inspect or remove the marker in {self.research_dir / STAGING}"
+            raise GateDenied([Denial(DenialCode.REGISTER_UNREADABLE, message)]) from exc
 
     def _gate(self, request: RunRequest, symbols: tuple[str, ...]) -> dict[str, Any]:
         if recover_stale(self.research_dir):
-            commit_register(self.research_dir, REGISTER_PATHS, "trial: record interrupted runs")
+            try:
+                commit_register(self.research_dir, REGISTER_PATHS, "trial: record interrupted runs")
+            except ResearchRepoError as exc:
+                _warn_uncommitted("interrupted runs", exc)
         card: ResearchCard | None = None
         if self.research_id is not None and CARD_ID_RE.fullmatch(self.research_id):
             card = load_card(self.research_dir, self.research_id)
@@ -129,7 +141,7 @@ class ResearchRun:
             raise GateChecked(decision, symbols)
         assert card is not None and decision.fingerprint is not None  # allowed decisions have both
         metadata = copy.deepcopy(dict(decision.effective_metadata))
-        self._pending = PendingRun(
+        pending = PendingRun(
             run_id=self.run_id,
             run_dir=self.run_dir,
             pid=os.getpid(),
@@ -148,9 +160,12 @@ class ResearchRun:
                 note=self.note,
                 reason=self.reason if self.reason and self.reason.strip() else None,
             ),
-            config=canonical_config(metadata, symbols),
+            # The run may mutate the returned metadata; the marker must not change with it.
+            config=copy.deepcopy(canonical_config(metadata, symbols)),
         )
-        write_pending(self.research_dir, self._pending)
+        write_pending(self.research_dir, pending)
+        # Only a run on record may be recorded: a failed marker write refuses the run.
+        self._pending = pending
         return metadata
 
     def _run_denials(self, decision: Decision, trials: Sequence[Trial]) -> list[Denial]:
@@ -201,13 +216,9 @@ class ResearchRun:
                         f"trial {trial.trial_id}: {trial.strategy} run {self.run_id}",
                     )
                 except ResearchRepoError as exc:
-                    print(
-                        f"Warning: {trial.trial_id} is not committed yet ({exc}); "
-                        "the next register commit includes it",
-                        file=sys.stderr,
-                    )
-        # Decision: recording never fails a run whose results already exist.
+                    _warn_uncommitted(str(trial.trial_id), exc)
         except Exception as exc:
+            # Decision: recording never fails a run whose results already exist.
             print(
                 f"Warning: run {self.run_id} is not in the ledger yet ({exc}); "
                 "the next gated run records it",
@@ -247,8 +258,20 @@ def run_gated(research: ResearchRun, run: Callable[[BeforeRun], Any]) -> Any:
     except BaseException:
         research.record()
         raise
+    if research._pending is None and not research.check_only:
+        print(
+            f"Warning: run {research.run_id} never passed the research gate and was not recorded",
+            file=sys.stderr,
+        )
     research.record()
     return result
+
+
+def _warn_uncommitted(what: str, exc: ResearchRepoError) -> None:
+    print(
+        f"Warning: {what} not committed yet ({exc}); the next register commit includes it",
+        file=sys.stderr,
+    )
 
 
 def _tag_run(run_dir: Path, trial: Trial) -> None:
@@ -264,8 +287,11 @@ def _tag_run(run_dir: Path, trial: Trial) -> None:
         "reason": trial.reason,
     }
     temp = path.with_name(f".{path.name}.tmp")
-    temp.write_text(json.dumps(config, indent=2), encoding="utf-8")
-    os.replace(temp, path)
+    try:
+        temp.write_text(json.dumps(config, indent=2), encoding="utf-8")
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def _print_check(decision: Decision, symbols: tuple[str, ...]) -> None:
