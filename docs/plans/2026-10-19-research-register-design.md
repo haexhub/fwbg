@@ -364,7 +364,9 @@ Router `src/fwbg/api/research.py` wraps the CLI's card commands and views.
   errors, 409 conflicts and an unreadable register.
 - `POST /api/runs/start` refusals: `detail = {"message", "denials"}` (409
   if any denial is a 409, else 422); a preflight that failed before the gate
-  `{"message", "output"}` (422); 504 on preflight timeout (120 s).
+  `{"message", "output"}` (422); 504 on preflight timeout (120 s); 409
+  "run was cancelled before it started" when the run was cancelled during
+  its preflight.
 
 fwbg-agents integration (separate plan in the agents repo): the
 Researcher queries `GET /api/research?tag=…` before proposing; its
@@ -382,12 +384,15 @@ host register (`${FWBG_RESEARCH_HOST_DIR:-$HOME/fwbg/research}`) at
   host path instead of starting an empty second register.
 - The image has `git`. The container commits as `fwbg-api
   <fwbg-api@localhost>` (env in compose); it has no signing key and no
-  hooks, so its commits are unsigned. The operator's own commits stay signed.
+  global git config, so its commits are unsigned. The operator's own commits stay signed.
 - The container runs as root. On exit, `register_lock` hands every
   root-owned file in the register back to the register directory's owner
   (`restore_owner`); otherwise the host user could no longer write
-  `.git/objects`. The lock file is opened `O_RDONLY|O_CREAT`, so one root
-  created stays usable (flock needs no write access).
+  `.git/objects`. It chowns only root-owned entries, never through a
+  symlink, and relies on `fs.protected_hardlinks` (the kernel default)
+  against hard links planted in the register. The lock file is opened
+  `O_RDONLY|O_CREAT`, so one root created stays usable (flock needs no
+  write access).
 - Every register git call passes `-c safe.directory=<register>` (git
   refuses a repository owned by another user) and `gc.auto=0`,
   `maintenance.auto=false` (git detaches those, so they would create

@@ -237,9 +237,10 @@ def _reconcile(research_dir: Path, results_dir: Path) -> int:
     for trial in recovered:
         print(f"recovered {trial.trial_id}")
     print("committed" if committed else "nothing to commit", flush=True)
-    for run_id in runs_in_progress(results_dir):
+    in_progress = runs_in_progress(results_dir)
+    for run_id in in_progress:
         print(f"Warning: not checked, may still be running: {run_id}", file=sys.stderr)
-    unindexed = unindexed_runs(research_dir, results_dir)
+    unindexed = unindexed_runs(research_dir, results_dir, in_progress)
     if unindexed:
         print(f"{len(unindexed)} runs not in the ledger:")
         for run_id in unindexed:
