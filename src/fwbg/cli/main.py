@@ -1026,7 +1026,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             )
         else:
             if args.check or args.check_json:
-                parser.error(f"--check needs the research gate ({GATE_ENV} is off)")
+                parser.error(f"--check/--check-json needs the research gate ({GATE_ENV} is off)")
             print(f"Warning: {GATE_ENV}=off - this run is neither gated nor recorded",
                   file=sys.stderr)
 
