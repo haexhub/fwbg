@@ -5,6 +5,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from fwbg.research import repo
 from fwbg.research.repo import REGISTER_LOCK, init_research_repo, register_lock, restore_owner
 
@@ -17,13 +19,11 @@ def _pretend_root(monkeypatch, created_by_root):
     calls = []
     real_lstat = os.lstat
 
-    # A real stat result with st_uid 0: os.walk itself reads st_mode through os.lstat.
+    # A real stat result with st_uid 0 for root's files and the owner's uid for the rest,
+    # whoever runs the tests: os.walk itself reads st_mode through os.lstat.
     def lstat(path, **kwargs):
-        status = real_lstat(path, **kwargs)
-        if not created_by_root(Path(path)):
-            return status
-        fields = list(status)
-        fields[4] = 0  # st_uid
+        fields = list(real_lstat(path, **kwargs))
+        fields[4] = 0 if created_by_root(Path(path)) else 4242  # st_uid
         return os.stat_result(fields)
 
     monkeypatch.setattr(repo.os, "geteuid", lambda: 0)
@@ -79,6 +79,7 @@ def test_restore_owner_never_follows_symlinks(tmp_path, git_env, monkeypatch):
     assert all(kwargs == {"follow_symlinks": False} for _, _, _, kwargs in calls)
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a directory with mode 0")
 def test_restore_owner_logs_an_unreadable_directory(tmp_path, git_env, monkeypatch, caplog):
     init_research_repo(tmp_path)
     locked = tmp_path / "reports" / "locked"

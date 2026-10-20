@@ -201,7 +201,7 @@ Enforcement points:
 
 - **CLI run path** (`run_optimizer`, `src/fwbg/cli/main.py`) — authoritative.
   Every run passes through here, because `/api/runs/start` spawns the CLI
-  (`src/fwbg/api/runs.py:183`).
+  (`start_run` in `src/fwbg/api/runs.py`).
 - **`POST /api/runs/start`** — preflight before spawning, so callers such
   as fwbg-agents get an immediate error instead of a process that dies. The
   preflight runs the CLI once with `--check-json` (`src/fwbg/api/run_preflight.py`),

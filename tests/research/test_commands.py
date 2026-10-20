@@ -21,8 +21,7 @@ from fwbg.research.ledger import LEDGER_FILENAME, append_trial, read_trials
 from fwbg.research.pending import write_pending
 from fwbg.research.ledger import TrialKind
 from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register
-from tests.research.factories import make_card, make_run, make_trial
-from tests.research.test_pending import dead_pid, make_pending
+from tests.research.factories import dead_pid, make_card, make_pending, make_run, make_trial
 
 TODAY = date(2026, 10, 20)
 REFUSED_AMEND = (

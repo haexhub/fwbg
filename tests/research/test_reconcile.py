@@ -10,8 +10,7 @@ from fwbg.research.legacy import LegacyRunError
 from fwbg.research.pending import STAGING, write_pending
 from fwbg.research.reconcile import ReconcileResult, reconcile, repair, unindexed_runs
 from fwbg.research.repo import ResearchRepoError
-from tests.research.factories import make_run, make_trial
-from tests.research.test_pending import dead_pid, make_pending
+from tests.research.factories import dead_pid, make_pending, make_run, make_trial
 
 NOTHING = ReconcileResult(recovered=(), committed=False, unindexed=())
 
