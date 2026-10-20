@@ -6,8 +6,9 @@ import json
 import hashlib
 import subprocess
 from datetime import datetime
+from pathlib import Path
 
-from fwbg.core.git_env import isolated_git_env
+from fwbg.core.git_env import isolated_git_env, source_dir
 from fwbg.data import config as data_config
 from fwbg.data.config import convert_numpy
 from fwbg.results.code_patch import write_code_patch
@@ -96,14 +97,16 @@ STRATEGY_SCHEMA = {
 }
 
 
-def get_git_info():
-    """Holt Git-Informationen für Reproduzierbarkeit."""
+def get_git_info(source: Path | None = None):
+    """Holt Git-Informationen für Reproduzierbarkeit (des Repos, das *source* enthält)."""
     git_info = {}
+    cwd = source or source_dir()
     env = isolated_git_env()
     try:
         # Aktueller Commit
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
+            cwd=cwd,
             env=env,
             capture_output=True,
             text=True,
@@ -115,6 +118,7 @@ def get_git_info():
         # Branch
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=cwd,
             env=env,
             capture_output=True,
             text=True,
@@ -126,6 +130,7 @@ def get_git_info():
         # Dirty status
         result = subprocess.run(
             ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=cwd,
             env=env,
             capture_output=True,
             text=True,
@@ -137,6 +142,7 @@ def get_git_info():
         # Letzte Commit-Message
         result = subprocess.run(
             ["git", "log", "-1", "--pretty=%B"],
+            cwd=cwd,
             env=env,
             capture_output=True,
             text=True,
@@ -278,9 +284,12 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
     os.makedirs(run_path, exist_ok=True)
 
     # Git-Info für Reproduzierbarkeit
-    git_info = get_git_info()
+    source = source_dir()
+    git_info = get_git_info(source)
     if git_info.get("dirty"):
-        git_info["patch"] = write_code_patch(run_path)
+        git_info["patch"], patch_error = write_code_patch(run_path, source)
+        if patch_error:
+            git_info["patch_error"] = patch_error
 
     # Technische Konfiguration
     config = {

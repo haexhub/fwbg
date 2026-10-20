@@ -36,7 +36,7 @@ NOT_EVALUATED_STATUSES = frozenset(
 )
 _SMOKE_NAME_RE = re.compile(r"m[0-9]+_smoke.*")
 _DATE_PREFIX_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
-_GIT_KEYS = ("commit", "branch", "dirty", "patch")
+_GIT_KEYS = ("commit", "branch", "dirty", "patch", "patch_error")
 
 
 class LegacyRunError(Exception):
