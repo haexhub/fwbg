@@ -102,7 +102,9 @@ def register_lock(research_dir: Path) -> Iterator[None]:
     On exit, files a root process created are handed to the register's owner
     (:func:`restore_owner`).
     """
-    with (research_dir / REGISTER_LOCK).open("a", encoding="utf-8") as handle:
+    # Read-only: flock needs no write access, so a lock file root created stays usable.
+    fd = os.open(research_dir / REGISTER_LOCK, os.O_RDONLY | os.O_CREAT, 0o644)
+    with os.fdopen(fd, "rb") as handle:
         # ponytail: waits without bound or feedback while another writer holds the lock;
         # poll with LOCK_NB and report the wait if writers ever run long.
         fcntl.flock(handle, fcntl.LOCK_EX)
@@ -125,11 +127,12 @@ def restore_owner(research_dir: Path) -> None:
         uid, gid = _owner(research_dir)
         if uid == 0:
             return
-        for root, dirs, files in os.walk(research_dir):
+        # ponytail: walks the whole register (.git included) on every lock exit;
+        # restrict it to new entries if registers grow large.
+        for root, dirs, files in os.walk(research_dir, onerror=_log_unreadable):
             for name in (*dirs, *files):
                 path = os.path.join(root, name)
-                status = os.lstat(path)
-                if (status.st_uid, status.st_gid) != (uid, gid):
+                if os.lstat(path).st_uid == 0:
                     os.chown(path, uid, gid, follow_symlinks=False)
     except OSError as exc:
         log.warning("could not hand register files back to their owner: %s", exc)
@@ -193,6 +196,10 @@ def store_config(research_dir: Path, fingerprint: str, config: Mapping[str, Any]
     return path
 
 
+def _log_unreadable(exc: OSError) -> None:
+    log.warning("could not read %s to restore its owner: %s", exc.filename, exc)
+
+
 def _owner(path: Path) -> tuple[int, int]:
     status = path.stat()
     return status.st_uid, status.st_gid
@@ -223,7 +230,16 @@ def _git(
     env["GIT_CEILING_DIRECTORIES"] = str(cwd.resolve().parent)
     # The API container (root) works on a register its host user owns; git refuses that
     # without an explicit safe.directory, which only protected config (here: -c) may set.
-    settings = (f"safe.directory={cwd.resolve()}", *config)
+    # Trusting it runs the register's .git/config and hooks as root in the container;
+    # acceptable, as the register's owner is the operator, who controls Docker anyway.
+    # No auto gc/maintenance: git detaches it, so it would create root-owned files
+    # after register_lock has already handed the register back to its owner.
+    settings = (
+        f"safe.directory={cwd.resolve()}",
+        "gc.auto=0",
+        "maintenance.auto=false",
+        *config,
+    )
     overrides = [option for setting in settings for option in ("-c", setting)]
     try:
         with subprocess.Popen(
