@@ -165,7 +165,7 @@ def optimizer(tmp_path, monkeypatch):
     monkeypatch.setenv(GATE_ENV, "on")
     for name in ("DATA_PATH", "TIMEFRAME", "tf_cfg", "OOS_SIZE", "WINDOW_SIZE", "RESAMPLE_FROM"):
         monkeypatch.setattr(data_config, name, getattr(data_config, name))
-    monkeypatch.delenv("TIMEFRAME", raising=False)
+    monkeypatch.setenv("TIMEFRAME", "HOUR_1")  # delenv of an unset name would not restore it
     results = tmp_path / "results"
     monkeypatch.setattr(storage, "RESULTS_BASE_PATH", str(results))
     data = tmp_path / "data"
