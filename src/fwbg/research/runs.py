@@ -24,7 +24,14 @@ from fwbg.core.presets import resolve_presets
 from fwbg.research.card import CARD_ID_RE, CardError, ResearchCard, load_card
 from fwbg.research.fingerprint import FINGERPRINT_VERSION, canonical_config
 from fwbg.research.gate import Decision, Denial, DenialCode, RunRequest, check
-from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, Trial, TrialStatus, read_trials
+from fwbg.research.ledger import (
+    LEDGER_FILENAME,
+    LedgerError,
+    Trial,
+    TrialKind,
+    TrialStatus,
+    read_trials,
+)
 from fwbg.research.legacy import LegacyRunError, run_window
 from fwbg.research.pending import (
     STAGING,
@@ -323,8 +330,45 @@ def parse_check_output(stdout: str, returncode: int) -> dict[str, Any] | None:
             consistent = (allowed is True and returncode == 0) or (
                 allowed is False and returncode == 2
             )
-            return payload if consistent else None
+            return payload if consistent and _valid_check_payload(payload) else None
     return None
+
+
+def _valid_check_payload(payload: Mapping[str, Any]) -> bool:
+    """Validate the complete machine-readable gate result before trusting it."""
+    if payload.get("allowed") is True:
+        return (
+            payload.get("kind") in {kind.value for kind in TrialKind}
+            and isinstance(payload.get("fingerprint"), str)
+            and bool(payload["fingerprint"])
+            and isinstance(payload.get("symbols"), list)
+            and all(isinstance(symbol, str) for symbol in payload["symbols"])
+            and _valid_window(payload.get("window"))
+            and payload.get("denials") == []
+        )
+    denials = payload.get("denials")
+    return (
+        payload.get("allowed") is False
+        and isinstance(denials, list)
+        and bool(denials)
+        and all(
+            isinstance(denial, dict)
+            and isinstance(denial.get("code"), str)
+            and denial.get("status") in (409, 422)
+            and isinstance(denial.get("message"), str)
+            and bool(denial["message"])
+            for denial in denials
+        )
+    )
+
+
+def _valid_window(window: object) -> bool:
+    """Check the stable window shape emitted by :func:`check_result`."""
+    return (
+        isinstance(window, dict)
+        and set(window) == {"start", "end"}
+        and all(value is None or isinstance(value, str) for value in window.values())
+    )
 
 
 def run_id_denials(

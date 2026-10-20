@@ -48,7 +48,7 @@ class NewCard(BaseModel):
     """Request body for registering a card; hypothesis and mechanism are required here."""
 
     title: str = Field(pattern=r"\S")
-    tags: list[str] = Field(min_length=1)
+    tags: list[Annotated[str, Field(pattern=r"\S")]] = Field(min_length=1)
     hypothesis: str = Field(pattern=r"\S")
     mechanism: str = Field(pattern=r"\S")
     cutoff: date | None = None

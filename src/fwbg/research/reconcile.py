@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Collection
+from dataclasses import dataclass
 from pathlib import Path
 
 from fwbg.api.run_service import ACTIVE_STATUSES
@@ -15,6 +16,27 @@ from fwbg.research.legacy import scan_runs
 from fwbg.research.pending import STAGING, recover_stale
 from fwbg.research.repo import REGISTER_PATHS, commit_register, register_lock
 from fwbg.research.views import card_ids
+
+
+@dataclass(frozen=True)
+class ReconcileResult:
+    """The repaired register and the workspace gaps found alongside it."""
+
+    recovered: tuple[str, ...]
+    committed: bool
+    unindexed: tuple[str, ...]
+
+
+def reconcile(research_dir: Path, results_dir: Path) -> ReconcileResult:
+    """Repair the register, commit it, and report runs missing from its ledger."""
+    recovered, committed = repair(research_dir)
+    in_progress = runs_in_progress(results_dir)
+    unindexed = unindexed_runs(research_dir, results_dir, in_progress)
+    return ReconcileResult(
+        recovered=tuple(str(trial.trial_id) for trial in recovered),
+        committed=committed,
+        unindexed=unindexed,
+    )
 
 
 def repair(research_dir: Path) -> tuple[list[Trial], bool]:

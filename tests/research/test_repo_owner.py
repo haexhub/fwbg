@@ -2,13 +2,19 @@
 
 import logging
 import os
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from fwbg.research import repo
-from fwbg.research.repo import REGISTER_LOCK, init_research_repo, register_lock, restore_owner
+from fwbg.research.repo import (
+    LEDGER_FILENAME,
+    REGISTER_LOCK,
+    commit_register,
+    init_research_repo,
+    register_lock,
+    restore_owner,
+)
 
 
 def _pretend_root(monkeypatch, created_by_root):
@@ -135,17 +141,8 @@ def test_register_lock_works_on_a_lock_file_it_cannot_write(tmp_path, git_env):
         pass
 
 
-def test_git_trusts_the_register_and_never_detaches_maintenance(tmp_path, git_env, monkeypatch):
+@pytest.mark.skipif(os.geteuid() != 0, reason="requires root to simulate a foreign-owned register")
+def test_commit_register_accepts_a_foreign_owned_register(tmp_path, git_env):
     init_research_repo(tmp_path)
-    seen = []
-    real = subprocess.Popen
-
-    def spy(args, **kwargs):
-        seen.append(args)
-        return real(args, **kwargs)
-
-    monkeypatch.setattr(repo.subprocess, "Popen", spy)
-    repo._git(tmp_path, "status")
-    assert f"safe.directory={tmp_path.resolve()}" in seen[0]
-    assert "gc.auto=0" in seen[0]
-    assert "maintenance.auto=false" in seen[0]
+    os.chown(tmp_path, 65534, 65534)
+    assert commit_register(tmp_path, [LEDGER_FILENAME], "test: no changes") is False

@@ -39,9 +39,10 @@ def create_app() -> FastAPI:
     from fwbg.api.plugins import (
         entry_modifiers_router,
         exit_modifiers_router,
-        router as plugins_router,
     )
-    from fwbg.api.presets import migrate_presets, migrate_strategy_refs, router as presets_router
+    from fwbg.api.plugins import router as plugins_router
+    from fwbg.api.presets import migrate_presets, migrate_strategy_refs
+    from fwbg.api.presets import router as presets_router
     from fwbg.api.research import router as research_router
     from fwbg.api.runs import router as runs_router
     from fwbg.api.signal_composer import router as signal_composer_router
@@ -92,7 +93,10 @@ def create_app() -> FastAPI:
     # CORS: wildcard origins are incompatible with credentials. Configure
     # FWBG_CORS_ORIGINS as a comma-separated list of trusted origins for
     # browser deployments. Default keeps the dashboard origins.
-    cors_env = os.environ.get("FWBG_CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173")
+    cors_env = os.environ.get(
+        "FWBG_CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173",
+    )
     cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
@@ -103,7 +107,11 @@ def create_app() -> FastAPI:
     )
 
     api_key = os.environ.get("FWBG_API_KEY", "").strip()
-    allow_unauth = os.environ.get("FWBG_ALLOW_UNAUTHENTICATED_API", "").strip().lower() in ("1", "true", "yes")
+    allow_unauth = os.environ.get("FWBG_ALLOW_UNAUTHENTICATED_API", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if api_key:
         app.add_middleware(APIKeyMiddleware, api_key=api_key)
         log.info("API key authentication enabled")
@@ -191,4 +199,5 @@ def __getattr__(name: str):
 def run_server(host: str = "0.0.0.0", port: int = 8420):
     """Start the API server."""
     import uvicorn
+
     uvicorn.run(create_app(), host=host, port=port, timeout_graceful_shutdown=5)

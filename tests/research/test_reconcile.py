@@ -9,6 +9,7 @@ from fwbg.research.cli import main
 from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, TrialKind, append_trial, read_trials
 from fwbg.research.legacy import LegacyRunError
 from fwbg.research.pending import STAGING, write_pending
+from fwbg.research.reconcile import reconcile as reconcile_register
 from fwbg.research.reconcile import repair, runs_in_progress, unindexed_runs
 from fwbg.research.repo import ResearchRepoError
 from tests.research.factories import dead_pid, make_pending, make_run, make_trial
@@ -28,6 +29,13 @@ def reconcile(register, results) -> Outcome:
     recovered, committed = repair(register)
     unindexed = unindexed_runs(register, results, runs_in_progress(results))
     return Outcome(tuple(str(trial.trial_id) for trial in recovered), committed, unindexed)
+
+
+def test_public_reconcile_returns_one_result(gate_register, results):
+    result = reconcile_register(gate_register, results)
+    assert result.recovered == ()
+    assert result.committed is False
+    assert result.unindexed == ()
 
 
 @pytest.fixture(autouse=True)

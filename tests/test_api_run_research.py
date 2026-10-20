@@ -18,7 +18,14 @@ from fwbg.research.runs import CHECK_PREFIX, add_run_arguments
 
 DENIAL_409 = {"code": "DUPLICATE_RUN", "status": 409, "message": "already ran"}
 DENIAL_422 = {"code": "MISSING_NOTE", "status": 422, "message": "a note is required"}
-ALLOWED = {"allowed": True, "denials": []}
+ALLOWED = {
+    "allowed": True,
+    "kind": "iteration",
+    "fingerprint": "sha256:" + "0" * 64,
+    "symbols": ["EURUSD"],
+    "window": {"start": None, "end": "2025-01-01"},
+    "denials": [],
+}
 
 
 class _FakeProcess:
@@ -228,9 +235,8 @@ def test_run_cancelled_during_the_preflight_is_not_spawned(api):
 
     def cancel(cmd):
         job_id = _job_id(cmd)
-        runs_mod._run_service.cancel(
-            runs_mod._active_jobs, runs_mod._active_jobs_lock, calls["results_dir"], job_id
-        )
+        response = client.post(f"/api/runs/{job_id}/cancel")
+        assert response.status_code == 200
 
     calls["during_preflight"] = cancel
 
@@ -240,9 +246,7 @@ def test_run_cancelled_during_the_preflight_is_not_spawned(api):
     assert resp.json()["detail"] == "run was cancelled before it started"
     assert calls["spawn"] == []
     job_id = _job_id(calls["preflight"][0])
-    assert runs_mod._active_jobs[job_id]["status"] == "cancelled"
-    state = json.loads((calls["results_dir"] / job_id / "run_state.json").read_text())
-    assert state["status"] == "cancelled"
+    assert client.get(f"/api/runs/{job_id}").json()["status"] == "cancelled"
 
 
 def test_gate_off_spawns_without_a_preflight(api, monkeypatch):

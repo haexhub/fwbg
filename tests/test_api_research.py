@@ -8,6 +8,7 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
+import fwbg.api.research as research_api
 from fwbg.api import create_app
 from fwbg.research import commands
 from fwbg.research.card import Status, load_card, replace_card
@@ -104,8 +105,14 @@ def test_post_needs_a_hypothesis_and_mechanism(client, missing):
 
 @pytest.mark.parametrize(
     "change",
-    [{"title": "  "}, {"hypothesis": " \n "}, {"mechanism": "\t"}, {"tags": []}],
-    ids=["blank-title", "blank-hypothesis", "blank-mechanism", "no-tags"],
+    [
+        {"title": "  "},
+        {"hypothesis": " \n "},
+        {"mechanism": "\t"},
+        {"tags": []},
+        {"tags": [" "]},
+    ],
+    ids=["blank-title", "blank-hypothesis", "blank-mechanism", "no-tags", "blank-tag"],
 )
 def test_post_refuses_blank_fields_and_no_tags(client, register, change):
     response = client.post("/api/research", json={**NEW, **change})
@@ -294,22 +301,22 @@ def test_verdict_needs_a_reopen_condition(client, card_id, register):
     assert load_card(register, card_id).status is Status.ACTIVE
 
 
-def test_reopen_activates_the_card_and_records_the_actor(client, card_id):
+def test_reopen_activates_the_card_and_records_the_actor(client, card_id, monkeypatch):
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 10, 21)
+
+    monkeypatch.setattr(research_api, "date", FixedDate)
     assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
-    before = date.today()
     response = client.post(
         f"/api/research/{card_id}/status",
         json={"status": "active", "reason": "new data", "actor": "agent-8"},
     )
-    after = date.today()
     assert response.status_code == 200
     card = response.json()["card"]
     assert card["status"] == "active"
-    # Either day: the request may cross midnight.
-    assert any(
-        f"- {day.isoformat()}: reopened from parked by agent-8: new data" in card["body"]
-        for day in (before, after)
-    )
+    assert "- 2026-10-21: reopened from parked by agent-8: new data" in card["body"]
 
 
 def test_reopen_refuses_a_reopen_condition(client, card_id):

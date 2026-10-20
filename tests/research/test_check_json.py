@@ -50,16 +50,17 @@ def test_check_result_lists_every_denial_with_its_status():
 
 
 def test_parse_check_output_finds_the_last_payload_among_noise():
+    allowed = check_result(decision=DECISION, symbols=("EURUSD",))
     stdout = "\n".join(
         [
             "Research gate: allowed (iteration)",
-            CHECK_PREFIX + '{"allowed": false, "denials": []}',
+            CHECK_PREFIX + json.dumps(check_result(DENIALS)),
             "progress 50%",
-            CHECK_PREFIX + '{"allowed": true}',
+            CHECK_PREFIX + json.dumps(allowed),
             "done",
         ]
     )
-    assert parse_check_output(stdout, 0) == {"allowed": True}
+    assert parse_check_output(stdout, 0) == allowed
 
 
 @pytest.mark.parametrize(
@@ -72,14 +73,25 @@ def test_parse_check_output_without_a_payload(stdout):
 
 @pytest.mark.parametrize(("allowed", "returncode"), [(True, 1), (True, 2), (False, 0), (False, 1)])
 def test_parse_check_output_rejects_a_payload_that_contradicts_the_exit_code(allowed, returncode):
-    stdout = CHECK_PREFIX + json.dumps({"allowed": allowed, "denials": []})
+    payload = (
+        check_result(decision=DECISION, symbols=("EURUSD",)) if allowed else check_result(DENIALS)
+    )
+    stdout = CHECK_PREFIX + json.dumps(payload)
     assert parse_check_output(stdout, returncode) is None
 
 
 @pytest.mark.parametrize(("allowed", "returncode"), [(True, 0), (False, 2)])
 def test_parse_check_output_accepts_a_payload_that_matches_the_exit_code(allowed, returncode):
-    stdout = CHECK_PREFIX + json.dumps({"allowed": allowed, "denials": []})
-    assert parse_check_output(stdout, returncode) == {"allowed": allowed, "denials": []}
+    payload = (
+        check_result(decision=DECISION, symbols=("EURUSD",)) if allowed else check_result(DENIALS)
+    )
+    stdout = CHECK_PREFIX + json.dumps(payload)
+    assert parse_check_output(stdout, returncode) == payload
+
+
+def test_parse_check_output_rejects_an_incomplete_allowed_payload():
+    stdout = CHECK_PREFIX + json.dumps({"allowed": True, "denials": []})
+    assert parse_check_output(stdout, 0) is None
 
 
 def research_run(tmp_path) -> ResearchRun:
