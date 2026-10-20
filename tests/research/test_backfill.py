@@ -458,3 +458,11 @@ def test_configs_of_recorded_runs_are_stored_again(runs, register):
     stored.unlink()
     apply_mapping(plans, runs, register, CRITERIA, TODAY)
     assert stored.read_bytes() == content
+
+
+def test_a_card_that_cannot_be_rendered_is_named_once(runs, register):
+    data = draft_mapping(runs)
+    data["cards"][1]["body"] = "## Verdict\r\n"
+    with pytest.raises(BackfillError, match="carriage return") as excinfo:
+        apply_mapping(parse_mapping(data), runs, register, CRITERIA, TODAY)
+    assert str(excinfo.value).count("S-0002") == 1

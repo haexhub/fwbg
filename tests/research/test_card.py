@@ -321,6 +321,11 @@ def test_render_refuses_a_card_that_would_not_read_back():
         render_card(make_card(created=datetime(2026, 10, 19, 10, 0)))
 
 
+def test_render_names_the_card_when_it_would_not_read_back():
+    with pytest.raises(CardError, match=r"^S-0007 would not read back: success_criteria\.x"):
+        render_card(make_card(success_criteria={"x": float("inf")}))
+
+
 def test_render_refuses_carriage_returns_in_the_body():
     with pytest.raises(CardError, match="carriage return"):
         render_card(make_card(body="## Hypothesis\r\nnotes\r\n"))
