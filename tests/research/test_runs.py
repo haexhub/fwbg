@@ -125,6 +125,16 @@ def test_used_run_id_is_refused(gate_register, results):
     assert denied.value.denials[0].code is DenialCode.RUN_ID_IN_USE
 
 
+@pytest.mark.parametrize("run_id", ["a/b", "..", ".", ""])
+def test_invalid_run_id_is_refused(gate_register, results, run_id):
+    run = ResearchRun(gate_register, run_id, results / "run-1", "S-0007", "x")
+    with pytest.raises(GateDenied) as denied:
+        run.before_run(METADATA, ["EURUSD"])
+    assert denial_codes(denied) == [DenialCode.INVALID_RUN_ID]
+    assert "invalid run id" in denied.value.denials[0].message
+    assert read_pending(gate_register) == []
+
+
 def test_run_id_in_the_ledger_is_refused(gate_register, results):
     append_trial(gate_register / LEDGER_FILENAME, make_trial(run_id="run-1"))
     run = ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "x")

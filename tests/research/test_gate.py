@@ -247,6 +247,7 @@ HTTP_STATUS = {
     "duplicate_fingerprint": 409,
     "register_unreadable": 409,
     "run_id_in_use": 409,
+    "invalid_run_id": 422,
 }
 
 

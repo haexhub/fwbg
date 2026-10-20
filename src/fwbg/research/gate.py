@@ -34,6 +34,7 @@ class DenialCode(str, Enum):
     DUPLICATE_FINGERPRINT = "duplicate_fingerprint"
     REGISTER_UNREADABLE = "register_unreadable"
     RUN_ID_IN_USE = "run_id_in_use"
+    INVALID_RUN_ID = "invalid_run_id"
 
     @property
     def http_status(self) -> int:
@@ -48,6 +49,7 @@ _REQUEST_ERRORS = frozenset(
         DenialCode.MISSING_NOTE,
         DenialCode.INVALID_WINDOW,
         DenialCode.INVALID_CONFIG,
+        DenialCode.INVALID_RUN_ID,
     }
 )
 
