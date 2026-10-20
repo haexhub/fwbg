@@ -15,6 +15,7 @@ from fwbg.research.ledger import LEDGER_FILENAME, TrialStatus, read_trials
 from fwbg.research.pending import read_pending
 from fwbg.research.runs import GATE_ENV, GateDenied
 from fwbg.results import storage
+from fwbg.utils import progress
 from tests.research.factories import make_run
 
 # ``fwbg.cli`` re-exports ``main()``, which shadows the module of the same name.
@@ -31,6 +32,8 @@ class FakeOptimizer:
         self.calls = []
         self.passed = False
         self.error = None
+        self.symbols = {"EURUSD": {}}
+        self.result = {"ok": True}
 
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
@@ -38,10 +41,10 @@ class FakeOptimizer:
         if kwargs["before_run"] is not None:
             metadata = kwargs["before_run"](metadata, ["EURUSD"])
         self.passed = True
-        make_run(self.results, kwargs["run_id"], symbols={"EURUSD": {}})
+        make_run(self.results, kwargs["run_id"], symbols=self.symbols)
         if self.error is not None:
             raise self.error
-        return {"ok": True}
+        return self.result
 
 
 @pytest.fixture
@@ -94,6 +97,28 @@ def test_gated_run_is_recorded(gated, monkeypatch):
     assert call["run_id"] == "r1" and call["before_run"] is not None
     assert call["strategy_metadata"]["pipeline"] == PIPELINE
     assert read_pending(gated.register) == []
+
+
+def test_failed_run_exits_1_and_is_recorded(gated, monkeypatch):
+    gated.fake.symbols, gated.fake.result = {}, None
+    with pytest.raises(SystemExit) as exited:
+        run_cli(
+            monkeypatch,
+            *("--strategy-file", str(gated.file), "--research-id", "S-0007"),
+            *("--note", "baseline", "--run-id", "r1"),
+        )
+    assert exited.value.code == 1
+    [trial] = trials(gated.register)
+    assert trial.run_id == "r1" and trial.status is TrialStatus.FAILED
+    assert read_pending(gated.register) == []
+
+
+def test_aborted_strategy_prompt_is_an_error(gated, monkeypatch):
+    monkeypatch.setattr(cli, "prompt_strategy_metadata", lambda: None)
+    with pytest.raises(SystemExit) as exited:
+        run_cli(monkeypatch, "--strategy", "--research-id", "S-0007", "--note", "x")
+    assert exited.value.code == 1
+    assert gated.fake.calls == []
 
 
 def test_check_reports_and_writes_nothing(gated, monkeypatch, capsys):
@@ -165,6 +190,7 @@ def optimizer(tmp_path, monkeypatch):
     monkeypatch.setenv(GATE_ENV, "on")
     for name in ("DATA_PATH", "TIMEFRAME", "tf_cfg", "OOS_SIZE", "WINDOW_SIZE", "RESAMPLE_FROM"):
         monkeypatch.setattr(data_config, name, getattr(data_config, name))
+    monkeypatch.setattr(progress, "_progress_queue", progress._progress_queue)
     monkeypatch.setenv("TIMEFRAME", "HOUR_1")  # delenv of an unset name would not restore it
     results = tmp_path / "results"
     monkeypatch.setattr(storage, "RESULTS_BASE_PATH", str(results))

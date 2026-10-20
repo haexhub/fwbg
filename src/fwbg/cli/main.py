@@ -887,14 +887,14 @@ def main():
         epilog="""
 Beispiele:
   python -m fwbg.cli portfolio --help                  # Monthly portfolio research
-  python -m fwbg.cli                                    # Standard-Run
+  python -m fwbg.cli --strategy-file x.json --research-id S-NNNN --note "was und warum"
+                                                        # Run: jeder Run braucht --research-id und --note
   python -m fwbg.cli -d "Test mit neuen Makros"        # Mit Beschreibung
   python -m fwbg.cli --strategy                        # Interaktive Strategie-Eingabe
   python -m fwbg.cli --strategy-file strategies/configs/x.json # Strategie aus Datei laden
   python -m fwbg.cli --list                            # Alle Runs anzeigen
   python -m fwbg.cli --list --tags baseline            # Nach Tags filtern
   python -m fwbg.cli --compare RUN1 RUN2               # Runs vergleichen
-  python -m fwbg.cli --no-save                         # Ohne Speichern
   python -m fwbg.cli --assets EURUSD,GBPUSD            # Nur bestimmte Assets
   python -m fwbg.cli --reverse-worst RUN_ID            # Schlechteste Strategien umkehren
 
@@ -1005,8 +1005,8 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
         if gate_enabled():
             if args.no_save:
                 parser.error("--no-save runs cannot be recorded in the research register")
-            if args.strategy_file and not strategy_metadata_loaded:
-                sys.exit(1)  # load_strategy_from_file already printed why
+            if (args.strategy_file or args.strategy) and not strategy_metadata_loaded:
+                sys.exit(1)  # loading failed or the prompt was aborted; never a default-config trial
             try:
                 strategy_metadata = prepare_metadata(strategy_metadata, data_config.TIMEFRAME)
             except (OSError, ValueError) as exc:
@@ -1016,10 +1016,10 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 get_research_dir(),
                 run_id,
                 Path(results_storage.RESULTS_BASE_PATH) / run_id,
-                args.research_id,
-                args.note,
-                args.reason,
-                args.check,
+                research_id=args.research_id,
+                note=args.note,
+                reason=args.reason,
+                check_only=args.check,
             )
         else:
             if args.check:

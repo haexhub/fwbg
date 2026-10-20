@@ -192,7 +192,12 @@ def _recorded_code(run_dir: Path) -> dict[str, Any]:
     return run_code(config) if isinstance(config, dict) else {}
 
 
+def valid_run_id(run_id: str) -> bool:
+    """A run id names a marker file and a run directory, so it must be a plain name."""
+    return bool(run_id) and "/" not in run_id and run_id not in (".", "..")
+
+
 def _path(research_dir: Path, run_id: str) -> Path:
-    if not run_id or "/" in run_id or run_id in (".", ".."):
+    if not valid_run_id(run_id):
         raise PendingError(f"invalid run id {run_id!r}")
     return research_dir / STAGING / f"{run_id}.json"

@@ -33,6 +33,7 @@ from fwbg.research.pending import (
     finish,
     live_runs,
     recover_stale,
+    valid_run_id,
     write_pending,
 )
 from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register, register_lock
@@ -170,6 +171,10 @@ class ResearchRun:
 
     def _run_denials(self, decision: Decision, trials: Sequence[Trial]) -> list[Denial]:
         """A run id is used once; an identical configuration must not run twice at once."""
+        if not valid_run_id(self.run_id):
+            # Checked first: every check below uses the run id as a file name.
+            message = f"invalid run id {self.run_id!r}; use a plain name without '/'"
+            return [Denial(DenialCode.INVALID_RUN_ID, message)]
         denials = []
         if (self.run_dir / "config.json").exists() or (self.run_dir / "grid_details").exists():
             denials.append(
