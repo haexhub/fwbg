@@ -110,8 +110,12 @@ class Trial:
         return json.dumps(record, allow_nan=False)
 
     @classmethod
-    def from_json(cls, line: str) -> Trial:
-        """Parse one stored ledger line; raise :class:`LedgerError` on any defect."""
+    def from_json(cls, line: str, *, numbered: bool = True) -> Trial:
+        """Parse one stored ledger line; raise :class:`LedgerError` on any defect.
+
+        With *numbered* false the line is a trial before its append (a pending
+        run): its ``"trial"`` must be null and ``trial_id`` stays ``None``.
+        """
         try:
             record = json.loads(line, parse_constant=_reject_constant)
         except (ValueError, RecursionError) as exc:
@@ -124,8 +128,10 @@ class Trial:
         missing = sorted(_FIELDS - record.keys())
         if missing:
             raise LedgerError(f"missing keys: {', '.join(missing)}")
+        if not numbered and record["trial"] is not None:
+            raise LedgerError(f"trial: expected null before the append, got {record['trial']!r}")
         return cls(
-            trial_id=_trial_id(record["trial"]),
+            trial_id=_trial_id(record["trial"]) if numbered else None,
             strategy=_strategy(record["strategy"]),
             run_id=_optional_text(record["run_id"], "run_id"),
             kind=_choice(TrialKind, record["kind"], "kind"),
