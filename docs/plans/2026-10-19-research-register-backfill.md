@@ -36,12 +36,20 @@ pytest. No new dependencies.
    replaces the design's earlier rule that strategies whose runs reach the
    present are contaminated. New iterations on such a card stay before the
    cutoff.
-2. **What counts as a legacy trial.** A run is `ok` when at least one symbol
-   has `grid_details/<SYMBOL>/unified_metrics.json`; its metrics come from
-   there for **every** evaluated symbol (not only the reported elite), with
-   `p_value` and `fold_stability` added from `results.json` where the symbol
-   was reported. Otherwise the run is `failed` (not counted). Runs named
-   `m<N>_smoke…` (fwbg-agents smoke tests) are `smoke` (not counted).
+2. **What counts as a legacy trial** (corrected after review). Each symbol
+   has its own result file — `grid_details/<SYMBOL>.json` (runs before
+   2026-03-02) or `grid_details/<SYMBOL>/config.json` — whose `status`
+   decides: `ok`, `no_edge`, `not_significant` and `no_unified_trades`
+   count as evaluated (the last one conservatively, for N); `error` and
+   `no_successful_folds` do not; any other status stops the scan. A run is
+   `ok` when at least one symbol was evaluated, otherwise `failed` (not
+   counted). Metrics come from `unified_metrics.json` where it exists, else
+   from the result file's `metrics` / `holdout_metrics` /
+   `selected_metrics`; `p_value` and `fold_stability` from the per-symbol
+   files, with the `results.json` elite list only as a fallback. Runs named
+   `m<N>_smoke…` (fwbg-agents smoke tests) are `smoke` (not counted). The
+   first version keyed on `unified_metrics.json` alone and would have
+   recorded 20 completed early runs as failed.
 3. **Legacy fingerprints use the step-1 definition.** Metadata from
    `strategy.json`, timeframe canonicalised (falling back to the run's
    `config.json` timeframe), presets resolved, symbols from `grid_details/`.
@@ -55,21 +63,28 @@ pytest. No new dependencies.
    differ. Duplicate protection applies to the same configuration over the
    same window.
 5. **Legacy cards are `parked` or `rejected` and frozen once written.**
-   Re-applying keeps existing cards and refuses a mapping whose cutoff or
-   criteria for an existing card differ. A later run that would move a
-   card's cutoff belongs on a new card. `rejected` only where a conclusion
-   is documented; everything else is `parked`.
+   Re-applying keeps existing cards and refuses a mapping whose cutoff,
+   criteria, title, slug, status, tags or body for an existing card differ —
+   after the first apply the card files, not the mapping, hold these. A
+   mapping that regroups runs or studies already in the ledger is refused;
+   changing the grouping after an apply means resetting the (unpushed)
+   register. `rejected` only where a conclusion is documented; everything
+   else is `parked`. A per-card `criteria` override is merged into the
+   template (`{**template, **override}`), it does not replace it.
 6. **Studies outside the run system** become study trials:
    `run_id = "study:<card>:<variant>"`, fingerprint
    `digest({"study", "variant", "symbols"})`, counted like legacy runs.
 7. **The mapping file is the reviewed artefact.** `scan` drafts one card per
    strategy name; the operator regroups it. It is kept in the register's
    `reports/` for provenance.
-8. **Real-data dry run (2026-10-19, prototype of this plan, scratch
-   register):** 102 runs → 68 counted, 31 failed, 3 smoke, 0 unresolvable,
-   89 distinct configurations, 128 counted symbol evaluations; the draft has
-   41 cards; a second apply adds nothing. The code below is that prototype
-   (300 tests green, ruff, black and mypy clean).
+8. **Real-data dry run (2026-10-20, merged code, scratch register):**
+   102 runs → 89 counted, 10 failed, 3 smoke, 0 unresolvable (20 with presets
+   resolved from the workspace), 93 distinct configurations, 164 counted
+   symbol evaluations (111 with a p-value); the draft has 41 cards; the first
+   apply writes 41 cards and 102 trials, a second apply adds nothing. The
+   code blocks below are the first iteration (a prototype); each task was
+   amended after code review — see the notes at each task. The source of
+   truth is the code on the branch.
 
 ## Before you start
 
@@ -85,6 +100,12 @@ pytest. No new dependencies.
 ---
 
 ### Task 1: Card writer
+
+> **Amended after code review (done).** `write_card` creates the file
+> exclusively (`open("x")`) and removes a partial file after a failed write;
+> `SLUG_RE` caps slugs at 60 characters; `render_card` refuses `\r` in the
+> body and does not wrap long lines; tests pin the round-trip guard, the
+> slug boundaries and the exact card layout.
 
 **Files:** Modify `src/fwbg/research/card.py`, `tests/research/test_card.py`.
 
@@ -245,6 +266,14 @@ index 51cd596..5ff8d99 100644
 ---
 
 ### Task 2: Register lock, commits and config store
+
+> **Amended after code review (done).** `commit_register` stages with only
+> the user's global excludes disabled (the register's `.gitignore` still
+> applies), commits exactly the changed names (works with an empty
+> `configs/`/`reports/`, commits renames and deletions, never other staged
+> work) and refuses empty `paths`; a git timeout sends SIGTERM first so no
+> `index.lock` is left behind; `store_config` writes atomically; tests pin
+> that the lock excludes other holders.
 
 **Files:** Modify `src/fwbg/research/repo.py`, `tests/research/test_repo.py`.
 
@@ -408,6 +437,11 @@ index ccabf7d..3223b0b 100644
 ---
 
 ### Task 3: Legacy run scanner
+
+> **Amended after code review (done).** The scanner reads all three run
+> formats and decides per symbol from its status field (decision 2); every
+> error names the run; symlinks are skipped; `LegacyRun` records
+> `presets_from_workspace`.
 
 **Files:** Create `src/fwbg/research/legacy.py`, `tests/research/test_legacy.py`;
 modify `tests/research/factories.py`.
@@ -818,6 +852,14 @@ def _window(strategy: Mapping[str, Any]) -> dict[str, str | None]:
 ---
 
 ### Task 4: Backfill
+
+> **Amended after code review (done).** `apply_mapping` validates the whole
+> mapping (cards, trials, ledger consistency, no future dates) before the
+> first write and again under the lock; regrouping after an apply, duplicate
+> study variants and edits to existing cards are refused; criteria
+> overrides merge with the template. The mapping side moved to
+> `fwbg.research.mapping` (`load_mapping` refuses duplicate YAML keys);
+> `backfill.py` keeps `apply_mapping`.
 
 **Files:** Create `src/fwbg/research/backfill.py`, `tests/research/test_backfill.py`.
 
@@ -1431,6 +1473,13 @@ again skips what was recorded and commits the rest.
 
 ### Task 5: `fwbg research` CLI
 
+> **Amended after code review (done).** Operator mistakes (malformed or
+> missing mapping, apply before init, missing `--results`) end in `Error: …`
+> on stderr with exit 1, never a traceback; `scan` does not create the
+> register directory and refuses to overwrite before scanning; the draft
+> keeps multi-line prose as YAML literal blocks; `scan` and `apply` warn
+> about runs whose `progress.json` still says `starting`/`running`.
+
 **Files:** Create `src/fwbg/research/cli.py`, `tests/research/test_cli.py`;
 modify `src/fwbg/cli/main.py` (route `fwbg research …` like `fwbg portfolio …`).
 
@@ -1611,9 +1660,11 @@ compare failures with `origin/develop` (six environment failures are known:
 
 **Step 2: Real-data dry run, without touching the real register.** Point
 `FWBG_RESEARCH_DIR` and `GIT_CONFIG_GLOBAL` (a temp file with a user name and
-email) at scratch locations, then run `fwbg research init`,
-`fwbg research backfill scan --out <scratch>/mapping.yaml` and
-`fwbg research backfill apply <scratch>/mapping.yaml` twice. Expect the
+email) at scratch locations, then run (from the worktree, so the branch
+code is used — the installed `fwbg` script points at the primary checkout)
+`PYTHONPATH=src $PY -m fwbg.cli research init`,
+`… research backfill scan --out <scratch>/mapping.yaml` and
+`… research backfill apply <scratch>/mapping.yaml` twice. Expect the
 numbers from decision 8 (or more, if new runs exist) and a second apply that
 adds nothing. Confirm `~/fwbg/research` was not created.
 
@@ -1627,6 +1678,13 @@ and commit `docs: mark research register backfill as implemented`.
 
 Done together with the operator after the branch is merged; nothing here is
 committed to this repository.
+
+**Preconditions:** stop the API and any active runs between `scan` and
+`apply` (`scan`/`apply` warn about runs whose `progress.json` still says
+`running`; on 2026-10-20 seven such files were stale leftovers). Agree the
+grouping completely before the first `apply`: afterwards card text lives in
+the card files, and regrouping requires resetting the register (possible
+only while it has not been pushed).
 
 1. **Consolidate run directories.** Copy runs that exist only in the
    repo-local `test_results/` (the `alt-*` alternative-data runs and the
