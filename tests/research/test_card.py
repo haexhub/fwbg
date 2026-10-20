@@ -211,37 +211,44 @@ def test_criteria_hash_ignores_key_order_but_not_values():
 
 
 def write_card_file(research_dir: Path, filename: str, text: str = CARD) -> None:
+    """Write a card fixture under the register strategies directory."""
     folder = research_dir / "strategies"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / filename).write_text(text, encoding="utf-8")
 
 
 def test_load_card_by_id(tmp_path):
+    """Load a slugged card file by its research ID."""
     write_card_file(tmp_path, "S-0007-cusum-continuation.md")
     assert load_card(tmp_path, "S-0007").title == "CUSUM event continuation"
 
 
 def test_load_card_without_slug(tmp_path):
+    """Load a card whose filename contains only its research ID."""
     write_card_file(tmp_path, "S-0007.md")
     assert load_card(tmp_path, "S-0007").id == "S-0007"
 
 
 def test_load_card_tolerates_byte_order_mark(tmp_path):
+    """Accept a UTF-8 byte order mark before card front matter."""
     write_card_file(tmp_path, "S-0007.md", "\ufeff" + CARD)
     assert load_card(tmp_path, "S-0007").id == "S-0007"
 
 
 def test_load_card_returns_none_when_absent(tmp_path):
+    """Return None when no card file matches the requested ID."""
     write_card_file(tmp_path, "S-0007-cusum-continuation.md")
     assert load_card(tmp_path, "S-0008") is None
 
 
 def test_load_card_does_not_match_longer_ids(tmp_path):
+    """Keep a research ID from matching a longer ID with the same prefix."""
     write_card_file(tmp_path, "S-00071-other.md")
     assert load_card(tmp_path, "S-0007") is None
 
 
 def test_load_card_refuses_ambiguous_ids(tmp_path):
+    """Reject multiple slugged card files for the same research ID."""
     write_card_file(tmp_path, "S-0007-a.md")
     write_card_file(tmp_path, "S-0007-b.md")
     with pytest.raises(CardError, match="ambiguous"):
@@ -249,6 +256,7 @@ def test_load_card_refuses_ambiguous_ids(tmp_path):
 
 
 def test_load_card_refuses_bare_and_slugged_file_for_same_id(tmp_path):
+    """Reject a bare card filename alongside a slugged file for the same ID."""
     write_card_file(tmp_path, "S-0007.md")
     write_card_file(tmp_path, "S-0007-x.md")
     with pytest.raises(CardError, match="ambiguous"):
@@ -256,12 +264,14 @@ def test_load_card_refuses_bare_and_slugged_file_for_same_id(tmp_path):
 
 
 def test_load_card_refuses_mismatched_id(tmp_path):
+    """Reject a card whose declared ID differs from the requested filename ID."""
     write_card_file(tmp_path, "S-0008-copy.md")
     with pytest.raises(CardError, match="declares id S-0007"):
         load_card(tmp_path, "S-0008")
 
 
 def test_load_card_names_file_of_malformed_card(tmp_path):
+    """Include the card filename when reporting malformed front matter."""
     write_card_file(tmp_path, "S-0007-broken.md", CARD.replace("status: active", "status: maybe"))
     with pytest.raises(CardError, match=r"^S-0007-broken\.md: "):
         load_card(tmp_path, "S-0007")
@@ -281,16 +291,19 @@ def test_load_card_refuses_malformed_id(tmp_path):
 
 
 def test_render_round_trips_through_parse():
+    """Preserve all card fields when rendering and parsing an amended card."""
     card = parse_card(CARD)
     assert parse_card(render_card(card)) == card
 
 
 def test_render_round_trips_awkward_titles_and_no_amendments():
+    """Preserve punctuation and Unicode in a card with no tags or amendments."""
     card = make_card(title='ORB: 15m ä "quoted" #1', tags=(), body="")
     assert parse_card(render_card(card)) == card
 
 
 def test_render_writes_the_committed_card_layout():
+    """Verify the exact Markdown and YAML layout written for a card."""
     card = make_card(title="ORB ä", tags=("a",), body="## Hypothesis\n")
     assert render_card(card) == (
         "---\n"
@@ -312,26 +325,31 @@ def test_render_writes_the_committed_card_layout():
 
 
 def test_render_keeps_long_titles_on_one_line():
+    """Prevent YAML wrapping from splitting long card titles."""
     title = " ".join(["word"] * 40)
     assert f"\ntitle: {title}\n" in render_card(make_card(title=title))
 
 
 def test_render_refuses_a_card_that_would_not_read_back():
+    """Reject a card whose datetime would change when parsed back as a date."""
     with pytest.raises(CardError, match="would not read back"):
         render_card(make_card(created=datetime(2026, 10, 19, 10, 0)))
 
 
 def test_render_names_the_card_when_it_would_not_read_back():
+    """Identify the card and criterion when rendering rejects nonfinite criteria."""
     with pytest.raises(CardError, match=r"^S-0007 would not read back: success_criteria\.x"):
         render_card(make_card(success_criteria={"x": float("inf")}))
 
 
 def test_render_refuses_carriage_returns_in_the_body():
+    """Reject prose whose carriage returns would change during a file round trip."""
     with pytest.raises(CardError, match="carriage return"):
         render_card(make_card(body="## Hypothesis\r\nnotes\r\n"))
 
 
 def test_write_card_writes_once_and_never_overwrites(tmp_path):
+    """Write a readable card once and refuse reuse of its ID with another slug."""
     card = make_card()
     (tmp_path / "research" / "strategies").mkdir(parents=True)
     path = write_card(tmp_path / "research", card, "cusum-continuation")
@@ -342,6 +360,7 @@ def test_write_card_writes_once_and_never_overwrites(tmp_path):
 
 
 def test_write_card_never_overwrites_an_existing_file(tmp_path, monkeypatch):
+    """Protect an existing file even when the preliminary card lookup misses it."""
     monkeypatch.setattr("fwbg.research.card.load_card", lambda *_: None)
     target = tmp_path / "strategies" / "S-0007-cusum-continuation.md"
     target.parent.mkdir()
@@ -352,26 +371,32 @@ def test_write_card_never_overwrites_an_existing_file(tmp_path, monkeypatch):
 
 
 def test_write_card_removes_a_partial_file_after_a_failed_write(tmp_path, monkeypatch):
+    """Remove partial card bytes after a simulated disk-full write failure."""
     real_open = Path.open
 
     class DiskFull:
         """Writes a few bytes, then fails like a full disk."""
 
         def __init__(self, handle):
+            """Keep the underlying file handle for the simulated disk failure."""
             self.handle = handle
 
         def __enter__(self):
+            """Return the failing writer when entering its file context."""
             return self
 
         def __exit__(self, *_):
+            """Close the underlying file handle when leaving the context."""
             self.handle.close()
 
         def write(self, text):
+            """Flush a partial write before raising a disk-full error."""
             self.handle.write(text[:4])
             self.handle.flush()
             raise OSError(errno.ENOSPC, "No space left on device")
 
     def open_disk_full(path, mode="r", *args, **kwargs):
+        """Wrap exclusively created files with a writer that simulates disk exhaustion."""
         handle = real_open(path, mode, *args, **kwargs)
         return DiskFull(handle) if mode == "x" else handle
 
@@ -399,6 +424,7 @@ def test_write_card_removes_a_partial_file_after_a_failed_write(tmp_path, monkey
     ],
 )
 def test_write_card_rejects_invalid_slug(tmp_path, slug):
+    """Reject unsafe or noncanonical slugs before creating a card file."""
     (tmp_path / "strategies").mkdir()
     with pytest.raises(CardError, match="invalid slug"):
         write_card(tmp_path, make_card(), slug)
@@ -413,13 +439,16 @@ def test_write_card_rejects_invalid_slug(tmp_path, slug):
     ],
 )
 def test_slugify(title, slug):
+    """Convert representative strategy titles into stable lowercase ASCII slugs."""
     assert slugify(title) == slug
 
 
 def test_slugify_caps_at_60_characters_without_a_trailing_hyphen():
+    """Truncate slugs to sixty characters and strip a trailing separator."""
     assert slugify("a" * 59 + " bc") == "a" * 59
 
 
 def test_slugify_refuses_titles_without_ascii_words():
+    """Reject titles that cannot produce a nonempty ASCII slug."""
     with pytest.raises(CardError, match="empty slug"):
         slugify("äöü")

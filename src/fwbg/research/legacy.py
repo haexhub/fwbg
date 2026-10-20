@@ -139,6 +139,7 @@ def load_run(run_dir: Path, preset_base: Path) -> LegacyRun:
 
 
 def _read_object(path: Path, run_dir: Path) -> dict[str, Any]:
+    """Read a JSON object or raise a legacy error naming its run-relative path."""
     where = f"{run_dir.name}/{path.relative_to(run_dir).as_posix()}"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -150,6 +151,7 @@ def _read_object(path: Path, run_dir: Path) -> dict[str, Any]:
 
 
 def _optional_object(path: Path, run_dir: Path) -> dict[str, Any] | None:
+    """Read an optional JSON object, returning None only when its file is absent."""
     return _read_object(path, run_dir) if path.exists() else None
 
 
@@ -186,6 +188,7 @@ def _metrics(
 
 
 def _evaluated(status: object, run_id: str, symbol: str) -> bool:
+    """Classify known symbol statuses and reject unknown trial-counting semantics."""
     if isinstance(status, str) and status in EVALUATED_STATUSES:
         return True
     if isinstance(status, str) and status in NOT_EVALUATED_STATUSES:
@@ -200,6 +203,7 @@ def _symbol_metrics(
     result: Mapping[str, Any],
     elite: Mapping[str, Any],
 ) -> dict[str, float | int | None]:
+    """Merge historical metric formats, preferring per-symbol unified results."""
     unified = fold = None
     if source.folder is not None:
         unified = _optional_object(source.folder / "unified_metrics.json", run_dir)
@@ -233,6 +237,7 @@ def _symbol_metrics(
 
 
 def _elite_by_symbol(run_dir: Path) -> dict[str, Mapping[str, Any]]:
+    """Index valid elite result entries by their uppercase symbol names."""
     entries = (_optional_object(run_dir / "results.json", run_dir) or {}).get("elite_results")
     if not isinstance(entries, list):
         return {}
@@ -244,6 +249,7 @@ def _elite_by_symbol(run_dir: Path) -> dict[str, Mapping[str, Any]]:
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
+    """Return a mapping unchanged, or an empty mapping for any other value."""
     return value if isinstance(value, Mapping) else {}
 
 
@@ -257,6 +263,7 @@ def _number(value: object) -> float | int | None:
 
 
 def _first_number(*values: object) -> float | int | None:
+    """Return the first finite numeric candidate, or None if none qualifies."""
     for value in values:
         number = _number(value)
         if number is not None:
@@ -300,6 +307,7 @@ def _configuration(
 
 
 def _code(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract the recorded Git provenance fields supported by the ledger."""
     git = config.get("git")
     if not isinstance(git, dict):
         return {}
@@ -307,6 +315,7 @@ def _code(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _window(strategy: Mapping[str, Any]) -> dict[str, str | None]:
+    """Extract textual date bounds, using None for absent or nontext bounds."""
     return {
         "start": (
             strategy.get("start_date") if isinstance(strategy.get("start_date"), str) else None

@@ -42,6 +42,7 @@ def test_missing_ledger_cannot_be_appended_to(tmp_path):
 
 
 def test_missing_ledger_message_names_the_init_command(tmp_path):
+    """Include the research init command in errors for a missing ledger."""
     with pytest.raises(LedgerError, match="run 'fwbg research init' for a new register"):
         read_trials(tmp_path / "trials.jsonl")
 

@@ -10,6 +10,7 @@ from tests.research.factories import make_run
 
 @pytest.fixture
 def preset_base(tmp_path):
+    """Create a workspace preset tree containing a minimal pipeline."""
     base = tmp_path / "workspace-strategies"
     (base / "configs").mkdir(parents=True)
     (base / "pipelines").mkdir()
@@ -20,6 +21,7 @@ def preset_base(tmp_path):
 
 
 def test_reads_metrics_status_code_and_window(tmp_path, preset_base):
+    """Read supported metrics, trial status, Git provenance and date bounds."""
     run_dir = make_run(
         tmp_path,
         "run-1",
@@ -44,6 +46,7 @@ def test_reads_metrics_status_code_and_window(tmp_path, preset_base):
 
 
 def test_every_evaluated_symbol_counts_not_only_the_elite(tmp_path, preset_base):
+    """Record metrics for every evaluated symbol, including those outside the elite list."""
     run = load_run(
         make_run(
             tmp_path,
@@ -57,6 +60,7 @@ def test_every_evaluated_symbol_counts_not_only_the_elite(tmp_path, preset_base)
 
 
 def test_run_without_symbol_results_is_failed(tmp_path, preset_base):
+    """Mark a run failed when no symbol has stored evaluation results."""
     run = load_run(make_run(tmp_path, "run-1", symbols={"GOLD": None}), preset_base)
     assert run.status is TrialStatus.FAILED
     assert run.metrics == {}
@@ -64,6 +68,7 @@ def test_run_without_symbol_results_is_failed(tmp_path, preset_base):
 
 
 def test_february_symbol_files_are_read(tmp_path, preset_base):
+    """Read February flat symbol files and their historical metric fields."""
     run_dir = make_run(
         tmp_path,
         "run-1",
@@ -91,6 +96,7 @@ def test_february_symbol_files_are_read(tmp_path, preset_base):
 
 
 def test_early_march_symbol_config_and_fold_results_are_read(tmp_path, preset_base):
+    """Combine early March symbol config metrics with fold result statistics."""
     run_dir = make_run(
         tmp_path,
         "run-1",
@@ -115,6 +121,7 @@ def test_early_march_symbol_config_and_fold_results_are_read(tmp_path, preset_ba
 
 
 def test_later_format_takes_values_from_the_symbol_files(tmp_path, preset_base):
+    """Prefer later unified metrics while retaining symbol and fold statistics."""
     run_dir = make_run(
         tmp_path,
         "run-1",
@@ -136,6 +143,7 @@ def test_later_format_takes_values_from_the_symbol_files(tmp_path, preset_base):
 
 
 def test_run_whose_symbols_all_failed_is_failed(tmp_path, preset_base):
+    """Mark runs failed when every symbol has a known failure status."""
     run_dir = make_run(
         tmp_path,
         "run-1",
@@ -148,6 +156,7 @@ def test_run_whose_symbols_all_failed_is_failed(tmp_path, preset_base):
 
 
 def test_only_evaluated_symbols_get_metrics_but_all_are_fingerprinted(tmp_path, preset_base):
+    """Exclude failed symbol metrics while retaining all symbols in the config fingerprint."""
     run_dir = make_run(
         tmp_path,
         "run-1",
@@ -164,6 +173,7 @@ def test_only_evaluated_symbols_get_metrics_but_all_are_fingerprinted(tmp_path, 
     ["insufficient_data", "no_data", "no_signal_source"],
 )
 def test_known_non_evaluated_statuses_are_ignored(tmp_path, preset_base, status):
+    """Exclude known unevaluated symbols while retaining an evaluated symbol's metrics."""
     run = load_run(
         make_run(
             tmp_path,
@@ -180,6 +190,7 @@ def test_known_non_evaluated_statuses_are_ignored(tmp_path, preset_base, status)
 
 
 def test_no_unified_trades_counts_as_evaluated(tmp_path, preset_base):
+    """Count a no-unified-trades symbol as evaluated rather than failed."""
     run_dir = make_run(tmp_path, "run-1", symbols={"DAX": {"status": "no_unified_trades"}})
     run = load_run(run_dir, preset_base)
     assert run.status is TrialStatus.OK
@@ -188,12 +199,14 @@ def test_no_unified_trades_counts_as_evaluated(tmp_path, preset_base):
 
 @pytest.mark.parametrize("status", ["mystery", None])
 def test_unknown_symbol_status_is_a_legacy_run_error(tmp_path, preset_base, status):
+    """Reject unknown symbol statuses instead of guessing whether they count."""
     run_dir = make_run(tmp_path, "run-1", symbols={"GOLD": {"status": status}})
     with pytest.raises(LegacyRunError, match="run-1.*GOLD"):
         load_run(run_dir, preset_base)
 
 
 def test_symbol_file_values_win_over_the_elite_list(tmp_path, preset_base):
+    """Prefer symbol statistics over conflicting aggregate elite values."""
     run_dir = make_run(
         tmp_path,
         "run-1",
@@ -211,6 +224,7 @@ def test_symbol_file_values_win_over_the_elite_list(tmp_path, preset_base):
 
 
 def test_null_result_blocks_are_ignored(tmp_path, preset_base):
+    """Ignore null result blocks while collecting available metrics."""
     run_dir = make_run(
         tmp_path,
         "run-1",
@@ -229,6 +243,7 @@ def test_null_result_blocks_are_ignored(tmp_path, preset_base):
 
 
 def test_lowercase_symbol_directories_are_recorded_upper_case(tmp_path, preset_base):
+    """Normalise lowercase directory names into uppercase recorded symbols."""
     run_dir = make_run(tmp_path, "run-1", symbols={"gold": {"unified": {"sharpe": 1.0}}})
     run = load_run(run_dir, preset_base)
     assert run.symbols == ("GOLD",)
@@ -236,6 +251,7 @@ def test_lowercase_symbol_directories_are_recorded_upper_case(tmp_path, preset_b
 
 
 def test_a_symbol_directory_wins_over_a_symbol_file(tmp_path, preset_base):
+    """Prefer a symbol directory when a flat historical file also exists."""
     run_dir = make_run(
         tmp_path,
         "run-1",
@@ -248,6 +264,7 @@ def test_a_symbol_directory_wins_over_a_symbol_file(tmp_path, preset_base):
 
 
 def test_symlinked_symbol_entries_are_skipped(tmp_path, preset_base):
+    """Exclude symlinked symbol entries from legacy results."""
     run_dir = make_run(tmp_path, "run-1")
     details = run_dir / "grid_details"
     (details / "DAX").symlink_to(details / "GOLD", target_is_directory=True)
@@ -255,16 +272,19 @@ def test_symlinked_symbol_entries_are_skipped(tmp_path, preset_base):
 
 
 def test_agent_smoke_runs_are_smoke(tmp_path, preset_base):
+    """Classify recognised agent smoke names as smoke trials."""
     run = load_run(make_run(tmp_path, "run-1", name="m3_smoke_20260623_231634"), preset_base)
     assert run.kind is TrialKind.SMOKE
 
 
 def test_names_starting_with_m_stay_legacy(tmp_path, preset_base):
+    """Keep ordinary names beginning with m classified as legacy trials."""
     run = load_run(make_run(tmp_path, "run-1", name="momentum-test"), preset_base)
     assert run.kind is TrialKind.LEGACY
 
 
 def test_non_finite_metrics_become_null(tmp_path, preset_base):
+    """Normalise nonfinite metric values to ledger-compatible nulls."""
     run_dir = make_run(tmp_path, "run-1")
     (run_dir / "grid_details" / "GOLD" / "unified_metrics.json").write_text(
         '{"sharpe": NaN, "calmar": Infinity, "trades": true}', encoding="utf-8"
@@ -279,22 +299,26 @@ def test_non_finite_metrics_become_null(tmp_path, preset_base):
 
 
 def test_timeframe_aliases_share_a_fingerprint(tmp_path, preset_base):
+    """Canonicalise timeframe aliases to the same configuration fingerprint."""
     a = load_run(make_run(tmp_path, "run-a", timeframe="DAY"), preset_base)
     b = load_run(make_run(tmp_path, "run-b", timeframe="DAY_1"), preset_base)
     assert a.fingerprint == b.fingerprint
 
 
 def test_missing_timeframe_falls_back_to_the_runs_effective_timeframe(tmp_path, preset_base):
+    """Use the run config timeframe when strategy metadata omits it."""
     run_dir = make_run(tmp_path, "run-1", timeframe=None)
     assert load_run(run_dir, preset_base).config["strategy"]["timeframe"] == "HOUR_1"
 
 
 def test_strategy_timeframe_wins_over_the_config_timeframe(tmp_path, preset_base):
+    """Prefer the strategy timeframe over a conflicting run config value."""
     run_dir = make_run(tmp_path, "run-1", timeframe="HOUR_4", config_timeframe="MINUTE_15")
     assert load_run(run_dir, preset_base).config["strategy"]["timeframe"] == "HOUR_4"
 
 
 def test_presets_at_the_recorded_directory_take_priority(tmp_path, preset_base):
+    """Resolve presets from their recorded location before trying the workspace."""
     old = tmp_path / "old-strategies"
     (old / "configs").mkdir(parents=True)
     (old / "pipelines").mkdir()
@@ -312,6 +336,7 @@ def test_presets_at_the_recorded_directory_take_priority(tmp_path, preset_base):
 
 
 def test_presets_resolve_from_the_workspace_when_the_old_directory_is_gone(tmp_path, preset_base):
+    """Use workspace presets and flag the fallback when recorded presets are missing."""
     run_dir = make_run(
         tmp_path / "results",
         "run-1",
@@ -326,6 +351,7 @@ def test_presets_resolve_from_the_workspace_when_the_old_directory_is_gone(tmp_p
 def test_presets_without_a_recorded_directory_ignore_the_working_directory(
     tmp_path, preset_base, monkeypatch
 ):
+    """Resolve unlocated presets from the workspace rather than the process directory."""
     elsewhere = tmp_path / "elsewhere"
     (elsewhere / "pipelines").mkdir(parents=True)
     (elsewhere / "pipelines" / "orb_simple_v1.json").write_text(
@@ -339,6 +365,7 @@ def test_presets_without_a_recorded_directory_ignore_the_working_directory(
 
 
 def test_unresolvable_presets_get_a_unique_stand_in(tmp_path, preset_base):
+    """Give unresolved runs distinct fingerprints without a stored canonical config."""
     extra = {"pipeline": "missing_preset", "_strategy_dir": "/nonexistent/configs"}
     a = load_run(make_run(tmp_path, "run-a", strategy_extra=extra), preset_base)
     b = load_run(make_run(tmp_path, "run-b", strategy_extra=extra), preset_base)
@@ -349,6 +376,7 @@ def test_unresolvable_presets_get_a_unique_stand_in(tmp_path, preset_base):
 
 
 def test_non_finite_strategy_values_get_a_stand_in(tmp_path, preset_base):
+    """Use an unresolved fingerprint when strategy values cannot be canonicalised."""
     run_dir = make_run(tmp_path, "run-1", strategy_extra={"cost_multiplier": float("nan")})
     run = load_run(run_dir, preset_base)
     assert run.config is None and run.unresolved is not None
@@ -356,6 +384,7 @@ def test_non_finite_strategy_values_get_a_stand_in(tmp_path, preset_base):
 
 
 def test_run_date_comes_from_the_timestamp(tmp_path, preset_base):
+    """Derive the legacy run date from the recorded config timestamp."""
     run = load_run(make_run(tmp_path, "run-1", timestamp="2026-02-13T16:37:45"), preset_base)
     assert run.run_date == date(2026, 2, 13)
     assert run.ts == "2026-02-13T16:37:45"
@@ -363,6 +392,7 @@ def test_run_date_comes_from_the_timestamp(tmp_path, preset_base):
 
 @pytest.mark.parametrize("timestamp", ["2026-W10-1T00:00", "soon", "2026-13-45T00:00"])
 def test_unusable_timestamp_is_a_legacy_run_error(tmp_path, preset_base, timestamp):
+    """Reject missing or invalid run timestamps with a legacy error."""
     run_dir = make_run(tmp_path, "run-1", timestamp=timestamp)
     with pytest.raises(LegacyRunError, match="run-1"):
         load_run(run_dir, preset_base)
@@ -370,6 +400,7 @@ def test_unusable_timestamp_is_a_legacy_run_error(tmp_path, preset_base, timesta
 
 @pytest.mark.parametrize("content", ["{broken", "[]", '{"timeframe": "HOUR_1"}'])
 def test_unusable_config_is_a_legacy_run_error(tmp_path, preset_base, content):
+    """Report unreadable or malformed config files as legacy errors."""
     run_dir = make_run(tmp_path, "run-1")
     (run_dir / "config.json").write_text(content, encoding="utf-8")
     with pytest.raises(LegacyRunError, match="run-1/config.json"):
@@ -377,6 +408,7 @@ def test_unusable_config_is_a_legacy_run_error(tmp_path, preset_base, content):
 
 
 def test_non_object_symbol_file_is_a_legacy_run_error(tmp_path, preset_base):
+    """Reject symbol files whose JSON is not an object."""
     run_dir = make_run(tmp_path, "run-1")
     (run_dir / "grid_details" / "GOLD" / "config.json").write_text("[]", encoding="utf-8")
     with pytest.raises(LegacyRunError, match="run-1/grid_details/GOLD/config.json"):
@@ -384,17 +416,20 @@ def test_non_object_symbol_file_is_a_legacy_run_error(tmp_path, preset_base):
 
 
 def test_scan_skips_directories_without_strategy(tmp_path, preset_base):
+    """Ignore directories without strategy metadata during a legacy scan."""
     make_run(tmp_path, "run-1")
     (tmp_path / "portfolio").mkdir()
     assert [run.run_id for run in scan_runs(tmp_path, preset_base)] == ["run-1"]
 
 
 def test_scan_skips_symlinked_run_directories(tmp_path, preset_base):
+    """Exclude symlinked run directories from scanning."""
     make_run(tmp_path, "run-1")
     (tmp_path / "alias").symlink_to(tmp_path / "run-1", target_is_directory=True)
     assert [run.run_id for run in scan_runs(tmp_path, preset_base)] == ["run-1"]
 
 
 def test_scanning_a_missing_results_directory_is_a_legacy_run_error(tmp_path, preset_base):
+    """Report a missing results root as a legacy error."""
     with pytest.raises(LegacyRunError, match="nope"):
         scan_runs(tmp_path / "nope", preset_base)

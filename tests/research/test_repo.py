@@ -37,6 +37,7 @@ def committed_files(path) -> list[str]:
 
 
 def staged_files(path) -> list[str]:
+    """List the paths currently staged in the fixture repository."""
     return git(path, "diff", "--cached", "--name-only").splitlines()
 
 
@@ -189,6 +190,7 @@ def test_research_dir_env_override(tmp_path, monkeypatch):
 
 
 def test_commit_register_commits_only_changes_under_named_paths(tmp_path, git_env):
+    """Commit selected register paths while preserving unrelated staged work."""
     research = tmp_path / "research"
     init_research_repo(research)
     (research / "reports" / "x.md").write_text("operator draft\n", encoding="utf-8")
@@ -203,6 +205,7 @@ def test_commit_register_commits_only_changes_under_named_paths(tmp_path, git_en
 
 
 def test_commit_register_accepts_empty_and_missing_named_paths(tmp_path, git_env):
+    """Ignore empty or missing directories when collecting paths to commit."""
     research = tmp_path / "research"
     init_research_repo(research)
     (research / "reports").rmdir()
@@ -213,6 +216,7 @@ def test_commit_register_accepts_empty_and_missing_named_paths(tmp_path, git_env
 
 
 def test_commit_register_commits_renames_and_deletions(tmp_path, git_env):
+    """Commit both sides of renames and include deleted register files."""
     research = tmp_path / "research"
     init_research_repo(research)
     cards = research / "strategies"
@@ -227,6 +231,7 @@ def test_commit_register_commits_renames_and_deletions(tmp_path, git_env):
 
 
 def test_commit_register_commits_a_deleted_tracked_directory(tmp_path, git_env):
+    """Commit deletions when a selected tracked directory no longer exists."""
     research = tmp_path / "research"
     init_research_repo(research)
     config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
@@ -239,6 +244,7 @@ def test_commit_register_commits_a_deleted_tracked_directory(tmp_path, git_env):
 
 
 def test_temporary_files_are_never_committed(tmp_path, git_env, monkeypatch):
+    """Keep stray and atomic-write temporary config files out of register commits."""
     research = tmp_path / "research"
     init_research_repo(research)
     (research / "configs" / "stray.json.tmp").write_text("{", encoding="utf-8")
@@ -246,6 +252,7 @@ def test_temporary_files_are_never_committed(tmp_path, git_env, monkeypatch):
     replace = os.replace
 
     def record(source, target):
+        """Record the temporary filename before performing the real atomic replacement."""
         temp_names.append(os.path.basename(source))
         replace(source, target)
 
@@ -258,6 +265,7 @@ def test_temporary_files_are_never_committed(tmp_path, git_env, monkeypatch):
 
 
 def test_commit_register_keeps_register_ignored_files_out(tmp_path, git_env):
+    """Respect register ignore rules when staging selected paths."""
     research = tmp_path / "research"
     init_research_repo(research)
     for staging in (research / ".staging" / "run-1", research / "strategies" / ".staging"):
@@ -272,6 +280,7 @@ def test_commit_register_keeps_register_ignored_files_out(tmp_path, git_env):
 
 
 def test_commit_register_ignores_global_excludes(tmp_path, git_env):
+    """Commit register configs even when global Git excludes hide JSON files."""
     excludes = tmp_path / "global-excludes"
     excludes.write_text("*.json\n", encoding="utf-8")
     git(tmp_path, "config", "--global", "core.excludesFile", str(excludes))
@@ -284,6 +293,7 @@ def test_commit_register_ignores_global_excludes(tmp_path, git_env):
 
 
 def test_commit_register_without_paths_raises(tmp_path, git_env):
+    """Reject an empty path list before committing unrelated staged work."""
     research = tmp_path / "research"
     init_research_repo(research)
     (research / "reports" / "x.md").write_text("operator draft\n", encoding="utf-8")
@@ -294,6 +304,7 @@ def test_commit_register_without_paths_raises(tmp_path, git_env):
 
 
 def test_git_timeout_leaves_no_lock_behind(tmp_path, git_env, monkeypatch):
+    """Ensure terminating a timed-out Git commit removes its index lock."""
     research = tmp_path / "research"
     init_research_repo(research)
     hooks = tmp_path / "hooks"
@@ -318,6 +329,7 @@ def flock_shared_nonblocking(path) -> None:
 
 
 def test_register_lock_is_exclusive_until_released(tmp_path):
+    """Verify the register lock excludes other holders and releases after exceptions."""
     lock = tmp_path / REGISTER_LOCK
     with register_lock(tmp_path):
         with pytest.raises(BlockingIOError):
@@ -329,6 +341,7 @@ def test_register_lock_is_exclusive_until_released(tmp_path):
 
 
 def test_register_lock_file_is_ignored_by_git(tmp_path, git_env):
+    """Keep the register lock file outside tracked register changes."""
     research = tmp_path / "research"
     init_research_repo(research)
     with register_lock(research):
@@ -337,10 +350,12 @@ def test_register_lock_file_is_ignored_by_git(tmp_path, git_env):
 
 
 def config_path(research_dir, fingerprint):
+    """Return the stored config path for a SHA-256 fingerprint."""
     return research_dir / "configs" / f"{fingerprint.removeprefix('sha256:')}.json"
 
 
 def test_store_config_writes_canonical_json_under_its_digest(tmp_path):
+    """Store canonical config bytes at their digest path and reuse identical content."""
     (tmp_path / "configs").mkdir()
     config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
     fingerprint = digest(config)
@@ -352,6 +367,7 @@ def test_store_config_writes_canonical_json_under_its_digest(tmp_path):
 
 
 def test_store_config_refuses_a_config_that_is_not_the_fingerprint(tmp_path):
+    """Reject malformed or mismatched fingerprints before storing a config."""
     (tmp_path / "configs").mkdir()
     config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
     other = canonical_config({"timeframe": "HOUR_1"}, ("GOLD",))
@@ -363,6 +379,7 @@ def test_store_config_refuses_a_config_that_is_not_the_fingerprint(tmp_path):
 
 @pytest.mark.parametrize("existing", [b"tampered\n", b"\xff\xfe not utf-8\n"])
 def test_store_config_refuses_a_different_existing_file(tmp_path, existing):
+    """Preserve conflicting existing bytes and report a storage error."""
     (tmp_path / "configs").mkdir()
     config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
     path = config_path(tmp_path, digest(config))
@@ -373,10 +390,12 @@ def test_store_config_refuses_a_different_existing_file(tmp_path, existing):
 
 
 def test_store_config_leaves_nothing_behind_when_the_write_fails(tmp_path, monkeypatch):
+    """Remove temporary config files when atomic replacement fails."""
     (tmp_path / "configs").mkdir()
     config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
 
     def fail(*_args):
+        """Simulate a failed atomic replacement caused by a full disk."""
         raise OSError("disk full")
 
     monkeypatch.setattr("fwbg.research.repo.os.replace", fail)
