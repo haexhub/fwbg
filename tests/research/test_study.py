@@ -11,8 +11,7 @@ from fwbg.research.pending import PendingRun, read_pending, write_pending
 from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register
 from fwbg.research.runs import GateDenied
 from fwbg.research.study import register_trial
-from tests.research.factories import make_card, make_trial
-from tests.research.test_runs import dead_pid
+from tests.research.factories import dead_pid, make_card, make_trial
 
 CONFIG = {
     "name": "x",
@@ -186,6 +185,21 @@ def test_metric_symbols_are_upper_cased(gate_register):
         research_dir=gate_register,
     )
     assert trial.metrics == {"EURUSD": {"sharpe": 0.4}}
+
+
+def test_metric_symbols_equal_after_upper_casing_are_refused(gate_register):
+    with pytest.raises(GateDenied) as denied:
+        register_trial(
+            "S-0007",
+            CONFIG,
+            ["EURUSD"],
+            {"eurusd": {"sharpe": 0.4}, "EURUSD": {"sharpe": 0.9}},
+            "x",
+            research_dir=gate_register,
+        )
+    assert denial_codes(denied) == [DenialCode.INVALID_CONFIG]
+    assert "EURUSD" in str(denied.value)
+    assert read_trials(gate_register / LEDGER_FILENAME) == []
 
 
 def test_stale_markers_are_recorded_first(gate_register, tmp_path):

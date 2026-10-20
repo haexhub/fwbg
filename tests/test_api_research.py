@@ -13,8 +13,7 @@ from fwbg.research.card import Status, load_card, replace_card
 from fwbg.research.ledger import LEDGER_FILENAME, append_trial
 from fwbg.research.pending import STAGING, write_pending
 from fwbg.research.repo import ResearchRepoError, init_research_repo
-from tests.research.factories import make_trial
-from tests.research.test_pending import make_pending
+from tests.research.factories import make_pending, make_trial
 
 NEW = {
     "title": "CUSUM event continuation",

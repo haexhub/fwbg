@@ -14,8 +14,7 @@ from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, TrialStatus, append
 from fwbg.research.pending import PendingError, write_pending
 from fwbg.research.repo import store_config
 from fwbg.research.views import coverage, list_lines, show_text
-from tests.research.factories import make_card, make_trial
-from tests.research.test_pending import make_pending
+from tests.research.factories import make_card, make_pending, make_trial
 
 BODY = "## Hypothesis\n\nEvents continue.\n\n## Verdict\n\n## Reports\n"
 

@@ -9,6 +9,7 @@ the register's trial count stays honest. Import it from here, not from
 from __future__ import annotations
 
 import copy
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
@@ -74,6 +75,11 @@ def register_trial(
         research_dir = get_research_dir(create=False)
     request = _request(research_id, config, symbols, note, reason)
     upper_metrics = {symbol.upper(): dict(values) for symbol, values in metrics.items()}
+    if len(upper_metrics) != len(metrics):
+        counts = Counter(symbol.upper() for symbol in metrics)
+        repeated = sorted(symbol for symbol, count in counts.items() if count > 1)
+        message = f"metrics name a symbol more than once: {', '.join(repeated)}"
+        raise GateDenied([Denial(DenialCode.INVALID_CONFIG, message)])
     status = TrialStatus.FAILED if failed else TrialStatus.OK
     code = run_code({"git": get_git_info(source_dir())})
     try:
