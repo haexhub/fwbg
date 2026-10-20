@@ -183,7 +183,7 @@ def append_trial(ledger_path: Path, trial: Trial) -> Trial:
         fcntl.flock(handle, fcntl.LOCK_EX)
         text = _decode(handle.read())
         stored = replace(trial, trial_id=_next_id(_parse(text)))
-        line = _readable_line(stored)
+        line = readable_line(stored)
         repair = "\n" if text and not text.endswith("\n") else ""
         handle.write((repair + line + "\n").encode("ascii"))
         handle.flush()
@@ -191,8 +191,15 @@ def append_trial(ledger_path: Path, trial: Trial) -> Trial:
     return stored
 
 
-def _readable_line(trial: Trial) -> str:
-    """Serialise *trial*, refusing anything the reader would not read back unchanged."""
+def readable_line(trial: Trial) -> str:
+    """Serialise *trial*, refusing anything the reader would not read back unchanged.
+
+    :func:`append_trial` writes only lines that pass this check.
+
+    Raises:
+        ValueError: *trial* would not be stored as one line that reads back unchanged
+            (a trial without an id never does).
+    """
     try:
         line = trial.to_json()
     except (TypeError, AttributeError, ValueError) as exc:
