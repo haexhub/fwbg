@@ -21,6 +21,7 @@ from fwbg_sdk.enums import Timeframe
 from fwbg.api.workspace import get_research_dir
 from fwbg.core.git_env import source_dir
 from fwbg.core.presets import resolve_presets
+from fwbg.research.backfill import STUDY_PREFIX
 from fwbg.research.card import CARD_ID_RE, CardError, ResearchCard, load_card
 from fwbg.research.fingerprint import FINGERPRINT_VERSION, canonical_config
 from fwbg.research.gate import Denial, DenialCode, RunRequest, check
@@ -43,7 +44,13 @@ from fwbg.research.repo import (
     register_lock,
     store_config,
 )
-from fwbg.research.runs import GateDenied, record_stale, running_duplicates, warn_uncommitted
+from fwbg.research.runs import (
+    GateDenied,
+    record_stale,
+    run_id_denials,
+    running_duplicates,
+    warn_uncommitted,
+)
 from fwbg.results.storage import get_git_info
 
 
@@ -123,6 +130,14 @@ def _request(
     return RunRequest(research_id, metadata, canonical, note, reason)
 
 
+def _run_id_denials(research_dir: Path, run_id: str, trials: Sequence[Trial]) -> list[Denial]:
+    """The CLI's run-id rules; ``study:`` ids belong to the backfill."""
+    if run_id.startswith(STUDY_PREFIX):
+        message = f"run id {run_id!r} uses the prefix {STUDY_PREFIX!r} reserved for the backfill"
+        return [Denial(DenialCode.INVALID_RUN_ID, message)]
+    return run_id_denials(research_dir, run_id, trials)
+
+
 def _record(
     research_dir: Path,
     request: RunRequest,
@@ -138,6 +153,8 @@ def _record(
     trials = read_trials(research_dir / LEDGER_FILENAME)
     decision = check(card, request, trials)
     denials = list(decision.denials)
+    if run_id is not None:
+        denials += _run_id_denials(research_dir, run_id, trials)
     denials += running_duplicates(research_dir, decision.fingerprint, request.reason)
     if denials:
         raise GateDenied(denials)

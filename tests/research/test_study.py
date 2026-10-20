@@ -11,7 +11,7 @@ from fwbg.research.pending import PendingRun, read_pending, write_pending
 from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register
 from fwbg.research.runs import GateDenied
 from fwbg.research.study import register_trial
-from tests.research.factories import dead_pid, make_card, make_trial
+from tests.research.factories import dead_pid, make_card, make_pending, make_trial
 
 CONFIG = {
     "name": "x",
@@ -228,3 +228,27 @@ def test_failed_commit_only_warns(gate_register, monkeypatch, capsys):
     trial = record(gate_register)
     assert read_trials(gate_register / LEDGER_FILENAME) == [trial]
     assert "not committed yet" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("run_id", ["a/b", "..", "", "study:S-0007:config-4"])
+def test_invalid_or_reserved_run_id_is_refused(gate_register, run_id):
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, run_id=run_id)
+    assert denial_codes(denied) == [DenialCode.INVALID_RUN_ID]
+    assert read_trials(gate_register / LEDGER_FILENAME) == []
+
+
+def test_run_id_already_in_the_ledger_is_refused(gate_register):
+    record(gate_register, run_id="study-1")
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, {**CONFIG, "model": {"x": 1}}, run_id="study-1")
+    assert denial_codes(denied) == [DenialCode.RUN_ID_IN_USE]
+    assert len(read_trials(gate_register / LEDGER_FILENAME)) == 1
+
+
+def test_pending_run_id_is_refused(gate_register, tmp_path):
+    write_pending(gate_register, make_pending(tmp_path / "run-1"))
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, run_id="run-1")
+    assert denial_codes(denied) == [DenialCode.RUN_ID_IN_USE]
+    assert read_trials(gate_register / LEDGER_FILENAME) == []

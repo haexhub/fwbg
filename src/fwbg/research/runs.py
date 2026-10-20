@@ -188,31 +188,9 @@ class ResearchRun:
 
     def _run_denials(self, decision: Decision, trials: Sequence[Trial]) -> list[Denial]:
         """A run id is used once; an identical configuration must not run twice at once."""
-        if not valid_run_id(self.run_id):
-            # Checked first: every check below uses the run id as a file name.
-            message = f"invalid run id {self.run_id!r}; use a plain name without '/'"
-            return [Denial(DenialCode.INVALID_RUN_ID, message)]
-        denials = []
-        if (self.run_dir / "config.json").exists() or (self.run_dir / "grid_details").exists():
-            denials.append(
-                Denial(DenialCode.RUN_ID_IN_USE, f"run id {self.run_id} already holds a run")
-            )
-        recorded = [trial.trial_id for trial in trials if trial.run_id == self.run_id]
-        if recorded:
-            denials.append(
-                Denial(
-                    DenialCode.RUN_ID_IN_USE,
-                    f"run id {self.run_id} is already recorded ({', '.join(map(str, recorded))})",
-                )
-            )
-        # Every marker, not only live ones: a stale marker that could not be recorded keeps its id.
-        if any(run.run_id == self.run_id for run in read_pending(self.research_dir)):
-            denials.append(
-                Denial(
-                    DenialCode.RUN_ID_IN_USE,
-                    f"run {self.run_id} is pending (running or unrecorded)",
-                )
-            )
+        denials = run_id_denials(self.research_dir, self.run_id, trials, run_dir=self.run_dir)
+        if any(denial.code is DenialCode.INVALID_RUN_ID for denial in denials):
+            return denials
         denials.extend(running_duplicates(self.research_dir, decision.fingerprint, self.reason))
         return denials
 
@@ -347,6 +325,36 @@ def parse_check_output(stdout: str, returncode: int) -> dict[str, Any] | None:
             )
             return payload if consistent else None
     return None
+
+
+def run_id_denials(
+    research_dir: Path, run_id: str, trials: Sequence[Trial], *, run_dir: Path | None = None
+) -> list[Denial]:
+    """A run id must be a plain name used once: not in the ledger, not pending, and
+    (with *run_dir*) not holding a run already."""
+    if not valid_run_id(run_id):
+        # Checked first: every check below uses the run id as a file name.
+        message = f"invalid run id {run_id!r}; use a plain name without '/'"
+        return [Denial(DenialCode.INVALID_RUN_ID, message)]
+    denials = []
+    if run_dir is not None and (
+        (run_dir / "config.json").exists() or (run_dir / "grid_details").exists()
+    ):
+        denials.append(Denial(DenialCode.RUN_ID_IN_USE, f"run id {run_id} already holds a run"))
+    recorded = [trial.trial_id for trial in trials if trial.run_id == run_id]
+    if recorded:
+        denials.append(
+            Denial(
+                DenialCode.RUN_ID_IN_USE,
+                f"run id {run_id} is already recorded ({', '.join(map(str, recorded))})",
+            )
+        )
+    # Every marker, not only live ones: a stale marker that could not be recorded keeps its id.
+    if any(run.run_id == run_id for run in read_pending(research_dir)):
+        denials.append(
+            Denial(DenialCode.RUN_ID_IN_USE, f"run {run_id} is pending (running or unrecorded)")
+        )
+    return denials
 
 
 def running_duplicates(
