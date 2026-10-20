@@ -146,11 +146,7 @@ class ResearchRun:
             raise GateDenied([Denial(DenialCode.REGISTER_UNREADABLE, message)]) from exc
 
     def _gate(self, request: RunRequest, symbols: tuple[str, ...]) -> dict[str, Any]:
-        if recover_stale(self.research_dir):
-            try:
-                commit_register(self.research_dir, REGISTER_PATHS, "trial: record interrupted runs")
-            except ResearchRepoError as exc:
-                _warn_uncommitted("interrupted runs", exc)
+        record_stale(self.research_dir)
         card: ResearchCard | None = None
         if self.research_id is not None and CARD_ID_RE.fullmatch(self.research_id):
             card = load_card(self.research_dir, self.research_id)
@@ -238,7 +234,7 @@ class ResearchRun:
                         f"trial {trial.trial_id}: {trial.strategy} run {self.run_id}",
                     )
                 except ResearchRepoError as exc:
-                    _warn_uncommitted(str(trial.trial_id), exc)
+                    warn_uncommitted(str(trial.trial_id), exc)
         except (
             OSError,
             TypeError,
@@ -373,7 +369,16 @@ def running_duplicates(
     ]
 
 
-def _warn_uncommitted(what: str, exc: ResearchRepoError) -> None:
+def record_stale(research_dir: Path) -> None:
+    """Record the runs whose process is gone and commit them; call under the lock."""
+    if recover_stale(research_dir):
+        try:
+            commit_register(research_dir, REGISTER_PATHS, "trial: record interrupted runs")
+        except ResearchRepoError as exc:
+            warn_uncommitted("interrupted runs", exc)
+
+
+def warn_uncommitted(what: str, exc: ResearchRepoError) -> None:
     print(
         f"Warning: {what} not committed yet ({exc}); the next register commit includes it",
         file=sys.stderr,

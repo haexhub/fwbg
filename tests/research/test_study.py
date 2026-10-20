@@ -4,14 +4,15 @@ import subprocess
 import pytest
 
 from fwbg.research.card import Status, replace_card
-from fwbg.research.fingerprint import fingerprint
+from fwbg.research.fingerprint import canonical_config, fingerprint
 from fwbg.research.gate import DenialCode
 from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, TrialStatus, read_trials
-from fwbg.research.pending import PendingRun, write_pending
-from fwbg.research.repo import REGISTER_PATHS, commit_register
+from fwbg.research.pending import PendingRun, read_pending, write_pending
+from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register
 from fwbg.research.runs import GateDenied
 from fwbg.research.study import register_trial
 from tests.research.factories import make_card, make_trial
+from tests.research.test_runs import dead_pid
 
 CONFIG = {
     "name": "x",
@@ -121,3 +122,95 @@ def test_defaults_to_the_workspace_register(gate_register, monkeypatch):
     monkeypatch.setenv("FWBG_RESEARCH_DIR", str(gate_register))
     trial = register_trial("S-0007", CONFIG, ["EURUSD"], METRICS, "baseline")
     assert read_trials(gate_register / LEDGER_FILENAME) == [trial]
+
+
+@pytest.mark.parametrize("end_date", [None, 20250401, ""])
+def test_end_date_must_be_a_string(gate_register, end_date):
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, {**CONFIG, "end_date": end_date})
+    assert denial_codes(denied) == [DenialCode.INVALID_WINDOW]
+    assert "YYYY-MM-DD string" in str(denied.value)
+
+
+def test_malformed_end_date_is_refused(gate_register):
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, {**CONFIG, "end_date": "2025/04/01"})
+    assert denial_codes(denied) == [DenialCode.INVALID_WINDOW]
+    assert read_trials(gate_register / LEDGER_FILENAME) == []
+
+
+def test_start_date_is_optional(gate_register):
+    config = {key: value for key, value in CONFIG.items() if key != "start_date"}
+    assert record(gate_register, config).window == {"start": None, "end": "2025-04-01"}
+
+
+def test_timeframe_spelling_does_not_change_the_fingerprint(gate_register):
+    first = record(gate_register, {**CONFIG, "timeframe": "1h"})
+    assert first.fingerprint == fingerprint(CONFIG, ("EURUSD",))
+
+
+def test_unknown_timeframe_is_refused(gate_register):
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, {**CONFIG, "timeframe": "fortnightly"})
+    assert denial_codes(denied) == [DenialCode.INVALID_CONFIG]
+
+
+def test_symbols_as_one_string_are_refused(gate_register):
+    with pytest.raises(GateDenied) as denied:
+        register_trial("S-0007", CONFIG, "EURUSD", METRICS, "x", research_dir=gate_register)
+    assert denial_codes(denied) == [DenialCode.INVALID_CONFIG]
+
+
+def test_nan_metric_is_refused_and_writes_nothing(gate_register):
+    with pytest.raises(GateDenied) as denied:
+        register_trial(
+            "S-0007",
+            CONFIG,
+            ["EURUSD"],
+            {"EURUSD": {"sharpe": float("nan")}},
+            "x",
+            research_dir=gate_register,
+        )
+    assert denial_codes(denied) == [DenialCode.INVALID_CONFIG]
+    assert read_trials(gate_register / LEDGER_FILENAME) == []
+    assert not any((gate_register / "configs").iterdir())
+
+
+def test_metric_symbols_are_upper_cased(gate_register):
+    trial = register_trial(
+        "S-0007",
+        CONFIG,
+        ["eurusd"],
+        {"eurusd": {"sharpe": 0.4}},
+        "x",
+        research_dir=gate_register,
+    )
+    assert trial.metrics == {"EURUSD": {"sharpe": 0.4}}
+
+
+def test_stale_markers_are_recorded_first(gate_register, tmp_path):
+    stale = make_trial(fingerprint=fingerprint(CONFIG, ("EURUSD",)))
+    write_pending(
+        gate_register,
+        PendingRun(
+            run_id="run-1",
+            run_dir=tmp_path / "run-1",
+            pid=dead_pid(),
+            trial=stale,
+            config=canonical_config(CONFIG, ("EURUSD",)),
+        ),
+    )
+    trial = record(gate_register, {**CONFIG, "model": {"x": 1}})
+    ledger = read_trials(gate_register / LEDGER_FILENAME)
+    assert [t.run_id for t in ledger] == ["run-1", None] and ledger[1] == trial
+    assert read_pending(gate_register) == []
+
+
+def test_failed_commit_only_warns(gate_register, monkeypatch, capsys):
+    def broken(*_):
+        raise ResearchRepoError("git commit failed: index.lock exists")
+
+    monkeypatch.setattr("fwbg.research.study.commit_register", broken)
+    trial = record(gate_register)
+    assert read_trials(gate_register / LEDGER_FILENAME) == [trial]
+    assert "not committed yet" in capsys.readouterr().err
