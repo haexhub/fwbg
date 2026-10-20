@@ -24,6 +24,7 @@ from fwbg.research.card import (
     Status,
     UniqueKeyLoader,
     slugify,
+    validate_criteria,
 )
 from fwbg.research.ledger import Metrics
 from fwbg.research.legacy import LegacyRun
@@ -245,24 +246,10 @@ def _text_list(value: object, where: str) -> tuple[str, ...]:
 
 def parse_criteria(value: object, where: str) -> dict[str, float]:
     """Thresholds by name, under the rules of a card's ``success_criteria``."""
-    if not isinstance(value, Mapping) or not value:
-        raise BackfillError(f"{where}: criteria must be a non-empty mapping")
-    criteria: dict[str, float] = {}
-    for key, threshold in value.items():
-        if not isinstance(key, str):
-            raise BackfillError(f"{where}: invalid criterion {key!r}")
-        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
-            raise BackfillError(f"{where}: criterion {key} must be a number, got {threshold!r}")
-        try:
-            number = float(threshold)
-        except OverflowError as exc:
-            raise BackfillError(f"{where}: criterion {key} is out of range") from exc
-        if not math.isfinite(number):
-            raise BackfillError(
-                f"{where}: criterion {key} must be a finite number, got {threshold!r}"
-            )
-        criteria[key] = number
-    return criteria
+    try:
+        return dict(validate_criteria(value))
+    except CardError as exc:
+        raise BackfillError(f"{where}: {exc}") from exc
 
 
 def _repeated(values: Iterable[str]) -> list[str]:
