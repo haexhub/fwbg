@@ -1,5 +1,12 @@
+from fwbg.research.card import CRITERIA_NAMES
 from fwbg.research.ledger import TrialKind, TrialStatus
-from fwbg.research.stats import best_result, criteria_check, development_trials, evaluations
+from fwbg.research.stats import (
+    _CHECKS,
+    best_result,
+    criteria_check,
+    development_trials,
+    evaluations,
+)
 from tests.research.factories import make_trial
 
 
@@ -40,3 +47,7 @@ def test_development_trials_and_evaluations_count_only_counted_trials():
     ]
     assert [trial.trial_id for trial in development_trials(trials)] == ["T-000001"]
     assert evaluations(trials) == 3
+
+
+def test_every_criterion_has_a_check():
+    assert _CHECKS.keys() == CRITERIA_NAMES

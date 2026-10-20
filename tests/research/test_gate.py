@@ -4,7 +4,7 @@ import pytest
 
 from fwbg.research.card import CriteriaAmendment, Status, criteria_hash
 from fwbg.research.fingerprint import fingerprint
-from fwbg.research.gate import DenialCode, RunRequest, check
+from fwbg.research.gate import DenialCode, RunRequest, check, criteria_denials
 from fwbg.research.ledger import TrialKind, TrialStatus
 from tests.research.factories import make_card, make_trial
 
@@ -278,8 +278,14 @@ def test_criteria_are_anchored_to_the_last_own_trial():
         make_trial(trial_id="T-000001", criteria_hash=b),
         make_trial(trial_id="T-000002", criteria_hash=a),
     ]
-    assert check(card, request(), a_then_b).allowed
     assert codes(check(card, request(), b_then_a)) == {DenialCode.CRITERIA_CHANGED}
+    # Criteria a are recorded nowhere on the card, so T-000001 ran under unrecorded criteria.
+    assert codes(check(card, request(), a_then_b)) == {DenialCode.CRITERIA_CHANGED}
+    amendment = CriteriaAmendment(date(2026, 10, 20), "tighten", b)
+    recorded = make_card(
+        success_criteria=current, registered_criteria_hash=a, criteria_amendments=(amendment,)
+    )
+    assert check(recorded, request(), a_then_b).allowed
 
 
 def test_an_earlier_amendment_does_not_cover_the_current_criteria():
@@ -450,3 +456,29 @@ def test_open_ended_iteration_must_start_before_the_cutoff(start):
     assert codes(check(make_card(), request(strategy_metadata=metadata), [])) == {
         DenialCode.INVALID_WINDOW
     }
+
+
+def test_an_amendment_does_not_legalise_a_hand_edited_registration():
+    # Criteria edited by hand with a recomputed registration hash, then amended:
+    # the trials ran under criteria that neither the registration nor an amendment records.
+    edited = {"min_sharpe": 0.1, "min_trades": 100.0}
+    amended = {"min_sharpe": 0.5, "min_trades": 100.0}
+    amendment = CriteriaAmendment(date(2026, 10, 20), "loosen", criteria_hash(amended))
+    card = make_card(
+        success_criteria=amended,
+        registered_criteria_hash=criteria_hash(edited),
+        criteria_amendments=(amendment,),
+    )
+    trials = [make_trial(trial_id="T-000001")]
+    assert codes(check(card, request(), trials)) == {DenialCode.CRITERIA_CHANGED}
+
+
+def test_criteria_denials_accept_trials_under_registration_and_amendments():
+    amended = {"min_sharpe": 0.5, "min_trades": 100.0}
+    amendment = CriteriaAmendment(date(2026, 10, 20), "loosen", criteria_hash(amended))
+    card = make_card(success_criteria=amended, criteria_amendments=(amendment,))
+    trials = [
+        make_trial(trial_id="T-000001"),
+        make_trial(trial_id="T-000002", criteria_hash=criteria_hash(amended)),
+    ]
+    assert criteria_denials(card, trials) == []

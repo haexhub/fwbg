@@ -15,7 +15,7 @@ import yaml
 from fwbg.api.run_service import ACTIVE_STATUSES
 from fwbg.api.workspace import get_research_dir, get_strategies_dir, get_test_results_dir
 from fwbg.research.backfill import apply_mapping
-from fwbg.research.card import CRITERIA_NAMES, CardError, Status, UniqueKeyLoader
+from fwbg.research.card import CARD_FILE_RE, CRITERIA_NAMES, CardError, Status, UniqueKeyLoader
 from fwbg.research.commands import (
     VERDICT_STATUSES,
     CommandError,
@@ -84,6 +84,14 @@ def _criterion(text: str) -> tuple[str, float]:
     raise argparse.ArgumentTypeError(f"expected name=number, got {text!r}")
 
 
+def _tag_list(text: str) -> list[str]:
+    """Comma-separated tags; at least one must be non-empty."""
+    tags = [tag.strip() for tag in text.split(",") if tag.strip()]
+    if not tags:
+        raise argparse.ArgumentTypeError(f"expected at least one tag, got {text!r}")
+    return tags
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Dispatch research commands and return a nonzero status for operator errors."""
     parser = argparse.ArgumentParser(
@@ -102,6 +110,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     for sub in (scan, apply):
         sub.add_argument("--results", type=Path, help="run directory root (default: workspace)")
     args = parser.parse_args(argv)
+    names = [name for name, _ in getattr(args, "criteria", [])]
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        parser.error(f"--set given more than once for {', '.join(repeated)}")
 
     try:
         if args.command == "init":
@@ -126,7 +138,7 @@ def _add_card_commands(commands: argparse._SubParsersAction[argparse.ArgumentPar
     criteria_help = f"success criterion name=value ({', '.join(sorted(CRITERIA_NAMES))})"
     new = commands.add_parser("new", help="register a new active research card")
     new.add_argument("title", help="one-line card title")
-    new.add_argument("--tags", required=True, help="comma-separated tags")
+    new.add_argument("--tags", type=_tag_list, required=True, help="comma-separated tags")
     new.add_argument("--cutoff", type=_iso_date, help="holdout cutoff (default: 18 months ago)")
     new.add_argument("--slug", help="file-name slug (default: from the title)")
     new.add_argument("--hypothesis", help="text of the Hypothesis section")
@@ -158,7 +170,7 @@ def _new(args: argparse.Namespace, research_dir: Path) -> None:
     path = new_card(
         research_dir,
         args.title,
-        args.tags.split(","),
+        args.tags,
         date.today(),
         cutoff=args.cutoff,
         slug=args.slug,
@@ -166,8 +178,8 @@ def _new(args: argparse.Namespace, research_dir: Path) -> None:
         hypothesis=args.hypothesis,
         mechanism=args.mechanism,
     )
-    # The file is named S-NNNN-<slug>.md.
-    print(f"Registered {path.name[:6]}: {path}")
+    match = CARD_FILE_RE.fullmatch(path.name)
+    print(f"Registered {match.group(1) if match else path.stem}: {path}")
 
 
 def _amend(args: argparse.Namespace, research_dir: Path) -> None:
