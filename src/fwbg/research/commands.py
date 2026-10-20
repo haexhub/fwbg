@@ -61,6 +61,18 @@ class CommandError(Exception):
     """A research command was refused, or its commit failed; the message says which."""
 
 
+class CommandInputError(CommandError):
+    """A research command was refused for its arguments alone, not the register's state."""
+
+
+class UncommittedError(CommandError):
+    """The change was written to disk, but its commit failed; the next commit includes it."""
+
+    def __init__(self, message: str, card_id: str) -> None:
+        super().__init__(message)
+        self.card_id = card_id
+
+
 def months_before(day: date, months: int) -> date:
     """The same day *months* earlier, clamped to the end of a shorter month."""
     year, month = divmod(day.year * 12 + day.month - 1 - months, 12)
@@ -83,10 +95,10 @@ def new_card(
     _one_line(title, "title")
     holdout_cutoff = cutoff or months_before(today, DEFAULT_HOLDOUT_MONTHS)
     if holdout_cutoff > today:
-        raise CommandError(f"holdout cutoff {holdout_cutoff} lies in the future")
+        raise CommandInputError(f"holdout cutoff {holdout_cutoff} lies in the future")
     for text, what in ((hypothesis, "hypothesis"), (mechanism, "mechanism")):
         if text is not None and _HEADING_LINE.search(text):
-            raise CommandError(f"{what} must not contain '#' or '##' heading lines")
+            raise CommandInputError(f"{what} must not contain '#' or '##' heading lines")
     frozen = validate_criteria({**_template(research_dir), **(criteria or {})})
     body = _BODY.format(hypothesis=hypothesis or _PLACEHOLDER, mechanism=mechanism or _PLACEHOLDER)
     with register_lock(research_dir):
@@ -114,7 +126,7 @@ def amend_criteria(
     """Change success criteria and record the change as an amendment."""
     _one_line(reason, "reason")
     if not changes:
-        raise CommandError("nothing to amend; pass --set name=value")
+        raise CommandInputError("nothing to amend; pass --set name=value")
     with register_lock(research_dir):
         card = _require(research_dir, card_id)
         if card.status is not Status.ACTIVE:
@@ -159,7 +171,7 @@ def write_verdict(
     if actor is not None:
         _one_line(actor, "actor")
     if status not in VERDICT_STATUSES:
-        raise CommandError(f"a verdict sets parked, rejected or candidate, not {status.value}")
+        raise CommandInputError(f"a verdict sets parked, rejected or candidate, not {status.value}")
     with register_lock(research_dir):
         # Committed on its own, so a refused verdict leaves no recovered trial uncommitted.
         if recover_stale(research_dir):
@@ -264,9 +276,10 @@ def _commit(research_dir: Path, card_id: str, message: str) -> None:
     try:
         commit_register(research_dir, REGISTER_PATHS, message)
     except ResearchRepoError as exc:
-        raise CommandError(
+        raise UncommittedError(
             f"{card_id} was updated on disk but not committed: {exc}; "
-            "the next register write commits it"
+            "the next register write commits it",
+            card_id,
         ) from exc
 
 
@@ -306,4 +319,4 @@ def _tags(tags: Sequence[str]) -> tuple[str, ...]:
 def _one_line(value: str | None, what: str) -> None:
     # The gate's note rule: non-blank, no line break of any kind.
     if value is None or not value.strip() or value.splitlines() != [value]:
-        raise CommandError(f"{what} must be one non-empty line, got {value!r}")
+        raise CommandInputError(f"{what} must be one non-empty line, got {value!r}")

@@ -1,16 +1,18 @@
 """The research register over HTTP: list, show, register and status changes."""
 
 import subprocess
+from dataclasses import replace
 from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
 
 from fwbg.api import create_app
-from fwbg.research.card import Status, load_card
+from fwbg.research import commands
+from fwbg.research.card import Status, load_card, replace_card
 from fwbg.research.ledger import LEDGER_FILENAME, append_trial
-from fwbg.research.pending import write_pending
-from fwbg.research.repo import init_research_repo
+from fwbg.research.pending import STAGING, write_pending
+from fwbg.research.repo import ResearchRepoError, init_research_repo
 from tests.research.factories import make_trial
 from tests.research.test_pending import make_pending
 
@@ -46,6 +48,24 @@ def card_id(client):
     response = client.post("/api/research", json=NEW)
     assert response.status_code == 201, response.text
     return response.json()["card"]["id"]
+
+
+def cards(client, query="") -> list:
+    response = client.get(f"/api/research{query}")
+    assert response.status_code == 200, response.text
+    return response.json()["cards"]
+
+
+def break_commits(monkeypatch) -> None:
+    def broken(*args, **kwargs):
+        raise ResearchRepoError("git commit failed: boom")
+
+    monkeypatch.setattr(commands, "commit_register", broken)
+
+
+def bad_marker(register) -> None:
+    (register / STAGING).mkdir(exist_ok=True)
+    (register / STAGING / "run-9.json").write_text("{not json", encoding="utf-8")
 
 
 def git(register, *args) -> str:
@@ -91,8 +111,39 @@ def test_post_refuses_an_unknown_criterion(client, register):
 
 def test_post_refuses_a_future_cutoff(client):
     response = client.post("/api/research", json={**NEW, "cutoff": "2999-01-01"})
-    assert response.status_code == 409
+    assert response.status_code == 422
     assert "lies in the future" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"title": "!!!"},
+        {"title": "two\nlines"},
+        {"tags": ["a\nb"]},
+        {"hypothesis": "x\n## Verdict\n\nfake"},
+    ],
+    ids=["no-slug", "multi-line-title", "multi-line-tag", "heading"],
+)
+def test_post_refuses_bad_input_with_422(client, register, change):
+    response = client.post("/api/research", json={**NEW, **change})
+    assert response.status_code == 422, response.text
+    assert "unreadable" not in response.json()["detail"]
+    assert not list((register / "strategies").glob("*.md"))
+
+
+def test_an_uncommitted_card_is_registered_with_a_warning(client, register, monkeypatch):
+    break_commits(monkeypatch)
+    response = client.post("/api/research", json=NEW)
+    assert response.status_code == 201
+    body = response.json()
+    assert body["card"]["id"] == "S-0001"
+    assert "S-0001 was updated on disk but not committed" in body["warning"]
+    assert load_card(register, "S-0001") is not None
+
+
+def test_a_committed_card_has_no_warning(client):
+    assert "warning" not in client.post("/api/research", json=NEW).json()
 
 
 # --- list --------------------------------------------------------------------
@@ -101,7 +152,8 @@ def test_post_refuses_a_future_cutoff(client):
 def test_list_returns_the_card_without_trials(client, card_id):
     response = client.get("/api/research")
     assert response.status_code == 200
-    [summary] = response.json()
+    assert response.json()["pending_error"] is None
+    [summary] = response.json()["cards"]
     assert summary["id"] == card_id
     assert (summary["trials"], summary["best"], summary["running"]) == (0, None, 0)
 
@@ -114,27 +166,38 @@ def test_list_counts_trials_and_live_runs(client, card_id, register, tmp_path):
     write_pending(
         register, make_pending(tmp_path / "results" / "run-2", run_id="run-2", strategy=card_id)
     )
-    [summary] = client.get("/api/research").json()
+    [summary] = cards(client)
     assert summary["trials"] == 1
     assert summary["best"]["symbol"] == "GOLD"
     assert summary["running"] == 1
 
 
 def test_list_filters_by_status_and_tag(client, card_id):
-    client.post("/api/research", json={**NEW, "title": "Other idea", "tags": ["other"]})
-    client.post(f"/api/research/{card_id}/status", json=VERDICT)
-    assert [c["id"] for c in client.get("/api/research?status=parked").json()] == [card_id]
-    assert [c["id"] for c in client.get("/api/research?status=active").json()] == ["S-0002"]
-    assert [c["id"] for c in client.get("/api/research?tag=other").json()] == ["S-0002"]
+    other = client.post("/api/research", json={**NEW, "title": "Other idea", "tags": ["other"]})
+    assert other.status_code == 201
+    assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    assert [c["id"] for c in cards(client, "?status=parked")] == [card_id]
+    assert [c["id"] for c in cards(client, "?status=active")] == ["S-0002"]
+    assert [c["id"] for c in cards(client, "?tag=other")] == ["S-0002"]
     assert client.get("/api/research?status=open").status_code == 422
 
 
 def test_list_shows_an_unreadable_card_as_an_error(client, card_id, register):
     [path] = (register / "strategies").glob("S-0001-*.md")
     path.write_text("no front matter", encoding="utf-8")
-    assert client.get("/api/research?status=parked").json() == [
+    assert cards(client, "?status=parked") == [
         {"id": "S-0001", "error": f"{path.name}: card has no YAML front matter"}
     ]
+
+
+def test_list_survives_a_bad_pending_marker(client, card_id, register):
+    bad_marker(register)
+    response = client.get("/api/research")
+    assert response.status_code == 200
+    assert response.json()["pending_error"].startswith("run-9.json: ")
+    [summary] = response.json()["cards"]
+    assert summary["id"] == card_id
+    assert summary["running"] is None
 
 
 def test_list_reports_an_unreadable_ledger(client, register):
@@ -154,6 +217,8 @@ def test_detail_has_card_trials_pending_and_coverage(client, card_id):
     assert detail["card"]["id"] == card_id
     assert detail["trials"] == []
     assert detail["pending"] == []
+    assert detail["pending_error"] is None
+    assert detail["criteria_problems"] == []
     assert isinstance(detail["coverage"], list)
     assert detail["coverage"][0] == "Coverage: 0 configs"
 
@@ -166,6 +231,23 @@ def test_detail_lists_trials_and_pending_runs(client, card_id, register, tmp_pat
     detail = client.get(f"/api/research/{card_id}").json()
     assert [(t["trial"], t["strategy"]) for t in detail["trials"]] == [("T-000001", card_id)]
     assert detail["pending"] == ["run-2"]
+
+
+def test_detail_survives_a_bad_pending_marker(client, card_id, register):
+    bad_marker(register)
+    response = client.get(f"/api/research/{card_id}")
+    assert response.status_code == 200
+    assert response.json()["pending"] is None
+    assert response.json()["pending_error"].startswith("run-9.json: ")
+
+
+def test_detail_names_criteria_problems(client, card_id, register):
+    card = load_card(register, card_id)
+    replace_card(
+        register, replace(card, success_criteria={**card.success_criteria, "min_sharpe": 0.1})
+    )
+    [problem] = client.get(f"/api/research/{card_id}").json()["criteria_problems"]
+    assert problem.startswith(f"success criteria of {card_id} differ from the registration")
 
 
 def test_detail_of_an_unknown_card_is_404(client, register):
@@ -201,7 +283,7 @@ def test_verdict_needs_a_reopen_condition(client, card_id, register):
 
 
 def test_reopen_activates_the_card_and_records_the_actor(client, card_id):
-    client.post(f"/api/research/{card_id}/status", json=VERDICT)
+    assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
     response = client.post(
         f"/api/research/{card_id}/status",
         json={"status": "active", "reason": "new data", "actor": "agent-8"},
@@ -213,8 +295,18 @@ def test_reopen_activates_the_card_and_records_the_actor(client, card_id):
     assert f"- {today}: reopened from parked by agent-8: new data" in card["body"]
 
 
+def test_reopen_refuses_a_reopen_condition(client, card_id):
+    assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    response = client.post(
+        f"/api/research/{card_id}/status",
+        json={"status": "active", "reason": "new data", "actor": "a", "reopen_if": "x"},
+    )
+    assert response.status_code == 422
+    assert cards(client)[0]["status"] == "parked"
+
+
 def test_verdict_on_a_parked_card_is_409(client, card_id):
-    client.post(f"/api/research/{card_id}/status", json=VERDICT)
+    assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
     response = client.post(
         f"/api/research/{card_id}/status", json={**VERDICT, "status": "rejected"}
     )
@@ -232,3 +324,27 @@ def test_a_status_change_needs_an_actor(client, card_id, actor):
 
 def test_a_status_change_of_an_unknown_card_is_404(client, register):
     assert client.post("/api/research/S-0099/status", json=VERDICT).status_code == 404
+
+
+def test_verdict_with_a_run_in_progress_is_409(client, card_id, register, tmp_path):
+    write_pending(
+        register, make_pending(tmp_path / "results" / "run-2", run_id="run-2", strategy=card_id)
+    )
+    response = client.post(f"/api/research/{card_id}/status", json=VERDICT)
+    assert response.status_code == 409
+    assert "run-2" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("field", ["reason", "actor", "reopen_if"])
+def test_a_multi_line_status_field_is_422(client, card_id, field):
+    response = client.post(f"/api/research/{card_id}/status", json={**VERDICT, field: "a\nb"})
+    assert response.status_code == 422
+
+
+def test_an_uncommitted_verdict_succeeds_with_a_warning(client, card_id, register, monkeypatch):
+    break_commits(monkeypatch)
+    response = client.post(f"/api/research/{card_id}/status", json=VERDICT)
+    assert response.status_code == 200
+    assert response.json()["card"]["status"] == "parked"
+    assert "was updated on disk but not committed" in response.json()["warning"]
+    assert load_card(register, card_id).status is Status.PARKED

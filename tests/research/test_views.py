@@ -94,6 +94,15 @@ def test_list_reports_an_unreadable_card_instead_of_aborting(register):
     assert lines[2] == "S-0009  unreadable: S-0009-broken.md: card has no YAML front matter"
 
 
+def test_iter_cards_yields_cards_and_load_errors_under_every_filter(register):
+    (register / "strategies" / "S-0009-broken.md").write_text("no front matter", encoding="utf-8")
+    found = list(views.iter_cards(register, status=Status.PARKED))
+    assert [(card_id, type(item).__name__) for card_id, item in found] == [
+        ("S-0008", "ResearchCard"),
+        ("S-0009", "CardError"),
+    ]
+
+
 def test_list_truncates_long_titles(register):
     write_card(register, make_card(id="S-0009", title="x" * 200), "long")
     line = list_lines(register)[2]

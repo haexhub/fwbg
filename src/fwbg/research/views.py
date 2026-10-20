@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -36,18 +36,9 @@ def list_lines(
     """One line per card, in id order; a card that does not load shows its error."""
     trials = read_trials(research_dir / LEDGER_FILENAME)
     rows: list[tuple[str, ...] | str] = []
-    for card_id in card_ids(research_dir):
-        try:
-            card = load_card(research_dir, card_id)
-        except CardError as exc:
-            # Shown under every filter: it might match, and it needs fixing.
-            rows.append(f"{card_id}  unreadable: {exc}")
-            continue
-        if card is None:
-            continue
-        if (status is not None and card.status is not status) or (
-            tag is not None and tag not in card.tags
-        ):
+    for card_id, card in iter_cards(research_dir, status, tag):
+        if isinstance(card, CardError):
+            rows.append(f"{card_id}  unreadable: {card}")
             continue
         own = [trial for trial in trials if trial.strategy == card.id]
         counted = _plural(sum(trial.counted for trial in own), "trial")
@@ -71,6 +62,26 @@ def list_lines(
             )
         )
     return lines
+
+
+def iter_cards(
+    research_dir: Path, status: Status | None = None, tag: str | None = None
+) -> Iterator[tuple[str, ResearchCard | CardError]]:
+    """The cards matching *status* and *tag* in id order, each with its id.
+
+    A card that does not load comes as its :class:`CardError`, under every filter:
+    it might match, and it needs fixing.
+    """
+    for card_id in card_ids(research_dir):
+        try:
+            card = load_card(research_dir, card_id)
+        except CardError as exc:
+            yield card_id, exc
+            continue
+        if card is None:
+            continue
+        if (status is None or card.status is status) and (tag is None or tag in card.tags):
+            yield card_id, card
 
 
 def show_text(research_dir: Path, card_id: str) -> str:
@@ -106,8 +117,11 @@ def show_text(research_dir: Path, card_id: str) -> str:
     return "\n".join(lines)
 
 
-def card_summary(card: ResearchCard, own: Sequence[Trial], running: int) -> dict[str, Any]:
-    """One card's list entry as JSON-ready data; *own* are its trials."""
+def card_summary(card: ResearchCard, own: Sequence[Trial], running: int | None) -> dict[str, Any]:
+    """One card's list entry as JSON-ready data; *own* are its trials.
+
+    *running* is the number of its live runs, ``None`` if unknown.
+    """
     best = best_result(own)
     return {
         "id": card.id,
