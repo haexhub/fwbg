@@ -302,8 +302,12 @@ deadlock).
 
 Study scripts call `fwbg.research.study.register_trial(...)` for every
 evaluated variant, failed and discarded ones too. It is not re-exported from
-`fwbg.research`, to avoid import cycles. The config must state the evaluated
-`end_date`: a study has already run, so the gate cannot clamp its window.
+`fwbg.research`, to avoid import cycles. The config must state its
+`timeframe` (a CLI run always fingerprints one, so without it duplicates never
+match) and the evaluated `end_date`: a study has already run, so the gate
+cannot clamp its window. Metrics may only name the trial's symbols, and a run
+id, when given, follows the CLI's rules (the `study:` prefix belongs to the
+backfill).
 Presets are resolved and the timeframe canonicalised as for a CLI run, so
 fingerprints match; the same gate applies (a refusal raises `GateDenied`).
 Calling it is enforced by convention (rule in `CLAUDE.md`/`AGENTS.md`), not

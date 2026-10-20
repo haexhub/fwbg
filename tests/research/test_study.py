@@ -252,3 +252,28 @@ def test_pending_run_id_is_refused(gate_register, tmp_path):
         record(gate_register, run_id="run-1")
     assert denial_codes(denied) == [DenialCode.RUN_ID_IN_USE]
     assert read_trials(gate_register / LEDGER_FILENAME) == []
+
+
+def test_config_without_a_timeframe_is_refused(gate_register):
+    config = {key: value for key, value in CONFIG.items() if key != "timeframe"}
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, config)
+    assert denial_codes(denied) == [DenialCode.INVALID_CONFIG]
+    assert "timeframe" in str(denied.value)
+
+
+@pytest.mark.parametrize(
+    ("symbols", "metrics"),
+    [
+        (["EURUSD"], {"EURUSD": 0.4}),
+        (["EURUSD", 7], METRICS),
+        (["EURUSD"], {7: {"sharpe": 0.4}}),
+        (["EURUSD"], {"GBPUSD": {"sharpe": 0.4}}),
+    ],
+    ids=["metric-not-a-mapping", "symbol-not-a-string", "metric-key-not-a-string", "unknown"],
+)
+def test_malformed_symbols_or_metrics_are_refused(gate_register, symbols, metrics):
+    with pytest.raises(GateDenied) as denied:
+        register_trial("S-0007", CONFIG, symbols, metrics, "x", research_dir=gate_register)
+    assert denial_codes(denied) == [DenialCode.INVALID_CONFIG]
+    assert read_trials(gate_register / LEDGER_FILENAME) == []

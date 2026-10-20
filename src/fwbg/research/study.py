@@ -69,8 +69,10 @@ def register_trial(
     """Record one evaluated variant of a study script as an iteration trial.
 
     Call it for every variant the script evaluated, discarded and failed ones too.
-    *config* is what the variant evaluated, including ``end_date`` (and
-    ``start_date``) of its data; it is fingerprinted like a run's metadata.
+    *config* is what the variant evaluated, including its ``timeframe`` and the
+    ``end_date`` (and ``start_date``) of its data; it is fingerprinted like a
+    run's metadata. *metrics* map symbols of *symbols* to their metrics; a
+    *run_id* follows the CLI's run-id rules.
     The register's gate applies (active card, frozen criteria and cutoff, end on
     or before the cutoff, duplicate configuration needs *reason*).
 
@@ -81,12 +83,7 @@ def register_trial(
     if research_dir is None:
         research_dir = get_research_dir(create=False)
     request = _request(research_id, config, symbols, note, reason)
-    upper_metrics = {symbol.upper(): dict(values) for symbol, values in metrics.items()}
-    if len(upper_metrics) != len(metrics):
-        counts = Counter(symbol.upper() for symbol in metrics)
-        repeated = sorted(symbol for symbol, count in counts.items() if count > 1)
-        message = f"metrics name a symbol more than once: {', '.join(repeated)}"
-        raise GateDenied([Denial(DenialCode.INVALID_CONFIG, message)])
+    upper_metrics = _metrics(metrics, request.symbols)
     status = TrialStatus.FAILED if failed else TrialStatus.OK
     code = run_code({"git": get_git_info(source_dir())})
     try:
@@ -115,19 +112,48 @@ def _request(
             "as a YYYY-MM-DD string"
         )
         raise GateDenied([Denial(DenialCode.INVALID_WINDOW, message)])
-    if isinstance(symbols, str):
-        message = f"symbols must be a list of symbols, not the string {symbols!r}"
+    if isinstance(symbols, str) or not all(isinstance(symbol, str) for symbol in symbols):
+        message = f"symbols must be a list of symbol strings, not {symbols!r}"
         raise GateDenied([Denial(DenialCode.INVALID_CONFIG, message)])
     try:
         # Like prepare_metadata, without a default timeframe: a study states its own.
         metadata = resolve_presets(config)
-        if metadata.get("timeframe") is not None:
-            metadata["timeframe"] = Timeframe.from_str(metadata["timeframe"]).canonical
     except (OSError, ValueError) as exc:
+        message = f"configuration cannot be prepared: {exc}"
+        raise GateDenied([Denial(DenialCode.INVALID_CONFIG, message)]) from exc
+    timeframe = metadata.get("timeframe")
+    try:
+        if not isinstance(timeframe, str):
+            # A CLI run always fingerprints one; without it no duplicate would ever match.
+            raise ValueError(f"a study trial must state its timeframe, not {timeframe!r}")
+        metadata["timeframe"] = Timeframe.from_str(timeframe).canonical
+    except ValueError as exc:
         message = f"configuration cannot be prepared: {exc}"
         raise GateDenied([Denial(DenialCode.INVALID_CONFIG, message)]) from exc
     canonical = tuple(sorted({symbol.upper() for symbol in symbols}))
     return RunRequest(research_id, metadata, canonical, note, reason)
+
+
+def _metrics(
+    metrics: Mapping[str, Mapping[str, float | int | None]], symbols: Sequence[str]
+) -> dict[str, dict[str, float | int | None]]:
+    """*metrics* under upper-case symbols, each one of *symbols*; raises :class:`GateDenied`."""
+    problems = []
+    if not all(isinstance(symbol, str) for symbol in metrics):
+        problems.append("metric symbols must be strings")
+    elif not all(isinstance(values, Mapping) for values in metrics.values()):
+        problems.append("each symbol's metrics must be a mapping of metric names to values")
+    else:
+        counts = Counter(symbol.upper() for symbol in metrics)
+        repeated = sorted(symbol for symbol, count in counts.items() if count > 1)
+        if repeated:
+            problems.append(f"metrics name a symbol more than once: {', '.join(repeated)}")
+        unknown = sorted(set(counts) - set(symbols))
+        if unknown:
+            problems.append(f"metrics for symbols the trial did not evaluate: {', '.join(unknown)}")
+    if problems:
+        raise GateDenied([Denial(DenialCode.INVALID_CONFIG, "; ".join(problems))])
+    return {symbol.upper(): dict(values) for symbol, values in metrics.items()}
 
 
 def _run_id_denials(research_dir: Path, run_id: str, trials: Sequence[Trial]) -> list[Denial]:
