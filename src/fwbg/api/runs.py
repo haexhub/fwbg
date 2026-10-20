@@ -18,7 +18,9 @@ from fwbg.api._paths import (
     safe_results_path as _safe_results_path,
     validate_id as _validate_id,
 )
+from fwbg.api.run_preflight import preflight as _preflight
 from fwbg.api.run_service import RunCapacityError, RunService
+from fwbg.research.runs import gate_enabled
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +121,35 @@ class RunStartRequest(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     cost_multiplier: Optional[float] = Field(default=None, gt=0)
+    research_id: Optional[str] = None
+    note: Optional[str] = None
+    reason: Optional[str] = None
+
+
+def _cli_command(body: RunStartRequest, strategy_file, job_id: str) -> list[str]:
+    """The fwbg CLI argv for a run (separate items, no shell)."""
+    cmd = [sys.executable, "-m", "fwbg.cli", "--strategy-file", str(strategy_file)]
+
+    if body.assets:
+        cmd.extend(["--assets", ",".join(body.assets)])
+    if body.asset_classes:
+        cmd.extend(["--asset-classes", ",".join(body.asset_classes)])
+    if body.description:
+        cmd.extend(["-d", body.description])
+    if body.start_date:
+        cmd.extend(["--start-date", body.start_date])
+    if body.end_date:
+        cmd.extend(["--end-date", body.end_date])
+    if body.cost_multiplier is not None:
+        cmd.extend(["--cost-multiplier", str(body.cost_multiplier)])
+    cmd.extend(["--run-id", job_id])
+    if body.research_id:
+        cmd.extend(["--research-id", body.research_id])
+    if body.note:
+        cmd.extend(["--note", body.note])
+    if body.reason:
+        cmd.extend(["--reason", body.reason])
+    return cmd
 
 
 class PreviewRequest(BaseModel):
@@ -159,27 +190,14 @@ def start_run(body: RunStartRequest) -> dict:
         _run_service.release(_active_jobs, _active_jobs_lock, results_dir, job_id)
         raise HTTPException(404, f"Strategy not found: {body.strategy_name}")
 
-    # Build the fwbg CLI command
-    cmd = [sys.executable, "-m", "fwbg.cli", "--strategy-file", str(strategy_file)]
-
-    if body.assets:
-        cmd.extend(["--assets", ",".join(body.assets)])
-    if body.asset_classes:
-        cmd.extend(["--asset-classes", ",".join(body.asset_classes)])
-    if body.description:
-        cmd.extend(["-d", body.description])
-    if body.start_date:
-        cmd.extend(["--start-date", body.start_date])
-    if body.end_date:
-        cmd.extend(["--end-date", body.end_date])
-    if body.cost_multiplier is not None:
-        cmd.extend(["--cost-multiplier", str(body.cost_multiplier)])
-    cmd.extend(["--run-id", job_id])
+    cmd = _cli_command(body, strategy_file, job_id)
 
     try:
         from fwbg.api.workspace import get_workspace
         env = os.environ.copy()
         env.setdefault("FWBG_WORKSPACE", str(get_workspace()))
+        if gate_enabled():
+            _preflight(cmd, env)
         process, stdout_path, stderr_path = _spawn_cli_process(
             cmd, env, results_dir / job_id
         )
@@ -193,6 +211,10 @@ def start_run(body: RunStartRequest) -> dict:
             stderr_path,
             cmd,
         )
+    except HTTPException:
+        # The research gate refused the run: free the slot, keep no run dir.
+        _run_service.release(_active_jobs, _active_jobs_lock, results_dir, job_id)
+        raise
     except Exception as e:
         log.exception("Failed to start run")
         _run_service.fail_spawn(
