@@ -1,6 +1,6 @@
 # Research Register
 
-## Status: Design approved (2026-10-19) — steps 1-3 (core, backfill, CLI gate) implemented
+## Status: Design approved (2026-10-19) — steps 1-4 (core, backfill, CLI gate, API) implemented
 
 ## Problem
 
@@ -79,8 +79,8 @@ $FWBG_WORKSPACE/test_results/<run_id>/   # run artefacts stay here, untracked
 Why a separate private repo in the workspace:
 
 - `haexhub/fwbg` is public; hypotheses, criteria and results should not be.
-- The API container already persists only the workspace volume
-  (`fwbg-workspace:/root/fwbg`); it cannot write into the source repo.
+- The API container cannot write into the source repo; it reaches the
+  register through a bind mount (see Container).
 - Research results are data, not code.
 
 `configs/` keeps the coverage view and reproducibility intact even when
@@ -202,10 +202,12 @@ Enforcement points:
 - **CLI run path** (`run_optimizer`, `src/fwbg/cli/main.py`) — authoritative.
   Every run passes through here, because `/api/runs/start` spawns the CLI
   (`src/fwbg/api/runs.py:183`).
-- **`POST /api/runs/start`** — preflight with the same function before
-  spawning, so callers such as fwbg-agents get an immediate error instead
-  of a process that dies. `RunStartRequest` gains `research_id`, `note`,
-  `reason`, `holdout`.
+- **`POST /api/runs/start`** — preflight before spawning, so callers such
+  as fwbg-agents get an immediate error instead of a process that dies. The
+  preflight runs the CLI once with `--check-json` (`src/fwbg/api/run_preflight.py`),
+  so the API refuses with the gate's own denials and identical fingerprints
+  without duplicating asset resolution. `RunStartRequest` gains
+  `research_id`, `note`, `reason`; `holdout` follows with step 5.
 
 Before either gate call, the CLI and API resolve `--assets` and
 `--asset-classes` through the same `AssetRegistry`, canonicalise the result
@@ -269,6 +271,12 @@ command's overrides and asset selection and exits 0 (allowed) or 2
 (refused). Neither `--check` nor a refused run writes anything of its own;
 both may record and commit *other* runs' stale pending markers, because
 recovery runs first so that a duplicate from a killed run is seen.
+`--check-json` does the same and prints its result as one
+`RESEARCH_CHECK {…}` stdout line (allowed: kind, fingerprint, symbols,
+window; refused: every denial with code, HTTP status and message).
+`parse_check_output(stdout, returncode)` accepts that line only when it
+matches the exit code, so a line from a CLI that failed before its gate (or
+one a plugin printed) never counts as a gate result.
 
 `FWBG_RESEARCH_GATE=off` disables the gate for the test suite only. It
 prints a warning on every run and is never set in `docker-compose.yml`.
@@ -292,9 +300,14 @@ deadlock).
 
 ### Scripts outside the run system
 
-Study scripts call `fwbg.research.register_trial(...)` with the same
-fields. This is enforced by convention (rule in `CLAUDE.md`/`AGENTS.md`),
-not by code.
+Study scripts call `fwbg.research.study.register_trial(...)` for every
+evaluated variant, failed and discarded ones too. It is not re-exported from
+`fwbg.research`, to avoid import cycles. The config must state the evaluated
+`end_date`: a study has already run, so the gate cannot clamp its window.
+Presets are resolved and the timeframe canonicalised as for a CLI run, so
+fingerprints match; the same gate applies (a refusal raises `GateDenied`).
+Calling it is enforced by convention (rule in `CLAUDE.md`/`AGENTS.md`), not
+by code.
 
 ## Tooling
 
@@ -311,7 +324,7 @@ not by code.
 | `reopen S-NNNN --reason …` | `parked`/`rejected` → `active`. |
 | `init` | Create the register (idempotent). |
 | `backfill scan --out MAPPING` / `backfill apply MAPPING` | Legacy import (see Migration). |
-| `reconcile` | Repair uncommitted register data and index runs missing from the ledger; idempotent. |
+| `reconcile` | Validate the register, record stale pending markers, commit uncommitted register paths (`reports/` included) and report workspace runs missing from the ledger; idempotent. It does not index them: assigning a run to a card needs the operator (`backfill scan/apply`). |
 
 **Coverage view** (`show`): from the canonical configs of all trials,
 list every config path whose value varied, with the set or range of
@@ -331,14 +344,58 @@ development result against the criteria); DSR comes with step 5.
 
 ### HTTP API (fwbg-agents, dashboard)
 
-- `GET /api/research`, `GET /api/research/{id}` — card, trials, coverage.
-- `POST /api/research` — create card.
-- `POST /api/research/{id}/status` — verdict or reopen; requires `actor`.
+Router `src/fwbg/api/research.py` wraps the CLI's card commands and views.
+
+- `GET /api/research[?status=…&tag=…]` → `{"cards": [summary…],
+  "pending_error": str|null}`; a card that does not load is listed as
+  `{id, error}`.
+- `GET /api/research/{id}` → `{card, trials, pending, pending_error,
+  coverage, criteria_problems}`.
+- `POST /api/research` (title, tags, hypothesis, mechanism, optional cutoff
+  and criteria) → 201 `{card}`.
+- `POST /api/research/{id}/status` (status, reason, `actor`, `reopen_if` for
+  a verdict) → `{card}`; the actor is recorded with the verdict or reopen.
+- Write endpoints add `"warning"` when the write landed but was not
+  committed; the caller must not retry then. 404 unknown card, 422 input
+  errors, 409 conflicts and an unreadable register.
+- `POST /api/runs/start` refusals: `detail = {"message", "denials"}` (409
+  if any denial is a 409, else 422); a preflight that failed before the gate
+  `{"message", "output"}` (422); 504 on preflight timeout (120 s).
 
 fwbg-agents integration (separate plan in the agents repo): the
 Researcher queries `GET /api/research?tag=…` before proposing; its
 `Strategy` row stores `research_id`; its `abandon` + post-mortem maps to a
 research verdict.
+
+### Container
+
+The Docker stack runs on the operator's machine; compose bind-mounts the
+host register (`${FWBG_RESEARCH_HOST_DIR:-$HOME/fwbg/research}`) at
+`/root/fwbg/research`, so CLI and API record into one register.
+
+- The register must be created on the host first (`python -m fwbg.cli
+  research init`); `create_host_path: false` makes compose refuse a missing
+  host path instead of starting an empty second register.
+- The image has `git`. The container commits as `fwbg-api
+  <fwbg-api@localhost>` (env in compose); it has no signing key and no
+  hooks, so its commits are unsigned. The operator's own commits stay signed.
+- The container runs as root. On exit, `register_lock` hands every
+  root-owned file in the register back to the register directory's owner
+  (`restore_owner`); otherwise the host user could no longer write
+  `.git/objects`. The lock file is opened `O_RDONLY|O_CREAT`, so one root
+  created stays usable (flock needs no write access).
+- Every register git call passes `-c safe.directory=<register>` (git
+  refuses a repository owned by another user) and `gc.auto=0`,
+  `maintenance.auto=false` (git detaches those, so they would create
+  root-owned files after ownership was restored). Trusting the directory
+  runs the register's git config and hooks as root; acceptable, as the
+  register's owner is the operator, who controls Docker anyway.
+- `hostname: fwbg-api`: pending markers carry the host name, and a marker
+  from another host always looks alive. A stable name lets a restarted
+  container record its own interrupted runs.
+- A container killed while it holds the register lock can leave root-owned
+  files (e.g. `.git/objects/xx/`) until its next register write. Fix at once
+  with `sudo chown -R "$USER": ~/fwbg/research`.
 
 ### AI sessions
 
@@ -346,9 +403,9 @@ research verdict.
 register", since step 3): before proposing a test, run `fwbg research
 list/show`; a new idea gets a card first; every run uses `--research-id`
 and `--note`; never set `FWBG_RESEARCH_GATE`; only a deliberate verdict
-closes a strategy. Study scripts calling `register_trial()` is added to the
-rule with step 4. The rule contains no results and can live in the public
-repo.
+closes a strategy. Since step 4 the rule also requires study scripts to
+call `fwbg.research.study.register_trial()`. The rule contains no results
+and can live in the public repo.
 
 ## Migration
 
@@ -396,15 +453,16 @@ Full backfill of all existing runs and studies:
 - Ledger append or research-repo commit fails after a successful run →
   warning, the run is not failed. The pending marker stays and the next
   gated run, `--check` or `verdict` records it; every register commit stages
-  all register paths, so it also picks up an earlier failed commit. `reconcile` first
-  validates the ledger and detects register files changed since the last
-  research-repo commit. It stages only the register paths (`strategies/`,
-  `trials.jsonl`, `configs/` and `reports/`) and creates a recovery commit
-  for that already-appended trial, leaving unrelated research-repo changes
-  untouched. It then indexes any workspace runs missing from the ledger and
-  commits those changes too.
-  If validation or the recovery commit fails again, it leaves the data in
-  place, reports the failure, and remains safe to retry.
+  all register paths, so it also picks up an earlier failed commit. `reconcile`
+  validates the ledger and every card under the register lock (and changes
+  nothing if one does not parse), records stale pending markers, then stages
+  only the register paths (`strategies/`, `trials.jsonl`, `configs/` and
+  `reports/`) and creates a recovery commit, leaving unrelated research-repo
+  changes untouched. It then reports workspace runs missing from the ledger
+  (runs in progress left out) but does not index them: assigning a run to a
+  card needs the operator (`research backfill scan/apply`).
+  If validation or the recovery commit fails, it leaves the data in place,
+  reports the failure, and remains safe to retry.
 - Unparseable card or ledger → the gate denies (fail closed).
 - Concurrent runs → serialized by the file lock.
 
@@ -437,8 +495,15 @@ Each step is usable on its own.
    `--check`, `CLAUDE.md`/`AGENTS.md` rule — done (plan
    `docs/plans/2026-10-20-research-register-gate.md`). Until step 4, API,
    dashboard and fwbg-agents runs are refused (no `--research-id`).
-4. **API** gate and endpoints, `register_trial()` (and its line in the
-   `CLAUDE.md`/`AGENTS.md` rule), `reconcile`.
+4. **API** gate (`--check-json` preflight) and endpoints,
+   `fwbg.research.study.register_trial()` (and its line in the
+   `CLAUDE.md`/`AGENTS.md` rule), `reconcile`, register mount in the API
+   container — done (plan `docs/plans/2026-10-20-research-register-api.md`).
+   For later steps: fwbg-agents (step 6) must call `/api/runs/start` with a
+   timeout of at least 130 s — the preflight runs the CLI (up to 120 s),
+   httpx defaults to 5 s, and a client timeout would orphan a started run.
+   The dashboard sends no `research_id`/`note` yet, so dashboard starts are
+   refused with 422 until step 7.
 5. **Holdout mode** and verdict statistics (DSR).
 6. **fwbg-agents integration** (separate plan, agents repo).
 7. **Dashboard page** (phase 2).
@@ -449,8 +514,9 @@ Each step is usable on its own.
   split the requested window internally. A holdout trial must train on
   data up to the cutoff and report metrics only for the period after it.
   Needs investigation before step 5.
-- **`/api/runs/preview`.** Counts as a trial only if it reports
-  performance metrics; decide during step 4.
+- **`/api/runs/preview`** — closed in step 4: not a trial. It shows one
+  symbol's signals with fixed TP/SL and reports no aggregated metrics;
+  fwbg-agents does not call it.
 
 ## Alternatives considered
 
