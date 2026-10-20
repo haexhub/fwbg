@@ -32,6 +32,8 @@ class DenialCode(str, Enum):
     HOLDOUT_REPEAT = "holdout_repeat"
     HOLDOUT_CONTAMINATED = "holdout_contaminated"
     DUPLICATE_FINGERPRINT = "duplicate_fingerprint"
+    REGISTER_UNREADABLE = "register_unreadable"
+    RUN_ID_IN_USE = "run_id_in_use"
 
     @property
     def http_status(self) -> int:

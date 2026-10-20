@@ -245,6 +245,8 @@ HTTP_STATUS = {
     "holdout_repeat": 409,
     "holdout_contaminated": 409,
     "duplicate_fingerprint": 409,
+    "register_unreadable": 409,
+    "run_id_in_use": 409,
 }
 
 
