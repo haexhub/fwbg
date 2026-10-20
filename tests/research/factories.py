@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping, Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 from fwbg.research.card import ResearchCard, Status, criteria_hash
 from fwbg.research.ledger import Trial, TrialKind, TrialStatus, append_trial
+
+# A documented study trial as a backfill mapping states it.
+STUDY = {
+    "variant": "config-4",
+    "symbols": ["eurusd"],
+    "date": date(2026, 2, 1),
+    "note": "narrative state",
+}
 
 
 def make_card(**overrides: Any) -> ResearchCard:
@@ -51,3 +61,63 @@ def append_many(ledger: str, worker: int, count: int) -> None:
     """Process target for concurrency tests: append *count* trials."""
     for index in range(count):
         append_trial(Path(ledger), make_trial(run_id=f"w{worker}-{index}"))
+
+
+def make_run(
+    results_dir: Path,
+    run_id: str,
+    *,
+    name: str = "orb-test",
+    timestamp: str = "2026-03-05T10:00:00",
+    timeframe: str | None = "MINUTE_15",
+    config_timeframe: str | None = None,
+    symbols: Mapping[str, Mapping[str, Any] | None] | None = None,
+    legacy_files: Mapping[str, Mapping[str, Any]] | None = None,
+    strategy_extra: Mapping[str, Any] | None = None,
+    elite: Sequence[Mapping[str, Any]] = (),
+) -> Path:
+    """Write a minimal legacy run directory.
+
+    ``symbols`` maps a ``grid_details/<SYMBOL>/`` directory to ``None`` (no result
+    file) or to optional ``status`` (default ``ok``; ``None`` leaves it out),
+    ``result`` (extra ``config.json`` content), ``unified`` and ``fold`` (content of
+    ``unified_metrics.json`` and ``fold_results.json``). ``legacy_files`` maps a
+    symbol to the content of a February-format ``grid_details/<SYMBOL>.json``.
+    """
+    run_dir = results_dir / run_id
+    run_dir.mkdir(parents=True)
+    strategy: dict[str, Any] = {"name": name, "pipeline": {"indicators": []}, "model": {}}
+    if timeframe is not None:
+        strategy["timeframe"] = timeframe
+    strategy.update(strategy_extra or {})
+    (run_dir / "strategy.json").write_text(json.dumps(strategy), encoding="utf-8")
+    config = {
+        "run_id": run_id,
+        "timestamp": timestamp,
+        "timeframe": config_timeframe or timeframe or "HOUR_1",
+        "git": {"commit": "abc123", "branch": "main", "dirty": True, "last_commit_message": "x"},
+    }
+    (run_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    details = run_dir / "grid_details"
+    details.mkdir()
+    default = {"GOLD": {"unified": {"sharpe": 0.5}}}
+    for symbol, spec in (symbols if symbols is not None else default).items():
+        folder = details / symbol
+        folder.mkdir()
+        if spec is None:
+            continue
+        result: dict[str, Any] = {"symbol": symbol}
+        if spec.get("status", "ok") is not None:
+            result["status"] = spec.get("status", "ok")
+        result.update(spec.get("result", {}))
+        (folder / "config.json").write_text(json.dumps(result), encoding="utf-8")
+        for key, filename in (("unified", "unified_metrics.json"), ("fold", "fold_results.json")):
+            if key in spec:
+                (folder / filename).write_text(json.dumps(spec[key]), encoding="utf-8")
+    for symbol, content in (legacy_files or {}).items():
+        (details / f"{symbol}.json").write_text(json.dumps(content), encoding="utf-8")
+    if elite:
+        (run_dir / "results.json").write_text(
+            json.dumps({"elite_results": list(elite)}), encoding="utf-8"
+        )
+    return run_dir
