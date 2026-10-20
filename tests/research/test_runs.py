@@ -314,6 +314,12 @@ def test_gate_is_on_unless_switched_off(monkeypatch):
     assert not gate_enabled()
 
 
+def test_gate_off_is_ignored_outside_the_test_runner(monkeypatch):
+    monkeypatch.setenv(GATE_ENV, "off")
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    assert gate_enabled()
+
+
 def test_failed_marker_write_refuses_and_records_nothing(gate_register, results, monkeypatch):
     def broken(*_):
         raise OSError("read-only file system")

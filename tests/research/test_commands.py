@@ -89,7 +89,7 @@ def test_new_card_registers_the_next_active_card(gate_register):
     assert created.criteria_amendments == ()
     headings = [line for line in created.body.splitlines() if line.startswith("## ")]
     assert headings == ["## Hypothesis", "## Mechanism", "## History", "## Verdict"]
-    assert created.body.endswith("## History\n\n## Verdict\n")
+    assert created.body.endswith("## History\n\n## Verdict\n\nOpen.\n")
     assert "Breakouts persist." in created.body
     assert git_status(gate_register) == ""
 

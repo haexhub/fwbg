@@ -7,6 +7,7 @@ import hashlib
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fwbg.core.git_env import isolated_git_env, source_dir
 from fwbg.data import config as data_config
@@ -97,9 +98,9 @@ STRATEGY_SCHEMA = {
 }
 
 
-def get_git_info(source: Path | None = None):
+def get_git_info(source: Path | None = None) -> dict[str, Any]:
     """Holt Git-Informationen für Reproduzierbarkeit (des Repos, das *source* enthält)."""
-    git_info = {}
+    git_info: dict[str, Any] = {}
     cwd = source if source is not None else source_dir()
     env = isolated_git_env()
     try:
