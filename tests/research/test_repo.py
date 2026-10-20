@@ -1,4 +1,5 @@
 import fcntl
+import os
 import shutil
 import subprocess
 
@@ -235,6 +236,25 @@ def test_commit_register_commits_a_deleted_tracked_directory(tmp_path, git_env):
     assert commit_register(research, ["configs"], "chore: drop configs") is True
     assert set(committed_files(research)) == set(REGISTER_FILES)
     assert git(research, "status", "--porcelain") == ""
+
+
+def test_temporary_files_are_never_committed(tmp_path, git_env, monkeypatch):
+    research = tmp_path / "research"
+    init_research_repo(research)
+    (research / "configs" / "stray.json.tmp").write_text("{", encoding="utf-8")
+    temp_names = []
+    replace = os.replace
+
+    def record(source, target):
+        temp_names.append(os.path.basename(source))
+        replace(source, target)
+
+    monkeypatch.setattr("fwbg.research.repo.os.replace", record)
+    config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
+    path = store_config(research, digest(config), config)
+    assert [name.endswith(".tmp") for name in temp_names] == [True]
+    assert commit_register(research, ["configs"], "chore: add config") is True
+    assert set(committed_files(research)) == {*REGISTER_FILES, f"configs/{path.name}"}
 
 
 def test_commit_register_keeps_register_ignored_files_out(tmp_path, git_env):
