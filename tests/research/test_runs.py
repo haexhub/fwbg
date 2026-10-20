@@ -5,6 +5,7 @@ import pytest
 
 from fwbg.research.gate import DenialCode
 from fwbg.research.ledger import LEDGER_FILENAME, TrialStatus, append_trial, read_trials
+from fwbg.research.legacy import LegacyRunError
 from fwbg.research.pending import STAGING, read_pending
 from fwbg.research.repo import ResearchRepoError
 from fwbg.research.runs import (
@@ -147,6 +148,22 @@ def test_run_id_of_a_running_run_is_refused(gate_register, results):
     ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "a").before_run(
         METADATA, ["EURUSD"]
     )
+    run = ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "b")
+    with pytest.raises(GateDenied) as denied:
+        run.before_run({**METADATA, "model": {"x": 1}}, ["EURUSD"])
+    assert denial_codes(denied) == [DenialCode.RUN_ID_IN_USE]
+
+
+def test_run_id_of_an_unrecordable_stale_marker_is_refused(gate_register, results, monkeypatch):
+    ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "a").before_run(
+        METADATA, ["EURUSD"]
+    )
+    rewrite_marker_pid(gate_register, "run-1", dead_pid())
+
+    def unrecordable(*_):
+        raise LegacyRunError("run-1: broken")
+
+    monkeypatch.setattr("fwbg.research.pending.finish", unrecordable)
     run = ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "b")
     with pytest.raises(GateDenied) as denied:
         run.before_run({**METADATA, "model": {"x": 1}}, ["EURUSD"])

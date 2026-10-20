@@ -31,6 +31,7 @@ from fwbg.research.pending import (
     PendingRun,
     finish,
     live_runs,
+    read_pending,
     recover_stale,
     tag_run,
     valid_run_id,
@@ -188,9 +189,15 @@ class ResearchRun:
                     f"run id {self.run_id} is already recorded ({', '.join(map(str, recorded))})",
                 )
             )
+        # Every marker, not only live ones: a stale marker that could not be recorded keeps its id.
+        if any(run.run_id == self.run_id for run in read_pending(self.research_dir)):
+            denials.append(
+                Denial(
+                    DenialCode.RUN_ID_IN_USE,
+                    f"run {self.run_id} is pending (running or unrecorded)",
+                )
+            )
         running = live_runs(self.research_dir)
-        if any(run.run_id == self.run_id for run in running):
-            denials.append(Denial(DenialCode.RUN_ID_IN_USE, f"run {self.run_id} is running"))
         if decision.fingerprint is not None and not (self.reason and self.reason.strip()):
             same = [run.run_id for run in running if run.trial.fingerprint == decision.fingerprint]
             if same:
