@@ -1,10 +1,10 @@
-"""Read-only views of the research register: ``fwbg research list`` and ``show``."""
+"""Read-only views of the research register: ``fwbg research list``, ``show`` and API data."""
 
 from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -36,18 +36,9 @@ def list_lines(
     """One line per card, in id order; a card that does not load shows its error."""
     trials = read_trials(research_dir / LEDGER_FILENAME)
     rows: list[tuple[str, ...] | str] = []
-    for card_id in _card_ids(research_dir):
-        try:
-            card = load_card(research_dir, card_id)
-        except CardError as exc:
-            # Shown under every filter: it might match, and it needs fixing.
-            rows.append(f"{card_id}  unreadable: {exc}")
-            continue
-        if card is None:
-            continue
-        if (status is not None and card.status is not status) or (
-            tag is not None and tag not in card.tags
-        ):
+    for card_id, card in iter_cards(research_dir, status, tag):
+        if isinstance(card, CardError):
+            rows.append(f"{card_id}  unreadable: {card}")
             continue
         own = [trial for trial in trials if trial.strategy == card.id]
         counted = _plural(sum(trial.counted for trial in own), "trial")
@@ -71,6 +62,26 @@ def list_lines(
             )
         )
     return lines
+
+
+def iter_cards(
+    research_dir: Path, status: Status | None = None, tag: str | None = None
+) -> Iterator[tuple[str, ResearchCard | CardError]]:
+    """The cards matching *status* and *tag* in id order, each with its id.
+
+    A card that does not load comes as its :class:`CardError`, under every filter:
+    it might match, and it needs fixing.
+    """
+    for card_id in card_ids(research_dir):
+        try:
+            card = load_card(research_dir, card_id)
+        except CardError as exc:
+            yield card_id, exc
+            continue
+        if card is None:
+            continue
+        if (status is None or card.status is status) and (tag is None or tag in card.tags):
+            yield card_id, card
 
 
 def show_text(research_dir: Path, card_id: str) -> str:
@@ -101,9 +112,57 @@ def show_text(research_dir: Path, card_id: str) -> str:
         f"{len(own) - counted} failed or smoke",
         *(_trial_row(trial) for trial in own),
         "",
-        *_coverage_section(research_dir, own),
+        *coverage_section(research_dir, own),
     ]
     return "\n".join(lines)
+
+
+def card_summary(card: ResearchCard, own: Sequence[Trial], running: int | None) -> dict[str, Any]:
+    """One card's list entry as JSON-ready data; *own* are its trials.
+
+    *running* is the number of its live runs, ``None`` if unknown.
+    """
+    best = best_result(own)
+    return {
+        "id": card.id,
+        "title": card.title,
+        "status": card.status.value,
+        "tags": list(card.tags),
+        "created": card.created.isoformat(),
+        "holdout_cutoff": card.holdout_cutoff.isoformat(),
+        "trials": sum(trial.counted for trial in own),
+        "best": (
+            None
+            if best is None
+            else {"trial": best.trial_id, "symbol": best.symbol, "metrics": dict(best.metrics)}
+        ),
+        "holdout_used": any(trial.kind is TrialKind.HOLDOUT for trial in own),
+        "running": running,
+    }
+
+
+def card_data(card: ResearchCard) -> dict[str, Any]:
+    """The whole card as JSON-ready data: front matter plus the Markdown body."""
+    return {
+        "id": card.id,
+        "title": card.title,
+        "status": card.status.value,
+        "tags": list(card.tags),
+        "created": card.created.isoformat(),
+        "holdout_cutoff": card.holdout_cutoff.isoformat(),
+        "holdout_contaminated": card.holdout_contaminated,
+        "success_criteria": dict(card.success_criteria),
+        "registered_criteria_hash": card.registered_criteria_hash,
+        "criteria_amendments": [
+            {
+                "date": amendment.date.isoformat(),
+                "reason": amendment.reason,
+                "criteria_hash": amendment.criteria_hash,
+            }
+            for amendment in card.criteria_amendments
+        ],
+        "body": card.body,
+    }
 
 
 def coverage(configs: Sequence[Mapping[str, Any]], evaluated: Iterable[str] = ()) -> list[str]:
@@ -141,7 +200,8 @@ def _path_values(path: str, flat: Sequence[Mapping[str, set[str]]]) -> list[str]
     return found + [_MISSING] if any(path not in values for values in flat) else found
 
 
-def _card_ids(research_dir: Path) -> list[str]:
+def card_ids(research_dir: Path) -> list[str]:
+    """The ids of the card files in the register, sorted."""
     return sorted(
         {
             match.group(1)
@@ -208,7 +268,8 @@ def _trial_row(trial: Trial) -> str:
     )
 
 
-def _coverage_section(research_dir: Path, own: Sequence[Trial]) -> list[str]:
+def coverage_section(research_dir: Path, own: Sequence[Trial]) -> list[str]:
+    """The coverage lines of ``show``: a header, then the indented :func:`coverage`."""
     configs = []
     left_out = 0
     for fingerprint in dict.fromkeys(trial.fingerprint for trial in own):

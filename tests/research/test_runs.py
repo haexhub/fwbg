@@ -17,7 +17,7 @@ from fwbg.research.runs import (
     prepare_metadata,
     run_gated,
 )
-from tests.research.factories import make_run, make_trial
+from tests.research.factories import dead_pid, make_run, make_trial
 
 METADATA = {"name": "x", "timeframe": "HOUR_1", "pipeline": {"indicators": []}, "model": {}}
 
@@ -38,12 +38,6 @@ def rewrite_marker_pid(register, run_id, pid) -> None:
     record = json.loads(path.read_text(encoding="utf-8"))
     record["pid"] = pid
     path.write_text(json.dumps(record), encoding="utf-8")
-
-
-def dead_pid() -> int:
-    with subprocess.Popen(["true"]) as process:
-        process.wait()
-    return process.pid
 
 
 def denial_codes(denied) -> list[DenialCode]:

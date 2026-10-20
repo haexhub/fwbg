@@ -8,6 +8,8 @@ from fwbg.research import commands, pending
 from fwbg.research.card import CardError, Status, criteria_hash, load_card, replace_card
 from fwbg.research.commands import (
     CommandError,
+    CommandInputError,
+    UncommittedError,
     amend_criteria,
     months_before,
     new_card,
@@ -19,8 +21,7 @@ from fwbg.research.ledger import LEDGER_FILENAME, append_trial, read_trials
 from fwbg.research.pending import write_pending
 from fwbg.research.ledger import TrialKind
 from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register
-from tests.research.factories import make_card, make_run, make_trial
-from tests.research.test_pending import dead_pid, make_pending
+from tests.research.factories import dead_pid, make_card, make_pending, make_run, make_trial
 
 TODAY = date(2026, 10, 20)
 REFUSED_AMEND = (
@@ -101,7 +102,7 @@ def test_new_card_takes_cutoff_and_slug(gate_register):
 
 
 def test_new_card_refuses_a_future_cutoff(gate_register):
-    with pytest.raises(CommandError, match="future"):
+    with pytest.raises(CommandInputError, match="future"):
         new_card(gate_register, "x", [], TODAY, cutoff=date(2026, 10, 21))
 
 
@@ -111,7 +112,7 @@ def test_new_card_refuses_an_unknown_criterion(gate_register):
 
 
 def test_new_card_refuses_a_multi_line_title(gate_register):
-    with pytest.raises(CommandError, match="title"):
+    with pytest.raises(CommandInputError, match="title"):
         new_card(gate_register, "a\nb", [], TODAY)
 
 
@@ -221,7 +222,7 @@ def test_verdict_refuses_a_card_that_is_not_active(gate_register):
 
 
 def test_verdict_refuses_the_status_active(gate_register):
-    with pytest.raises(CommandError, match="not active"):
+    with pytest.raises(CommandInputError, match="not active"):
         write_verdict(gate_register, "S-0007", Status.ACTIVE, "x", "y", TODAY)
 
 
@@ -283,14 +284,45 @@ def test_reopen_refuses_active_and_candidate_cards(gate_register, status):
         reopen(gate_register, "S-0007", "x", TODAY)
 
 
+# --- actor -------------------------------------------------------------------
+
+
+def test_verdict_records_its_actor_after_the_reopen_condition(gate_register):
+    write_verdict(gate_register, "S-0007", Status.PARKED, "paused", "time", TODAY, actor="agent-7")
+    assert "Reopen if: time\nBy: agent-7\nTrials: " in card(gate_register).body
+
+
+def test_verdict_without_an_actor_names_none(gate_register):
+    write_verdict(gate_register, "S-0007", Status.PARKED, "paused", "time", TODAY)
+    assert "By:" not in card(gate_register).body
+
+
+def test_reopen_records_its_actor(gate_register):
+    set_card(gate_register, status=Status.PARKED, body="## History\n")
+    reopen(gate_register, "S-0007", "new data", TODAY, actor="agent-7")
+    assert card(gate_register).body == (
+        "## History\n\n- 2026-10-20: reopened from parked by agent-7: new data\n"
+    )
+
+
+@pytest.mark.parametrize("actor", ["", "  ", "a\nb"])
+def test_verdict_and_reopen_refuse_a_blank_or_multi_line_actor(gate_register, actor):
+    with pytest.raises(CommandInputError, match="actor must be one non-empty line"):
+        write_verdict(gate_register, "S-0007", Status.PARKED, "x", "y", TODAY, actor=actor)
+    set_card(gate_register, status=Status.PARKED)
+    with pytest.raises(CommandInputError, match="actor must be one non-empty line"):
+        reopen(gate_register, "S-0007", "x", TODAY, actor=actor)
+    assert card(gate_register).status is Status.PARKED
+
+
 # --- review fixes ------------------------------------------------------------
 
 
 @pytest.mark.parametrize("text", ["x\n## Verdict\n\nfake", "# Title", "a\n#\tb"])
 def test_new_card_refuses_headings_in_section_text(gate_register, text):
-    with pytest.raises(CommandError, match="heading"):
+    with pytest.raises(CommandInputError, match="heading"):
         new_card(gate_register, "x", [], TODAY, hypothesis=text)
-    with pytest.raises(CommandError, match="heading"):
+    with pytest.raises(CommandInputError, match="heading"):
         new_card(gate_register, "x", [], TODAY, mechanism=text)
 
 
@@ -399,7 +431,10 @@ def test_a_failed_commit_is_reported_and_leaves_the_change_on_disk(
         raise ResearchRepoError("git commit failed: boom")
 
     monkeypatch.setattr(commands, "commit_register", broken)
-    with pytest.raises(CommandError, match=f"{card_id} was updated on disk but not committed"):
+    with pytest.raises(
+        UncommittedError, match=f"{card_id} was updated on disk but not committed"
+    ) as raised:
         command(gate_register)
+    assert raised.value.card_id == card_id
     assert card(gate_register, card_id) is not None
     assert git_status(gate_register) != ""

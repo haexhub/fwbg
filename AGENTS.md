@@ -9,6 +9,10 @@ private research register in `$FWBG_WORKSPACE/research`.
   with its hypothesis and mechanism written before the first run.
 - Every run passes `--research-id S-NNNN --note "<what changed and why>"`;
   re-running an identical configuration needs `--reason`. Dry-run with `--check`.
+- Scripts that evaluate strategies outside `python -m fwbg.cli` record every
+  evaluated variant (failed and discarded ones too) with
+  `fwbg.research.study.register_trial(...)`, stating the config they evaluated
+  including its `timeframe` and `end_date`.
 - Never set `FWBG_RESEARCH_GATE`; it exists for the test suite only.
 - A strategy is closed only by a deliberate `research verdict`, never after
   one failed configuration.
