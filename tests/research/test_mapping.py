@@ -120,3 +120,17 @@ def test_load_mapping_reads_a_yaml_draft(runs):
 def test_load_mapping_reports_yaml_errors(text, fragment):
     with pytest.raises(BackfillError, match=fragment):
         load_mapping(text)
+
+
+def test_unknown_top_level_keys_are_refused():
+    # A dedented block lands at the top level instead of in its card.
+    text = (
+        "cards:\n"
+        "- id: S-0001\n"
+        "  title: jev\n"
+        "  runs: [r1]\n"
+        "studies:\n"
+        "- {variant: a, symbols: [EURUSD], date: 2026-09-25, note: first}\n"
+    )
+    with pytest.raises(BackfillError, match="unknown top-level keys: studies"):
+        load_mapping(text)
