@@ -99,6 +99,30 @@ def test_gated_run_is_recorded(gated, monkeypatch):
     assert read_pending(gated.register) == []
 
 
+def test_marker_holds_the_absolute_run_dir(gated, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(storage, "RESULTS_BASE_PATH", "results")
+    markers = []
+
+    def spying_optimizer(**kwargs):
+        gate = kwargs["before_run"]
+
+        def before_run(metadata, symbols):
+            effective = gate(metadata, symbols)
+            markers.extend(read_pending(gated.register))
+            return effective
+
+        return gated.fake(**{**kwargs, "before_run": before_run})
+
+    monkeypatch.setattr(cli, "run_optimizer", spying_optimizer)
+    run_cli(
+        monkeypatch,
+        *("--strategy-file", str(gated.file), "--research-id", "S-0007"),
+        *("--note", "baseline", "--run-id", "r1"),
+    )
+    assert [run.run_dir for run in markers] == [tmp_path / "results" / "r1"]
+
+
 def test_failed_run_exits_1_and_is_recorded(gated, monkeypatch):
     gated.fake.symbols, gated.fake.result = {}, None
     with pytest.raises(SystemExit) as exited:
