@@ -14,3 +14,11 @@ def runs(tmp_path):
     make_run(results, "r2", name="orb-test", timestamp="2026-03-06T09:00:00")
     make_run(results, "r3", name="pdh retest", timestamp="2026-02-22T08:00:00")
     return scan_runs(results, tmp_path / "presets")
+
+
+@pytest.fixture
+def strategies_dir(tmp_path):
+    """A research directory with an empty ``strategies/`` folder and no git."""
+    research = tmp_path / "research"
+    (research / "strategies").mkdir(parents=True)
+    return research

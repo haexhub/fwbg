@@ -4,23 +4,34 @@ from __future__ import annotations
 
 import contextlib
 import math
+import os
 import re
-from collections.abc import Mapping
+import uuid
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from fwbg.research.fingerprint import DIGEST_RE, digest
 
+if TYPE_CHECKING:
+    # ledger imports CARD_ID_RE from here.
+    from fwbg.research.ledger import Trial
+
 CARD_ID_RE = re.compile(r"S-[0-9]{4}")
+CARD_FILE_RE = re.compile(r"(S-[0-9]{4})(?:-.*)?\.md")
+CRITERIA_NAMES = frozenset(
+    {"min_sharpe", "min_trades", "max_drawdown", "min_fold_stability", "max_p_value"}
+)
 # At most 60 characters, the length slugify cuts a title to.
 SLUG_RE = re.compile(r"(?=.{1,60}\Z)[a-z0-9]+(?:-[a-z0-9]+)*")
 _FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
+_HEADING_RE = re.compile(r"^## (.+?)[ \t]*$", re.MULTILINE)
 _FIELDS = frozenset(
     {
         "id",
@@ -104,7 +115,7 @@ def parse_card(text: str) -> ResearchCard:
             created=_as_date(meta["created"], "created"),
             holdout_cutoff=_as_date(meta["holdout_cutoff"], "holdout_cutoff"),
             holdout_contaminated=_flag(meta["holdout_contaminated"], "holdout_contaminated"),
-            success_criteria=_criteria(meta["success_criteria"]),
+            success_criteria=validate_criteria(meta["success_criteria"]),
             registered_criteria_hash=_hash(
                 meta["registered_criteria_hash"], "registered_criteria_hash"
             ),
@@ -115,25 +126,29 @@ def parse_card(text: str) -> ResearchCard:
         raise CardError(f"missing field: {exc.args[0]}") from exc
 
 
-def load_card(research_dir: Path, card_id: str) -> ResearchCard | None:
-    """Load card *card_id* from ``strategies/``; ``None`` if no file exists for it."""
+def card_path(research_dir: Path, card_id: str) -> Path | None:
+    """The file of card *card_id*; ``None`` if there is none."""
     _card_id(card_id)
     folder = research_dir / "strategies"
     paths = sorted({*folder.glob(f"{card_id}-*.md"), *folder.glob(f"{card_id}.md")})
-    if not paths:
-        return None
     if len(paths) > 1:
         raise CardError(f"ambiguous research id {card_id}: {[p.name for p in paths]}")
+    return paths[0] if paths else None
+
+
+def load_card(research_dir: Path, card_id: str) -> ResearchCard | None:
+    """Load card *card_id* from ``strategies/``; ``None`` if no file exists for it."""
+    path = card_path(research_dir, card_id)
+    if path is None:
+        return None
     try:
-        card = parse_card(paths[0].read_text(encoding="utf-8-sig"))
+        card = parse_card(path.read_text(encoding="utf-8-sig"))
     except UnicodeDecodeError as exc:
-        raise CardError(
-            f"{paths[0].name}: not valid UTF-8 ({exc.reason} at byte {exc.start})"
-        ) from exc
+        raise CardError(f"{path.name}: not valid UTF-8 ({exc.reason} at byte {exc.start})") from exc
     except CardError as exc:
-        raise CardError(f"{paths[0].name}: {exc}") from exc
+        raise CardError(f"{path.name}: {exc}") from exc
     if card.id != card_id:
-        raise CardError(f"{paths[0].name} declares id {card.id}, expected {card_id}")
+        raise CardError(f"{path.name} declares id {card.id}, expected {card_id}")
     return card
 
 
@@ -206,13 +221,19 @@ def _as_date(value: object, field_name: str) -> date:
     raise CardError(f"{field_name}: expected a date, got {value!r}")
 
 
-def _criteria(value: object) -> Mapping[str, float]:
+def validate_criteria(value: object) -> Mapping[str, float]:
+    """Success criteria as a read-only mapping; raise :class:`CardError` on any defect."""
     if not isinstance(value, Mapping) or not value:
         raise CardError("success_criteria must be a non-empty mapping")
     criteria: dict[str, float] = {}
     for key, threshold in value.items():
         if not isinstance(key, str):
             raise CardError(f"success_criteria: keys must be text, got {key!r}")
+        if key not in CRITERIA_NAMES:
+            raise CardError(
+                f"success_criteria: unknown criterion {key!r} "
+                f"(known: {', '.join(sorted(CRITERIA_NAMES))})"
+            )
         if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
             raise CardError(f"success_criteria.{key}: expected a number, got {threshold!r}")
         try:
@@ -323,3 +344,53 @@ def write_card(research_dir: Path, card: ResearchCard, slug: str) -> Path:
             path.unlink(missing_ok=True)
         raise
     return path
+
+
+def replace_card(research_dir: Path, card: ResearchCard) -> Path:
+    """Rewrite the existing file of ``card.id`` atomically; call under ``register_lock``."""
+    path = card_path(research_dir, card.id)
+    if path is None:
+        raise CardError(f"no research card {card.id}")
+    text = render_card(card)
+    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temp.write_text(text, encoding="utf-8")
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+    return path
+
+
+def next_card_id(research_dir: Path, trials: Iterable[Trial]) -> str:
+    """The id after the highest card file or ledger card; call under ``register_lock``."""
+    numbers = [
+        int(match.group(1)[2:])
+        for path in (research_dir / "strategies").glob("S-*.md")
+        if (match := CARD_FILE_RE.fullmatch(path.name))
+    ]
+    numbers += [int(trial.strategy[2:]) for trial in trials]
+    number = max(numbers, default=0) + 1
+    if number > 9999:
+        raise CardError("research ids are exhausted (S-9999)")
+    return f"S-{number:04d}"
+
+
+def add_section_entry(body: str, heading: str, entry: str, before: Sequence[str] = ()) -> str:
+    """Append *entry* to the ``## <heading>`` section of a card body.
+
+    A missing section is created before the first *before* section the body
+    has, else at the end. Text outside the section stays as it was.
+    """
+    entry = entry.strip("\n")
+    heads = list(_HEADING_RE.finditer(body))
+    own = next((m for m in heads if m.group(1) == heading), None)
+    if own is not None:
+        end = next((m.start() for m in heads if m.start() > own.start()), len(body))
+        section, tail = body[own.start() : end].rstrip("\n"), body[end:]
+        return body[: own.start()] + section + "\n\n" + entry + "\n" + ("\n" + tail if tail else "")
+    new = f"## {heading}\n\n{entry}\n"
+    anchor = next((m.start() for m in heads if m.group(1) in before), None)
+    if anchor is not None:
+        return body[:anchor] + new + "\n" + body[anchor:]
+    head = body.rstrip("\n")
+    return (head + "\n\n" if head else "") + new

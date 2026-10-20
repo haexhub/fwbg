@@ -39,7 +39,8 @@ def test_draft_gives_a_name_without_ascii_words_a_numbered_slug(tmp_path):
         ({"status": "active"}, "parked or rejected"),
         ({"slug": "Bad Slug"}, "invalid slug"),
         ({"runs": [], "studies": []}, "at least one run"),
-        ({"criteria": {"min_sharpe": "high"}}, "must be a number"),
+        ({"criteria": {"min_sharpe": "high"}}, "expected a number"),
+        ({"criteria": {"min_sharp": 1}}, r"S-0001\.criteria: .*unknown criterion 'min_sharp'"),
         ({"extra": 1}, "unknown keys: extra"),
         ({"studies": [{"variant": "v", "symbols": ["A"], "date": "soon", "note": "n"}]}, "date"),
         (
@@ -80,6 +81,7 @@ def test_draft_gives_a_name_without_ascii_words_a_numbered_slug(tmp_path):
         "slug",
         "empty",
         "criteria",
+        "unknown-criterion",
         "unknown",
         "date",
         "note",
