@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -78,11 +78,12 @@ class _Configuration:
     from_workspace: bool
 
 
-def scan_runs(results_dir: Path, preset_base: Path) -> list[LegacyRun]:
+def scan_runs(results_dir: Path, preset_base: Path, skip: Collection[str] = ()) -> list[LegacyRun]:
     """Read every run directory under *results_dir* that has a ``strategy.json``.
 
     Symlinked run directories are skipped, and so are gated runs (their
     ``config.json`` has a ``research`` block): they are already in the ledger.
+    Run ids in *skip* (runs that may still be writing their files) are not read.
     *preset_base* is the workspace strategies directory; it stands in for a
     run's recorded ``_strategy_dir`` when that location no longer holds the
     presets the run referenced.
@@ -92,7 +93,8 @@ def scan_runs(results_dir: Path, preset_base: Path) -> list[LegacyRun]:
     return [
         load_run(run_dir, preset_base)
         for run_dir in sorted(results_dir.iterdir())
-        if run_dir.is_dir()
+        if run_dir.name not in skip
+        and run_dir.is_dir()
         and not run_dir.is_symlink()
         and (run_dir / "strategy.json").exists()
         and not _gated(run_dir)

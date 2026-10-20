@@ -6,8 +6,9 @@ import pytest
 from fwbg.research.card import CardError
 from fwbg.research.cli import main
 from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, TrialKind, append_trial, read_trials
+from fwbg.research.legacy import LegacyRunError
 from fwbg.research.pending import STAGING, write_pending
-from fwbg.research.reconcile import ReconcileResult, reconcile
+from fwbg.research.reconcile import ReconcileResult, reconcile, repair, unindexed_runs
 from fwbg.research.repo import ResearchRepoError
 from tests.research.factories import make_run, make_trial
 from tests.research.test_pending import dead_pid, make_pending
@@ -98,6 +99,43 @@ def test_live_marker_is_left_alone(gate_register, results):
     assert (gate_register / STAGING / "run-1.json").exists()
 
 
+def truncate_result(run_dir, symbol="GOLD"):
+    """Cut a symbol's result file short, as a run still writing it leaves it."""
+    (run_dir / "grid_details" / symbol / "config.json").write_text('{"sta', encoding="utf-8")
+
+
+def test_running_gated_run_with_partial_results_is_skipped_unread(gate_register, results):
+    """A run with a live marker is not loaded, so its half-written files do not fail the scan."""
+    run_dir = make_run(results, "run-1")
+    truncate_result(run_dir)
+    write_pending(gate_register, make_pending(run_dir))
+
+    assert reconcile(gate_register, results) == NOTHING
+
+
+def test_run_in_progress_with_partial_results_is_skipped_unread(gate_register, results):
+    """A run whose progress.json says it is running is not loaded either."""
+    run_dir = make_run(results, "r-running")
+    truncate_result(run_dir)
+    (run_dir / "progress.json").write_text(json.dumps({"status": "running"}), encoding="utf-8")
+
+    assert unindexed_runs(gate_register, results) == ()
+
+
+def test_repair_and_report_are_separate_steps(gate_register, results):
+    """The repair commits on its own; a broken run fails only the report."""
+    run_dir = make_run(results, "run-1")
+    write_pending(gate_register, make_pending(run_dir, pid=dead_pid()))
+    truncate_result(make_run(results, "r-broken"))
+
+    recovered, committed = repair(gate_register)
+    assert [trial.run_id for trial in recovered] == ["run-1"]
+    assert committed
+    assert dirty(gate_register) == ""
+    with pytest.raises(LegacyRunError):
+        unindexed_runs(gate_register, results)
+
+
 def test_runs_missing_from_the_ledger_are_reported(gate_register, results):
     """Untagged runs not in the ledger are reported; recorded and running ones are not."""
     make_run(results, "r-missing")
@@ -160,12 +198,18 @@ def test_cli_reports_recovered_committed_and_unindexed(gate_register, results, c
     write_pending(gate_register, make_pending(run_dir, pid=dead_pid()))
     make_run(results, "r-missing")
 
+    make_run(results, "r-other")
+
     assert main(["reconcile"]) == 0
-    out = capsys.readouterr().out
-    assert "recovered T-000001" in out
-    assert "committed" in out
-    assert "r-missing" in out
-    assert "research backfill scan --out mapping.yaml" in out
+    out = capsys.readouterr().out.splitlines()
+    assert out == [
+        "recovered T-000001",
+        "committed",
+        "2 runs not in the ledger:",
+        "  r-missing",
+        "  r-other",
+        "map them with: python -m fwbg.cli research backfill scan --out mapping.yaml",
+    ]
 
     assert main(["reconcile", "--results", str(results)]) == 0
     out = capsys.readouterr().out
@@ -188,3 +232,38 @@ def test_cli_reports_errors_without_traceback(gate_register, capsys):
 
     assert main(["reconcile"]) == 1
     assert capsys.readouterr().err.startswith("Error: ")
+
+
+def test_cli_reports_the_repair_before_a_failing_scan(gate_register, results, capsys):
+    """A run that cannot be read exits 1, after the repair has been reported."""
+    run_dir = make_run(results, "run-1")
+    write_pending(gate_register, make_pending(run_dir, pid=dead_pid()))
+    truncate_result(make_run(results, "r-broken"))
+
+    assert main(["reconcile"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == ["recovered T-000001", "committed"]
+    assert captured.err.startswith("Error: r-broken")
+    assert dirty(gate_register) == ""
+
+
+def test_cli_warns_about_runs_it_did_not_check(gate_register, results, capsys):
+    """Runs that may still be running are named on stderr, one per line."""
+    for run_id in ("r-a", "r-b"):
+        run_dir = make_run(results, run_id)
+        (run_dir / "progress.json").write_text(json.dumps({"status": "running"}), encoding="utf-8")
+
+    assert main(["reconcile"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == ["nothing to commit"]
+    assert captured.err.splitlines() == [
+        "Warning: not checked, may still be running: r-a",
+        "Warning: not checked, may still be running: r-b",
+    ]
+
+
+def test_cli_without_a_register_points_to_init(tmp_path, capsys):
+    """No register: exit 1 with the init hint, and no lock file is left behind."""
+    assert main(["reconcile"]) == 1
+    assert "research init" in capsys.readouterr().err
+    assert not (tmp_path / "research").exists()
