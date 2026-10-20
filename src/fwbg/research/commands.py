@@ -117,9 +117,11 @@ def amend_criteria(
         if card.status is not Status.ACTIVE:
             raise CommandError(f"{card_id} is {card.status.value}; reopen it first")
         own = [t for t in read_trials(research_dir / LEDGER_FILENAME) if t.strategy == card_id]
-        denials = criteria_denials(card, own)
-        if denials:
-            raise CommandError(f"{denials[0].message}; restore the criteria before amending")
+        if criteria_denials(card, own):
+            raise CommandError(
+                f"the criteria of {card_id} do not match its recorded registration and "
+                "amendments; restore them by hand (see the register's git history) before amending"
+            )
         criteria = validate_criteria({**card.success_criteria, **changes})
         new_hash = criteria_hash(criteria)
         if new_hash == card.criteria_hash:
