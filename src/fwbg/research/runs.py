@@ -340,15 +340,26 @@ def check_result(
     }
 
 
-def parse_check_output(stdout: str) -> dict[str, Any] | None:
-    """The last ``--check-json`` payload in *stdout*; ``None`` if the CLI printed none."""
+def parse_check_output(stdout: str, returncode: int) -> dict[str, Any] | None:
+    """The ``--check-json`` payload in *stdout*: the last prefixed line, which must be
+    valid and match the exit code; ``None`` otherwise.
+
+    An allowed payload needs exit 0, a refusal exit 2: a line from a CLI that failed
+    before its gate, or one a plugin forged, never counts as a gate result.
+    """
     for line in reversed(stdout.splitlines()):
         if line.startswith(CHECK_PREFIX):
             try:
                 payload = json.loads(line.removeprefix(CHECK_PREFIX))
             except ValueError:
                 return None
-            return payload if isinstance(payload, dict) else None
+            if not isinstance(payload, dict):
+                return None
+            allowed = payload.get("allowed")
+            consistent = (allowed is True and returncode == 0) or (
+                allowed is False and returncode == 2
+            )
+            return payload if consistent else None
     return None
 
 
