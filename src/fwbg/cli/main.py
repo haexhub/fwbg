@@ -1015,7 +1015,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             research = ResearchRun(
                 get_research_dir(),
                 run_id,
-                Path(results_storage.RESULTS_BASE_PATH) / run_id,
+                (Path(results_storage.RESULTS_BASE_PATH) / run_id).resolve(),
                 research_id=args.research_id,
                 note=args.note,
                 reason=args.reason,
