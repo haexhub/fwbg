@@ -83,7 +83,7 @@ def test_patch_reproduces_the_working_tree(repo, tmp_path):
         assert (clone / name).read_bytes() == (repo / name).read_bytes()
 
 
-def test_non_utf8_changes_are_kept_byte_for_byte(repo, tmp_path, monkeypatch):
+def test_non_utf8_changes_are_kept_byte_for_byte(repo, tmp_path):
     legacy = b"NAME = '\xe9'\n"
     (repo / "src" / "legacy.py").write_bytes(legacy)
     run_dir = tmp_path / "run"
@@ -121,7 +121,7 @@ def test_user_git_config_cannot_break_the_patch(repo, tmp_path, key, value):
         assert (clone / name).read_bytes() == (repo / name).read_bytes()
 
 
-def test_nested_repository_fails_loudly(repo, tmp_path, monkeypatch, caplog):
+def test_nested_repository_fails_loudly(repo, tmp_path, caplog):
     nested = repo / "src" / "vendored"
     nested.mkdir()
     (nested / "lib.py").write_text("LIB = 1\n", encoding="utf-8")

@@ -100,7 +100,7 @@ STRATEGY_SCHEMA = {
 def get_git_info(source: Path | None = None):
     """Holt Git-Informationen für Reproduzierbarkeit (des Repos, das *source* enthält)."""
     git_info = {}
-    cwd = source or source_dir()
+    cwd = source if source is not None else source_dir()
     env = isolated_git_env()
     try:
         # Aktueller Commit
