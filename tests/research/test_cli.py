@@ -253,6 +253,9 @@ def test_card_command_errors_are_reported_without_traceback(gate_register, capsy
         ["new", "x", "--tags", "a", "--set", "min_sharpe=high"],
         ["amend", "S-0007", "--reason", "nothing to set"],
         ["verdict", "S-0007", "active", "--reason", "x", "--reopen-if", "y"],
+        ["new", "x", "--tags", " , "],
+        ["new", "x", "--tags", "a", "--set", "min_sharpe=1", "--set", "min_sharpe=2"],
+        ["amend", "S-0007", "--set", "min_trades=1", "--set", "min_trades=2", "--reason", "x"],
     ],
 )
 def test_card_commands_refuse_malformed_arguments(gate_register, capsys, args):
