@@ -16,7 +16,7 @@ from fwbg_sdk.enums import Timeframe
 from fwbg.core.presets import PRESET_SECTIONS, resolve_presets
 from fwbg.research.fingerprint import canonical_config, digest
 from fwbg.research.ledger import Metrics, TrialKind, TrialStatus
-from fwbg.statuses import EXECUTED_STATUSES
+from fwbg.statuses import EXECUTED_STATUSES, NOT_EXECUTED_STATUSES
 
 METRIC_KEYS = (
     "sharpe",
@@ -31,9 +31,7 @@ METRIC_KEYS = (
 # A symbol with one of these statuses ran to a result and counts towards N
 # (conservatively, whether or not it found an edge).
 EVALUATED_STATUSES = EXECUTED_STATUSES
-NOT_EVALUATED_STATUSES = frozenset(
-    {"error", "no_successful_folds", "insufficient_data", "no_data", "no_signal_source"}
-)
+NOT_EVALUATED_STATUSES = NOT_EXECUTED_STATUSES
 _SMOKE_NAME_RE = re.compile(r"m[0-9]+_smoke.*")
 _DATE_PREFIX_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _GIT_KEYS = ("commit", "branch", "dirty", "patch", "patch_error")
@@ -83,7 +81,8 @@ class _Configuration:
 def scan_runs(results_dir: Path, preset_base: Path) -> list[LegacyRun]:
     """Read every run directory under *results_dir* that has a ``strategy.json``.
 
-    Symlinked run directories are skipped. *preset_base* is the workspace
+    Symlinked run directories are skipped, and so are gated runs (their
+    ``config.json`` has a ``research`` block): they are already in the ledger. *preset_base* is the workspace
     strategies directory; it stands in for a run's recorded ``_strategy_dir``
     when that location no longer holds the presets the run referenced.
     """
@@ -92,8 +91,31 @@ def scan_runs(results_dir: Path, preset_base: Path) -> list[LegacyRun]:
     return [
         load_run(run_dir, preset_base)
         for run_dir in sorted(results_dir.iterdir())
-        if run_dir.is_dir() and not run_dir.is_symlink() and (run_dir / "strategy.json").exists()
+        if run_dir.is_dir()
+        and not run_dir.is_symlink()
+        and (run_dir / "strategy.json").exists()
+        and not _gated(run_dir)
     ]
+
+
+def _gated(run_dir: Path) -> bool:
+    """Whether the run passed the research gate; unreadable configs fail later in load_run."""
+    try:
+        config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(config, dict) and "research" in config
+
+
+def run_outcome(run_dir: Path, *, count_unknown: bool = False) -> tuple[TrialStatus, Metrics]:
+    """Status and per-symbol metrics of a run directory, by the ledger's rule.
+
+    ``ok`` iff at least one symbol was evaluated. An unknown symbol status
+    raises :class:`LegacyRunError`, or counts as evaluated with
+    *count_unknown* (live runs: never drop a trial over a classification gap).
+    """
+    metrics = _metrics(run_dir, _symbol_files(run_dir), count_unknown)
+    return (TrialStatus.OK if metrics else TrialStatus.FAILED), metrics
 
 
 def load_run(run_dir: Path, preset_base: Path) -> LegacyRun:
@@ -109,9 +131,8 @@ def load_run(run_dir: Path, preset_base: Path) -> LegacyRun:
         raise LegacyRunError(f"{run_dir.name}/config.json: bad timestamp {ts!r}") from exc
     name = strategy.get("name")
     name = name if isinstance(name, str) and name.strip() else run_dir.name
-    files = _symbol_files(run_dir)
-    symbols = tuple(sorted(files))
-    metrics = _metrics(run_dir, files)
+    symbols = tuple(sorted(_symbol_files(run_dir)))
+    status, metrics = run_outcome(run_dir)
     configuration = _configuration(strategy, config, symbols, preset_base)
     # An unresolvable run still counts as a trial, under a stand-in that never
     # matches a real configuration.
@@ -126,15 +147,15 @@ def load_run(run_dir: Path, preset_base: Path) -> LegacyRun:
         run_date=run_date,
         name=name,
         kind=TrialKind.SMOKE if _SMOKE_NAME_RE.fullmatch(name) else TrialKind.LEGACY,
-        status=TrialStatus.OK if metrics else TrialStatus.FAILED,
+        status=status,
         symbols=symbols,
         metrics=metrics,
         config=configuration.canonical,
         fingerprint=fingerprint,
         unresolved=configuration.unresolved,
         presets_from_workspace=configuration.from_workspace,
-        code=_code(config),
-        window=_window(strategy),
+        code=run_code(config),
+        window=run_window(strategy),
     )
 
 
@@ -173,7 +194,7 @@ def _symbol_files(run_dir: Path) -> dict[str, _SymbolFiles]:
 
 
 def _metrics(
-    run_dir: Path, files: Mapping[str, _SymbolFiles]
+    run_dir: Path, files: Mapping[str, _SymbolFiles], count_unknown: bool = False
 ) -> dict[str, dict[str, float | int | None]]:
     """Per-symbol metrics for every evaluated symbol (not only the reported elite)."""
     elite = _elite_by_symbol(run_dir)
@@ -182,17 +203,19 @@ def _metrics(
         if not source.result.exists():
             continue
         result = _read_object(source.result, run_dir)
-        if _evaluated(result.get("status"), run_dir.name, symbol):
+        if _evaluated(result.get("status"), run_dir.name, symbol, count_unknown):
             metrics[symbol] = _symbol_metrics(run_dir, source, result, elite.get(symbol, {}))
     return metrics
 
 
-def _evaluated(status: object, run_id: str, symbol: str) -> bool:
-    """Classify known symbol statuses and reject unknown trial-counting semantics."""
+def _evaluated(status: object, run_id: str, symbol: str, count_unknown: bool = False) -> bool:
+    """Classify known symbol statuses; unknown ones count with *count_unknown*, else raise."""
     if isinstance(status, str) and status in EVALUATED_STATUSES:
         return True
     if isinstance(status, str) and status in NOT_EVALUATED_STATUSES:
         return False
+    if count_unknown:
+        return True
     # Fail closed: whether such a symbol counts towards N is the operator's call.
     raise LegacyRunError(f"{run_id}: symbol {symbol} has unknown status {status!r}")
 
@@ -306,7 +329,7 @@ def _configuration(
     return _Configuration(canonical=canonical, unresolved=None, from_workspace=from_workspace)
 
 
-def _code(config: Mapping[str, Any]) -> dict[str, Any]:
+def run_code(config: Mapping[str, Any]) -> dict[str, Any]:
     """Extract the recorded Git provenance fields supported by the ledger."""
     git = config.get("git")
     if not isinstance(git, dict):
@@ -314,7 +337,7 @@ def _code(config: Mapping[str, Any]) -> dict[str, Any]:
     return {key: git[key] for key in _GIT_KEYS if key in git}
 
 
-def _window(strategy: Mapping[str, Any]) -> dict[str, str | None]:
+def run_window(strategy: Mapping[str, Any]) -> dict[str, str | None]:
     """Extract textual date bounds, using None for absent or nontext bounds."""
     return {
         "start": (
