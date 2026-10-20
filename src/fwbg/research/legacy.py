@@ -82,9 +82,10 @@ def scan_runs(results_dir: Path, preset_base: Path) -> list[LegacyRun]:
     """Read every run directory under *results_dir* that has a ``strategy.json``.
 
     Symlinked run directories are skipped, and so are gated runs (their
-    ``config.json`` has a ``research`` block): they are already in the ledger. *preset_base* is the workspace
-    strategies directory; it stands in for a run's recorded ``_strategy_dir``
-    when that location no longer holds the presets the run referenced.
+    ``config.json`` has a ``research`` block): they are already in the ledger.
+    *preset_base* is the workspace strategies directory; it stands in for a
+    run's recorded ``_strategy_dir`` when that location no longer holds the
+    presets the run referenced.
     """
     if not results_dir.is_dir():
         raise LegacyRunError(f"{results_dir}: not a directory")

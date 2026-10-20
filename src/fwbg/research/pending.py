@@ -12,9 +12,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,8 @@ class PendingRun:
     pid: int
     trial: Trial
     config: Mapping[str, Any]
+    # Another container shares the register volume but not the PID namespace.
+    host: str = field(default_factory=socket.gethostname)
 
 
 def write_pending(research_dir: Path, pending: PendingRun) -> None:
@@ -61,52 +64,69 @@ def write_pending(research_dir: Path, pending: PendingRun) -> None:
         "run_id": pending.run_id,
         "run_dir": str(pending.run_dir),
         "pid": pending.pid,
+        "host": pending.host,
         "trial": json.loads(pending.trial.to_json()),
         "config": pending.config,
     }
     temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        temp.write_text(json.dumps(record), encoding="utf-8")
+        with temp.open("w", encoding="utf-8") as handle:
+            handle.write(json.dumps(record))
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temp, path)
     finally:
         temp.unlink(missing_ok=True)
 
 
 def read_pending(research_dir: Path) -> list[PendingRun]:
-    """All markers, oldest run id first."""
+    """All markers, in run id order."""
     runs = []
     for path in sorted((research_dir / STAGING).glob("*.json")):
         try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-            trial = Trial.from_json(json.dumps(record["trial"]), numbered=False)
-            runs.append(
-                PendingRun(
-                    record["run_id"],
-                    Path(record["run_dir"]),
-                    int(record["pid"]),
-                    trial,
-                    record["config"],
-                )
-            )
+            runs.append(_parse_marker(path))
         except (OSError, ValueError, KeyError, TypeError, LedgerError) as exc:
             raise PendingError(f"{path.name}: {exc}") from exc
     return runs
 
 
+def _parse_marker(path: Path) -> PendingRun:
+    record = json.loads(path.read_text(encoding="utf-8"))
+    run_id, pid, host = record["run_id"], record["pid"], record["host"]
+    if run_id != path.stem:
+        raise ValueError(f"run id {run_id!r} does not match the file name")
+    if type(pid) is not int or pid <= 0:
+        raise ValueError(f"invalid pid {pid!r}")
+    if not isinstance(host, str) or not host:
+        raise ValueError(f"invalid host {host!r}")
+    return PendingRun(
+        run_id=run_id,
+        run_dir=Path(record["run_dir"]),
+        pid=pid,
+        trial=Trial.from_json(json.dumps(record["trial"]), numbered=False),
+        config=record["config"],
+        host=host,
+    )
+
+
 def finish(research_dir: Path, pending: PendingRun) -> Trial:
     """Append the run's trial with its outcome and drop the marker; call under the lock."""
     marker = _path(research_dir, pending.run_id)
-    # A crash between append and unlink must not record the run twice.
+    # A crash between append and unlink must not record the run twice; a reused
+    # run id with an earlier trial in the ledger is a new run.
     recorded = next(
         (
             trial
             for trial in read_trials(research_dir / LEDGER_FILENAME)
-            if trial.run_id == pending.run_id and trial.strategy == pending.trial.strategy
+            if trial.run_id == pending.run_id
+            and trial.strategy == pending.trial.strategy
+            and trial.ts == pending.trial.ts
+            and trial.fingerprint == pending.trial.fingerprint
         ),
         None,
     )
     if recorded is not None:
-        marker.unlink()
+        marker.unlink(missing_ok=True)
         return recorded
     status = TrialStatus.FAILED
     metrics: Metrics = {}
@@ -118,7 +138,7 @@ def finish(research_dir: Path, pending: PendingRun) -> Trial:
     # Config first: the ledger must never name a fingerprint without its config.
     store_config(research_dir, trial.fingerprint, pending.config)
     stored = append_trial(research_dir / LEDGER_FILENAME, trial)
-    marker.unlink()
+    marker.unlink(missing_ok=True)
     return stored
 
 
@@ -130,7 +150,7 @@ def recover_stale(research_dir: Path) -> list[Trial]:
     """
     recorded = []
     for run in read_pending(research_dir):
-        if _alive(run.pid):
+        if _alive(run):
             continue
         try:
             recorded.append(finish(research_dir, run))
@@ -144,15 +164,19 @@ def live_runs(research_dir: Path, card_id: str | None = None) -> list[PendingRun
     return [
         run
         for run in read_pending(research_dir)
-        if _alive(run.pid) and card_id in (None, run.trial.strategy)
+        if _alive(run) and card_id in (None, run.trial.strategy)
     ]
 
 
-def _alive(pid: int) -> bool:
+def _alive(run: PendingRun) -> bool:
     # ponytail: a reused pid keeps a stale marker looking alive until that
-    # process ends; store the process start time if that ever bites.
+    # process ends, and a marker from another host (container) always looks
+    # alive, since its pid cannot be checked here; store the process start time
+    # and record such markers from their own host (or by hand) if that ever bites.
+    if run.host != socket.gethostname():
+        return True
     try:
-        os.kill(pid, 0)
+        os.kill(run.pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
