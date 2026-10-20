@@ -296,15 +296,20 @@ def test_verdict_needs_a_reopen_condition(client, card_id, register):
 
 def test_reopen_activates_the_card_and_records_the_actor(client, card_id):
     assert client.post(f"/api/research/{card_id}/status", json=VERDICT).status_code == 200
+    before = date.today()
     response = client.post(
         f"/api/research/{card_id}/status",
         json={"status": "active", "reason": "new data", "actor": "agent-8"},
     )
+    after = date.today()
     assert response.status_code == 200
     card = response.json()["card"]
     assert card["status"] == "active"
-    today = date.today().isoformat()
-    assert f"- {today}: reopened from parked by agent-8: new data" in card["body"]
+    # Either day: the request may cross midnight.
+    assert any(
+        f"- {day.isoformat()}: reopened from parked by agent-8: new data" in card["body"]
+        for day in (before, after)
+    )
 
 
 def test_reopen_refuses_a_reopen_condition(client, card_id):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from collections.abc import Collection
 from pathlib import Path
 
 from fwbg.api.run_service import ACTIVE_STATUSES
@@ -17,31 +17,13 @@ from fwbg.research.repo import REGISTER_PATHS, commit_register, register_lock
 from fwbg.research.views import card_ids
 
 
-@dataclass(frozen=True)
-class ReconcileResult:
-    recovered: tuple[str, ...]  # trial ids recorded from stale markers
-    committed: bool  # a recovery commit was made
-    unindexed: tuple[str, ...]  # run ids in the workspace that are neither in the ledger nor tagged
-
-
-def reconcile(research_dir: Path, results_dir: Path) -> ReconcileResult:
-    """Validate the register, record stale runs, commit what is uncommitted, report gaps.
-
-    Idempotent. Raises (and changes nothing) when the ledger or a card does not
-    parse; a failed commit raises ResearchRepoError with the data left in place.
-    A run is assigned to a card only by the operator, through ``research backfill``.
-    """
-    recovered, committed = repair(research_dir)
-    return ReconcileResult(
-        recovered=tuple(str(trial.trial_id) for trial in recovered),
-        committed=committed,
-        unindexed=unindexed_runs(research_dir, results_dir),
-    )
-
-
 def repair(research_dir: Path) -> tuple[list[Trial], bool]:
     """Record the stale runs and commit the register; the recorded trials and whether
-    a commit was made. Raises, without writing, if the ledger or a card does not parse."""
+    a commit was made. Idempotent.
+
+    Raises, without writing, if the ledger or a card does not parse; a failed
+    commit raises ResearchRepoError with the data left in place.
+    """
     # Before the lock: a missing register fails with the init hint and gets no lock file.
     read_trials(research_dir / LEDGER_FILENAME)
     with register_lock(research_dir):
@@ -56,14 +38,17 @@ def repair(research_dir: Path) -> tuple[list[Trial], bool]:
     return recovered, committed
 
 
-def unindexed_runs(research_dir: Path, results_dir: Path) -> tuple[str, ...]:
+def unindexed_runs(
+    research_dir: Path, results_dir: Path, in_progress: Collection[str]
+) -> tuple[str, ...]:
     """Run ids under *results_dir* that are neither in the ledger nor tagged.
 
-    Runs that may still be running (a pending marker, or an active or unreadable
-    ``progress.json``) are not read: their files may be half-written.
+    Runs that may still be running (a pending marker, or *in_progress*: see
+    :func:`runs_in_progress`) are not read: their files may be half-written.
+    A run is assigned to a card only by the operator, through ``research backfill``.
     """
     pending = {path.stem for path in (research_dir / STAGING).glob("*.json")}
-    skip = pending | set(runs_in_progress(results_dir))
+    skip = pending | set(in_progress)
     runs = scan_runs(results_dir, get_strategies_dir().parent, skip)
     # ungated_runs keeps legacy trials (backfill re-applies them); here any ledger entry counts.
     recorded = {trial.run_id for trial in read_trials(research_dir / LEDGER_FILENAME)}

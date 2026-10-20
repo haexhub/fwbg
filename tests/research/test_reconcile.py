@@ -1,5 +1,6 @@
 import json
 import subprocess
+from typing import NamedTuple
 
 import pytest
 
@@ -8,11 +9,25 @@ from fwbg.research.cli import main
 from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, TrialKind, append_trial, read_trials
 from fwbg.research.legacy import LegacyRunError
 from fwbg.research.pending import STAGING, write_pending
-from fwbg.research.reconcile import ReconcileResult, reconcile, repair, unindexed_runs
+from fwbg.research.reconcile import repair, runs_in_progress, unindexed_runs
 from fwbg.research.repo import ResearchRepoError
 from tests.research.factories import dead_pid, make_pending, make_run, make_trial
 
-NOTHING = ReconcileResult(recovered=(), committed=False, unindexed=())
+
+class Outcome(NamedTuple):
+    recovered: tuple[str, ...]
+    committed: bool
+    unindexed: tuple[str, ...]
+
+
+NOTHING = Outcome(recovered=(), committed=False, unindexed=())
+
+
+def reconcile(register, results) -> Outcome:
+    """Both steps of ``research reconcile``: the repair, then the report."""
+    recovered, committed = repair(register)
+    unindexed = unindexed_runs(register, results, runs_in_progress(results))
+    return Outcome(tuple(str(trial.trial_id) for trial in recovered), committed, unindexed)
 
 
 @pytest.fixture(autouse=True)
@@ -59,7 +74,7 @@ def test_uncommitted_trial_is_committed_once(gate_register, results):
     append_trial(gate_register / LEDGER_FILENAME, make_trial(run_id="r-1"))
     before = commits(gate_register)
 
-    assert reconcile(gate_register, results) == ReconcileResult((), True, ())
+    assert reconcile(gate_register, results) == Outcome((), True, ())
     assert commits(gate_register) == before + 1
     assert dirty(gate_register) == ""
     assert reconcile(gate_register, results) == NOTHING
@@ -83,7 +98,7 @@ def test_stale_marker_is_recovered_and_committed(gate_register, results):
     result = reconcile(gate_register, results)
 
     trials = read_trials(gate_register / LEDGER_FILENAME)
-    assert result == ReconcileResult((str(trials[0].trial_id),), True, ())
+    assert result == Outcome((str(trials[0].trial_id),), True, ())
     assert not (gate_register / STAGING / "run-1.json").exists()
     assert dirty(gate_register) == ""
     assert reconcile(gate_register, results) == NOTHING
@@ -118,7 +133,7 @@ def test_run_in_progress_with_partial_results_is_skipped_unread(gate_register, r
     truncate_result(run_dir)
     (run_dir / "progress.json").write_text(json.dumps({"status": "running"}), encoding="utf-8")
 
-    assert unindexed_runs(gate_register, results) == ()
+    assert unindexed_runs(gate_register, results, runs_in_progress(results)) == ()
 
 
 def test_repair_and_report_are_separate_steps(gate_register, results):
@@ -132,7 +147,7 @@ def test_repair_and_report_are_separate_steps(gate_register, results):
     assert committed
     assert dirty(gate_register) == ""
     with pytest.raises(LegacyRunError):
-        unindexed_runs(gate_register, results)
+        unindexed_runs(gate_register, results, runs_in_progress(results))
 
 
 def test_runs_missing_from_the_ledger_are_reported(gate_register, results):
@@ -148,7 +163,7 @@ def test_runs_missing_from_the_ledger_are_reported(gate_register, results):
     )
     reconcile(gate_register, results)
 
-    assert reconcile(gate_register, results) == ReconcileResult((), False, ("r-missing",))
+    assert reconcile(gate_register, results) == Outcome((), False, ("r-missing",))
 
 
 def test_broken_ledger_raises_and_commits_nothing(gate_register, results):

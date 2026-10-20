@@ -1,6 +1,6 @@
 # Research Register Step 4: API, `register_trial`, `reconcile` — Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task.
+Execution: task by task, each task reviewed for spec compliance and code quality.
 
 **Goal:** API-started runs, study scripts and the Docker API container record into the same
 private research register as the CLI; the API exposes cards for fwbg-agents; `reconcile`
@@ -46,8 +46,8 @@ Design: `docs/plans/2026-10-19-research-register-design.md` (step 4). Step 3 pla
 
 ## Rules for every task
 
-- Work only in `/home/haex/Projekte/fwbg/.worktrees/research-api` (branch `feat/research-api`).
-  Never touch `/home/haex/Projekte/fwbg` itself, never write under `~/fwbg`. No bare `git stash`.
+- Work only in the step-4 worktree (branch `feat/research-api`). Never touch the main
+  checkout, never write under `~/fwbg`. No bare `git stash`.
 - TDD: failing test first, then the code. Tests use `tmp_path` registers
   (`init_research_repo(tmp_path / "research")`) and set `FWBG_RESEARCH_DIR`,
   `FWBG_TEST_RESULTS_DIR`, `FWBG_STRATEGIES_DIR` via `monkeypatch.setenv`.
