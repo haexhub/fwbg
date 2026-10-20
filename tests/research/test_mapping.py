@@ -9,6 +9,7 @@ from tests.research.factories import STUDY, make_run
 
 
 def test_draft_proposes_one_parked_card_per_name_in_order_of_first_run(runs):
+    """Group runs by strategy name and number parked cards by their first run date."""
     cards = draft_mapping(runs)["cards"]
     assert [(c["id"], c["title"], c["runs"]) for c in cards] == [
         ("S-0001", "pdh retest", ["r3"]),
@@ -19,6 +20,7 @@ def test_draft_proposes_one_parked_card_per_name_in_order_of_first_run(runs):
 
 
 def test_draft_gives_a_name_without_ascii_words_a_numbered_slug(tmp_path):
+    """Use a valid numbered fallback slug for a name without ASCII words."""
     results = tmp_path / "results"
     make_run(results, "r1", name="pdh retest", timestamp="2026-02-22T08:00:00")
     make_run(results, "r2", name="\u65e5\u672c", timestamp="2026-03-05T10:00:00")
@@ -94,6 +96,7 @@ def test_draft_gives_a_name_without_ascii_words_a_numbered_slug(tmp_path):
     ],
 )
 def test_parse_mapping_rejects_invalid_cards(runs, change, fragment):
+    """Reject malformed card fields, criteria and study data with useful errors."""
     data = draft_mapping(runs)
     data["cards"][0].update(change)
     with pytest.raises(BackfillError, match=fragment):
@@ -101,6 +104,7 @@ def test_parse_mapping_rejects_invalid_cards(runs, change, fragment):
 
 
 def test_duplicate_card_ids_are_rejected(runs):
+    """Reject two mapping entries that share a research card ID."""
     data = draft_mapping(runs)
     data["cards"][1]["id"] = "S-0001"
     with pytest.raises(BackfillError, match="duplicate card ids: S-0001"):
@@ -108,6 +112,7 @@ def test_duplicate_card_ids_are_rejected(runs):
 
 
 def test_load_mapping_reads_a_yaml_draft(runs):
+    """Load a serialised YAML draft into the same plans as its original mapping."""
     text = yaml.safe_dump(draft_mapping(runs), sort_keys=False, allow_unicode=True)
     assert load_mapping(text) == parse_mapping(draft_mapping(runs))
 
@@ -131,12 +136,14 @@ def test_load_mapping_reads_a_yaml_draft(runs):
     ids=["duplicate-key", "impossible-date", "syntax"],
 )
 def test_load_mapping_reports_yaml_errors(text, fragment):
+    """Report duplicate keys, impossible dates and YAML syntax errors."""
     with pytest.raises(BackfillError, match=fragment):
         load_mapping(text)
 
 
 def test_unknown_top_level_keys_are_refused():
     # A dedented block lands at the top level instead of in its card.
+    """Catch accidentally dedented mapping fields as unknown top-level keys."""
     text = (
         "cards:\n"
         "- id: S-0001\n"

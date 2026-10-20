@@ -102,6 +102,7 @@ def apply_mapping(
 
 
 def _check_coverage(plans: Sequence[CardPlan], runs_by_id: Mapping[str, LegacyRun]) -> None:
+    """Reject unknown, repeated or unmapped runs before preparing any writes."""
     mapped = [run_id for plan in plans for run_id in plan.runs]
     unknown = sorted(set(mapped) - runs_by_id.keys())
     twice = sorted(run_id for run_id, count in Counter(mapped).items() if count > 1)
@@ -232,6 +233,7 @@ def _cutoff(plan: CardPlan, runs_by_id: Mapping[str, LegacyRun], today: date) ->
 def _new_card(
     plan: CardPlan, cutoff: date, criteria: Mapping[str, float], today: date
 ) -> ResearchCard:
+    """Build a legacy card and verify that it can be rendered before writing."""
     card = ResearchCard(
         id=plan.id,
         title=plan.title,
@@ -254,6 +256,7 @@ def _new_card(
 
 
 def _study_run_id(card_id: str, variant: str) -> str:
+    """Identify a study trial by its card and variant for repeatable imports."""
     return f"study:{card_id}:{variant}"
 
 
@@ -268,6 +271,7 @@ def _storable(trial: Trial) -> Trial:
 
 
 def _legacy_trial(card: ResearchCard, run: LegacyRun) -> Trial:
+    """Build a trial from a scanned run, preserving provenance and resolution notes."""
     note = f"legacy run: {run.name}"
     if run.unresolved:
         note += f" ({run.unresolved})"
@@ -291,6 +295,7 @@ def _legacy_trial(card: ResearchCard, run: LegacyRun) -> Trial:
 
 
 def _study_trial(card: ResearchCard, study: StudyTrial, run_id: str) -> Trial:
+    """Build a legacy trial with a synthetic fingerprint for a documented study."""
     return Trial(
         strategy=card.id,
         run_id=run_id,

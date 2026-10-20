@@ -8,6 +8,7 @@ from tests.research.factories import make_run
 
 @pytest.fixture
 def runs(tmp_path):
+    """Scan three fixture runs spanning two strategy names and distinct run dates."""
     results = tmp_path / "results"
     make_run(results, "r1", name="orb-test", timestamp="2026-03-05T10:00:00")
     make_run(results, "r2", name="orb-test", timestamp="2026-03-06T09:00:00")

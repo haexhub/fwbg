@@ -24,6 +24,7 @@ def workspace(tmp_path, monkeypatch):
 
 
 def test_init_scan_and_apply_end_to_end(tmp_path, git_env, capsys):
+    """Exercise register creation, draft scanning and applying through the CLI."""
     make_run(tmp_path / "results", "r1", name="orb-test")
     make_run(tmp_path / "results", "r2", name="m3_smoke_x")
     mapping = tmp_path / "mapping.yaml"
@@ -41,6 +42,7 @@ def test_init_scan_and_apply_end_to_end(tmp_path, git_env, capsys):
 
 
 def test_init_twice_reports_an_existing_register(git_env, capsys):
+    """Report an existing register successfully when init is repeated."""
     assert main(["init"]) == 0
     capsys.readouterr()
     assert main(["init"]) == 0
@@ -48,6 +50,7 @@ def test_init_twice_reports_an_existing_register(git_env, capsys):
 
 
 def test_research_cli_import_does_not_require_the_api_extra():
+    """Import the research CLI successfully while FastAPI imports are blocked."""
     code = """
 import importlib.abc
 import sys
@@ -79,6 +82,7 @@ assert "fastapi" not in sys.modules
 
 
 def test_scan_refuses_to_overwrite_a_mapping_before_scanning(tmp_path, capsys):
+    """Preserve an existing mapping even when the requested results directory is absent."""
     mapping = tmp_path / "mapping.yaml"
     mapping.write_text("keep me\n", encoding="utf-8")
     missing = tmp_path / "missing"
@@ -88,12 +92,14 @@ def test_scan_refuses_to_overwrite_a_mapping_before_scanning(tmp_path, capsys):
 
 
 def test_scan_does_not_create_the_research_dir(tmp_path):
+    """Create a draft mapping without initialising the research register."""
     make_run(tmp_path / "results", "r1")
     assert main(["backfill", "scan", "--out", str(tmp_path / "mapping.yaml")]) == 0
     assert not (tmp_path / "research").exists()
 
 
 def test_scan_of_a_missing_results_dir_fails_without_creating_the_default(tmp_path, capsys):
+    """Report a missing results directory without creating results or mapping files."""
     missing = tmp_path / "missing"
     out = tmp_path / "mapping.yaml"
     assert main(["backfill", "scan", "--out", str(out), "--results", str(missing)]) == 1
@@ -103,6 +109,7 @@ def test_scan_of_a_missing_results_dir_fails_without_creating_the_default(tmp_pa
 
 
 def test_draft_prose_keeps_its_line_breaks_when_edited(tmp_path):
+    """Preserve operator-added prose lines when a YAML draft is loaded again."""
     make_run(tmp_path / "results", "20260305_100000")
     mapping = tmp_path / "mapping.yaml"
     assert main(["backfill", "scan", "--out", str(mapping)]) == 0
@@ -115,6 +122,7 @@ def test_draft_prose_keeps_its_line_breaks_when_edited(tmp_path):
 
 
 def test_scan_warns_about_runs_in_progress(tmp_path, capsys):
+    """Warn about active runs while excluding completed runs from the warning."""
     running = make_run(tmp_path / "results", "r1")
     finished = make_run(tmp_path / "results", "r2")
     (running / "progress.json").write_text(json.dumps({"status": "running"}), encoding="utf-8")
@@ -127,6 +135,7 @@ def test_scan_warns_about_runs_in_progress(tmp_path, capsys):
 
 
 def test_apply_before_init_reports_not_initialised(tmp_path, capsys):
+    """Explain that init is required without creating a register during apply."""
     make_run(tmp_path / "results", "r1")
     mapping = tmp_path / "mapping.yaml"
     mapping.write_text("cards: []\n", encoding="utf-8")
@@ -137,6 +146,7 @@ def test_apply_before_init_reports_not_initialised(tmp_path, capsys):
 
 
 def test_apply_reports_mapping_errors_without_traceback(tmp_path, git_env, capsys):
+    """Return an operator error for unmapped runs through the CLI."""
     make_run(tmp_path / "results", "r1")
     main(["init"])
     mapping = tmp_path / "mapping.yaml"
@@ -151,6 +161,7 @@ def test_apply_reports_mapping_errors_without_traceback(tmp_path, git_env, capsy
     ids=["malformed-yaml", "not-utf-8"],
 )
 def test_apply_reports_an_unreadable_mapping(tmp_path, git_env, capsys, content):
+    """Report malformed YAML and invalid UTF-8 mapping files as operator errors."""
     make_run(tmp_path / "results", "r1")
     main(["init"])
     mapping = tmp_path / "mapping.yaml"
@@ -160,6 +171,7 @@ def test_apply_reports_an_unreadable_mapping(tmp_path, git_env, capsys, content)
 
 
 def test_apply_reports_a_missing_mapping(tmp_path, git_env, capsys):
+    """Report a missing mapping file through the CLI error path."""
     make_run(tmp_path / "results", "r1")
     main(["init"])
     assert main(["backfill", "apply", str(tmp_path / "missing.yaml")]) == 1
@@ -172,6 +184,7 @@ def test_apply_reports_a_missing_mapping(tmp_path, git_env, capsys):
     ids=["duplicate-key", "impossible-date"],
 )
 def test_apply_reports_an_unreadable_criteria_template(tmp_path, git_env, capsys, template):
+    """Reject malformed criteria templates without a traceback or appended trials."""
     make_run(tmp_path / "results", "r1")
     main(["init"])
     (tmp_path / "research" / "templates" / "criteria-default.yaml").write_text(
@@ -188,6 +201,7 @@ def test_apply_reports_an_unreadable_criteria_template(tmp_path, git_env, capsys
 
 def test_fwbg_routes_research_commands(monkeypatch, capsys):
     # fwbg's main enables faulthandler on stderr, which needs a real file descriptor.
+    """Route research arguments from the main CLI to the research parser."""
     monkeypatch.setattr(faulthandler, "enable", lambda: None)
     monkeypatch.setattr(sys, "argv", ["fwbg", "research", "backfill"])
     with pytest.raises(SystemExit) as exit_info:

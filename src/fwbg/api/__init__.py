@@ -56,10 +56,12 @@ def create_app() -> FastAPI:
         """
 
         def __init__(self, app, api_key: str):
+            """Wrap the application and retain the configured API key for request checks."""
             super().__init__(app)
             self._api_key = api_key
 
         async def dispatch(self, request: Request, call_next):
+            """Reject protected API requests whose key fails a constant-time comparison."""
             path = request.url.path
             if not path.startswith("/api") or path.startswith(_AUTH_BYPASS_PATHS):
                 return await call_next(request)

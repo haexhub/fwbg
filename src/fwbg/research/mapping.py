@@ -90,6 +90,7 @@ def draft_mapping(runs: Sequence[LegacyRun]) -> dict[str, Any]:
 
 
 def _draft_slug(name: str, number: int) -> str:
+    """Derive an ASCII slug or use a numbered fallback for an unusable name."""
     try:
         return slugify(name)
     except CardError:
@@ -126,6 +127,7 @@ def parse_mapping(data: object) -> list[CardPlan]:
 
 
 def _card_plan(item: object, index: int) -> CardPlan:
+    """Validate one mapping entry into a card plan with its runs and studies."""
     where = f"cards[{index}]"
     if not isinstance(item, Mapping):
         raise BackfillError(f"{where}: expected a mapping")
@@ -181,6 +183,7 @@ def _card_plan(item: object, index: int) -> CardPlan:
 
 
 def _study(item: object, where: str) -> StudyTrial:
+    """Validate a study trial and normalise its symbols to uppercase."""
     if not isinstance(item, Mapping):
         raise BackfillError(f"{where}: expected a mapping")
     unknown = sorted(str(key) for key in item.keys() - _STUDY_KEYS)
@@ -232,6 +235,7 @@ def _ledger_number(value: object) -> bool:
 
 
 def _text_list(value: object, where: str) -> tuple[str, ...]:
+    """Validate a list of nonempty strings and freeze it as a tuple."""
     if value is None:
         return ()
     if not isinstance(value, list) or not all(isinstance(v, str) and v for v in value):

@@ -216,6 +216,7 @@ def readable_line(trial: Trial) -> str:
 
 
 def _missing_ledger(ledger_path: Path) -> LedgerError:
+    """Build an error explaining how to initialise or restore a missing ledger."""
     return LedgerError(
         f"ledger {ledger_path} does not exist; run 'fwbg research init' for a new register, "
         f"or restore {LEDGER_FILENAME} from the register's git history"

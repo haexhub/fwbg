@@ -30,12 +30,14 @@ TODAY = date(2026, 10, 20)
 
 @pytest.fixture
 def register(tmp_path, git_env):
+    """Create an isolated, initialised research register for backfill tests."""
     research = tmp_path / "research"
     init_research_repo(research)
     return research
 
 
 def mapping_for(runs, **card_overrides):
+    """Parse a draft mapping after applying overrides keyed by card ID."""
     data = draft_mapping(runs)
     for card in data["cards"]:
         card.update(card_overrides.get(card["id"], {}))
@@ -43,12 +45,14 @@ def mapping_for(runs, **card_overrides):
 
 
 def git_log(path):
+    """Return commit subjects from newest to oldest in the fixture register."""
     return subprocess.run(
         ["git", "log", "--format=%s"], cwd=path, capture_output=True, text=True, check=True
     ).stdout.splitlines()
 
 
 def git_status(path):
+    """Return porcelain status including every untracked register file."""
     return subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=all"],
         cwd=path,
@@ -68,6 +72,7 @@ def register_files(path):
 
 
 def test_apply_writes_cards_trials_configs_and_one_commit(runs, register):
+    """Verify a backfill writes parked cards, matching trials and deduplicated configs."""
     result = apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
     assert (result.cards_written, result.trials_appended, result.committed) == (2, 3, True)
     card = load_card(register, "S-0002")
@@ -86,6 +91,7 @@ def test_apply_writes_cards_trials_configs_and_one_commit(runs, register):
 
 
 def test_applying_again_adds_nothing(runs, register):
+    """Verify reapplying a mapping neither duplicates records nor creates a commit."""
     plans = mapping_for(runs)
     apply_mapping(plans, runs, register, CRITERIA, TODAY)
     result = apply_mapping(plans, runs, register, CRITERIA, date(2026, 10, 21))
@@ -94,6 +100,7 @@ def test_applying_again_adds_nothing(runs, register):
 
 
 def test_new_runs_are_added_to_existing_cards_only_if_the_cutoff_holds(tmp_path, runs, register):
+    """Reject later runs that would move an existing card holdout cutoff."""
     apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
     make_run(tmp_path / "results", "r4", name="orb-test", timestamp="2026-04-01T10:00:00")
     more = scan_runs(tmp_path / "results", tmp_path / "presets")
@@ -102,6 +109,7 @@ def test_new_runs_are_added_to_existing_cards_only_if_the_cutoff_holds(tmp_path,
 
 
 def test_every_scanned_run_must_be_mapped_exactly_once(runs, register):
+    """Report unknown, repeated and missing runs before appending any trial."""
     data = draft_mapping(runs)
     data["cards"][1]["runs"] = ["r1", "r1", "ghost"]
     with pytest.raises(BackfillError) as excinfo:
@@ -114,6 +122,7 @@ def test_every_scanned_run_must_be_mapped_exactly_once(runs, register):
 
 
 def test_criteria_override_and_rejected_status(runs, register):
+    """Merge card criteria overrides with defaults and preserve rejected status."""
     plans = mapping_for(
         runs, **{"S-0001": {"status": "rejected", "criteria": {"max_drawdown": 0.6}}}
     )
@@ -125,6 +134,7 @@ def test_criteria_override_and_rejected_status(runs, register):
 
 
 def test_study_trials_are_recorded_once_with_a_synthetic_fingerprint(runs, register):
+    """Import a study once, preserving metrics and advancing the card cutoff."""
     study = {
         "variant": "config-4",
         "symbols": ["eurusd"],
@@ -142,6 +152,7 @@ def test_study_trials_are_recorded_once_with_a_synthetic_fingerprint(runs, regis
 
 
 def test_gate_recognises_a_backfilled_config_with_the_same_window(tmp_path, git_env):
+    """Ensure the gate detects a duplicate of a backfilled config and date window."""
     results = tmp_path / "results"
     make_run(
         results, "r1", timestamp="2026-03-05T10:00:00", strategy_extra={"end_date": "2026-03-01"}
@@ -164,6 +175,7 @@ def test_gate_recognises_a_backfilled_config_with_the_same_window(tmp_path, git_
 def test_open_ended_legacy_runs_differ_from_clamped_iterations(runs, register):
     # A legacy run without end_date saw data up to its run date; a new iteration is
     # clamped to the cutoff, so it evaluates a different window and is not a duplicate.
+    """Allow a clamped iteration whose window differs from an open-ended legacy run."""
     apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
     run = next(r for r in runs if r.run_id == "r1")
     card = replace(load_card(register, "S-0002"), status=Status.ACTIVE)
@@ -201,6 +213,7 @@ def test_open_ended_legacy_runs_differ_from_clamped_iterations(runs, register):
     ],
 )
 def test_a_defect_in_a_later_card_leaves_the_register_untouched(runs, register, spoil):
+    """Ensure invalid later cards cannot leave earlier cards or trials partially written."""
     data = draft_mapping(runs)
     spoil(data["cards"])
     before = register_files(register)
@@ -212,6 +225,7 @@ def test_a_defect_in_a_later_card_leaves_the_register_untouched(runs, register, 
 
 def test_a_trial_the_ledger_cannot_store_is_refused_before_writing(runs, register):
     # json.loads accepts NaN, so a run's config.json can carry one into the trial.
+    """Reject an unserialisable trial before changing any register file."""
     spoiled = [replace(r, code={"dirty": float("nan")}) if r.run_id == "r2" else r for r in runs]
     before = register_files(register)
     with pytest.raises(BackfillError, match="r2"):
@@ -220,6 +234,7 @@ def test_a_trial_the_ledger_cannot_store_is_refused_before_writing(runs, registe
 
 
 def test_a_conflicting_existing_card_is_found_before_writing(runs, register):
+    """Detect an existing card cutoff conflict before writing the mapping."""
     existing = make_card(id="S-0002", status=Status.PARKED, holdout_cutoff=date(2026, 1, 1))
     write_card(register, existing, "orb-test")
     commit_register(register, ["strategies"], "test: existing card")
@@ -231,12 +246,14 @@ def test_a_conflicting_existing_card_is_found_before_writing(runs, register):
 
 
 def test_existing_cards_keep_their_criteria(runs, register):
+    """Reject changed template criteria when they conflict with an existing card."""
     apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
     with pytest.raises(BackfillError, match="S-0001 exists with a different cutoff or criteria"):
         apply_mapping(mapping_for(runs), runs, register, {**CRITERIA, "min_sharpe": 1.5}, TODAY)
 
 
 def test_dates_after_today_are_refused(runs, register):
+    """Reject future runs and studies without appending trials."""
     future_study = mapping_for(
         runs, **{"S-0001": {"studies": [{**STUDY, "date": date(2062, 9, 25)}]}}
     )
@@ -248,6 +265,7 @@ def test_dates_after_today_are_refused(runs, register):
 
 
 def test_trials_record_what_each_run_left(tmp_path, register):
+    """Preserve run outcomes, provenance, metrics and resolvable configs during import."""
     workspace = tmp_path / "workspace"
     (workspace / "configs").mkdir(parents=True)
     (workspace / "pipelines").mkdir()
@@ -369,6 +387,7 @@ def test_trials_record_what_each_run_left(tmp_path, register):
 
 
 def test_a_failed_commit_is_completed_by_applying_the_same_mapping_again(tmp_path, runs, register):
+    """Recover from a failed commit without duplicating cards or trials."""
     hooks = tmp_path / "hooks"
     hooks.mkdir()
     (hooks / "pre-commit").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
@@ -410,6 +429,7 @@ def test_a_failed_commit_is_completed_by_applying_the_same_mapping_again(tmp_pat
     ids=["move-run", "renumber-card", "move-study", "rename-variant"],
 )
 def test_regrouping_after_an_apply_is_refused(runs, register, changes, fragment):
+    """Reject moves, renumbering and renamed study variants after the first apply."""
     first = draft_mapping(runs)
     first["cards"][0]["studies"] = [STUDY]
     apply_mapping(parse_mapping(first), runs, register, CRITERIA, TODAY)
@@ -424,6 +444,7 @@ def test_regrouping_after_an_apply_is_refused(runs, register, changes, fragment)
 
 
 def test_a_recorded_run_cannot_leave_the_mapping(runs, register):
+    """Require an already recorded run to remain in subsequent mappings."""
     apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
     remaining = [run for run in runs if run.run_id != "r1"]
     with pytest.raises(
@@ -444,6 +465,7 @@ def test_a_recorded_run_cannot_leave_the_mapping(runs, register):
     ids=["title", "slug", "status", "tags", "body"],
 )
 def test_existing_cards_are_not_edited_through_the_mapping(runs, register, change):
+    """Reject mapping edits to metadata or prose of an existing card."""
     apply_mapping(mapping_for(runs), runs, register, CRITERIA, TODAY)
     field = next(iter(change))
     with pytest.raises(BackfillError, match=f"S-0001: the mapping changes the {field} "):
@@ -451,6 +473,7 @@ def test_existing_cards_are_not_edited_through_the_mapping(runs, register, chang
 
 
 def test_configs_of_recorded_runs_are_stored_again(runs, register):
+    """Restore a missing config even when its trial is already recorded."""
     plans = mapping_for(runs)
     apply_mapping(plans, runs, register, CRITERIA, TODAY)
     (stored,) = (register / "configs").glob("*.json")
@@ -461,6 +484,7 @@ def test_configs_of_recorded_runs_are_stored_again(runs, register):
 
 
 def test_a_card_that_cannot_be_rendered_is_named_once(runs, register):
+    """Ensure rendering errors identify the offending card without repeating its ID."""
     data = draft_mapping(runs)
     data["cards"][1]["body"] = "## Verdict\r\n"
     with pytest.raises(BackfillError, match="carriage return") as excinfo:

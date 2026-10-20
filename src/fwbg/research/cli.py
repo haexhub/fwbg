@@ -41,6 +41,7 @@ class _MappingDumper(yaml.SafeDumper):
 
 
 def _represent_text(dumper: yaml.SafeDumper, text: str) -> yaml.ScalarNode:
+    """Represent multiline YAML text as a literal block to preserve edited prose."""
     style = "|" if "\n" in text else None
     return dumper.represent_scalar("tag:yaml.org,2002:str", text, style=style)
 
@@ -49,6 +50,7 @@ _MappingDumper.add_representer(str, _represent_text)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Dispatch research commands and return a nonzero status for operator errors."""
     parser = argparse.ArgumentParser(
         prog="fwbg research",
         description="Set up the research register and backfill legacy runs.",
@@ -81,6 +83,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _scan(results_dir: Path, out: Path) -> int:
+    """Write a new draft mapping and report the scanned run counts."""
     if out.exists():
         print(f"Error: {out} exists; refusing to overwrite a mapping", file=sys.stderr)
         return 1
@@ -105,6 +108,7 @@ def _scan(results_dir: Path, out: Path) -> int:
 
 
 def _apply(results_dir: Path, mapping_path: Path, research_dir: Path) -> int:
+    """Load the reviewed mapping and criteria, apply them and report the writes."""
     template_path = research_dir / CRITERIA_TEMPLATE
     if not template_path.exists():
         print(
@@ -133,6 +137,7 @@ def _apply(results_dir: Path, mapping_path: Path, research_dir: Path) -> int:
 
 
 def _scan_runs(results_dir: Path) -> list[LegacyRun]:
+    """Scan legacy runs and warn about active or unreadable progress files."""
     runs = scan_runs(results_dir, get_strategies_dir().parent)
     active = _runs_in_progress(results_dir)
     if active:
