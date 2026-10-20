@@ -27,7 +27,7 @@ def pytest_configure(config):
     # auth override this explicitly via monkeypatch or a subprocess.
     os.environ.setdefault("FWBG_ALLOW_UNAUTHENTICATED_API", "1")
     # The research gate needs a register; only tests that test it switch it on.
-    os.environ.setdefault("FWBG_RESEARCH_GATE", "off")
+    os.environ["FWBG_RESEARCH_GATE"] = "off"
 
     patterns = [
         os.path.join(project_root, "src", "**", "*.nbi"),
