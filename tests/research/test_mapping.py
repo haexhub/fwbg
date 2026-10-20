@@ -4,7 +4,8 @@ import pytest
 import yaml
 
 from fwbg.research.mapping import BackfillError, draft_mapping, load_mapping, parse_mapping
-from tests.research.factories import STUDY
+from fwbg.research.legacy import scan_runs
+from tests.research.factories import STUDY, make_run
 
 
 def test_draft_proposes_one_parked_card_per_name_in_order_of_first_run(runs):
@@ -15,6 +16,18 @@ def test_draft_proposes_one_parked_card_per_name_in_order_of_first_run(runs):
     ]
     assert {c["status"] for c in cards} == {"parked"}
     assert cards[0]["slug"] == "pdh-retest"
+
+
+def test_draft_gives_a_name_without_ascii_words_a_numbered_slug(tmp_path):
+    results = tmp_path / "results"
+    make_run(results, "r1", name="pdh retest", timestamp="2026-02-22T08:00:00")
+    make_run(results, "r2", name="\u65e5\u672c", timestamp="2026-03-05T10:00:00")
+    cards = draft_mapping(scan_runs(results, tmp_path / "presets"))["cards"]
+    assert [(c["title"], c["slug"]) for c in cards] == [
+        ("pdh retest", "pdh-retest"),
+        ("\u65e5\u672c", "card-0002"),
+    ]
+    assert [plan.slug for plan in parse_mapping({"cards": cards})] == ["pdh-retest", "card-0002"]
 
 
 @pytest.mark.parametrize(

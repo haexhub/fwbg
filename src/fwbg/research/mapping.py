@@ -79,7 +79,7 @@ def draft_mapping(runs: Sequence[LegacyRun]) -> dict[str, Any]:
             {
                 "id": f"S-{number:04d}",
                 "title": name,
-                "slug": slugify(name),
+                "slug": _draft_slug(name, number),
                 "status": Status.PARKED.value,
                 "tags": [],
                 "body": "## Hypothesis\n\n## Verdict\n\nNo conclusion documented.\n",
@@ -87,6 +87,14 @@ def draft_mapping(runs: Sequence[LegacyRun]) -> dict[str, Any]:
             }
         )
     return {"cards": cards}
+
+
+def _draft_slug(name: str, number: int) -> str:
+    try:
+        return slugify(name)
+    except CardError:
+        # A name without ASCII letters or digits (e.g. Japanese) gives no slug of its own.
+        return f"card-{number:04d}"
 
 
 def load_mapping(text: str) -> list[CardPlan]:
