@@ -45,6 +45,16 @@ def test_reads_metrics_status_code_and_window(tmp_path, preset_base):
     assert run.presets_from_workspace is False
 
 
+def test_patch_error_is_kept_in_the_code_state(tmp_path, preset_base):
+    """Keep a recorded patch capture failure visible in the trial's code state."""
+    run_dir = make_run(tmp_path, "run-1")
+    config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    config["git"] = {"commit": "abc123", "dirty": True, "patch": None, "patch_error": "boom"}
+    (run_dir / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    run = load_run(run_dir, preset_base)
+    assert run.code["patch_error"] == "boom"
+
+
 def test_every_evaluated_symbol_counts_not_only_the_elite(tmp_path, preset_base):
     """Record metrics for every evaluated symbol, including those outside the elite list."""
     run = load_run(
