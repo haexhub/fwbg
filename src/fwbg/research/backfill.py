@@ -26,12 +26,12 @@ from fwbg.research.card import (
 from fwbg.research.fingerprint import FINGERPRINT_VERSION, digest
 from fwbg.research.ledger import (
     LEDGER_FILENAME,
-    LedgerError,
     Trial,
     TrialKind,
     TrialStatus,
     append_trial,
     read_trials,
+    readable_line,
 )
 from fwbg.research.legacy import LegacyRun
 from fwbg.research.mapping import BackfillError, CardPlan, StudyTrial, parse_criteria
@@ -257,14 +257,12 @@ def _study_run_id(card_id: str, variant: str) -> str:
 
 
 def _storable(trial: Trial) -> Trial:
-    """*trial*, refused here if the ledger could not store it as one line that reads back."""
-    numbered = replace(trial, trial_id="T-000001")
+    """*trial*, refused here if :func:`append_trial` could not store it."""
     try:
-        stored = Trial.from_json(numbered.to_json())
-    except (TypeError, ValueError, LedgerError) as exc:
+        # The id is a stand-in: append_trial assigns the real one.
+        readable_line(replace(trial, trial_id="T-000001"))
+    except ValueError as exc:
         raise BackfillError(f"{trial.strategy}: {trial.run_id} cannot be stored: {exc}") from exc
-    if stored != numbered:
-        raise BackfillError(f"{trial.strategy}: {trial.run_id} would not read back unchanged")
     return trial
 
 
