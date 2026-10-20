@@ -1,4 +1,5 @@
 import fcntl
+import shutil
 import subprocess
 
 import pytest
@@ -222,6 +223,18 @@ def test_commit_register_commits_renames_and_deletions(tmp_path, git_env):
     assert commit_register(research, ["strategies"], "chore: rename card") is True
     assert set(committed_files(research)) == {*REGISTER_FILES, "strategies/S-0001-new.md"}
     assert staged_files(research) == []
+
+
+def test_commit_register_commits_a_deleted_tracked_directory(tmp_path, git_env):
+    research = tmp_path / "research"
+    init_research_repo(research)
+    config = canonical_config({"timeframe": "DAY_1"}, ("GOLD",))
+    store_config(research, digest(config), config)
+    commit_register(research, ["configs"], "chore: add config")
+    shutil.rmtree(research / "configs")
+    assert commit_register(research, ["configs"], "chore: drop configs") is True
+    assert set(committed_files(research)) == set(REGISTER_FILES)
+    assert git(research, "status", "--porcelain") == ""
 
 
 def test_commit_register_keeps_register_ignored_files_out(tmp_path, git_env):

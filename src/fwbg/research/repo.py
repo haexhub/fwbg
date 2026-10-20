@@ -103,7 +103,8 @@ def commit_register(research_dir: Path, paths: Sequence[str], message: str) -> b
     """Commit the changes under *paths* (relative to the register); ``False`` if none.
 
     Only the changed files under *paths* are committed: other staged work stays
-    staged, and named paths that do not exist are skipped. The register's own
+    staged, a tracked path deleted entirely is committed as deleted, and named
+    paths that neither exist nor are tracked are skipped. The register's own
     ``.gitignore`` applies, the user's global excludes do not.
 
     Raises:
@@ -112,10 +113,12 @@ def commit_register(research_dir: Path, paths: Sequence[str], message: str) -> b
     """
     if not paths:
         raise ValueError("commit_register needs at least one path")
-    existing = [path for path in paths if (research_dir / path).exists()]
-    if existing:
+    stageable = [
+        path for path in paths if (research_dir / path).exists() or _tracked(research_dir, path)
+    ]
+    if stageable:
         # Global excludes (e.g. *.json) must not hide register files.
-        _git(research_dir, "add", "--all", "--", *existing, config=["core.excludesFile=/dev/null"])
+        _git(research_dir, "add", "--all", "--", *stageable, config=["core.excludesFile=/dev/null"])
     # --no-renames: a rename must list both names, or its deletion stays uncommitted.
     diff = _git(research_dir, "diff", "--cached", "--no-renames", "--name-only", "-z", "--", *paths)
     changed = [name for name in diff.stdout.split("\0") if name]
@@ -157,6 +160,11 @@ def store_config(research_dir: Path, fingerprint: str, config: Mapping[str, Any]
 def _write_if_missing(path: Path, text: str) -> None:
     if not path.exists():
         path.write_text(text, encoding="utf-8")
+
+
+def _tracked(research_dir: Path, path: str) -> bool:
+    """Whether git tracks *path* or files under it (it may be deleted from disk)."""
+    return bool(_git(research_dir, "ls-files", "-z", "--", path).stdout)
 
 
 def _has_commit(research_dir: Path) -> bool:
