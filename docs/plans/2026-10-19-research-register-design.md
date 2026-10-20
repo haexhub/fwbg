@@ -1,6 +1,6 @@
 # Research Register
 
-## Status: Design approved (2026-10-19) — steps 1 (core) and 2 (backfill) implemented
+## Status: Design approved (2026-10-19) — steps 1-3 (core, backfill, CLI gate) implemented
 
 ## Problem
 
@@ -111,7 +111,10 @@ criteria_amendments:         # written by `fwbg research amend`
 
 The criteria hash is computed from `success_criteria`; the tool writes the
 registration value to `registered_criteria_hash` and never accepts a
-hand-edited value. At registration, that persisted hash is the frozen
+hand-edited value. Only the five known criteria are accepted
+(`min_sharpe`, `min_trades`, `max_drawdown`, `min_fold_stability`,
+`max_p_value`); an unknown name makes the card unreadable. At registration,
+that persisted hash is the frozen
 baseline for the first trial; it does not need a separate
 `criteria_amendments` entry. A later criteria change is valid only when
 `fwbg research amend` records the new hash in `criteria_amendments` together
@@ -224,9 +227,11 @@ ledger (append) order.
 3. Criteria: the hash of the card's `success_criteria` must equal the
    **latest** `criteria_amendments` entry's hash, or `registered_criteria_hash`
    when there are no amendments; without amendments it must also equal the
-   hash recorded by the card's last trial → else deny (409). Criteria edits
-   go through `fwbg research amend --reason`; a hand-written amendment is only
-   caught by the research repo's git history.
+   hash recorded by the card's last trial; and every earlier trial of the
+   card must have run under the registration hash or an amendment hash
+   → else deny (409, `CRITERIA_CHANGED`). Criteria edits go through
+   `fwbg research amend --reason`; a hand-written amendment is only caught
+   by the research repo's git history.
 4. The card's `holdout_cutoff` equals the cutoff recorded by every earlier
    trial of the card — it is **frozen once trials ran**, in both directions
    (earlier would put seen data into the holdout; later after a holdout look
@@ -245,23 +250,45 @@ ledger (append) order.
 8. `--note` (exactly one line: what changed, why) is required (422). The
    diff to the previous iteration is computed automatically.
 
-`--no-save` runs are gated and recorded like any other run: the operator
-still saw the result. They skip normal `test_results` output, but the
-research integration creates a staging directory under
-`$FWBG_RESEARCH_DIR/.staging/<run_id>` for the trial's `config.json` and
-`code.patch`; that staging data is retained until the ledger and research-repo
-commit succeed, then cleaned up. `reconcile` repairs abandoned staging data.
+The CLI wiring adds run-level checks around the pure function: a run id
+must be a valid name (`INVALID_RUN_ID`, 422) and is used once — a run id
+whose directory already holds `config.json` or `grid_details/`, that is in
+the ledger or that has a pending marker is refused (`RUN_ID_IN_USE`, 409; a
+bare directory is allowed, the API pre-creates it for logs). An unreadable
+card or ledger denies (`REGISTER_UNREADABLE`, 409). A live pending marker
+with the same fingerprint counts as a duplicate like a recorded successful
+trial.
+
+`--no-save` is refused while the gate is on: a run whose results were seen
+is a trial, and the staging run directory it would need is not built. (If
+`--no-save` is needed again, add a staging run directory instead of lifting
+the refusal.)
+
+`--check` (`python -m fwbg.cli --check …`) runs the same gate with the run
+command's overrides and asset selection and exits 0 (allowed) or 2
+(refused). Neither `--check` nor a refused run writes anything of its own;
+both may record and commit *other* runs' stale pending markers, because
+recovery runs first so that a duplicate from a killed run is seen.
 
 `FWBG_RESEARCH_GATE=off` disables the gate for the test suite only. It
 prints a warning on every run and is never set in `docker-compose.yml`.
 A missing research directory does **not** disable the gate.
 
-After the run, the CLI appends the trial to the ledger, writes
-`configs/<fingerprint>.json`, adds a `research` block (id, trial,
-fingerprint, note, reason, kind) to the run's `config.json`, and commits
-in the research repo. `append_trial` locks `trials.jsonl` itself; append
-plus commit are serialised by a separate `.register.lock` (locking
-`trials.jsonl` again from the same process would deadlock).
+A gated run is on record from its start. When the gate allows it, the
+CLI writes a pending marker `$FWBG_RESEARCH_DIR/.staging/<run_id>.json`
+(ignored by the register's git) under the register lock; it holds the whole
+trial except its outcome, the canonical config, the run directory, host and
+pid. After the run, the CLI decides the outcome from the run directory
+(`ok` iff at least one symbol was evaluated), appends the trial to the
+ledger, writes `configs/<fingerprint>.json`, adds a `research` block (id,
+trial, fingerprint, note, reason, kind) to the run's `config.json`, commits
+in the research repo and deletes the marker. A run that never reaches its
+own recording — Ctrl-C (the worker pool's handler ends the process through
+`os._exit`), SIGKILL, OOM — leaves its marker behind; the next register
+write (gated run, `--check`, refused run, `verdict`) finds the marker with a
+dead process and records the trial. `append_trial` locks `trials.jsonl`
+itself; append plus commit are serialised by a separate `.register.lock`
+(locking `trials.jsonl` again from the same process would deadlock).
 
 ### Scripts outside the run system
 
@@ -278,9 +305,9 @@ not by code.
 | `new "<title>" --tags … [--cutoff DATE]` | Create card from template, status `active`. |
 | `list [--status S] [--tag T]` | Id, title, status, iterations, best development result, holdout used. |
 | `show S-NNNN` | Card, iteration timeline, coverage. |
-| `check <strategy-file> [overrides]` | Dry run of the gate. |
-| `amend S-NNNN --criteria … --reason …` | Change success criteria; appends a `criteria_amendments` entry (date, reason, new hash) to the front matter. |
-| `verdict S-NNNN <status> --reason … --reopen-if …` | Write verdict, set status. |
+| `python -m fwbg.cli --check --strategy-file … [overrides]` | Dry run of the gate (a flag of the run command, not a `research` subcommand: it needs the run's overrides and asset selection). |
+| `amend S-NNNN --criteria … --reason …` | Change success criteria; appends a `criteria_amendments` entry (date, reason, new hash) to the front matter. Only on `active` cards; refused when the card's criteria do not match the recorded registration/amendments. |
+| `verdict S-NNNN <status> --reason … --reopen-if …` | Write verdict, set status. Refused while the card has pending (running) runs. |
 | `reopen S-NNNN --reason …` | `parked`/`rejected` → `active`. |
 | `init` | Create the register (idempotent). |
 | `backfill scan --out MAPPING` / `backfill apply MAPPING` | Legacy import (see Migration). |
@@ -288,7 +315,9 @@ not by code.
 
 **Coverage view** (`show`): from the canonical configs of all trials,
 list every config path whose value varied, with the set or range of
-values seen, plus assets, timeframes and date windows.
+values seen, plus assets, timeframes and date windows. List items are
+keyed by their `name` (`strategy.exit_strategies[atr_based].params.tp_mult`), or
+by `[*]` when they have none.
 
 ### Verdict
 
@@ -296,7 +325,9 @@ Auto-computed: N (counted trials for this strategy, plus the global N for
 context), Deflated Sharpe Ratio of the best iteration given N, holdout
 result, coverage summary, list of distinct `criteria_hash` values used.
 Manual: reason and **reopen condition** (what new evidence or capability
-would justify another round).
+would justify another round). Step 3 writes the statistics without DSR
+(N per card and register, criteria versions, holdout state, best
+development result against the criteria); DSR comes with step 5.
 
 ### HTTP API (fwbg-agents, dashboard)
 
@@ -311,10 +342,13 @@ research verdict.
 
 ### AI sessions
 
-`CLAUDE.md` and `AGENTS.md` in fwbg get a rule: before proposing a test,
-run `fwbg research list/show`; every run uses `--research-id` and
-`--note`; study scripts call `register_trial()`. The rule contains no
-results and can live in the public repo.
+`CLAUDE.md` and `AGENTS.md` in fwbg carry a rule (section "Research
+register", since step 3): before proposing a test, run `fwbg research
+list/show`; a new idea gets a card first; every run uses `--research-id`
+and `--note`; never set `FWBG_RESEARCH_GATE`; only a deliberate verdict
+closes a strategy. Study scripts calling `register_trial()` is added to the
+rule with step 4. The rule contains no results and can live in the public
+repo.
 
 ## Migration
 
@@ -360,12 +394,15 @@ Full backfill of all existing runs and studies:
 ## Error handling
 
 - Ledger append or research-repo commit fails after a successful run →
-  warning, the run is not failed. `reconcile` first validates the ledger and
-  detects register files changed since the last research-repo commit. It
-  stages only the register paths (`strategies/`, `trials.jsonl`, `configs/`
-  and `reports/`) and creates a recovery commit for that already-appended
-  trial, leaving unrelated research-repo changes untouched. It then indexes
-  any workspace runs missing from the ledger and commits those changes too.
+  warning, the run is not failed. The pending marker stays and the next
+  register write records it; every register commit stages all register
+  paths, so it also picks up an earlier failed commit. `reconcile` first
+  validates the ledger and detects register files changed since the last
+  research-repo commit. It stages only the register paths (`strategies/`,
+  `trials.jsonl`, `configs/` and `reports/`) and creates a recovery commit
+  for that already-appended trial, leaving unrelated research-repo changes
+  untouched. It then indexes any workspace runs missing from the ledger and
+  commits those changes too.
   If validation or the recovery commit fails again, it leaves the data in
   place, reports the failure, and remains safe to retry.
 - Unparseable card or ledger → the gate denies (fail closed).
@@ -396,9 +433,12 @@ Each step is usable on its own.
 2. **Backfill + cleanup**, including operator review of the mapping —
    before the gate, so duplicate detection knows the legacy configs from
    day one.
-3. **CLI gate** and `fwbg research new/list/show/check/amend/verdict/reopen`.
-4. **API** gate and endpoints, `CLAUDE.md`/`AGENTS.md` rule,
-   `register_trial()`.
+3. **CLI gate** and `fwbg research new/list/show/amend/verdict/reopen`,
+   `--check`, `CLAUDE.md`/`AGENTS.md` rule — done (plan
+   `docs/plans/2026-10-20-research-register-gate.md`). Until step 4, API,
+   dashboard and fwbg-agents runs are refused (no `--research-id`).
+4. **API** gate and endpoints, `register_trial()` (and its line in the
+   `CLAUDE.md`/`AGENTS.md` rule), `reconcile`.
 5. **Holdout mode** and verdict statistics (DSR).
 6. **fwbg-agents integration** (separate plan, agents repo).
 7. **Dashboard page** (phase 2).
