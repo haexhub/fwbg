@@ -217,17 +217,7 @@ class ResearchRun:
                     f"run {self.run_id} is pending (running or unrecorded)",
                 )
             )
-        running = live_runs(self.research_dir)
-        if decision.fingerprint is not None and not (self.reason and self.reason.strip()):
-            same = [run.run_id for run in running if run.trial.fingerprint == decision.fingerprint]
-            if same:
-                denials.append(
-                    Denial(
-                        DenialCode.DUPLICATE_FINGERPRINT,
-                        f"identical configuration is running now (run {', '.join(same)}); "
-                        "pass a reason to run it again",
-                    )
-                )
+        denials.extend(running_duplicates(self.research_dir, decision.fingerprint, self.reason))
         return denials
 
     def record(self) -> Trial | None:
@@ -361,6 +351,26 @@ def parse_check_output(stdout: str, returncode: int) -> dict[str, Any] | None:
             )
             return payload if consistent else None
     return None
+
+
+def running_duplicates(
+    research_dir: Path, run_fingerprint: str | None, reason: str | None
+) -> list[Denial]:
+    """An identical configuration must not run twice at once, unless *reason* says why."""
+    if run_fingerprint is None or (reason and reason.strip()):
+        return []
+    same = [
+        run.run_id for run in live_runs(research_dir) if run.trial.fingerprint == run_fingerprint
+    ]
+    if not same:
+        return []
+    return [
+        Denial(
+            DenialCode.DUPLICATE_FINGERPRINT,
+            f"identical configuration is running now (run {', '.join(same)}); "
+            "pass a reason to run it again",
+        )
+    ]
 
 
 def _warn_uncommitted(what: str, exc: ResearchRepoError) -> None:
