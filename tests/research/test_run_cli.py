@@ -13,7 +13,7 @@ from fwbg.optimization.resource_manager import SimplePoolManager
 from fwbg.research.gate import Denial, DenialCode
 from fwbg.research.ledger import LEDGER_FILENAME, TrialStatus, read_trials
 from fwbg.research.pending import read_pending
-from fwbg.research.runs import GATE_ENV, GateDenied
+from fwbg.research.runs import GATE_ENV, GateDenied, parse_check_output
 from fwbg.results import storage
 from fwbg.utils import progress
 from tests.research.factories import make_run
@@ -155,6 +155,42 @@ def test_check_reports_and_writes_nothing(gated, monkeypatch, capsys):
     assert exited.value.code == 0
     assert "Research gate: allowed" in capsys.readouterr().out
     assert trials(gated.register) == [] and read_pending(gated.register) == []
+    assert not gated.fake.passed
+
+
+def test_check_json_reports_an_allowed_run(gated, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as exited:
+        run_cli(
+            monkeypatch,
+            *("--strategy-file", str(gated.file), "--research-id", "S-0007"),
+            *("--note", "baseline", "--run-id", "r1", "--check-json"),
+        )
+    assert exited.value.code == 0
+    payload = parse_check_output(capsys.readouterr().out)
+    assert payload is not None and payload["allowed"] is True
+    assert payload["symbols"] == ["EURUSD"] and payload["window"]["end"] == "2025-04-30"
+    assert trials(gated.register) == [] and read_pending(gated.register) == []
+    assert not gated.fake.passed
+
+
+def test_check_json_reports_a_refusal(gated, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as exited:
+        run_cli(
+            monkeypatch,
+            *("--strategy-file", str(gated.file), "--note", "x", "--run-id", "r1", "--check-json"),
+        )
+    assert exited.value.code == 2
+    payload = parse_check_output(capsys.readouterr().out)
+    assert payload == {
+        "allowed": False,
+        "denials": [
+            {
+                "code": "missing_research_id",
+                "status": 422,
+                "message": "every run needs a research id (S-NNNN)",
+            }
+        ],
+    }
     assert not gated.fake.passed
 
 
