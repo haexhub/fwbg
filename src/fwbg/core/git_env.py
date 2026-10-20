@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 # Git hooks export GIT_DIR and GIT_INDEX_FILE; inheriting them would make git act on
 # another repository, e.g. write private data into the public fwbg repository
@@ -32,3 +33,14 @@ def isolated_git_env() -> dict[str, str]:
     env = {name: value for name, value in os.environ.items() if name not in GIT_LOCAL_ENV_VARS}
     env["GIT_OPTIONAL_LOCKS"] = "0"
     return env
+
+
+def source_dir() -> Path:
+    """The installed fwbg package; git run here describes the code that runs.
+
+    Outside a git checkout (an installed wheel) git fails here and the run
+    records no git information.
+    """
+    # ponytail: a non-editable install in a venv inside a checkout would report
+    # that checkout's HEAD; check `git ls-files --error-unmatch` if that ever matters.
+    return Path(__file__).resolve().parent.parent
