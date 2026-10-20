@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -13,15 +13,19 @@ from fwbg.research.commands import CommandError
 from fwbg.research.fingerprint import canonical_json
 from fwbg.research.gate import criteria_denials
 from fwbg.research.ledger import LEDGER_FILENAME, Trial, TrialKind, read_trials
-from fwbg.research.pending import live_runs
+from fwbg.research.pending import PendingError, live_runs
 from fwbg.research.stats import best_result, evaluations
 
 WIDTH = 120
 # Indented by two spaces in ``show``.
 _COVERAGE_WIDTH = WIDTH - 2
 _ALWAYS = ("symbols", "strategy.timeframe", "strategy.start_date", "strategy.end_date")
+_EVALUATED = "evaluated symbols"
+# Free text that never changes a result.
+_IGNORED_KEYS = frozenset({"_comment"})
 _MAX_VALUES = 10
 _MAX_PATH = 72
+_MIN_ROOM = 24
 _MISSING = "-"
 _INDEX = re.compile(r"\[([0-9]+)\]")
 
@@ -102,11 +106,14 @@ def show_text(research_dir: Path, card_id: str) -> str:
     return "\n".join(lines)
 
 
-def coverage(configs: Sequence[Mapping[str, Any]]) -> list[str]:
+def coverage(configs: Sequence[Mapping[str, Any]], evaluated: Iterable[str] = ()) -> list[str]:
     """The paths whose values differ between *configs*, plus symbols and the window.
 
-    One line per path with its sorted distinct values; ``-`` marks configs
-    without the path.
+    List items are matched by their ``name`` (``[<name>]``), or all together
+    (``[*]``) when not every item has one, so reordering a list changes nothing;
+    lists of lists keep their index. One line per path with the sorted union of
+    its values, plus ``-`` if some config lacks the path. *evaluated* are the
+    symbols the trials evaluated, listed after ``symbols``.
     """
     flat = [_flatten(config, "", {}) for config in configs]
     if not flat:
@@ -114,17 +121,24 @@ def coverage(configs: Sequence[Mapping[str, Any]]) -> list[str]:
     varied = {
         path
         for path in set().union(*flat) - set(_ALWAYS)
-        if len({values.get(path) for values in flat}) > 1
+        if len({frozenset(values.get(path, ())) for values in flat}) > 1
+        or any(path not in values for values in flat)
     }
-    listed = [*_ALWAYS, *sorted(varied, key=_natural)]
-    width = min(max(len(path) for path in listed), _MAX_PATH)
+    rows = [(path, _path_values(path, flat)) for path in _ALWAYS]
+    rows.insert(1, (_EVALUATED, sorted(set(evaluated)) or [_MISSING]))
+    rows += [(path, _path_values(path, flat)) for path in sorted(varied, key=_natural)]
+    width = min(max(len(path) for path, _ in rows), _MAX_PATH)
     lines = []
-    for path in listed:
-        found = sorted({values.get(path) for values in flat}, key=_value_key)
-        shown = [_MISSING if value is None else value for value in found]
+    for path, shown in rows:
         prefix = f"{path:<{width}}  "
-        lines.append(prefix + _value_list(shown, _COVERAGE_WIDTH - len(prefix)))
+        room = max(_COVERAGE_WIDTH - len(prefix), _MIN_ROOM)
+        lines.append(prefix + _value_list(shown, room))
     return lines
+
+
+def _path_values(path: str, flat: Sequence[Mapping[str, set[str]]]) -> list[str]:
+    found = sorted(set().union(*(values.get(path, ()) for values in flat)), key=_value_key)
+    return found + [_MISSING] if any(path not in values for values in flat) else found
 
 
 def _card_ids(research_dir: Path) -> list[str]:
@@ -161,7 +175,10 @@ def _criteria_state(card: ResearchCard, own: Sequence[Trial]) -> str:
 
 
 def _live_lines(research_dir: Path, card_id: str) -> list[str]:
-    live = live_runs(research_dir, card_id)
+    try:
+        live = live_runs(research_dir, card_id)
+    except PendingError as exc:
+        return [_clip(f"Runs in progress: unknown ({exc})")]
     if not live:
         return ["Runs in progress: none"]
     return [
@@ -207,22 +224,25 @@ def _coverage_section(research_dir: Path, own: Sequence[Trial]) -> list[str]:
     header = f"Coverage: {_plural(len(configs), 'config')}"
     if left_out:
         header += f" ({_plural(left_out, 'trial')} without a stored config left out)"
-    return [header, *(f"  {line}" for line in coverage(configs))]
+    evaluated = {symbol for trial in own for symbol in trial.metrics}
+    return [header, *(f"  {line}" for line in coverage(configs, evaluated))]
 
 
-def _flatten(value: Any, path: str, out: dict[str, str]) -> dict[str, str]:
+def _flatten(value: Any, path: str, out: dict[str, set[str]]) -> dict[str, set[str]]:
+    """Map each leaf path to the rendered values found there (items sharing a key unite)."""
     if isinstance(value, Mapping):
         for key in sorted(value):
-            _flatten(value[key], f"{path}.{key}" if path else str(key), out)
-    elif (
-        isinstance(value, list)
-        and value
-        and all(isinstance(item, (Mapping, list)) for item in value)
-    ):
+            if key not in _IGNORED_KEYS:
+                _flatten(value[key], f"{path}.{key}" if path else str(key), out)
+    elif isinstance(value, list) and value and all(isinstance(item, Mapping) for item in value):
+        named = all(isinstance(item.get("name"), str) for item in value)
+        for item in value:
+            _flatten(item, f"{path}[{item['name'] if named else '*'}]", out)
+    elif isinstance(value, list) and value and all(isinstance(item, list) for item in value):
         for index, item in enumerate(value):
             _flatten(item, f"{path}[{index}]", out)
     else:
-        out[path] = canonical_json(value)
+        out.setdefault(path, set()).add(canonical_json(value))
     return out
 
 
@@ -231,10 +251,8 @@ def _natural(path: str) -> str:
     return _INDEX.sub(lambda match: f"[{int(match.group(1)):09d}]", path)
 
 
-def _value_key(value: str | None) -> tuple[int, float, str]:
-    """Numbers numerically, then other values as text, a missing path last."""
-    if value is None:
-        return (2, 0.0, "")
+def _value_key(value: str) -> tuple[int, float, str]:
+    """Numbers numerically, then other values as text."""
     parsed = json.loads(value)
     if isinstance(parsed, (int, float)) and not isinstance(parsed, bool):
         return (0, float(parsed), value)

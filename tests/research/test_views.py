@@ -1,14 +1,17 @@
 import os
+import re
 from datetime import date
 
 import pytest
+
+from fwbg.research import views
 
 from fwbg.research.cli import main
 from fwbg.research.card import CriteriaAmendment, Status, criteria_hash, write_card
 from fwbg.research.commands import CommandError
 from fwbg.research.fingerprint import digest
 from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, TrialStatus, append_trial
-from fwbg.research.pending import write_pending
+from fwbg.research.pending import PendingError, write_pending
 from fwbg.research.repo import store_config
 from fwbg.research.views import coverage, list_lines, show_text
 from tests.research.factories import make_card, make_trial
@@ -98,6 +101,14 @@ def test_list_truncates_long_titles(register):
     assert line.endswith("x…")
 
 
+def test_list_aligns_columns_across_rows(register):
+    for _ in range(12):
+        add_trial(register, metrics={"PORTFOLIO": {"sharpe": 0.5}})
+    lines = list_lines(register)
+    assert lines[0].index("best") == lines[1].index("best")
+    assert lines[0].index("holdout") == lines[1].index("holdout")
+
+
 # --- show --------------------------------------------------------------------
 
 
@@ -147,15 +158,36 @@ def test_show_lists_live_runs_of_the_card(register, tmp_path):
     assert not any("other" in line for line in lines)
 
 
+def test_show_survives_an_unreadable_pending_marker(register, monkeypatch):
+    def broken(*args):
+        raise PendingError("x.json: invalid pid 0")
+
+    monkeypatch.setattr(views, "live_runs", broken)
+    lines = show_text(register, "S-0007").splitlines()
+    assert "Runs in progress: unknown (x.json: invalid pid 0)" in lines
+
+
 def test_show_coverage_leaves_out_trials_without_a_stored_config(register):
-    add_trial(register, cfg=config(10))
+    add_trial(register, cfg=config(10), metrics={"EURUSD": {}})
     add_trial(register, cfg=config(20))
-    add_trial(register, run_id="study:S-0007:a", fingerprint="sha256:" + "1" * 64)
+    add_trial(
+        register,
+        run_id="study:S-0007:a",
+        fingerprint="sha256:" + "1" * 64,
+        metrics={"GBPUSD": {"sharpe": 0.1}},
+    )
     lines = show_text(register, "S-0007").splitlines()
     assert "Coverage: 2 configs (1 trial without a stored config left out)" in lines
-    assert any(
-        line.startswith("  strategy.pipeline.indicators[0].params.range_bars") for line in lines
-    )
+    assert f"  {row('evaluated symbols', 'EURUSD, GBPUSD')}" in lines
+    assert f"  {row(RANGE_BARS, '10, 20')}" in lines
+
+
+def test_show_of_an_unparseable_config_is_an_error(register):
+    fingerprint = "sha256:" + "2" * 64
+    (register / "configs" / f"{'2' * 64}.json").write_text("{not json", encoding="utf-8")
+    add_trial(register, fingerprint=fingerprint)
+    with pytest.raises(CommandError, match=f"configs/{'2' * 64}.json: "):
+        show_text(register, "S-0007")
 
 
 def test_show_of_an_unknown_card_is_an_error(register):
@@ -166,7 +198,7 @@ def test_show_of_an_unknown_card_is_an_error(register):
 # --- coverage ----------------------------------------------------------------
 
 
-RANGE_BARS = "strategy.pipeline.indicators[0].params.range_bars"
+RANGE_BARS = "strategy.pipeline.indicators[cusum].params.range_bars"
 
 
 def row(path, values):
@@ -181,6 +213,7 @@ def test_coverage_lists_varied_paths_and_the_window():
     ]
     assert coverage(configs) == [
         row("symbols", '["EURUSD","GBPUSD"], ["EURUSD"]'),
+        row("evaluated symbols", "-"),
         row("strategy.timeframe", '"HOUR_1"'),
         row("strategy.start_date", "-"),
         row("strategy.end_date", '"2025-04-30", -'),
@@ -199,8 +232,79 @@ def test_coverage_keeps_lines_short():
     assert lines[-1] == row(RANGE_BARS, '"' + "x" * 30 + '0" … (+4 more)')
 
 
+def test_coverage_keeps_room_for_values_after_an_overlong_path():
+    path = "p" * 110
+    lines = coverage([{"strategy": {path: 1}}, {"strategy": {path: 2}}])
+    assert lines[-1].endswith("  1, 2")
+
+
 def test_coverage_of_no_configs_is_empty():
     assert coverage([]) == []
+
+
+def test_coverage_shows_evaluated_symbols_after_symbols():
+    lines = coverage([config()], evaluated=["GBPUSD", "EURUSD"])
+    assert cells(lines[:2]) == [("symbols", '["EURUSD"]'), ("evaluated symbols", "EURUSD, GBPUSD")]
+
+
+def strategy(**values):
+    return {"strategy": values, "symbols": ["EURUSD"]}
+
+
+def cells(lines):
+    """(path, values) of each coverage line."""
+    return [tuple(re.split(r" {2,}", line, maxsplit=1)) for line in lines]
+
+
+def varied(lines):
+    """(path, values) of the rows after the always-listed ones."""
+    return cells(lines[5:])
+
+
+def test_coverage_matches_list_items_by_name_not_position():
+    first = {"name": "atr", "params": {"period": 14}}
+    second = {"name": "rsi", "params": {"period": 7}}
+    lines = coverage([strategy(indicators=[first, second]), strategy(indicators=[second, first])])
+    assert varied(lines) == []
+
+
+def test_coverage_unites_items_that_share_a_name():
+    def trail(pips):
+        return {"name": "trail", "params": {"trail_pips": pips}}
+
+    lines = coverage([strategy(exits=[trail(10), trail(20)]), strategy(exits=[trail(10)])])
+    assert varied(lines) == [("strategy.exits[trail].params.trail_pips", "10, 20")]
+
+
+def test_coverage_keys_unnamed_items_by_star():
+    lines = coverage([strategy(grid=[{"a": 1}, {"a": 2}]), strategy(grid=[{"a": 3}])])
+    assert varied(lines) == [("strategy.grid[*].a", "1, 2, 3")]
+
+
+def test_coverage_marks_a_path_some_configs_lack():
+    lines = coverage([strategy(grid=[{"a": 1}]), strategy()])
+    assert varied(lines) == [("strategy.grid[*].a", "1, -")]
+
+
+def test_coverage_ignores_comments_but_keeps_other_underscore_keys():
+    lines = coverage(
+        [
+            strategy(_comment="first", _cli_data_path="/a", exits=[{"_comment": "x"}]),
+            strategy(_comment="second", _cli_data_path="/b", exits=[{"_comment": "y"}]),
+        ]
+    )
+    assert varied(lines) == [("strategy._cli_data_path", '"/a", "/b"')]
+
+
+def test_coverage_orders_list_of_list_indices_naturally():
+    lines = coverage([strategy(grid=[[0]] * 11), strategy(grid=[[1]] * 11)])
+    paths = [path for path, _ in varied(lines)]
+    assert paths == [f"strategy.grid[{index}]" for index in range(11)]
+
+
+def test_coverage_sorts_numbers_before_booleans():
+    configs = [strategy(flag=value) for value in (True, 2, False, 1)]
+    assert varied(coverage(configs)) == [("strategy.flag", "1, 2, false, true")]
 
 
 # --- CLI ---------------------------------------------------------------------
@@ -220,11 +324,3 @@ def test_cli_show_of_an_unknown_card_exits_1(register, monkeypatch, capsys):
     monkeypatch.setenv("FWBG_RESEARCH_DIR", str(register))
     assert main(["show", "S-0042"]) == 1
     assert "Error: no research card S-0042" in capsys.readouterr().err
-
-
-def test_list_aligns_columns_across_rows(register):
-    for _ in range(12):
-        add_trial(register, metrics={"PORTFOLIO": {"sharpe": 0.5}})
-    lines = list_lines(register)
-    assert lines[0].index("best") == lines[1].index("best")
-    assert lines[0].index("holdout") == lines[1].index("holdout")
