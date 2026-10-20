@@ -127,7 +127,10 @@ class RunStartRequest(BaseModel):
 
 
 def _cli_command(body: RunStartRequest, strategy_file, job_id: str) -> list[str]:
-    """The fwbg CLI argv for a run (separate items, no shell)."""
+    """The fwbg CLI argv for a run (separate items, no shell).
+
+    The research values use ``--flag=value`` so text starting with ``-`` parses.
+    """
     cmd = [sys.executable, "-m", "fwbg.cli", "--strategy-file", str(strategy_file)]
 
     if body.assets:
@@ -144,11 +147,11 @@ def _cli_command(body: RunStartRequest, strategy_file, job_id: str) -> list[str]
         cmd.extend(["--cost-multiplier", str(body.cost_multiplier)])
     cmd.extend(["--run-id", job_id])
     if body.research_id:
-        cmd.extend(["--research-id", body.research_id])
+        cmd.append(f"--research-id={body.research_id}")
     if body.note:
-        cmd.extend(["--note", body.note])
+        cmd.append(f"--note={body.note}")
     if body.reason:
-        cmd.extend(["--reason", body.reason])
+        cmd.append(f"--reason={body.reason}")
     return cmd
 
 
@@ -197,7 +200,17 @@ def start_run(body: RunStartRequest) -> dict:
         env = os.environ.copy()
         env.setdefault("FWBG_WORKSPACE", str(get_workspace()))
         if gate_enabled():
-            _preflight(cmd, env)
+            try:
+                _preflight(cmd, env)
+            except HTTPException:
+                # The preflight refused or failed: free the slot, keep no run dir.
+                _run_service.release(_active_jobs, _active_jobs_lock, results_dir, job_id)
+                raise
+            with _active_jobs_lock:
+                status = _active_jobs.get(job_id, {}).get("status")
+            if status != "starting":
+                # Cancelled during the preflight: keep its cancelled state.
+                raise HTTPException(409, "run was cancelled before it started")
         process, stdout_path, stderr_path = _spawn_cli_process(
             cmd, env, results_dir / job_id
         )
@@ -212,9 +225,7 @@ def start_run(body: RunStartRequest) -> dict:
             cmd,
         )
     except HTTPException:
-        # The research gate refused the run: free the slot, keep no run dir.
-        _run_service.release(_active_jobs, _active_jobs_lock, results_dir, job_id)
-        raise
+        raise  # handled above; not a spawn failure
     except Exception as e:
         log.exception("Failed to start run")
         _run_service.fail_spawn(

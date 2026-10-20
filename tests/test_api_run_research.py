@@ -4,18 +4,21 @@ The preflight runs the CLI with ``--check-json`` before the real run is
 spawned, so a refused run becomes an HTTP error instead of a run that dies.
 """
 
+import argparse
 import json
 import subprocess
 
 import pytest
 from fastapi.testclient import TestClient
 
+import fwbg.api.run_preflight as preflight_mod
 import fwbg.api.runs as runs_mod
 from fwbg.api import create_app
-from fwbg.research.runs import CHECK_PREFIX
+from fwbg.research.runs import CHECK_PREFIX, add_run_arguments
 
 DENIAL_409 = {"code": "DUPLICATE_RUN", "status": 409, "message": "already ran"}
 DENIAL_422 = {"code": "MISSING_NOTE", "status": 422, "message": "a note is required"}
+ALLOWED = {"allowed": True, "denials": []}
 
 
 class _FakeProcess:
@@ -39,10 +42,21 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(runs_mod, "MAX_CONCURRENT_RUNS", 1)
     monkeypatch.setattr(runs_mod, "gate_enabled", lambda: True)
 
-    calls = {"preflight": [], "spawn": [], "result": None}
+    calls = {
+        "preflight": [],
+        "preflight_env": [],
+        "spawn": [],
+        "spawn_env": [],
+        "result": None,
+        "during_preflight": None,
+        "results_dir": tmp_path / "results",
+    }
 
     def fake_run(cmd, **kwargs):
         calls["preflight"].append(cmd)
+        calls["preflight_env"].append(kwargs["env"])
+        if calls["during_preflight"]:
+            calls["during_preflight"](cmd)
         result = calls["result"]
         if isinstance(result, BaseException):
             raise result
@@ -50,9 +64,10 @@ def api(tmp_path, monkeypatch):
 
     def fake_spawn(cmd, env, run_dir):
         calls["spawn"].append(cmd)
+        calls["spawn_env"].append(env)
         return _FakeProcess(), run_dir / "cli_stdout.log", run_dir / "cli_stderr.log"
 
-    monkeypatch.setattr("fwbg.api.run_preflight.subprocess.run", fake_run)
+    monkeypatch.setattr(preflight_mod, "_run", fake_run)
     monkeypatch.setattr(runs_mod, "_spawn_cli_process", fake_spawn)
 
     def respond(payload=None, returncode=0, stdout="", stderr=""):
@@ -73,9 +88,24 @@ def _refusal(*denials):
     return {"allowed": False, "denials": list(denials)}
 
 
+def _job_id(cmd):
+    return cmd[cmd.index("--run-id") + 1]
+
+
 def _assert_slot_released(client, calls):
-    calls["respond"]({"allowed": True, "denials": []})
+    refused_job = _job_id(calls["preflight"][-1])
+    assert not (calls["results_dir"] / refused_job).exists()
+    calls["respond"](ALLOWED)
     assert _start(client).status_code == 200
+
+
+def _assert_preflight_failed(resp, *fragments):
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["message"] == "research preflight failed"
+    assert "denials" not in detail
+    for fragment in fragments:
+        assert fragment in detail["output"]
 
 
 def test_refusal_with_a_409_denial_returns_409_and_releases_the_slot(api):
@@ -103,28 +133,46 @@ def test_refusal_with_only_422_denials_returns_422(api):
 
 def test_allowed_run_spawns_with_the_research_fields(api):
     client, calls = api
-    calls["respond"]({"allowed": True, "denials": []})
+    calls["respond"](ALLOWED)
 
     resp = _start(client, research_id="S-0001", note="tighter stop, see card", reason="rerun")
 
     assert resp.status_code == 200
     assert len(calls["spawn"]) == 1
     cmd = calls["spawn"][0]
-    assert cmd[cmd.index("--research-id") + 1] == "S-0001"
-    assert cmd[cmd.index("--note") + 1] == "tighter stop, see card"
-    assert cmd[cmd.index("--reason") + 1] == "rerun"
-    assert cmd[cmd.index("--run-id") + 1] == resp.json()["job_id"]
+    assert "--research-id=S-0001" in cmd
+    assert "--note=tighter stop, see card" in cmd
+    assert "--reason=rerun" in cmd
+    assert _job_id(cmd) == resp.json()["job_id"]
     assert "--check-json" not in cmd
     assert calls["preflight"] == [[*cmd, "--check-json"]]
+    assert calls["preflight_env"] == calls["spawn_env"]
+
+
+def test_research_text_starting_with_a_dash_parses_in_the_cli(api):
+    client, calls = api
+    calls["respond"](ALLOWED)
+
+    assert (
+        _start(client, research_id="S-0001", note="-5% tighter stop", reason="-x").status_code
+        == 200
+    )
+
+    cmd = calls["spawn"][0]
+    assert "--note=-5% tighter stop" in cmd
+    parser = argparse.ArgumentParser()
+    add_run_arguments(parser)
+    args, _ = parser.parse_known_args(cmd[3:])
+    assert (args.research_id, args.note, args.reason) == ("S-0001", "-5% tighter stop", "-x")
 
 
 def test_allowed_run_without_reason_omits_the_flag(api):
     client, calls = api
-    calls["respond"]({"allowed": True, "denials": []})
+    calls["respond"](ALLOWED)
 
     assert _start(client, research_id="S-0001", note="n").status_code == 200
 
-    assert "--reason" not in calls["spawn"][0]
+    assert not any(item.startswith("--reason") for item in calls["spawn"][0])
 
 
 def test_cli_failing_before_its_gate_returns_422_with_both_stream_tails(api):
@@ -137,23 +185,29 @@ def test_cli_failing_before_its_gate_returns_422_with_both_stream_tails(api):
 
     resp = _start(client)
 
-    assert resp.status_code == 422
-    detail = resp.json()["detail"]
-    assert detail.startswith("research preflight failed")
-    assert "Keine Datendateien gefunden" in detail
-    assert "Traceback: boom" in detail
+    _assert_preflight_failed(resp, "Keine Datendateien gefunden", "Traceback: boom")
     assert calls["spawn"] == []
     _assert_slot_released(client, calls)
 
 
 def test_payload_contradicting_the_exit_code_is_a_preflight_failure(api):
     client, calls = api
-    calls["respond"]({"allowed": True, "denials": []}, returncode=1)
+    calls["respond"](ALLOWED, returncode=1)
 
     resp = _start(client)
 
-    assert resp.status_code == 422
-    assert CHECK_PREFIX not in resp.json()["detail"]
+    _assert_preflight_failed(resp)
+    assert CHECK_PREFIX not in resp.json()["detail"]["output"]
+
+
+@pytest.mark.parametrize("denials", ["nope", [DENIAL_409, "nope"], None])
+def test_malformed_denials_are_a_preflight_failure(api, denials):
+    client, calls = api
+    calls["respond"]({"allowed": False, "denials": denials}, returncode=2)
+
+    _assert_preflight_failed(_start(client))
+    assert calls["spawn"] == []
+    _assert_slot_released(client, calls)
 
 
 def test_preflight_timeout_returns_504_and_releases_the_slot(api):
@@ -163,8 +217,32 @@ def test_preflight_timeout_returns_504_and_releases_the_slot(api):
     resp = _start(client)
 
     assert resp.status_code == 504
+    assert resp.json()["detail"] == "research preflight timed out"
     assert calls["spawn"] == []
     _assert_slot_released(client, calls)
+
+
+def test_run_cancelled_during_the_preflight_is_not_spawned(api):
+    client, calls = api
+    calls["respond"](ALLOWED)
+
+    def cancel(cmd):
+        job_id = _job_id(cmd)
+        runs_mod._run_service.cancel(
+            runs_mod._active_jobs, runs_mod._active_jobs_lock, calls["results_dir"], job_id
+        )
+
+    calls["during_preflight"] = cancel
+
+    resp = _start(client)
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "run was cancelled before it started"
+    assert calls["spawn"] == []
+    job_id = _job_id(calls["preflight"][0])
+    assert runs_mod._active_jobs[job_id]["status"] == "cancelled"
+    state = json.loads((calls["results_dir"] / job_id / "run_state.json").read_text())
+    assert state["status"] == "cancelled"
 
 
 def test_gate_off_spawns_without_a_preflight(api, monkeypatch):
