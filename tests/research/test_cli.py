@@ -132,6 +132,26 @@ def test_apply_reports_a_missing_mapping(tmp_path, git_env, capsys):
     assert capsys.readouterr().err.startswith("Error: ")
 
 
+@pytest.mark.parametrize(
+    "template",
+    ["min_sharpe: 1.0\nmin_sharpe: 9.0\n", "min_sharpe: 2026-02-30\n"],
+    ids=["duplicate-key", "impossible-date"],
+)
+def test_apply_reports_an_unreadable_criteria_template(tmp_path, git_env, capsys, template):
+    make_run(tmp_path / "results", "r1")
+    main(["init"])
+    (tmp_path / "research" / "templates" / "criteria-default.yaml").write_text(
+        template, encoding="utf-8"
+    )
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text("cards:\n- id: S-0001\n  title: orb\n  runs: [r1]\n", encoding="utf-8")
+    assert main(["backfill", "apply", str(mapping)]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("Error: ") and "criteria-default.yaml" in err
+    assert "Traceback" not in err
+    assert read_trials(tmp_path / "research" / LEDGER_FILENAME) == []
+
+
 def test_fwbg_routes_research_commands(monkeypatch, capsys):
     # fwbg's main enables faulthandler on stderr, which needs a real file descriptor.
     monkeypatch.setattr(faulthandler, "enable", lambda: None)
