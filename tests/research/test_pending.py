@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import socket
 import subprocess
 from dataclasses import replace
 
@@ -48,11 +49,14 @@ def dead_pid() -> int:
     return process.pid
 
 
-def make_pending(run_dir, *, run_id="run-1", pid=None, strategy="S-0007") -> PendingRun:
+def make_pending(
+    run_dir, *, run_id="run-1", pid=None, strategy="S-0007", ts="2026-10-19T10:00:00"
+) -> PendingRun:
     """A pending run whose trial matches CONFIG's fingerprint and has no outcome yet."""
     trial = make_trial(
         strategy=strategy,
         run_id=run_id,
+        ts=ts,
         status=TrialStatus.FAILED,
         fingerprint=digest(CONFIG),
         code={},
@@ -110,6 +114,46 @@ def test_marker_with_an_invalid_trial_is_a_pending_error(register, tmp_path):
         read_pending(register)
 
 
+def rewrite_marker(register, changes):
+    record = json.loads(marker(register).read_text(encoding="utf-8"))
+    record.update(changes)
+    marker(register).write_text(json.dumps(record), encoding="utf-8")
+
+
+def test_marker_records_this_host(register, tmp_path):
+    write_pending(register, make_pending(tmp_path / "results" / "run-1"))
+    record = json.loads(marker(register).read_text(encoding="utf-8"))
+    assert record["host"] == socket.gethostname()
+    assert read_pending(register)[0].host == socket.gethostname()
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"run_id": "run-2"},
+        {"pid": "123"},
+        {"pid": 0},
+        {"pid": -1},
+        {"pid": True},
+        {"host": ""},
+        {"host": 7},
+    ],
+)
+def test_marker_with_invalid_fields_is_a_pending_error(register, tmp_path, changes):
+    write_pending(register, make_pending(tmp_path / "results" / "run-1"))
+    rewrite_marker(register, changes)
+    with pytest.raises(PendingError, match="run-1.json"):
+        read_pending(register)
+
+
+def test_marker_from_another_host_counts_as_alive(register, tmp_path):
+    write_pending(register, make_pending(tmp_path / "results" / "run-1", pid=dead_pid()))
+    rewrite_marker(register, {"host": f"other-{socket.gethostname()}"})
+    assert recover_stale(register) == []
+    assert marker(register).exists()
+    assert [run.run_id for run in live_runs(register, "S-0007")] == ["run-1"]
+
+
 def test_finish_records_the_outcome_and_drops_the_marker(register, tmp_path):
     run_dir = make_run(
         tmp_path / "results", "run-1", symbols={"GOLD": {"unified": {"sharpe": 0.5}}}
@@ -145,6 +189,24 @@ def test_finish_of_an_already_recorded_run_only_drops_the_marker(register, tmp_p
     assert finish(register, run) == recorded
     assert ledger(register) == [recorded]
     assert not marker(register).exists()
+
+
+def test_finish_of_a_reused_run_id_records_a_new_trial(register, tmp_path):
+    earlier = append_trial(
+        register / LEDGER_FILENAME,
+        make_trial(run_id="run-1", status=TrialStatus.FAILED, ts="2026-10-19T10:00:00"),
+    )
+    run = make_pending(tmp_path / "results" / "run-1", ts="2026-10-20T09:00:00")
+    write_pending(register, run)
+    stored = finish(register, run)
+    assert stored.trial_id == "T-000002"
+    assert ledger(register) == [earlier, stored]
+    assert not marker(register).exists()
+
+
+def test_finish_without_a_marker_still_records(register, tmp_path):
+    stored = finish(register, make_pending(tmp_path / "results" / "run-1"))
+    assert ledger(register) == [stored]
 
 
 def test_recover_stale_records_dead_runs_and_keeps_live_ones(register, tmp_path):
