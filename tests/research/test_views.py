@@ -324,3 +324,52 @@ def test_cli_show_of_an_unknown_card_exits_1(register, monkeypatch, capsys):
     monkeypatch.setenv("FWBG_RESEARCH_DIR", str(register))
     assert main(["show", "S-0042"]) == 1
     assert "Error: no research card S-0042" in capsys.readouterr().err
+
+
+# --- JSON data for the API ---------------------------------------------------
+
+
+def test_card_summary_counts_trials_and_names_the_best_development_result():
+    card = make_card()
+    own = [
+        make_trial(trial_id="T-000001", metrics={"GOLD": {"sharpe": 0.8, "trades": 120}}),
+        make_trial(trial_id="T-000002", kind=TrialKind.HOLDOUT, metrics={"GOLD": {"sharpe": 3.0}}),
+        make_trial(trial_id="T-000003", status=TrialStatus.FAILED),
+    ]
+    assert views.card_summary(card, own, running=1) == {
+        "id": "S-0007",
+        "title": "CUSUM event continuation",
+        "status": "active",
+        "tags": ["event"],
+        "created": "2026-10-19",
+        "holdout_cutoff": "2025-04-30",
+        "trials": 2,
+        "best": {"trial": "T-000001", "symbol": "GOLD", "metrics": {"sharpe": 0.8, "trades": 120}},
+        "holdout_used": True,
+        "running": 1,
+    }
+
+
+def test_card_summary_without_results():
+    summary = views.card_summary(make_card(), [], running=0)
+    assert (summary["trials"], summary["best"], summary["holdout_used"]) == (0, None, False)
+
+
+def test_card_data_serialises_every_field():
+    amendment = CriteriaAmendment(date(2026, 10, 20), "tighter", "sha256:" + "1" * 64)
+    card = make_card(status=Status.PARKED, criteria_amendments=(amendment,), body=BODY)
+    assert views.card_data(card) == {
+        "id": "S-0007",
+        "title": "CUSUM event continuation",
+        "status": "parked",
+        "tags": ["event"],
+        "created": "2026-10-19",
+        "holdout_cutoff": "2025-04-30",
+        "holdout_contaminated": False,
+        "success_criteria": {"min_sharpe": 1.0, "min_trades": 100.0},
+        "registered_criteria_hash": card.registered_criteria_hash,
+        "criteria_amendments": [
+            {"date": "2026-10-20", "reason": "tighter", "criteria_hash": "sha256:" + "1" * 64}
+        ],
+        "body": BODY,
+    }

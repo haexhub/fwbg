@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
         router as plugins_router,
     )
     from fwbg.api.presets import migrate_presets, migrate_strategy_refs, router as presets_router
+    from fwbg.api.research import router as research_router
     from fwbg.api.runs import router as runs_router
     from fwbg.api.signal_composer import router as signal_composer_router
     from fwbg.api.strategies import router as strategies_router
@@ -134,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(signal_composer_router, prefix="/api")
     app.include_router(analysis_router, prefix="/api")
     app.include_router(discovery_router, prefix="/api")
+    app.include_router(research_router, prefix="/api")
 
     return app
 
