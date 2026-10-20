@@ -75,6 +75,11 @@ def write_pending(research_dir: Path, pending: PendingRun) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         temp.unlink(missing_ok=True)
 
@@ -92,19 +97,27 @@ def read_pending(research_dir: Path) -> list[PendingRun]:
 
 def _parse_marker(path: Path) -> PendingRun:
     record = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(record, dict):
+        raise ValueError("marker must contain a JSON object")
     run_id, pid, host = record["run_id"], record["pid"], record["host"]
     if run_id != path.stem:
         raise ValueError(f"run id {run_id!r} does not match the file name")
+    run_dir = record["run_dir"]
+    if not isinstance(run_dir, str) or not run_dir:
+        raise ValueError(f"invalid run directory {run_dir!r}")
     if type(pid) is not int or pid <= 0:
         raise ValueError(f"invalid pid {pid!r}")
     if not isinstance(host, str) or not host:
         raise ValueError(f"invalid host {host!r}")
+    config = record["config"]
+    if not isinstance(config, Mapping):
+        raise ValueError(f"invalid config {config!r}")
     return PendingRun(
         run_id=run_id,
-        run_dir=Path(record["run_dir"]),
+        run_dir=Path(run_dir),
         pid=pid,
         trial=Trial.from_json(json.dumps(record["trial"]), numbered=False),
-        config=record["config"],
+        config=dict(config),
         host=host,
     )
 

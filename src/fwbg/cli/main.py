@@ -8,8 +8,10 @@ import json
 import math
 import warnings
 import argparse
+from collections.abc import Mapping
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import matplotlib
 matplotlib.use("Agg")
@@ -55,6 +57,7 @@ from fwbg.results import storage as results_storage  # noqa: E402
 from fwbg.api.workspace import get_research_dir  # noqa: E402
 from fwbg.research.runs import (  # noqa: E402
     GATE_ENV,
+    BeforeRun,
     ResearchRun,
     add_run_arguments,
     gate_enabled,
@@ -83,13 +86,13 @@ def _ran_real_backtest(raw_results) -> bool:
 
 
 def run_optimizer(
-    description=None,
-    save_results=True,
-    strategy_metadata=None,
-    asset_filter=None,
-    run_id=None,
-    before_run=None,
-):
+    description: str | None = None,
+    save_results: bool = True,
+    strategy_metadata: Mapping[str, Any] | None = None,
+    asset_filter: list[str] | None = None,
+    run_id: str | None = None,
+    before_run: BeforeRun | None = None,
+) -> dict[str, Any] | None:
     """
     Führt die Walk-Forward Optimierung aus.
 

@@ -20,11 +20,11 @@ from typing import Any
 from fwbg_sdk.enums import Timeframe
 
 from fwbg.core.presets import resolve_presets
-from fwbg.research.card import CARD_ID_RE, ResearchCard, load_card
+from fwbg.research.card import CARD_ID_RE, CardError, ResearchCard, load_card
 from fwbg.research.fingerprint import FINGERPRINT_VERSION, canonical_config
 from fwbg.research.gate import Decision, Denial, DenialCode, RunRequest, check
-from fwbg.research.ledger import LEDGER_FILENAME, Trial, TrialStatus, read_trials
-from fwbg.research.legacy import run_window
+from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, Trial, TrialStatus, read_trials
+from fwbg.research.legacy import LegacyRunError, run_window
 from fwbg.research.pending import (
     STAGING,
     PendingError,
@@ -46,7 +46,10 @@ BeforeRun = Callable[[Mapping[str, Any], Sequence[str]], dict[str, Any]]
 
 def gate_enabled() -> bool:
     """On unless ``FWBG_RESEARCH_GATE=off``, which only the test suite sets."""
-    return os.environ.get(GATE_ENV, "").strip().lower() != "off"
+    return not (
+        os.environ.get(GATE_ENV, "").strip().lower() == "off"
+        and "PYTEST_CURRENT_TEST" in os.environ
+    )
 
 
 class GateDenied(Exception):
@@ -119,7 +122,16 @@ class ResearchRun:
                 return self._gate(request, canonical)
         except (GateDenied, GateChecked):
             raise
-        except Exception as exc:  # fail closed: an unreadable register never lets a run through
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            CardError,
+            LedgerError,
+            LegacyRunError,
+            PendingError,
+            ResearchRepoError,
+        ) as exc:  # fail closed: an unreadable register never lets a run through
             message = f"research register: {exc}"
             if isinstance(exc, PendingError):
                 message += f"; inspect or remove the marker in {self.research_dir / STAGING}"
@@ -229,7 +241,16 @@ class ResearchRun:
                     )
                 except ResearchRepoError as exc:
                     _warn_uncommitted(str(trial.trial_id), exc)
-        except Exception as exc:
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            CardError,
+            LedgerError,
+            LegacyRunError,
+            PendingError,
+            ResearchRepoError,
+        ) as exc:
             # Decision: recording never fails a run whose results already exist.
             print(
                 f"Warning: run {self.run_id} is not in the ledger yet ({exc}); "

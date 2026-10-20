@@ -47,7 +47,10 @@ from fwbg.research.stats import best_result, criteria_check, evaluations
 DEFAULT_HOLDOUT_MONTHS = 18
 VERDICT_STATUSES = (Status.PARKED, Status.REJECTED, Status.CANDIDATE)
 _PLACEHOLDER = "To be written before the first iteration."
-_BODY = "## Hypothesis\n\n{hypothesis}\n\n## Mechanism\n\n{mechanism}\n\n## History\n\n## Verdict\n"
+_BODY = (
+    "## Hypothesis\n\n{hypothesis}\n\n## Mechanism\n\n{mechanism}\n\n"
+    "## History\n\n## Verdict\n\nOpen.\n"
+)
 # A top-level or section heading inside section text would split the card's sections.
 _HEADING_LINE = re.compile(r"^#{1,2}[ \t]", re.MULTILINE)
 

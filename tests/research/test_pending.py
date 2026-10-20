@@ -85,6 +85,19 @@ def test_written_marker_reads_back_unchanged(register, tmp_path):
     assert read_pending(register) == [run]
 
 
+def test_written_marker_syncs_file_and_directory(register, tmp_path, monkeypatch):
+    fsynced = []
+    real_fsync = os.fsync
+
+    def record_fsync(fd):
+        fsynced.append(fd)
+        real_fsync(fd)
+
+    monkeypatch.setattr(pending_module.os, "fsync", record_fsync)
+    write_pending(register, make_pending(tmp_path / "results" / "run-1"))
+    assert len(fsynced) == 2
+
+
 def test_a_run_id_is_pending_only_once(register, tmp_path):
     run = make_pending(tmp_path / "results" / "run-1")
     write_pending(register, run)
@@ -143,6 +156,14 @@ def test_marker_with_invalid_fields_is_a_pending_error(register, tmp_path, chang
     write_pending(register, make_pending(tmp_path / "results" / "run-1"))
     rewrite_marker(register, changes)
     with pytest.raises(PendingError, match="run-1.json"):
+        read_pending(register)
+
+
+@pytest.mark.parametrize("config", [[], "not a mapping", 7])
+def test_marker_with_invalid_config_is_a_pending_error(register, tmp_path, config):
+    write_pending(register, make_pending(tmp_path / "results" / "run-1"))
+    rewrite_marker(register, {"config": config})
+    with pytest.raises(PendingError, match="invalid config"):
         read_pending(register)
 
 
