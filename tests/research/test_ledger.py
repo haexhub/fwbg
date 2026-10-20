@@ -41,6 +41,12 @@ def test_missing_ledger_cannot_be_appended_to(tmp_path):
     assert not path.exists()
 
 
+def test_missing_ledger_message_names_the_init_command(tmp_path):
+    """Include the research init command in errors for a missing ledger."""
+    with pytest.raises(LedgerError, match="run 'fwbg research init' for a new register"):
+        read_trials(tmp_path / "trials.jsonl")
+
+
 def test_append_assigns_sequential_ids_and_round_trips(ledger):
     first = append_trial(ledger, make_trial(metrics={"GOLD": {"sharpe": 0.14, "trades": 37}}))
     second = append_trial(ledger, make_trial(run_id="run-2"))

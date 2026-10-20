@@ -1,6 +1,6 @@
 # Research Register
 
-## Status: Design approved (2026-10-19) — step 1 (core) implemented
+## Status: Design approved (2026-10-19) — steps 1 (core) and 2 (backfill) implemented
 
 ## Problem
 
@@ -282,7 +282,8 @@ not by code.
 | `amend S-NNNN --criteria … --reason …` | Change success criteria; appends a `criteria_amendments` entry (date, reason, new hash) to the front matter. |
 | `verdict S-NNNN <status> --reason … --reopen-if …` | Write verdict, set status. |
 | `reopen S-NNNN --reason …` | `parked`/`rejected` → `active`. |
-| `backfill --plan OUT.yaml` / `--apply MAPPING.yaml` | Legacy import (see Migration). |
+| `init` | Create the register (idempotent). |
+| `backfill scan --out MAPPING` / `backfill apply MAPPING` | Legacy import (see Migration). |
 | `reconcile` | Repair uncommitted register data and index runs missing from the ledger; idempotent. |
 
 **Coverage view** (`show`): from the canonical configs of all trials,
@@ -319,11 +320,14 @@ results and can live in the public repo.
 
 Full backfill of all existing runs and studies:
 
-1. **Index:** `fwbg research backfill --plan mapping.yaml` scans the
-   workspace and the repo-local `test_results/`, computes fingerprints from
-   the stored `strategy.json` (presets resolved) and the run's symbols, and
-   classifies runs without `results.json` as `failed` and agent smoke runs
-   as `smoke`. Stored `strategy.json` files keep preset *names*, so legacy
+1. **Index:** `fwbg research backfill scan --out mapping.yaml` scans one
+   results directory (the workspace `test_results/` by default; runs that
+   exist only in the repo-local copy are consolidated into it by hand
+   first), computes fingerprints from the stored `strategy.json` (presets
+   resolved, timeframe canonicalised) and the run's symbols, decides each
+   run's status from its symbols' own status fields (all three historical
+   run formats; see the backfill plan, decision 2) and marks agent smoke
+   runs as `smoke`. Stored `strategy.json` files keep preset *names*, so legacy
    fingerprints are an approximation: presets resolve against today's
    files. Many legacy runs point their `_strategy_dir` at a directory whose
    preset folders no longer exist; the backfill must handle these
@@ -334,18 +338,18 @@ Full backfill of all existing runs and studies:
    Studies outside the run system get one card each, with trials counted as
    documented. The operator reviews the mapping before anything is written.
    No LLM runs inside fwbg.
-3. **Apply:** `--apply mapping.yaml` writes cards and legacy trials.
+3. **Apply:** `fwbg research backfill apply mapping.yaml` validates the whole
+   mapping, then writes cards and legacy trials in one register commit.
    Strategies with a documented conclusion get that verdict; strategies
    without one become `parked` ("no conclusion documented"), never
    `rejected`.
-4. **Legacy holdout:** cutoff = the day after the latest data end of the
-   strategy's runs (`end_date` is exclusive, so the last day a legacy run
-   saw must stay out of the holdout); data from the cutoff on is a clean
-   forward holdout. Every legacy trial records the **card's** cutoff, not
-   its own data end — the gate freezes the cutoff at whatever the card's
-   trials recorded. Strategies whose runs reach the present get
-   `holdout_contaminated: true` — confirmation then needs forward data or
-   paper trading.
+4. **Legacy holdout (forward holdout, operator decision 2026-10-19):**
+   cutoff = the day after the latest run (or study) date of the card
+   (`end_date` is exclusive, so the last day a legacy run saw stays out of
+   the holdout); `holdout_contaminated: false`. No run has seen data after
+   the cutoff, so that data is a clean holdout that grows over time. Every
+   legacy trial records the **card's** cutoff — the gate freezes the cutoff
+   at whatever the card's trials recorded.
 5. **Repo cleanup:** move runs that exist only in the repo-local
    `test_results/` into the workspace; remove byte-identical duplicates
    after a diff check and operator confirmation; keep `test_results/`
@@ -407,9 +411,6 @@ Each step is usable on its own.
   Needs investigation before step 5.
 - **`/api/runs/preview`.** Counts as a trial only if it reports
   performance metrics; decide during step 4.
-- **Legacy symbols.** Old runs record their symbols only indirectly
-  (`grid_details/<SYMBOL>/`, `results.json`); the backfill plan must pick
-  the reliable source.
 
 ## Alternatives considered
 

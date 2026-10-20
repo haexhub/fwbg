@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
 import re
 from collections.abc import Mapping
@@ -17,6 +18,8 @@ import yaml
 from fwbg.research.fingerprint import DIGEST_RE, digest
 
 CARD_ID_RE = re.compile(r"S-[0-9]{4}")
+# At most 60 characters, the length slugify cuts a title to.
+SLUG_RE = re.compile(r"(?=.{1,60}\Z)[a-z0-9]+(?:-[a-z0-9]+)*")
 _FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
 _FIELDS = frozenset(
     {
@@ -83,7 +86,7 @@ def parse_card(text: str) -> ResearchCard:
     if match is None:
         raise CardError("card has no YAML front matter")
     try:
-        meta = yaml.load(match.group(1), Loader=_UniqueKeyLoader)
+        meta = yaml.load(match.group(1), Loader=UniqueKeyLoader)
     except (yaml.YAMLError, ValueError) as exc:
         # PyYAML raises a plain ValueError for impossible dates such as 2025-04-31.
         raise CardError(f"invalid YAML front matter: {exc}") from exc
@@ -134,7 +137,7 @@ def load_card(research_dir: Path, card_id: str) -> ResearchCard | None:
     return card
 
 
-class _UniqueKeyLoader(yaml.SafeLoader):
+class UniqueKeyLoader(yaml.SafeLoader):
     """Safe loader that refuses duplicate mapping keys instead of keeping the last one."""
 
     def construct_mapping(self, node: Any, deep: bool = False) -> dict[Any, Any]:
@@ -244,3 +247,79 @@ def _amendment(value: object) -> CriteriaAmendment:
         )
     except KeyError as exc:
         raise CardError(f"criteria_amendments: missing {exc.args[0]}") from exc
+
+
+def render_card(card: ResearchCard) -> str:
+    """Serialise *card* so that :func:`parse_card` reads it back unchanged."""
+    # Reading a card file translates newlines, so a carriage return would not survive.
+    if "\r" in card.body:
+        raise CardError(f"{card.id}: body contains a carriage return")
+    meta: dict[str, Any] = {
+        "id": card.id,
+        "title": card.title,
+        "status": card.status.value,
+        "tags": list(card.tags),
+        "created": card.created,
+        "holdout_cutoff": card.holdout_cutoff,
+        "holdout_contaminated": card.holdout_contaminated,
+        "success_criteria": dict(card.success_criteria),
+        "registered_criteria_hash": card.registered_criteria_hash,
+    }
+    if card.criteria_amendments:
+        meta["criteria_amendments"] = [
+            {"date": item.date, "reason": item.reason, "criteria_hash": item.criteria_hash}
+            for item in card.criteria_amendments
+        ]
+    front = yaml.safe_dump(
+        meta, sort_keys=False, allow_unicode=True, default_flow_style=False, width=1000
+    )
+    text = f"---\n{front}---\n{card.body}"
+    try:
+        read_back = parse_card(text)
+    except CardError as exc:
+        raise CardError(f"{card.id} would not read back: {exc}") from exc
+    if read_back != card:
+        raise CardError(f"{card.id} would not read back unchanged")
+    return text
+
+
+def slugify(title: str) -> str:
+    """File-name slug for a card title: lowercase ASCII words joined by hyphens."""
+    words = re.findall(r"[a-z0-9]+", title.lower())
+    slug = "-".join(words)[:60].strip("-")
+    if not slug:
+        raise CardError(f"title {title!r} gives an empty slug")
+    return slug
+
+
+def write_card(research_dir: Path, card: ResearchCard, slug: str) -> Path:
+    """Write *card* to ``strategies/<id>-<slug>.md``; an existing card is never overwritten.
+
+    The register must be initialised (``strategies/`` exists); filesystem errors
+    (``OSError``) pass through. Callers that may run concurrently must hold
+    :func:`fwbg.research.repo.register_lock`: the exclusive create only stops a
+    second write of the same file, not the same id under another slug.
+
+    Raises:
+        CardError: the slug is invalid, the card cannot be rendered, or a card
+            with this id already exists.
+    """
+    if not SLUG_RE.fullmatch(slug):
+        raise CardError(f"invalid slug {slug!r}")
+    if load_card(research_dir, card.id) is not None:
+        raise CardError(f"{card.id} already exists; cards are never overwritten")
+    text = render_card(card)
+    path = research_dir / "strategies" / f"{card.id}-{slug}.md"
+    try:
+        handle = path.open("x", encoding="utf-8")
+    except FileExistsError as exc:
+        raise CardError(f"{card.id} already exists; cards are never overwritten") from exc
+    try:
+        with handle:
+            handle.write(text)
+    except OSError:
+        # A truncated card would make every later load of this id fail.
+        with contextlib.suppress(OSError):
+            path.unlink(missing_ok=True)
+        raise
+    return path

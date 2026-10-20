@@ -36,6 +36,7 @@ class _SafeJsonEncoder(json.JSONEncoder):
 
 
 from fwbg_sdk.enums import Timeframe  # noqa: E402
+from fwbg.statuses import EXECUTED_STATUSES  # noqa: E402
 from fwbg.data import config as data_config  # noqa: E402
 from fwbg.core.config import StrategyConfig  # noqa: E402
 from fwbg.optimization.process import process_symbol  # noqa: E402
@@ -58,12 +59,6 @@ from .commands import (  # noqa: E402
 )
 
 warnings.filterwarnings("ignore")
-
-
-# Per-symbol statuses that mean a backtest actually executed (as opposed to
-# bailing out before evaluation: no_data, insufficient_data, no_signal_source,
-# no_successful_folds, missing_model_dependencies, error, ...).
-EXECUTED_STATUSES = frozenset({"ok", "no_edge", "not_significant", "no_unified_trades"})
 
 
 def _ran_real_backtest(raw_results) -> bool:
@@ -837,6 +832,11 @@ def main():
 
         portfolio_main(sys.argv[2:])
         return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "research":
+        from fwbg.research.cli import main as research_main
+
+        raise SystemExit(research_main(sys.argv[2:]))
 
     # Handle 'data' subcommand (ETL: raw → datasource)
     if len(sys.argv) > 1 and sys.argv[1] == "data":
