@@ -32,6 +32,9 @@ class DenialCode(str, Enum):
     HOLDOUT_REPEAT = "holdout_repeat"
     HOLDOUT_CONTAMINATED = "holdout_contaminated"
     DUPLICATE_FINGERPRINT = "duplicate_fingerprint"
+    REGISTER_UNREADABLE = "register_unreadable"
+    RUN_ID_IN_USE = "run_id_in_use"
+    INVALID_RUN_ID = "invalid_run_id"
 
     @property
     def http_status(self) -> int:
@@ -46,6 +49,7 @@ _REQUEST_ERRORS = frozenset(
         DenialCode.MISSING_NOTE,
         DenialCode.INVALID_WINDOW,
         DenialCode.INVALID_CONFIG,
+        DenialCode.INVALID_RUN_ID,
     }
 )
 
@@ -131,7 +135,7 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
                 f"{card.id} is {card.status.value}; reopen it with a reason before running",
             )
         )
-    denials.extend(_criteria_denials(card, own_trials))
+    denials.extend(criteria_denials(card, own_trials))
     denials.extend(_cutoff_denials(card, own_trials))
     window_denial = _apply_window(card, metadata, request.holdout)
     if window_denial is not None:
@@ -175,7 +179,11 @@ def _refuse(code: DenialCode, message: str, kind: TrialKind, metadata: dict[str,
     return Decision((Denial(code, message),), kind, metadata, None)
 
 
-def _criteria_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[Denial]:
+def criteria_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[Denial]:
+    """Whether the card's criteria are the recorded ones and its trials ran under recorded ones.
+
+    *own_trials* are the card's trials in ledger order.
+    """
     current = card.criteria_hash
     if card.criteria_amendments:
         # ponytail: a hand-written amendment entry passes this check; the research
@@ -198,6 +206,17 @@ def _criteria_denials(card: ResearchCard, own_trials: Sequence[Trial]) -> list[D
                 DenialCode.CRITERIA_CHANGED,
                 f"success criteria of {card.id} differ from those of {own_trials[-1].trial_id} "
                 "and no amendment records the change",
+            )
+        ]
+    # Guards an amendment made on top of a hand-edited registration hash.
+    recorded = {card.registered_criteria_hash, *(a.criteria_hash for a in card.criteria_amendments)}
+    unrecorded = next((t for t in own_trials if t.criteria_hash not in recorded), None)
+    if unrecorded is not None:
+        return [
+            Denial(
+                DenialCode.CRITERIA_CHANGED,
+                f"{unrecorded.trial_id} of {card.id} ran under success criteria that neither "
+                "the registration nor an amendment records",
             )
         ]
     return []

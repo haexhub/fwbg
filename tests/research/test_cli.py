@@ -3,16 +3,19 @@ import json
 import os
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
 import yaml
 
 from fwbg.cli.main import main as fwbg_main
+from fwbg.research.card import Status, load_card
 from fwbg.research.cli import main
-from fwbg.research.ledger import LEDGER_FILENAME, read_trials
+from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, append_trial, read_trials
 from fwbg.research.mapping import load_mapping
-from tests.research.factories import make_run
+from fwbg.research.pending import STAGING
+from tests.research.factories import make_run, make_trial
 
 
 @pytest.fixture(autouse=True)
@@ -39,6 +42,32 @@ def test_init_scan_and_apply_end_to_end(tmp_path, git_env, capsys):
     assert main(["backfill", "apply", str(mapping)]) == 0
     assert "2 cards written, 2 trials appended, committed" in capsys.readouterr().out
     assert len(read_trials(tmp_path / "research" / LEDGER_FILENAME)) == 2
+
+
+def test_gated_runs_stay_out_of_the_backfill(tmp_path, git_env, capsys):
+    """A run on record through the gate (in the ledger untagged, or pending) is never backfilled."""
+    results = tmp_path / "results"
+    make_run(results, "r1", name="orb-test")
+    make_run(results, "r-recorded", name="cusum")
+    make_run(results, "r-pending", name="cusum")
+    assert main(["init"]) == 0
+    research = tmp_path / "research"
+    append_trial(research / LEDGER_FILENAME, make_trial(run_id="r-recorded"))
+    (research / STAGING).mkdir()
+    (research / STAGING / "r-pending.json").write_text("{}", encoding="utf-8")
+    mapping = tmp_path / "mapping.yaml"
+
+    assert main(["backfill", "scan", "--out", str(mapping)]) == 0
+    assert "1 runs: 1 counted" in capsys.readouterr().out
+    assert [plan.runs for plan in load_mapping(mapping.read_text(encoding="utf-8"))] == [("r1",)]
+
+    assert main(["backfill", "apply", str(mapping)]) == 0
+    assert "1 trials appended" in capsys.readouterr().out
+    trials = read_trials(research / LEDGER_FILENAME)
+    assert [(t.run_id, t.kind) for t in trials] == [
+        ("r-recorded", TrialKind.ITERATION),
+        ("r1", TrialKind.LEGACY),
+    ]
 
 
 def test_init_twice_reports_an_existing_register(git_env, capsys):
@@ -208,3 +237,56 @@ def test_fwbg_routes_research_commands(monkeypatch, capsys):
         fwbg_main()
     assert exit_info.value.code == 2
     assert "fwbg research backfill" in capsys.readouterr().err
+
+
+def test_card_commands_end_to_end(gate_register, capsys):
+    """Register, amend, close and reopen cards through the research CLI."""
+    args = ["new", "Opening range breakout", "--tags", "orb,session", "--set", "min_sharpe=0.8"]
+    assert main([*args, "--cutoff", "2025-01-31", "--hypothesis", "Breakouts persist."]) == 0
+    path = gate_register / "strategies" / "S-0008-opening-range-breakout.md"
+    assert capsys.readouterr().out == f"Registered S-0008: {path}\n"
+    created = load_card(gate_register, "S-0008")
+    assert created is not None and created.tags == ("orb", "session")
+    assert created.holdout_cutoff == date(2025, 1, 31)
+    assert created.success_criteria["min_sharpe"] == 0.8
+
+    assert main(["amend", "S-0008", "--set", "min_trades=50", "--reason", "short sample"]) == 0
+    assert capsys.readouterr().out == "Amended S-0008 (amendment 1)\n"
+
+    verdict = ["verdict", "S-0008", "rejected", "--reason", "no edge", "--reopen-if", "new data"]
+    assert main(verdict) == 0
+    assert capsys.readouterr().out == "S-0008 is now rejected\n"
+
+    assert main(["reopen", "S-0008", "--reason", "new data"]) == 0
+    assert capsys.readouterr().out == "S-0008 is active again\n"
+    reopened = load_card(gate_register, "S-0008")
+    assert reopened is not None and reopened.status is Status.ACTIVE
+
+
+def test_card_command_errors_are_reported_without_traceback(gate_register, capsys):
+    """An unknown criterion is an operator error, not a crash."""
+    assert main(["new", "x", "--tags", "a", "--set", "min_sharp=1"]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("Error: ") and "min_sharp" in err
+    assert "Traceback" not in err
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["new", "x", "--tags", "a", "--cutoff", "2026-13-01"],
+        ["new", "x", "--tags", "a", "--cutoff", "20250101"],
+        ["new", "x", "--tags", "a", "--set", "min_sharpe"],
+        ["new", "x", "--tags", "a", "--set", "min_sharpe=high"],
+        ["amend", "S-0007", "--reason", "nothing to set"],
+        ["verdict", "S-0007", "active", "--reason", "x", "--reopen-if", "y"],
+        ["new", "x", "--tags", " , "],
+        ["new", "x", "--tags", "a", "--set", "min_sharpe=1", "--set", "min_sharpe=2"],
+        ["amend", "S-0007", "--set", "min_trades=1", "--set", "min_trades=2", "--reason", "x"],
+    ],
+)
+def test_card_commands_refuse_malformed_arguments(gate_register, capsys, args):
+    """Malformed dates, criteria and statuses are argparse errors (exit 2)."""
+    with pytest.raises(SystemExit) as exit_info:
+        main(args)
+    assert exit_info.value.code == 2

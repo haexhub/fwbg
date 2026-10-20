@@ -338,8 +338,10 @@ def test_render_refuses_a_card_that_would_not_read_back():
 
 def test_render_names_the_card_when_it_would_not_read_back():
     """Identify the card and criterion when rendering rejects nonfinite criteria."""
-    with pytest.raises(CardError, match=r"^S-0007 would not read back: success_criteria\.x"):
-        render_card(make_card(success_criteria={"x": float("inf")}))
+    with pytest.raises(
+        CardError, match=r"^S-0007 would not read back: success_criteria\.min_sharpe"
+    ):
+        render_card(make_card(success_criteria={"min_sharpe": float("inf")}))
 
 
 def test_render_refuses_carriage_returns_in_the_body():
@@ -452,3 +454,9 @@ def test_slugify_refuses_titles_without_ascii_words():
     """Reject titles that cannot produce a nonempty ASCII slug."""
     with pytest.raises(CardError, match="empty slug"):
         slugify("äöü")
+
+
+def test_unknown_criterion_is_refused():
+    text = render_card(make_card()).replace("min_trades:", "min_trade:")
+    with pytest.raises(CardError, match="unknown criterion 'min_trade'"):
+        parse_card(text)

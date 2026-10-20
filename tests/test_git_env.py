@@ -1,4 +1,7 @@
-from fwbg.core.git_env import isolated_git_env
+from pathlib import Path
+
+import fwbg
+from fwbg.core.git_env import isolated_git_env, source_dir
 
 
 def test_isolated_git_env_drops_repository_variables_and_optional_locks(monkeypatch):
@@ -10,3 +13,7 @@ def test_isolated_git_env_drops_repository_variables_and_optional_locks(monkeypa
     assert "GIT_INDEX_FILE" not in env
     assert env["GIT_OPTIONAL_LOCKS"] == "0"
     assert env["FWBG_X"] == "kept"
+
+
+def test_source_dir_is_the_installed_fwbg_package():
+    assert source_dir() == Path(fwbg.__file__).resolve().parent
