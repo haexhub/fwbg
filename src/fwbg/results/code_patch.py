@@ -57,20 +57,22 @@ def capture_code_patch(cwd: Path) -> bytes:
     return b"".join(parts)
 
 
-def write_code_patch(run_dir: str | os.PathLike[str]) -> str | None:
-    """Write ``code.patch`` for the repository in the current directory into *run_dir*.
+def write_code_patch(
+    run_dir: str | os.PathLike[str], source: Path
+) -> tuple[str | None, str | None]:
+    """Write ``code.patch`` for the repository containing *source* into *run_dir*.
 
-    Returns the file name, or ``None`` when the tree is clean or no patch could
-    be captured or written (no git, not a repository, a full disk) — a missing patch
-    must never fail a run.
+    Returns ``(file name, None)`` when a patch was written, ``(None, None)``
+    for a clean tree and ``(None, error)`` when no patch could be captured or
+    written. A missing patch never fails a run, but it must stay visible.
     """
     try:
-        patch = capture_code_patch(Path.cwd())
+        patch = capture_code_patch(source)
     except CodePatchError as exc:
         log.warning("could not capture %s: %s", PATCH_FILENAME, exc)
-        return None
+        return None, str(exc)
     if not patch:
-        return None
+        return None, None
     try:
         (Path(run_dir) / PATCH_FILENAME).write_bytes(patch)
     except OSError as exc:
@@ -78,8 +80,8 @@ def write_code_patch(run_dir: str | os.PathLike[str]) -> str | None:
         # config.json will record no patch, so a truncated file must not stay behind.
         with contextlib.suppress(OSError):
             (Path(run_dir) / PATCH_FILENAME).unlink(missing_ok=True)
-        return None
-    return PATCH_FILENAME
+        return None, f"could not write {PATCH_FILENAME}: {exc}"
+    return PATCH_FILENAME, None
 
 
 def _git(cwd: Path, *args: str, ok_codes: tuple[int, ...] = (0,)) -> bytes:

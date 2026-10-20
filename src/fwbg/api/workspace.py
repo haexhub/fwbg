@@ -31,11 +31,12 @@ def get_workspace() -> Path:
     return Path(os.environ.get("FWBG_WORKSPACE", Path.home() / "fwbg"))
 
 
-def _workspace_subdir(env_var: str, *subpath: str) -> Path:
+def _workspace_subdir(env_var: str, *subpath: str, create: bool = True) -> Path:
     """Resolve a workspace subdirectory, with env var override support."""
     explicit = os.environ.get(env_var)
     path = Path(explicit) if explicit else get_workspace().joinpath(*subpath)
-    path.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -49,9 +50,9 @@ def get_test_results_dir() -> Path:
     return _workspace_subdir("FWBG_TEST_RESULTS_DIR", "test_results")
 
 
-def get_research_dir() -> Path:
+def get_research_dir(*, create: bool = True) -> Path:
     """Return the research register directory (a private git repository)."""
-    return _workspace_subdir("FWBG_RESEARCH_DIR", "research")
+    return _workspace_subdir("FWBG_RESEARCH_DIR", "research", create=create)
 
 
 def get_data_dir() -> Path:

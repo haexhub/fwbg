@@ -8,7 +8,10 @@ import json
 import math
 import warnings
 import argparse
+from collections.abc import Mapping
 from functools import partial
+from pathlib import Path
+from typing import Any
 
 import matplotlib
 matplotlib.use("Agg")
@@ -50,6 +53,17 @@ from fwbg.results.storage import (  # noqa: E402
 from fwbg.optimization.resource_manager import SimplePoolManager, get_resource_info  # noqa: E402
 from fwbg.simulation.equity import simulate_equity_from_pnl, filter_correlated_assets  # noqa: E402
 from fwbg.results.plotting import create_asset_plot  # noqa: E402
+from fwbg.results import storage as results_storage  # noqa: E402
+from fwbg.api.workspace import get_research_dir  # noqa: E402
+from fwbg.research.runs import (  # noqa: E402
+    GATE_ENV,
+    BeforeRun,
+    ResearchRun,
+    add_run_arguments,
+    gate_enabled,
+    prepare_metadata,
+    run_gated,
+)
 from .commands import (  # noqa: E402
     show_runs,
     show_comparison,
@@ -72,12 +86,13 @@ def _ran_real_backtest(raw_results) -> bool:
 
 
 def run_optimizer(
-    description=None,
-    save_results=True,
-    strategy_metadata=None,
-    asset_filter=None,
-    run_id=None,
-):
+    description: str | None = None,
+    save_results: bool = True,
+    strategy_metadata: Mapping[str, Any] | None = None,
+    asset_filter: list[str] | None = None,
+    run_id: str | None = None,
+    before_run: BeforeRun | None = None,
+) -> dict[str, Any] | None:
     """
     Führt die Walk-Forward Optimierung aus.
 
@@ -86,7 +101,12 @@ def run_optimizer(
         save_results: Wenn True, werden Ergebnisse in test_results/ gespeichert
         strategy_metadata: Strukturierte Strategie-Metadaten (dict oder via create_strategy_metadata())
         asset_filter: Liste von Assets die getestet werden sollen (None = alle)
+        before_run: Research-Gate ``(metadata, symbols) -> metadata``; Pflicht solange das Gate an ist
     """
+    if before_run is None and gate_enabled():
+        raise RuntimeError(
+            f"run_optimizer needs the research gate (before_run) while {GATE_ENV} is on"
+        )
     # Strategy-Config für Worker erstellen
     if strategy_metadata:
         strategy = StrategyConfig.from_dict(strategy_metadata)
@@ -187,6 +207,12 @@ def run_optimizer(
         print(f"Verfügbare Dateien: {glob.glob(f'{data_config.DATA_PATH}/*.csv')[:5]}...")
         return None
 
+    # Research gate: needs the concrete symbols and runs before anything is written.
+    if before_run is not None:
+        symbols = [os.path.basename(f).split("_")[0] for f in files]
+        strategy_metadata = before_run(strategy_metadata or {}, symbols)
+        strategy = StrategyConfig.from_dict(strategy_metadata)
+
     # Run-ID und Verzeichnis erstellen
     if not run_id:
         run_id = generate_run_id(description)
@@ -238,7 +264,6 @@ def run_optimizer(
     )
 
     # Progress-Tracker im Hauptprozess mit Queue für Worker-Updates
-    from pathlib import Path
     run_dir_path = Path(run_path) if run_path else None
     progress_tracker = ProgressTracker(
         len(files), asset_names, queue=progress_queue,
@@ -865,14 +890,14 @@ def main():
         epilog="""
 Beispiele:
   python -m fwbg.cli portfolio --help                  # Monthly portfolio research
-  python -m fwbg.cli                                    # Standard-Run
+  python -m fwbg.cli --strategy-file x.json --research-id S-NNNN --note "was und warum"
+                                                        # Run: jeder Run braucht --research-id und --note
   python -m fwbg.cli -d "Test mit neuen Makros"        # Mit Beschreibung
   python -m fwbg.cli --strategy                        # Interaktive Strategie-Eingabe
   python -m fwbg.cli --strategy-file strategies/configs/x.json # Strategie aus Datei laden
   python -m fwbg.cli --list                            # Alle Runs anzeigen
   python -m fwbg.cli --list --tags baseline            # Nach Tags filtern
   python -m fwbg.cli --compare RUN1 RUN2               # Runs vergleichen
-  python -m fwbg.cli --no-save                         # Ohne Speichern
   python -m fwbg.cli --assets EURUSD,GBPUSD            # Nur bestimmte Assets
   python -m fwbg.cli --reverse-worst RUN_ID            # Schlechteste Strategien umkehren
 
@@ -903,6 +928,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                         help="Backtest-Fenster Ende (ISO, überschreibt Strategy-end_date)")
     parser.add_argument("--cost-multiplier", type=float, metavar="X",
                         help="Spread/Slippage-Multiplikator (z.B. 2.0 für Kosten-Stresstest)")
+    add_run_arguments(parser)
 
     args = parser.parse_args()
 
@@ -931,6 +957,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             strategy_metadata = load_strategy_from_file(args.strategy_file)
         elif args.strategy:
             strategy_metadata = prompt_strategy_metadata()
+        strategy_metadata_loaded = strategy_metadata
 
         # CLI --timeframe überschreibt Strategy-Timeframe
         if strategy_metadata is None:
@@ -976,13 +1003,44 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 print(f"Keine Assets für Klassen {classes} gefunden!")
                 return
 
-        result = run_optimizer(
-            description=args.description,
-            save_results=not args.no_save,
-            strategy_metadata=strategy_metadata if strategy_metadata else None,
-            asset_filter=asset_filter,
-            run_id=args.run_id,
-        )
+        research = None
+        run_id = args.run_id or generate_run_id(args.description)
+        if gate_enabled():
+            if args.no_save:
+                parser.error("--no-save runs cannot be recorded in the research register")
+            if (args.strategy_file or args.strategy) and not strategy_metadata_loaded:
+                sys.exit(1)  # loading failed or the prompt was aborted; never a default-config trial
+            try:
+                strategy_metadata = prepare_metadata(strategy_metadata, data_config.TIMEFRAME)
+            except (OSError, ValueError) as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                sys.exit(1)
+            research = ResearchRun(
+                get_research_dir(),
+                run_id,
+                (Path(results_storage.RESULTS_BASE_PATH) / run_id).resolve(),
+                research_id=args.research_id,
+                note=args.note,
+                reason=args.reason,
+                check_only=args.check,
+            )
+        else:
+            if args.check:
+                parser.error(f"--check needs the research gate ({GATE_ENV} is off)")
+            print(f"Warning: {GATE_ENV}=off - this run is neither gated nor recorded",
+                  file=sys.stderr)
+
+        def start(before_run=None):
+            return run_optimizer(
+                description=args.description,
+                save_results=not args.no_save,
+                strategy_metadata=strategy_metadata if strategy_metadata else None,
+                asset_filter=asset_filter,
+                run_id=run_id,
+                before_run=before_run,
+            )
+
+        result = start() if research is None else run_gated(research, start)
         if result is None:
             sys.exit(1)
 

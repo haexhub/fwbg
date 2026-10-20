@@ -17,6 +17,9 @@ from fwbg.research.ledger import LEDGER_FILENAME
 
 CRITERIA_TEMPLATE = Path("templates") / "criteria-default.yaml"
 _DIRECTORIES = ("strategies", "configs", "templates", "reports")
+# What a register write changes; every register commit stages all of it, so any
+# commit also picks up the changes of an earlier one that failed.
+REGISTER_PATHS = ("strategies", "configs", LEDGER_FILENAME)
 _GITIGNORE = ".gitignore"
 REGISTER_LOCK = ".register.lock"
 # *.tmp: store_config writes through temporary files that must never be committed.
