@@ -23,6 +23,10 @@ from tests.research.factories import make_card, make_run, make_trial
 from tests.research.test_pending import dead_pid, make_pending
 
 TODAY = date(2026, 10, 20)
+REFUSED_AMEND = (
+    r"^the criteria of S-0007 do not match its recorded registration and amendments; "
+    r"restore them by hand \(see the register's git history\) before amending$"
+)
 TEMPLATE = {
     "min_sharpe": 1.0,
     "min_trades": 100.0,
@@ -166,7 +170,7 @@ def test_amend_refuses_a_multi_line_reason(gate_register):
 
 def test_amend_refuses_hand_edited_criteria(gate_register):
     set_card(gate_register, success_criteria={"min_sharpe": 0.1, "min_trades": 100.0})
-    with pytest.raises(CommandError, match="restore the criteria before amending"):
+    with pytest.raises(CommandError, match=REFUSED_AMEND):
         amend_criteria(gate_register, "S-0007", {"min_sharpe": 0.5}, "loosen", TODAY)
 
 
@@ -299,7 +303,7 @@ def test_amend_refuses_a_hand_edit_with_a_recomputed_registration(gate_register)
     append_trial(gate_register / LEDGER_FILENAME, make_trial())
     edited = {"min_sharpe": 0.1, "min_trades": 100.0}
     set_card(gate_register, success_criteria=edited, registered_criteria_hash=criteria_hash(edited))
-    with pytest.raises(CommandError, match="restore the criteria before amending"):
+    with pytest.raises(CommandError, match=REFUSED_AMEND):
         amend_criteria(gate_register, "S-0007", {"min_sharpe": 0.5}, "loosen", TODAY)
     assert card(gate_register).criteria_amendments == ()
 
