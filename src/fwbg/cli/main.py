@@ -1022,10 +1022,10 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 research_id=args.research_id,
                 note=args.note,
                 reason=args.reason,
-                check_only=args.check,
+                check_only=args.check or args.check_json,
             )
         else:
-            if args.check:
+            if args.check or args.check_json:
                 parser.error(f"--check needs the research gate ({GATE_ENV} is off)")
             print(f"Warning: {GATE_ENV}=off - this run is neither gated nor recorded",
                   file=sys.stderr)
@@ -1040,7 +1040,9 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 before_run=before_run,
             )
 
-        result = start() if research is None else run_gated(research, start)
+        result = (
+            start() if research is None else run_gated(research, start, as_json=args.check_json)
+        )
         if result is None:
             sys.exit(1)
 

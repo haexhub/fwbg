@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import os
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -40,6 +41,8 @@ from fwbg.research.pending import (
 from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register, register_lock
 
 GATE_ENV = "FWBG_RESEARCH_GATE"
+# ``--check-json`` prints its result as one stdout line with this prefix.
+CHECK_PREFIX = "RESEARCH_CHECK "
 
 BeforeRun = Callable[[Mapping[str, Any], Sequence[str]], dict[str, Any]]
 
@@ -77,6 +80,11 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     group.add_argument("--reason", help="why an identical configuration runs again")
     group.add_argument(
         "--check", action="store_true", help="check the run against the register; do not run it"
+    )
+    group.add_argument(
+        "--check-json",
+        action="store_true",
+        help="like --check; also print the result as one JSON line",
     )
 
 
@@ -268,10 +276,13 @@ class ResearchRun:
         return trial
 
 
-def run_gated(research: ResearchRun, run: Callable[[BeforeRun], Any]) -> Any:
+def run_gated(
+    research: ResearchRun, run: Callable[[BeforeRun], Any], *, as_json: bool = False
+) -> Any:
     """Run *run* behind the gate and record it.
 
-    Exits with 2 on a refusal and 0 after ``--check``. Any other exception is
+    Exits with 2 on a refusal and 0 after ``--check``; *as_json* also prints
+    either result as a :data:`CHECK_PREFIX` line. Any other exception is
     recorded (outcome from the run directory) and re-raised. A process ended
     by ``os._exit`` (the pool's Ctrl-C handler) or SIGKILL keeps its pending
     marker and is recorded by the next gated run.
@@ -282,9 +293,14 @@ def run_gated(research: ResearchRun, run: Callable[[BeforeRun], Any]) -> Any:
         print("Research gate refused the run:", file=sys.stderr)
         for denial in exc.denials:
             print(f"  - [{denial.code.value}] {denial.message}", file=sys.stderr)
+        if as_json:
+            print(CHECK_PREFIX + json.dumps(check_result(exc.denials)), flush=True)
         raise SystemExit(2) from None
     except GateChecked as exc:
         _print_check(exc.decision, exc.symbols)
+        if as_json:
+            payload = check_result(decision=exc.decision, symbols=exc.symbols)
+            print(CHECK_PREFIX + json.dumps(payload), flush=True)
         raise SystemExit(0) from None
     except BaseException:
         research.record()
@@ -296,6 +312,44 @@ def run_gated(research: ResearchRun, run: Callable[[BeforeRun], Any]) -> Any:
         )
     research.record()
     return result
+
+
+def check_result(
+    denials: Sequence[Denial] = (),
+    decision: Decision | None = None,
+    symbols: Sequence[str] = (),
+) -> dict[str, Any]:
+    """The ``--check-json`` payload: allowed with kind, fingerprint, symbols and window,
+    or refused with every denial and its HTTP status."""
+    if denials:
+        return {
+            "allowed": False,
+            "denials": [
+                {"code": d.code.value, "status": d.code.http_status, "message": d.message}
+                for d in denials
+            ],
+        }
+    assert decision is not None
+    return {
+        "allowed": True,
+        "kind": decision.kind.value,
+        "fingerprint": decision.fingerprint,
+        "symbols": list(symbols),
+        "window": run_window(decision.effective_metadata),
+        "denials": [],
+    }
+
+
+def parse_check_output(stdout: str) -> dict[str, Any] | None:
+    """The last ``--check-json`` payload in *stdout*; ``None`` if the CLI printed none."""
+    for line in reversed(stdout.splitlines()):
+        if line.startswith(CHECK_PREFIX):
+            try:
+                payload = json.loads(line.removeprefix(CHECK_PREFIX))
+            except ValueError:
+                return None
+            return payload if isinstance(payload, dict) else None
+    return None
 
 
 def _warn_uncommitted(what: str, exc: ResearchRepoError) -> None:
