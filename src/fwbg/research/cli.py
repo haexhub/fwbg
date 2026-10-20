@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from collections.abc import Sequence
@@ -12,7 +11,6 @@ from pathlib import Path
 
 import yaml
 
-from fwbg.api.run_service import ACTIVE_STATUSES
 from fwbg.api.workspace import get_research_dir, get_strategies_dir, get_test_results_dir
 from fwbg.research.backfill import apply_mapping, ungated_runs
 from fwbg.research.card import CARD_FILE_RE, CRITERIA_NAMES, CardError, Status, UniqueKeyLoader
@@ -28,6 +26,7 @@ from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, TrialKind, TrialS
 from fwbg.research.legacy import LegacyRun, LegacyRunError, scan_runs
 from fwbg.research.mapping import BackfillError, draft_mapping, load_mapping
 from fwbg.research.pending import PendingError
+from fwbg.research.reconcile import reconcile, runs_in_progress
 from fwbg.research.repo import CRITERIA_TEMPLATE, ResearchRepoError, init_research_repo
 from fwbg.research.views import list_lines, show_text
 
@@ -107,13 +106,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     listing.add_argument("--tag", help="only cards with this tag")
     shown = commands.add_parser("show", help="a card with its trials and coverage")
     shown.add_argument("card_id", metavar="S-NNNN")
+    reconciled = commands.add_parser(
+        "reconcile", help="record interrupted runs, commit the register, report unindexed runs"
+    )
     backfill = commands.add_parser("backfill", help="import legacy runs and studies")
     actions = backfill.add_subparsers(dest="action", required=True)
     scan = actions.add_parser("scan", help="write a draft mapping of legacy runs to cards")
     scan.add_argument("--out", type=Path, required=True, help="mapping file to create")
     apply = actions.add_parser("apply", help="write the cards and trials of a mapping")
     apply.add_argument("mapping", type=Path, help="reviewed mapping file")
-    for sub in (scan, apply):
+    for sub in (scan, apply, reconciled):
         sub.add_argument("--results", type=Path, help="run directory root (default: workspace)")
     args = parser.parse_args(argv)
     names = [name for name, _ in getattr(args, "criteria", [])]
@@ -131,6 +133,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _CARD_COMMANDS[args.command](args, get_research_dir())
             return 0
         results_dir = args.results or get_test_results_dir()
+        if args.command == "reconcile":
+            return _reconcile(get_research_dir(create=False), results_dir)
         if args.action == "scan":
             return _scan(results_dir, args.out)
         return _apply(results_dir, args.mapping, get_research_dir())
@@ -227,6 +231,18 @@ _CARD_COMMANDS = {
 }
 
 
+def _reconcile(research_dir: Path, results_dir: Path) -> int:
+    """Reconcile the register and report what it did and which runs it lacks."""
+    result = reconcile(research_dir, results_dir)
+    for trial_id in result.recovered:
+        print(f"recovered {trial_id}")
+    print("committed" if result.committed else "nothing to commit")
+    if result.unindexed:
+        print(f"{len(result.unindexed)} runs not in the ledger: {', '.join(result.unindexed)}")
+        print("map them with: python -m fwbg.cli research backfill scan --out mapping.yaml")
+    return 0
+
+
 def _scan(results_dir: Path, out: Path) -> int:
     """Write a new draft mapping and report the scanned run counts."""
     if out.exists():
@@ -289,7 +305,7 @@ def _apply(results_dir: Path, mapping_path: Path, research_dir: Path) -> int:
 def _scan_runs(results_dir: Path) -> list[LegacyRun]:
     """Scan legacy runs and warn about active or unreadable progress files."""
     runs = scan_runs(results_dir, get_strategies_dir().parent)
-    active = _runs_in_progress(results_dir)
+    active = runs_in_progress(results_dir)
     if active:
         print(
             "Warning: these runs may still be in progress; stop the API and active runs "
@@ -297,17 +313,3 @@ def _scan_runs(results_dir: Path) -> list[LegacyRun]:
             file=sys.stderr,
         )
     return runs
-
-
-def _runs_in_progress(results_dir: Path) -> list[str]:
-    """Run ids whose ``progress.json`` reports an active run or cannot be read."""
-    active = []
-    for progress in sorted(results_dir.glob("*/progress.json")):
-        try:
-            state = json.loads(progress.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            state = None
-        # Stale "running" files exist, so this only warns; an unreadable file warns too.
-        if not isinstance(state, dict) or str(state.get("status")) in ACTIVE_STATUSES:
-            active.append(progress.parent.name)
-    return active
