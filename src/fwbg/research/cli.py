@@ -29,6 +29,7 @@ from fwbg.research.legacy import LegacyRun, LegacyRunError, scan_runs
 from fwbg.research.mapping import BackfillError, draft_mapping, load_mapping
 from fwbg.research.pending import PendingError
 from fwbg.research.repo import CRITERIA_TEMPLATE, ResearchRepoError, init_research_repo
+from fwbg.research.views import list_lines, show_text
 
 _OPERATOR_ERRORS = (
     BackfillError,
@@ -101,6 +102,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init", help="create the research register (idempotent)")
     _add_card_commands(commands)
+    listing = commands.add_parser("list", help="one line per research card")
+    listing.add_argument("--status", choices=[status.value for status in Status])
+    listing.add_argument("--tag", help="only cards with this tag")
+    shown = commands.add_parser("show", help="a card with its trials and coverage")
+    shown.add_argument("card_id", metavar="S-NNNN")
     backfill = commands.add_parser("backfill", help="import legacy runs and studies")
     actions = backfill.add_subparsers(dest="action", required=True)
     scan = actions.add_parser("scan", help="write a draft mapping of legacy runs to cards")
@@ -201,7 +207,24 @@ def _reopen(args: argparse.Namespace, research_dir: Path) -> None:
     print(f"{card.id} is active again")
 
 
-_CARD_COMMANDS = {"new": _new, "amend": _amend, "verdict": _verdict, "reopen": _reopen}
+def _list(args: argparse.Namespace, research_dir: Path) -> None:
+    status = Status(args.status) if args.status else None
+    for line in list_lines(research_dir, status=status, tag=args.tag):
+        print(line)
+
+
+def _show(args: argparse.Namespace, research_dir: Path) -> None:
+    print(show_text(research_dir, args.card_id))
+
+
+_CARD_COMMANDS = {
+    "new": _new,
+    "amend": _amend,
+    "verdict": _verdict,
+    "reopen": _reopen,
+    "list": _list,
+    "show": _show,
+}
 
 
 def _scan(results_dir: Path, out: Path) -> int:
