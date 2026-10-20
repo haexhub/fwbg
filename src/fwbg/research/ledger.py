@@ -210,7 +210,7 @@ def _readable_line(trial: Trial) -> str:
 
 def _missing_ledger(ledger_path: Path) -> LedgerError:
     return LedgerError(
-        f"ledger {ledger_path} does not exist; run init_research_repo for a new register, "
+        f"ledger {ledger_path} does not exist; run 'fwbg research init' for a new register, "
         f"or restore {LEDGER_FILENAME} from the register's git history"
     )
 
