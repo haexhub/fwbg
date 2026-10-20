@@ -102,6 +102,18 @@ def test_post_needs_a_hypothesis_and_mechanism(client, missing):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "change",
+    [{"title": "  "}, {"hypothesis": " \n "}, {"mechanism": "\t"}, {"tags": []}],
+    ids=["blank-title", "blank-hypothesis", "blank-mechanism", "no-tags"],
+)
+def test_post_refuses_blank_fields_and_no_tags(client, register, change):
+    response = client.post("/api/research", json={**NEW, **change})
+    assert response.status_code == 422, response.text
+    assert isinstance(response.json()["detail"], list)  # refused by the request model
+    assert not list((register / "strategies").glob("*.md"))
+
+
 def test_post_refuses_an_unknown_criterion(client, register):
     response = client.post("/api/research", json={**NEW, "criteria": {"min_luck": 1.0}})
     assert response.status_code == 422
