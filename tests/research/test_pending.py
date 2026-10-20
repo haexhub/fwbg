@@ -269,3 +269,30 @@ def test_unnumbered_trial_json_requires_a_null_trial_id():
     numbered = replace(make_trial(), trial_id="T-000001").to_json()
     with pytest.raises(LedgerError, match="trial"):
         Trial.from_json(numbered, numbered=False)
+
+
+def test_recovered_run_is_tagged_with_its_trial(register, tmp_path):
+    run_dir = make_run(tmp_path / "results", "run-1")
+    write_pending(register, make_pending(run_dir, pid=dead_pid()))
+    [trial] = recover_stale(register)
+    config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+    assert config["research"] == {
+        "id": "S-0007",
+        "trial": trial.trial_id,
+        "fingerprint": trial.fingerprint,
+        "kind": "iteration",
+        "note": "baseline",
+        "reason": None,
+    }
+    assert config["run_id"] == "run-1"
+
+
+def test_failing_tag_of_a_recovered_run_only_logs(register, tmp_path, caplog):
+    run_dir = make_run(tmp_path / "results", "run-1")
+    (run_dir / "config.json").write_text("[]", encoding="utf-8")
+    write_pending(register, make_pending(run_dir, pid=dead_pid()))
+    with caplog.at_level(logging.WARNING, logger=pending_module.__name__):
+        [trial] = recover_stale(register)
+    assert ledger(register) == [trial]
+    assert not marker(register).exists()
+    assert "could not tag run run-1" in caplog.text

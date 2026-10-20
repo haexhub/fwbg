@@ -12,9 +12,10 @@ import yaml
 from fwbg.cli.main import main as fwbg_main
 from fwbg.research.card import Status, load_card
 from fwbg.research.cli import main
-from fwbg.research.ledger import LEDGER_FILENAME, read_trials
+from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, append_trial, read_trials
 from fwbg.research.mapping import load_mapping
-from tests.research.factories import make_run
+from fwbg.research.pending import STAGING
+from tests.research.factories import make_run, make_trial
 
 
 @pytest.fixture(autouse=True)
@@ -41,6 +42,32 @@ def test_init_scan_and_apply_end_to_end(tmp_path, git_env, capsys):
     assert main(["backfill", "apply", str(mapping)]) == 0
     assert "2 cards written, 2 trials appended, committed" in capsys.readouterr().out
     assert len(read_trials(tmp_path / "research" / LEDGER_FILENAME)) == 2
+
+
+def test_gated_runs_stay_out_of_the_backfill(tmp_path, git_env, capsys):
+    """A run on record through the gate (in the ledger untagged, or pending) is never backfilled."""
+    results = tmp_path / "results"
+    make_run(results, "r1", name="orb-test")
+    make_run(results, "r-recorded", name="cusum")
+    make_run(results, "r-pending", name="cusum")
+    assert main(["init"]) == 0
+    research = tmp_path / "research"
+    append_trial(research / LEDGER_FILENAME, make_trial(run_id="r-recorded"))
+    (research / STAGING).mkdir()
+    (research / STAGING / "r-pending.json").write_text("{}", encoding="utf-8")
+    mapping = tmp_path / "mapping.yaml"
+
+    assert main(["backfill", "scan", "--out", str(mapping)]) == 0
+    assert "1 runs: 1 counted" in capsys.readouterr().out
+    assert [plan.runs for plan in load_mapping(mapping.read_text(encoding="utf-8"))] == [("r1",)]
+
+    assert main(["backfill", "apply", str(mapping)]) == 0
+    assert "1 trials appended" in capsys.readouterr().out
+    trials = read_trials(research / LEDGER_FILENAME)
+    assert [(t.run_id, t.kind) for t in trials] == [
+        ("r-recorded", TrialKind.ITERATION),
+        ("r1", TrialKind.LEGACY),
+    ]
 
 
 def test_init_twice_reports_an_existing_register(git_env, capsys):
