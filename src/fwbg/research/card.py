@@ -32,6 +32,7 @@ CRITERIA_NAMES = frozenset(
 SLUG_RE = re.compile(r"(?=.{1,60}\Z)[a-z0-9]+(?:-[a-z0-9]+)*")
 _FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
 _HEADING_RE = re.compile(r"^## (.+?)[ \t]*$", re.MULTILINE)
+_FENCE_RE = re.compile(r"^(```|~~~).*?^\1[ \t]*$", re.MULTILINE | re.DOTALL)
 _FIELDS = frozenset(
     {
         "id",
@@ -379,12 +380,24 @@ def add_section_entry(body: str, heading: str, entry: str, before: Sequence[str]
     """Append *entry* to the ``## <heading>`` section of a card body.
 
     A missing section is created before the first *before* section the body
-    has, else at the end. Text outside the section stays as it was.
+    has, else at the end. Text outside the section stays as it was; ``## ``
+    lines inside code fences are not headings.
+
+    Raises:
+        CardError: the section appears more than once.
     """
     entry = entry.strip("\n")
-    heads = list(_HEADING_RE.finditer(body))
-    own = next((m for m in heads if m.group(1) == heading), None)
-    if own is not None:
+    fences = [m.span() for m in _FENCE_RE.finditer(body)]
+    heads = [
+        m
+        for m in _HEADING_RE.finditer(body)
+        if not any(start <= m.start() < end for start, end in fences)
+    ]
+    owns = [m for m in heads if m.group(1) == heading]
+    if len(owns) > 1:
+        raise CardError(f"section {heading!r} appears {len(owns)} times; fix the card by hand")
+    if owns:
+        own = owns[0]
         end = next((m.start() for m in heads if m.start() > own.start()), len(body))
         section, tail = body[own.start() : end].rstrip("\n"), body[end:]
         return body[: own.start()] + section + "\n\n" + entry + "\n" + ("\n" + tail if tail else "")

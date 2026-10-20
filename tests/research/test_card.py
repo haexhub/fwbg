@@ -485,6 +485,13 @@ def test_next_card_id_follows_cards_and_ledger(strategies_dir):
     assert next_card_id(strategies_dir, [make_trial(strategy="S-0011")]) == "S-0012"
 
 
+def test_next_card_id_ignores_files_that_are_not_card_files(strategies_dir):
+    write_card(strategies_dir, make_card(id="S-0007"), "x")
+    (strategies_dir / "strategies" / "S-draft.md").write_text("draft", encoding="utf-8")
+    (strategies_dir / "strategies" / "S-00099.md").write_text("typo", encoding="utf-8")
+    assert next_card_id(strategies_dir, []) == "S-0008"
+
+
 def test_add_section_entry_appends_inside_the_section():
     body = "## Hypothesis\n\nH.\n\n## Verdict\n\nOpen.\n\n## Reports\n\n- a\n"
     assert add_section_entry(body, "Verdict", "### 2026-10-20: parked") == (
@@ -502,3 +509,23 @@ def test_add_section_entry_creates_a_missing_section_before_an_anchor():
 def test_add_section_entry_appends_a_missing_section_at_the_end():
     assert add_section_entry("Intro.\n", "Verdict", "x") == "Intro.\n\n## Verdict\n\nx\n"
     assert add_section_entry("", "Verdict", "x") == "## Verdict\n\nx\n"
+
+
+def test_add_section_entry_skips_headings_in_code_fences():
+    body = "## Verdict\n\nOpen.\n\n```\n## Fake\n```\n"
+    assert add_section_entry(body, "Verdict", "x") == (
+        "## Verdict\n\nOpen.\n\n```\n## Fake\n```\n\nx\n"
+    )
+
+
+def test_add_section_entry_ignores_a_fenced_target_heading():
+    body = "## Hypothesis\n\n~~~\n## Verdict\n~~~\n"
+    assert add_section_entry(body, "Verdict", "x") == (
+        "## Hypothesis\n\n~~~\n## Verdict\n~~~\n\n## Verdict\n\nx\n"
+    )
+
+
+def test_add_section_entry_refuses_a_repeated_section():
+    body = "## Verdict\n\na\n\n## Verdict\n\nb\n"
+    with pytest.raises(CardError, match="section 'Verdict' appears 2 times"):
+        add_section_entry(body, "Verdict", "x")

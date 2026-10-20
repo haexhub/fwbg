@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from fwbg.api.workspace import get_research_dir
+from fwbg.research.card import CRITERIA_NAMES
 from fwbg.research.fingerprint import canonical_config, canonical_json, digest
 from fwbg.research.ledger import LEDGER_FILENAME
 from fwbg.research.repo import (
@@ -176,6 +177,10 @@ def test_default_criteria_are_numbers():
     criteria = yaml.safe_load(DEFAULT_CRITERIA_YAML)
     assert criteria
     assert all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in criteria.values())
+
+
+def test_default_criteria_are_the_known_criteria():
+    assert set(yaml.safe_load(DEFAULT_CRITERIA_YAML)) == CRITERIA_NAMES
 
 
 def test_research_dir_defaults_to_workspace(tmp_path, monkeypatch):
