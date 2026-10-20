@@ -1,0 +1,190 @@
+import json
+import subprocess
+
+import pytest
+
+from fwbg.research.card import CardError
+from fwbg.research.cli import main
+from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, TrialKind, append_trial, read_trials
+from fwbg.research.pending import STAGING, write_pending
+from fwbg.research.reconcile import ReconcileResult, reconcile
+from fwbg.research.repo import ResearchRepoError
+from tests.research.factories import make_run, make_trial
+from tests.research.test_pending import dead_pid, make_pending
+
+NOTHING = ReconcileResult(recovered=(), committed=False, unindexed=())
+
+
+@pytest.fixture(autouse=True)
+def workspace(tmp_path, monkeypatch):
+    """Point every workspace directory into *tmp_path*."""
+    monkeypatch.setenv("FWBG_RESEARCH_DIR", str(tmp_path / "research"))
+    monkeypatch.setenv("FWBG_TEST_RESULTS_DIR", str(tmp_path / "results"))
+    monkeypatch.setenv("FWBG_STRATEGIES_DIR", str(tmp_path / "strategies" / "configs"))
+    (tmp_path / "results").mkdir()
+
+
+@pytest.fixture
+def results(tmp_path):
+    return tmp_path / "results"
+
+
+def commits(register) -> int:
+    count = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=register,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return int(count.stdout)
+
+
+def dirty(register) -> str:
+    return subprocess.run(
+        ["git", "status", "--porcelain"], cwd=register, capture_output=True, text=True, check=True
+    ).stdout
+
+
+def test_clean_register_changes_nothing_twice(gate_register, results):
+    """A clean register: nothing recovered, nothing committed, the same result again."""
+    before = commits(gate_register)
+    assert reconcile(gate_register, results) == NOTHING
+    assert reconcile(gate_register, results) == NOTHING
+    assert commits(gate_register) == before
+
+
+def test_uncommitted_trial_is_committed_once(gate_register, results):
+    """A ledger append left uncommitted is committed, and only once."""
+    append_trial(gate_register / LEDGER_FILENAME, make_trial(run_id="r-1"))
+    before = commits(gate_register)
+
+    assert reconcile(gate_register, results) == ReconcileResult((), True, ())
+    assert commits(gate_register) == before + 1
+    assert dirty(gate_register) == ""
+    assert reconcile(gate_register, results) == NOTHING
+    assert commits(gate_register) == before + 1
+
+
+def test_uncommitted_reports_are_committed(gate_register, results):
+    """Reports are part of the register commit."""
+    (gate_register / "reports").mkdir(exist_ok=True)
+    (gate_register / "reports" / "S-0007.md").write_text("report\n", encoding="utf-8")
+
+    assert reconcile(gate_register, results).committed
+    assert dirty(gate_register) == ""
+
+
+def test_stale_marker_is_recovered_and_committed(gate_register, results):
+    """A pending run whose process is gone is recorded and committed."""
+    run_dir = make_run(results, "run-1")
+    write_pending(gate_register, make_pending(run_dir, pid=dead_pid()))
+
+    result = reconcile(gate_register, results)
+
+    trials = read_trials(gate_register / LEDGER_FILENAME)
+    assert result == ReconcileResult((str(trials[0].trial_id),), True, ())
+    assert not (gate_register / STAGING / "run-1.json").exists()
+    assert dirty(gate_register) == ""
+    assert reconcile(gate_register, results) == NOTHING
+
+
+def test_live_marker_is_left_alone(gate_register, results):
+    """A running gated run is neither recorded nor reported."""
+    run_dir = make_run(results, "run-1")
+    write_pending(gate_register, make_pending(run_dir))
+
+    assert reconcile(gate_register, results) == NOTHING
+    assert (gate_register / STAGING / "run-1.json").exists()
+
+
+def test_runs_missing_from_the_ledger_are_reported(gate_register, results):
+    """Untagged runs not in the ledger are reported; recorded and running ones are not."""
+    make_run(results, "r-missing")
+    make_run(results, "r-iteration")
+    make_run(results, "r-legacy")
+    running = make_run(results, "r-running")
+    (running / "progress.json").write_text(json.dumps({"status": "running"}), encoding="utf-8")
+    append_trial(gate_register / LEDGER_FILENAME, make_trial(run_id="r-iteration"))
+    append_trial(
+        gate_register / LEDGER_FILENAME, make_trial(run_id="r-legacy", kind=TrialKind.LEGACY)
+    )
+    reconcile(gate_register, results)
+
+    assert reconcile(gate_register, results) == ReconcileResult((), False, ("r-missing",))
+
+
+def test_broken_ledger_raises_and_commits_nothing(gate_register, results):
+    """An unparsable ledger line stops reconcile before anything is recovered or committed."""
+    run_dir = make_run(results, "run-1")
+    write_pending(gate_register, make_pending(run_dir, pid=dead_pid()))
+    with open(gate_register / LEDGER_FILENAME, "a", encoding="utf-8") as handle:
+        handle.write("{not json\n")
+    before = commits(gate_register)
+
+    with pytest.raises(LedgerError):
+        reconcile(gate_register, results)
+    assert commits(gate_register) == before
+    assert (gate_register / STAGING / "run-1.json").exists()
+
+
+def test_broken_card_raises_and_commits_nothing(gate_register, results):
+    """A card that does not parse stops reconcile before anything is committed."""
+    append_trial(gate_register / LEDGER_FILENAME, make_trial(run_id="r-1"))
+    (gate_register / "strategies" / "S-0008-broken.md").write_text("no front matter\n")
+    before = commits(gate_register)
+
+    with pytest.raises(CardError):
+        reconcile(gate_register, results)
+    assert commits(gate_register) == before
+
+
+def test_failed_commit_raises_and_keeps_the_data(gate_register, results, monkeypatch):
+    """A commit that fails raises; the recovered trial stays in the ledger."""
+    run_dir = make_run(results, "run-1")
+    write_pending(gate_register, make_pending(run_dir, pid=dead_pid()))
+
+    def fail(*args, **kwargs):
+        raise ResearchRepoError("git failed")
+
+    monkeypatch.setattr("fwbg.research.reconcile.commit_register", fail)
+
+    with pytest.raises(ResearchRepoError):
+        reconcile(gate_register, results)
+    assert [trial.run_id for trial in read_trials(gate_register / LEDGER_FILENAME)] == ["run-1"]
+
+
+def test_cli_reports_recovered_committed_and_unindexed(gate_register, results, capsys):
+    """The CLI prints each part of the result and the backfill hint."""
+    run_dir = make_run(results, "run-1")
+    write_pending(gate_register, make_pending(run_dir, pid=dead_pid()))
+    make_run(results, "r-missing")
+
+    assert main(["reconcile"]) == 0
+    out = capsys.readouterr().out
+    assert "recovered T-000001" in out
+    assert "committed" in out
+    assert "r-missing" in out
+    assert "research backfill scan --out mapping.yaml" in out
+
+    assert main(["reconcile", "--results", str(results)]) == 0
+    out = capsys.readouterr().out
+    assert "nothing to commit" in out
+    assert "recovered" not in out
+
+
+def test_cli_clean_register_reports_nothing_unindexed(gate_register, capsys):
+    """Without gaps, the CLI says so and gives no hint."""
+    assert main(["reconcile"]) == 0
+    out = capsys.readouterr().out
+    assert "nothing to commit" in out
+    assert "backfill" not in out
+
+
+def test_cli_reports_errors_without_traceback(gate_register, capsys):
+    """A broken ledger exits 1 with a one-line error."""
+    with open(gate_register / LEDGER_FILENAME, "a", encoding="utf-8") as handle:
+        handle.write("{not json\n")
+
+    assert main(["reconcile"]) == 1
+    assert capsys.readouterr().err.startswith("Error: ")
