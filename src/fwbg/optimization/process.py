@@ -5,6 +5,7 @@ Hauptmodul für die Verarbeitung einzelner Symbole mit Walk-Forward Optimierung.
 Fold-Verarbeitung ist in process_fold.py ausgelagert.
 Grid-Search Funktionen sind in grid_search.py ausgelagert.
 """
+import functools
 import gc
 import os
 import re
@@ -27,9 +28,10 @@ from fwbg.research.dsr import return_statistics
 from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds, plan_walk_forward
-from .bias_checks import check_asset_bias
+from .bias_checks import check_asset_bias, fold_bias_ratios
 from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
 from .process_fold import precompute_indicators, process_single_fold
+from .selection_protocol import SELECTION_PROTOCOL
 
 
 def _compute_trade_analytics(trades_detailed):
@@ -171,7 +173,7 @@ def _parse_ct_value(ct_value):
 
 def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
                                  sample_bias_detected, bias_ratios, mean_bias_ratio,
-                                 config_inconsistent=False):
+                                 config_inconsistent=False, folds_without_bias_ratio=0):
     """Build walk_forward summary dict shared by all result types."""
     profitable_folds = sum(1 for p in pnls if p > 0)
     summary = {
@@ -179,10 +181,11 @@ def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
         "successful_folds": len(all_fold_results),
         "profitable_folds": profitable_folds,
         "fold_stability": profitable_folds / len(all_fold_results) if all_fold_results else 0.0,
-        "mean_win_rate": np.mean(win_rates),
-        "std_win_rate": np.std(win_rates),
-        "min_win_rate": min(win_rates),
-        "max_win_rate": max(win_rates),
+        # win_rates: folds that traded; None when no fold traded.
+        "mean_win_rate": np.mean(win_rates) if win_rates else None,
+        "std_win_rate": np.std(win_rates) if win_rates else None,
+        "min_win_rate": min(win_rates) if win_rates else None,
+        "max_win_rate": max(win_rates) if win_rates else None,
         "mean_pnl": np.mean(pnls),
         "std_pnl": np.std(pnls),
         "min_pnl": min(pnls),
@@ -191,6 +194,8 @@ def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
         "sample_bias_detected": sample_bias_detected,
         "bias_ratios": bias_ratios,
         "mean_bias_ratio": mean_bias_ratio,
+        "folds_without_bias_ratio": folds_without_bias_ratio,
+        "selection_protocol": SELECTION_PROTOCOL,
         "fold_details": all_fold_results,
     }
 
@@ -314,11 +319,12 @@ def _process_single_variant(variant_idx, variant_label, variant_strategy,
         )
 
     n_successful = len(all_fold_results)
-    mean_pnl = float(np.mean([r["test_pnl"] for r in all_fold_results])) if n_successful else float("-inf")
+    # Ranked on inner validation PnL: the test folds must not pick the variant.
+    mean_pnl = float(np.mean([r["inner_val_pnl"] for r in all_fold_results])) if n_successful else float("-inf")
 
     if n_variants > 1:
         log(1, f"  Variant result: {n_successful}/{len(wf_folds)} folds"
-               + (f", mean_pnl={mean_pnl:.1f}" if n_successful else ""), sym)
+               + (f", mean_inner_pnl={mean_pnl:.1f}" if n_successful else ""), sym)
 
     return {
         "score": (n_successful, mean_pnl),
@@ -450,6 +456,19 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
     return df
 
 
+def _records_selection_protocol(func):
+    """Every result of *func*, early returns and errors included, records its selection protocol."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        result["selection_protocol"] = SELECTION_PROTOCOL
+        return result
+
+    return wrapper
+
+
+@_records_selection_protocol
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     """
     Verarbeitet ein einzelnes Symbol mit Walk-Forward Optimierung.
@@ -598,11 +617,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # Use best variant for post-processing
         if len(variants) > 1:
-            score = (len(best_variant_data["all_fold_results"]),
-                     float(np.mean([r["test_pnl"] for r in best_variant_data["all_fold_results"]]))
-                     if best_variant_data["all_fold_results"] else float("-inf"))
+            score = best_variant_data["score"]
             log(1, f"Best variant: {best_variant_data['label']} "
-                   f"({score[0]}/{len(wf_folds)} folds, pnl={score[1]:.1f})", sym)
+                   f"({score[0]}/{len(wf_folds)} folds, mean_inner_pnl={score[1]:.1f})", sym)
 
         ctx = best_variant_data["ctx"]
         all_fold_results = best_variant_data["all_fold_results"]
@@ -628,34 +645,41 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 best_grid = max(valid, key=lambda g: g["inner_val_pnl"])
                 result["best_grid_result"] = best_grid
                 log(1, f"  Best grid result: TP={best_grid['tp_mult']}, SL={best_grid['sl_mult']}, "
-                       f"CT={best_grid.get('conf_thresh', '?')}, PnL={best_grid['inner_val_pnl']:.1f}", sym)
+                       f"CT={best_grid.get('conf_thresh', best_grid.get('ct', '?'))}, "
+                       f"PnL={best_grid['inner_val_pnl']:.1f}", sym)
             return result
 
         log(1, f"=== Walk-Forward Complete: {len(all_fold_results)}/{len(wf_folds)} successful folds ===", sym)
 
         # Aggregate metrics across all folds
-        win_rates = [r["test_win_rate"] for r in all_fold_results]
+        # A fold whose chosen setting traded nothing (kept: the test set must not filter
+        # folds) has no win rate; it still counts as a fold and in fold_stability.
+        win_rates = [r["test_win_rate"] for r in all_fold_results if r["test_trades"] > 0]
         pnls = [r["test_pnl"] for r in all_fold_results]
         trades_counts = [r["test_trades"] for r in all_fold_results]
-        bias_ratios = [r["test_pnl"] / r["inner_val_pnl"] if r["inner_val_pnl"] > 0 else 0
-                      for r in all_fold_results]
+        bias = fold_bias_ratios(all_fold_results)
+        bias_ratios = bias["bias_ratios"]
 
-        mean_wr = np.mean(win_rates)
-        std_wr = np.std(win_rates)
+        mean_wr = np.mean(win_rates) if win_rates else 0.0  # replaced by the unified trades' WR
+        std_wr = np.std(win_rates) if win_rates else 0.0
         mean_pnl = np.mean(pnls)
         std_pnl = np.std(pnls)
         total_trades = sum(trades_counts)
         per_fold_total_trades = total_trades
-        mean_bias_ratio = np.mean(bias_ratios)
+        mean_bias_ratio = bias["mean_bias_ratio"]
 
         # Detect sample bias
         sample_bias_detected = any(ratio > 2.0 for ratio in bias_ratios if ratio > 0)
 
         log(1, "Walk-Forward Results:", sym)
-        log(1, f"  Win-Rate: {mean_wr*100:.1f}% ± {std_wr*100:.1f}% (range: {min(win_rates)*100:.1f}%-{max(win_rates)*100:.1f}%)", sym)
+        if win_rates:
+            log(1, f"  Win-Rate: {mean_wr*100:.1f}% ± {std_wr*100:.1f}% (range: {min(win_rates)*100:.1f}%-{max(win_rates)*100:.1f}%)", sym)
+        else:
+            log(1, "  Win-Rate: n/a (no fold traded)", sym)
         log(1, f"  PnL: {mean_pnl:.1f} ± {std_pnl:.1f} (range: {min(pnls):.1f}-{max(pnls):.1f})", sym)
         log(1, f"  Total Trades: {total_trades}", sym)
-        log(1, f"  Bias Ratios: {[f'{r:.2f}x' for r in bias_ratios]}", sym)
+        log(1, f"  Bias Ratios: {[f'{r:.2f}x' for r in bias_ratios]}"
+               f" ({bias['folds_without_bias_ratio']} folds without: inner PnL <= 0)", sym)
 
         if sample_bias_detected:
             log(1, "  WARNING: Sample bias detected in some folds (>2x ratio)", sym)
@@ -892,6 +916,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             per_fold_total_trades,
             sample_bias_detected, bias_ratios, mean_bias_ratio,
             config_inconsistent=config_inconsistent,
+            folds_without_bias_ratio=bias["folds_without_bias_ratio"],
         )
         # Override total_trades with unified simulation count
         wf_summary["total_trades"] = total_trades

@@ -37,6 +37,7 @@ from .indicator_grid import expand_indicator_grid
 from .process import load_symbol_frame, process_symbol
 from .process_fold import precompute_indicators
 from .robust_validation import WalkForwardFold
+from .selection_protocol import SELECTION_PROTOCOL
 from .signal_fold import prepare_signal_fold_data
 from .unified_simulation import run_unified_simulation
 
@@ -66,6 +67,7 @@ _DEVELOPMENT_KEYS = (
     "best_config",
     "indicator_variant",
     "unified_candidate",  # the frozen setting the holdout evaluated
+    "selection_protocol",
 )
 
 
@@ -77,6 +79,12 @@ def symbol_worker(strategy: StrategyConfig) -> partial:
 
 def process_symbol_holdout(csv_path: str, strategy: StrategyConfig) -> dict:
     """Develop *csv_path* on [start, cutoff), then evaluate the frozen setting once after it."""
+    result = _holdout_look(csv_path, strategy)
+    result["selection_protocol"] = SELECTION_PROTOCOL  # the development's
+    return result
+
+
+def _holdout_look(csv_path: str, strategy: StrategyConfig) -> dict:
     cutoff = strategy.holdout_cutoff
     development = process_symbol(
         csv_path, dataclasses.replace(strategy, end_date=cutoff, holdout_cutoff=None)

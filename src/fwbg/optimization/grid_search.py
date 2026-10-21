@@ -210,6 +210,8 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "features": inner_result["selected_features"],
         "regime_filter": regime_config,
         "exit_modifier_params": ctx.exit_modifier_params,
+        "entry_modifier": ctx.entry_modifier,
+        "entry_modifier_params": ctx.entry_modifier_params,
         "model_hyperparameters": ctx.model_hyperparameters,
         "ct_votes": inner_result.get("ct_votes"),
         "ct_diagnostics": inner_result.get("ct_diagnostics"),

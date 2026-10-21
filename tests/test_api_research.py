@@ -12,9 +12,10 @@ import fwbg.api.research as research_api
 from fwbg.api import create_app
 from fwbg.research import commands
 from fwbg.research.card import Status, load_card, replace_card
+from fwbg.research.fingerprint import digest
 from fwbg.research.ledger import LEDGER_FILENAME, append_trial, read_trials
 from fwbg.research.pending import STAGING, write_pending
-from fwbg.research.repo import ResearchRepoError, init_research_repo
+from fwbg.research.repo import ResearchRepoError, init_research_repo, store_config
 from tests.research.factories import dead_pid, make_pending, make_trial
 
 NEW = {
@@ -189,6 +190,19 @@ def test_list_counts_trials_and_live_runs(client, card_id, register, tmp_path):
     assert summary["trials"] == 1
     assert summary["best"]["symbol"] == "GOLD"
     assert summary["running"] == 1
+
+
+def test_list_ranks_no_signal_evaluation_from_before_inner_selection(client, card_id, register):
+    cfg = {"strategy": {"model": {"type": "signal"}}, "symbols": ["GOLD"]}
+    store_config(register, digest(cfg), cfg)
+    ledger = register / LEDGER_FILENAME
+    append_trial(
+        ledger,
+        make_trial(strategy=card_id, fingerprint=digest(cfg), metrics={"GOLD": {"sharpe": 2.0}}),
+    )
+    append_trial(ledger, make_trial(strategy=card_id, metrics={"DAX": {"sharpe": 0.5}}))
+    [summary] = cards(client)
+    assert (summary["trials"], summary["best"]["symbol"]) == (2, "DAX")
 
 
 def test_list_filters_by_status_and_tag(client, card_id):
