@@ -20,9 +20,7 @@ from fwbg.data.assets import get_asset
 from fwbg.core.context import SimulationContext
 from fwbg.data.loader import load_data_aligned, run_data_loading
 from fwbg.simulation.trade import (
-    calculate_sharpe_ratio, calculate_calmar_from_returns,
-    monte_carlo_permutation_test, monte_carlo_equity_from_returns,
-    pnl_to_returns,
+    calculate_sharpe_ratio, calculate_calmar_from_returns, pnl_to_returns,
 )
 from fwbg.core import get_risk_manager
 from fwbg.research.dsr import return_statistics
@@ -30,6 +28,7 @@ from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds, plan_walk_forward
 from .bias_checks import check_asset_bias
+from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
 from .process_fold import precompute_indicators, process_single_fold
 
 
@@ -400,6 +399,57 @@ def _apply_date_window(df: pd.DataFrame, start_date: str | None, end_date: str |
     return df.loc[df.index < end]
 
 
+def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.DataFrame | None:
+    """Load *csv_path* as the run sees it: resampled, date-windowed, flat bars
+    dropped, data-loading pipeline applied. None without data (in the window).
+    """
+    t0 = time.time()
+    df = load_data_aligned(csv_path)
+    if df is None:
+        log(1, "SKIP - Keine Daten", sym)
+        return None
+
+    # Resample to target timeframe if loaded from a lower one
+    if data_config.RESAMPLE_FROM:
+        from fwbg.data.resample import resample_ohlcv
+        n_before = len(df)
+        df = resample_ohlcv(df, data_config.TIMEFRAME)
+        log(2, f"Resampled {data_config.RESAMPLE_FROM} → {data_config.TIMEFRAME} "
+                f"({n_before} → {len(df)} bars)", sym)
+
+    # Restrict to the configured backtest window (ISO start/end dates).
+    # The DatetimeIndex makes all downstream fold/holdout splitting (which is
+    # purely positional) operate on the window automatically — no fold-logic
+    # change needed. Used to reserve a holdout tail or run a holdout window.
+    # Half-open: start_date inclusive, end_date exclusive (see _apply_date_window).
+    if strategy.start_date or strategy.end_date:
+        n_before = len(df)
+        df = _apply_date_window(df, strategy.start_date, strategy.end_date)
+        log(2, f"Datumsfenster {strategy.start_date}..{strategy.end_date}: "
+                f"{n_before} → {len(df)} Zeilen", sym)
+        if df.empty:
+            log(1, "SKIP - Keine Daten im Datumsfenster", sym)
+            return None
+
+    # Drop flat bars (O==H==L==C, weekends/holidays for index data)
+    if strategy.assets.get("drop_flat_bars"):
+        n_before = len(df)
+        df = df[~((df["O"] == df["H"]) & (df["H"] == df["L"]) & (df["L"] == df["C"]))]
+        log(2, f"Dropped {n_before - len(df)} flat bars "
+                f"({n_before} → {len(df)})", sym)
+
+    log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
+
+    # === DATA LOADING (generic orchestrator) ===
+    data_loading_configs = strategy.get_data_loading()
+    if data_loading_configs:
+        t0 = time.time()
+        report_phase(sym, "Data Loading...")
+        df = run_data_loading(df, data_loading_configs)
+        log(2, f"Data Loading abgeschlossen ({time.time()-t0:.1f}s)", sym)
+    return df
+
+
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     """
     Verarbeitet ein einzelnes Symbol mit Walk-Forward Optimierung.
@@ -426,52 +476,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         log(1, "START", sym)
         report_phase(sym, "Lade Daten...")
 
-        t0 = time.time()
-        df = load_data_aligned(csv_path)
+        df = load_symbol_frame(csv_path, strategy, sym)
         if df is None:
-            log(1, "SKIP - Keine Daten", sym)
             result = {"symbol": sym, "status": "no_data"}
             return result
-
-        # Resample to target timeframe if loaded from a lower one
-        if data_config.RESAMPLE_FROM:
-            from fwbg.data.resample import resample_ohlcv
-            n_before = len(df)
-            df = resample_ohlcv(df, data_config.TIMEFRAME)
-            log(2, f"Resampled {data_config.RESAMPLE_FROM} → {data_config.TIMEFRAME} "
-                    f"({n_before} → {len(df)} bars)", sym)
-
-        # Restrict to the configured backtest window (ISO start/end dates).
-        # The DatetimeIndex makes all downstream fold/holdout splitting (which is
-        # purely positional) operate on the window automatically — no fold-logic
-        # change needed. Used to reserve a holdout tail or run a holdout window.
-        # Half-open: start_date inclusive, end_date exclusive (see _apply_date_window).
-        if strategy.start_date or strategy.end_date:
-            n_before = len(df)
-            df = _apply_date_window(df, strategy.start_date, strategy.end_date)
-            log(2, f"Datumsfenster {strategy.start_date}..{strategy.end_date}: "
-                    f"{n_before} → {len(df)} Zeilen", sym)
-            if df.empty:
-                log(1, "SKIP - Keine Daten im Datumsfenster", sym)
-                result = {"symbol": sym, "status": "no_data"}
-                return result
-
-        # Drop flat bars (O==H==L==C, weekends/holidays for index data)
-        if strategy.assets.get("drop_flat_bars"):
-            n_before = len(df)
-            df = df[~((df["O"] == df["H"]) & (df["H"] == df["L"]) & (df["L"] == df["C"]))]
-            log(2, f"Dropped {n_before - len(df)} flat bars "
-                    f"({n_before} → {len(df)})", sym)
-
-        log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
-
-        # === DATA LOADING (generic orchestrator) ===
-        data_loading_configs = strategy.get_data_loading()
-        if data_loading_configs:
-            t0 = time.time()
-            report_phase(sym, "Data Loading...")
-            df = run_data_loading(df, data_loading_configs)
-            log(2, f"Data Loading abgeschlossen ({time.time()-t0:.1f}s)", sym)
 
         # === LOOKAHEAD BIAS PREVENTION ===
         # KRITISCH: Walk-Forward Splits VOR Indikator-Berechnung!
@@ -970,49 +978,29 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         report_phase(sym, "Monte Carlo Validierung...")
 
         t_mc = time.time()
-        mc_perm = monte_carlo_permutation_test(reporting_pnl, n_permutations=1000)
-        mc_equity = monte_carlo_equity_from_returns(reporting_returns, n_simulations=500)
+        mc_summary = monte_carlo_summary(reporting_pnl, reporting_returns)
 
-        log(2, f"  Monte Carlo: p={mc_perm['p_value']:.3f}, "
-               f"Equity median={mc_equity['median_equity']:.1f}, "
-               f"bankruptcy={mc_equity['bankruptcy_rate']:.1%} ({time.time()-t_mc:.1f}s)", sym)
-
-        mc_summary = {
-            "p_value": mc_perm["p_value"],
-            "is_significant": mc_perm["is_significant"],
-            "percentile": mc_perm["percentile"],
-            "equity_median": mc_equity["median_equity"],
-            "equity_p5": mc_equity["p5_equity"],
-            "equity_p95": mc_equity["p95_equity"],
-            "bankruptcy_rate": mc_equity["bankruptcy_rate"],
-        }
+        log(2, f"  Monte Carlo: p={mc_summary['p_value']:.3f}, "
+               f"Equity median={mc_summary['equity_median']:.1f}, "
+               f"bankruptcy={mc_summary['bankruptcy_rate']:.1%} ({time.time()-t_mc:.1f}s)", sym)
 
         # Sharpe/Calmar (needed for both not_significant and ok paths)
         actual_trades_per_year = len(reporting_pnl) * bars_per_year / reporting_test_bars if reporting_test_bars > 0 else len(reporting_pnl)
         sharpe = calculate_sharpe_ratio(reporting_returns, trades_per_year=actual_trades_per_year)
         calmar = calculate_calmar_from_returns(reporting_returns)
 
-        # === TIME-BASED EQUITY REPLAY (Reporting) ===
-        # Statt Trade-Index-Kompoundierung (simulate_equity_from_pnl) werden
-        # die kausalen Returns chronologisch zu ihren echten Exit-Zeitpunkten
-        # über die komplette Historie replayed → zeitachsen-treue Equity-Kurve,
-        # Max-DD und Annual-Return aus realer Kalenderspanne.
+        # === TIME-BASED EQUITY REPLAY (Reporting, see equity_replay) ===
         detailed_aligned = (
             len(all_trades_detailed) == total_trades
             and all(t.get("exit_time") for t in all_trades_detailed)
         )
         reporting_equity = None
         if causal_ok and detailed_aligned:
-            from fwbg.simulation.equity import simulate_equity_timeline
             exit_times = [
                 all_trades_detailed[i]["exit_time"]
                 for i in causal["causal_trade_indices"]
             ]
-            reporting_equity = simulate_equity_timeline(exit_times, causal["causal_returns"])
-            pts = reporting_equity["equity_points"]
-            if len(pts) > 2000:
-                step = len(pts) // 2000 + 1
-                reporting_equity["equity_points"] = pts[::step] + [pts[-1]]
+            reporting_equity = equity_replay(exit_times, causal["causal_returns"])
 
         reporting = {
             "causal": causal_ok,
@@ -1020,23 +1008,15 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "pnl_trace": reporting_pnl,
             "equity": reporting_equity,
         }
-        slim_trades_detailed = [
-            {
-                "entry_time": t.get("entry_time"),
-                "exit_time": t.get("exit_time"),
-                "direction": t.get("direction"),
-                "result": t.get("result"),
-                "pnl_raw": t.get("pnl_raw"),
-                "exit_reason": t.get("exit_reason"),
-            }
-            for t in all_trades_detailed
-        ] if len(all_trades_detailed) == total_trades else []
+        slim_trades_detailed = (
+            slim_trades(all_trades_detailed) if len(all_trades_detailed) == total_trades else []
+        )
 
         ct_long, ct_short, ct_display = _parse_ct_value(b_config["ct"])
 
         # === NOT SIGNIFICANT ===
-        if not mc_perm["is_significant"]:
-            log(1, f"SKIP - Not significant (p={mc_perm['p_value']:.3f})", sym)
+        if not mc_summary["is_significant"]:
+            log(1, f"SKIP - Not significant (p={mc_summary['p_value']:.3f})", sym)
 
             result = {
                 "symbol": sym,
@@ -1067,7 +1047,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "trade_analytics": trade_analytics,
                 "reporting": reporting,
                 "trades_detailed": slim_trades_detailed,
-                "reason": f"Not statistically significant (p={mc_perm['p_value']:.3f})",
+                "reason": f"Not statistically significant (p={mc_summary['p_value']:.3f})",
                 "grid_results": accumulated_grid_results,
             }
 
@@ -1075,15 +1055,15 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             result["bias_check"] = bias_check_result
 
             log(1, f"NOT_SIGNIFICANT - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
-                   f"p={mc_perm['p_value']:.3f} TP={b_config['tp']} SL={b_config['sl']} "
+                   f"p={mc_summary['p_value']:.3f} TP={b_config['tp']} SL={b_config['sl']} "
                    f"CT={ct_display:.2f} Trades={total_trades}", sym)
 
             report_done(sym, "not_significant")
             return result
 
         # === OK ===
-        if mc_equity["bankruptcy_rate"] > 0.1:
-            log(1, f"WARNING: {mc_equity['bankruptcy_rate']:.1%} Bankruptcy-Rate", sym)
+        if mc_summary["bankruptcy_rate"] > 0.1:
+            log(1, f"WARNING: {mc_summary['bankruptcy_rate']:.1%} Bankruptcy-Rate", sym)
 
         # OOS fold stability: fraction of walk-forward folds with positive OOS PnL
         oos_fold_stability = sum(1 for p in pnls if p > 0) / len(pnls) if pnls else 0
@@ -1131,7 +1111,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             result["indicator_variant"] = indicator_variant_label
 
         log(1, f"OK (Walk-Forward) - WR={mean_wr:.1%}±{std_wr:.1%} Sharpe={sharpe:.2f} "
-               f"p={mc_perm['p_value']:.3f} Trades={total_trades} ({time.time()-t_start:.1f}s)", sym)
+               f"p={mc_summary['p_value']:.3f} Trades={total_trades} ({time.time()-t_start:.1f}s)", sym)
 
         if sample_bias_detected:
             log(1, f"  NOTE: Sample bias detected in {sum(1 for r in bias_ratios if r > 2.0)} folds", sym)
