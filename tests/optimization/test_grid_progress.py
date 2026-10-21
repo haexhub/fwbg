@@ -553,7 +553,7 @@ class TestGridResultsInProcessSymbolOutput:
         import inspect
 
         # Hole den Quellcode
-        source = inspect.getsource(process._process_symbol)  # the body behind process_symbol
+        source = inspect.getsource(process.process_symbol)
 
         # Prüfe ob grid_results zum result dictionary hinzugefügt wird
         # Suche nach "grid_results" als Key in einem return-Statement oder result-Dict
