@@ -150,10 +150,15 @@ def build_performance_matrix(
     for fid in fold_ids:
         combo_map = {}
         for gr in grid_results_by_fold[fid]:
+            # A signal combo without inner trades is ineligible (never chosen): no candidate.
+            # ML entries carry no inner_trades.
+            if gr.get("inner_trades") == 0:
+                continue
             try:
                 key = _combo_key(gr)
+                hash(key)  # an unhashable grid value (e.g. a set) cannot key a row
                 val = gr["inner_val_pnl"]
-            except KeyError:
+            except (KeyError, TypeError):
                 continue
             if val is None or not np.isfinite(val):
                 continue
@@ -286,8 +291,11 @@ def compute_overfitting_metrics(
         kurtosis=kurtosis,
     )
 
-    # PBO
-    matrix, _ = build_performance_matrix(grid_results_by_fold)
-    pbo_result = probability_of_backtest_overfitting(matrix)
+    # PBO on its own: a failure here must not drop the DSR.
+    try:
+        matrix, _ = build_performance_matrix(grid_results_by_fold)
+        pbo_result = probability_of_backtest_overfitting(matrix)
+    except Exception as exc:
+        pbo_result = {**probability_of_backtest_overfitting(np.empty((0, 0))), "error": str(exc)}
 
     return {"dsr": dsr_result, "pbo": pbo_result}
