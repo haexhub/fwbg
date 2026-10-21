@@ -27,14 +27,16 @@ def test_best_result_ignores_holdout_failed_and_missing_sharpe():
             trial_id="T-000004", status=TrialStatus.FAILED, metrics={"EURUSD": {"sharpe": 3.0}}
         ),
     ]
-    best = best_result(trials)
+    best = best_result(trials, {})
     assert best is not None
     assert (best.trial_id, best.symbol, best.sharpe) == ("T-000002", "GBPUSD", 0.9)
 
 
 def test_best_result_without_any_sharpe_is_none():
-    assert best_result([make_trial(trial_id="T-000001", metrics={"X": {"sharpe": None}})]) is None
-    assert best_result([]) is None
+    assert (
+        best_result([make_trial(trial_id="T-000001", metrics={"X": {"sharpe": None}})], {}) is None
+    )
+    assert best_result([], {}) is None
 
 
 def test_criteria_check():
@@ -71,11 +73,11 @@ def test_return_samples_need_all_inputs_from_counted_development_trials():
         make_trial(trial_id="T-000005", status=TrialStatus.FAILED, metrics={"A": INPUTS}),
         make_trial(trial_id="T-000006", kind=TrialKind.SMOKE, metrics={"A": INPUTS}),
     ]
-    assert [(s.trial_id, s.symbol) for s in return_samples(trials)] == [("T-000001", "A")]
+    assert [(s.trial_id, s.symbol) for s in return_samples(trials, {})] == [("T-000001", "A")]
 
 
 def test_deflated_best_needs_two_samples():
-    assert deflated_best([make_trial(trial_id="T-000001", metrics={"A": INPUTS})]) is None
+    assert deflated_best([make_trial(trial_id="T-000001", metrics={"A": INPUTS})], {}) is None
 
 
 def test_deflated_best_deflates_the_best_sample_by_all_evaluations():
@@ -89,7 +91,7 @@ def test_deflated_best_deflates_the_best_sample_by_all_evaluations():
             metrics={"A": {**INPUTS, "sr_per_trade": 0.9}},
         ),
     ]
-    result = deflated_best(trials)
+    result = deflated_best(trials, {})
     assert result is not None
     assert (result.best.trial_id, result.best.sr) == ("T-000002", 0.3)
     assert (result.n_trials, result.samples) == (5, 2)  # N counts every evaluation
@@ -108,7 +110,7 @@ def test_deflated_best_floors_the_sr_variance_at_its_null_sampling_variance():
         make_trial(trial_id="T-000001", metrics={"A": INPUTS, "B": INPUTS}),
         make_trial(trial_id="T-000002", kind=TrialKind.LEGACY, metrics=legacy),
     ]
-    result = deflated_best(trials)
+    result = deflated_best(trials, {})
     assert result is not None
     assert (result.n_trials, result.samples) == (22, 2)
     assert result.sample_variance == 0.0
@@ -128,7 +130,7 @@ def test_the_variance_floor_is_the_mean_over_the_samples():
             metrics={"A": INPUTS, "B": {**INPUTS, "sr_per_trade": 0.12, "n_returns": 51}},
         )
     ]
-    result = deflated_best(trials)
+    result = deflated_best(trials, {})
     assert result is not None
     assert result.variance_floor == pytest.approx((1 / 100 + 1 / 50) / 2)
     assert result.sample_variance == pytest.approx(0.0002)
@@ -137,7 +139,7 @@ def test_the_variance_floor_is_the_mean_over_the_samples():
 
 def test_deflated_best_is_undefined_for_impossible_moments():
     bad = {**INPUTS, "sr_per_trade": 1.0, "skew": 3.0, "kurtosis": 1.0}
-    result = deflated_best([make_trial(trial_id="T-000001", metrics={"A": INPUTS, "B": bad})])
+    result = deflated_best([make_trial(trial_id="T-000001", metrics={"A": INPUTS, "B": bad})], {})
     assert result is not None
     assert result.best.symbol == "B"
     assert result.dsr is None
