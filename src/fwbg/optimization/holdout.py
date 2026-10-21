@@ -130,6 +130,13 @@ def _evaluate(csv_path: str, strategy: StrategyConfig, development: dict) -> dic
 
     variant = _variant(strategy, development.get("indicator_variant"))
     ctx = SimulationContext.create(get_asset(sym), variant)
+    if n_dev <= ctx.embargo_bars:
+        return _not_evaluated(
+            development,
+            cutoff,
+            "not enough development bars after the embargo",
+            status="insufficient_data",
+        )
     fold = holdout_fold(df, n_dev, ctx.embargo_bars)
     fold_indicators, precomputed_raw_df, _ = precompute_indicators(df, variant, sym)
     prepare = prepare_signal_fold_data if ctx.model_type == "signal" else None
