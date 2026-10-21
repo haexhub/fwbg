@@ -8,6 +8,7 @@ would pick TP 6, selecting on the training window picks TP 2.
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from fwbg.core.config import ExitStrategyConfig
 from fwbg.core.context import SimulationContext
@@ -208,8 +209,9 @@ def test_fold_result_reports_inner_metrics():
 
     result, grid = _run(train_df, test_df)
 
-    assert result["inner_val_pnl"] == inner_mean != result["test_pnl"]
+    assert result["inner_val_pnl"] == pytest.approx(inner_mean)
+    assert result["inner_val_pnl"] != result["test_pnl"]
     assert result["inner_fold_stability"] == 1.0
     assert result["n_candidates"] == 2
     assert [e["fold_id"] for e in grid] == [0, 0]
-    assert [e["inner_val_pnl"] for e in grid][0] == inner_mean
+    assert grid[0]["inner_val_pnl"] == pytest.approx(inner_mean)
