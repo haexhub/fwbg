@@ -5,9 +5,15 @@ import pandas as pd
 
 from fwbg.core.config import ExitStrategyConfig
 from fwbg.core.context import SimulationContext
+from fwbg.optimization import signal_selection
+from fwbg.optimization.nested_cv import nested_cv_split
 from fwbg.optimization.robust_validation import WalkForwardFold
 from fwbg.optimization.signal_fold import process_signal_fold
-from fwbg.optimization.signal_selection import signal_combos
+from fwbg.optimization.signal_selection import (
+    inner_windows,
+    select_combo,
+    signal_combos,
+)
 
 SIGNALS = ["_composed_signal_long", "_composed_signal_short"]
 
@@ -121,3 +127,146 @@ def test_signal_fold_grid_entries_keep_the_combo_order():
         (6, 4, 0.5),
         (6, 4, 0.6),
     ]
+
+
+def _three_exits_ctx(**overrides):
+    exits = [
+        ExitStrategyConfig(name="fixed", params={"tp_mult": tp, "sl_mult": 4}) for tp in (2, 4, 6)
+    ]
+    return _ctx(exit_strategies=exits, **overrides)
+
+
+def _canned(monkeypatch, results):
+    """Two inner windows; evaluate_on_holdout answers (pnl, n_trades) per TP and window."""
+    frame = _frame(300)
+    windows = [(frame.iloc[:100], frame.iloc[100:200]), (frame.iloc[:200], frame.iloc[200:300])]
+    starts = [val.index[0] for _, val in windows]
+
+    def fake(holdout_df, inner_df, candidate, ctx):
+        pnl, n_trades = results[candidate["params"][0]][starts.index(holdout_df.index[0])]
+        return {
+            "trades": [],
+            "trades_detailed": [],
+            "pnl": pnl,
+            "win_rate": 0,
+            "n_trades": n_trades,
+        }
+
+    monkeypatch.setattr(signal_selection, "evaluate_on_holdout", fake)
+    return windows
+
+
+def _chosen_tp(choice):
+    combo, _ = choice
+    return combo.candidate["params"][0]
+
+
+def test_windows_match_the_ml_split():
+    train_df = _frame(960)
+    ctx = _ctx(n_inner_folds=3, embargo_bars=5)
+
+    windows = inner_windows(train_df, ctx)
+
+    expected = nested_cv_split(train_df, 0.0, 3, embargo_bars=5)["inner_folds"]
+    assert len(windows) == len(expected) >= 2
+    for (inner_train, val), (exp_train, exp_val) in zip(windows, expected):
+        pd.testing.assert_frame_equal(inner_train, exp_train)
+        pd.testing.assert_frame_equal(val, exp_val)
+        assert inner_train.index.isin(train_df.index).all()
+        assert val.index.isin(train_df.index).all()
+
+
+def test_picks_highest_mean_inner_pnl(monkeypatch):
+    windows = _canned(monkeypatch, {2: [(1, 3), (1, 3)], 4: [(4, 3), (-1, 3)], 6: [(0, 3), (2, 3)]})
+
+    choice, _ = select_combo(signal_combos(_three_exits_ctx(), SIGNALS), windows)
+
+    assert _chosen_tp(choice) == 4
+    assert choice[1]["inner_val_pnl"] == 1.5
+
+
+def test_window_without_trades_counts_as_zero(monkeypatch):
+    windows = _canned(monkeypatch, {2: [(3, 2), (0, 0)], 4: [(2, 2), (2, 2)], 6: [(0, 0), (0, 0)]})
+
+    choice, entries = select_combo(signal_combos(_three_exits_ctx(), SIGNALS), windows)
+
+    assert _chosen_tp(choice) == 4
+    assert entries[0]["inner_val_pnl"] == 1.5
+    assert entries[0]["fold_pnls"] == [3, 0]
+
+
+def test_combo_without_inner_trades_is_ineligible(monkeypatch):
+    windows = _canned(
+        monkeypatch, {2: [(0, 0), (0, 0)], 4: [(-1, 2), (-1, 2)], 6: [(-3, 2), (0, 0)]}
+    )
+
+    choice, _ = select_combo(signal_combos(_three_exits_ctx(), SIGNALS), windows)
+
+    # No sign gate: the best eligible combo is chosen even though it loses.
+    assert _chosen_tp(choice) == 4
+    assert choice[1]["inner_val_pnl"] == -1
+
+
+def test_no_eligible_combo_returns_none(monkeypatch):
+    windows = _canned(monkeypatch, {tp: [(0, 0), (0, 0)] for tp in (2, 4, 6)})
+
+    choice, entries = select_combo(signal_combos(_three_exits_ctx(), SIGNALS), windows)
+
+    assert choice is None
+    assert len(entries) == 3
+
+
+def test_no_windows_returns_none():
+    choice, entries = select_combo(signal_combos(_three_exits_ctx(), SIGNALS), [])
+
+    assert choice is None
+    assert [e["inner_trades"] for e in entries] == [0, 0, 0]
+
+
+def test_tie_keeps_config_order(monkeypatch):
+    windows = _canned(monkeypatch, {2: [(1, 1), (1, 1)], 4: [(2, 1), (0, 1)], 6: [(0, 1), (2, 1)]})
+
+    choice, _ = select_combo(signal_combos(_three_exits_ctx(), SIGNALS), windows)
+
+    assert _chosen_tp(choice) == 2
+
+
+def test_grid_entries_carry_inner_metrics(monkeypatch):
+    windows = _canned(monkeypatch, {2: [(3, 2), (-1, 1)], 4: [(1, 1), (1, 1)], 6: [(0, 0), (0, 0)]})
+    ctx = _three_exits_ctx(model_hyperparameters={"signal_column_long": "x"})
+
+    _, entries = select_combo(signal_combos(ctx, SIGNALS), windows)
+
+    assert entries[0] == {
+        "exit_strategy": "fixed",
+        "tp_mult": 2,
+        "sl_mult": 4,
+        "ct": 0.5,
+        "timeout_bars": None,
+        "model_hyperparameters": {"signal_column_long": "x"},
+        "inner_val_pnl": 1.0,
+        "inner_trades": 3,
+        "fold_pnls": [3, -1],
+        "fold_stability": 0.5,
+    }
+    assert all("pnl" not in e for e in entries)
+
+
+def test_scoring_only_sees_train_rows(monkeypatch):
+    frame = _frame(1200)
+    train_df, test_df = frame.iloc[:960], frame.iloc[960:]
+    seen = []
+    real = signal_selection.evaluate_on_holdout
+
+    def spy(holdout_df, inner_df, candidate, ctx):
+        seen.extend([holdout_df.index, inner_df.index])
+        return real(holdout_df, inner_df, candidate, ctx)
+
+    monkeypatch.setattr(signal_selection, "evaluate_on_holdout", spy)
+    ctx = _ctx()
+
+    select_combo(signal_combos(ctx, SIGNALS), inner_windows(train_df, ctx))
+
+    assert len(seen) == 3 * 2 * 2  # combos x windows x (val, inner train)
+    assert all(idx.isin(train_df.index).all() for idx in seen)
+    assert not any(idx.isin(test_df.index).any() for idx in seen)
