@@ -423,9 +423,19 @@ shortcut: data is loaded and indicators precomputed twice per symbol.
 
 Known limitations:
 
-- Signal models select their exit combination on the test fold
-  (`src/fwbg/optimization/signal_fold.py:71-148`). This inflates development
-  metrics and the DSR's best SR. Fixing it is a later step.
+- ML folds are still dropped when the chosen setting makes fewer than 5
+  trades on the test fold (`src/fwbg/optimization/process_fold.py`), so the
+  test set still filters ML folds and with them the folds counted in the
+  variant score and `fold_stability`. Signal folds are no longer filtered
+  (see Selection protocol). Candidate for the next step together with the
+  unified merge.
+- The unified simulation (`src/fwbg/optimization/unified_simulation.py`)
+  merges the settings of all folds (medians, majority votes) and
+  re-simulates every test fold with the merged setting. An earlier test fold
+  is thereby traded with settings chosen in later folds, whose training
+  windows contain it, so the unified development metrics stay optimistic
+  (signal and ML models). Next step: a causal unified simulation, recorded
+  as `selection_protocol` 3.
 - Externally cached signal data (e.g. provider probabilities that
   `jev_signal` reads) trained past the cutoff contaminates development and
   holdout alike; the pipeline cannot detect it.
@@ -441,6 +451,61 @@ Known limitations:
   crashes in `run_data_loading` without `params.indicators`
   (`get_default_params` is an instance method, the orchestrator calls it on
   the class).
+
+## Selection protocol
+
+Every symbol result records how its walk-forward chose settings as
+`walk_forward.selection_protocol`
+(`src/fwbg/optimization/selection_protocol.py`); the ledger copies it into
+the symbol's metrics. Protocol 2: in every fold the setting (signal and ML
+models) is chosen on inner windows of the fold's training window, never on
+its test set, and indicator variants are ranked by mean inner validation PnL
+instead of mean test PnL. Runs without the marker predate it.
+
+Before protocol 2, signal models evaluated every exit strategy × model HP ×
+CT combo on the test fold and kept the best: biased development metrics,
+bias ratios of always 1, PBO silently n/a, and a `fold_stability` that was
+the share of folds whose best-of-grid test PnL was positive. Now
+(`src/fwbg/optimization/signal_selection.py`, `signal_fold.py`):
+
+- **Windows:** the inner windows ML uses (`nested_cv_split` with
+  `validation.n_inner_folds` and `validation.embargo_bars`); no new config
+  keys. Stateful indicators keep their fold-level values (no per-window
+  refit; deliberate shortcut, only `fractional_diff` is stateful today).
+- **Criterion:** mean inner validation PnL over all windows, a window
+  without trades counting 0. Eligible: at least one inner trade. Ties keep
+  config order; no sign gate, a negative best is chosen and reported.
+- **Test fold:** only the chosen combo is evaluated, once. A fold without an
+  eligible combo yields no result, its test set untouched (fail closed). A
+  fold whose chosen combo makes no test trade is kept with PnL 0: dropping
+  it would let the test set filter folds.
+- **Cost:** C combos × K inner windows plus one test evaluation per fold,
+  instead of C test evaluations.
+
+**Register.** Signal-model development evaluations without
+`selection_protocol ≥ CURRENT_PROTOCOL` (`src/fwbg/research/stats.py`,
+hand-curated, 2) and whose stored config (`configs/<fingerprint>.json`) has
+`model.type == "signal"` count in N but are never ranked: not the best
+development result (also in `list`, CLI and API), not a V[SR] sample, not
+the DSR's best. The verdict and `show` state how many were left out.
+Earlier ML evaluations and evaluations without a stored config stay
+rankable: ML already chose its setting on inner windows. Rerunning is the
+operator's call.
+
+ML results change too, so old and new runs differ:
+
+- Variants ranked by mean inner validation PnL (before: mean test PnL).
+- `mean_bias_ratio` is Σ test PnL / Σ inner PnL over the folds with a
+  positive inner PnL (before: mean of per-fold ratios, 0 for a fold with
+  inner PnL ≤ 0); no such fold → `None`, which counts as warned. A new
+  warning states "k/n folds without bias ratio".
+- PBO rows are keyed by the full combo (exit strategy, params, HP, regime),
+  so combos that shared a row before are now split and PBO values change.
+- Mixed `None`/integer `timeout_bars` across the grid now get DSR and PBO
+  instead of falling back to `dsr = 0`.
+- Folds with no test trade are left out of win-rate statistics (they still
+  count as folds and in `fold_stability`).
+- `selection_protocol` is stamped on every result, ML included.
 
 ## Tooling
 
@@ -471,8 +536,10 @@ Auto-computed (`src/fwbg/research/commands.py`, `stats.py`): N (counted
 trials and symbol evaluations of the card, plus the register's for
 context), the distinct `criteria_hash` values used, holdout state, the best
 development result (by Sharpe) against the current criteria, the Deflated
-Sharpe Ratio and one line per holdout look. Manual: reason and **reopen
-condition** (what new evidence or capability would justify another round).
+Sharpe Ratio, one line per holdout look and how many signal-model
+evaluations predate selection protocol 2 (counted in N, not ranked; see
+Selection protocol). Manual: reason and **reopen condition** (what new
+evidence or capability would justify another round).
 
 Deflated Sharpe Ratio (step 5, `src/fwbg/research/dsr.py`, the full formula
 of Bailey & López de Prado 2014, stdlib only):
@@ -484,7 +551,8 @@ of Bailey & López de Prado 2014, stdlib only):
 - **V[SR]:** the unbiased sample variance (n − 1) of the per-trade SRs of
   the card's development evaluations that carry return statistics. Legacy
   evaluations of runs before step 5 and `no_edge` evaluations have none;
-  they count in N only.
+  they count in N only, as do signal-model evaluations from before
+  selection protocol 2 (their SRs were chosen on the test folds).
 - **V[SR] floor** (operator decision 2026-10-21): V[SR] is at least the mean
   over those evaluations of 1/(T − 1), T being each one's return count.
   Under the null of zero true SR, a per-trade SR estimated from T returns
@@ -502,8 +570,9 @@ of Bailey & López de Prado 2014, stdlib only):
   "> 0.9999".
 - Fewer than 2 evaluations with return statistics → "too few trials with
   return statistics". Skew and kurtosis that leave no positive SR variance
-  → "not defined". Development metrics of signal models are optimistic (see
-  Holdout look), so the best SR is biased upward.
+  → "not defined". Development metrics stay optimistic through the unified
+  merge (see Holdout look, Known limitations), so the best SR is still
+  biased upward.
 
 Holdout result: one line per holdout trial with the evaluated period
 (`holdout <cutoff>..<end or open>`), each symbol checked against the current
