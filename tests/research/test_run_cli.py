@@ -333,6 +333,15 @@ def test_run_optimizer_refuses_to_run_ungated(optimizer):
     assert not optimizer.results.exists()
 
 
+def test_run_optimizer_refuses_an_ungated_holdout_look(optimizer, monkeypatch, capsys):
+    # Only the gate sets a holdout cutoff; one from the strategy file would look unrecorded.
+    monkeypatch.setenv(GATE_ENV, "off")
+    metadata = {**optimizer.metadata, "holdout_cutoff": "2024-01-01"}
+    assert cli.run_optimizer(strategy_metadata=metadata, run_id="r1") is None
+    assert "holdout_cutoff is set by the research gate" in capsys.readouterr().out
+    assert not optimizer.results.exists()
+
+
 def test_run_optimizer_runs_with_the_gated_metadata(optimizer, monkeypatch):
     seen = []
     captured = []

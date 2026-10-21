@@ -148,7 +148,16 @@ def _inline(self, func, items, progress_callback=None, result_callback=None):
 
 
 def run_inline(monkeypatch, tmp_path: Path, **metadata) -> Path:
-    """The real run_optimizer (gate off) with the worker pool inlined; returns the run dir."""
+    """The real run_optimizer with the worker pool inlined; returns the run dir."""
+    return run_inline_result(monkeypatch, tmp_path, **metadata)[1]
+
+
+def run_inline_result(monkeypatch, tmp_path: Path, **metadata) -> tuple[dict | None, Path]:
+    """The real run_optimizer (gate off) with the worker pool inlined; its result and run dir.
+
+    A ``holdout_cutoff`` reaches the run through a stand-in gate (``before_run``),
+    the only way a real holdout look gets one.
+    """
     for name in ("DATA_PATH", "TIMEFRAME", "tf_cfg", "OOS_SIZE", "WINDOW_SIZE", "RESAMPLE_FROM"):
         monkeypatch.setattr(data_config, name, getattr(data_config, name))
     monkeypatch.setattr(progress, "_progress_queue", progress._progress_queue)
@@ -159,7 +168,11 @@ def run_inline(monkeypatch, tmp_path: Path, **metadata) -> Path:
     data = tmp_path / "data"
     data.mkdir()
     (data / SYMBOL_FILE).write_text("time,O,H,L,C\n", encoding="utf-8")
-    cli.run_optimizer(
-        strategy_metadata={**METADATA, "_cli_data_path": str(data), **metadata}, run_id="r1"
+    cutoff = metadata.pop("holdout_cutoff", None)
+    before_run = (lambda meta, symbols: {**meta, "holdout_cutoff": cutoff}) if cutoff else None
+    result = cli.run_optimizer(
+        strategy_metadata={**METADATA, "_cli_data_path": str(data), **metadata},
+        run_id="r1",
+        before_run=before_run,
     )
-    return tmp_path / "results" / "r1"
+    return result, tmp_path / "results" / "r1"
