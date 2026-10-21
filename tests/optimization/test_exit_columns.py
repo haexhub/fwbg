@@ -10,7 +10,8 @@ import ta
 from fwbg.core.config import StrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.data.assets import AssetConfig
-from fwbg.optimization.process_fold import prepare_fold_data
+from fwbg.optimization import process_fold
+from fwbg.optimization.process_fold import prepare_fold_data, process_single_fold
 from fwbg.optimization.robust_validation import WalkForwardFold
 from fwbg.optimization.signal_fold import prepare_signal_fold_data
 from fwbg.plugins import import_plugin_module
@@ -22,10 +23,10 @@ ASSET = AssetConfig(
 )
 
 
-def _context(exit_params: dict) -> SimulationContext:
+def _context(exit_params: dict, required: tuple[str, ...] = ("feat1",)) -> SimulationContext:
     strategy = StrategyConfig.from_dict(
         {
-            "model": {"type": "xgboost", "required_features": ["feat1"]},
+            "model": {"type": "xgboost", "required_features": list(required)},
             "exit_strategies": [
                 {"name": "orb_based", "params": {"tp_mult": 1.0, "sl_mult": 2.0, **exit_params}}
             ],
@@ -150,3 +151,13 @@ def test_signal_fold_nan_stop_rows_fall_back_to_atr():
     atr = ta.volatility.average_true_range(test_df["H"], test_df["L"], test_df["C"], window=14)
     expected = np.maximum(np.nan_to_num(atr.to_numpy()) * 2.0, ctx.spread)
     np.testing.assert_allclose(sl_dists[nan_rows], expected[nan_rows])
+
+
+def test_a_fold_without_selected_features_is_skipped_not_trained_on_the_stop(monkeypatch):
+    """The named stop column is no forced feature: with nothing selected the
+    fold is skipped instead of training a model on the stop column alone."""
+    monkeypatch.setattr(process_fold, "select_features", lambda *args: (None, None))
+    monkeypatch.setattr(process_fold, "run_grid_search", lambda *a, **k: pytest.fail("trained"))
+    ctx = _context({"sl_dist_column": "rb8_orb_s00_sl_dist"}, required=())
+    result = process_single_fold(_fold(), 0, 1, [], None, None, ctx, "TEST", 0)
+    assert result == (None, [])
