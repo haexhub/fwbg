@@ -5,6 +5,7 @@ Hauptmodul für die Verarbeitung einzelner Symbole mit Walk-Forward Optimierung.
 Fold-Verarbeitung ist in process_fold.py ausgelagert.
 Grid-Search Funktionen sind in grid_search.py ausgelagert.
 """
+import functools
 import gc
 import os
 import re
@@ -455,14 +456,20 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
     return df
 
 
+def _records_selection_protocol(func):
+    """Every result of *func*, early returns and errors included, records its selection protocol."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        result["selection_protocol"] = SELECTION_PROTOCOL
+        return result
+
+    return wrapper
+
+
+@_records_selection_protocol
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
-    """Walk-forward development of one symbol; every result records its selection protocol."""
-    result = _process_symbol(csv_path, strategy)
-    result["selection_protocol"] = SELECTION_PROTOCOL
-    return result
-
-
-def _process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     """
     Verarbeitet ein einzelnes Symbol mit Walk-Forward Optimierung.
 
