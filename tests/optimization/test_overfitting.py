@@ -164,8 +164,39 @@ class TestBuildPerformanceMatrix:
                 grid_results_by_fold.setdefault(gr["fold_id"], []).append(gr)
 
         matrix, combo_keys = build_performance_matrix(grid_results_by_fold)
-        assert matrix.shape[1] == 2
-        assert len(combo_keys) == matrix.shape[0] > 0
+        # tp 2 / ct 0.5, tp 6 / ct 0.5 and tp 6 / ct 0.6: the CT pair keeps two rows.
+        assert matrix.shape == (3, 2)
+        assert len(set(combo_keys)) == 3
+
+    def test_combos_differing_only_by_ct_or_hp_keep_their_rows(self):
+        base = {"exit_strategy": "fixed", "tp_mult": 2, "sl_mult": 4, "timeout_bars": None}
+        entries = [
+            {**base, "ct": 0.5, "model_hyperparameters": {"a": [1, 2]}, "inner_val_pnl": 1.0},
+            {**base, "ct": 0.6, "model_hyperparameters": {"a": [1, 2]}, "inner_val_pnl": 2.0},
+            {**base, "ct": 0.5, "model_hyperparameters": {"a": [3]}, "inner_val_pnl": 3.0},
+        ]
+        matrix, _ = build_performance_matrix({0: entries, 1: entries})
+        assert sorted(matrix[:, 0]) == [1.0, 2.0, 3.0]
+
+    def test_ml_entries_match_across_folds_despite_their_chosen_ct(self):
+        """An ML entry's conf_thresh is chosen per fold, not a grid dimension."""
+        entry = {"exit_strategy": "atr_based", "tp_mult": 2, "sl_mult": 1, "timeout_bars": 0}
+        matrix, _ = build_performance_matrix(
+            {
+                0: [{**entry, "conf_thresh": 0.55, "inner_val_pnl": 1.0}],
+                1: [{**entry, "conf_thresh": 0.65, "inner_val_pnl": 2.0}],
+            }
+        )
+        assert matrix.tolist() == [[1.0, 2.0]]
+
+    def test_none_and_int_timeouts_sort_without_error(self):
+        entries = [
+            {"tp_mult": 2, "sl_mult": 4, "timeout_bars": None, "inner_val_pnl": 1.0},
+            {"tp_mult": 2, "sl_mult": 4, "timeout_bars": 12, "inner_val_pnl": 2.0},
+        ]
+        matrix, combo_keys = build_performance_matrix({0: entries, 1: entries})
+        assert matrix.shape == (2, 2)
+        assert len(combo_keys) == 2
 
 
 class TestProbabilityOfBacktestOverfitting:
