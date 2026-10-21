@@ -186,6 +186,15 @@ class TestBuildPerformanceMatrix:
         matrix, _ = build_performance_matrix({0: entries, 1: entries})
         assert sorted(matrix[:, 0]) == [1.0, 2.0, 3.0]
 
+    def test_combos_differing_only_by_entry_settings_keep_their_rows(self):
+        base = {"exit_strategy": "fixed", "tp_mult": 2, "sl_mult": 4, "timeout_bars": None}
+        entries = [
+            {**base, "entry_modifier": "plain", "entry_modifier_params": {}, "inner_val_pnl": 1.0},
+            {**base, "entry_modifier": "scale_in", "entry_modifier_params": {"levels": [0.5]}, "inner_val_pnl": 2.0},
+        ]
+        matrix, _ = build_performance_matrix({0: entries, 1: entries})
+        assert sorted(matrix[:, 0]) == [1.0, 2.0]
+
     def test_ml_entries_match_across_folds_despite_their_chosen_ct(self):
         """An ML entry's conf_thresh is chosen per fold, not a grid dimension."""
         entry = {"exit_strategy": "atr_based", "tp_mult": 2, "sl_mult": 1, "timeout_bars": 0}

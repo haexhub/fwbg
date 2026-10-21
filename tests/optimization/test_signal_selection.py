@@ -8,6 +8,7 @@ from fwbg.optimization.nested_cv import nested_cv_split
 from fwbg.optimization.signal_fold import process_signal_fold
 from fwbg.optimization.signal_selection import (
     inner_windows,
+    score_combo,
     select_combo,
     signal_combos,
 )
@@ -67,6 +68,9 @@ def test_combos_cover_exits_x_hp_x_ct_in_config_order():
     assert last.ctx.separate_long_short is True
     assert last.ctx.model_hyperparameters == {"base": 1, "signal_column_long": "x"}
     assert first.config is exits[0] and last.config is exits[1]
+    scored = score_combo(first, [])
+    assert scored["entry_modifier"] == "delay"
+    assert scored["entry_modifier_params"] == {"bars": 2}
 
 
 def test_signal_fold_grid_entries_keep_the_combo_order():
@@ -199,6 +203,8 @@ def test_grid_entries_carry_inner_metrics(monkeypatch):
         "timeout_bars": None,
         "exit_params": {"tp_mult": 2, "sl_mult": 4},
         "exit_modifier_params": {},
+        "entry_modifier": None,
+        "entry_modifier_params": {},
         "model_hyperparameters": {"signal_column_long": "x"},
         "inner_val_pnl": 1.0,
         "inner_trades": 3,

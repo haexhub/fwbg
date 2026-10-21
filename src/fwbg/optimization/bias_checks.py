@@ -6,6 +6,7 @@ wenn Sample Bias erkannt wird.
 """
 import sys
 import os
+import math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tests'))
 
 from typing import Dict, Any, List
@@ -34,11 +35,35 @@ def fold_bias_ratios(fold_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     PnL of the whole test fold, and the two differ in length; a ratio of 1 is not
     equal per-bar performance (ML and signal models alike).
     """
-    with_ratio = [r for r in fold_results if r["inner_val_pnl"] > 0]
-    inner_sum = sum(r["inner_val_pnl"] for r in with_ratio)
+    with_ratio = []
+    for result in fold_results:
+        inner_pnl = result.get("inner_val_pnl")
+        test_pnl = result.get("test_pnl")
+        try:
+            valid_pnl = math.isfinite(inner_pnl) and inner_pnl > 0 and math.isfinite(test_pnl)
+        except (TypeError, ValueError):
+            valid_pnl = False
+        if not valid_pnl:
+            continue
+        ratio = test_pnl / inner_pnl
+        try:
+            ratio_is_finite = math.isfinite(ratio)
+        except (TypeError, ValueError):
+            ratio_is_finite = False
+        if ratio_is_finite:
+            with_ratio.append((inner_pnl, test_pnl, ratio))
+
+    try:
+        inner_sum = math.fsum(inner_pnl for inner_pnl, _, _ in with_ratio)
+        test_sum = math.fsum(test_pnl for _, test_pnl, _ in with_ratio)
+        mean_bias_ratio = test_sum / inner_sum if with_ratio else None
+    except (OverflowError, ZeroDivisionError):
+        mean_bias_ratio = None
+    if mean_bias_ratio is not None and not math.isfinite(mean_bias_ratio):
+        mean_bias_ratio = None
     return {
-        "bias_ratios": [r["test_pnl"] / r["inner_val_pnl"] for r in with_ratio],
-        "mean_bias_ratio": sum(r["test_pnl"] for r in with_ratio) / inner_sum if with_ratio else None,
+        "bias_ratios": [ratio for _, _, ratio in with_ratio],
+        "mean_bias_ratio": mean_bias_ratio,
         "folds_without_bias_ratio": len(fold_results) - len(with_ratio),
     }
 
@@ -188,9 +213,10 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
     for result in ok_assets:
         wf = result.get("walk_forward", {})
         if not wf:
+            warned_assets.append({"symbol": result.get("symbol", "UNKNOWN"), "mean_bias": None})
             continue
 
-        mean_bias = wf.get("mean_bias_ratio", 0)
+        mean_bias = wf.get("mean_bias_ratio")
         symbol = result.get("symbol", "UNKNOWN")
 
         if mean_bias is None:
@@ -214,21 +240,27 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
             ok_count += 1
 
     total = len(ok_assets)
-    bias_percentage = len(biased_assets) / total if total > 0 else 0
+    unchecked = sum(1 for asset in warned_assets if asset["mean_bias"] is None)
+    measurable = total - unchecked
+    bias_percentage = len(biased_assets) / measurable if measurable > 0 else 0
 
     # System-wide Check
     if bias_percentage > 0.2:
         status = "SYSTEMATIC_BIAS"
         severity = "🚨"
-        message = f"SYSTEMATIC BIAS! {len(biased_assets)}/{total} assets ({bias_percentage*100:.0f}%) have mean_bias >1.5x"
+        message = f"SYSTEMATIC BIAS! {len(biased_assets)}/{measurable} measurable assets ({bias_percentage*100:.0f}%) have mean_bias >1.5x"
     elif bias_percentage > 0.1:
         status = "WARNING"
         severity = "⚠️ "
-        message = f"Warning: {len(biased_assets)}/{total} assets ({bias_percentage*100:.0f}%) have mean_bias >1.5x"
+        message = f"Warning: {len(biased_assets)}/{measurable} measurable assets ({bias_percentage*100:.0f}%) have mean_bias >1.5x"
+    elif unchecked:
+        status = "WARNING"
+        severity = "⚠️ "
+        message = f"Warning: bias unavailable for {unchecked}/{total} assets (no defined mean_bias_ratio)"
     else:
         status = "OK"
         severity = "✓"
-        message = f"System OK: Only {len(biased_assets)}/{total} assets biased (<10%)"
+        message = f"System OK: Only {len(biased_assets)}/{measurable} measurable assets biased (<10%)"
 
     # Logging
     if verbose:
@@ -259,6 +291,8 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
         "ok_assets": ok_count,
         "warned_assets": len(warned_assets),
         "biased_assets": len(biased_assets),
+        "measurable_assets": measurable,
+        "unchecked_assets": unchecked,
         "bias_percentage": bias_percentage,
         "biased_list": biased_assets,
         "message": message,

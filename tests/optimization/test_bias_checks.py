@@ -63,6 +63,17 @@ def test_no_positive_inner_pnl_leaves_the_mean_undefined():
     assert bias == {"bias_ratios": [], "mean_bias_ratio": None, "folds_without_bias_ratio": 2}
 
 
+def test_non_finite_pnl_is_excluded_from_bias_ratios():
+    bias = fold_bias_ratios(
+        [_fold(float("nan"), 1.0), _fold(1.0, float("inf")), _fold(2.0, 4.0)]
+    )
+    assert bias == {
+        "bias_ratios": [2.0],
+        "mean_bias_ratio": 2.0,
+        "folds_without_bias_ratio": 2,
+    }
+
+
 def test_folds_without_a_ratio_are_a_warning_not_ok():
     check = check_asset_bias(_result([1.0], 1.0, 2), verbose=False)
     assert check["bias_check"] == "warning"
@@ -86,6 +97,15 @@ def test_systematic_check_does_not_count_an_undefined_mean_as_ok():
     check = check_systematic_bias([_result([], None, 6)], verbose=True)
     assert check["ok_assets"] == 0
     assert check["warned_assets"] == 1
+
+
+def test_systematic_bias_uses_only_measurable_assets_and_warns_on_unchecked():
+    results = [_result([], 2.0, 0)] + [_result([], None, 6) for _ in range(9)]
+    check = check_systematic_bias(results, verbose=False)
+    assert check["status"] == "systematic_bias"
+    assert check["bias_percentage"] == 1.0
+    assert check["measurable_assets"] == 1
+    assert check["unchecked_assets"] == 9
 
 
 def test_a_run_with_inner_pnl_at_or_below_zero_records_no_ratio(monkeypatch, tmp_path):

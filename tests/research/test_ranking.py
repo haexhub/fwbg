@@ -22,6 +22,7 @@ from fwbg.research.stats import (
     unranked_evaluations,
     unranked_note,
 )
+from fwbg.research.stats import _grid_variants
 from fwbg.research.views import card_summary, list_lines, show_text
 from tests.research.factories import make_card, make_trial
 
@@ -166,6 +167,14 @@ def test_unrankable_configs_reads_model_type_and_indicator_grid(gate_register, c
         ml_product: INDICATOR_GRID,
     }
     assert f"configs/{'d' * 64}.json" in caplog.text
+
+
+def test_grid_variant_count_matches_expander_for_iterables_and_scalars():
+    assert _grid_variants({"or": {"bars": (4, 8)}}) == 2
+    assert _grid_variants({"or": {}}) == 1
+    assert _grid_variants({}) == 1
+    with pytest.raises(TypeError):
+        _grid_variants({"or": {"bars": 4}})
 
 
 # --- verdict, show, list, API summary ----------------------------------------

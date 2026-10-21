@@ -108,6 +108,8 @@ _COMBO_FIELDS = (
     "ct",
     "exit_params",
     "exit_modifier_params",
+    "entry_modifier",
+    "entry_modifier_params",
     "model_hyperparameters",
     "regime_filter",
 )
