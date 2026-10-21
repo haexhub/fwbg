@@ -87,13 +87,8 @@ def process_symbol_holdout(csv_path: str, strategy: StrategyConfig) -> dict:
     report_phase(sym, "Holdout evaluation...")
     try:
         result = _evaluate(csv_path, strategy, development)
-    except Exception as exc:  # like process_symbol: a crash is this symbol's error
-        tb = traceback.format_exc()
-        log(1, f"Holdout evaluation failed: {exc}", sym)
-        result = _not_evaluated(
-            development, cutoff, f"holdout evaluation failed: {exc}", status="error"
-        )
-        result["error"] = f"{exc}\n{tb}"
+    except Exception as exc:  # before any holdout trade exists: not evaluated
+        result = _failed(development, {"cutoff": cutoff, "evaluated": False}, exc)
     report_done(sym, result["status"])
     return result
 
@@ -153,7 +148,11 @@ def _evaluate(csv_path: str, strategy: StrategyConfig, development: dict) -> dic
         return _not_evaluated(
             development, cutoff, "holdout window too short to evaluate", status="insufficient_data"
         )
-    return _holdout_result(development, evaluations[0], fold, cutoff, ctx.embargo_bars)
+    holdout = _look(fold, evaluations[0], cutoff, ctx.embargo_bars)
+    try:
+        return _holdout_result(development, evaluations[0], fold, holdout)
+    except Exception as exc:  # the holdout trades exist: the data was looked at
+        return _failed(development, holdout, exc)
 
 
 def _variant(strategy: StrategyConfig, label: str | None) -> StrategyConfig:
@@ -167,8 +166,25 @@ def _variant(strategy: StrategyConfig, label: str | None) -> StrategyConfig:
     raise ValueError(f"indicator variant {label!r} not in the grid")
 
 
+def _look(fold: WalkForwardFold, evaluation: dict, cutoff: str | None, embargo: int) -> dict:
+    """What the holdout look touched: its windows, trades and the features it could not use."""
+    return {
+        "cutoff": cutoff,
+        "evaluated": True,
+        "train_start": fold.train_df.index[0].isoformat(),
+        "train_end": fold.train_df.index[-1].isoformat(),
+        "test_start": fold.test_df.index[0].isoformat(),
+        "test_end": fold.test_df.index[-1].isoformat(),
+        "bars": len(fold.test_df),
+        "embargo_bars": embargo,
+        "trades": len(evaluation["trades"]),
+        # Candidate features the preparation dropped (e.g. all-NaN after the cutoff).
+        "dropped_features": evaluation.get("dropped_features", []),
+    }
+
+
 def _holdout_result(
-    development: dict, evaluation: dict, fold: WalkForwardFold, cutoff: str | None, embargo: int
+    development: dict, evaluation: dict, fold: WalkForwardFold, holdout: dict
 ) -> dict:
     sym = development["symbol"]
     config = development["config"]
@@ -178,18 +194,7 @@ def _holdout_result(
         trades, config["risk_per_trade"], config["circuit_breaker"], development["tr_trace"]
     )
     years = len(fold.test_df) / (data_config.tf_cfg["bars_per_hour"] * 24 * 250)
-    holdout = {
-        "cutoff": cutoff,
-        "evaluated": True,
-        "train_start": fold.train_df.index[0].isoformat(),
-        "train_end": fold.train_df.index[-1].isoformat(),
-        "test_start": fold.test_df.index[0].isoformat(),
-        "test_end": fold.test_df.index[-1].isoformat(),
-        "bars": len(fold.test_df),
-        "embargo_bars": embargo,
-        "trades": len(trades),
-        "sized_trades": len(pnl),
-    }
+    holdout["sized_trades"] = len(pnl)
     if not trades:
         log(1, "HOLDOUT - no trades after the cutoff", sym)
         return {
@@ -231,6 +236,18 @@ def _holdout_result(
         "trades_detailed": slim_trades(detailed) if len(detailed) == len(trades) else [],
         "holdout": holdout,
         "development": development_summary(development),
+    }
+
+
+def _failed(development: dict, holdout: dict, exc: Exception) -> dict:
+    """A crash in the holdout phase is this symbol's error, like in process_symbol."""
+    log(1, f"Holdout evaluation failed: {exc}", development["symbol"])
+    return {
+        "symbol": development["symbol"],
+        "status": "error",
+        "holdout": {**holdout, "reason": f"holdout evaluation failed: {exc}"},
+        "development": development_summary(development),
+        "error": f"{exc}\n{traceback.format_exc()}",
     }
 
 

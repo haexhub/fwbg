@@ -2,12 +2,13 @@
 
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
 from fwbg.core.config import StrategyConfig, ValidationConfig
-from fwbg.optimization import holdout, process
+from fwbg.optimization import holdout, process, unified_simulation
 from fwbg.optimization.causal_reporting import sized_returns
 from fwbg.optimization.holdout import HOLDOUT_STATUSES, process_symbol_holdout, symbol_worker
 from fwbg.optimization.process import process_symbol
@@ -15,6 +16,7 @@ from fwbg.optimization.signal_fold import prepare_signal_fold_data
 from fwbg.research.dsr import return_statistics
 from fwbg.simulation.trade import monte_carlo_permutation_test
 from fwbg.statuses import EXECUTED_STATUSES, NOT_EXECUTED_STATUSES
+from tests.optimization import symbol_harness
 from tests.optimization.symbol_harness import (
     CUTOFF,
     HOLDOUT,
@@ -26,6 +28,7 @@ from tests.optimization.symbol_harness import (
     patch_development,
     patch_holdout,
     run_inline,
+    unified_fold,
 )
 
 LOOK = replace(STRATEGY, holdout_cutoff=CUTOFF)
@@ -243,3 +246,90 @@ def test_a_holdout_run_completes_whether_or_not_it_looked(monkeypatch, tmp_path,
     run = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
     config = json.loads((run / "grid_details" / "EURUSD" / "config.json").read_text("utf-8"))
     assert config["status"] == status
+
+
+def test_a_crash_after_the_holdout_trades_exist_counts_as_evaluated(monkeypatch):
+    patch_development(monkeypatch, WINNING)
+    patch_holdout(monkeypatch)
+
+    def crash(pnl, returns):
+        raise RuntimeError("monte carlo exploded")
+
+    monkeypatch.setattr(holdout, "monte_carlo_summary", crash)
+    result = process_symbol_holdout(SYMBOL_FILE, LOOK)
+    assert result["status"] == "error"
+    assert result["holdout"]["evaluated"] is True  # the holdout data was looked at
+    assert result["holdout"]["trades"] == len(HOLDOUT)
+    assert "monte carlo exploded" in result["holdout"]["reason"]
+    assert "monte carlo exploded" in result["error"]
+    assert not NOT_REPORTED & result.keys()
+
+
+# --- the real one-fold unified simulation (prepare_fold_data, no patch_holdout) ---
+
+
+def featured_frame() -> pd.DataFrame:
+    """Hours with a causal feature f1 and a feed f2 that stops at the cutoff."""
+    frame = hourly_frame()
+    frame["f1"] = frame["C"].pct_change().shift(1)
+    frame["f2"] = frame["f1"].where(frame.index < pd.Timestamp(CUTOFF))
+    return frame
+
+
+def spy_evaluation(monkeypatch) -> list[dict]:
+    """evaluate_on_holdout records what it was given and answers HOLDOUT on its test frame."""
+    calls = []
+
+    def evaluate(holdout_df, inner_df, candidate, ctx):
+        calls.append({"holdout_df": holdout_df, "inner_df": inner_df, "candidate": candidate})
+        return unified_fold(SimpleNamespace(test_df=holdout_df), HOLDOUT)
+
+    monkeypatch.setattr(unified_simulation, "evaluate_on_holdout", evaluate)
+    return calls
+
+
+PIPELINES = {
+    "no indicators": {},
+    "precomputed raw indicator": {"indicators": [{"name": "sma"}]},
+    "stateful indicator": {"indicators": [{"name": "autoencoder_features"}]},
+    "preprocessed": {
+        "preprocessing": [{"name": "fractional_diff"}],
+        "indicators": [{"name": "sma"}],
+    },
+}
+
+
+@pytest.mark.parametrize("pipeline", PIPELINES.values(), ids=PIPELINES.keys())
+def test_the_real_holdout_fold_trains_before_the_embargo_and_tests_after_the_cutoff(
+    monkeypatch, pipeline
+):
+    look = replace(LOOK, pipeline=pipeline, validation=ValidationConfig(folds=4, embargo_bars=5))
+    patch_development(monkeypatch, WINNING)
+    monkeypatch.setattr(process, "load_data_aligned", lambda path: featured_frame())
+    calls = spy_evaluation(monkeypatch)
+    development = process_symbol(SYMBOL_FILE, replace(look, end_date=CUTOFF, holdout_cutoff=None))
+    result = process_symbol_holdout(SYMBOL_FILE, look)
+    [call] = calls
+    frame = featured_frame()
+    n_dev = int(frame.index.searchsorted(pd.Timestamp(CUTOFF)))
+    assert call["inner_df"].index.max() <= frame.index[n_dev - 5 - 1]
+    assert call["holdout_df"].index.min() >= pd.Timestamp(CUTOFF)
+    assert call["candidate"] == development["unified_candidate"]
+    assert "f1" in call["inner_df"].columns
+    assert result["status"] == "ok" and result["holdout"]["dropped_features"] == []
+
+
+def test_candidate_features_the_holdout_cannot_use_are_recorded(monkeypatch):
+    fold_result = symbol_harness.fold_result
+
+    def with_feed(fold):
+        return {**fold_result(fold), "selected_features_long": ["f1", "f2"]}
+
+    patch_development(monkeypatch, WINNING)
+    monkeypatch.setattr(symbol_harness, "fold_result", with_feed)
+    monkeypatch.setattr(process, "load_data_aligned", lambda path: featured_frame())
+    calls = spy_evaluation(monkeypatch)
+    result = process_symbol_holdout(SYMBOL_FILE, LOOK)
+    assert result["development"]["config"]["features"] == ["f1", "f2"]
+    assert calls[0]["candidate"]["selected_features_long"] == ["f1"]
+    assert result["holdout"]["dropped_features"] == ["f2"]
