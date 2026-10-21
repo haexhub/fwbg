@@ -88,13 +88,14 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
         np.ndarray der Level-Preise oder None (sl_level nicht gesetzt/none
         oder keine passende Spalte).
 
-    ``sl_level_column`` in exit_params wählt die Spalte explizit; ohne sie
-    müssen die Kandidaten eindeutig sein (z. B. nur eine ORB-Session).
+    ``sl_level_column`` in exit_params wählt die Spalte explizit (Name oder
+    fnmatch-Glob-Muster mit genau einem Treffer); ohne sie müssen die
+    Kandidaten eindeutig sein (z. B. nur eine ORB-Session).
 
     Raises:
         ValueError: wenn der Suffix nicht in den Schema-Choices enthalten ist.
-        AmbiguousColumnError: wenn mehrere Spalten passen und
-            ``sl_level_column`` fehlt.
+        ColumnRoleError: wenn mehrere Spalten passen und ``sl_level_column``
+            fehlt, oder ein Muster keine bzw. mehrere Spalten trifft.
     """
     sl_level_suffix = exit_params.get("sl_level")
     if not sl_level_suffix or sl_level_suffix == "none":

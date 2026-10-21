@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from fwbg.data.config import MIN_TRADES
+from fwbg.core.columns import named_columns
 from fwbg.core.config import RegimeFilterConfig
 from fwbg.pipeline import (
     compute_indicator_pool, get_feature_columns, compute_regime_bitmask,
@@ -215,7 +216,9 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
     # Feature pool cleaning: identify columns to drop (inf, >10% NaN)
     full_pool = get_feature_columns(train_df)
 
-    protected_cols = set(ctx.required_features or []) | set(ctx.exit_columns or [])
+    protected_cols = set(ctx.required_features or []) | set(
+        named_columns(train_df.columns, ctx.exit_columns or [])
+    )
     clean_pool = []
     excluded_inf = 0
     excluded_nan = 0
