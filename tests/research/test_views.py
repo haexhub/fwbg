@@ -352,7 +352,7 @@ def test_card_summary_counts_trials_and_names_the_best_development_result():
         make_trial(trial_id="T-000002", kind=TrialKind.HOLDOUT, metrics={"GOLD": {"sharpe": 3.0}}),
         make_trial(trial_id="T-000003", status=TrialStatus.FAILED),
     ]
-    assert views.card_summary(card, own, running=1) == {
+    assert views.card_summary(card, own, running=1, unrankable={}) == {
         "id": "S-0007",
         "title": "CUSUM event continuation",
         "status": "active",
@@ -367,7 +367,7 @@ def test_card_summary_counts_trials_and_names_the_best_development_result():
 
 
 def test_card_summary_without_results():
-    summary = views.card_summary(make_card(), [], running=0)
+    summary = views.card_summary(make_card(), [], running=0, unrankable={})
     assert (summary["trials"], summary["best"], summary["holdout_used"]) == (0, None, False)
 
 

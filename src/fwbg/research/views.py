@@ -14,7 +14,15 @@ from fwbg.research.fingerprint import canonical_json
 from fwbg.research.gate import criteria_denials
 from fwbg.research.ledger import LEDGER_FILENAME, Trial, TrialKind, read_trials
 from fwbg.research.pending import PendingError, live_runs
-from fwbg.research.stats import best_result, evaluations
+from fwbg.research.repo import config_path
+from fwbg.research.stats import (
+    best_result,
+    evaluations,
+    plural,
+    unrankable_configs,
+    unranked_evaluations,
+    unranked_note,
+)
 
 WIDTH = 120
 # Indented by two spaces in ``show``.
@@ -42,15 +50,23 @@ def list_lines(
 ) -> list[str]:
     """One line per card, in id order; a card that does not load shows its error."""
     trials = read_trials(research_dir / LEDGER_FILENAME)
+    unrankable = unrankable_configs(research_dir, trials)
     rows: list[tuple[str, ...] | str] = []
     for card_id, card in iter_cards(research_dir, status, tag):
         if isinstance(card, CardError):
             rows.append(f"{card_id}  unreadable: {card}")
             continue
         own = [trial for trial in trials if trial.strategy == card.id]
-        counted = _plural(sum(trial.counted for trial in own), "trial")
+        counted = plural(sum(trial.counted for trial in own), "trial")
         rows.append(
-            (counted, _best(own), _holdout(card, own), card.id, card.status.value, card.title)
+            (
+                counted,
+                _best(own, unrankable),
+                _holdout(card, own),
+                card.id,
+                card.status.value,
+                card.title,
+            )
         )
     # Column widths over all rows, so a long symbol or a two-digit count does not shift the rest.
     widths = [
@@ -99,6 +115,7 @@ def show_text(research_dir: Path, card_id: str) -> str:
     own = [t for t in read_trials(research_dir / LEDGER_FILENAME) if t.strategy == card.id]
     name_width = max(len(name) for name in card.success_criteria)
     counted = sum(trial.counted for trial in own)
+    unranked = unranked_note(unranked_evaluations(own, unrankable_configs(research_dir, own)))
     lines = [
         _clip(f"{card.id}  {card.title}"),
         _clip(
@@ -117,6 +134,7 @@ def show_text(research_dir: Path, card_id: str) -> str:
         "",
         f"Trials: {counted} counted ({evaluations(own)} symbol evaluations), "
         f"{len(own) - counted} failed or smoke",
+        *([unranked] if unranked is not None else []),
         *(_trial_row(trial) for trial in own),
         "",
         *coverage_section(research_dir, own),
@@ -124,12 +142,20 @@ def show_text(research_dir: Path, card_id: str) -> str:
     return "\n".join(lines)
 
 
-def card_summary(card: ResearchCard, own: Sequence[Trial], running: int | None) -> dict[str, Any]:
+def card_summary(
+    card: ResearchCard,
+    own: Sequence[Trial],
+    running: int | None,
+    *,
+    unrankable: Mapping[str, str],
+) -> dict[str, Any]:
     """One card's list entry as JSON-ready data; *own* are its trials.
 
-    *running* is the number of its live runs, ``None`` if unknown.
+    *running* is the number of its live runs, ``None`` if unknown; *unrankable*
+    maps the fingerprints not ranked before the inner-selection protocol to their
+    reason (:func:`~fwbg.research.stats.unrankable_configs`).
     """
-    best = best_result(own)
+    best = best_result(own, unrankable)
     return {
         "id": card.id,
         "title": card.title,
@@ -218,8 +244,8 @@ def card_ids(research_dir: Path) -> list[str]:
     )
 
 
-def _best(own: Sequence[Trial]) -> str:
-    best = best_result(own)
+def _best(own: Sequence[Trial], unrankable: Mapping[str, str]) -> str:
+    best = best_result(own, unrankable)
     if best is None:
         return "best Sharpe -"
     return f"best Sharpe {best.sharpe:.2f} ({best.trial_id} {best.symbol})"
@@ -280,7 +306,7 @@ def coverage_section(research_dir: Path, own: Sequence[Trial]) -> list[str]:
     configs = []
     left_out = 0
     for fingerprint in dict.fromkeys(trial.fingerprint for trial in own):
-        path = research_dir / "configs" / f"{fingerprint.removeprefix('sha256:')}.json"
+        path = config_path(research_dir, fingerprint)
         if not path.exists():
             # Study trials carry synthetic fingerprints without a stored config.
             left_out += sum(trial.fingerprint == fingerprint for trial in own)
@@ -289,9 +315,9 @@ def coverage_section(research_dir: Path, own: Sequence[Trial]) -> list[str]:
             configs.append(json.loads(path.read_text(encoding="utf-8")))
         except ValueError as exc:
             raise CommandError(f"configs/{path.name}: {exc}") from exc
-    header = f"Coverage: {_plural(len(configs), 'config')}"
+    header = f"Coverage: {plural(len(configs), 'config')}"
     if left_out:
-        header += f" ({_plural(left_out, 'trial')} without a stored config left out)"
+        header += f" ({plural(left_out, 'trial')} without a stored config left out)"
     evaluated = {symbol for trial in own for symbol in trial.metrics}
     return [header, *(f"  {line}" for line in coverage(configs, evaluated))]
 
@@ -336,10 +362,6 @@ def _value_list(values: Sequence[str], room: int) -> str:
         if len(text) <= room or len(shown) <= 1:
             return _clip(text, room)
         shown.pop()
-
-
-def _plural(count: int, noun: str) -> str:
-    return f"{count} {noun}{'' if count == 1 else 's'}"
 
 
 def _clip(text: str, width: int = WIDTH) -> str:

@@ -797,6 +797,8 @@ class TestCandidateStoresModelHyperparameters:
             symbol="TEST", asset_class="FOREX", spread=0.0001, point=0.0001,
             model_hyperparameters={"signal_column_long": "test_col"},
             exit_modifier_params={},
+            entry_modifier="scale_in",
+            entry_modifier_params={"levels": [0.5]},
         )
 
         _, grid_result = _build_candidate_and_grid_result(
@@ -807,6 +809,8 @@ class TestCandidateStoresModelHyperparameters:
         assert grid_result is not None
         assert "model_hyperparameters" in grid_result
         assert grid_result["model_hyperparameters"]["signal_column_long"] == "test_col"
+        assert grid_result["entry_modifier"] == "scale_in"
+        assert grid_result["entry_modifier_params"] == {"levels": [0.5]}
 
     def test_candidate_model_hp_reflects_combo_ctx_variant(self):
         """When _build_combo_tuples creates combo_ctx with merged HP variant,

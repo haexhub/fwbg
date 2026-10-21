@@ -5,7 +5,7 @@ import os
 
 from fwbg.data.config import convert_numpy
 
-_CONFIG_BLOCKS = ("overfitting", "holdout")
+_CONFIG_BLOCKS = ("overfitting", "holdout", "selection_protocol")
 
 
 def config_extras(result: dict) -> dict:

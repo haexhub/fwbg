@@ -523,7 +523,7 @@ def run_optimizer(
 
             # Walk-Forward
             wf = result.get("walk_forward", {})
-            std_wr = wf.get("std_win_rate", 0)
+            std_wr = wf.get("std_win_rate") or 0  # None: no fold traded
             std_pnl = wf.get("std_pnl", 0)
             n_folds = wf.get("n_folds", 0)
             mean_bias = wf.get("mean_bias_ratio", 0)
@@ -548,7 +548,8 @@ def run_optimizer(
             output_lines.append(f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}")
             sharpe_text = "n/a" if sharpe is None else f"{sharpe:.2f}"
             output_lines.append(f"  Performance: Sharpe={sharpe_text}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
-            output_lines.append(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
+            mean_bias_text = "n/a" if mean_bias is None else f"{mean_bias:.2f}x"
+            output_lines.append(f"  Bias: Mean={mean_bias_text}, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
 
             # Status-spezifische Zeilen
             if status == "ok":
@@ -581,7 +582,7 @@ def run_optimizer(
             if best_grid:
                 output_lines.append(f"  Best Grid: TP={best_grid.get('tp_mult', '?')}, "
                                     f"SL={best_grid.get('sl_mult', '?')}, "
-                                    f"CT={best_grid.get('conf_thresh', '?')}, "
+                                    f"CT={best_grid.get('conf_thresh', best_grid.get('ct', '?'))}, "
                                     f"Inner PnL={best_grid.get('inner_val_pnl', 0):.1f}, "
                                     f"Stability={best_grid.get('fold_stability', 0):.0%}")
 

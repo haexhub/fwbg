@@ -273,6 +273,7 @@ class TestSystematicBiasInResults:
 
         biased_assets = []
         total_assets = 0
+        measurable_assets = 0
         non_walk_forward = []
 
         # Statuses where no walk-forward result is expected (strategy found no edge / no data)
@@ -310,6 +311,10 @@ class TestSystematicBiasInResults:
             mean_bias = wf_results['mean_bias_ratio']
             total_assets += 1
 
+            if mean_bias is None:
+                continue
+
+            measurable_assets += 1
             if mean_bias > 1.5:
                 biased_assets.append({
                     'symbol': data['symbol'],
@@ -330,7 +335,10 @@ class TestSystematicBiasInResults:
         if total_assets == 0:
             pytest.skip("No valid assets to analyze")
 
-        bias_percentage = len(biased_assets) / total_assets
+        if measurable_assets == 0:
+            pytest.skip("No measurable mean bias ratios to analyze")
+
+        bias_percentage = len(biased_assets) / measurable_assets
 
         # Walk-forward threshold: 20%
         if bias_percentage > 0.2:

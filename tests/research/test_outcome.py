@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from fwbg.research.ledger import TrialStatus
@@ -123,3 +125,43 @@ def test_an_unreadable_holdout_block_counts_only_leniently(tmp_path, holdout):
     status, metrics = run_outcome(run_dir, lenient=True)
     assert status is TrialStatus.OK
     assert set(metrics) == {"GOLD"}
+
+
+def test_run_outcome_carries_the_selection_protocol(tmp_path):
+    """Marked runs record their protocol per symbol; runs before the marker record None."""
+    run_dir = make_run(
+        tmp_path,
+        "run-1",
+        symbols={
+            "GOLD": {
+                "unified": {"sharpe": 0.5},
+                "fold": {"walk_forward": {"selection_protocol": 2}},
+            },
+            "DAX": {"unified": {"sharpe": 0.4}, "fold": {"walk_forward": {"fold_stability": 0.5}}},
+        },
+    )
+    _, metrics = run_outcome(run_dir)
+    assert metrics["GOLD"]["selection_protocol"] == 2
+    assert metrics["DAX"]["selection_protocol"] is None
+
+
+def test_a_holdout_look_carries_its_developments_selection_protocol(tmp_path):
+    """A holdout look has no fold_results.json; development.json keeps the marker."""
+    run_dir = make_run(tmp_path, "run-1", symbols={"GOLD": _holdout_symbol("ok", True)})
+    development = {"status": "ok", "walk_forward": {"selection_protocol": 2}}
+    (run_dir / "grid_details" / "GOLD" / "development.json").write_text(
+        json.dumps(development), encoding="utf-8"
+    )
+    _, metrics = run_outcome(run_dir)
+    assert metrics["GOLD"]["selection_protocol"] == 2
+
+
+def test_a_symbol_result_without_walk_forward_carries_its_selection_protocol(tmp_path):
+    """Early statuses (e.g. no_unified_trades) record the marker in config.json only."""
+    run_dir = make_run(
+        tmp_path,
+        "run-1",
+        symbols={"GOLD": {"status": "no_unified_trades", "result": {"selection_protocol": 2}}},
+    )
+    _, metrics = run_outcome(run_dir)
+    assert metrics["GOLD"]["selection_protocol"] == 2
