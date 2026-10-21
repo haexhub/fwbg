@@ -1,4 +1,4 @@
-"""Signal model fold processing — no training, no grid search.
+"""Signal model fold processing — no training; the combo grid is chosen on inner windows.
 
 Signal models evaluate signal_rules into composed signal columns.
 This module handles their specific data preparation (keep all rows,
@@ -133,6 +133,7 @@ def process_signal_fold(fold, train_df, test_df, full_pool, ctx, sym):
         },
         "selected_features_long": features,
         "selected_features_short": features,
+        # Eligible combos (at least one inner trade), not every combo of the grid.
         "n_candidates": sum(1 for e in all_grid_results if e["inner_trades"] > 0),
     }
 
