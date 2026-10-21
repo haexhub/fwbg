@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 
 from fwbg.plugins import import_plugin_module
-from fwbg.core.columns import AmbiguousColumnError
+from fwbg.core.columns import AmbiguousColumnError, ColumnRoleError
 from fwbg.core.context import SimulationContext
 
 _orb_exit = import_plugin_module("fwbg-premium", "exit_strategies", "orb_based")
@@ -590,3 +590,46 @@ class TestOrbExitStrategyAmbiguousColumns:
 
         tp_dists, _ = OrbExitStrategy().resolve_distances(df, tp=1.0, sl=1.0, ctx=self._ctx())
         assert len(tp_dists) == len(df)
+
+
+class TestOrbExitStrategyColumnPatterns:
+    """sl_dist_column / range_column may be glob patterns that match one column,
+    so one config names the stop across indicator-grid variants."""
+
+    @staticmethod
+    def _ctx(**exit_params):
+        return TestOrbExitStrategyAmbiguousColumns._ctx(**exit_params)
+
+    @staticmethod
+    def _df(ohlc_df):
+        df = ohlc_df.copy()
+        df["rb4_prb2_orb_s00_sl_dist"] = 100.0
+        df["rb4_prb2_orb_s00_rl50_sl_dist"] = 50.0
+        df["hl_ses_rl50_pdl_sl_dist"] = 70.0
+        df["rb4_prb2_orb_s00_range"] = 40.0
+        df["wor_stat_avg_range"] = 90.0
+        return df
+
+    def test_a_pattern_matching_one_column_selects_it(self, ohlc_df):
+        ctx = self._ctx(sl_dist_column="*_orb_s00_sl_dist")
+        _, sl_dists = OrbExitStrategy().resolve_distances(self._df(ohlc_df), 2.0, 1.0, ctx)
+        np.testing.assert_allclose(sl_dists, 100.0)
+
+    def test_a_range_pattern_matching_one_column_selects_it(self, ohlc_df):
+        ctx = self._ctx(
+            tp_mode="range", range_column="*_orb_s00_range", sl_dist_column="*_orb_s00_sl_dist",
+        )
+        tp_dists, _ = OrbExitStrategy().resolve_distances(self._df(ohlc_df), 1.0, 1.0, ctx)
+        np.testing.assert_allclose(tp_dists, 40.0)
+
+    def test_a_pattern_matching_several_columns_is_refused(self, ohlc_df):
+        ctx = self._ctx(sl_dist_column="*_s00_*sl_dist")
+        with pytest.raises(AmbiguousColumnError) as err:
+            OrbExitStrategy().resolve_distances(self._df(ohlc_df), 2.0, 1.0, ctx)
+        assert "rb4_prb2_orb_s00_sl_dist" in str(err.value)
+        assert "rb4_prb2_orb_s00_rl50_sl_dist" in str(err.value)
+
+    def test_a_pattern_matching_nothing_is_refused(self, ohlc_df):
+        ctx = self._ctx(sl_dist_column="*_orb_s09_sl_dist")
+        with pytest.raises(ColumnRoleError, match=r"\*_orb_s09_sl_dist"):
+            OrbExitStrategy().resolve_distances(self._df(ohlc_df), 2.0, 1.0, ctx)

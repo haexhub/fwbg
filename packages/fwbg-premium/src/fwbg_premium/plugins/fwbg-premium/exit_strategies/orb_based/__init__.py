@@ -20,7 +20,11 @@ Column choice: auto-detection needs exactly one *_sl_dist (and, for
 tp_mode="range", one *_range) column. Several ORB sessions, ranges or
 retracement levels give several, and the run fails with AmbiguousColumnError
 until exit_params names the column (sl_dist_column, range_column; for sl_level
-also sl_level_column). Naming the column keeps the sl_mult scaling.
+also sl_level_column). Naming the column keeps the sl_mult scaling. A name may
+be an fnmatch glob pattern (e.g. "*_orb_s00_sl_dist") that must match exactly
+one column; it names the column across indicator-grid variants whose prefixes
+differ. A plain name missing from the frame falls back to auto-detection; a
+pattern that matches nothing is an error.
 """
 from typing import Tuple, Union, TYPE_CHECKING
 import numpy as np

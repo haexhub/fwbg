@@ -77,3 +77,9 @@ def test_a_named_stop_column_survives_the_fold_clean_up():
     columns = _prepared_columns(_context({"sl_dist_column": "rb8_orb_s00_sl_dist"}))
     assert "rb8_orb_s00_sl_dist" in columns
     assert "hl_ses_rl50_pdl_sl_dist" not in columns
+
+
+def test_a_stop_column_pattern_survives_the_fold_clean_up():
+    columns = _prepared_columns(_context({"sl_dist_column": "*_orb_s00_sl_dist"}))
+    assert "rb8_orb_s00_sl_dist" in columns
+    assert "hl_ses_rl50_pdl_sl_dist" not in columns

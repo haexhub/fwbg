@@ -71,6 +71,7 @@ Exit strategy for ORB (Opening Range Breakout) setups. Stop-loss distance is rea
 - AC-017: get_cache_key(params) returns the exact string 'orb_tp{tp_mult:.2f}_sl{sl_mult:.2f}_to{timeout_bars or "none"}'.
 - AC-018: Plugin is registered under the name 'orb_based' via @register_exit_strategy.
 - AC-019: Without a present explicit column, several '*_sl_dist' candidates (or several '*_range' candidates when tp_mode='range') raise AmbiguousColumnError naming the candidates and the exit_params key to set (sl_dist_column / range_column). Several ORB sessions, ranges or retracement levels produce several candidates. Naming the previously auto-detected column reproduces its stop, since sl_mult scales both (AC-005).
+- AC-020: sl_dist_column, range_column and sl_level_column may be fnmatch glob patterns (e.g. '*_orb_s00_sl_dist'). A plain name is used when present (exact match first); a pattern must match exactly one column of the frame (resolved per frame, so per indicator-grid variant): several matches raise AmbiguousColumnError naming them, no match raises ColumnRoleError. A plain name missing from the frame still falls back to auto-detection (see Edge Cases).
 
 ## Edge Cases
 

@@ -110,3 +110,10 @@ class TestAmbiguousSlLevel:
             {"sl_level": "or_high", "sl_level_column": "rb4_orb_s08_or_high"},
         )
         assert levels.tolist() == [1.40, 1.41]
+
+    def test_sl_level_column_pattern_resolves_the_ambiguity(self):
+        levels = resolve_sl_levels(
+            self._sessions_df(), _ctx(),
+            {"sl_level": "or_high", "sl_level_column": "*_orb_s08_or_high"},
+        )
+        assert levels.tolist() == [1.40, 1.41]

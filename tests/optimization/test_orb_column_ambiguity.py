@@ -5,6 +5,8 @@ With retracement enabled the opening_range plugin emits both the session's
 them, and the run reports the refusal instead of trading on either one.
 """
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -52,9 +54,10 @@ def _orb_exit(**exit_params) -> dict:
 ATR_EXIT = {"name": "atr_based", "params": {"tp_mult": 2.0, "sl_mult": 1.0}, "ct": [0.5]}
 
 
-def _strategy(model: dict, exits: list[dict]) -> StrategyConfig:
+def _strategy(model: dict, exits: list[dict], optimization: dict | None = None) -> StrategyConfig:
     return StrategyConfig.from_dict(
         {
+            "optimization": optimization or {},
             "name": "orb-ambiguity",
             "timeframe": "MINUTE_15",
             "pipeline": {"indicators": [{"name": "opening_range", "params": ORB}]},
@@ -113,3 +116,23 @@ def test_explicit_stop_column_settles_it_for_a_trained_model(m15_run):
     exits = [_orb_exit(sl_dist_column="rb4_prb2_orb_s00_sl_dist")]
     result = m15_run(_strategy({"type": "xgboost"}, exits))
     assert result["status"] != "error", result.get("error")
+
+
+GRID = {"indicator_grid": {"opening_range": {"range_bars": [4, 6], "pre_range_bars": [0, 2]}}}
+
+
+def _grid_strategy(stop_column: str) -> StrategyConfig:
+    # Trained model, no signal rules: the rule columns' prefixes differ per variant too.
+    strategy = _strategy({"type": "xgboost"}, [_orb_exit(sl_dist_column=stop_column)], GRID)
+    return replace(strategy, signal_rules=None)
+
+
+def test_a_stop_column_pattern_names_the_stop_in_every_grid_variant(m15_run):
+    result = m15_run(_grid_strategy("*_orb_s00_sl_dist"))
+    assert result["status"] != "error", result.get("error")
+
+
+def test_a_stop_column_pattern_that_matches_nothing_is_the_symbols_error(m15_run):
+    result = m15_run(_grid_strategy("*_orb_s09_sl_dist"))
+    assert result["status"] == "error"
+    assert "*_orb_s09_sl_dist" in result["error"]
