@@ -9,6 +9,8 @@ private research register in `$FWBG_WORKSPACE/research`.
   with its hypothesis and mechanism written before the first run.
 - Every run passes `--research-id S-NNNN --note "<what changed and why>"`;
   re-running an identical configuration needs `--reason`. Dry-run with `--check`.
+- A holdout look (`--holdout`) evaluates the frozen setting once on data after
+  the card's cutoff; use it when iterating is done. A further look needs `--reason`.
 - Scripts that evaluate strategies outside `python -m fwbg.cli` record every
   evaluated variant (failed and discarded ones too) with
   `fwbg.research.study.register_trial(...)`, stating the config they evaluated
