@@ -1,10 +1,10 @@
 """Hash-seed independence: the same configuration gives the same backtest in every process.
 
 Python randomises str hashing per process (PYTHONHASHSEED), so iterating a set of
-column names yields a different order in each process. Exit strategies pick
-auxiliary columns by the first name that matches (orb_based takes the first
-``*_sl_dist``), so a hash-ordered column layout changed trades between runs.
-Each check runs in fresh interpreters with different hash seeds.
+column names yields a different order in each process. orb_based used to take
+the first ``*_sl_dist`` column, so a hash-ordered column layout changed trades
+between runs; it now refuses several candidates, and the backtest below names
+its stop column. Each check runs in fresh interpreters with different hash seeds.
 """
 
 import json
@@ -77,7 +77,8 @@ strategy = StrategyConfig.from_dict({
     "exit_strategies": [{
         "name": "orb_based",
         "params": {"tp_mode": "range", "tp_mult": 0.8, "sl_mult": 2,
-                   "min_tp_pips": 1, "min_sl_pips": 1},
+                   "min_tp_pips": 1, "min_sl_pips": 1,
+                   "sl_dist_column": "rb4_prb2_orb_s00_sl_dist"},
         "ct": [0.5],
     }],
     "model": {"type": "signal", "trade_directions": ["long", "short"]},
@@ -120,8 +121,8 @@ def test_opening_range_column_order_is_independent_of_the_hash_seed(tmp_path):
     assert orders["5"] == orders["0"]
     assert orders["12345"] == orders["0"]
     sl_dist = [c for c in orders["0"] if c.endswith("_sl_dist")]
-    # orb_based auto-detects the first *_sl_dist; the session's own stop distance
-    # comes before its retracement variant, as in the plugin's feature order.
+    # The plugin's feature order: the session's own stop distance comes before
+    # its retracement variant.
     assert sl_dist[:2] == ["rb4_prb2_orb_s00_sl_dist", "rb4_prb2_orb_s00_rl50_sl_dist"]
 
 

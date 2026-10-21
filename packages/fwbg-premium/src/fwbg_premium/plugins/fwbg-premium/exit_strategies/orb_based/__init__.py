@@ -16,6 +16,12 @@ Design rationale:
 tp_mode (exit_params):
   - "atr" (default): TP = ATR * tp_mult. Trailing uses ATR * trail_atr_mult.
   - "range": TP = range_column * tp_mult. Trailing uses range as trail distance.
+
+Column choice: auto-detection needs exactly one *_sl_dist (and, for
+tp_mode="range", one *_range) column. Several ORB sessions, ranges or
+retracement levels give several, and the run fails with AmbiguousColumnError
+until exit_params names the column (sl_dist_column, range_column; for sl_level
+also sl_level_column). Mind that an explicit sl_dist_column drops sl_mult.
 """
 from typing import Tuple, Union, TYPE_CHECKING
 import numpy as np
@@ -25,6 +31,7 @@ from fwbg_sdk import BaseExitStrategy, register_exit_strategy
 from fwbg.simulation import _simulate_trade_numba, _simulate_trade_trailing_numba, compute_session_mask
 from fwbg.simulation.numba_core import _simulate_trade_session_numba
 from fwbg.core import GridParams
+from fwbg.core.columns import resolve_role_column
 
 if TYPE_CHECKING:
     from fwbg.core.context import SimulationContext
@@ -457,19 +464,15 @@ class OrbExitStrategy(BaseExitStrategy):
     def _get_range(df: pd.DataFrame, exit_params: dict = None) -> np.ndarray:
         """Return range array for tp_mode='range'.
 
-        Looks for range_column in exit_params, then auto-detects *_range columns
-        (excluding *_vs_atr variants). Falls back to zeros.
+        Looks for range_column in exit_params, then auto-detects the *_range
+        column (excluding *_vs_atr variants); several candidates raise
+        AmbiguousColumnError. Falls back to zeros.
         """
         ep = exit_params or {}
-        range_column = ep.get("range_column")
-        if range_column and range_column in df.columns:
-            return np.nan_to_num(df[range_column].values.astype(np.float64), nan=0.0)
-        # Auto-detect: first column ending in _range (but not _vs_atr or _vs_range)
-        col = next(
-            (c for c in df.columns
-             if (c == "orb_range" or c.endswith("_orb_range") or c.endswith("_range"))
-             and "_vs_" not in c),
-            None,
+        col = resolve_role_column(
+            df.columns, ep.get("range_column"),
+            lambda c: c.endswith("_range") and "_vs_" not in c,
+            "range_column",
         )
         if col is not None:
             return np.nan_to_num(df[col].values.astype(np.float64), nan=0.0)
@@ -490,16 +493,15 @@ class OrbExitStrategy(BaseExitStrategy):
         When auto-detected (no explicit sl_dist_column): applies sl_mult as
         buffer multiplier on the raw distance. NaN rows fall back to ATR * sl_mult.
 
-        No column found at all: pure ATR * sl_mult.
+        No column found at all: pure ATR * sl_mult. Several auto-detect
+        candidates raise AmbiguousColumnError.
         """
-        explicit = sl_dist_column and sl_dist_column in df.columns
-        if explicit:
-            sl_col = sl_dist_column
-        else:
-            sl_col = next(
-                (c for c in df.columns if c == "orb_sl_dist" or c.endswith("_sl_dist")),
-                None,
-            )
+        sl_col = resolve_role_column(
+            df.columns, sl_dist_column, lambda c: c.endswith("_sl_dist"), "sl_dist_column",
+            note=" An explicit sl_dist_column is the absolute stop distance: sl_mult "
+                 "is not applied to it.",
+        )
+        explicit = sl_col is not None and sl_col == sl_dist_column
         if sl_col is not None:
             raw = df[sl_col].values.astype(np.float64)
             fallback = atr_v * sl_mult

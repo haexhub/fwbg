@@ -12,6 +12,7 @@ from typing import Tuple, Optional, List
 
 import numpy as np
 
+from fwbg.core.columns import AmbiguousColumnError
 from fwbg.utils.logging import log
 from .nested_cv import (
     run_inner_cv, select_features_from_fold,
@@ -374,8 +375,9 @@ def _run_with_successive_halving(
             result = _compute_cached_targets(
                 tp, sl, timeout_bars, inner_folds, inner_df, combo_ctx
             )
-        except (ImportError, ModuleNotFoundError):
-            # Re-raise setup errors — they indicate broken dependencies,
+        except (ImportError, ModuleNotFoundError, AmbiguousColumnError):
+            # Re-raise setup and config errors — they indicate broken dependencies
+            # or an exit that cannot tell which column to read,
             # not something we can recover from per-combo.
             raise
         except Exception as tgt_e:
@@ -657,7 +659,7 @@ def run_grid_search(
                         candidates.append(candidate)
                     if grid_result:
                         grid_results.append(grid_result)
-                except (ImportError, ModuleNotFoundError):
+                except (ImportError, ModuleNotFoundError, AmbiguousColumnError):
                     raise  # Let outer handler deal with it
                 except Exception as e:
                     import sys
@@ -669,8 +671,8 @@ def run_grid_search(
                     progress_reported += 1
                     if progress_callback:
                         progress_callback(progress_reported, grid_total)
-    except (ImportError, ModuleNotFoundError) as outer_e:
-        # Setup/environment errors must never be silently swallowed.
+    except (ImportError, ModuleNotFoundError, AmbiguousColumnError) as outer_e:
+        # Setup/environment and config errors must never be silently swallowed.
         # They indicate broken dependencies or stale Numba caches.
         import sys
         import traceback
