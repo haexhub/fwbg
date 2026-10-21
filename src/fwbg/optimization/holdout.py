@@ -10,9 +10,11 @@ come from the holdout trades alone; the development outcome is kept apart.
 Causality: raw (stationary-free) indicators and the data-loading pipeline run
 on the whole window [start, end) so the first holdout bars have their warm-up.
 That gives development rows the same values as the development run only
-because registered indicators are causal (pinned by
-tests/test_lookahead_bias.py). Preprocessors and stateful indicators are fit
-on the training frame only (process_fold).
+because registered indicators and data loaders are prefix-stable: computed on
+[start, end) they equal their values computed on [start, cutoff) (pinned by
+tests/test_prefix_stability.py; tests/test_lookahead_bias.py checks they are
+causal). Preprocessors and stateful indicators are fit on the training frame
+only (process_fold).
 """
 
 import dataclasses
