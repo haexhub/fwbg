@@ -12,7 +12,7 @@ from fwbg.data import config as data_config
 from fwbg.optimization.holdout import process_symbol_holdout
 from fwbg.optimization.resource_manager import SimplePoolManager
 from fwbg.research.gate import Denial, DenialCode
-from fwbg.research.ledger import LEDGER_FILENAME, TrialStatus, read_trials
+from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, TrialStatus, read_trials
 from fwbg.research.pending import read_pending
 from fwbg.research.runs import GATE_ENV, GateDenied, parse_check_output
 from fwbg.results import storage
@@ -35,12 +35,14 @@ class FakeOptimizer:
         self.error = None
         self.symbols = {"EURUSD": {}}
         self.result = {"ok": True}
+        self.metadata = None
 
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
         metadata = kwargs["strategy_metadata"]
         if kwargs["before_run"] is not None:
             metadata = kwargs["before_run"](metadata, ["EURUSD"])
+            self.metadata = metadata
         self.passed = True
         make_run(self.results, kwargs["run_id"], symbols=self.symbols)
         if self.error is not None:
@@ -174,6 +176,33 @@ def test_check_json_reports_an_allowed_run(gated, monkeypatch, capsys):
     assert not gated.fake.passed
 
 
+def test_check_json_reports_a_holdout(gated, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as exited:
+        run_cli(
+            monkeypatch,
+            *("--strategy-file", str(gated.file), "--research-id", "S-0007", "--holdout"),
+            *("--note", "look", "--run-id", "r1", "--check-json"),
+        )
+    assert exited.value.code == 0
+    out = capsys.readouterr().out
+    payload = parse_check_output(out, 0)
+    assert payload is not None and payload["kind"] == "holdout"
+    assert payload["window"]["end"] is None
+    assert "split:       development .. 2025-04-30 | holdout 2025-04-30 .. open" in out
+    assert trials(gated.register) == [] and not gated.fake.passed
+
+
+def test_holdout_flag_runs_a_holdout_look(gated, monkeypatch):
+    run_cli(
+        monkeypatch,
+        *("--strategy-file", str(gated.file), "--research-id", "S-0007", "--holdout"),
+        *("--note", "look", "--run-id", "r1"),
+    )
+    [trial] = trials(gated.register)
+    assert trial.kind is TrialKind.HOLDOUT and trial.run_id == "r1"
+    assert gated.fake.metadata["holdout_cutoff"] == "2025-04-30"
+
+
 def test_check_json_reports_a_refusal(gated, monkeypatch, capsys):
     with pytest.raises(SystemExit) as exited:
         run_cli(
@@ -218,6 +247,15 @@ def test_gate_off_check_json_names_its_flag(gated, monkeypatch, capsys):
         run_cli(monkeypatch, "--strategy-file", str(gated.file), "--check-json")
     assert exited.value.code == 2
     assert "--check/--check-json needs the research gate" in capsys.readouterr().err
+    assert gated.fake.calls == []
+
+
+def test_gate_off_refuses_the_holdout_flag(gated, monkeypatch, capsys):
+    monkeypatch.setenv(GATE_ENV, "off")
+    with pytest.raises(SystemExit) as exited:
+        run_cli(monkeypatch, "--strategy-file", str(gated.file), "--holdout")
+    assert exited.value.code == 2
+    assert "--holdout needs the research gate" in capsys.readouterr().err
     assert gated.fake.calls == []
 
 

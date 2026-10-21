@@ -72,6 +72,8 @@ class RunRequest:
     preset names). ``symbols`` contains the uppercase, sorted concrete symbols
     produced by ``AssetRegistry``. CLI/API wiring must resolve asset classes
     before constructing this request; unresolved names never reach the gate.
+    ``holdout`` asks for the card's holdout look instead of an iteration; the
+    register, not ``strategy_metadata``, supplies its ``holdout_cutoff``.
     """
 
     research_id: str | None
@@ -98,8 +100,10 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
     """Decide whether *request* may run, given its card and the whole ledger.
 
     *trials* must be in ledger order (append order); ``Trial.ts`` is not used.
-    ``end_date`` is exclusive: iterations see ``[.., cutoff)``, a holdout run
-    ``[cutoff, ..)``.
+    ``end_date`` is exclusive: iterations see ``[.., cutoff)``. A holdout run
+    develops on ``[start, cutoff)`` and is evaluated once on ``[cutoff, end)``;
+    its effective metadata carries the card's ``holdout_cutoff`` (fingerprinted),
+    which a caller's configuration must not set.
     """
     kind = TrialKind.HOLDOUT if request.holdout else TrialKind.ITERATION
     metadata = dict(request.strategy_metadata)
@@ -137,9 +141,20 @@ def check(card: ResearchCard | None, request: RunRequest, trials: Sequence[Trial
         )
     denials.extend(criteria_denials(card, own_trials))
     denials.extend(_cutoff_denials(card, own_trials))
+    if "holdout_cutoff" in request.strategy_metadata:
+        denials.append(
+            Denial(
+                DenialCode.INVALID_CONFIG,
+                "holdout_cutoff is set by the register for holdout runs; "
+                "remove it from the strategy",
+            )
+        )
     window_denial = _apply_window(card, metadata, request.holdout)
     if window_denial is not None:
         denials.append(window_denial)
+    if request.holdout:
+        # The worker develops on [start, cutoff) and looks at [cutoff, end); fingerprinted.
+        metadata["holdout_cutoff"] = card.holdout_cutoff.isoformat()
     has_reason = _has_text(request.reason)
     if request.holdout:
         denials.extend(_holdout_denials(card, own_trials, has_reason))
@@ -259,6 +274,11 @@ def _apply_window(card: ResearchCard, metadata: dict[str, Any], holdout: bool) -
     for key, raw, day in (("start_date", raw_start, start), ("end_date", raw_end, end)):
         if raw is not None and day is None:
             return Denial(DenialCode.INVALID_WINDOW, f"{key} {raw!r} is not a YYYY-MM-DD date")
+    if holdout and start is not None and start >= cutoff:
+        return Denial(
+            DenialCode.INVALID_WINDOW,
+            f"a holdout run develops on data before the cutoff {cutoff}; start_date is {start}",
+        )
     if end is None and not holdout:
         end = cutoff
         metadata["end_date"] = cutoff.isoformat()

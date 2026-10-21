@@ -1029,8 +1029,11 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 note=args.note,
                 reason=args.reason,
                 check_only=args.check or args.check_json,
+                holdout=args.holdout,
             )
         else:
+            if args.holdout:
+                parser.error(f"--holdout needs the research gate ({GATE_ENV} is off)")
             if args.check or args.check_json:
                 parser.error(f"--check/--check-json needs the research gate ({GATE_ENV} is off)")
             print(f"Warning: {GATE_ENV}=off - this run is neither gated nor recorded",
