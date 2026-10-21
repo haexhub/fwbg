@@ -337,6 +337,7 @@ def simulate_trades(
                 timeout_bars=timeout_bars,
                 in_session=in_session,
                 sl_level_abs=sl_abs,
+                sl_level_mult=sl,
                 entry_delay=entry_delay,
                 breakeven_trigger=breakeven_trigger,
                 trail_distance=td,

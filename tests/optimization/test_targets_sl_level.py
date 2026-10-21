@@ -24,6 +24,9 @@ class _SlLevelExit(BaseExitStrategy):
         n = len(df)
         return np.full(n, tp), np.full(n, sl)
 
+    def get_cache_key(self, params):
+        return "_test_sl_level_exit"
+
     @classmethod
     def get_param_schema(cls):
         return {
@@ -117,3 +120,30 @@ class TestAmbiguousSlLevel:
             {"sl_level": "or_high", "sl_level_column": "*_orb_s08_or_high"},
         )
         assert levels.tolist() == [1.40, 1.41]
+
+
+def test_simulate_trades_scales_the_level_distance_by_sl_mult():
+    from fwbg.core.context import SimulationContext
+    from fwbg.optimization.targets import simulate_trades
+
+    n = 4
+    df = pd.DataFrame(
+        {
+            "O": [1.2600] * n, "H": [1.2601] * n, "L": [1.2599] * n, "C": [1.2600] * n,
+            "orb_or_low": [1.2580] * n,
+        },
+        index=pd.date_range("2024-01-01", periods=n, freq="15min"),
+    )
+    ctx = SimulationContext(
+        symbol="TEST", asset_class="FOREX", spread=0.0003, point=0.0001,
+        exit_strategy="_test_sl_level_exit", exit_params={"sl_level": "or_low"},
+    )
+    probs = np.zeros((n, 2))
+    probs[0, 1] = 1.0
+    out = simulate_trades(
+        df, probs, None, 1, None, 0.5, 0.5, tp=0.01, sl=1.5, ctx=ctx,
+        return_detailed=True, timeout_bars=1,
+    )
+    [trade] = out["trades_detailed"]
+    entry = trade["entry_price"]
+    assert trade["sl_level"] == pytest.approx(entry - 1.5 * (entry - 1.2580))

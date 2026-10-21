@@ -377,7 +377,10 @@ class OrbExitStrategy(BaseExitStrategy):
                 "default": "none",
                 "description": (
                     "SL an strukturellem Preisniveau verankern statt Entry ± sl_dist. "
-                    "sl_mult wirkt als Buffer-Multiplikator auf die Distanz zum Level."
+                    "sl_mult skaliert die Distanz Entry→Level: SL = Entry ∓ sl_mult × "
+                    "|Entry − Level| (1.0 = genau das Level). Level auf der falschen "
+                    "Seite des Entry → Entry ∓ sl_dist × sl_mult. Nur in der "
+                    "Trade-Simulation; Trainings-Targets ignorieren sl_level."
                 ),
                 "choices": ["none", "or_midpoint", "or_high", "or_low"],
             },
