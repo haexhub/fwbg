@@ -425,6 +425,13 @@ def test_non_object_symbol_file_is_a_legacy_run_error(tmp_path, preset_base):
         load_run(run_dir, preset_base)
 
 
+def test_an_ungated_holdout_look_is_never_read_as_development(tmp_path, preset_base):
+    """A run with a holdout cutoff in its strategy evaluated holdout data: refuse it."""
+    make_run(tmp_path, "run-1", strategy_extra={"holdout_cutoff": "2025-04-30"})
+    with pytest.raises(LegacyRunError, match="run-1/strategy.json: .*holdout look"):
+        scan_runs(tmp_path, preset_base)
+
+
 def test_scan_skips_directories_without_strategy(tmp_path, preset_base):
     """Ignore directories without strategy metadata during a legacy scan."""
     make_run(tmp_path, "run-1")

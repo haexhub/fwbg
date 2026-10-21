@@ -112,6 +112,11 @@ def run_optimizer(
         strategy = StrategyConfig.from_dict(strategy_metadata)
     else:
         strategy = StrategyConfig()
+    if before_run is None and strategy.holdout_cutoff:
+        # Ungated, the look would go unrecorded and later pass for development data.
+        print("Error: holdout_cutoff is set by the research gate (--holdout), "
+              "not by the strategy; refusing an ungated holdout look.")
+        return None
 
     # Datasource aus Strategy übernehmen (via Data-Source-Registry)
     if strategy.datasource:

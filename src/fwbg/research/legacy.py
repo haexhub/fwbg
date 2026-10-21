@@ -135,6 +135,13 @@ def run_outcome(run_dir: Path, *, lenient: bool = False) -> tuple[TrialStatus, M
 def load_run(run_dir: Path, preset_base: Path) -> LegacyRun:
     """Read one run directory; raise :class:`LegacyRunError` if its files are unusable."""
     strategy = _read_object(run_dir / "strategy.json", run_dir)
+    if strategy.get("holdout_cutoff") is not None:
+        # Only an ungated run gets here (gated ones are skipped); its metrics are holdout
+        # metrics and must never enter the register as development data.
+        raise LegacyRunError(
+            f"{run_dir.name}/strategy.json: an ungated holdout look (holdout_cutoff set); "
+            "it cannot be recorded as a development trial"
+        )
     config = _read_object(run_dir / "config.json", run_dir)
     ts = config.get("timestamp")
     if not isinstance(ts, str) or not _DATE_PREFIX_RE.match(ts):
