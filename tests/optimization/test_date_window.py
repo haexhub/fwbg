@@ -9,7 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fwbg.optimization.process import _apply_date_window
+from fwbg.core.config import StrategyConfig
+from fwbg.optimization import process
+from fwbg.optimization.process import _apply_date_window, load_symbol_frame
 
 
 def _make_df(n_days: int = 10) -> pd.DataFrame:
@@ -59,3 +61,26 @@ def test_malformed_end_date_raises_value_error_naming_value():
     df = _make_df(5)
     with pytest.raises(ValueError, match="also-bad"):
         _apply_date_window(df, None, "also-bad")
+
+
+def _hourly(n: int = 48) -> pd.DataFrame:
+    index = pd.date_range("2024-01-01", periods=n, freq="h")
+    close = np.linspace(1.0, 2.0, n)
+    return pd.DataFrame({"O": close, "H": close + 0.1, "L": close - 0.1, "C": close}, index=index)
+
+
+def test_load_symbol_frame_applies_the_half_open_window(monkeypatch):
+    monkeypatch.setattr(process, "load_data_aligned", lambda path: _hourly())
+    strategy = StrategyConfig(start_date="2024-01-01 06:00", end_date="2024-01-02")
+
+    df = load_symbol_frame("EURUSD_HOUR_1.csv", strategy, "EURUSD")
+
+    assert df.index[0] == pd.Timestamp("2024-01-01 06:00")
+    assert df.index[-1] == pd.Timestamp("2024-01-01 23:00")
+
+
+def test_load_symbol_frame_is_none_without_bars(monkeypatch):
+    monkeypatch.setattr(process, "load_data_aligned", lambda path: _hourly())
+    assert load_symbol_frame("EURUSD_HOUR_1.csv", StrategyConfig(start_date="2025-01-01"), "EURUSD") is None
+    monkeypatch.setattr(process, "load_data_aligned", lambda path: None)
+    assert load_symbol_frame("EURUSD_HOUR_1.csv", StrategyConfig(), "EURUSD") is None
