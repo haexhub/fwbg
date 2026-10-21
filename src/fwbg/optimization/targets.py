@@ -114,7 +114,10 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
     )
     if sl_col is None:
         return None
-    return df[sl_col].values.astype(np.float64)
+    # A non-positive or non-finite level (e.g. a zero-filled NaN) is no level:
+    # the row falls back to the distance stop instead of a stop near zero.
+    levels = df[sl_col].values.astype(np.float64)
+    return np.where(np.isfinite(levels) & (levels > 0), levels, np.nan)
 
 
 def simulate_trades(

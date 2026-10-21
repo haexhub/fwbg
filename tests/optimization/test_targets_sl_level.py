@@ -147,3 +147,10 @@ def test_simulate_trades_scales_the_level_distance_by_sl_mult():
     [trade] = out["trades_detailed"]
     entry = trade["entry_price"]
     assert trade["sl_level"] == pytest.approx(entry - 1.5 * (entry - 1.2580))
+
+
+def test_non_positive_or_non_finite_levels_are_missing():
+    df = pd.DataFrame({"orb_or_low": [1.2580, 0.0, -1.0, np.inf, np.nan]})
+    levels = resolve_sl_levels(df, _ctx(), {"sl_level": "or_low"})
+    assert levels[0] == 1.2580
+    assert np.isnan(levels[1:]).all()
