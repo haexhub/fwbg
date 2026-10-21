@@ -3,6 +3,8 @@ import json
 import pytest
 
 from fwbg.optimization.process import process_symbol
+from fwbg.optimization.signal_selection import SELECTION_PROTOCOL
+from fwbg.research.legacy import run_outcome
 from tests.optimization.symbol_harness import (
     LOSING,
     STRATEGY,
@@ -46,3 +48,11 @@ def test_run_writes_a_null_sharpe_for_no_edge(monkeypatch, tmp_path):
     assert json.loads((sym_dir / "unified_metrics.json").read_text())["sharpe"] is None
     assert json.loads((sym_dir / "config.json").read_text())["metrics"]["sharpe"] is None
     assert "sr_per_trade" not in json.loads((sym_dir / "unified_metrics.json").read_text())
+
+
+def test_run_records_the_selection_protocol_per_symbol(monkeypatch, tmp_path):
+    patch_development(monkeypatch, WINNING)
+    run_dir = run_inline(monkeypatch, tmp_path)
+    fold = json.loads((run_dir / "grid_details" / "EURUSD" / "fold_results.json").read_text())
+    assert fold["walk_forward"]["selection_protocol"] == SELECTION_PROTOCOL == 2
+    assert run_outcome(run_dir)[1]["EURUSD"]["selection_protocol"] == 2

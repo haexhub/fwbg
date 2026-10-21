@@ -271,10 +271,11 @@ def _symbol_metrics(
     elite: Mapping[str, Any],
 ) -> dict[str, float | int | None]:
     """Merge historical metric formats, preferring per-symbol unified results."""
-    unified = fold = None
+    unified = fold = development = None
     if source.folder is not None:
         unified = _optional_object(source.folder / "unified_metrics.json", run_dir)
         fold = _optional_object(source.folder / "fold_results.json", run_dir)
+        development = _optional_object(source.folder / "development.json", run_dir)
     candidates = (
         unified,
         result.get("metrics"),
@@ -299,6 +300,13 @@ def _symbol_metrics(
         fold_walk_forward.get("fold_stability"),
         walk_forward.get("fold_stability"),
         elite.get("fold_stability"),
+    )
+    # How the run chose its settings (optimizer's walk_forward.selection_protocol);
+    # a holdout look keeps its development's in development.json. None: before the marker.
+    values["selection_protocol"] = _first_number(
+        fold_walk_forward.get("selection_protocol"),
+        walk_forward.get("selection_protocol"),
+        _mapping(_mapping(development).get("walk_forward")).get("selection_protocol"),
     )
     return values
 

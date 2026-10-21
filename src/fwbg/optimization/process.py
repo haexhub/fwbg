@@ -30,6 +30,7 @@ from .robust_validation import create_walk_forward_folds, plan_walk_forward
 from .bias_checks import check_asset_bias, fold_bias_ratios
 from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
 from .process_fold import precompute_indicators, process_single_fold
+from .signal_selection import SELECTION_PROTOCOL
 
 
 def _compute_trade_analytics(trades_detailed):
@@ -192,6 +193,7 @@ def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
         "bias_ratios": bias_ratios,
         "mean_bias_ratio": mean_bias_ratio,
         "folds_without_bias_ratio": len(all_fold_results) - len(bias_ratios),
+        "selection_protocol": SELECTION_PROTOCOL,
         "fold_details": all_fold_results,
     }
 

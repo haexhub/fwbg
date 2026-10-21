@@ -102,6 +102,7 @@ def test_february_symbol_files_are_read(tmp_path, preset_base):
         "trades": 85,
         "p_value": 0.01,
         "fold_stability": 0.29,
+        "selection_protocol": None,
     }
 
 
@@ -127,6 +128,7 @@ def test_early_march_symbol_config_and_fold_results_are_read(tmp_path, preset_ba
         "trades": 150,
         "p_value": None,
         "fold_stability": 0.625,
+        "selection_protocol": None,
     }
 
 
@@ -149,6 +151,7 @@ def test_later_format_takes_values_from_the_symbol_files(tmp_path, preset_base):
         "max_drawdown": 0.35,
         "p_value": 0.05,
         "fold_stability": 0.75,
+        "selection_protocol": None,
     }
 
 
@@ -204,7 +207,9 @@ def test_no_unified_trades_counts_as_evaluated(tmp_path, preset_base):
     run_dir = make_run(tmp_path, "run-1", symbols={"DAX": {"status": "no_unified_trades"}})
     run = load_run(run_dir, preset_base)
     assert run.status is TrialStatus.OK
-    assert run.metrics == {"DAX": {"p_value": None, "fold_stability": None}}
+    assert run.metrics == {
+        "DAX": {"p_value": None, "fold_stability": None, "selection_protocol": None}
+    }
 
 
 @pytest.mark.parametrize("status", ["mystery", None])
@@ -305,6 +310,7 @@ def test_non_finite_metrics_become_null(tmp_path, preset_base):
         "trades": None,
         "p_value": None,
         "fold_stability": None,
+        "selection_protocol": None,
     }
 
 
