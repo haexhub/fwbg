@@ -207,6 +207,30 @@ def test_no_data_after_the_cutoff_is_not_evaluated(monkeypatch):
     assert calls == []
 
 
+def test_embargo_without_training_bars_is_not_evaluated(monkeypatch):
+    frame = hourly_frame()
+    strategy = replace(LOOK, validation=ValidationConfig(embargo_bars=len(frame)))
+    development = {
+        "symbol": "EURUSD",
+        "status": "ok",
+        "indicator_variant": None,
+        "unified_candidate": {},
+        "config": {},
+        "tr_trace": [],
+    }
+    monkeypatch.setattr(holdout, "load_symbol_frame", lambda path, strategy, sym: frame)
+    monkeypatch.setattr(holdout, "run_unified_simulation", pytest.fail)
+
+    result = holdout._evaluate(SYMBOL_FILE, strategy, development)
+
+    assert result["status"] == "insufficient_data"
+    assert result["holdout"] == {
+        "cutoff": CUTOFF,
+        "evaluated": False,
+        "reason": "not enough development bars after the embargo",
+    }
+
+
 def test_a_crash_in_the_holdout_evaluation_is_this_symbols_error(monkeypatch):
     patch_development(monkeypatch, WINNING)
 
