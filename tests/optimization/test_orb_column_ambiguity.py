@@ -107,3 +107,9 @@ def test_ambiguous_stop_column_is_the_symbols_error_for_a_trained_model(m15_run,
     result = m15_run(_strategy({"type": "xgboost"}, exits))
     assert result["status"] == "error"
     assert "sl_dist_column" in result["error"]
+
+
+def test_explicit_stop_column_settles_it_for_a_trained_model(m15_run):
+    exits = [_orb_exit(sl_dist_column="rb4_prb2_orb_s00_sl_dist")]
+    result = m15_run(_strategy({"type": "xgboost"}, exits))
+    assert result["status"] != "error", result.get("error")
