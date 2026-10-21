@@ -2,6 +2,9 @@
 
 from collections.abc import Callable, Iterable
 
+EXIT_COLUMN_PARAMS = ("sl_dist_column", "range_column", "sl_level_column")
+"""exit_params keys that name a frame column an exit strategy reads."""
+
 
 class AmbiguousColumnError(ValueError):
     """Several columns qualify for a role and the config does not name one."""

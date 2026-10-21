@@ -215,7 +215,7 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
     # Feature pool cleaning: identify columns to drop (inf, >10% NaN)
     full_pool = get_feature_columns(train_df)
 
-    protected_cols = set(ctx.required_features) if ctx.required_features else set()
+    protected_cols = set(ctx.required_features or []) | set(ctx.exit_columns or [])
     clean_pool = []
     excluded_inf = 0
     excluded_nan = 0
