@@ -21,7 +21,6 @@ from fwbg.research.ledger import LEDGER_FILENAME, append_trial, read_trials
 from fwbg.research.pending import write_pending
 from fwbg.research.ledger import TrialKind, TrialStatus
 from fwbg.research.repo import REGISTER_PATHS, ResearchRepoError, commit_register
-from fwbg.research.stats import deflated_best
 from tests.research.factories import dead_pid, make_card, make_pending, make_run, make_trial
 
 TODAY = date(2026, 10, 20)
@@ -399,14 +398,36 @@ def test_verdict_reports_the_deflated_sharpe_ratio(gate_register):
     append_trial(
         ledger_path, make_trial(metrics={"GOLD": {"sharpe": 1.2, **INPUTS, "sr_per_trade": 0.3}})
     )
-    result = deflated_best(read_trials(ledger_path))
-    assert result is not None and result.dsr is not None
     write_verdict(gate_register, "S-0007", Status.CANDIDATE, "x", "y", TODAY)
+    # Independent reference values (scipy): N=2, V=0.02 -> E[max SR] 0.07350, DSR 0.98664.
     assert (
-        f"Deflated Sharpe ratio: {result.dsr:.3f} for T-000002 GOLD (per-trade SR 0.3000 over "
-        "101 returns, skew 0, kurtosis 3; N=2 symbol evaluations; V[SR]=0.02 from "
-        f"2 evaluations with return statistics; E[max SR]={result.expected_max_sr:.4f}).\n"
+        "Deflated Sharpe ratio: 0.9866 for T-000002 GOLD (per-trade SR 0.3000 over "
+        "101 returns, skew 0, kurtosis 3; N=2 symbol evaluations; V[SR]=0.02000 "
+        "(sample variance from 2 evaluations with return statistics; floor 1/(T-1) 0.01000); "
+        "E[max SR]=0.0735).\n"
     ) in card(gate_register).body
+
+
+def test_verdict_reports_a_floored_sr_variance(gate_register):
+    legacy = {f"L{index}": {"sharpe": 0.0} for index in range(20)}
+    ledger_path = gate_register / LEDGER_FILENAME
+    append_trial(ledger_path, make_trial(metrics={"A": INPUTS, "B": INPUTS}))
+    append_trial(ledger_path, make_trial(kind=TrialKind.LEGACY, metrics=legacy))
+    write_verdict(gate_register, "S-0007", Status.PARKED, "x", "y", TODAY)
+    # Independent reference values (scipy): N=22, V=0.01 -> E[max SR] 0.19423, DSR 0.17361.
+    assert (
+        "Deflated Sharpe ratio: 0.1736 for T-000001 A (per-trade SR 0.1000 over 101 returns, "
+        "skew 0, kurtosis 3; N=22 symbol evaluations; V[SR]=0.01000 (floor 1/(T-1); "
+        "sample variance 0.00000 from 2 evaluations with return statistics); "
+        "E[max SR]=0.1942).\n"
+    ) in card(gate_register).body
+
+
+def test_verdict_never_rounds_a_deflated_sharpe_ratio_up_to_one(gate_register):
+    strong = {**INPUTS, "sr_per_trade": 0.9, "n_returns": 5000}
+    append_trial(gate_register / LEDGER_FILENAME, make_trial(metrics={"A": INPUTS, "B": strong}))
+    write_verdict(gate_register, "S-0007", Status.PARKED, "x", "y", TODAY)
+    assert "Deflated Sharpe ratio: > 0.9999 for T-000001 B (" in card(gate_register).body
 
 
 def test_verdict_says_when_the_deflated_sharpe_ratio_is_not_defined(gate_register):
@@ -432,8 +453,8 @@ def test_verdict_reports_holdout_results_against_the_criteria(gate_register):
     )
     write_verdict(gate_register, "S-0007", Status.REJECTED, "x", "y", TODAY)
     assert (
-        "Holdout result T-000002 (window open..open, cutoff 2025-04-30): "
-        "GOLD min_sharpe pass (1.4 >= 1); min_trades fail (80 < 100) | "
+        "Holdout result T-000002 (holdout 2025-04-30..open), checked against the current "
+        "criteria (registration): GOLD min_sharpe pass (1.4 >= 1); min_trades fail (80 < 100) | "
         "EURUSD no holdout metrics.\n"
     ) in card(gate_register).body + "\n"
 
@@ -445,9 +466,27 @@ def test_verdict_reports_a_failed_holdout_look(gate_register):
     )
     write_verdict(gate_register, "S-0007", Status.REJECTED, "x", "y", TODAY)
     assert (
-        "Holdout result T-000001 (window open..2025-04-30, cutoff 2025-04-30): "
-        "failed, no symbol evaluated."
+        "Holdout result T-000001 (holdout 2025-04-30..2025-04-30): failed, no symbol evaluated."
     ) in card(gate_register).body
+
+
+def test_verdict_flags_holdout_looks_checked_against_changed_criteria(gate_register):
+    ledger_path = gate_register / LEDGER_FILENAME
+    append_trial(
+        ledger_path,
+        make_trial(
+            kind=TrialKind.HOLDOUT,
+            window={"start": None, "end": "2026-01-31"},
+            metrics={"GOLD": {"sharpe": 0.6}},
+        ),
+    )
+    amend_criteria(gate_register, "S-0007", {"min_sharpe": 0.5}, "loosen", TODAY)
+    write_verdict(gate_register, "S-0007", Status.CANDIDATE, "x", "y", TODAY)
+    assert (
+        "Holdout result T-000001 (holdout 2025-04-30..2026-01-31), checked against the current "
+        "criteria (amendment 1) (criteria changed since this look): "
+        "GOLD min_sharpe pass (0.6 >= 0.5); min_trades n/a.\n"
+    ) in card(gate_register).body + "\n"
 
 
 def test_verdict_lists_every_criteria_version(gate_register):

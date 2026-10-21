@@ -464,23 +464,41 @@ Deflated Sharpe Ratio (step 5, `src/fwbg/research/dsr.py`, the full formula
 of Bailey & López de Prado 2014, stdlib only):
 
 - **N:** every counted symbol evaluation of the card, holdout looks
-  included (conservative).
-- **V[SR]:** sample variance of the per-trade SRs of the card's development
-  evaluations that carry return statistics. Legacy and `no_edge`
-  evaluations have none; they count in N only. Holdout looks are not part
-  of the selection the DSR deflates.
+  included. Holdout looks are not part of the selection the DSR deflates;
+  counting them anyway is the conservative choice (a larger N only raises
+  E[max SR]).
+- **V[SR]:** the unbiased sample variance (n − 1) of the per-trade SRs of
+  the card's development evaluations that carry return statistics. Legacy
+  and `no_edge` evaluations have none; they count in N only.
+- **V[SR] floor** (operator decision 2026-10-21): V[SR] is at least the mean
+  over those evaluations of 1/(T − 1), T being each one's return count.
+  Under the null of zero true SR, a per-trade SR estimated from T returns
+  has a sampling variance of about 1/(T − 1). Without the floor, two or
+  a few near-identical samples would give a V[SR] near 0, collapse E[max SR]
+  towards 0 and leave the DSR no deflation at all. The floor is theory, not
+  a threshold fitted to data. The verdict line states V[SR], whether the
+  floor or the sample variance was used, and the other one.
 - **Best:** the development evaluation with the highest `sr_per_trade`, the
   statistic being deflated (per trade, never annualised, so trials with
   different trade frequencies share one scale); its own skew, kurtosis and
-  return count enter the PSR against E[max SR] of N trials.
+  return count enter the PSR against E[max SR] of N trials. It can differ
+  from the "Best development result" line, which ranks by annualised Sharpe.
+- The DSR is printed with four decimals; a value that would round to 1 reads
+  "> 0.9999".
 - Fewer than 2 evaluations with return statistics → "too few trials with
   return statistics". Skew and kurtosis that leave no positive SR variance
   → "not defined". Development metrics of signal models are optimistic (see
   Holdout look), so the best SR is biased upward.
 
-Holdout result: one line per holdout trial with its window and cutoff, each
-symbol checked against the current criteria ("no holdout metrics" for a
-symbol without numbers; "failed, no symbol evaluated" for a failed look).
+Holdout result: one line per holdout trial with the evaluated period
+(`holdout <cutoff>..<end or open>`), each symbol checked against the current
+criteria, labelled like the best-result line (registration or amendment N).
+"(criteria changed since this look)" flags a look recorded under a different
+`criteria_hash` than the card's current one. A symbol without numbers reads
+"no holdout metrics"; a failed look reads "failed, no symbol evaluated".
+Symbols whose holdout was not looked at (development ended before
+evaluating) are absent from the line: the ledger records only evaluated
+symbols of a holdout trial.
 
 The run-level `overfitting` block in each symbol's `config.json`
 (`src/fwbg/optimization/overfitting.py`, written since step 5) is advisory
