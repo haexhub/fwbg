@@ -53,7 +53,7 @@ from fwbg.optimization.resource_manager import SimplePoolManager, get_resource_i
 from fwbg.simulation.equity import simulate_equity_from_pnl, filter_correlated_assets  # noqa: E402
 from fwbg.results.plotting import create_asset_plot  # noqa: E402
 from fwbg.results import storage as results_storage  # noqa: E402
-from fwbg.results.symbol_files import config_extras  # noqa: E402
+from fwbg.results.symbol_files import config_extras, write_development  # noqa: E402
 from fwbg.api.workspace import get_research_dir  # noqa: E402
 from fwbg.research.runs import (  # noqa: E402
     GATE_ENV,
@@ -365,6 +365,7 @@ def run_optimizer(
 
         with open(os.path.join(sym_dir, "config.json"), "w") as f:
             json.dump(config_data, f, indent=2, cls=_SafeJsonEncoder)
+        write_development(sym_dir, result, _SafeJsonEncoder)
 
         # --- fold_results.json: Walk-Forward Folds + Bias-Check ---
         fold_data = {}
@@ -707,7 +708,8 @@ def run_optimizer(
             and fold_stability >= MIN_FOLD_STABILITY
         )
 
-        if is_profitable:
+        # A holdout look is an evaluation, never a deployment export.
+        if is_profitable and not strategy.holdout_cutoff:
             export_config = {k: v for k, v in e["config"].items()}
             final_assets[sym] = export_config
             status = "OK"

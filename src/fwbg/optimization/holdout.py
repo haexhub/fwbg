@@ -65,6 +65,7 @@ _DEVELOPMENT_KEYS = (
     "config",
     "best_config",
     "indicator_variant",
+    "unified_candidate",  # the frozen setting the holdout evaluated
 )
 
 
