@@ -61,6 +61,13 @@ def test_missing_end_date_is_refused_and_writes_nothing(gate_register):
     assert read_trials(gate_register / LEDGER_FILENAME) == []
 
 
+def test_a_study_cannot_look_at_the_holdout(gate_register):
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, config={**CONFIG, "holdout_cutoff": "2025-04-30"})
+    assert denial_codes(denied) == [DenialCode.INVALID_CONFIG]
+    assert read_trials(gate_register / LEDGER_FILENAME) == []
+
+
 def test_end_after_the_cutoff_is_refused(gate_register):
     with pytest.raises(GateDenied) as denied:
         record(gate_register, {**CONFIG, "end_date": "2025-06-01"})

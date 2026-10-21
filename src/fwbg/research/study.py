@@ -4,6 +4,9 @@ A script that evaluates strategy variants itself (not through
 ``python -m fwbg.cli``) records every variant with :func:`register_trial`, so
 the register's trial count stays honest. Import it from here, not from
 ``fwbg.research``.
+
+Studies record iterations only; a holdout look runs through
+``python -m fwbg.cli --holdout``. A config carrying ``holdout_cutoff`` is refused.
 """
 
 from __future__ import annotations

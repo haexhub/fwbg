@@ -86,6 +86,11 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     group.add_argument("--note", help="one line: what changed since the last iteration and why")
     group.add_argument("--reason", help="why an identical configuration runs again")
     group.add_argument(
+        "--holdout",
+        action="store_true",
+        help="look at the card's holdout once: develop before its cutoff, evaluate after it",
+    )
+    group.add_argument(
         "--check", action="store_true", help="check the run against the register; do not run it"
     )
     group.add_argument(
@@ -121,6 +126,7 @@ class ResearchRun:
     note: str | None
     reason: str | None = None
     check_only: bool = False
+    holdout: bool = False
     _pending: PendingRun | None = field(default=None, init=False, repr=False)
 
     def before_run(self, metadata: Mapping[str, Any], symbols: Sequence[str]) -> dict[str, Any]:
@@ -131,7 +137,9 @@ class ResearchRun:
             GateChecked: ``check_only`` and the run would be allowed.
         """
         canonical = tuple(sorted({symbol.upper() for symbol in symbols}))
-        request = RunRequest(self.research_id, metadata, canonical, self.note, self.reason)
+        request = RunRequest(
+            self.research_id, metadata, canonical, self.note, self.reason, holdout=self.holdout
+        )
         try:
             with register_lock(self.research_dir):
                 return self._gate(request, canonical)
@@ -445,3 +453,8 @@ def _print_check(decision: Decision, symbols: tuple[str, ...]) -> None:
     print(
         f"  window:      {window['start'] or 'open'} .. {window['end'] or 'open'} (end exclusive)"
     )
+    cutoff = decision.effective_metadata.get("holdout_cutoff")
+    if cutoff is not None:
+        print(
+            f"  split:       development .. {cutoff} | holdout {cutoff} .. {window['end'] or 'open'}"
+        )
