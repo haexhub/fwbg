@@ -1106,6 +1106,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "feature_stability": feature_stability,
             "trade_analytics": trade_analytics,
             "grid_results": accumulated_grid_results,
+            "unified_candidate": unified_candidate,
         }
         if indicator_variant_label:
             result["indicator_variant"] = indicator_variant_label

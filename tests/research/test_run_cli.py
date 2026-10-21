@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from fwbg.data import config as data_config
+from fwbg.optimization.holdout import process_symbol_holdout
 from fwbg.optimization.resource_manager import SimplePoolManager
 from fwbg.research.gate import Denial, DenialCode
 from fwbg.research.ledger import LEDGER_FILENAME, TrialStatus, read_trials
@@ -311,6 +312,22 @@ def test_run_optimizer_runs_with_the_gated_metadata(optimizer, monkeypatch):
     assert captured[0].keywords["strategy"].end_date == "2024-01-01"
     strategy = json.loads((optimizer.results / "r1" / "strategy.json").read_text("utf-8"))
     assert strategy["end_date"] == "2024-01-01"
+
+
+def test_run_optimizer_dispatches_a_holdout_look(optimizer, monkeypatch):
+    captured = []
+
+    def before_run(metadata, symbols):
+        return {**metadata, "holdout_cutoff": "2024-01-01"}
+
+    def capture(self, func, items, progress_callback=None, result_callback=None):
+        captured.append(func)
+        return []
+
+    monkeypatch.setattr(SimplePoolManager, "map_adaptive", capture)
+    cli.run_optimizer(strategy_metadata=optimizer.metadata, run_id="r1", before_run=before_run)
+    assert captured[0].func is process_symbol_holdout
+    assert captured[0].keywords["strategy"].holdout_cutoff == "2024-01-01"
 
 
 def test_run_optimizer_writes_nothing_when_the_gate_refuses(optimizer):

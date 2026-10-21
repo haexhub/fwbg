@@ -13,7 +13,7 @@ import pandas as pd
 from fwbg.core.config import StrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.data import config as data_config
-from fwbg.optimization import process, unified_simulation
+from fwbg.optimization import holdout, process, unified_simulation
 from fwbg.optimization.resource_manager import SimplePoolManager
 from fwbg.results import storage
 from fwbg.utils import progress
@@ -41,6 +41,9 @@ def hourly_frame(rows: int = ROWS) -> pd.DataFrame:
     index = pd.date_range("2022-01-01", periods=rows, freq="h")
     close = 100 + np.cumsum(np.random.RandomState(1).randn(rows) * 0.1)
     return pd.DataFrame({"O": close, "H": close + 0.1, "L": close - 0.1, "C": close}, index=index)
+
+
+HOLDOUT = [(2.0, 1.0)] * 21 + [(-1.0, 0.0)] * 9  # the holdout fold's trades: WR 0.7
 
 
 def unified_fold(fold, pairs) -> dict:
@@ -112,6 +115,29 @@ def patch_development(monkeypatch, pairs) -> None:
         "run_unified_simulation",
         lambda folds, *args, **kwargs: [unified_fold(fold, pairs) for fold in folds],
     )
+
+
+def patch_holdout(monkeypatch, pairs=HOLDOUT, evaluations=None) -> list[dict]:
+    """The holdout's single unified-simulation call; records what it was given."""
+    calls = []
+
+    def simulate(
+        folds,
+        candidate,
+        fold_indicators,
+        precomputed_raw_df,
+        preprocessing_configs,
+        ctx,
+        sym,
+        prepare_data_fn=None,
+    ):
+        calls.append(
+            {"folds": folds, "candidate": candidate, "ctx": ctx, "prepare": prepare_data_fn}
+        )
+        return evaluations if evaluations is not None else [unified_fold(folds[0], pairs)]
+
+    monkeypatch.setattr(holdout, "run_unified_simulation", simulate)
+    return calls
 
 
 def _inline(self, func, items, progress_callback=None, result_callback=None):

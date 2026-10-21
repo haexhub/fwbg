@@ -374,6 +374,7 @@ class StrategyConfig:
     # before fold splitting — used e.g. to reserve a holdout tail.
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    holdout_cutoff: Optional[str] = None  # Set by the research gate for a holdout look; see optimization.holdout
 
     # Transaction-cost multiplier applied to spread (and thus slippage).
     # 1.0 = as configured; 2.0 = cost-stress run.
@@ -435,6 +436,7 @@ class StrategyConfig:
             timeframe=data.get("timeframe"),
             start_date=data.get("start_date"),
             end_date=data.get("end_date"),
+            holdout_cutoff=data.get("holdout_cutoff"),
             cost_multiplier=data.get("cost_multiplier", 1.0),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
