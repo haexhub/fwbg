@@ -80,9 +80,17 @@ def _ran_real_backtest(raw_results) -> bool:
 
     A run where every symbol bailed out before evaluation is broken, not a
     legitimate "no edge found" — the caller fails it loudly instead of
-    reporting a silently "completed" empty run.
+    reporting a silently "completed" empty run. A holdout look's symbol ran iff
+    its holdout was looked at, the rule the research ledger counts by.
     """
-    return any(r and r.get("status") in EXECUTED_STATUSES for r in raw_results)
+    return any(
+        r and (
+            (r.get("holdout") or {}).get("evaluated") is True
+            if "holdout" in r
+            else r.get("status") in EXECUTED_STATUSES
+        )
+        for r in raw_results
+    )
 
 
 def run_optimizer(
@@ -444,6 +452,10 @@ def run_optimizer(
             _ta = result.get("trade_analytics") or {}
             _n_long = (_ta.get("long_stats") or {}).get("total", 0)
             _n_short = (_ta.get("short_stats") or {}).get("total", 0)
+            if not _ta:
+                # A holdout look has no trade analytics; its trades carry their direction.
+                _directions = [t.get("direction") for t in result.get("trades_detailed") or []]
+                _n_long, _n_short = _directions.count("LONG"), _directions.count("SHORT")
 
             unified_metrics = {
                 "pnl": round(sum(_trades), 4),
@@ -634,6 +646,12 @@ def run_optimizer(
     # No symbol ran a real backtest → the run is broken. Return None so main()
     # exits non-zero and the API records the run as "failed" instead of a
     # silently "completed" few-second empty run.
+    if not ran_real_backtest and strategy.holdout_cutoff:
+        print(
+            "\nERROR: no symbol reached its holdout — every development ended before "
+            "the holdout look (e.g. no_edge, no_successful_folds). The run counts as failed."
+        )
+        return None
     if not ran_real_backtest:
         print(
             "\nFEHLER: Kein Symbol hat einen Backtest ausgeführt — alle Assets "
@@ -714,7 +732,9 @@ def run_optimizer(
         )
 
         # A holdout look is an evaluation, never a deployment export.
-        if is_profitable and not strategy.holdout_cutoff:
+        if strategy.holdout_cutoff:
+            status = "HOLDOUT"
+        elif is_profitable:
             export_config = {k: v for k, v in e["config"].items()}
             final_assets[sym] = export_config
             status = "OK"
