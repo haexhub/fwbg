@@ -30,7 +30,7 @@ from .robust_validation import create_walk_forward_folds, plan_walk_forward
 from .bias_checks import check_asset_bias, fold_bias_ratios
 from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
 from .process_fold import precompute_indicators, process_single_fold
-from .signal_selection import SELECTION_PROTOCOL
+from .selection_protocol import SELECTION_PROTOCOL
 
 
 def _compute_trade_analytics(trades_detailed):
@@ -456,6 +456,13 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
 
 
 def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
+    """Walk-forward development of one symbol; every result records its selection protocol."""
+    result = _process_symbol(csv_path, strategy)
+    result["selection_protocol"] = SELECTION_PROTOCOL
+    return result
+
+
+def _process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     """
     Verarbeitet ein einzelnes Symbol mit Walk-Forward Optimierung.
 

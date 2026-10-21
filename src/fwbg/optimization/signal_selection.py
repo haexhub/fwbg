@@ -19,11 +19,6 @@ from .nested_cv import evaluate_on_holdout, nested_cv_split
 
 Window = tuple[pd.DataFrame, pd.DataFrame]
 
-# Recorded per symbol as walk_forward.selection_protocol: 2 = every fold's setting (signal
-# and ML) and the indicator variant are chosen on inner windows of the training data,
-# never on the fold's test set. Runs without it predate this for signal models.
-SELECTION_PROTOCOL = 2
-
 
 @dataclass(frozen=True)
 class SignalCombo:
