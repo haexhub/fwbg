@@ -180,10 +180,11 @@ def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
         "successful_folds": len(all_fold_results),
         "profitable_folds": profitable_folds,
         "fold_stability": profitable_folds / len(all_fold_results) if all_fold_results else 0.0,
-        "mean_win_rate": np.mean(win_rates),
-        "std_win_rate": np.std(win_rates),
-        "min_win_rate": min(win_rates),
-        "max_win_rate": max(win_rates),
+        # win_rates: folds that traded; None when no fold traded.
+        "mean_win_rate": np.mean(win_rates) if win_rates else None,
+        "std_win_rate": np.std(win_rates) if win_rates else None,
+        "min_win_rate": min(win_rates) if win_rates else None,
+        "max_win_rate": max(win_rates) if win_rates else None,
         "mean_pnl": np.mean(pnls),
         "std_pnl": np.std(pnls),
         "min_pnl": min(pnls),
@@ -630,20 +631,23 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 best_grid = max(valid, key=lambda g: g["inner_val_pnl"])
                 result["best_grid_result"] = best_grid
                 log(1, f"  Best grid result: TP={best_grid['tp_mult']}, SL={best_grid['sl_mult']}, "
-                       f"CT={best_grid.get('conf_thresh', '?')}, PnL={best_grid['inner_val_pnl']:.1f}", sym)
+                       f"CT={best_grid.get('conf_thresh', best_grid.get('ct', '?'))}, "
+                       f"PnL={best_grid['inner_val_pnl']:.1f}", sym)
             return result
 
         log(1, f"=== Walk-Forward Complete: {len(all_fold_results)}/{len(wf_folds)} successful folds ===", sym)
 
         # Aggregate metrics across all folds
-        win_rates = [r["test_win_rate"] for r in all_fold_results]
+        # A fold whose chosen setting traded nothing (kept: the test set must not filter
+        # folds) has no win rate; it still counts as a fold and in fold_stability.
+        win_rates = [r["test_win_rate"] for r in all_fold_results if r["test_trades"] > 0]
         pnls = [r["test_pnl"] for r in all_fold_results]
         trades_counts = [r["test_trades"] for r in all_fold_results]
         bias = fold_bias_ratios(all_fold_results)
         bias_ratios = bias["bias_ratios"]
 
-        mean_wr = np.mean(win_rates)
-        std_wr = np.std(win_rates)
+        mean_wr = np.mean(win_rates) if win_rates else 0.0  # replaced by the unified trades' WR
+        std_wr = np.std(win_rates) if win_rates else 0.0
         mean_pnl = np.mean(pnls)
         std_pnl = np.std(pnls)
         total_trades = sum(trades_counts)
@@ -654,7 +658,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         sample_bias_detected = any(ratio > 2.0 for ratio in bias_ratios if ratio > 0)
 
         log(1, "Walk-Forward Results:", sym)
-        log(1, f"  Win-Rate: {mean_wr*100:.1f}% ± {std_wr*100:.1f}% (range: {min(win_rates)*100:.1f}%-{max(win_rates)*100:.1f}%)", sym)
+        if win_rates:
+            log(1, f"  Win-Rate: {mean_wr*100:.1f}% ± {std_wr*100:.1f}% (range: {min(win_rates)*100:.1f}%-{max(win_rates)*100:.1f}%)", sym)
+        else:
+            log(1, "  Win-Rate: n/a (no fold traded)", sym)
         log(1, f"  PnL: {mean_pnl:.1f} ± {std_pnl:.1f} (range: {min(pnls):.1f}-{max(pnls):.1f})", sym)
         log(1, f"  Total Trades: {total_trades}", sym)
         log(1, f"  Bias Ratios: {[f'{r:.2f}x' for r in bias_ratios]}"
