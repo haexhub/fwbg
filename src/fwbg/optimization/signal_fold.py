@@ -7,6 +7,7 @@ and direct evaluation (no inner CV needed).
 """
 import dataclasses
 
+from fwbg.core.columns import named_columns
 from fwbg.utils.logging import log
 from .nested_cv import evaluate_on_holdout
 from .process_fold import _prepare_fold_common, _finalize_fold_data
@@ -53,7 +54,12 @@ def prepare_signal_fold_data(fold, fold_indicators, precomputed_raw_df,
     # Fill feature NaN with 0 (NaN = "no signal") instead of dropping rows.
     # Dropping bars creates gaps that break sequential trade simulation
     # (a trade opened during session may hit TP/SL outside session).
+    # Named exit columns keep NaN: a zero stop distance or level is not "no
+    # value" to the exit, while NaN makes it fall back to its ATR/distance stop.
+    exit_cols = set(named_columns(train_df.columns, ctx.exit_columns or []))
     for col in full_pool:
+        if col in exit_cols:
+            continue
         if col in train_df.columns:
             train_df[col] = train_df[col].fillna(0)
         if col in test_df.columns:
