@@ -27,7 +27,8 @@
         "min_sl_pips": 12,
         "tp_mult": 5.0,
         "sl_mult": 0.9,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -46,7 +47,8 @@
         "min_sl_pips": 12,
         "tp_mult": 5.0,
         "sl_mult": 1.0,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -65,7 +67,8 @@
         "min_sl_pips": 12,
         "tp_mult": 5.0,
         "sl_mult": 1.1,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -84,7 +87,8 @@
         "min_sl_pips": 12,
         "tp_mult": 6.0,
         "sl_mult": 0.9,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -103,7 +107,8 @@
         "min_sl_pips": 12,
         "tp_mult": 6.0,
         "sl_mult": 1.0,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -122,7 +127,8 @@
         "min_sl_pips": 12,
         "tp_mult": 6.0,
         "sl_mult": 1.1,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -141,7 +147,8 @@
         "min_sl_pips": 12,
         "tp_mult": 7.0,
         "sl_mult": 0.9,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -160,7 +167,8 @@
         "min_sl_pips": 12,
         "tp_mult": 7.0,
         "sl_mult": 1.0,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -179,7 +187,8 @@
         "min_sl_pips": 12,
         "tp_mult": 7.0,
         "sl_mult": 1.1,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -198,7 +207,8 @@
         "min_sl_pips": 12,
         "tp_mult": 8.0,
         "sl_mult": 0.9,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -217,7 +227,8 @@
         "min_sl_pips": 12,
         "tp_mult": 8.0,
         "sl_mult": 1.0,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -236,7 +247,8 @@
         "min_sl_pips": 12,
         "tp_mult": 8.0,
         "sl_mult": 1.1,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -255,7 +267,8 @@
         "min_sl_pips": 12,
         "tp_mult": 9.0,
         "sl_mult": 0.9,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -274,7 +287,8 @@
         "min_sl_pips": 12,
         "tp_mult": 9.0,
         "sl_mult": 1.0,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -293,7 +307,8 @@
         "min_sl_pips": 12,
         "tp_mult": 9.0,
         "sl_mult": 1.1,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -312,7 +327,8 @@
         "min_sl_pips": 12,
         "tp_mult": 10.0,
         "sl_mult": 0.9,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -331,7 +347,8 @@
         "min_sl_pips": 12,
         "tp_mult": 10.0,
         "sl_mult": 1.0,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -350,7 +367,8 @@
         "min_sl_pips": 12,
         "tp_mult": 10.0,
         "sl_mult": 1.1,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -369,7 +387,8 @@
         "min_sl_pips": 12,
         "tp_mult": 12.0,
         "sl_mult": 0.9,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -388,7 +407,8 @@
         "min_sl_pips": 12,
         "tp_mult": 12.0,
         "sl_mult": 1.0,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5
@@ -407,7 +427,8 @@
         "min_sl_pips": 12,
         "tp_mult": 12.0,
         "sl_mult": 1.1,
-        "timeout_bars": null
+        "timeout_bars": null,
+        "sl_dist_column": "rb1_prb0_orb_s00_sl_dist"
       },
       "ct": [
         0.5

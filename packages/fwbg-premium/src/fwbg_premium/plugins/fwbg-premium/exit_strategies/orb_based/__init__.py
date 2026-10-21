@@ -8,10 +8,9 @@ Design rationale:
   - SL is anchored to the structural level that invalidates the trade thesis.
   - orb_sl_dist = full OR range. With sl_mult=1.0, SL sits at the opposite
     boundary (e.g. long entry at or_high → SL at or_low). sl_mult>1.0 adds buffer.
-  - When sl_dist_column is explicitly set (via exit_params), the column value
-    is the ABSOLUTE SL distance — used as-is, no sl_mult applied.
-  - When auto-detected (no explicit sl_dist_column), sl_mult is applied as a
-    buffer multiplier on the raw distance (1.0 = opposite boundary, >1.0 = beyond).
+  - sl_mult always scales the stop distance column, whether it is named by
+    exit_params.sl_dist_column or auto-detected (1.0 = the column's distance,
+    >1.0 = beyond it).
 
 tp_mode (exit_params):
   - "atr" (default): TP = ATR * tp_mult. Trailing uses ATR * trail_atr_mult.
@@ -21,7 +20,7 @@ Column choice: auto-detection needs exactly one *_sl_dist (and, for
 tp_mode="range", one *_range) column. Several ORB sessions, ranges or
 retracement levels give several, and the run fails with AmbiguousColumnError
 until exit_params names the column (sl_dist_column, range_column; for sl_level
-also sl_level_column). Mind that an explicit sl_dist_column drops sl_mult.
+also sl_level_column). Naming the column keeps the sl_mult scaling.
 """
 from typing import Tuple, Union, TYPE_CHECKING
 import numpy as np
@@ -487,27 +486,19 @@ class OrbExitStrategy(BaseExitStrategy):
     ) -> np.ndarray:
         """Return SL distances per bar.
 
-        When sl_dist_column is explicitly set: column value is the ABSOLUTE SL
-        distance (no sl_mult applied). NaN rows fall back to ATR * sl_mult.
-
-        When auto-detected (no explicit sl_dist_column): applies sl_mult as
-        buffer multiplier on the raw distance. NaN rows fall back to ATR * sl_mult.
+        The stop column (explicit sl_dist_column, else the single auto-detected
+        *_sl_dist) is scaled by sl_mult. NaN rows fall back to ATR * sl_mult.
 
         No column found at all: pure ATR * sl_mult. Several auto-detect
         candidates raise AmbiguousColumnError.
         """
         sl_col = resolve_role_column(
             df.columns, sl_dist_column, lambda c: c.endswith("_sl_dist"), "sl_dist_column",
-            note=" An explicit sl_dist_column is the absolute stop distance: sl_mult "
-                 "is not applied to it.",
+            note=" sl_mult still scales the named column.",
         )
-        explicit = sl_col is not None and sl_col == sl_dist_column
         if sl_col is not None:
             raw = df[sl_col].values.astype(np.float64)
-            fallback = atr_v * sl_mult
-            if explicit:
-                return np.where(np.isnan(raw), fallback, raw).astype(np.float64)
-            return np.where(np.isnan(raw), fallback, raw * sl_mult).astype(np.float64)
+            return np.where(np.isnan(raw), atr_v * sl_mult, raw * sl_mult).astype(np.float64)
         return (atr_v * sl_mult).astype(np.float64)
 
 

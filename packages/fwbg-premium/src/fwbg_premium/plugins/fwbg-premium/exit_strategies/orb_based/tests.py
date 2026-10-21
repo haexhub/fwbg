@@ -1,8 +1,8 @@
 """Tests for OrbExitStrategy plugin.
 
 The orb_based strategy uses structural-level SL and ATR-based TP:
-- Explicit sl_dist_column: raw distance used as-is (no sl_mult). E.g. pdl_sl_dist.
-- Auto-detect *_sl_dist: distance * sl_mult (buffer tuning). E.g. orb_sl_dist.
+- *_sl_dist column (explicit sl_dist_column or the single auto-detected one):
+  distance * sl_mult (buffer tuning). E.g. orb_sl_dist, pdl_sl_dist.
 - No column: ATR * sl_mult fallback.
 - Several auto-detect candidates and no explicit column: refused.
 - TP = ATR * tp_mult (optimizer searches best multiple)
@@ -246,23 +246,36 @@ class TestOrbExitStrategySLDistColumn:
             f"Expected SL from pdl_sl_dist=500, got min={sl_dists.min():.2f}"
         )
 
-    def test_explicit_sl_dist_column_ignores_sl_mult(self, ohlc_df):
-        """When sl_dist_column is explicitly set, sl_mult must NOT be applied.
+    @pytest.mark.parametrize("sl_mult, expected", [(1.0, 100.0), (2.0, 200.0)])
+    def test_explicit_sl_dist_column_is_scaled_by_sl_mult(self, ohlc_df, sl_mult, expected):
+        """An explicit sl_dist_column is scaled by sl_mult like an auto-detected one.
 
-        The raw column value is the absolute SL distance (e.g. distance to PDL/PDH).
+        It used to be taken as the absolute stop distance, so naming the column
+        dropped sl_mult and collapsed an sl_mult grid to a single stop.
         """
-        strategy = OrbExitStrategy()
         df = ohlc_df.copy()
+        df["orb_sl_dist"] = 30.0
         df["hl_ses_pdl_sl_dist"] = 100.0
 
-        atr_v = strategy._get_atr(df, 14)
-
-        # With explicit sl_dist_column: raw=100, sl_mult=3.0 → result should be 100 (NOT 300)
-        sl_dists = strategy._get_sl_dist(df, atr_v, sl_mult=3.0, sl_dist_column="hl_ses_pdl_sl_dist")
-        np.testing.assert_allclose(
-            sl_dists, 100.0,
-            err_msg="Explicit sl_dist_column must use raw value, NOT apply sl_mult",
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"atr_period": 14, "min_tp_pips": 1, "min_sl_pips": 1,
+                         "sl_dist_column": "hl_ses_pdl_sl_dist"},
         )
+        _, sl_dists = OrbExitStrategy().resolve_distances(df, tp=2.0, sl=sl_mult, ctx=ctx)
+        np.testing.assert_allclose(sl_dists, expected)
+
+    def test_explicit_sl_dist_column_nan_rows_fall_back_to_atr(self, ohlc_df):
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["hl_ses_pdl_sl_dist"] = np.nan
+
+        atr_v = strategy._get_atr(df, 14)
+        sl_dists = strategy._get_sl_dist(
+            df, atr_v, sl_mult=2.0, sl_dist_column="hl_ses_pdl_sl_dist",
+        )
+        np.testing.assert_allclose(sl_dists, atr_v * 2.0)
 
     def test_auto_detect_sl_dist_applies_sl_mult(self, ohlc_df):
         """When no sl_dist_column is set, auto-detect applies sl_mult as buffer."""
