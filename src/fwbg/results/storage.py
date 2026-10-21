@@ -345,7 +345,7 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
             "tr_trace": r["tr_trace"],  # Trade-Sequenz für Analyse speichern
             "trades_detailed": r.get("trades_detailed", []),  # Volle Trade-Details
             "monte_carlo": r.get("monte_carlo", {}),
-            "fold_stability": r.get("fold_stability", 0),
+            "fold_stability": r.get("fold_stability"),
             "nested_cv": r.get("nested_cv", {}),  # Nested CV Info
             "smoothness": r.get("smoothness", {}),  # Equity-Smoothness
             "long_short_stats": r.get("long_short_stats", {}),  # Separate L/S Statistiken
