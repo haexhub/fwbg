@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Tuple, Optional, TYPE_CHECKING
 
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_exit_strategy, GridParams
+from fwbg.core.columns import resolve_role_column
 
 if TYPE_CHECKING:
     from fwbg_sdk.models import BaseModel
@@ -87,8 +88,13 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
         np.ndarray der Level-Preise oder None (sl_level nicht gesetzt/none
         oder keine passende Spalte).
 
+    ``sl_level_column`` in exit_params wählt die Spalte explizit; ohne sie
+    müssen die Kandidaten eindeutig sein (z. B. nur eine ORB-Session).
+
     Raises:
         ValueError: wenn der Suffix nicht in den Schema-Choices enthalten ist.
+        AmbiguousColumnError: wenn mehrere Spalten passen und
+            ``sl_level_column`` fehlt.
     """
     sl_level_suffix = exit_params.get("sl_level")
     if not sl_level_suffix or sl_level_suffix == "none":
@@ -101,9 +107,9 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
             f"Invalid sl_level '{sl_level_suffix}' for exit strategy "
             f"'{ctx.exit_strategy}'; allowed: {choices}"
         )
-    sl_col = next(
-        (c for c in df.columns if c.endswith(f"_{sl_level_suffix}")),
-        None,
+    sl_col = resolve_role_column(
+        df.columns, exit_params.get("sl_level_column"),
+        lambda c: c.endswith(f"_{sl_level_suffix}"), "sl_level_column",
     )
     if sl_col is None:
         return None

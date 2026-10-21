@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
+from fwbg.core.columns import AmbiguousColumnError
 from fwbg.optimization.targets import resolve_sl_levels
 
 
@@ -83,3 +84,29 @@ class TestResolveSlLevels:
             _df(), _ctx("_test_no_sl_level_exit"), {"sl_level": "or_midpoint"}
         )
         assert levels is not None
+
+
+class TestAmbiguousSlLevel:
+    """Several *_<sl_level> columns (one per ORB session) fail closed unless
+    exit_params.sl_level_column names the one to use."""
+
+    @staticmethod
+    def _sessions_df():
+        return pd.DataFrame({
+            "rb4_orb_s00_or_high": [1.30, 1.31],
+            "rb4_orb_s08_or_high": [1.40, 1.41],
+        })
+
+    def test_several_level_columns_are_refused(self):
+        with pytest.raises(AmbiguousColumnError) as err:
+            resolve_sl_levels(self._sessions_df(), _ctx(), {"sl_level": "or_high"})
+        message = str(err.value)
+        assert "rb4_orb_s00_or_high" in message and "rb4_orb_s08_or_high" in message
+        assert "sl_level_column" in message
+
+    def test_sl_level_column_resolves_the_ambiguity(self):
+        levels = resolve_sl_levels(
+            self._sessions_df(), _ctx(),
+            {"sl_level": "or_high", "sl_level_column": "rb4_orb_s08_or_high"},
+        )
+        assert levels.tolist() == [1.40, 1.41]
