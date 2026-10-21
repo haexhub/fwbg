@@ -384,6 +384,38 @@ class OrbExitStrategy(BaseExitStrategy):
                 ),
                 "choices": ["none", "or_midpoint", "or_high", "or_low"],
             },
+            "sl_dist_column": {
+                "type": "string",
+                "default": None,
+                "required": False,
+                "description": (
+                    "Stop distance column. Plain name or fnmatch glob pattern "
+                    "(e.g. '*_orb_s00_sl_dist') that must match exactly one column; "
+                    "the value is scaled by sl_mult. Unset: the single *_sl_dist column "
+                    "(several are refused)."
+                ),
+            },
+            "range_column": {
+                "type": "string",
+                "default": None,
+                "required": False,
+                "description": (
+                    "Range column for tp_mode='range'. Plain name or fnmatch glob pattern "
+                    "that must match exactly one column. Unset: the single *_range column "
+                    "(several are refused)."
+                ),
+            },
+            "sl_level_column": {
+                "type": "string",
+                "default": None,
+                "required": False,
+                "description": (
+                    "Level column for sl_level. Plain name or fnmatch glob pattern "
+                    "that must match exactly one column; sl_mult scales the distance "
+                    "from entry to the level. Unset: the single *_<sl_level> column "
+                    "(several are refused)."
+                ),
+            },
             "entry_delay": {
                 "type": "int",
                 "default": 1,

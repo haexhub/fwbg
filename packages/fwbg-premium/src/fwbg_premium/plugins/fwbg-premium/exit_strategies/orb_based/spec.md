@@ -77,7 +77,7 @@ Exit strategy for ORB (Opening Range Breakout) setups. Stop-loss distance is rea
 
 - df with fewer than 2 rows: loop range(n-1) yields no iterations, so both targets arrays are all zeros (and duration arrays all zeros if requested).
 - No orb_sl_dist / *_sl_dist column present: SL falls back to pure ATR*sl_mult (still floored).
-- sl_dist_column set to a name that is NOT in df.columns: treated as auto-detected — the code searches for orb_sl_dist / *_sl_dist instead, applying sl_mult as a buffer multiplier.
+- sl_dist_column (or range_column / sl_level_column) set to a plain name that is NOT in df.columns: logged as a warning, then auto-detection applies (several candidates raise AmbiguousColumnError; one is used, scaled by sl_mult). A glob pattern that matches nothing raises ColumnRoleError instead.
 - ATR column contains NaNs: replaced with 0.0 by np.nan_to_num, so TP/SL floors (min_*_pips*spread) become the effective distances on those bars.
 - SL column value is NaN on a bar: replaced by ATR*sl_mult fallback in both explicit and auto-detected paths.
 - tp_mode='range' but no matching range column is present: _get_range returns zeros, so TP distance collapses to the min_tp_pips*spread floor.
@@ -101,5 +101,5 @@ Exit strategy for ORB (Opening Range Breakout) setups. Stop-loss distance is rea
 
 ## Needs Clarification
 
-- [NEEDS CLARIFICATION: sl_level, entry_delay, and max_trades_per_signal appear in the schema/defaults but are not referenced in compute_targets/resolve_distances — confirm whether they are consumed elsewhere in the pipeline (e.g. by the signal-to-trade layer) or are dead schema entries.]
+- [NEEDS CLARIFICATION: entry_delay and max_trades_per_signal appear in the schema/defaults but are not referenced in compute_targets/resolve_distances — confirm whether they are consumed elsewhere in the pipeline (e.g. by the signal-to-trade layer) or are dead schema entries.]
 - [NEEDS CLARIFICATION: The trail_atr_mult / trail_tp_atr_mult / breakeven_trigger inside the entry-modifier branch read from ctx.exit_modifier_params even though no exit_modifier is required in that branch — confirm whether this precomputation should also honor exit_params['breakeven_trigger'] / trail_pips as the non-modifier branch does.]

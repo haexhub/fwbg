@@ -306,8 +306,9 @@ class TestOrbExitStrategySLDistColumn:
             err_msg="Auto-detect sl_dist must apply sl_mult as buffer multiplier",
         )
 
-    def test_without_sl_dist_column_picks_first(self, ohlc_df):
-        """Without sl_dist_column, auto-detect picks the first *_sl_dist column."""
+    def test_without_sl_dist_column_uses_the_single_candidate(self, ohlc_df):
+        """Without sl_dist_column, auto-detect uses the one *_sl_dist column
+        (several are refused, see TestOrbExitStrategyAmbiguousColumns)."""
         strategy = OrbExitStrategy()
         df = ohlc_df.copy()
         df["orb_sl_dist"] = 100.0
@@ -532,6 +533,14 @@ class TestOrbExitStrategyDefaults:
         schema = OrbExitStrategy.get_param_schema()
         assert "tp_mult" in schema
         assert "sl_mult" in schema
+
+    @pytest.mark.parametrize("param", ["sl_dist_column", "range_column", "sl_level_column"])
+    def test_schema_declares_the_optional_column_params(self, param):
+        entry = OrbExitStrategy.get_param_schema()[param]
+        assert entry["type"] == "string"
+        assert entry["default"] is None
+        assert entry["required"] is False
+        assert "pattern" in entry["description"]
 
 
 class TestOrbExitStrategyAmbiguousColumns:
