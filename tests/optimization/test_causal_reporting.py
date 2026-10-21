@@ -1,9 +1,18 @@
 """Tests für die kausale Reporting-Kalibrierung (Plan: Look-Ahead-Fix)."""
+import pandas as pd
 import pytest
 
 from fwbg.optimization.causal_reporting import (
     circuit_breaker_mask,
     compute_causal_reporting,
+    equity_replay,
+    monte_carlo_summary,
+    sized_returns,
+    slim_trades,
+)
+from fwbg.simulation.trade import (
+    monte_carlo_equity_from_returns,
+    monte_carlo_permutation_test,
 )
 
 
@@ -134,3 +143,59 @@ class TestHindsightRemoval:
 
         # Hindsight sieht den Cluster und drückt das Risiko — kausal nicht.
         assert causal_fk_fold1 > naive_fk
+
+
+class TestSharedHelpers:
+    """Helpers shared by process_symbol and the holdout look (extracted from process.py)."""
+
+    def test_sized_returns_apply_the_circuit_breaker_and_prior_loss_scale(self):
+        trades = [{"result": r, "pnl_raw": p} for r, p in [(-1.0, -1.0), (-1.0, -2.0), (1.0, 4.0), (1.0, 5.0)]]
+        cb = {"enabled": True, "pause_after_losses": 2, "pause_bars": 1}
+
+        returns, pnl, taken = sized_returns(trades, 0.02, cb, [-2.0, -4.0, 3.0])
+
+        # Two losses pause one trade; the scale is the prior mean loss (3).
+        assert taken == [0, 1, 3]
+        assert pnl == [-1.0, -2.0, 5.0]
+        assert returns == pytest.approx([0.02 * -1 / 3, 0.02 * -2 / 3, 0.02 * 5 / 3])
+
+    def test_sized_returns_ignore_a_disabled_circuit_breaker(self):
+        trades = [{"result": -1.0, "pnl_raw": -1.0}] * 3
+        cb = {"enabled": False, "pause_after_losses": 1, "pause_bars": 5}
+
+        _, _, taken = sized_returns(trades, 0.01, cb, [-1.0])
+
+        assert taken == [0, 1, 2]
+
+    def test_monte_carlo_summary_keys(self):
+        pnl = [2.0, -1.0, 2.0, 2.0, -1.0] * 6
+        returns = [0.01 * p for p in pnl]
+
+        summary = monte_carlo_summary(pnl, returns)
+
+        perm = monte_carlo_permutation_test(pnl, n_permutations=1000)
+        equity = monte_carlo_equity_from_returns(returns, n_simulations=500)
+        assert summary == {
+            "p_value": perm["p_value"],
+            "is_significant": perm["is_significant"],
+            "percentile": perm["percentile"],
+            "equity_median": equity["median_equity"],
+            "equity_p5": equity["p5_equity"],
+            "equity_p95": equity["p95_equity"],
+            "bankruptcy_rate": equity["bankruptcy_rate"],
+        }
+
+    def test_equity_replay_thins_long_curves_and_keeps_the_last_point(self):
+        times = [str(t) for t in pd.date_range("2024-01-01", periods=50, freq="h")]
+
+        full = equity_replay(times, [0.001] * 50)
+        thin = equity_replay(times, [0.001] * 50, max_points=10)
+
+        assert len(thin["equity_points"]) < len(full["equity_points"])
+        assert thin["equity_points"][-1] == full["equity_points"][-1]
+
+    def test_slim_trades_keep_the_reported_fields(self):
+        trade = {"entry_time": "a", "exit_time": "b", "direction": "LONG", "result": 1.0,
+                 "pnl_raw": 2.0, "exit_reason": "tp", "mae": 0.5}
+
+        assert slim_trades([trade]) == [{k: v for k, v in trade.items() if k != "mae"}]

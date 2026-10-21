@@ -49,6 +49,8 @@ def cli_command(body: RunStartRequest, strategy_file: Path, job_id: str) -> list
         cmd.append(f"--note={body.note}")
     if body.reason:
         cmd.append(f"--reason={body.reason}")
+    if body.holdout:
+        cmd.append("--holdout")
     return cmd
 
 

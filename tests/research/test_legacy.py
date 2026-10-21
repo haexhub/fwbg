@@ -425,6 +425,13 @@ def test_non_object_symbol_file_is_a_legacy_run_error(tmp_path, preset_base):
         load_run(run_dir, preset_base)
 
 
+def test_an_ungated_holdout_look_is_never_read_as_development(tmp_path, preset_base):
+    """A run with a holdout cutoff in its strategy evaluated holdout data: refuse it."""
+    make_run(tmp_path, "run-1", strategy_extra={"holdout_cutoff": "2025-04-30"})
+    with pytest.raises(LegacyRunError, match="run-1/strategy.json: .*holdout look"):
+        scan_runs(tmp_path, preset_base)
+
+
 def test_scan_skips_directories_without_strategy(tmp_path, preset_base):
     """Ignore directories without strategy metadata during a legacy scan."""
     make_run(tmp_path, "run-1")
@@ -453,3 +460,25 @@ def test_scan_skips_gated_runs(tmp_path, preset_base):
     config["research"] = {"research_id": "S-0007"}
     (gated / "config.json").write_text(json.dumps(config), encoding="utf-8")
     assert [run.run_id for run in scan_runs(tmp_path, preset_base)] == ["run-1"]
+
+
+def test_return_statistics_reach_the_ledger(tmp_path, preset_base):
+    """Carry the per-trade return statistics the verdict's DSR needs."""
+    unified = {
+        "sharpe": 1.2,
+        "sr_per_trade": 0.11,
+        "skew": -0.4,
+        "kurtosis": 4.5,
+        "n_returns": 230,
+        "test_period_years": 2.5,
+    }
+    run = load_run(make_run(tmp_path, "run-1", symbols={"GOLD": {"unified": unified}}), preset_base)
+    assert {k: run.metrics["GOLD"][k] for k in unified} == unified
+
+
+def test_a_null_sharpe_stays_null(tmp_path, preset_base):
+    """A no_edge symbol of a new run records no Sharpe, not a fake zero."""
+    run_dir = make_run(
+        tmp_path, "run-1", symbols={"GOLD": {"status": "no_edge", "unified": {"sharpe": None}}}
+    )
+    assert load_run(run_dir, preset_base).metrics["GOLD"]["sharpe"] is None

@@ -123,6 +123,7 @@ class RunStartRequest(BaseModel):
     research_id: Optional[str] = None
     note: Optional[str] = None
     reason: Optional[str] = None
+    holdout: bool = False
 
 
 class PreviewRequest(BaseModel):
@@ -555,7 +556,7 @@ def compare_runs(body: CompareRequest) -> dict:
             run_data["aggregate"] = {
                 "total_pnl": sum(m.get("pnl", 0) for m in metrics_list),
                 "avg_win_rate": sum(m.get("win_rate", 0) for m in metrics_list) / len(metrics_list),
-                "avg_sharpe": sum(m.get("sharpe", 0) for m in metrics_list) / len(metrics_list),
+                "avg_sharpe": sum((m.get("sharpe") or 0) for m in metrics_list) / len(metrics_list),
                 "avg_calmar": sum(m.get("calmar", 0) for m in metrics_list) / len(metrics_list),
                 "avg_profit_factor": sum(m.get("profit_factor", 0) for m in metrics_list) / len(metrics_list),
                 "total_trades": sum(m.get("trades", 0) for m in metrics_list),
@@ -838,6 +839,13 @@ def get_grid_detail(run_id: str, symbol: str) -> dict:
                 merged.update(json.loads(fpath.read_text()))
             except (json.JSONDecodeError, IOError):
                 pass
+    # A holdout look's development outcome: nested, its keys would shadow the holdout's.
+    dev_path = sym_dir / "development.json"
+    if merged and dev_path.exists():
+        try:
+            merged["development"] = json.loads(dev_path.read_text())
+        except (json.JSONDecodeError, IOError):
+            pass
 
     if not merged:
         raise HTTPException(404, f"Grid detail not found: {run_id}/{symbol}")

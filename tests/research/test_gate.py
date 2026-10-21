@@ -364,6 +364,44 @@ def test_holdout_must_end_after_the_cutoff(end):
     }
 
 
+def test_holdout_records_the_card_cutoff_in_its_configuration():
+    decision = check(make_card(), request(holdout=True), [])
+    assert decision.effective_metadata["holdout_cutoff"] == "2025-04-30"
+    assert decision.fingerprint == fingerprint(decision.effective_metadata, SYMBOLS)
+    assert decision.fingerprint != check(make_card(), request(), []).fingerprint
+    assert "holdout_cutoff" not in METADATA
+
+
+@pytest.mark.parametrize("end", [None, "2025-09-01"])
+@pytest.mark.parametrize("start", ["2025-04-30", "2025-06-01"])
+def test_holdout_must_start_before_the_cutoff(start, end):
+    metadata = {**METADATA, "start_date": start, **({"end_date": end} if end else {})}
+    decision = check(make_card(), request(strategy_metadata=metadata, holdout=True), [])
+    assert codes(decision) == {DenialCode.INVALID_WINDOW}
+
+
+def test_holdout_starting_before_the_cutoff_is_allowed():
+    metadata = {**METADATA, "start_date": "2024-01-01"}
+    assert check(make_card(), request(strategy_metadata=metadata, holdout=True), []).allowed
+
+
+@pytest.mark.parametrize("holdout", [False, True])
+def test_a_configuration_must_not_set_the_holdout_cutoff(holdout):
+    metadata = {**METADATA, "holdout_cutoff": "2025-04-30"}
+    decision = check(make_card(), request(strategy_metadata=metadata, holdout=holdout), [])
+    assert codes(decision) == {DenialCode.INVALID_CONFIG}
+
+
+def test_repeated_identical_holdout_look_needs_one_reason():
+    first = check(make_card(), request(holdout=True), [])
+    used = [make_trial(trial_id="T-000001", kind=TrialKind.HOLDOUT, fingerprint=first.fingerprint)]
+    assert codes(check(make_card(), request(holdout=True), used)) == {
+        DenialCode.HOLDOUT_REPEAT,
+        DenialCode.DUPLICATE_FINGERPRINT,
+    }
+    assert check(make_card(), request(holdout=True, reason="data fixed"), used).allowed
+
+
 @pytest.mark.parametrize("reason", [None, "exit bug fixed"])
 def test_contaminated_holdout_is_refused_even_with_a_reason(reason):
     card = make_card(holdout_contaminated=True)

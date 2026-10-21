@@ -131,3 +131,10 @@ class TestRanRealBacktest:
 
     def test_empty_is_false(self):
         assert _ran_real_backtest([]) is False
+
+    def test_a_holdout_symbol_ran_iff_its_holdout_was_looked_at(self):
+        # Like the ledger (research.legacy): the holdout block decides, not the status.
+        looked = {"status": "error", "holdout": {"evaluated": True}}
+        not_looked = {"status": "no_edge", "holdout": {"evaluated": False}}
+        assert _ran_real_backtest([looked]) is True
+        assert _ran_real_backtest([not_looked, None]) is False

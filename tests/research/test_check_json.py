@@ -35,8 +35,28 @@ def test_check_result_for_an_allowed_decision():
         "fingerprint": "abc123",
         "symbols": ["EURUSD", "GOLD"],
         "window": {"start": "2024-01-01", "end": "2025-04-30"},
+        "holdout_cutoff": None,
         "denials": [],
     }
+
+
+def test_check_result_names_the_cutoff_of_a_holdout():
+    holdout = Decision(
+        denials=(),
+        kind=TrialKind.HOLDOUT,
+        effective_metadata={"start_date": "2024-01-01", "holdout_cutoff": "2025-04-30"},
+        fingerprint="abc123",
+    )
+    payload = check_result(decision=holdout, symbols=("EURUSD",))
+    assert payload["kind"] == "holdout" and payload["holdout_cutoff"] == "2025-04-30"
+    assert payload["window"] == {"start": "2024-01-01", "end": None}
+    assert parse_check_output(CHECK_PREFIX + json.dumps(payload), 0) == payload
+
+
+@pytest.mark.parametrize("cutoff", [20250430, ["2025-04-30"]])
+def test_parse_check_output_rejects_a_malformed_cutoff(cutoff):
+    payload = {**check_result(decision=DECISION, symbols=("EURUSD",)), "holdout_cutoff": cutoff}
+    assert parse_check_output(CHECK_PREFIX + json.dumps(payload), 0) is None
 
 
 def test_check_result_lists_every_denial_with_its_status():
