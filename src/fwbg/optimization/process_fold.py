@@ -559,7 +559,8 @@ def process_single_fold(
     }
 
     # Calculate bias ratio
-    bias_ratio = fold_result["test_pnl"] / fold_result["inner_val_pnl"] if fold_result["inner_val_pnl"] > 0 else 0
+    inner_pnl = fold_result["inner_val_pnl"]
+    bias_text = f"{fold_result['test_pnl'] / inner_pnl:.2f}x" if inner_pnl > 0 else "n/a"
 
     # Log detailed fold results for diagnostics
     bc = fold_result["best_config"]
@@ -584,6 +585,6 @@ def process_single_fold(
 
     log(1, f"  Fold {fold.fold_id + 1}: WR={test_result['win_rate']:.1%} "
            f"PnL={test_result['pnl']:.1f} Trades={test_result['n_trades']} "
-           f"Bias={bias_ratio:.2f}x [{detail_str}]", sym)
+           f"Bias={bias_text} [{detail_str}]", sym)
 
     return fold_result, all_grid_results

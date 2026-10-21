@@ -548,7 +548,8 @@ def run_optimizer(
             output_lines.append(f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}")
             sharpe_text = "n/a" if sharpe is None else f"{sharpe:.2f}"
             output_lines.append(f"  Performance: Sharpe={sharpe_text}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
-            output_lines.append(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
+            mean_bias_text = "n/a" if mean_bias is None else f"{mean_bias:.2f}x"
+            output_lines.append(f"  Bias: Mean={mean_bias_text}, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
 
             # Status-spezifische Zeilen
             if status == "ok":
