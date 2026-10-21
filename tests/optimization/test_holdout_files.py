@@ -12,6 +12,7 @@ from tests.optimization.symbol_harness import (
     patch_development,
     patch_holdout,
     run_inline,
+    run_inline_result,
 )
 
 # Filters every harness result passes, so only the holdout rule can stop an export.
@@ -36,6 +37,7 @@ def test_holdout_look_records_holdout_metrics_and_keeps_development_apart(monkey
     assert not (sym_dir / "fold_results.json").exists()
     assert development["status"] == "ok" and development["fold_stability"] is not None
     assert unified["trades"] == config["holdout"]["sized_trades"]
+    assert (unified["n_long"], unified["n_short"]) == (30, 0)  # the holdout's trade directions
     status, metrics = run_outcome(run_dir)
     assert status is TrialStatus.OK
     symbol = metrics["EURUSD"]
@@ -50,10 +52,13 @@ def test_holdout_look_records_holdout_metrics_and_keeps_development_apart(monkey
     assert elite[0]["fold_stability"] is None
 
 
-def test_holdout_after_a_failed_development_records_no_metrics(monkeypatch, tmp_path):
+def test_holdout_after_a_failed_development_records_no_metrics(monkeypatch, tmp_path, capsys):
     patch_development(monkeypatch, LOSING)
     patch_holdout(monkeypatch)
-    run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
+    result, run_dir = run_inline_result(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
+    # Like the ledger: no symbol reached its holdout, so the run failed (exit 1).
+    assert result is None
+    assert "no symbol reached its holdout" in capsys.readouterr().out
     sym_dir = run_dir / "grid_details" / "EURUSD"
     config = json.loads((sym_dir / "config.json").read_text())
     assert config["status"] == "no_edge"
@@ -84,7 +89,8 @@ def test_a_holdout_that_failed_after_its_trades_counts(monkeypatch, tmp_path):
     patch_development(monkeypatch, WINNING)
     patch_holdout(monkeypatch)
     monkeypatch.setattr(holdout, "_holdout_result", crash)
-    run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
+    result, run_dir = run_inline_result(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
+    assert result is not None  # the look happened: the run completes (exit 0), as recorded
     config = json.loads((run_dir / "grid_details" / "EURUSD" / "config.json").read_text())
     assert (config["status"], config["holdout"]["evaluated"]) == ("error", True)
     status, metrics = run_outcome(run_dir)
@@ -106,7 +112,7 @@ def test_a_run_without_holdout_writes_no_development_file(monkeypatch, tmp_path)
     assert not (run_dir / "grid_details" / "EURUSD" / "development.json").exists()
 
 
-def test_holdout_look_never_exports_assets(monkeypatch, tmp_path):
+def test_holdout_look_never_exports_assets(monkeypatch, tmp_path, capsys):
     patch_development(monkeypatch, WINNING)
     patch_holdout(monkeypatch)
     run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF, filters=PERMISSIVE)
@@ -115,6 +121,8 @@ def test_holdout_look_never_exports_assets(monkeypatch, tmp_path):
         == "ok"
     )
     assert json.loads((run_dir / "assets.json").read_text()) == {}
+    [row] = [line for line in capsys.readouterr().out.splitlines() if line.startswith("| EURUSD")]
+    assert row.rstrip().endswith("| HOLDOUT  |")  # the elite table's status column
 
 
 def test_the_same_filters_export_a_development_run(monkeypatch, tmp_path):
