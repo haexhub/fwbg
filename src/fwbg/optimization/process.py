@@ -25,6 +25,7 @@ from fwbg.simulation.trade import (
     pnl_to_returns,
 )
 from fwbg.core import get_risk_manager
+from fwbg.research.dsr import return_statistics
 from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds, plan_walk_forward
@@ -825,6 +826,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             reporting_pnl = all_trades_pnl
         reporting_returns_arr = np.array(reporting_returns)
         non_ann_sr = float(np.mean(reporting_returns_arr) / np.std(reporting_returns_arr)) if len(reporting_returns_arr) > 1 and np.std(reporting_returns_arr) > 0 else 0.0
+        # Per-trade return statistics of the reporting series (the verdict's DSR inputs).
+        return_stats = return_statistics(reporting_returns)
 
         from .overfitting import compute_overfitting_metrics
         try:
@@ -932,7 +935,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "pnl": mean_pnl,
                 "win_rate": mean_wr,
                 "rrr": rrr,
-                "sharpe": 0,
+                # no edge, no sizing: no Sharpe (a 0 would enter statistics)
+                "sharpe": None,
                 "calmar": 0,
                 "tr_trace": all_trades_pnl,
                 "test_period_years": test_period_years,
@@ -1058,6 +1062,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "walk_forward": wf_summary,
                 "monte_carlo": mc_summary,
                 "overfitting": overfitting,
+                "return_stats": return_stats,
                 "feature_stability": feature_stability,
                 "trade_analytics": trade_analytics,
                 "reporting": reporting,
@@ -1117,6 +1122,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "reporting": reporting,
             "trades_detailed": slim_trades_detailed,
             "overfitting": overfitting,
+            "return_stats": return_stats,
             "feature_stability": feature_stability,
             "trade_analytics": trade_analytics,
             "grid_results": accumulated_grid_results,

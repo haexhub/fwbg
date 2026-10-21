@@ -88,6 +88,19 @@ def test_compare_uses_the_safe_results_resolver(result_client):
     assert invalid_response.status_code == 400
 
 
+def test_compare_tolerates_a_null_sharpe(result_client):
+    client, results_dir = result_client
+    for symbol, sharpe in (("A", None), ("B", 1.0)):
+        sym_dir = results_dir / "run-1" / "grid_details" / symbol
+        sym_dir.mkdir(parents=True)
+        (sym_dir / "unified_metrics.json").write_text(json.dumps({"sharpe": sharpe, "pnl": 1}))
+
+    response = client.post("/api/runs/compare", json={"run_ids": ["run-1"]})
+
+    assert response.status_code == 200
+    assert response.json()["runs"][0]["aggregate"]["avg_sharpe"] == 0.5
+
+
 def test_preview_rejects_invalid_strategy_identifier(result_client):
     client, _ = result_client
 
