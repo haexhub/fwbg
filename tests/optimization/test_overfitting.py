@@ -12,6 +12,8 @@ from fwbg.optimization.overfitting import (
     probability_of_backtest_overfitting,
     sr_std,
 )
+from fwbg.optimization.signal_fold import process_signal_fold
+from tests.optimization.test_signal_selection import SIGNALS, _ctx, _frame, _fold
 
 
 # === DSR Tests ===
@@ -147,6 +149,23 @@ class TestBuildPerformanceMatrix:
         assert matrix[0, 0] == 5.0
         assert matrix[0, 1] == 3.0
         assert matrix[0, 2] == 7.0
+
+
+    def test_performance_matrix_reads_signal_grid_entries(self):
+        """Signal folds' grid entries (inner metrics + fold_id) feed the PBO matrix."""
+        grid_results_by_fold = {}
+        for fold_id, start in enumerate(("2024-01-01", "2024-02-20")):
+            train_df = _frame(960, start=start)
+            test_df = _frame(240, start=train_df.index[-1] + train_df.index.freq)
+            fold = _fold(train_df, test_df)
+            fold.fold_id = fold_id
+            _, grid = process_signal_fold(fold, train_df, test_df, SIGNALS, _ctx(), "TEST")
+            for gr in grid:
+                grid_results_by_fold.setdefault(gr["fold_id"], []).append(gr)
+
+        matrix, combo_keys = build_performance_matrix(grid_results_by_fold)
+        assert matrix.shape[1] == 2
+        assert len(combo_keys) == matrix.shape[0] > 0
 
 
 class TestProbabilityOfBacktestOverfitting:

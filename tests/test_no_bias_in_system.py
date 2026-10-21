@@ -310,7 +310,7 @@ class TestSystematicBiasInResults:
             mean_bias = wf_results['mean_bias_ratio']
             total_assets += 1
 
-            if mean_bias > 1.5:
+            if mean_bias is not None and mean_bias > 1.5:
                 biased_assets.append({
                     'symbol': data['symbol'],
                     'mean_bias_ratio': mean_bias,

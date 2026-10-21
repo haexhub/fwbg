@@ -17,6 +17,22 @@ except ImportError:
     SampleBiasDetector = None
 
 
+def fold_bias_ratios(fold_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Test/inner PnL ratio per fold, defined only where the inner PnL is positive.
+
+    A fold whose chosen setting did not win on its inner windows (inner PnL <= 0,
+    possible for ML and signal models) has no meaningful ratio: dividing by zero,
+    or a sign flip that reads as "no bias" (or as bias). Such folds are left out
+    of the ratios and counted; the mean is None when no fold has a ratio.
+    """
+    ratios = [r["test_pnl"] / r["inner_val_pnl"] for r in fold_results if r["inner_val_pnl"] > 0]
+    return {
+        "bias_ratios": ratios,
+        "mean_bias_ratio": sum(ratios) / len(ratios) if ratios else None,
+        "folds_without_bias_ratio": len(fold_results) - len(ratios),
+    }
+
+
 def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, Any]:
     """
     Prüft ein einzelnes Asset-Result auf Sample Bias.
@@ -51,6 +67,7 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
     std_wr = wf.get("std_win_rate", 0)
     bias_ratios = wf.get("bias_ratios", [])
     mean_bias = wf.get("mean_bias_ratio", 0)
+    without_ratio = wf.get("folds_without_bias_ratio", 0)
     total_trades = wf.get("total_trades", 0)
 
     # RRR berechnen
@@ -64,11 +81,13 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
     if n_folds < 5:
         issues.append(f"Only {n_folds} folds (need >=5)")
 
-    # Check 2: Mean Bias Ratio
-    if mean_bias > 1.5:
+    # Check 2: Mean Bias Ratio (None: no fold has a positive inner PnL)
+    if mean_bias is not None and mean_bias > 1.5:
         issues.append(f"Mean bias ratio {mean_bias:.2f}x > 1.5x (systematic bias!)")
-    elif mean_bias > 1.3:
+    elif mean_bias is not None and mean_bias > 1.3:
         warnings.append(f"Mean bias ratio {mean_bias:.2f}x > 1.3x (monitor)")
+    if without_ratio:
+        warnings.append(f"{without_ratio}/{n_folds} folds without bias ratio (inner PnL <= 0)")
 
     # Check 3: Einzelne Folds mit extremem Bias
     extreme_folds = [r for r in bias_ratios if r > 2.0]
@@ -124,6 +143,7 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
         "n_folds": n_folds,
         "mean_bias_ratio": mean_bias,
         "bias_ratios": bias_ratios,
+        "folds_without_bias_ratio": without_ratio,
         "mean_win_rate": mean_wr,
         "std_win_rate": std_wr,
         "total_trades": total_trades,
@@ -161,7 +181,13 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
         mean_bias = wf.get("mean_bias_ratio", 0)
         symbol = result.get("symbol", "UNKNOWN")
 
-        if mean_bias > 1.5:
+        if mean_bias is None:
+            # No fold had a positive inner PnL: the bias is unchecked, not OK.
+            warned_assets.append({
+                "symbol": symbol,
+                "mean_bias": None
+            })
+        elif mean_bias > 1.5:
             biased_assets.append({
                 "symbol": symbol,
                 "mean_bias": mean_bias,
@@ -210,7 +236,8 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
         if warned_assets and verbose:
             print("\nWarning Assets:")
             for a in warned_assets:
-                print(f"  - {a['symbol']}: {a['mean_bias']:.2f}x")
+                mean_text = "n/a" if a['mean_bias'] is None else f"{a['mean_bias']:.2f}x"
+                print(f"  - {a['symbol']}: {mean_text}")
 
         print(f"{'='*80}\n")
 
