@@ -3,7 +3,6 @@ import statistics
 import pytest
 
 from fwbg.research.card import CRITERIA_NAMES
-from fwbg.research.dsr import deflated_sharpe_ratio
 from fwbg.research.ledger import TrialKind, TrialStatus
 from fwbg.research.stats import (
     _CHECKS,
@@ -94,8 +93,46 @@ def test_deflated_best_deflates_the_best_sample_by_all_evaluations():
     assert result is not None
     assert (result.best.trial_id, result.best.sr) == ("T-000002", 0.3)
     assert (result.n_trials, result.samples) == (5, 2)  # N counts every evaluation
-    assert result.sr_variance == pytest.approx(statistics.variance([0.1, 0.3]))
-    assert result.dsr == pytest.approx(deflated_sharpe_ratio(0.3, 101, 0.0, 3.0, 5, 0.02))
+    assert result.sample_variance == pytest.approx(statistics.variance([0.1, 0.3]))
+    assert result.variance_floor == pytest.approx(0.01)  # 1/(T-1) for T=101
+    assert not result.floored
+    assert result.sr_variance == result.sample_variance
+    # Independent reference values (scipy, outside this code path).
+    assert result.expected_max_sr == pytest.approx(0.168658, abs=1e-6)
+    assert result.dsr == pytest.approx(0.900574, abs=1e-6)
+
+
+def test_deflated_best_floors_the_sr_variance_at_its_null_sampling_variance():
+    legacy = {f"L{index}": {"sharpe": 0.0} for index in range(20)}
+    trials = [
+        make_trial(trial_id="T-000001", metrics={"A": INPUTS, "B": INPUTS}),
+        make_trial(trial_id="T-000002", kind=TrialKind.LEGACY, metrics=legacy),
+    ]
+    result = deflated_best(trials)
+    assert result is not None
+    assert (result.n_trials, result.samples) == (22, 2)
+    assert result.sample_variance == 0.0
+    assert result.floored
+    assert result.sr_variance == pytest.approx(0.01)
+    # Independent reference values (scipy): E[max SR] of 22 trials with V=0.01,
+    # PSR of SR 0.1 over 101 returns against it, and against 0.
+    assert result.expected_max_sr == pytest.approx(0.194234, abs=1e-6)
+    assert result.dsr == pytest.approx(0.173610, abs=1e-6)
+    assert result.dsr < 0.840741  # PSR against 0
+
+
+def test_the_variance_floor_is_the_mean_over_the_samples():
+    trials = [
+        make_trial(
+            trial_id="T-000001",
+            metrics={"A": INPUTS, "B": {**INPUTS, "sr_per_trade": 0.12, "n_returns": 51}},
+        )
+    ]
+    result = deflated_best(trials)
+    assert result is not None
+    assert result.variance_floor == pytest.approx((1 / 100 + 1 / 50) / 2)
+    assert result.sample_variance == pytest.approx(0.0002)
+    assert result.sr_variance == result.variance_floor
 
 
 def test_deflated_best_is_undefined_for_impossible_moments():
