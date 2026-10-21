@@ -99,15 +99,45 @@ def deflated_sharpe_ratio(
 # === Probability of Backtest Overfitting ===
 
 
+# The grid's choices that identify a combo. "ct" is a grid dimension of signal models;
+# an ML entry's "conf_thresh" is chosen inside its inner CV and would split one combo
+# into a row per fold, so it is not part of the key.
+_COMBO_FIELDS = (
+    "exit_strategy",
+    "timeout_bars",
+    "ct",
+    "exit_params",
+    "exit_modifier_params",
+    "model_hyperparameters",
+    "regime_filter",
+)
+
+
+def _frozen(value):
+    """A hashable stand-in for a grid value (dicts and lists become sorted tuples)."""
+    if isinstance(value, dict):
+        return tuple(sorted((str(k), _frozen(v)) for k, v in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_frozen(v) for v in value)
+    return value
+
+
+def _combo_key(grid_result: dict) -> tuple:
+    """The full combo of a grid entry (KeyError without tp_mult and sl_mult)."""
+    tp_sl = (grid_result["tp_mult"], grid_result["sl_mult"])
+    return tp_sl + tuple(_frozen(grid_result.get(field)) for field in _COMBO_FIELDS)
+
+
 def build_performance_matrix(
     grid_results_by_fold: dict,
 ) -> tuple[np.ndarray, list[tuple]]:
     """Build performance matrix M(n_combos, n_folds) from grid results.
 
-    Each row is a strategy combo (tp_mult, sl_mult, timeout_bars),
+    Each row is a strategy combo (TP, SL and every _COMBO_FIELDS value, so combos that
+    differ only by CT, exit, HP variant or regime filter keep their own rows),
     each column is a fold. Only combos present in ALL folds are included.
 
-    Returns (matrix, combo_keys) where combo_keys is list of (tp, sl, timeout) tuples.
+    Returns (matrix, combo_keys) where combo_keys is the list of combo tuples.
     """
     if not grid_results_by_fold:
         return np.empty((0, 0)), []
@@ -121,7 +151,7 @@ def build_performance_matrix(
         combo_map = {}
         for gr in grid_results_by_fold[fid]:
             try:
-                key = (gr["tp_mult"], gr["sl_mult"], gr.get("timeout_bars", 0))
+                key = _combo_key(gr)
                 val = gr["inner_val_pnl"]
             except KeyError:
                 continue
@@ -138,7 +168,8 @@ def build_performance_matrix(
     if not common_keys:
         return np.empty((0, n_folds)), []
 
-    combo_keys = sorted(common_keys)
+    # repr: a total order even where a field mixes None and numbers (timeout_bars).
+    combo_keys = sorted(common_keys, key=repr)
     matrix = np.zeros((len(combo_keys), n_folds))
     for i, key in enumerate(combo_keys):
         for j, cm in enumerate(fold_combo_maps):

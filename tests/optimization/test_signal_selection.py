@@ -243,6 +243,8 @@ def test_grid_entries_carry_inner_metrics(monkeypatch):
         "sl_mult": 4,
         "ct": 0.5,
         "timeout_bars": None,
+        "exit_params": {"tp_mult": 2, "sl_mult": 4},
+        "exit_modifier_params": {},
         "model_hyperparameters": {"signal_column_long": "x"},
         "inner_val_pnl": 1.0,
         "inner_trades": 3,
