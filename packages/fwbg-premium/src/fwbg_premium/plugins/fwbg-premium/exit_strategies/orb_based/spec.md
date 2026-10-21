@@ -56,7 +56,7 @@ Exit strategy for ORB (Opening Range Breakout) setups. Stop-loss distance is rea
 - AC-002: When return_durations=True, compute_targets additionally returns int64 duration arrays where a filled bar equals (exit_bar - i), and a never-exited trade equals max_bars.
 - AC-003: The final bar (i = n-1) never opens a trade (loop iterates 0..n-2), so targets_long[-1] == targets_short[-1] == 0.0.
 - AC-004: When df contains exactly one '*_sl_dist' column and no explicit sl_dist_column is set, SL distance = raw_column * sl_mult with NaN rows replaced by ATR*sl_mult, then floored to min_sl_pips*spread.
-- AC-005: When exit_params['sl_dist_column'] names a present column, SL distance = that column * sl_mult (the same rule as AC-004); NaN rows fall back to ATR*sl_mult, then floored to min_sl_pips*spread.
+- AC-005: When exit_params['sl_dist_column'] names a present column, SL distance = that column * sl_mult (the same rule as AC-004). In every path (named or auto-detected, signal or trained model) a NaN, non-finite or non-positive stop value is missing and falls back to ATR*sl_mult, then floored to min_sl_pips*spread; signal folds do not zero-fill named exit columns.
 - AC-006: When no *_sl_dist column exists in df, SL distance = ATR * sl_mult, floored to min_sl_pips*spread.
 - AC-007: When tp_mode='atr' (default), TP distance = max(atr[i]*tp_mult, min_tp_pips*spread).
 - AC-008: When tp_mode='range', TP distance = max(range_column[i]*tp_mult, min_tp_pips*spread) using the resolved range column (exit_params['range_column'], else the single '*_range' column excluding '*_vs_*').

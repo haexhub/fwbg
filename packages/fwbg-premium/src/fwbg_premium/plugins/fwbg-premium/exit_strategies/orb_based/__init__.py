@@ -494,7 +494,8 @@ class OrbExitStrategy(BaseExitStrategy):
         """Return SL distances per bar.
 
         The stop column (explicit sl_dist_column, else the single auto-detected
-        *_sl_dist) is scaled by sl_mult. NaN rows fall back to ATR * sl_mult.
+        *_sl_dist) is scaled by sl_mult. NaN, non-finite and non-positive rows
+        fall back to ATR * sl_mult.
 
         No column found at all: pure ATR * sl_mult. Several auto-detect
         candidates raise AmbiguousColumnError.
@@ -505,7 +506,8 @@ class OrbExitStrategy(BaseExitStrategy):
         )
         if sl_col is not None:
             raw = df[sl_col].values.astype(np.float64)
-            return np.where(np.isnan(raw), atr_v * sl_mult, raw * sl_mult).astype(np.float64)
+            usable = np.isfinite(raw) & (raw > 0)
+            return np.where(usable, raw * sl_mult, atr_v * sl_mult).astype(np.float64)
         return (atr_v * sl_mult).astype(np.float64)
 
 

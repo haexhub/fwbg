@@ -266,6 +266,20 @@ class TestOrbExitStrategySLDistColumn:
         _, sl_dists = OrbExitStrategy().resolve_distances(df, tp=2.0, sl=sl_mult, ctx=ctx)
         np.testing.assert_allclose(sl_dists, expected)
 
+    @pytest.mark.parametrize("sl_dist_column", [None, "hl_ses_pdl_sl_dist"])
+    def test_non_positive_or_non_finite_stops_fall_back_to_atr(self, ohlc_df, sl_dist_column):
+        """A zero (e.g. a zero-filled NaN) or infinite stop distance is missing."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        values = np.full(len(df), 100.0)
+        values[1], values[2], values[3] = 0.0, -5.0, np.inf
+        df["hl_ses_pdl_sl_dist"] = values
+
+        atr_v = strategy._get_atr(df, 14)
+        sl_dists = strategy._get_sl_dist(df, atr_v, sl_mult=2.0, sl_dist_column=sl_dist_column)
+        np.testing.assert_allclose(sl_dists[1:4], atr_v[1:4] * 2.0)
+        assert sl_dists[0] == 200.0
+
     def test_explicit_sl_dist_column_nan_rows_fall_back_to_atr(self, ohlc_df):
         strategy = OrbExitStrategy()
         df = ohlc_df.copy()
