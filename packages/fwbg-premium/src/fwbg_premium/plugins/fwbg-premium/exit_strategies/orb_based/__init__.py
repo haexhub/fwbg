@@ -304,6 +304,9 @@ class OrbExitStrategy(BaseExitStrategy):
             "breakeven_trigger": 0.0,
             "breakeven_offset": 0.0,
             "trail_pips": 0,
+            "sl_dist_column": None,
+            "range_column": None,
+            "sl_level_column": None,
         }
 
     @classmethod
