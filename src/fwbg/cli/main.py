@@ -9,7 +9,6 @@ import math
 import warnings
 import argparse
 from collections.abc import Mapping
-from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +41,7 @@ from fwbg_sdk.enums import Timeframe  # noqa: E402
 from fwbg.statuses import EXECUTED_STATUSES  # noqa: E402
 from fwbg.data import config as data_config  # noqa: E402
 from fwbg.core.config import StrategyConfig  # noqa: E402
-from fwbg.optimization.process import process_symbol  # noqa: E402
+from fwbg.optimization.holdout import symbol_worker  # noqa: E402
 from fwbg.utils.progress import ProgressTracker, init_progress_queue, report_result  # noqa: E402
 from fwbg.results.storage import (  # noqa: E402
     generate_run_id,
@@ -489,7 +488,8 @@ def run_optimizer(
 
         # Zusammenfassung für später sammeln (wird nach Progress-UI ausgegeben)
         output_lines = []
-        if status in ["ok", "no_edge", "not_significant"]:
+        # A holdout look that was not evaluated carries no config (optimization.holdout).
+        if status in ["ok", "no_edge", "not_significant"] and (result.get("config") or result.get("best_config")):
             # Config extrahieren (entweder aus "config" oder "best_config")
             cfg = result.get("config") or result.get("best_config", {})
             tp = cfg.get("tp_mult", "?")
@@ -578,8 +578,8 @@ def run_optimizer(
     print(f"\nStarte Verarbeitung von {len(files)} Assets...\n")
     progress_tracker.start()
 
-    # Worker-Funktion mit Strategy-Config via partial wrappen
-    worker_func = partial(process_symbol, strategy=strategy)
+    # Worker-Funktion mit Strategy-Config (Holdout-Look bei gesetztem Cutoff)
+    worker_func = symbol_worker(strategy)
 
     try:
         raw_results = pool_manager.map_adaptive(
