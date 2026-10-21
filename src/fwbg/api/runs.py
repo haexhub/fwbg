@@ -555,7 +555,7 @@ def compare_runs(body: CompareRequest) -> dict:
             run_data["aggregate"] = {
                 "total_pnl": sum(m.get("pnl", 0) for m in metrics_list),
                 "avg_win_rate": sum(m.get("win_rate", 0) for m in metrics_list) / len(metrics_list),
-                "avg_sharpe": sum(m.get("sharpe", 0) for m in metrics_list) / len(metrics_list),
+                "avg_sharpe": sum((m.get("sharpe") or 0) for m in metrics_list) / len(metrics_list),
                 "avg_calmar": sum(m.get("calmar", 0) for m in metrics_list) / len(metrics_list),
                 "avg_profit_factor": sum(m.get("profit_factor", 0) for m in metrics_list) / len(metrics_list),
                 "total_trades": sum(m.get("trades", 0) for m in metrics_list),

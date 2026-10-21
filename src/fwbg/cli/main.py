@@ -54,6 +54,7 @@ from fwbg.optimization.resource_manager import SimplePoolManager, get_resource_i
 from fwbg.simulation.equity import simulate_equity_from_pnl, filter_correlated_assets  # noqa: E402
 from fwbg.results.plotting import create_asset_plot  # noqa: E402
 from fwbg.results import storage as results_storage  # noqa: E402
+from fwbg.results.symbol_files import config_extras  # noqa: E402
 from fwbg.api.workspace import get_research_dir  # noqa: E402
 from fwbg.research.runs import (  # noqa: E402
     GATE_ENV,
@@ -361,6 +362,7 @@ def run_optimizer(
             config_data["holdout_result"] = result["holdout_result"]
         if result.get("best_candidate"):
             config_data["best_candidate"] = result["best_candidate"]
+        config_data.update(config_extras(result))
 
         with open(os.path.join(sym_dir, "config.json"), "w") as f:
             json.dump(config_data, f, indent=2, cls=_SafeJsonEncoder)
@@ -459,6 +461,7 @@ def run_optimizer(
                 "n_long": _n_long,
                 "n_short": _n_short,
             }
+            unified_metrics.update(result.get("return_stats") or {})
             with open(os.path.join(sym_dir, "unified_metrics.json"), "w") as f:
                 json.dump(unified_metrics, f, indent=2)
 
@@ -525,7 +528,8 @@ def run_optimizer(
             # Details
             output_lines.append(f"  Best Config: TP={tp}, SL={sl}, CT={ct:.2f}")
             output_lines.append(f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}")
-            output_lines.append(f"  Performance: Sharpe={sharpe:.2f}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
+            sharpe_text = "n/a" if sharpe is None else f"{sharpe:.2f}"
+            output_lines.append(f"  Performance: Sharpe={sharpe_text}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
             output_lines.append(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
 
             # Status-spezifische Zeilen
