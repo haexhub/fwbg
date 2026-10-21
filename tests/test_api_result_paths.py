@@ -132,3 +132,19 @@ def test_active_run_cannot_be_deleted(result_client):
     assert response.status_code == 409
     assert run_dir.exists()
     assert (run_dir / "keep.txt").exists()
+
+
+def test_grid_detail_shows_a_holdout_looks_development_apart(result_client):
+    client, results_dir = result_client
+    sym_dir = results_dir / "run-1" / "grid_details" / "EURUSD"
+    sym_dir.mkdir(parents=True)
+    (sym_dir / "config.json").write_text(
+        json.dumps({"status": "ok", "holdout": {"evaluated": True}})
+    )
+    (sym_dir / "unified_metrics.json").write_text(json.dumps({"sharpe": 1.1}))
+    (sym_dir / "development.json").write_text(json.dumps({"status": "ok", "sharpe": 0.4}))
+
+    detail = client.get("/api/runs/run-1/grid_details/EURUSD").json()
+
+    assert detail["sharpe"] == 1.1  # the holdout's metrics stay on top
+    assert detail["development"] == {"status": "ok", "sharpe": 0.4}
