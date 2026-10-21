@@ -63,9 +63,20 @@ def select_features(
         default_tp = 1.5
         default_sl = 1.0
         fs_exit_mode = ctx.exit_strategy
+        first_ep = {}
+
+    # ponytail: these targets run with default exit params; only the stop column
+    # is carried over, so a config can settle an ambiguous *_sl_dist without
+    # changing the targets of configs that never had one. Upgrade path: pass
+    # first_ep whole (changes feature selection for non-default exit params).
+    fs_ctx = ctx
+    if isinstance(first_ep.get("sl_dist_column"), str):
+        fs_ctx = dataclasses.replace(
+            ctx, exit_params={"sl_dist_column": first_ep["sl_dist_column"]},
+        )
 
     result = compute_targets_cached(
-        train_df, default_tp, default_sl, ctx, timeout_bars=None,
+        train_df, default_tp, default_sl, fs_ctx, timeout_bars=None,
         exit_strategy_mode=fs_exit_mode,
     )
     targets_long, targets_short = result[0], result[1]
