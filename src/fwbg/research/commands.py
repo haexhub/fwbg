@@ -33,7 +33,7 @@ from fwbg.research.card import (
     write_card,
 )
 from fwbg.research.gate import criteria_denials
-from fwbg.research.ledger import LEDGER_FILENAME, Trial, TrialKind, read_trials
+from fwbg.research.ledger import LEDGER_FILENAME, Trial, TrialKind, TrialStatus, read_trials
 from fwbg.research.pending import live_runs, read_pending, recover_stale
 from fwbg.research.repo import (
     CRITERIA_TEMPLATE,
@@ -42,7 +42,14 @@ from fwbg.research.repo import (
     commit_register,
     register_lock,
 )
-from fwbg.research.stats import best_result, criteria_check, evaluations
+from fwbg.research.stats import (
+    MIN_RETURN_SAMPLES,
+    best_result,
+    criteria_check,
+    deflated_best,
+    evaluations,
+    return_samples,
+)
 
 DEFAULT_HOLDOUT_MONTHS = 18
 VERDICT_STATUSES = (Status.PARKED, Status.REJECTED, Status.CANDIDATE)
@@ -262,14 +269,77 @@ def verdict_entry(
         lines.append("Best development result: none with a Sharpe ratio.")
     else:
         check = "; ".join(criteria_check(card.success_criteria, best.metrics))
-        amendments = len(card.criteria_amendments)
-        version = f"amendment {amendments}" if amendments else "registration"
         lines.append(
             f"Best development result: {best.trial_id} {best.symbol}, checked against "
-            f"the current criteria ({version}): {check}."
+            f"the current criteria ({_criteria_version(card)}): {check}."
         )
-    lines.append("Deflated Sharpe ratio: not computed yet (register step 5).")
+    lines.append(_dsr_line(own))
+    lines.extend(_holdout_lines(card, own))
     return "\n".join(lines)
+
+
+def _dsr_line(own: Sequence[Trial]) -> str:
+    result = deflated_best(own)
+    if result is None:
+        have = len(return_samples(own))
+        return (
+            "Deflated Sharpe ratio: too few trials with return statistics "
+            f"({have} of {MIN_RETURN_SAMPLES} needed)."
+        )
+    best = result.best
+    sample = f"sample variance {result.sample_variance:.5f} from {result.samples} evaluations "
+    if result.floored:
+        variance = f"floor 1/(T-1); {sample}with return statistics"
+    else:
+        variance = (
+            f"sample variance from {result.samples} evaluations with return statistics; "
+            f"floor 1/(T-1) {result.variance_floor:.5f}"
+        )
+    basis = (
+        f"per-trade SR {best.sr:.4f} over {best.n_returns} returns, "
+        f"skew {best.skew:.3g}, kurtosis {best.kurtosis:.3g}; "
+        f"N={result.n_trials} symbol evaluations; V[SR]={result.sr_variance:.5f} ({variance}); "
+        f"E[max SR]={result.expected_max_sr:.4f}"
+    )
+    if result.dsr is None:
+        return (
+            f"Deflated Sharpe ratio: not defined for {best.trial_id} {best.symbol} "
+            f"(its skew and kurtosis leave no positive SR variance; {basis})."
+        )
+    # Four decimals, but never a rounded-up 1: the DSR is a probability below 1.
+    dsr = "> 0.9999" if result.dsr >= 0.99995 else f"{result.dsr:.4f}"
+    return f"Deflated Sharpe ratio: {dsr} for {best.trial_id} {best.symbol} ({basis})."
+
+
+def _holdout_lines(card: ResearchCard, own: Sequence[Trial]) -> list[str]:
+    """One line per holdout look: its symbols checked against the current criteria."""
+    lines = []
+    for trial in own:
+        if trial.kind is not TrialKind.HOLDOUT:
+            continue
+        end = trial.window.get("end") or "open"
+        head = f"Holdout result {trial.trial_id} (holdout {trial.holdout_cutoff}..{end})"
+        if trial.status is not TrialStatus.OK:
+            lines.append(f"{head}: failed, no symbol evaluated.")
+            continue
+        head += f", checked against the current criteria ({_criteria_version(card)})"
+        if trial.criteria_hash != card.criteria_hash:
+            head += " (criteria changed since this look)"
+        parts = [
+            (
+                f"{symbol} " + "; ".join(criteria_check(card.success_criteria, values))
+                if any(isinstance(v, (int, float)) for v in values.values())
+                else f"{symbol} no holdout metrics"
+            )
+            for symbol, values in trial.metrics.items()
+        ]
+        lines.append(f"{head}: {' | '.join(parts)}.")
+    return lines
+
+
+def _criteria_version(card: ResearchCard) -> str:
+    amendments = len(card.criteria_amendments)
+    return f"amendment {amendments}" if amendments else "registration"
 
 
 def _commit(research_dir: Path, card_id: str, message: str) -> None:

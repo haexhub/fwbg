@@ -18,6 +18,9 @@ from fwbg.research.fingerprint import canonical_config, digest
 from fwbg.research.ledger import Metrics, TrialKind, TrialStatus
 from fwbg.statuses import EXECUTED_STATUSES, NOT_EXECUTED_STATUSES
 
+# The ledger records no per-symbol status: a legacy no_edge symbol shows sharpe 0,
+# a new one sharpe null. Neither carries return statistics, so both count towards
+# N but never enter the verdict's SR variance (stats.return_samples).
 METRIC_KEYS = (
     "sharpe",
     "trades",
@@ -27,6 +30,11 @@ METRIC_KEYS = (
     "calmar",
     "profit_factor",
     "rrr",
+    "sr_per_trade",
+    "skew",
+    "kurtosis",
+    "n_returns",
+    "test_period_years",
 )
 # A symbol with one of these statuses ran to a result and counts towards N
 # (conservatively, whether or not it found an edge).
@@ -113,7 +121,8 @@ def _gated(run_dir: Path) -> bool:
 def run_outcome(run_dir: Path, *, lenient: bool = False) -> tuple[TrialStatus, Metrics]:
     """Status and per-symbol metrics of a run directory, by the ledger's rule.
 
-    ``ok`` iff at least one symbol was evaluated. An unknown symbol status or
+    ``ok`` iff at least one symbol was evaluated; a holdout look's symbol is
+    evaluated iff its holdout was looked at (``holdout.evaluated``). An unknown symbol status or
     an unreadable result file raises :class:`LegacyRunError`; with *lenient*
     such a symbol counts as evaluated (with empty metrics if its files cannot
     be read) and an unreadable elite list is ignored (live runs: never drop a
@@ -126,6 +135,13 @@ def run_outcome(run_dir: Path, *, lenient: bool = False) -> tuple[TrialStatus, M
 def load_run(run_dir: Path, preset_base: Path) -> LegacyRun:
     """Read one run directory; raise :class:`LegacyRunError` if its files are unusable."""
     strategy = _read_object(run_dir / "strategy.json", run_dir)
+    if strategy.get("holdout_cutoff") is not None:
+        # Only an ungated run gets here (gated ones are skipped); its metrics are holdout
+        # metrics and must never enter the register as development data.
+        raise LegacyRunError(
+            f"{run_dir.name}/strategy.json: an ungated holdout look (holdout_cutoff set); "
+            "it cannot be recorded as a development trial"
+        )
     config = _read_object(run_dir / "config.json", run_dir)
     ts = config.get("timestamp")
     if not isinstance(ts, str) or not _DATE_PREFIX_RE.match(ts):
@@ -214,7 +230,7 @@ def _metrics(
             continue
         try:
             result = _read_object(source.result, run_dir)
-            if _evaluated(result.get("status"), run_dir.name, symbol, lenient):
+            if _counted(result, run_dir.name, symbol, lenient):
                 metrics[symbol] = _symbol_metrics(run_dir, source, result, elite.get(symbol, {}))
         except LegacyRunError:
             if not lenient:
@@ -222,6 +238,18 @@ def _metrics(
             # A killed run can leave a truncated file; the symbol was still looked at.
             metrics[symbol] = {}
     return metrics
+
+
+def _counted(result: Mapping[str, Any], run_id: str, symbol: str, lenient: bool) -> bool:
+    """Whether a symbol counts towards N: for a holdout look, iff its holdout was looked at."""
+    if "holdout" not in result:
+        return _evaluated(result.get("status"), run_id, symbol, lenient)
+    looked = _mapping(result["holdout"]).get("evaluated")
+    if isinstance(looked, bool):
+        return looked
+    if lenient:
+        return True
+    raise LegacyRunError(f"{run_id}: symbol {symbol} has an unreadable holdout block")
 
 
 def _evaluated(status: object, run_id: str, symbol: str, lenient: bool = False) -> bool:

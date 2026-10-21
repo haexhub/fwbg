@@ -9,9 +9,10 @@ from types import SimpleNamespace
 import pytest
 
 from fwbg.data import config as data_config
+from fwbg.optimization.holdout import process_symbol_holdout
 from fwbg.optimization.resource_manager import SimplePoolManager
 from fwbg.research.gate import Denial, DenialCode
-from fwbg.research.ledger import LEDGER_FILENAME, TrialStatus, read_trials
+from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, TrialStatus, read_trials
 from fwbg.research.pending import read_pending
 from fwbg.research.runs import GATE_ENV, GateDenied, parse_check_output
 from fwbg.results import storage
@@ -34,12 +35,14 @@ class FakeOptimizer:
         self.error = None
         self.symbols = {"EURUSD": {}}
         self.result = {"ok": True}
+        self.metadata = None
 
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
         metadata = kwargs["strategy_metadata"]
         if kwargs["before_run"] is not None:
             metadata = kwargs["before_run"](metadata, ["EURUSD"])
+            self.metadata = metadata
         self.passed = True
         make_run(self.results, kwargs["run_id"], symbols=self.symbols)
         if self.error is not None:
@@ -173,6 +176,34 @@ def test_check_json_reports_an_allowed_run(gated, monkeypatch, capsys):
     assert not gated.fake.passed
 
 
+def test_check_json_reports_a_holdout(gated, monkeypatch, capsys):
+    with pytest.raises(SystemExit) as exited:
+        run_cli(
+            monkeypatch,
+            *("--strategy-file", str(gated.file), "--research-id", "S-0007", "--holdout"),
+            *("--note", "look", "--run-id", "r1", "--check-json"),
+        )
+    assert exited.value.code == 0
+    out = capsys.readouterr().out
+    payload = parse_check_output(out, 0)
+    assert payload is not None and payload["kind"] == "holdout"
+    assert payload["holdout_cutoff"] == "2025-04-30"
+    assert payload["window"]["end"] is None
+    assert "split:       development .. 2025-04-30 | holdout 2025-04-30 .. open" in out
+    assert trials(gated.register) == [] and not gated.fake.passed
+
+
+def test_holdout_flag_runs_a_holdout_look(gated, monkeypatch):
+    run_cli(
+        monkeypatch,
+        *("--strategy-file", str(gated.file), "--research-id", "S-0007", "--holdout"),
+        *("--note", "look", "--run-id", "r1"),
+    )
+    [trial] = trials(gated.register)
+    assert trial.kind is TrialKind.HOLDOUT and trial.run_id == "r1"
+    assert gated.fake.metadata["holdout_cutoff"] == "2025-04-30"
+
+
 def test_check_json_reports_a_refusal(gated, monkeypatch, capsys):
     with pytest.raises(SystemExit) as exited:
         run_cli(
@@ -217,6 +248,15 @@ def test_gate_off_check_json_names_its_flag(gated, monkeypatch, capsys):
         run_cli(monkeypatch, "--strategy-file", str(gated.file), "--check-json")
     assert exited.value.code == 2
     assert "--check/--check-json needs the research gate" in capsys.readouterr().err
+    assert gated.fake.calls == []
+
+
+def test_gate_off_refuses_the_holdout_flag(gated, monkeypatch, capsys):
+    monkeypatch.setenv(GATE_ENV, "off")
+    with pytest.raises(SystemExit) as exited:
+        run_cli(monkeypatch, "--strategy-file", str(gated.file), "--holdout")
+    assert exited.value.code == 2
+    assert "--holdout needs the research gate" in capsys.readouterr().err
     assert gated.fake.calls == []
 
 
@@ -293,6 +333,15 @@ def test_run_optimizer_refuses_to_run_ungated(optimizer):
     assert not optimizer.results.exists()
 
 
+def test_run_optimizer_refuses_an_ungated_holdout_look(optimizer, monkeypatch, capsys):
+    # Only the gate sets a holdout cutoff; one from the strategy file would look unrecorded.
+    monkeypatch.setenv(GATE_ENV, "off")
+    metadata = {**optimizer.metadata, "holdout_cutoff": "2024-01-01"}
+    assert cli.run_optimizer(strategy_metadata=metadata, run_id="r1") is None
+    assert "holdout_cutoff is set by the research gate" in capsys.readouterr().out
+    assert not optimizer.results.exists()
+
+
 def test_run_optimizer_runs_with_the_gated_metadata(optimizer, monkeypatch):
     seen = []
     captured = []
@@ -311,6 +360,22 @@ def test_run_optimizer_runs_with_the_gated_metadata(optimizer, monkeypatch):
     assert captured[0].keywords["strategy"].end_date == "2024-01-01"
     strategy = json.loads((optimizer.results / "r1" / "strategy.json").read_text("utf-8"))
     assert strategy["end_date"] == "2024-01-01"
+
+
+def test_run_optimizer_dispatches_a_holdout_look(optimizer, monkeypatch):
+    captured = []
+
+    def before_run(metadata, symbols):
+        return {**metadata, "holdout_cutoff": "2024-01-01"}
+
+    def capture(self, func, items, progress_callback=None, result_callback=None):
+        captured.append(func)
+        return []
+
+    monkeypatch.setattr(SimplePoolManager, "map_adaptive", capture)
+    cli.run_optimizer(strategy_metadata=optimizer.metadata, run_id="r1", before_run=before_run)
+    assert captured[0].func is process_symbol_holdout
+    assert captured[0].keywords["strategy"].holdout_cutoff == "2024-01-01"
 
 
 def test_run_optimizer_writes_nothing_when_the_gate_refuses(optimizer):

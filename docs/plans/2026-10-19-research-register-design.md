@@ -1,6 +1,6 @@
 # Research Register
 
-## Status: Design approved (2026-10-19) — steps 1-4 (core, backfill, CLI gate, API) implemented
+## Status: Design approved (2026-10-19) — steps 1-5 (core, backfill, CLI gate, API, holdout + DSR) implemented
 
 ## Problem
 
@@ -21,10 +21,13 @@ tested. Today:
   hundred-plus trials, a p-value around 0.03 is roughly what noise
   produces.
 
-Each run also reports a nested-CV holdout (the last `holdout_ratio` of the
-data, `src/fwbg/optimization/nested_cv.py:62`). When many iterations of
-one strategy are tuned while looking at that number, it stops being a
-holdout.
+Runs have no holdout of their own. The nested CV inside each walk-forward
+fold is called with `holdout_ratio=0.0`
+(`src/fwbg/optimization/process_fold.py:418`); the strategy's
+`validation.holdout_ratio` is never read (nor are `validation.method` and
+`validation.oos_size`). A tail reserved by hand with `end_date` stops being a
+holdout once many iterations of one strategy are tuned while looking at it.
+The register's holdout look (step 5, see Holdout look) replaces both.
 
 ## Goals
 
@@ -150,6 +153,27 @@ One JSON object per line:
   counted towards N.
 - Metrics are stored **per symbol**. A run over seven assets is seven
   evaluations; N for the Deflated Sharpe Ratio counts (run, symbol) pairs.
+  A holdout look's symbol counts iff its holdout was looked at
+  (`holdout.evaluated`).
+- Since step 5 the metric keys include the per-trade return statistics
+  `sr_per_trade`, `skew`, `kurtosis` (plain, not excess) and `n_returns`,
+  the verdict DSR's inputs, plus `test_period_years` (all from
+  `unified_metrics.json`).
+- `no_edge` writes `sharpe: null` since step 5: without an edge nothing is
+  sized, and a 0 would enter statistics. Its rows still carry the naive
+  `max_drawdown` and `annual_return`.
+- The ledger stores no per-symbol status, so a legacy `no_edge` zero cannot
+  be told apart from a real zero. No heuristic: legacy rows of runs before
+  step 5 carry no return statistics, so they count towards N only and never
+  reach V[SR]. Ungated development runs after step 5 do carry them; once
+  backfilled as legacy trials they enter V[SR] like iterations (they are
+  development data). Side effect: the "Best development result" line
+  (ranked by Sharpe) can pick a legacy zero, but only when every other
+  development Sharpe is negative.
+- A run whose `strategy.json` carries `holdout_cutoff` but that did not pass
+  the gate is never read as a legacy run: the scan raises, so the backfill
+  refuses it (its metrics are holdout metrics, not development data).
+  `run_optimizer` refuses such an ungated holdout look in the first place.
 
 ### Fingerprint
 
@@ -181,6 +205,11 @@ canonicalises the timeframe before gating (see the plan's notes).
 The code state is deliberately not part of the fingerprint: re-running the
 same config after a bugfix is legitimate and only needs `--reason`.
 
+A holdout run's effective metadata carries `holdout_cutoff` (the card's
+cutoff, written by the gate), so it is fingerprinted and a holdout look never
+matches an iteration over the same window. A strategy or study config may not
+set it (`INVALID_CONFIG`, 422): only the register decides what is a look.
+
 ### Code state
 
 When the working tree is dirty, the run writes `code.patch` into its run
@@ -207,7 +236,8 @@ Enforcement points:
   preflight runs the CLI once with `--check-json` (`src/fwbg/api/run_preflight.py`),
   so the API refuses with the gate's own denials and identical fingerprints
   without duplicating asset resolution. `RunStartRequest` gains
-  `research_id`, `note`, `reason`; `holdout` follows with step 5.
+  `research_id`, `note`, `reason` and (step 5) `holdout`, which the
+  preflight and the spawned run pass on as `--holdout`.
 
 Before either gate call, the CLI and API resolve `--assets` and
 `--asset-classes` through the same `AssetRegistry`, canonicalise the result
@@ -221,7 +251,8 @@ Checks (a missing research id or card stops immediately; after that every
 denial is collected, so one refusal lists all problems):
 
 Data split: `end_date` is exclusive when fwbg slices data, so iterations
-see `[.., cutoff)` and the holdout is `[cutoff, ..)`. `trials` are passed in
+see `[.., cutoff)`. A holdout look develops on `[start, cutoff)` and is
+evaluated once on `[cutoff, end)` (see Holdout look). `trials` are passed in
 ledger (append) order.
 
 1. `--research-id` given, card exists and declares that id → else deny (422).
@@ -240,8 +271,11 @@ ledger (append) order.
    would tune on seen holdout results) → else deny (409).
 5. Window: `start_date`/`end_date` must be strict `YYYY-MM-DD` with
    start < end → else deny (422). Iteration: missing end → set to the
-   cutoff; end after the cutoff → deny (409). Holdout run: end may be open;
-   an end on or before the cutoff → deny (422).
+   cutoff; end after the cutoff → deny (409). Holdout run: its start must
+   lie before the cutoff, since it develops on that data (422); end may be
+   open; an end on or before the cutoff → deny (422). The gate then writes
+   the card's `holdout_cutoff` into the effective metadata; a caller's
+   `holdout_cutoff` → deny (422, `INVALID_CONFIG`).
 6. `--holdout`: denied on a card with `holdout_contaminated: true` (409). The
    first holdout trial per strategy is free; any earlier holdout trial
    (whatever its status) makes a further look require `--reason`.
@@ -259,7 +293,9 @@ the ledger or that has a pending marker is refused (`RUN_ID_IN_USE`, 409; a
 bare directory is allowed, the API pre-creates it for logs). An unreadable
 card or ledger denies (`REGISTER_UNREADABLE`, 409). A live pending marker
 with the same fingerprint counts as a duplicate like a recorded successful
-trial.
+trial. Any pending holdout marker of the card, live or dead, counts as an
+earlier look (`HOLDOUT_REPEAT` without `--reason`): a dead look may already
+have shown results.
 
 `--no-save` is refused while the gate is on: a run whose results were seen
 is a trial, and the staging run directory it would need is not built. (If
@@ -273,7 +309,9 @@ both may record and commit *other* runs' stale pending markers, because
 recovery runs first so that a duplicate from a killed run is seen.
 `--check-json` does the same and prints its result as one
 `RESEARCH_CHECK {…}` stdout line (allowed: kind, fingerprint, symbols,
-window; refused: every denial with code, HTTP status and message).
+window, `holdout_cutoff` (`null` for an iteration); refused: every denial
+with code, HTTP status and message). `--check` prints a holdout look's
+development/holdout split.
 `parse_check_output(stdout, returncode)` accepts that line only when it
 matches the exit code, so a line from a CLI that failed before its gate (or
 one a plugin printed) never counts as a gate result.
@@ -310,8 +348,99 @@ id, when given, follows the CLI's rules (the `study:` prefix belongs to the
 backfill).
 Presets are resolved and the timeframe canonicalised as for a CLI run, so
 fingerprints match; the same gate applies (a refusal raises `GateDenied`).
+`register_trial` records iterations only: it has no holdout parameter, and a
+config carrying `holdout_cutoff` is refused (`INVALID_CONFIG`). A holdout
+look runs through `python -m fwbg.cli --holdout`, whose split the register
+controls.
 Calling it is enforced by convention (rule in `CLAUDE.md`/`AGENTS.md`), not
 by code.
+
+## Holdout look (step 5)
+
+`python -m fwbg.cli --holdout` (API: `RunStartRequest.holdout`) looks at the
+card's holdout once; use it when iterating is done. The per-symbol worker
+(`src/fwbg/optimization/holdout.py`) runs it when the gate set
+`holdout_cutoff` (operator decision 2026-10-21, "Option A"):
+
+1. **Development** is the normal pipeline on `[start, cutoff)`: walk-forward,
+   selection, unified simulation and risk calibration see nothing after the
+   cutoff.
+2. **Evaluation:** the frozen unified candidate (with the indicator variant
+   development chose) is retrained once on the development bars minus the
+   embargo, `[0, n_dev - embargo_bars)`, and evaluated once on
+   `[cutoff, end)` through a one-fold `run_unified_simulation`
+   (`evaluate_on_holdout`). The embargo keeps labels of the last training
+   bars from reaching into the holdout. Retraining on all development data
+   is what a deployment would do; nothing is selected after the cutoff.
+   Selected features missing from the training frame are dropped and
+   recorded (`dropped_features`).
+3. **Sizing without hindsight:** holdout trades are sized with the
+   development's fk (`risk_per_trade`), circuit breaker and loss scale; no
+   parameter is fitted on holdout trades.
+4. **Metrics come from holdout trades only.** The Monte Carlo test on them
+   decides `ok` or `not_significant`. `win_rate` is over all holdout trades;
+   `pnl`, `sharpe`, `calmar` and the return statistics are over the trades
+   the circuit breaker sized. `pnl` is a sum (a development `pnl` is a
+   per-fold mean). A holdout result carries no `fold_stability`
+   (`min_fold_stability` reads n/a).
+
+Files per symbol: `config.json` gets a `holdout` block (cutoff, `evaluated`,
+and either the reason it was not evaluated or the train and test windows,
+bars, `embargo_bars`, trades, sized trades and `dropped_features`);
+`development.json` keeps the development outcome apart (without per-fold
+details, with the frozen candidate; the API's grid detail nests it under
+`development`); `unified_metrics.json` holds the holdout metrics and return
+statistics. A holdout look exports nothing to `assets.json`: it is an
+evaluation, not a deployment.
+
+Statuses: the holdout phase assigns `HOLDOUT_STATUSES` (`ok`,
+`not_significant`, `no_unified_trades`, `insufficient_data` for a holdout
+window too short to evaluate, `no_data` for no data after the cutoff,
+`error`). A development that ends in anything but `ok` (`no_edge`,
+`not_significant`, `no_successful_folds`, …) passes its status through with
+`holdout.evaluated: false`; the symbol is not evaluated and does not count.
+An error before any holdout trade exists is not a look; one after is
+(`evaluated: true`). A look in which no symbol was evaluated is recorded
+`failed` and still counts as a look (gate rule 6), so the next one needs
+`--reason`. Conservative: the run may already have shown something.
+
+Exit code and ledger agree: a holdout run fails (exit 1, "no symbol reached
+its holdout") iff no symbol's holdout was looked at, the rule the ledger
+counts by; a look that errors after its holdout trades exist completes
+(exit 0). The run's elite table labels holdout results `HOLDOUT`, and
+`unified_metrics.json` counts `n_long`/`n_short` from the holdout trades'
+directions.
+
+Causality: raw indicators and the data-loading pipeline run on the whole
+window `[start, end)` so the first holdout bars have their warm-up. The
+development rows then equal the development run's only because registered
+indicators and data loaders are prefix-stable: computed on `[start, end)`
+they equal their values on `[start, cutoff)`. `tests/test_prefix_stability.py`
+is that guarantee; `tests/test_lookahead_bias.py` (future scramble) checks
+causality but cannot see statistics over the frame's length. Preprocessors
+and stateful indicators are fit on the training frame only. Deliberate
+shortcut: data is loaded and indicators precomputed twice per symbol.
+
+Known limitations:
+
+- Signal models select their exit combination on the test fold
+  (`src/fwbg/optimization/signal_fold.py:71-148`). This inflates development
+  metrics and the DSR's best SR. Fixing it is a later step.
+- Externally cached signal data (e.g. provider probabilities that
+  `jev_signal` reads) trained past the cutoff contaminates development and
+  holdout alike; the pipeline cannot detect it.
+- Resampling runs on the whole CSV; harmless while a date cutoff (midnight)
+  falls on a bar boundary.
+- An open-ended look records `window.end: null` and fingerprints no
+  `end_date`, so looks months apart share fingerprint and window although
+  they see different data. A second look needs `--reason` anyway, and the
+  run directory's `holdout` block records the window actually touched.
+- Cosmetic: the run summary labels a holdout result "Walk-Forward (0
+  folds)", and progress shows a symbol done before its holdout phase.
+- Pre-existing, not of this step: the `jev_signal` data-loading plugin
+  crashes in `run_data_loading` without `params.indicators`
+  (`get_default_params` is an instance method, the orchestrator calls it on
+  the class).
 
 ## Tooling
 
@@ -338,13 +467,60 @@ by `[*]` when they have none.
 
 ### Verdict
 
-Auto-computed: N (counted trials for this strategy, plus the global N for
-context), Deflated Sharpe Ratio of the best iteration given N, holdout
-result, coverage summary, list of distinct `criteria_hash` values used.
-Manual: reason and **reopen condition** (what new evidence or capability
-would justify another round). Step 3 writes the statistics without DSR
-(N per card and register, criteria versions, holdout state, best
-development result against the criteria); DSR comes with step 5.
+Auto-computed (`src/fwbg/research/commands.py`, `stats.py`): N (counted
+trials and symbol evaluations of the card, plus the register's for
+context), the distinct `criteria_hash` values used, holdout state, the best
+development result (by Sharpe) against the current criteria, the Deflated
+Sharpe Ratio and one line per holdout look. Manual: reason and **reopen
+condition** (what new evidence or capability would justify another round).
+
+Deflated Sharpe Ratio (step 5, `src/fwbg/research/dsr.py`, the full formula
+of Bailey & López de Prado 2014, stdlib only):
+
+- **N:** every counted symbol evaluation of the card, holdout looks
+  included. Holdout looks are not part of the selection the DSR deflates;
+  counting them anyway is the conservative choice (a larger N only raises
+  E[max SR]).
+- **V[SR]:** the unbiased sample variance (n − 1) of the per-trade SRs of
+  the card's development evaluations that carry return statistics. Legacy
+  evaluations of runs before step 5 and `no_edge` evaluations have none;
+  they count in N only.
+- **V[SR] floor** (operator decision 2026-10-21): V[SR] is at least the mean
+  over those evaluations of 1/(T − 1), T being each one's return count.
+  Under the null of zero true SR, a per-trade SR estimated from T returns
+  has a sampling variance of about 1/(T − 1). Without the floor, two or
+  a few near-identical samples would give a V[SR] near 0, collapse E[max SR]
+  towards 0 and leave the DSR no deflation at all. The floor is theory, not
+  a threshold fitted to data. The verdict line states V[SR], whether the
+  floor or the sample variance was used, and the other one.
+- **Best:** the development evaluation with the highest `sr_per_trade`, the
+  statistic being deflated (per trade, never annualised, so trials with
+  different trade frequencies share one scale); its own skew, kurtosis and
+  return count enter the PSR against E[max SR] of N trials. It can differ
+  from the "Best development result" line, which ranks by annualised Sharpe.
+- The DSR is printed with four decimals; a value that would round to 1 reads
+  "> 0.9999".
+- Fewer than 2 evaluations with return statistics → "too few trials with
+  return statistics". Skew and kurtosis that leave no positive SR variance
+  → "not defined". Development metrics of signal models are optimistic (see
+  Holdout look), so the best SR is biased upward.
+
+Holdout result: one line per holdout trial with the evaluated period
+(`holdout <cutoff>..<end or open>`), each symbol checked against the current
+criteria, labelled like the best-result line (registration or amendment N).
+"(criteria changed since this look)" flags a look recorded under a different
+`criteria_hash` than the card's current one. A symbol without numbers reads
+"no holdout metrics"; a failed look reads "failed, no symbol evaluated".
+Symbols whose holdout was not looked at (development ended before
+evaluating) are absent from the line: the ledger records only evaluated
+symbols of a holdout trial.
+
+The run-level `overfitting` block in each symbol's `config.json`
+(`src/fwbg/optimization/overfitting.py`, written since step 5) is advisory
+and **not** the verdict DSR: it assumes unit SR variance and N = grid
+combinations, so it reads near 0 for per-trade SRs. A `no_edge` config's
+`overfitting.dsr.observed_sr` was computed without sizing (fk ≤ 0); never use
+it as a trial SR.
 
 ### HTTP API (fwbg-agents, dashboard)
 
@@ -418,8 +594,10 @@ register", since step 3): before proposing a test, run `fwbg research
 list/show`; a new idea gets a card first; every run uses `--research-id`
 and `--note`; never set `FWBG_RESEARCH_GATE`; only a deliberate verdict
 closes a strategy. Since step 4 the rule also requires study scripts to
-call `fwbg.research.study.register_trial()`. The rule contains no results
-and can live in the public repo.
+call `fwbg.research.study.register_trial()`; since step 5 it says when to
+take a holdout look (`--holdout`, once iterating is done; a further look
+needs `--reason`). The rule contains no results and can live in the public
+repo.
 
 ## Migration
 
@@ -491,7 +669,10 @@ Full backfill of all existing runs and studies:
   failed runs recorded.
 - Backfill: fixture with legacy runs (with/without `results.json`, smoke)
   → correct kinds; second run adds nothing.
-- DSR: matches reference values from Bailey & López de Prado (2014).
+- DSR: matches the numerical example of Bailey & López de Prado (2014)
+  (`tests/research/test_dsr.py`) — done.
+- Holdout look: prefix stability of indicators and data loaders
+  (`tests/test_prefix_stability.py`) is its causality guarantee.
 - API: `start_run` returns 409/422 before spawning a process.
 - Existing suite: `conftest.py` sets `FWBG_RESEARCH_GATE=off`; no existing
   test writes to a ledger.
@@ -518,16 +699,27 @@ Each step is usable on its own.
    httpx defaults to 5 s, and a client timeout would orphan a started run.
    The dashboard sends no `research_id`/`note` yet, so dashboard starts are
    refused with 422 until step 7.
-5. **Holdout mode** and verdict statistics (DSR).
+5. **Holdout mode** (`--holdout`, API `holdout`, see Holdout look),
+   per-trade return statistics in run files and ledger, `no_edge` without
+   Sharpe, and verdict statistics (DSR, holdout results) — done (plan
+   `docs/plans/2026-10-21-research-register-holdout.md`).
+   `/api/runs/compare` still counts a `null` Sharpe as 0 in `avg_sharpe`
+   (old behaviour kept). For step 6:
+   - `no_edge` symbols now carry `sharpe: null`. fwbg-agents'
+     `_best_symbol_metrics` returns `{}` when every symbol is `no_edge`, so
+     its lifecycle check reports a missing metric (fails closed); check every
+     other place that reads `sharpe` for `null`.
+   - A holdout look is started with `holdout: true`; its run directory's
+     `config.json` `holdout` block and `development.json` tell holdout and
+     development metrics apart. A further look needs a `reason`.
 6. **fwbg-agents integration** (separate plan, agents repo).
 7. **Dashboard page** (phase 2).
 
 ## Open questions
 
-- **Holdout evaluation mechanics.** fwbg's walk-forward and nested CV
-  split the requested window internally. A holdout trial must train on
-  data up to the cutoff and report metrics only for the period after it.
-  Needs investigation before step 5.
+- **Holdout evaluation mechanics** — closed in step 5: develop on
+  `[start, cutoff)`, retrain the frozen candidate once on the development
+  data minus the embargo, evaluate once on `[cutoff, end)` (see Holdout look).
 - **`/api/runs/preview`** — closed in step 4: not a trial. It shows one
   symbol's signals with fixed TP/SL and reports no aggregated metrics;
   fwbg-agents does not call it.

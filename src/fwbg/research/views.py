@@ -19,7 +19,14 @@ from fwbg.research.stats import best_result, evaluations
 WIDTH = 120
 # Indented by two spaces in ``show``.
 _COVERAGE_WIDTH = WIDTH - 2
-_ALWAYS = ("symbols", "strategy.timeframe", "strategy.start_date", "strategy.end_date")
+# The holdout split is part of the window, not an explored parameter.
+_ALWAYS = (
+    "symbols",
+    "strategy.timeframe",
+    "strategy.start_date",
+    "strategy.end_date",
+    "strategy.holdout_cutoff",
+)
 _EVALUATED = "evaluated symbols"
 # Free text that never changes a result.
 _IGNORED_KEYS = frozenset({"_comment"})

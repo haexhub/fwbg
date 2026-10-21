@@ -86,6 +86,11 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     group.add_argument("--note", help="one line: what changed since the last iteration and why")
     group.add_argument("--reason", help="why an identical configuration runs again")
     group.add_argument(
+        "--holdout",
+        action="store_true",
+        help="look at the card's holdout once: develop before its cutoff, evaluate after it",
+    )
+    group.add_argument(
         "--check", action="store_true", help="check the run against the register; do not run it"
     )
     group.add_argument(
@@ -121,6 +126,7 @@ class ResearchRun:
     note: str | None
     reason: str | None = None
     check_only: bool = False
+    holdout: bool = False
     _pending: PendingRun | None = field(default=None, init=False, repr=False)
 
     def before_run(self, metadata: Mapping[str, Any], symbols: Sequence[str]) -> dict[str, Any]:
@@ -131,7 +137,9 @@ class ResearchRun:
             GateChecked: ``check_only`` and the run would be allowed.
         """
         canonical = tuple(sorted({symbol.upper() for symbol in symbols}))
-        request = RunRequest(self.research_id, metadata, canonical, self.note, self.reason)
+        request = RunRequest(
+            self.research_id, metadata, canonical, self.note, self.reason, holdout=self.holdout
+        )
         try:
             with register_lock(self.research_dir):
                 return self._gate(request, canonical)
@@ -194,11 +202,14 @@ class ResearchRun:
         return metadata
 
     def _run_denials(self, decision: Decision, trials: Sequence[Trial]) -> list[Denial]:
-        """A run id is used once; an identical configuration must not run twice at once."""
+        """A run id is used once; an identical configuration must not run twice at once;
+        a holdout look still pending counts like a recorded one."""
         denials = run_id_denials(self.research_dir, self.run_id, trials, run_dir=self.run_dir)
         if any(denial.code is DenialCode.INVALID_RUN_ID for denial in denials):
             return denials
         denials.extend(running_duplicates(self.research_dir, decision.fingerprint, self.reason))
+        if decision.kind is TrialKind.HOLDOUT and not (self.reason and self.reason.strip()):
+            denials.extend(pending_holdout_looks(self.research_dir, self.research_id))
         return denials
 
     def record(self) -> Trial | None:
@@ -290,8 +301,9 @@ def check_result(
     decision: Decision | None = None,
     symbols: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """The ``--check-json`` payload: allowed with kind, fingerprint, symbols and window,
-    or refused with every denial and its HTTP status."""
+    """The ``--check-json`` payload: allowed with kind, fingerprint, symbols, window and
+    holdout cutoff (``None`` for an iteration), or refused with every denial and its
+    HTTP status."""
     if denials:
         return {
             "allowed": False,
@@ -307,6 +319,7 @@ def check_result(
         "fingerprint": decision.fingerprint,
         "symbols": list(symbols),
         "window": run_window(decision.effective_metadata),
+        "holdout_cutoff": decision.effective_metadata.get("holdout_cutoff"),
         "denials": [],
     }
 
@@ -344,6 +357,9 @@ def _valid_check_payload(payload: Mapping[str, Any]) -> bool:
             and isinstance(payload.get("symbols"), list)
             and all(isinstance(symbol, str) for symbol in payload["symbols"])
             and _valid_window(payload.get("window"))
+            and (
+                payload.get("holdout_cutoff") is None or isinstance(payload["holdout_cutoff"], str)
+            )
             and payload.get("denials") == []
         )
     denials = payload.get("denials")
@@ -421,6 +437,27 @@ def running_duplicates(
     ]
 
 
+def pending_holdout_looks(research_dir: Path, research_id: str | None) -> list[Denial]:
+    """A holdout look of *research_id* that is running or unrecorded; call without a reason.
+
+    Every marker counts, not only live ones: a dead look may already have shown results.
+    """
+    looks = [
+        run.run_id
+        for run in read_pending(research_dir)
+        if run.trial.strategy == research_id and run.trial.kind is TrialKind.HOLDOUT
+    ]
+    if not looks:
+        return []
+    return [
+        Denial(
+            DenialCode.HOLDOUT_REPEAT,
+            f"the holdout of {research_id} is already being looked at (run {', '.join(looks)}); "
+            "a further look needs a reason",
+        )
+    ]
+
+
 def record_stale(research_dir: Path) -> None:
     """Record the runs whose process is gone and commit them; call under the lock."""
     if recover_stale(research_dir):
@@ -445,3 +482,8 @@ def _print_check(decision: Decision, symbols: tuple[str, ...]) -> None:
     print(
         f"  window:      {window['start'] or 'open'} .. {window['end'] or 'open'} (end exclusive)"
     )
+    cutoff = decision.effective_metadata.get("holdout_cutoff")
+    if cutoff is not None:
+        print(
+            f"  split:       development .. {cutoff} | holdout {cutoff} .. {window['end'] or 'open'}"
+        )

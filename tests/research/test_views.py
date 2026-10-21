@@ -225,8 +225,16 @@ def test_coverage_lists_varied_paths_and_the_window():
         row("strategy.timeframe", '"HOUR_1"'),
         row("strategy.start_date", "-"),
         row("strategy.end_date", '"2025-04-30", -'),
+        row("strategy.holdout_cutoff", "-"),
         row(RANGE_BARS, "10, 20, -"),
     ]
+
+
+def test_coverage_lists_the_holdout_split_with_the_window_not_as_a_parameter():
+    configs = [config(10), config(10, holdout_cutoff="2025-04-30")]
+    lines = coverage(configs)
+    assert cells(lines[:6])[-1] == ("strategy.holdout_cutoff", '"2025-04-30", -')
+    assert varied(lines) == []
 
 
 def test_coverage_caps_the_values_shown():
@@ -266,7 +274,7 @@ def cells(lines):
 
 def varied(lines):
     """(path, values) of the rows after the always-listed ones."""
-    return cells(lines[5:])
+    return cells(lines[6:])
 
 
 def test_coverage_matches_list_items_by_name_not_position():

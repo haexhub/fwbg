@@ -161,7 +161,9 @@ def test_research_text_starting_with_a_dash_parses_in_the_cli(api):
     calls["respond"](ALLOWED)
 
     assert (
-        _start(client, research_id="S-0001", note="-5% tighter stop", reason="-x").status_code
+        _start(
+            client, research_id="S-0001", note="-5% tighter stop", reason="-x", holdout=True
+        ).status_code
         == 200
     )
 
@@ -171,6 +173,27 @@ def test_research_text_starting_with_a_dash_parses_in_the_cli(api):
     add_run_arguments(parser)
     args, _ = parser.parse_known_args(cmd[3:])
     assert (args.research_id, args.note, args.reason) == ("S-0001", "-5% tighter stop", "-x")
+    assert args.holdout is True
+
+
+def test_holdout_reaches_the_cli_and_its_preflight(api):
+    client, calls = api
+    calls["respond"]({**ALLOWED, "kind": "holdout", "window": {"start": None, "end": None}})
+
+    assert _start(client, research_id="S-0001", note="n", holdout=True).status_code == 200
+
+    cmd = calls["spawn"][0]
+    assert "--holdout" in cmd
+    assert calls["preflight"] == [[*cmd, "--check-json"]]
+
+
+def test_holdout_is_off_by_default(api):
+    client, calls = api
+    calls["respond"](ALLOWED)
+
+    assert _start(client, research_id="S-0001", note="n").status_code == 200
+
+    assert "--holdout" not in calls["spawn"][0]
 
 
 def test_allowed_run_without_reason_omits_the_flag(api):

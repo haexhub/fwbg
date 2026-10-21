@@ -66,3 +66,60 @@ def test_run_outcome_without_symbol_results_is_failed(tmp_path):
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
     assert run_outcome(run_dir) == (TrialStatus.FAILED, {})
+
+
+def test_lenient_run_outcome_keeps_the_return_statistics(tmp_path):
+    """Live runs record the return statistics; the sample size stays an integer."""
+    unified = {
+        "sharpe": 1.2,
+        "sr_per_trade": 0.11,
+        "skew": -0.4,
+        "kurtosis": 4.5,
+        "n_returns": 230,
+        "test_period_years": 2.5,
+    }
+    run_dir = make_run(tmp_path, "run-1", symbols={"GOLD": {"unified": unified}})
+    status, metrics = run_outcome(run_dir, lenient=True)
+    assert status is TrialStatus.OK
+    assert {k: metrics["GOLD"][k] for k in unified} == unified
+    assert type(metrics["GOLD"]["n_returns"]) is int
+
+
+def _holdout_symbol(status, evaluated):
+    return {
+        "status": status,
+        "result": {"holdout": {"cutoff": "2024-01-01", "evaluated": evaluated}},
+    }
+
+
+@pytest.mark.parametrize("status", ["no_edge", "not_significant", "no_successful_folds", "error"])
+def test_a_holdout_never_looked_at_does_not_count(tmp_path, status):
+    """A holdout symbol counts only when its holdout was looked at, whatever its status."""
+    run_dir = make_run(tmp_path, "run-1", symbols={"GOLD": _holdout_symbol(status, False)})
+    assert run_outcome(run_dir) == (TrialStatus.FAILED, {})
+
+
+@pytest.mark.parametrize("status", ["ok", "not_significant", "no_unified_trades", "error"])
+def test_a_holdout_looked_at_counts(tmp_path, status):
+    """An error after the holdout trades existed still looked at the data."""
+    run_dir = make_run(
+        tmp_path,
+        "run-1",
+        symbols={"GOLD": _holdout_symbol(status, True), "DAX": _holdout_symbol("no_edge", False)},
+    )
+    status_, metrics = run_outcome(run_dir)
+    assert status_ is TrialStatus.OK
+    assert set(metrics) == {"GOLD"}
+
+
+@pytest.mark.parametrize("holdout", [None, "x", {"cutoff": "2024-01-01"}, {"evaluated": "yes"}])
+def test_an_unreadable_holdout_block_counts_only_leniently(tmp_path, holdout):
+    """Like an unknown status: strict refuses, live runs count the symbol."""
+    run_dir = make_run(
+        tmp_path, "run-1", symbols={"GOLD": {"status": "no_edge", "result": {"holdout": holdout}}}
+    )
+    with pytest.raises(LegacyRunError, match="run-1.*GOLD.*holdout"):
+        run_outcome(run_dir)
+    status, metrics = run_outcome(run_dir, lenient=True)
+    assert status is TrialStatus.OK
+    assert set(metrics) == {"GOLD"}
