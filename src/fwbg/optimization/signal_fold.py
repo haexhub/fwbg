@@ -5,12 +5,11 @@ This module handles their specific data preparation (keep all rows,
 fill NaN with 0, preserve auxiliary columns for exit strategies)
 and direct evaluation (no inner CV needed).
 """
-import dataclasses
-
 from fwbg.core.columns import named_columns
 from fwbg.utils.logging import log
 from .nested_cv import evaluate_on_holdout
 from .process_fold import _prepare_fold_common, _finalize_fold_data
+from .signal_selection import signal_combos
 
 
 def prepare_signal_fold_data(fold, fold_indicators, precomputed_raw_df,
@@ -93,65 +92,33 @@ def process_signal_fold(fold, train_df, test_df, full_pool, ctx, sym):
     best_config = None
     all_grid_results = []
 
-    for exit_cfg in ctx.exit_strategies:
-        tp = exit_cfg.params.get("tp_mult", 1.0)
-        sl = exit_cfg.params.get("sl_mult", 1.0)
-        timeout_bars = exit_cfg.params.get("timeout_bars", None)
+    for combo in signal_combos(ctx, features):
+        candidate = combo.candidate
+        exit_cfg = combo.config
+        tp, sl, ct = candidate["params"]
+        test_result = evaluate_on_holdout(test_df, train_df, candidate, combo.ctx)
 
-        combo_ctx = dataclasses.replace(
-            ctx,
-            exit_strategy=exit_cfg.name,
-            exit_params=exit_cfg.params,
-            exit_modifier=exit_cfg.exit_modifier,
-            exit_modifier_params=exit_cfg.exit_modifier_params,
-            entry_modifier=exit_cfg.entry_modifier,
-            entry_modifier_params=exit_cfg.entry_modifier_params,
-            separate_long_short=bool(exit_cfg.long_ct or exit_cfg.short_ct),
-        )
+        grid_entry = {
+            "fold_id": fold.fold_id,
+            "tp_mult": tp, "sl_mult": sl, "ct": ct,
+            "n_trades": test_result["n_trades"],
+            "pnl": test_result["pnl"],
+            "win_rate": test_result["win_rate"],
+        }
+        all_grid_results.append(grid_entry)
 
-        for model_hp_variant in ctx.grid_model_hyperparameters:
-            hp_ctx = combo_ctx
-            merged_hp = combo_ctx.model_hyperparameters
-            if model_hp_variant is not None:
-                merged_hp = {**combo_ctx.model_hyperparameters, **model_hp_variant}
-                hp_ctx = dataclasses.replace(combo_ctx, model_hyperparameters=merged_hp)
-
-            ct_list = exit_cfg.ct or [0.5]
-            for ct in ct_list:
-                candidate = {
-                    "params": (tp, sl, ct),
-                    "timeout_bars": timeout_bars,
-                    "selected_features_long": features,
-                    "selected_features_short": features,
-                    "model_hyperparameters": merged_hp,
-                    "exit_modifier_params": exit_cfg.exit_modifier_params,
-                }
-
-                # hp_ctx carries exit strategy config for evaluate_on_holdout;
-                # candidate carries model hyperparameters for the model itself.
-                test_result = evaluate_on_holdout(test_df, train_df, candidate, hp_ctx)
-
-                grid_entry = {
-                    "fold_id": fold.fold_id,
-                    "tp_mult": tp, "sl_mult": sl, "ct": ct,
-                    "n_trades": test_result["n_trades"],
-                    "pnl": test_result["pnl"],
-                    "win_rate": test_result["win_rate"],
-                }
-                all_grid_results.append(grid_entry)
-
-                if test_result["n_trades"] >= 1 and test_result["pnl"] > best_pnl:
-                    best_pnl = test_result["pnl"]
-                    best_result = test_result
-                    best_config = {
-                        "tp": tp, "sl": sl, "ct": ct,
-                        "rrr": tp / sl if sl > 0 else 0,
-                        "timeout_bars": timeout_bars,
-                        "model_hyperparameters": merged_hp,
-                        "exit_modifier_params": exit_cfg.exit_modifier_params,
-                        "exit_strategy": exit_cfg.name,
-                        "exit_params": exit_cfg.params,
-                    }
+        if test_result["n_trades"] >= 1 and test_result["pnl"] > best_pnl:
+            best_pnl = test_result["pnl"]
+            best_result = test_result
+            best_config = {
+                "tp": tp, "sl": sl, "ct": ct,
+                "rrr": tp / sl if sl > 0 else 0,
+                "timeout_bars": candidate["timeout_bars"],
+                "model_hyperparameters": candidate["model_hyperparameters"],
+                "exit_modifier_params": exit_cfg.exit_modifier_params,
+                "exit_strategy": exit_cfg.name,
+                "exit_params": exit_cfg.params,
+            }
 
     if not best_result:
         log(2, f"  Fold {fold_idx_1based}: No trades from signal model", sym)
