@@ -523,7 +523,7 @@ def run_optimizer(
 
             # Walk-Forward
             wf = result.get("walk_forward", {})
-            std_wr = wf.get("std_win_rate", 0)
+            std_wr = wf.get("std_win_rate") or 0  # None: no fold traded
             std_pnl = wf.get("std_pnl", 0)
             n_folds = wf.get("n_folds", 0)
             mean_bias = wf.get("mean_bias_ratio", 0)
@@ -582,7 +582,7 @@ def run_optimizer(
             if best_grid:
                 output_lines.append(f"  Best Grid: TP={best_grid.get('tp_mult', '?')}, "
                                     f"SL={best_grid.get('sl_mult', '?')}, "
-                                    f"CT={best_grid.get('conf_thresh', '?')}, "
+                                    f"CT={best_grid.get('conf_thresh', best_grid.get('ct', '?'))}, "
                                     f"Inner PnL={best_grid.get('inner_val_pnl', 0):.1f}, "
                                     f"Stability={best_grid.get('fold_stability', 0):.0%}")
 

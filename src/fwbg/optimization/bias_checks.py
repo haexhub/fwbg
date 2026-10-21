@@ -24,12 +24,22 @@ def fold_bias_ratios(fold_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     possible for ML and signal models) has no meaningful ratio: dividing by zero,
     or a sign flip that reads as "no bias" (or as bias). Such folds are left out
     of the ratios and counted; the mean is None when no fold has a ratio.
+
+    The mean weights each fold's ratio by its inner PnL (sum of test PnL / sum of
+    inner PnL over the folds with a ratio), so a fold whose inner PnL is barely
+    positive keeps its large ratio in the list (a per-fold warning) but cannot
+    drive the mean (the CRITICAL check) on its own. No threshold is involved.
+
+    Scale: inner_val_pnl is the MEAN PnL per inner validation window, test_pnl the
+    PnL of the whole test fold, and the two differ in length; a ratio of 1 is not
+    equal per-bar performance (ML and signal models alike).
     """
-    ratios = [r["test_pnl"] / r["inner_val_pnl"] for r in fold_results if r["inner_val_pnl"] > 0]
+    with_ratio = [r for r in fold_results if r["inner_val_pnl"] > 0]
+    inner_sum = sum(r["inner_val_pnl"] for r in with_ratio)
     return {
-        "bias_ratios": ratios,
-        "mean_bias_ratio": sum(ratios) / len(ratios) if ratios else None,
-        "folds_without_bias_ratio": len(fold_results) - len(ratios),
+        "bias_ratios": [r["test_pnl"] / r["inner_val_pnl"] for r in with_ratio],
+        "mean_bias_ratio": sum(r["test_pnl"] for r in with_ratio) / inner_sum if with_ratio else None,
+        "folds_without_bias_ratio": len(fold_results) - len(with_ratio),
     }
 
 
@@ -94,12 +104,12 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
     if len(extreme_folds) > 0:
         warnings.append(f"{len(extreme_folds)}/{n_folds} folds have >2.0x bias: {[f'{r:.2f}' for r in extreme_folds]}")
 
-    # Check 4: Win-Rate Konsistenz
-    if std_wr > 0.15:
+    # Check 4: Win-Rate Konsistenz (None: no fold traded)
+    if std_wr is not None and std_wr > 0.15:
         warnings.append(f"High WR std-dev: {std_wr*100:.1f}% (regime-dependent)")
 
     # Check 5: Unrealistic Win-Rate (if SampleBiasDetector available)
-    if SampleBiasDetector:
+    if SampleBiasDetector and mean_wr is not None:
         wr_check = SampleBiasDetector.check_unrealistic_winrate(
             win_rate=mean_wr,
             rrr=rrr,
@@ -135,7 +145,8 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
             for warn in warnings:
                 print(f"    - {warn}")
         else:
-            print(f"{severity} {symbol}: No bias detected (mean={mean_bias:.2f}x, std_wr={std_wr*100:.1f}%)")
+            std_text = "n/a" if std_wr is None else f"{std_wr*100:.1f}%"
+            print(f"{severity} {symbol}: No bias detected (mean={mean_bias:.2f}x, std_wr={std_text})")
 
     return {
         "symbol": symbol,

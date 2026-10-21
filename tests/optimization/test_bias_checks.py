@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from fwbg.optimization.bias_checks import (
     check_asset_bias,
     check_systematic_bias,
@@ -38,6 +40,17 @@ def test_ratio_only_where_the_inner_pnl_is_positive():
         "mean_bias_ratio": 2.0,
         "folds_without_bias_ratio": 2,
     }
+
+
+def test_a_near_zero_inner_pnl_does_not_dominate_the_mean():
+    """The mean weights each fold's ratio by its inner PnL: sum(test) / sum(inner)."""
+    bias = fold_bias_ratios([_fold(10.0, 10.0), _fold(10.0, 10.0), _fold(0.1, 5.0)])
+    assert bias["bias_ratios"] == [1.0, 1.0, 50.0]  # the fold itself still shows its ratio
+    assert bias["mean_bias_ratio"] == pytest.approx(25.0 / 20.1)
+    check = check_asset_bias(
+        _result(bias["bias_ratios"], bias["mean_bias_ratio"], 0), verbose=False
+    )
+    assert check["bias_check"] == "warning"  # the >2x fold is a warning, not CRITICAL
 
 
 def test_a_negative_test_pnl_keeps_its_ratio():
