@@ -307,7 +307,7 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                        opens=None, timeout_bars=None, in_session=None,
                        sl_level_abs=None, entry_delay=1,
                        breakeven_trigger=0.0, trail_distance=0.0,
-                       scale_levels=None, scale_qty_mult=1.0):
+                       scale_levels=None, scale_qty_mult=1.0, sl_level_mult=1.0):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
@@ -352,6 +352,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         trail_distance: Trailing-Abstand vom besten Preis (0.0=aus)
         scale_levels: Liste von Retracement-Fraktionen für Scale-In (None=aus)
         scale_qty_mult: Quantity pro Scale-In (1.0=gleich wie Initial)
+        sl_level_abs: Optional - absolutes SL-Level (Preis) statt entry ± sl_distance
+        sl_level_mult: Skaliert die Distanz Entry→Level (sl_mult; 1.0 = genau das
+            Level). Level auf der falschen Seite → entry ± sl_distance.
 
     Returns:
         dict mit Trade-Details oder None bei ungültigem Trade
@@ -385,7 +388,8 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
     if direction == 1:  # Long
         entry = entry_price + spread + slippage  # Kaufe teurer
         tp = entry + tp_distance  # TP-Level (Trigger)
-        sl = sl_level_abs if sl_level_abs is not None else entry - sl_distance
+        sl = (entry - sl_level_mult * (entry - sl_level_abs)
+              if sl_level_abs is not None else entry - sl_distance)
         if sl_level_abs is not None and sl >= entry:
             # Level auf der falschen Seite des Entry (z. B. Distanz-Spalte als
             # Level missbraucht oder Gap über das Level) → Distanz-SL statt
@@ -394,7 +398,8 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
     else:  # Short
         entry = entry_price - spread - slippage  # Verkaufe billiger
         tp = entry - tp_distance  # TP-Level (Trigger)
-        sl = sl_level_abs if sl_level_abs is not None else entry + sl_distance
+        sl = (entry + sl_level_mult * (sl_level_abs - entry)
+              if sl_level_abs is not None else entry + sl_distance)
         if sl_level_abs is not None and sl <= entry:
             sl = entry + sl_distance
 

@@ -12,6 +12,7 @@ from typing import Tuple, Optional, List
 
 import numpy as np
 
+from fwbg.core.columns import ColumnRoleError
 from fwbg.utils.logging import log
 from .nested_cv import (
     run_inner_cv, select_features_from_fold,
@@ -62,9 +63,27 @@ def select_features(
         default_tp = 1.5
         default_sl = 1.0
         fs_exit_mode = ctx.exit_strategy
+        first_ep = {}
+
+    # These targets run with default TP/SL multipliers, but column selection and
+    # the TP source still have to match the first exit strategy. Otherwise a
+    # range-based strategy either trains feature selection against ATR targets
+    # or raises on every additional range column despite naming one explicitly.
+    # Do not carry unrelated exit parameters: feature selection intentionally
+    # remains based on the default trade configuration.
+    fs_ctx = ctx
+    fs_exit_params = {
+        key: first_ep[key]
+        for key in ("sl_dist_column", "tp_mode", "range_column")
+        if key in first_ep
+    }
+    if fs_exit_params:
+        fs_ctx = dataclasses.replace(
+            ctx, exit_params=fs_exit_params,
+        )
 
     result = compute_targets_cached(
-        train_df, default_tp, default_sl, ctx, timeout_bars=None,
+        train_df, default_tp, default_sl, fs_ctx, timeout_bars=None,
         exit_strategy_mode=fs_exit_mode,
     )
     targets_long, targets_short = result[0], result[1]
@@ -374,8 +393,9 @@ def _run_with_successive_halving(
             result = _compute_cached_targets(
                 tp, sl, timeout_bars, inner_folds, inner_df, combo_ctx
             )
-        except (ImportError, ModuleNotFoundError):
-            # Re-raise setup errors — they indicate broken dependencies,
+        except (ImportError, ModuleNotFoundError, ColumnRoleError):
+            # Re-raise setup and config errors — they indicate broken dependencies
+            # or an exit that cannot tell which column to read,
             # not something we can recover from per-combo.
             raise
         except Exception as tgt_e:
@@ -657,7 +677,7 @@ def run_grid_search(
                         candidates.append(candidate)
                     if grid_result:
                         grid_results.append(grid_result)
-                except (ImportError, ModuleNotFoundError):
+                except (ImportError, ModuleNotFoundError, ColumnRoleError):
                     raise  # Let outer handler deal with it
                 except Exception as e:
                     import sys
@@ -669,8 +689,8 @@ def run_grid_search(
                     progress_reported += 1
                     if progress_callback:
                         progress_callback(progress_reported, grid_total)
-    except (ImportError, ModuleNotFoundError) as outer_e:
-        # Setup/environment errors must never be silently swallowed.
+    except (ImportError, ModuleNotFoundError, ColumnRoleError) as outer_e:
+        # Setup/environment and config errors must never be silently swallowed.
         # They indicate broken dependencies or stale Numba caches.
         import sys
         import traceback

@@ -7,6 +7,8 @@ Parameter die für eine einzelne Asset-Optimierung benötigt werden.
 from dataclasses import dataclass, field
 from typing import List, Optional, TYPE_CHECKING
 
+from .columns import EXIT_COLUMN_PARAMS
+
 if TYPE_CHECKING:
     from .config import StrategyConfig, RegimeFilterGridConfig, ExitStrategyConfig
 
@@ -120,6 +122,10 @@ class SimulationContext:
     # Required features: always included in feature selection, bypass selection plugins
     required_features: List[str] = field(default_factory=list)
 
+    # Columns the exit strategies read by name (sl_dist_column, range_column,
+    # sl_level_column): kept through the fold clean-up, not forced into the model
+    exit_columns: List[str] = field(default_factory=list)
+
     # Time-based entry filters (from FilterConfig)
     allowed_hours: Optional[list] = None
     allowed_days: Optional[list] = None
@@ -160,15 +166,13 @@ class SimulationContext:
         # Required features from base model config
         req_feats = list(strategy.model.required_features)
 
-        # Auto-add sl_dist_column from exit strategy params to required features
+        exit_cols: List[str] = []
         for es in strategy.exit_strategies:
-            val = es.params.get("sl_dist_column")
-            if isinstance(val, list):
-                for v in val:
-                    if v and v not in req_feats:
-                        req_feats.append(v)
-            elif val and val not in req_feats:
-                req_feats.append(val)
+            for key in EXIT_COLUMN_PARAMS:
+                val = es.params.get(key)
+                for v in val if isinstance(val, list) else [val]:
+                    if v and v not in exit_cols:
+                        exit_cols.append(v)
 
         return cls(
             symbol=asset.symbol,
@@ -202,6 +206,7 @@ class SimulationContext:
             exit_session_start_hour=None,
             exit_session_end_hour=None,
             required_features=req_feats,
+            exit_columns=exit_cols,
             # Time-based entry filters
             allowed_hours=strategy.filters.allowed_hours,
             allowed_days=strategy.filters.allowed_days,
