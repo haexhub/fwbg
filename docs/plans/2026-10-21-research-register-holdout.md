@@ -20,6 +20,28 @@ Execution: task by task. Each task gets a review for spec compliance and code qu
 - Design: `docs/plans/2026-10-19-research-register-design.md`. Relevant parts: gate rules 4-6, the Verdict section, and the open question "Holdout evaluation mechanics", which this step closes.
 - Earlier steps: `docs/plans/2026-10-20-research-register-gate.md` and `docs/plans/2026-10-20-research-register-api.md`.
 
+## Amendments after review
+
+The design doc (`docs/plans/2026-10-19-research-register-design.md`) is
+authoritative where it differs from the tasks below. Changes after review:
+
+- **V[SR] floor** (operator decision 2026-10-21): V[SR] is the larger of the
+  sample variance and the mean of 1/(T − 1) over the return samples, so few
+  or near-identical samples cannot collapse E[max SR]. The verdict line
+  states which one was used.
+- **Holdout line format:** `Holdout result T-… (holdout <cutoff>..<end or
+  open>), checked against the current criteria (registration | amendment N)`,
+  flagged `(criteria changed since this look)` when the look ran under other
+  criteria; the DSR prints four decimals, never a rounded-up 1.
+- **Counting:** a holdout symbol counts (and the look is `ok`) iff its
+  holdout was looked at (`holdout.evaluated`); the run's exit code follows
+  the same rule. Pending holdout looks count as looks.
+- **Files:** `development.json` is nested under `development` in the API's
+  grid detail; the `holdout` block records `dropped_features`; a holdout
+  look exports nothing to `assets.json`.
+- **Ungated looks:** `run_optimizer` refuses a `holdout_cutoff` it did not
+  get from the gate, and the legacy scan refuses runs carrying one.
+
 ---
 
 ## Findings and risks (read first)

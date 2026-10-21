@@ -163,10 +163,17 @@ One JSON object per line:
   sized, and a 0 would enter statistics. Its rows still carry the naive
   `max_drawdown` and `annual_return`.
 - The ledger stores no per-symbol status, so a legacy `no_edge` zero cannot
-  be told apart from a real zero. No heuristic: legacy rows carry no return
-  statistics, so they count towards N only and never reach V[SR]. Side
-  effect: the "Best development result" line (ranked by Sharpe) can pick a
-  legacy zero, but only when every other development Sharpe is negative.
+  be told apart from a real zero. No heuristic: legacy rows of runs before
+  step 5 carry no return statistics, so they count towards N only and never
+  reach V[SR]. Ungated development runs after step 5 do carry them; once
+  backfilled as legacy trials they enter V[SR] like iterations (they are
+  development data). Side effect: the "Best development result" line
+  (ranked by Sharpe) can pick a legacy zero, but only when every other
+  development Sharpe is negative.
+- A run whose `strategy.json` carries `holdout_cutoff` but that did not pass
+  the gate is never read as a legacy run: the scan raises, so the backfill
+  refuses it (its metrics are holdout metrics, not development data).
+  `run_optimizer` refuses such an ungated holdout look in the first place.
 
 ### Fingerprint
 
@@ -397,6 +404,13 @@ An error before any holdout trade exists is not a look; one after is
 `failed` and still counts as a look (gate rule 6), so the next one needs
 `--reason`. Conservative: the run may already have shown something.
 
+Exit code and ledger agree: a holdout run fails (exit 1, "no symbol reached
+its holdout") iff no symbol's holdout was looked at, the rule the ledger
+counts by; a look that errors after its holdout trades exist completes
+(exit 0). The run's elite table labels holdout results `HOLDOUT`, and
+`unified_metrics.json` counts `n_long`/`n_short` from the holdout trades'
+directions.
+
 Causality: raw indicators and the data-loading pipeline run on the whole
 window `[start, end)` so the first holdout bars have their warm-up. The
 development rows then equal the development run's only because registered
@@ -469,7 +483,8 @@ of Bailey & López de Prado 2014, stdlib only):
   E[max SR]).
 - **V[SR]:** the unbiased sample variance (n − 1) of the per-trade SRs of
   the card's development evaluations that carry return statistics. Legacy
-  and `no_edge` evaluations have none; they count in N only.
+  evaluations of runs before step 5 and `no_edge` evaluations have none;
+  they count in N only.
 - **V[SR] floor** (operator decision 2026-10-21): V[SR] is at least the mean
   over those evaluations of 1/(T − 1), T being each one's return count.
   Under the null of zero true SR, a per-trade SR estimated from T returns
