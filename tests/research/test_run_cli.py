@@ -187,6 +187,7 @@ def test_check_json_reports_a_holdout(gated, monkeypatch, capsys):
     out = capsys.readouterr().out
     payload = parse_check_output(out, 0)
     assert payload is not None and payload["kind"] == "holdout"
+    assert payload["holdout_cutoff"] == "2025-04-30"
     assert payload["window"]["end"] is None
     assert "split:       development .. 2025-04-30 | holdout 2025-04-30 .. open" in out
     assert trials(gated.register) == [] and not gated.fake.passed

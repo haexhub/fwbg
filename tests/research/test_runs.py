@@ -67,6 +67,29 @@ def test_holdout_run_is_on_record_as_a_holdout(gate_register, results):
     assert pending.config["strategy"]["holdout_cutoff"] == "2025-04-30"
 
 
+def holdout_look(register, results, run_id, metadata=METADATA, **kwargs):
+    run = ResearchRun(register, run_id, results / run_id, "S-0007", "look", holdout=True, **kwargs)
+    return run.before_run(metadata, ["EURUSD"])
+
+
+def test_pending_holdout_look_counts_as_a_look(gate_register, results):
+    holdout_look(gate_register, results, "run-1")
+    other = {**METADATA, "model": {"depth": 3}}
+    with pytest.raises(GateDenied) as denied:
+        holdout_look(gate_register, results, "run-2", other)
+    assert denial_codes(denied) == [DenialCode.HOLDOUT_REPEAT]
+    assert "run-1" in denied.value.denials[0].message
+    holdout_look(gate_register, results, "run-2", other, reason="second look on purpose")
+    assert [p.run_id for p in read_pending(gate_register)] == ["run-1", "run-2"]
+
+
+def test_pending_iteration_does_not_count_as_a_look(gate_register, results):
+    ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", "a").before_run(
+        METADATA, ["EURUSD"]
+    )
+    holdout_look(gate_register, results, "run-2")
+
+
 def test_refusal_writes_nothing(gate_register, results):
     run = ResearchRun(gate_register, "run-1", results / "run-1", "S-0007", None)
     with pytest.raises(GateDenied) as denied:

@@ -392,6 +392,16 @@ def test_a_configuration_must_not_set_the_holdout_cutoff(holdout):
     assert codes(decision) == {DenialCode.INVALID_CONFIG}
 
 
+def test_repeated_identical_holdout_look_needs_one_reason():
+    first = check(make_card(), request(holdout=True), [])
+    used = [make_trial(trial_id="T-000001", kind=TrialKind.HOLDOUT, fingerprint=first.fingerprint)]
+    assert codes(check(make_card(), request(holdout=True), used)) == {
+        DenialCode.HOLDOUT_REPEAT,
+        DenialCode.DUPLICATE_FINGERPRINT,
+    }
+    assert check(make_card(), request(holdout=True, reason="data fixed"), used).allowed
+
+
 @pytest.mark.parametrize("reason", [None, "exit bug fixed"])
 def test_contaminated_holdout_is_refused_even_with_a_reason(reason):
     card = make_card(holdout_contaminated=True)
