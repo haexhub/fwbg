@@ -123,6 +123,7 @@ class RunStartRequest(BaseModel):
     research_id: Optional[str] = None
     note: Optional[str] = None
     reason: Optional[str] = None
+    holdout: bool = False
 
 
 class PreviewRequest(BaseModel):
