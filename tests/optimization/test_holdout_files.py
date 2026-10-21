@@ -3,6 +3,7 @@
 import json
 
 from fwbg.optimization import holdout
+from fwbg.optimization.signal_selection import SELECTION_PROTOCOL
 from fwbg.research.legacy import run_outcome
 from fwbg.research.ledger import TrialStatus
 from tests.optimization.symbol_harness import (
@@ -129,3 +130,12 @@ def test_the_same_filters_export_a_development_run(monkeypatch, tmp_path):
     patch_development(monkeypatch, WINNING)
     run_dir = run_inline(monkeypatch, tmp_path, filters=PERMISSIVE)
     assert list(json.loads((run_dir / "assets.json").read_text())) == ["EURUSD"]
+
+
+def test_holdout_look_keeps_the_developments_selection_protocol(monkeypatch, tmp_path):
+    patch_development(monkeypatch, WINNING)
+    patch_holdout(monkeypatch)
+    run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
+    development = json.loads((run_dir / "grid_details" / "EURUSD" / "development.json").read_text())
+    assert development["walk_forward"]["selection_protocol"] == SELECTION_PROTOCOL == 2
+    assert run_outcome(run_dir)[1]["EURUSD"]["selection_protocol"] == 2

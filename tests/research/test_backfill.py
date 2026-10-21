@@ -352,7 +352,13 @@ def test_trials_record_what_each_run_left(tmp_path, register):
     assert "missing_preset" in trials["unres"].note
     assert trials["smoke"].note == "legacy run: m3_smoke_1"
     assert trials["ok"].metrics == {
-        "GOLD": {"sharpe": 0.5, "trades": 40, "p_value": None, "fold_stability": None}
+        "GOLD": {
+            "sharpe": 0.5,
+            "trades": 40,
+            "p_value": None,
+            "fold_stability": None,
+            "selection_protocol": None,
+        }
     }
     assert trials["failed"].metrics == {}
     for run in runs:
