@@ -154,3 +154,14 @@ def test_a_holdout_look_carries_its_developments_selection_protocol(tmp_path):
     )
     _, metrics = run_outcome(run_dir)
     assert metrics["GOLD"]["selection_protocol"] == 2
+
+
+def test_a_symbol_result_without_walk_forward_carries_its_selection_protocol(tmp_path):
+    """Early statuses (e.g. no_unified_trades) record the marker in config.json only."""
+    run_dir = make_run(
+        tmp_path,
+        "run-1",
+        symbols={"GOLD": {"status": "no_unified_trades", "result": {"selection_protocol": 2}}},
+    )
+    _, metrics = run_outcome(run_dir)
+    assert metrics["GOLD"]["selection_protocol"] == 2

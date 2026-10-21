@@ -301,11 +301,14 @@ def _symbol_metrics(
         walk_forward.get("fold_stability"),
         elite.get("fold_stability"),
     )
-    # How the run chose its settings (optimizer's walk_forward.selection_protocol);
-    # a holdout look keeps its development's in development.json. None: before the marker.
+    # How the run chose its settings (the optimizer's selection_protocol): on every
+    # symbol result (config.json), in walk_forward, and for a holdout look in its
+    # development.json. None: the run predates the marker.
     values["selection_protocol"] = _first_number(
+        result.get("selection_protocol"),
         fold_walk_forward.get("selection_protocol"),
         walk_forward.get("selection_protocol"),
+        _mapping(development).get("selection_protocol"),
         _mapping(_mapping(development).get("walk_forward")).get("selection_protocol"),
     )
     return values

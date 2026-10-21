@@ -2,8 +2,10 @@
 
 import json
 
+import pytest
+
 from fwbg.optimization import holdout
-from fwbg.optimization.signal_selection import SELECTION_PROTOCOL
+from fwbg.optimization.selection_protocol import SELECTION_PROTOCOL
 from fwbg.research.legacy import run_outcome
 from fwbg.research.ledger import TrialStatus
 from tests.optimization.symbol_harness import (
@@ -139,3 +141,13 @@ def test_holdout_look_keeps_the_developments_selection_protocol(monkeypatch, tmp
     development = json.loads((run_dir / "grid_details" / "EURUSD" / "development.json").read_text())
     assert development["walk_forward"]["selection_protocol"] == SELECTION_PROTOCOL == 2
     assert run_outcome(run_dir)[1]["EURUSD"]["selection_protocol"] == 2
+
+
+@pytest.mark.parametrize("pairs", [WINNING, LOSING])
+def test_every_holdout_result_carries_the_selection_protocol(monkeypatch, tmp_path, pairs):
+    """Looked at or not (development ended in no_edge), config.json records the protocol."""
+    patch_development(monkeypatch, pairs)
+    patch_holdout(monkeypatch)
+    run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
+    config = json.loads((run_dir / "grid_details" / "EURUSD" / "config.json").read_text())
+    assert config["selection_protocol"] == SELECTION_PROTOCOL

@@ -4,7 +4,7 @@ import pytest
 
 from fwbg.optimization import process
 from fwbg.optimization.process import process_symbol
-from fwbg.optimization.signal_selection import SELECTION_PROTOCOL
+from fwbg.optimization.selection_protocol import SELECTION_PROTOCOL
 from fwbg.research.legacy import run_outcome
 from tests.optimization import symbol_harness
 from tests.optimization.symbol_harness import (
@@ -95,7 +95,8 @@ def test_folds_without_any_trade_leave_the_win_rate_undefined(monkeypatch, tmp_p
     assert wf["fold_stability"] == 0.0
 
 
-def test_no_successful_folds_names_a_signal_entrys_ct(monkeypatch, capsys):
+def _patch_no_successful_folds(monkeypatch):
+    """Development where no fold yields a result; one signal grid entry (ct 0.6)."""
     patch_development(monkeypatch, WINNING)
     entry = {"tp_mult": 2, "sl_mult": 4, "ct": 0.6, "inner_val_pnl": 0.0, "inner_trades": 0}
 
@@ -112,6 +113,40 @@ def test_no_successful_folds_names_a_signal_entrys_ct(monkeypatch, capsys):
         }
 
     monkeypatch.setattr(process, "_run_indicator_variants", no_folds)
+
+
+def test_no_successful_folds_names_a_signal_entrys_ct(monkeypatch, capsys):
+    _patch_no_successful_folds(monkeypatch)
     result = process_symbol(SYMBOL_FILE, STRATEGY)
     assert result["status"] == "no_successful_folds"
     assert "CT=0.6," in capsys.readouterr().err
+
+
+def _symbol_config(run_dir):
+    return json.loads((run_dir / "grid_details" / "EURUSD" / "config.json").read_text())
+
+
+def test_a_run_without_successful_folds_records_the_selection_protocol(monkeypatch, tmp_path):
+    _patch_no_successful_folds(monkeypatch)
+    config = _symbol_config(run_inline(monkeypatch, tmp_path))
+    assert (config["status"], config["selection_protocol"]) == ("no_successful_folds", 2)
+
+
+def test_a_run_without_unified_trades_records_the_selection_protocol(monkeypatch, tmp_path):
+    patch_development(monkeypatch, [])
+    run_dir = run_inline(monkeypatch, tmp_path)
+    assert (_symbol_config(run_dir)["status"], _symbol_config(run_dir)["selection_protocol"]) == (
+        "no_unified_trades",
+        2,
+    )
+    assert run_outcome(run_dir)[1]["EURUSD"]["selection_protocol"] == 2
+
+
+def test_an_errored_symbol_carries_the_selection_protocol(monkeypatch):
+    def broken(path):
+        raise RuntimeError("boom")
+
+    patch_development(monkeypatch, WINNING)
+    monkeypatch.setattr(process, "load_data_aligned", broken)
+    result = process_symbol(SYMBOL_FILE, STRATEGY)
+    assert (result["status"], result["selection_protocol"]) == ("error", SELECTION_PROTOCOL)
