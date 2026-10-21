@@ -520,7 +520,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Without any of those, every fold is skipped with an empty pool and
         # the run silently "completes" as no_successful_folds. Fail fast and
         # loudly instead. (strategy.model.required_features, not ctx's, since
-        # ctx.required_features also carries the exit sl_dist_column.)
+        # signal_fold appends the composed signal columns to ctx's.)
         if ctx.model_type == "signal":
             has_signal_rules = bool(ctx.signal_rules) and any(
                 (ctx.signal_rules.get(d) or {}).get("conditions")
