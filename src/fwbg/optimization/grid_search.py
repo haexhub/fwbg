@@ -65,14 +65,21 @@ def select_features(
         fs_exit_mode = ctx.exit_strategy
         first_ep = {}
 
-    # ponytail: these targets run with default exit params; only the stop column
-    # is carried over, so a config can settle an ambiguous *_sl_dist without
-    # changing the targets of configs that never had one. Upgrade path: pass
-    # first_ep whole (changes feature selection for non-default exit params).
+    # These targets run with default TP/SL multipliers, but column selection and
+    # the TP source still have to match the first exit strategy. Otherwise a
+    # range-based strategy either trains feature selection against ATR targets
+    # or raises on every additional range column despite naming one explicitly.
+    # Do not carry unrelated exit parameters: feature selection intentionally
+    # remains based on the default trade configuration.
     fs_ctx = ctx
-    if isinstance(first_ep.get("sl_dist_column"), str):
+    fs_exit_params = {
+        key: first_ep[key]
+        for key in ("sl_dist_column", "tp_mode", "range_column")
+        if key in first_ep
+    }
+    if fs_exit_params:
         fs_ctx = dataclasses.replace(
-            ctx, exit_params={"sl_dist_column": first_ep["sl_dist_column"]},
+            ctx, exit_params=fs_exit_params,
         )
 
     result = compute_targets_cached(
