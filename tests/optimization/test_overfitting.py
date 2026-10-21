@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from math import comb
 
+from fwbg.optimization import overfitting
 from fwbg.optimization.overfitting import (
     build_performance_matrix,
     compute_overfitting_metrics,
@@ -109,6 +110,13 @@ class TestDeflatedSharpeRatio:
 # === PBO Tests ===
 
 
+def _reaches_every_tp(frame):
+    """Two bars after each signal the high reaches every TP: each combo trades."""
+    frame = frame.copy()
+    frame.iloc[7::24, frame.columns.get_loc("H")] = 110.0
+    return frame
+
+
 class TestBuildPerformanceMatrix:
     def test_basic(self):
         """Builds matrix from grid results with common combos only."""
@@ -155,13 +163,14 @@ class TestBuildPerformanceMatrix:
         """Signal folds' grid entries (inner metrics + fold_id) feed the PBO matrix."""
         grid_results_by_fold = {}
         for fold_id, start in enumerate(("2024-01-01", "2024-02-20")):
-            train_df = signal_frame(960, start=start)
+            train_df = _reaches_every_tp(signal_frame(960, start=start))
             test_df = signal_frame(240, start=train_df.index[-1] + train_df.index.freq)
             fold = one_fold(train_df, test_df, fold_id)
             _, grid = process_signal_fold(fold, train_df, test_df, SIGNALS, signal_ctx(), "TEST")
             for gr in grid:
                 grid_results_by_fold.setdefault(gr["fold_id"], []).append(gr)
 
+        assert all(gr["inner_trades"] > 0 for grid in grid_results_by_fold.values() for gr in grid)
         matrix, combo_keys = build_performance_matrix(grid_results_by_fold)
         # tp 2 / ct 0.5, tp 6 / ct 0.5 and tp 6 / ct 0.6: the CT pair keeps two rows.
         assert matrix.shape == (3, 2)
@@ -187,6 +196,25 @@ class TestBuildPerformanceMatrix:
             }
         )
         assert matrix.tolist() == [[1.0, 2.0]]
+
+    def test_signal_entries_without_inner_trades_are_left_out(self):
+        """A combo with no inner trade is ineligible (D1): it is no PBO candidate."""
+        base = {"exit_strategy": "fixed", "sl_mult": 4, "timeout_bars": None, "ct": 0.5}
+        entries = [
+            {**base, "tp_mult": 2, "inner_val_pnl": 0.0, "inner_trades": 0},
+            {**base, "tp_mult": 6, "inner_val_pnl": 1.0, "inner_trades": 3},
+        ]
+        matrix, combo_keys = build_performance_matrix({0: entries, 1: entries})
+        assert matrix.tolist() == [[1.0, 1.0]]
+        assert [key[0] for key in combo_keys] == [6]
+
+    def test_unhashable_grid_values_are_skipped(self):
+        entries = [
+            {"tp_mult": 2, "sl_mult": 4, "model_hyperparameters": {"a": {1}}, "inner_val_pnl": 1.0},
+            {"tp_mult": 6, "sl_mult": 4, "inner_val_pnl": 2.0},
+        ]
+        matrix, _ = build_performance_matrix({0: entries, 1: entries})
+        assert matrix.tolist() == [[2.0, 2.0]]
 
     def test_none_and_int_timeouts_sort_without_error(self):
         entries = [
@@ -253,6 +281,22 @@ class TestProbabilityOfBacktestOverfitting:
 
 
 class TestComputeOverfittingMetrics:
+    def test_a_pbo_failure_keeps_the_dsr(self, monkeypatch):
+        def broken(grid_results_by_fold):
+            raise ValueError("bad grid")
+
+        monkeypatch.setattr(overfitting, "build_performance_matrix", broken)
+        result = compute_overfitting_metrics(
+            trade_returns=list(np.random.default_rng(1).normal(0.01, 0.1, 50)),
+            observed_sr=0.2,
+            n_strategies=4,
+            grid_results_by_fold={0: []},
+            n_trades=50,
+        )
+        assert result["dsr"]["observed_sr"] == 0.2
+        assert result["pbo"]["pbo"] is None
+        assert result["pbo"]["error"] == "bad grid"
+
     def test_returns_both_dsr_and_pbo(self):
         """Entry point should return both DSR and PBO sub-dicts."""
         rng = np.random.default_rng(42)
