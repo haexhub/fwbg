@@ -13,7 +13,7 @@ from fwbg.optimization.overfitting import (
     sr_std,
 )
 from fwbg.optimization.signal_fold import process_signal_fold
-from tests.optimization.test_signal_selection import SIGNALS, _ctx, _frame, _fold
+from tests.optimization.signal_harness import SIGNALS, one_fold, signal_ctx, signal_frame
 
 
 # === DSR Tests ===
@@ -155,11 +155,10 @@ class TestBuildPerformanceMatrix:
         """Signal folds' grid entries (inner metrics + fold_id) feed the PBO matrix."""
         grid_results_by_fold = {}
         for fold_id, start in enumerate(("2024-01-01", "2024-02-20")):
-            train_df = _frame(960, start=start)
-            test_df = _frame(240, start=train_df.index[-1] + train_df.index.freq)
-            fold = _fold(train_df, test_df)
-            fold.fold_id = fold_id
-            _, grid = process_signal_fold(fold, train_df, test_df, SIGNALS, _ctx(), "TEST")
+            train_df = signal_frame(960, start=start)
+            test_df = signal_frame(240, start=train_df.index[-1] + train_df.index.freq)
+            fold = one_fold(train_df, test_df, fold_id)
+            _, grid = process_signal_fold(fold, train_df, test_df, SIGNALS, signal_ctx(), "TEST")
             for gr in grid:
                 grid_results_by_fold.setdefault(gr["fold_id"], []).append(gr)
 

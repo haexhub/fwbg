@@ -146,7 +146,8 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
                 print(f"    - {warn}")
         else:
             std_text = "n/a" if std_wr is None else f"{std_wr*100:.1f}%"
-            print(f"{severity} {symbol}: No bias detected (mean={mean_bias:.2f}x, std_wr={std_text})")
+            mean_text = "n/a" if mean_bias is None else f"{mean_bias:.2f}x"
+            print(f"{severity} {symbol}: No bias detected (mean={mean_text}, std_wr={std_text})")
 
     return {
         "symbol": symbol,
@@ -264,4 +265,4 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
     }
 
 
-__all__ = ["check_asset_bias", "check_systematic_bias"]
+__all__ = ["check_asset_bias", "check_systematic_bias", "fold_bias_ratios"]

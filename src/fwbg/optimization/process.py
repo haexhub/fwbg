@@ -172,7 +172,7 @@ def _parse_ct_value(ct_value):
 
 def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
                                  sample_bias_detected, bias_ratios, mean_bias_ratio,
-                                 config_inconsistent=False):
+                                 config_inconsistent=False, folds_without_bias_ratio=0):
     """Build walk_forward summary dict shared by all result types."""
     profitable_folds = sum(1 for p in pnls if p > 0)
     summary = {
@@ -193,7 +193,7 @@ def _build_walk_forward_summary(all_fold_results, win_rates, pnls, total_trades,
         "sample_bias_detected": sample_bias_detected,
         "bias_ratios": bias_ratios,
         "mean_bias_ratio": mean_bias_ratio,
-        "folds_without_bias_ratio": len(all_fold_results) - len(bias_ratios),
+        "folds_without_bias_ratio": folds_without_bias_ratio,
         "selection_protocol": SELECTION_PROTOCOL,
         "fold_details": all_fold_results,
     }
@@ -902,6 +902,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             per_fold_total_trades,
             sample_bias_detected, bias_ratios, mean_bias_ratio,
             config_inconsistent=config_inconsistent,
+            folds_without_bias_ratio=bias["folds_without_bias_ratio"],
         )
         # Override total_trades with unified simulation count
         wf_summary["total_trades"] = total_trades

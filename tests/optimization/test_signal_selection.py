@@ -1,63 +1,17 @@
 """Signal-model combo enumeration, inner-window scoring and selection."""
 
-import numpy as np
 import pandas as pd
 
 from fwbg.core.config import ExitStrategyConfig
-from fwbg.core.context import SimulationContext
 from fwbg.optimization import signal_selection
 from fwbg.optimization.nested_cv import nested_cv_split
-from fwbg.optimization.robust_validation import WalkForwardFold
 from fwbg.optimization.signal_fold import process_signal_fold
 from fwbg.optimization.signal_selection import (
     inner_windows,
     select_combo,
     signal_combos,
 )
-
-SIGNALS = ["_composed_signal_long", "_composed_signal_short"]
-
-
-def _ctx(**overrides) -> SimulationContext:
-    defaults = dict(
-        symbol="TEST",
-        asset_class="forex",
-        spread=1.0,
-        point=0.01,
-        min_trades=2,
-        model_type="signal",
-        n_inner_folds=2,
-        embargo_bars=0,
-        exit_strategies=[
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 2, "sl_mult": 4}),
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 6, "sl_mult": 4}, ct=[0.5, 0.6]),
-        ],
-    )
-    defaults.update(overrides)
-    return SimulationContext(**defaults)
-
-
-def _frame(n_bars, start="2024-01-01"):
-    """Flat hourly bars with a long signal every 24th bar."""
-    idx = pd.date_range(start, periods=n_bars, freq="h")
-    signal = np.zeros(n_bars)
-    signal[5::24] = 1.0
-    return pd.DataFrame(
-        {"O": 100.0, "H": 100.5, "L": 99.5, "C": 100.0, SIGNALS[0]: signal, SIGNALS[1]: 0.0},
-        index=idx,
-    )
-
-
-def _fold(train_df, test_df):
-    return WalkForwardFold(
-        fold_id=0,
-        train_start=0,
-        train_end=len(train_df),
-        test_start=len(train_df),
-        test_end=len(train_df) + len(test_df),
-        train_df=train_df,
-        test_df=test_df,
-    )
+from tests.optimization.signal_harness import SIGNALS, one_fold, signal_ctx, signal_frame
 
 
 def test_combos_cover_exits_x_hp_x_ct_in_config_order():
@@ -77,7 +31,7 @@ def test_combos_cover_exits_x_hp_x_ct_in_config_order():
             long_ct=[0.6],
         ),
     ]
-    ctx = _ctx(
+    ctx = signal_ctx(
         exit_strategies=exits,
         model_hyperparameters={"base": 1},
         grid_model_hyperparameters=[None, {"signal_column_long": "x"}],
@@ -116,10 +70,10 @@ def test_combos_cover_exits_x_hp_x_ct_in_config_order():
 
 
 def test_signal_fold_grid_entries_keep_the_combo_order():
-    train_df, test_df = _frame(960), _frame(240, start="2024-02-10")
+    train_df, test_df = signal_frame(960), signal_frame(240, start="2024-02-10")
 
     _, grid = process_signal_fold(
-        _fold(train_df, test_df), train_df, test_df, SIGNALS, _ctx(), "TEST"
+        one_fold(train_df, test_df), train_df, test_df, SIGNALS, signal_ctx(), "TEST"
     )
 
     assert [(e["tp_mult"], e["sl_mult"], e["ct"]) for e in grid] == [
@@ -133,12 +87,12 @@ def _three_exits_ctx(**overrides):
     exits = [
         ExitStrategyConfig(name="fixed", params={"tp_mult": tp, "sl_mult": 4}) for tp in (2, 4, 6)
     ]
-    return _ctx(exit_strategies=exits, **overrides)
+    return signal_ctx(exit_strategies=exits, **overrides)
 
 
 def _canned(monkeypatch, results):
     """Two inner windows; evaluate_on_holdout answers (pnl, n_trades) per TP and window."""
-    frame = _frame(300)
+    frame = signal_frame(300)
     windows = [(frame.iloc[:100], frame.iloc[100:200]), (frame.iloc[:200], frame.iloc[200:300])]
     starts = [val.index[0] for _, val in windows]
 
@@ -162,8 +116,8 @@ def _chosen_tp(choice):
 
 
 def test_windows_match_the_ml_split():
-    train_df = _frame(960)
-    ctx = _ctx(n_inner_folds=3, embargo_bars=5)
+    train_df = signal_frame(960)
+    ctx = signal_ctx(n_inner_folds=3, embargo_bars=5)
 
     windows = inner_windows(train_df, ctx)
 
@@ -255,7 +209,7 @@ def test_grid_entries_carry_inner_metrics(monkeypatch):
 
 
 def test_scoring_only_sees_train_rows(monkeypatch):
-    frame = _frame(1200)
+    frame = signal_frame(1200)
     train_df, test_df = frame.iloc[:960], frame.iloc[960:]
     seen = []
     real = signal_selection.evaluate_on_holdout
@@ -265,7 +219,7 @@ def test_scoring_only_sees_train_rows(monkeypatch):
         return real(holdout_df, inner_df, candidate, ctx)
 
     monkeypatch.setattr(signal_selection, "evaluate_on_holdout", spy)
-    ctx = _ctx()
+    ctx = signal_ctx()
 
     select_combo(signal_combos(ctx, SIGNALS), inner_windows(train_df, ctx))
 

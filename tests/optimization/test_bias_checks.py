@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from fwbg.optimization import bias_checks
 from fwbg.optimization.bias_checks import (
     check_asset_bias,
     check_systematic_bias,
@@ -101,3 +102,12 @@ def test_a_run_with_inner_pnl_at_or_below_zero_records_no_ratio(monkeypatch, tmp
     assert walk_forward["mean_bias_ratio"] is None
     assert walk_forward["folds_without_bias_ratio"] == walk_forward["n_folds"] > 0
     assert walk_forward["sample_bias_detected"] is False
+
+
+def test_an_undefined_mean_prints_n_a_on_the_ok_branch(capsys):
+    check_asset_bias(_result([], None, 0), verbose=True)
+    assert "No bias detected (mean=n/a" in capsys.readouterr().out
+
+
+def test_fold_bias_ratios_is_exported():
+    assert "fold_bias_ratios" in bias_checks.__all__
