@@ -13,6 +13,7 @@ from fwbg.core.git_env import isolated_git_env, source_dir
 from fwbg.data import config as data_config
 from fwbg.data.config import convert_numpy
 from fwbg.results.code_patch import write_code_patch
+from fwbg.results.symbol_files import config_extras
 
 
 def _get_results_base_path() -> str:
@@ -403,6 +404,7 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
                     "calmar": r.get("calmar", 0),
                     "trades": len(r.get("tr_trace", [])),
                 }
+            config_data.update(convert_numpy(config_extras(r)))
             with open(os.path.join(sym_dir, "config.json"), "w") as f:
                 json.dump(config_data, f, indent=2)
 

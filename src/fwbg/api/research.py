@@ -37,7 +37,7 @@ from fwbg.research.gate import criteria_denials
 from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, read_trials
 from fwbg.research.pending import PendingError, live_runs, read_pending
 from fwbg.research.repo import ResearchRepoError
-from fwbg.research.stats import signal_configs
+from fwbg.research.stats import unrankable_configs
 from fwbg.research.views import card_data, card_summary, coverage_section, iter_cards
 
 router = APIRouter(prefix="/research", tags=["research"])
@@ -79,7 +79,7 @@ def list_cards(status: Status | None = None, tag: str | None = None) -> dict[str
     research_dir = get_research_dir(create=False)
     with _reading():
         trials = read_trials(research_dir / LEDGER_FILENAME)
-        signal = signal_configs(research_dir, trials)
+        unrankable = unrankable_configs(research_dir, trials)
         try:
             running: Counter[str] | None = Counter(
                 run.trial.strategy for run in live_runs(research_dir)
@@ -94,7 +94,7 @@ def list_cards(status: Status | None = None, tag: str | None = None) -> dict[str
                 continue
             own = [trial for trial in trials if trial.strategy == card.id]
             count = None if running is None else running[card.id]
-            entries.append(card_summary(card, own, count, signal=signal))
+            entries.append(card_summary(card, own, count, unrankable=unrankable))
     return {"cards": entries, "pending_error": pending_error}
 
 

@@ -6,6 +6,7 @@ from fwbg.optimization import process
 from fwbg.optimization.process import process_symbol
 from fwbg.optimization.selection_protocol import SELECTION_PROTOCOL
 from fwbg.research.legacy import run_outcome
+from fwbg.results.storage import save_run_results
 from tests.optimization import symbol_harness
 from tests.optimization.symbol_harness import (
     LOSING,
@@ -150,3 +151,16 @@ def test_an_errored_symbol_carries_the_selection_protocol(monkeypatch):
     monkeypatch.setattr(process, "load_data_aligned", broken)
     result = process_symbol(SYMBOL_FILE, STRATEGY)
     assert (result["status"], result["selection_protocol"]) == ("error", SELECTION_PROTOCOL)
+
+
+def test_the_fallback_symbol_config_carries_the_register_blocks(tmp_path):
+    # save_run_results writes grid_details only for symbols the live callback missed.
+    result = {
+        "symbol": "EURUSD",
+        "status": "no_successful_folds",
+        "grid_results": [{"pnl": 0.0}],
+        "selection_protocol": SELECTION_PROTOCOL,
+    }
+    save_run_results(str(tmp_path), [], [], [], [], [], all_results=[result])
+    config = json.loads((tmp_path / "grid_details" / "EURUSD" / "config.json").read_text())
+    assert config["selection_protocol"] == SELECTION_PROTOCOL

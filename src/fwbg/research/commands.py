@@ -11,7 +11,7 @@ from __future__ import annotations
 import calendar
 import logging
 import re
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -49,7 +49,7 @@ from fwbg.research.stats import (
     deflated_best,
     evaluations,
     return_samples,
-    signal_configs,
+    unrankable_configs,
     unranked_evaluations,
     unranked_note,
 )
@@ -205,7 +205,7 @@ def write_verdict(
                 f"{card_id} has runs that could not be recorded ({names}); see the warning above"
             )
         trials = read_trials(research_dir / LEDGER_FILENAME)
-        signal = signal_configs(research_dir, [t for t in trials if t.strategy == card_id])
+        unrankable = unrankable_configs(research_dir, [t for t in trials if t.strategy == card_id])
         entry = verdict_entry(
             card,
             trials,
@@ -215,7 +215,7 @@ def write_verdict(
             today,
             len(pending),
             actor=actor,
-            signal=signal,
+            unrankable=unrankable,
         )
         updated = replace(card, status=status, body=add_section_entry(card.body, "Verdict", entry))
         replace_card(research_dir, updated)
@@ -253,14 +253,14 @@ def verdict_entry(
     pending: int = 0,
     *,
     actor: str | None = None,
-    signal: Collection[str] = frozenset(),
+    unrankable: Mapping[str, str],
 ) -> str:
     """The dated verdict text: reasoning plus the statistics it rests on.
 
     *pending* is the number of pending runs (of other cards) not yet in *trials*;
-    *actor*, if given, is recorded after the reopen condition. *signal* are the
-    fingerprints whose stored config uses a signal model
-    (:func:`~fwbg.research.stats.signal_configs`).
+    *actor*, if given, is recorded after the reopen condition. *unrankable* maps
+    the fingerprints not ranked before the inner-selection protocol to their
+    reason (:func:`~fwbg.research.stats.unrankable_configs`).
     """
     own = [trial for trial in trials if trial.strategy == card.id]
     looks = [str(trial.trial_id) for trial in own if trial.kind is TrialKind.HOLDOUT]
@@ -279,10 +279,10 @@ def verdict_entry(
         + (f" ({', '.join(versions)})." if versions else "."),
         f"Holdout: {'used by ' + ', '.join(looks) if looks else 'unused'}.",
     ]
-    unranked = unranked_evaluations(own, signal)
-    if unranked:
-        lines.append(f"{unranked_note(unranked)}.")
-    best = best_result(own, signal)
+    unranked = unranked_note(unranked_evaluations(own, unrankable))
+    if unranked is not None:
+        lines.append(f"{unranked}.")
+    best = best_result(own, unrankable)
     if best is None:
         lines.append("Best development result: none with a Sharpe ratio.")
     else:
@@ -291,15 +291,15 @@ def verdict_entry(
             f"Best development result: {best.trial_id} {best.symbol}, checked against "
             f"the current criteria ({_criteria_version(card)}): {check}."
         )
-    lines.append(_dsr_line(own, signal))
+    lines.append(_dsr_line(own, unrankable))
     lines.extend(_holdout_lines(card, own))
     return "\n".join(lines)
 
 
-def _dsr_line(own: Sequence[Trial], signal: Collection[str]) -> str:
-    result = deflated_best(own, signal)
+def _dsr_line(own: Sequence[Trial], unrankable: Mapping[str, str]) -> str:
+    result = deflated_best(own, unrankable)
     if result is None:
-        have = len(return_samples(own, signal))
+        have = len(return_samples(own, unrankable))
         return (
             "Deflated Sharpe ratio: too few trials with return statistics "
             f"({have} of {MIN_RETURN_SAMPLES} needed)."

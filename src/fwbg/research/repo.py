@@ -168,6 +168,11 @@ def commit_register(research_dir: Path, paths: Sequence[str], message: str) -> b
     return True
 
 
+def config_path(research_dir: Path, fingerprint: str) -> Path:
+    """Where the config with *fingerprint* is stored: ``configs/<hex>.json``."""
+    return research_dir / "configs" / f"{fingerprint.removeprefix('sha256:')}.json"
+
+
 def store_config(research_dir: Path, fingerprint: str, config: Mapping[str, Any]) -> Path:
     """Store the fingerprinted *config* as ``configs/<hex>.json`` (content-addressed).
 
@@ -181,7 +186,7 @@ def store_config(research_dir: Path, fingerprint: str, config: Mapping[str, Any]
     """
     if digest(config) != fingerprint:
         raise ValueError(f"{fingerprint!r} is not the fingerprint of the given config")
-    path = research_dir / "configs" / f"{fingerprint.removeprefix('sha256:')}.json"
+    path = config_path(research_dir, fingerprint)
     data = (canonical_json(config) + "\n").encode("utf-8")
     if path.exists():
         if path.read_bytes() != data:

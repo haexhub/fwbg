@@ -482,15 +482,25 @@ the share of folds whose best-of-grid test PnL was positive. Now
 - **Cost:** C combos × K inner windows plus one test evaluation per fold,
   instead of C test evaluations.
 
-**Register.** Signal-model development evaluations without
-`selection_protocol ≥ CURRENT_PROTOCOL` (`src/fwbg/research/stats.py`,
-hand-curated, 2) and whose stored config (`configs/<fingerprint>.json`) has
-`model.type == "signal"` count in N but are never ranked: not the best
-development result (also in `list`, CLI and API), not a V[SR] sample, not
-the DSR's best. The verdict and `show` state how many were left out.
-Earlier ML evaluations and evaluations without a stored config stay
-rankable: ML already chose its setting on inner windows. Rerunning is the
-operator's call.
+**Register.** A development evaluation without
+`selection_protocol ≥ INNER_SELECTION_PROTOCOL` (`src/fwbg/research/stats.py`,
+hand-curated, 2) chose something on test folds if its stored config
+(`configs/<fingerprint>.json`) has `model.type == "signal"` (the setting
+itself) or an `optimization.indicator_grid` with more than one variant
+(before protocol 2 the variant was ranked by mean test PnL, for ML models
+too; the register counts variants as `expand_indicator_grid` does: per
+indicator the product of its value lists, summed over indicators). Such an
+evaluation counts in N but is never ranked: not the best development result
+(also in `list`, CLI and API), not a V[SR] sample, not the DSR's best. The
+verdict and `show` state how many were left out per reason, e.g. "3
+pre-protocol-2 evaluations not ranked (counted in N): 2 signal-model, 1
+indicator-grid"; a signal model with a grid counts once, as signal-model.
+Evaluations without metrics are not counted there (nothing to leave out).
+Earlier ML evaluations without a multi-variant grid stay rankable: their
+only setting choice was on inner windows. Evaluations without a stored
+config (studies, legacy runs) or with an unreadable one are ranked as
+unknown. Protocol 3 (causal unified merge) does not raise this threshold
+unless decided separately. Rerunning is the operator's call.
 
 ML results change too, so old and new runs differ:
 
