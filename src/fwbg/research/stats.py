@@ -117,7 +117,7 @@ def _grid_variants(grid: Any) -> int:
     each variant overrides one indicator. Without variants it runs the base once.
     """
     count = sum(
-        math.prod(len(values) if isinstance(values, list) else 1 for values in params.values())
+        math.prod(len(values) for values in params.values())
         for params in _mapping(grid).values()
         if isinstance(params, dict)
     )

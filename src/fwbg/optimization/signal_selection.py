@@ -104,6 +104,8 @@ def score_combo(combo: SignalCombo, windows: list[Window]) -> dict[str, Any]:
         "timeout_bars": combo.candidate["timeout_bars"],
         "exit_params": combo.config.params,
         "exit_modifier_params": combo.config.exit_modifier_params,
+        "entry_modifier": combo.config.entry_modifier,
+        "entry_modifier_params": combo.config.entry_modifier_params,
         "model_hyperparameters": combo.candidate["model_hyperparameters"],
         "inner_val_pnl": sum(pnls) / len(pnls) if pnls else 0.0,
         "inner_trades": sum(r["n_trades"] for r in results),
