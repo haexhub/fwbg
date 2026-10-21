@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,13 @@ from fwbg.research.fingerprint import canonical_json
 from fwbg.research.gate import criteria_denials
 from fwbg.research.ledger import LEDGER_FILENAME, Trial, TrialKind, read_trials
 from fwbg.research.pending import PendingError, live_runs
-from fwbg.research.stats import best_result, evaluations
+from fwbg.research.stats import (
+    best_result,
+    evaluations,
+    signal_configs,
+    unranked_evaluations,
+    unranked_note,
+)
 
 WIDTH = 120
 # Indented by two spaces in ``show``.
@@ -42,6 +48,7 @@ def list_lines(
 ) -> list[str]:
     """One line per card, in id order; a card that does not load shows its error."""
     trials = read_trials(research_dir / LEDGER_FILENAME)
+    signal = signal_configs(research_dir, trials)
     rows: list[tuple[str, ...] | str] = []
     for card_id, card in iter_cards(research_dir, status, tag):
         if isinstance(card, CardError):
@@ -50,7 +57,14 @@ def list_lines(
         own = [trial for trial in trials if trial.strategy == card.id]
         counted = _plural(sum(trial.counted for trial in own), "trial")
         rows.append(
-            (counted, _best(own), _holdout(card, own), card.id, card.status.value, card.title)
+            (
+                counted,
+                _best(own, signal),
+                _holdout(card, own),
+                card.id,
+                card.status.value,
+                card.title,
+            )
         )
     # Column widths over all rows, so a long symbol or a two-digit count does not shift the rest.
     widths = [
@@ -99,6 +113,7 @@ def show_text(research_dir: Path, card_id: str) -> str:
     own = [t for t in read_trials(research_dir / LEDGER_FILENAME) if t.strategy == card.id]
     name_width = max(len(name) for name in card.success_criteria)
     counted = sum(trial.counted for trial in own)
+    unranked = unranked_evaluations(own, signal_configs(research_dir, own))
     lines = [
         _clip(f"{card.id}  {card.title}"),
         _clip(
@@ -117,6 +132,7 @@ def show_text(research_dir: Path, card_id: str) -> str:
         "",
         f"Trials: {counted} counted ({evaluations(own)} symbol evaluations), "
         f"{len(own) - counted} failed or smoke",
+        *([unranked_note(unranked)] if unranked else []),
         *(_trial_row(trial) for trial in own),
         "",
         *coverage_section(research_dir, own),
@@ -124,12 +140,20 @@ def show_text(research_dir: Path, card_id: str) -> str:
     return "\n".join(lines)
 
 
-def card_summary(card: ResearchCard, own: Sequence[Trial], running: int | None) -> dict[str, Any]:
+def card_summary(
+    card: ResearchCard,
+    own: Sequence[Trial],
+    running: int | None,
+    *,
+    signal: Collection[str] = frozenset(),
+) -> dict[str, Any]:
     """One card's list entry as JSON-ready data; *own* are its trials.
 
-    *running* is the number of its live runs, ``None`` if unknown.
+    *running* is the number of its live runs, ``None`` if unknown; *signal* are
+    the fingerprints whose stored config uses a signal model (not ranked before
+    :data:`~fwbg.research.stats.CURRENT_PROTOCOL`).
     """
-    best = best_result(own)
+    best = best_result(own, signal)
     return {
         "id": card.id,
         "title": card.title,
@@ -218,8 +242,8 @@ def card_ids(research_dir: Path) -> list[str]:
     )
 
 
-def _best(own: Sequence[Trial]) -> str:
-    best = best_result(own)
+def _best(own: Sequence[Trial], signal: Collection[str]) -> str:
+    best = best_result(own, signal)
     if best is None:
         return "best Sharpe -"
     return f"best Sharpe {best.sharpe:.2f} ({best.trial_id} {best.symbol})"
