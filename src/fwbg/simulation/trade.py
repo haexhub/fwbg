@@ -305,9 +305,9 @@ def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
 def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_distance, spread,
                        max_bars=None, timestamps=None, symbol=None,
                        opens=None, timeout_bars=None, in_session=None,
-                       sl_level_abs=None, sl_level_mult=1.0, entry_delay=1,
+                       sl_level_abs=None, entry_delay=1,
                        breakeven_trigger=0.0, trail_distance=0.0,
-                       scale_levels=None, scale_qty_mult=1.0):
+                       scale_levels=None, scale_qty_mult=1.0, sl_level_mult=1.0):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
