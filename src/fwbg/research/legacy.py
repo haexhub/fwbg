@@ -18,6 +18,9 @@ from fwbg.research.fingerprint import canonical_config, digest
 from fwbg.research.ledger import Metrics, TrialKind, TrialStatus
 from fwbg.statuses import EXECUTED_STATUSES, NOT_EXECUTED_STATUSES
 
+# The ledger records no per-symbol status: a legacy no_edge symbol shows sharpe 0,
+# a new one sharpe null. Neither carries return statistics, so both count towards
+# N but never enter the verdict's SR variance (stats.return_samples).
 METRIC_KEYS = (
     "sharpe",
     "trades",
@@ -27,6 +30,11 @@ METRIC_KEYS = (
     "calmar",
     "profit_factor",
     "rrr",
+    "sr_per_trade",
+    "skew",
+    "kurtosis",
+    "n_returns",
+    "test_period_years",
 )
 # A symbol with one of these statuses ran to a result and counts towards N
 # (conservatively, whether or not it found an edge).

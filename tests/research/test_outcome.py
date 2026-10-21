@@ -66,3 +66,20 @@ def test_run_outcome_without_symbol_results_is_failed(tmp_path):
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
     assert run_outcome(run_dir) == (TrialStatus.FAILED, {})
+
+
+def test_lenient_run_outcome_keeps_the_return_statistics(tmp_path):
+    """Live runs record the return statistics; the sample size stays an integer."""
+    unified = {
+        "sharpe": 1.2,
+        "sr_per_trade": 0.11,
+        "skew": -0.4,
+        "kurtosis": 4.5,
+        "n_returns": 230,
+        "test_period_years": 2.5,
+    }
+    run_dir = make_run(tmp_path, "run-1", symbols={"GOLD": {"unified": unified}})
+    status, metrics = run_outcome(run_dir, lenient=True)
+    assert status is TrialStatus.OK
+    assert {k: metrics["GOLD"][k] for k in unified} == unified
+    assert type(metrics["GOLD"]["n_returns"]) is int
