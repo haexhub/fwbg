@@ -839,6 +839,13 @@ def get_grid_detail(run_id: str, symbol: str) -> dict:
                 merged.update(json.loads(fpath.read_text()))
             except (json.JSONDecodeError, IOError):
                 pass
+    # A holdout look's development outcome: nested, its keys would shadow the holdout's.
+    dev_path = sym_dir / "development.json"
+    if merged and dev_path.exists():
+        try:
+            merged["development"] = json.loads(dev_path.read_text())
+        except (json.JSONDecodeError, IOError):
+            pass
 
     if not merged:
         raise HTTPException(404, f"Grid detail not found: {run_id}/{symbol}")

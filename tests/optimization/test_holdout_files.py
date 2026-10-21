@@ -2,6 +2,7 @@
 
 import json
 
+from fwbg.optimization import holdout
 from fwbg.research.legacy import run_outcome
 from fwbg.research.ledger import TrialStatus
 from tests.optimization.symbol_harness import (
@@ -44,6 +45,7 @@ def test_holdout_look_records_holdout_metrics_and_keeps_development_apart(monkey
         unified["sharpe"],
         unified["sr_per_trade"],
     )
+    assert symbol["sharpe"] != development["sharpe"]  # the holdout's, not the development's
     elite = json.loads((run_dir / "results.json").read_text())["elite_results"]
     assert elite[0]["fold_stability"] is None
 
@@ -62,8 +64,31 @@ def test_holdout_after_a_failed_development_records_no_metrics(monkeypatch, tmp_
     }
     assert not (sym_dir / "unified_metrics.json").exists()
     assert json.loads((sym_dir / "development.json").read_text())["status"] == "no_edge"
-    _, metrics = run_outcome(run_dir)
-    assert all(value is None for value in metrics["EURUSD"].values())  # counted, no metrics
+    assert run_outcome(run_dir) == (TrialStatus.FAILED, {})  # nothing was looked at
+
+
+def test_a_holdout_with_no_trades_was_still_looked_at(monkeypatch, tmp_path):
+    patch_development(monkeypatch, WINNING)
+    patch_holdout(monkeypatch, pairs=[])
+    run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
+    config = json.loads((run_dir / "grid_details" / "EURUSD" / "config.json").read_text())
+    assert (config["status"], config["holdout"]["evaluated"]) == ("no_unified_trades", True)
+    status, metrics = run_outcome(run_dir)
+    assert (status, list(metrics)) == (TrialStatus.OK, ["EURUSD"])
+
+
+def test_a_holdout_that_failed_after_its_trades_counts(monkeypatch, tmp_path):
+    def crash(*args):
+        raise RuntimeError("boom")
+
+    patch_development(monkeypatch, WINNING)
+    patch_holdout(monkeypatch)
+    monkeypatch.setattr(holdout, "_holdout_result", crash)
+    run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
+    config = json.loads((run_dir / "grid_details" / "EURUSD" / "config.json").read_text())
+    assert (config["status"], config["holdout"]["evaluated"]) == ("error", True)
+    status, metrics = run_outcome(run_dir)
+    assert (status, list(metrics)) == (TrialStatus.OK, ["EURUSD"])
 
 
 def test_development_file_carries_the_frozen_unified_setting(monkeypatch, tmp_path):
