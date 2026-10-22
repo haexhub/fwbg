@@ -20,10 +20,13 @@ MIN_RETURN_SAMPLES = 2
 # Hand-curated: the walk_forward.selection_protocol from which an optimizer run's
 # reported metrics are free of known test-fold influence. Protocol 2 chose signal
 # models and indicator-grid variants on inner windows of each fold's training data;
-# protocol 3 also replays each test fold with the setting merged from the folds up
-# to it. Optimizer rows below it count in N but are never ranked.
+# protocol 3 also replays each test fold with the indicator variant and the setting
+# chosen on the folds up to it. Remaining hindsight: no_edge and the sizing fallback
+# with few causal trades use all folds. Optimizer rows below it count in N but are
+# never ranked.
 RANKED_PROTOCOL = 3
-# From protocol 2 on, settings were chosen on training data: only the merge remained.
+# From protocol 2 on, settings were chosen on training data; the all-fold merge,
+# variant choice and the ML test-trade filter kept such rows out.
 _INNER_SELECTION = 2
 # Why an evaluation from before RANKED_PROTOCOL is not ranked.
 SIGNAL_MODEL = "signal-model"
@@ -160,8 +163,9 @@ def unranked_evaluations(trials: Iterable[Trial], unrankable: Mapping[str, str])
 
     Only evaluations that would otherwise be ranked (a Sharpe ratio or return
     statistics) are counted; a metric-less one has nothing to leave out. A row
-    marked with protocol 2 or later chose its setting on training data, so only the
-    unified merge kept it out. *unrankable* comes from :func:`unrankable_configs`.
+    marked with protocol 2 or later chose its setting on training data; the
+    all-fold merge, variant choice and ML test-trade filter kept it out (reported
+    as unified-merge). *unrankable* comes from :func:`unrankable_configs`.
     """
     counts: dict[str, int] = {}
     for trial in development_trials(trials):

@@ -17,26 +17,27 @@ from .process_fold import prepare_fold_data
 
 
 def merge_unified_settings(
-    consistent_folds: List[Dict[str, Any]],
+    majority_folds: List[Dict[str, Any]],
     all_fold_results: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Derive one unified setting from all consistent fold results.
+    """Derive one unified setting from the folds of the model-HP majority.
 
     Merging strategy:
     - TP, SL, CT: median across folds
     - timeout_bars: median (None treated as infinity, excluded from median)
-    - model_hyperparameters: taken from first fold (all consistent folds share same HP)
+    - model_hyperparameters: taken from first fold (all majority folds share same HP)
     - exit_modifier_params: majority vote (whole dict)
-    - Features: stability >= 50% across ALL successful folds (not just consistent)
+    - Features: stability >= 50% across ALL successful folds (not just the majority)
 
     Args:
-        consistent_folds: fold results that passed the HP consistency check.
+        majority_folds: fold results that share the majority model HP
+            (:func:`consistent_folds`).
         all_fold_results: ALL successful fold results (for feature stability).
 
     Returns:
         candidate dict compatible with evaluate_on_holdout.
     """
-    configs = [fold_result["best_config"] for fold_result in consistent_folds]
+    configs = [fold_result["best_config"] for fold_result in majority_folds]
 
     # TP / SL: median
     tp_median = float(np.median([config["tp"] for config in configs]))
@@ -59,7 +60,7 @@ def merge_unified_settings(
     else:
         timeout_median = None
 
-    # model_hyperparameters: all consistent folds share the same HP (by definition)
+    # model_hyperparameters: all majority folds share the same HP (by definition)
     model_hyperparameters = configs[0].get("model_hyperparameters")
 
     # exit_modifier_params: majority vote (whole dict as hashable key)
@@ -87,7 +88,7 @@ def merge_unified_settings(
         if count / n_successful_folds >= 0.5
     ]
 
-    # exit_strategy / exit_params: all consistent folds should agree
+    # exit_strategy / exit_params: all majority folds should agree
     # (they were selected by the same exit strategy combo).
     exit_strategy = configs[0].get("exit_strategy")
     exit_params = configs[0].get("exit_params")

@@ -958,7 +958,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # Test period duration (used for annual return, sharpe, etc.)
         # Use all wf_folds (not just successful ones) because unified simulation
-        # re-simulates every fold with the merged config.
+        # replays every fold with its causal candidate; untraded leading folds
+        # still count in the test period.
         bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
         total_test_bars = sum(f.test_end - f.test_start for f in wf_folds)
         test_period_years = total_test_bars / bars_per_year if bars_per_year > 0 else 1

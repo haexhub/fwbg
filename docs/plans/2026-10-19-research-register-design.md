@@ -437,6 +437,15 @@ Known limitations:
   per-trade SR, skew and kurtosis, which the register ranks and deflates,
   are unaffected; drawdown, Calmar and annual return in that case still use
   hindsight sizing.
+- If fold 0 fails, fold 1 is the first traded fold and has no prior trades,
+  so causal reporting excludes its trades, yet its bars still count in the
+  annualised test period (`reporting_test_bars` in
+  `src/fwbg/optimization/process.py` leaves out fold 0 only). Conservative:
+  annualised Sharpe and return read low; per-trade SR and DSR are
+  unaffected.
+- An unmarked run of a strategy file without `model` is stored without a
+  `strategy.model` mapping, so the register does not see it as an optimizer
+  evaluation and keeps it ranked (workspace configs set `model`).
 - Externally cached signal data (e.g. provider probabilities that
   `jev_signal` reads) trained past the cutoff contaminates development and
   holdout alike; the pipeline cannot detect it.
@@ -497,8 +506,9 @@ validation PnL; ties go to the earlier variant) is best over the folds with
 are anchored, so a later fold's inner windows contain fold k's test period;
 a variant ranked over all folds was chosen partly on it. A variant that
 replays some folds without being the frozen one recomputes its indicators
-once for the replay. A fold before the first successful one is not traded
-(empty result); it still counts as a fold and in the test period. Each
+once for the replay, unless all its assigned folds are untraded. A fold
+before the first successful one is not traded (empty result); it still
+counts as a fold and in the test period. Each
 replayed fold is sized for causal Kelly reporting with the RRR of its own
 replay setting. The frozen setting (`development.json`, holdout,
 `best_config`, deployment) stays the merge over all folds of the frozen
@@ -528,9 +538,10 @@ variant (the variant was ranked by mean test PnL, for ML models too; the
 register counts variants as `expand_indicator_grid` does: per indicator the
 product of its value lists, summed over indicators), else unified-merge. A
 config with several reasons counts once, in that order. An evaluation
-marked 2 chose its setting on inner windows, so only the unified merge kept
-it out: it is reported as unified-merge. Evaluations without metrics are not
-counted there (nothing to leave out). A study script that passes a config
+marked 2 chose its setting on inner windows; the merge over all folds, the
+variant choice over all folds (grid configs) and the ML test-trade filter
+kept it out. It is reported as unified-merge. Evaluations without metrics
+are not counted there (nothing to leave out). A study script that passes a config
 with a `strategy.model` mapping counts as an optimizer evaluation
 (conservative). Evaluations without a stored config (studies, legacy runs)
 stay ranked; those with an unreadable config are ranked as unknown.
