@@ -276,6 +276,8 @@ def run_unified_simulation(
             test_df, train_df, fold_candidate, _candidate_context(ctx, candidate),
         )
         result["dropped_features"] = sorted(dropped)
+        # The RRR this fold was traded with: causal reporting sizes the fold with it.
+        result["rrr"] = tp / sl if sl > 0 else 1.0
 
         total_trades += result["n_trades"]
         pnl = result["pnl"]

@@ -407,3 +407,13 @@ class TestRunUnifiedSimulation:
         assert ctx0 == _Ctx(model_hyperparameters={"a": 1}, exit_modifier_params={"be": 0.5},
                             exit_strategy="orb_based", exit_params={"col": "orb"})
         assert ctx1 == _Ctx()
+
+    def test_each_traded_fold_carries_its_candidates_rrr(self, monkeypatch):
+        monkeypatch.setattr(
+            unified_simulation, "evaluate_on_holdout",
+            lambda *args: {"trades": [], "n_trades": 0, "pnl": 0.0, "win_rate": 0.0},
+        )
+        no_sl = {**_candidate(2.0), "params": (2.0, 0.0, 0.5)}
+        results = _simulate(WF_FOLDS[:4], [None, _candidate(1.0), _candidate(3.0), no_sl])
+        assert "rrr" not in results[0]
+        assert [r["rrr"] for r in results[1:]] == [0.5, 1.5, 1.0]
