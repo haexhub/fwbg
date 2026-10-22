@@ -7,7 +7,6 @@ import pytest
 from fwbg.core.config import StrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.optimization import causal_reporting, causal_variants, indicator_grid, process
-from fwbg.optimization import unified_simulation
 from fwbg.optimization.causal_variants import (
     VariantRecord,
     prefix_variant_choice,
@@ -138,7 +137,7 @@ def _patch_two_variants(monkeypatch):
     monkeypatch.setattr(causal_variants, "precompute_indicators", precompute)
     monkeypatch.setattr(causal_variants, "run_unified_simulation", simulate)
     monkeypatch.setattr(
-        unified_simulation, "run_unified_simulation", lambda *a, **k: pytest.fail("single path")
+        process, "run_unified_simulation", lambda *a, **k: pytest.fail("single path")
     )
     return strategies, contexts, precomputed, replays
 

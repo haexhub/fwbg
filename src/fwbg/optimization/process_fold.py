@@ -517,10 +517,10 @@ def process_single_fold(
         entry_modifier_params=b.get("entry_modifier_params", ctx.entry_modifier_params),
         model_hyperparameters=b.get("model_hyperparameters", ctx.model_hyperparameters),
     )
-    # A fold is kept whatever its test trade count: dropping it would let the
-    # test set filter folds.
     test_result = evaluate_on_holdout(test_df, train_df, b, holdout_ctx)
 
+    # A fold is kept whatever its test trade count: dropping it would let the
+    # test set filter folds.
     if test_result["n_trades"] < ctx.min_trades:
         log(1, f"  Fold {fold.fold_id + 1}: Low trade count ({test_result['n_trades']}/{ctx.min_trades})", sym)
 

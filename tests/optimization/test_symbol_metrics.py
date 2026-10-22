@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from fwbg.optimization import process, unified_simulation
+from fwbg.optimization import process
 from fwbg.optimization.process import process_symbol
 from fwbg.optimization.selection_protocol import SELECTION_PROTOCOL
 from fwbg.research.legacy import run_outcome
@@ -83,7 +83,8 @@ def test_zero_trade_folds_count_as_folds_but_have_no_win_rate(monkeypatch, tmp_p
     assert wf["n_folds"] > 1
     assert (wf["mean_win_rate"], wf["std_win_rate"]) == (0.6, 0.0)
     assert (wf["min_win_rate"], wf["max_win_rate"]) == (0.6, 0.6)
-    assert wf["fold_stability"] == (wf["n_folds"] - 1) / wf["n_folds"]
+    # The zero-trade fold still counts in the per-fold PnL statistics.
+    assert wf["mean_pnl"] == pytest.approx(10.0 * (wf["n_folds"] - 1) / wf["n_folds"])
 
 
 def test_folds_without_any_trade_leave_the_win_rate_undefined(monkeypatch, tmp_path):
@@ -94,7 +95,7 @@ def test_folds_without_any_trade_leave_the_win_rate_undefined(monkeypatch, tmp_p
     assert [wf[k] for k in ("mean_win_rate", "std_win_rate", "min_win_rate", "max_win_rate")] == [
         None
     ] * 4
-    assert wf["fold_stability"] == 0.0
+    assert wf["mean_pnl"] == 0.0
 
 
 def test_folds_replay_the_setting_known_before_them_and_the_full_merge_is_frozen(
@@ -116,7 +117,7 @@ def test_folds_replay_the_setting_known_before_them_and_the_full_merge_is_frozen
         replays.append(candidates)
         return [symbol_harness.unified_fold(fold, WINNING) for fold in folds]
 
-    monkeypatch.setattr(unified_simulation, "run_unified_simulation", record)
+    monkeypatch.setattr(process, "run_unified_simulation", record)
     holdout_calls = symbol_harness.patch_holdout(monkeypatch)
     run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=symbol_harness.CUTOFF)
 
@@ -201,3 +202,32 @@ def test_the_fallback_symbol_config_carries_the_register_blocks(tmp_path):
     save_run_results(str(tmp_path), [], [], [], [], [], all_results=[result])
     config = json.loads((tmp_path / "grid_details" / "EURUSD" / "config.json").read_text())
     assert config["selection_protocol"] == SELECTION_PROTOCOL
+
+
+def test_fold_stability_follows_the_causal_replay(monkeypatch):
+    """Profitable replayed folds / replayed folds; an untraded replay fold is not profitable."""
+    canned = symbol_harness.fold_result
+    # Every fold's own test PnL is negative: the per-fold stability would be 0.
+    monkeypatch.setattr(
+        symbol_harness, "fold_result", lambda fold: {**canned(fold), "test_pnl": -5.0}
+    )
+    patch_development(monkeypatch, WINNING)
+    replayed = []
+
+    def replay(folds, *args, **kwargs):
+        replayed.extend(folds)
+        return [
+            symbol_harness.unified_fold(fold, [] if fold.fold_id == 0 else WINNING)
+            for fold in folds
+        ]
+
+    monkeypatch.setattr(process, "run_unified_simulation", replay)
+    result = process_symbol(SYMBOL_FILE, STRATEGY)
+
+    assert result["status"] == "ok"
+    n = len(replayed)
+    assert n > 2
+    wf = result["walk_forward"]
+    assert wf["fold_stability"] == result["fold_stability"] == (n - 1) / n
+    assert wf["profitable_folds"] == n - 1
+    assert wf["mean_pnl"] == -5.0  # per-fold PnL statistics stay those of the folds
