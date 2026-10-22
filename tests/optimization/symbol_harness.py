@@ -13,7 +13,7 @@ import pandas as pd
 from fwbg.core.config import StrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.data import config as data_config
-from fwbg.optimization import holdout, process, unified_simulation
+from fwbg.optimization import holdout, process
 from fwbg.optimization.resource_manager import SimplePoolManager
 from fwbg.results import storage
 from fwbg.utils import progress
@@ -111,7 +111,7 @@ def patch_development(monkeypatch, pairs) -> None:
     monkeypatch.setattr(process, "load_data_aligned", lambda path: hourly_frame())
     monkeypatch.setattr(process, "_run_indicator_variants", variants)
     monkeypatch.setattr(
-        unified_simulation,
+        process,
         "run_unified_simulation",
         lambda folds, *args, **kwargs: [unified_fold(fold, pairs) for fold in folds],
     )

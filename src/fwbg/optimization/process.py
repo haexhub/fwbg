@@ -33,6 +33,10 @@ from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
 from .causal_variants import VariantRecord, replay_prefix_variants, replay_view, variant_score
 from .process_fold import precompute_indicators, process_single_fold
 from .selection_protocol import SELECTION_PROTOCOL
+from .unified_simulation import (
+    causal_candidates, consistent_folds, hp_key, merge_unified_settings,
+    run_unified_simulation,
+)
 
 
 def _compute_trade_analytics(trades_detailed):
@@ -667,7 +671,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # Aggregate metrics across all folds
         # A fold whose chosen setting traded nothing (kept: the test set must not filter
-        # folds) has no win rate; it still counts as a fold and in fold_stability.
+        # folds) has no win rate; it still counts as a fold in the per-fold PnL statistics.
         win_rates = [r["test_win_rate"] for r in all_fold_results if r["test_trades"] > 0]
         pnls = [r["test_pnl"] for r in all_fold_results]
         trades_counts = [r["test_trades"] for r in all_fold_results]
@@ -724,11 +728,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # For rule-based signal strategies, model_hyperparameters define the strategy
         # (rl level, hour window). Different HP = different strategy. The frozen merge
         # uses only the majority-HP folds; each causal prefix applies the same rule.
-        from .unified_simulation import (
-            causal_candidates, consistent_folds, hp_key, merge_unified_settings,
-            run_unified_simulation,
-        )
-
         majority_folds = consistent_folds(all_fold_results)
         if len(majority_folds) < len(all_fold_results):
             majority_hp_key = hp_key(majority_folds[0]["best_config"].get("model_hyperparameters"))
@@ -798,6 +797,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             all_trades_detailed.extend(unified_fold_result.get("trades_detailed") or [])
 
         n_unified_folds = len(unified_fold_results)
+        # Fold stability comes from the causal replay (an untraded fold is not profitable);
+        # the per-fold test PnL of the frozen variant stays a diagnostic (bias ratios, PBO).
+        replay_profitable_folds = sum(1 for r in unified_fold_results if r["pnl"] > 0)
+        replay_fold_stability = replay_profitable_folds / n_unified_folds if n_unified_folds else 0.0
 
         all_trades_pnl = [t["pnl_raw"] for t in all_trades]
         all_trades_binary = [t["result"] for t in all_trades]
@@ -928,8 +931,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             config_inconsistent=config_inconsistent,
             folds_without_bias_ratio=bias["folds_without_bias_ratio"],
         )
-        # Override total_trades with unified simulation count
+        # Override total_trades and fold stability with the unified simulation's values
         wf_summary["total_trades"] = total_trades
+        wf_summary["profitable_folds"] = replay_profitable_folds
+        wf_summary["fold_stability"] = replay_fold_stability
         wf_summary["causal_reporting"] = {
             "causal": causal_ok,
             "fold_0_excluded": True,
@@ -1101,14 +1106,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if mc_summary["bankruptcy_rate"] > 0.1:
             log(1, f"WARNING: {mc_summary['bankruptcy_rate']:.1%} Bankruptcy-Rate", sym)
 
-        # OOS fold stability: fraction of walk-forward folds with positive OOS PnL
-        oos_fold_stability = sum(1 for p in pnls if p > 0) / len(pnls) if pnls else 0
-
         result = {
             "symbol": sym,
             "status": "ok",
             "pnl": mean_pnl,
-            "fold_stability": oos_fold_stability,
+            "fold_stability": replay_fold_stability,
             "config": {
                 "risk_per_trade": fk,
                 "point_value": asset.point,
