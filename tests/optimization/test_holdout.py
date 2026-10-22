@@ -137,7 +137,7 @@ def test_holdout_trains_on_development_minus_embargo_and_tests_after_the_cutoff(
         n_dev,
         len(frame),
     )
-    assert call["candidate"] == development["unified_candidate"]
+    assert call["candidates"] == [development["unified_candidate"]]
     assert call["ctx"].embargo_bars == 5
     assert call["prepare"] is None  # ML preparation
     assert result["holdout"]["embargo_bars"] == 5

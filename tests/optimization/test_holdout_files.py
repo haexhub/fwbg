@@ -106,7 +106,7 @@ def test_development_file_carries_the_frozen_unified_setting(monkeypatch, tmp_pa
     run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
     development = json.loads((run_dir / "grid_details" / "EURUSD" / "development.json").read_text())
     # JSON round trip of what the holdout evaluated (its params tuple becomes a list).
-    assert development["unified_candidate"] == json.loads(json.dumps(calls[0]["candidate"]))
+    assert development["unified_candidate"] == json.loads(json.dumps(calls[0]["candidates"][0]))
 
 
 def test_a_run_without_holdout_writes_no_development_file(monkeypatch, tmp_path):
