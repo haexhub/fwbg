@@ -321,6 +321,40 @@ variant per prefix; per-fold diagnostics remain those of the frozen variant).
 
 ---
 
+### Task 6: Causal fold_stability, sizing documented (operator decisions 2026-10-22)
+
+**Findings (second whole-branch review):**
+1. Deployment sizing (`fk`, circuit breaker, `mean_wr`; `process.py:~820-840`) and with it the
+   holdout's sizing and loss scale (`development["tr_trace"]`) are now calibrated on the causal
+   replay's trades (mixed settings), with the frozen setting's RRR.
+2. `fold_stability` (a register criterion, `legacy.py:299`) comes from the per-fold test PnL of the
+   frozen variant (`process.py:184`, `:1105`); for grid runs that variant was ranked over all folds.
+
+**Decisions:**
+- D7 sizing stays calibrated on the causal replay (the track record a trader would have had,
+  out of sample); document it: holdout step 3 and Known limitations of the register design doc
+  (Kelly takes its win rate from trades of the prefix settings but the frozen RRR), and the
+  comment at `process.py:~839` ("korrekt fürs Live-Sizing").
+- D8 `fold_stability` = share of replayed folds whose replay PnL is > 0 (untraded folds count as
+  not profitable; denominator = replay results). Both `wf_summary["fold_stability"]` and the
+  reported `oos_fold_stability` use it. Bias ratios, PBO, mean/std per-fold PnL stay diagnostics
+  of the frozen variant.
+
+**Also (review minors):** move the function-local `from .unified_simulation import (...)` in
+`process.py` to the top imports; move the "A fold is kept whatever its test trade count" comment
+in `process_fold.py` next to the `min_trades` warning; one design-doc sentence distinguishing
+"not traded" (no setting yet) from `causal_reporting`'s `untraded_folds` (fk ≤ 0 on prior data);
+merge the two `from fwbg.optimization import ...` lines in `tests/optimization/test_causal_variants.py`.
+
+**Tests:** `fold_stability` from the replay: through `symbol_harness` with replay results whose
+per-fold PnL signs differ from the per-fold test PnL → the result's walk_forward
+`fold_stability` (and the elite's) follow the replay; an untraded fold counts as not profitable.
+
+**Commits:** `fix(optimization): fold stability from the causal replay`,
+`docs: deployment sizing calibrates on the causal replay`
+
+---
+
 ### Final
 
 - Whole-branch review.
