@@ -713,47 +713,37 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # For rule-based signal strategies, model_hyperparameters define the strategy
         # (rl level, hour window). Different HP = different strategy. Only aggregate
         # trades from folds that agree on the same HP to avoid mixing strategies.
-        hp_list = [r["best_config"].get("model_hyperparameters") or {} for r in all_fold_results]
+        from .unified_simulation import (
+            causal_candidates, consistent_folds, hp_key, merge_unified_settings,
+            run_unified_simulation,
+        )
 
-        def _hp_key(hp):
-            """Hashable key for model_hyperparameters (ignoring None values)."""
-            if not hp:
-                return ()
-            def _make_hashable(v):
-                if isinstance(v, list):
-                    return tuple(v)
-                return v
-            return tuple(sorted((k, _make_hashable(v)) for k, v in hp.items() if v is not None))
-
-        hp_keys = [_hp_key(hp) for hp in hp_list]
-        hp_counts = {}
-        for key in hp_keys:
-            hp_counts[key] = hp_counts.get(key, 0) + 1
-        majority_hp_key = max(hp_counts, key=hp_counts.get) if hp_counts else ()
-        majority_hp_count = hp_counts.get(majority_hp_key, 0)
-        hp_consistent = majority_hp_count == len(all_fold_results)
-
-        if not hp_consistent:
-            # Only aggregate trades from folds with majority model_hyperparameters
-            consistent_folds = [
-                r for r, key in zip(all_fold_results, hp_keys)
-                if key == majority_hp_key
-            ]
-            inconsistent_count = len(all_fold_results) - len(consistent_folds)
+        majority_folds = consistent_folds(all_fold_results)
+        if len(majority_folds) < len(all_fold_results):
+            majority_hp_key = hp_key(majority_folds[0]["best_config"].get("model_hyperparameters"))
             # Show what each fold picked
-            for i, (r, hp) in enumerate(zip(all_fold_results, hp_list)):
-                is_majority = "✓" if hp_keys[i] == majority_hp_key else "✗"
+            for i, r in enumerate(all_fold_results):
+                hp = r["best_config"].get("model_hyperparameters") or {}
+                is_majority = "✓" if hp_key(hp) == majority_hp_key else "✗"
                 log(2, f"    Fold {i+1}: hp={dict(hp) if hp else '{}'} {is_majority}", sym)
-            log(1, f"  Model HP inconsistent: {majority_hp_count}/{len(all_fold_results)} folds agree. "
-                   f"Dropping {inconsistent_count} inconsistent fold(s).", sym)
-        else:
-            consistent_folds = all_fold_results
+            log(1, f"  Model HP inconsistent: {len(majority_folds)}/{len(all_fold_results)} folds agree. "
+                   f"Dropping {len(all_fold_results) - len(majority_folds)} inconsistent fold(s).", sym)
 
         # === UNIFIED SIMULATION ===
-        # Derive one setting from consistent folds, re-simulate all folds.
-        from .unified_simulation import merge_unified_settings, run_unified_simulation
-
-        unified_candidate = merge_unified_settings(consistent_folds, all_fold_results)
+        # The frozen (deployment) setting merges all folds. The replay behind the
+        # reported metrics is causal: fold k uses the merge of folds 0..k only.
+        unified_candidate = merge_unified_settings(majority_folds, all_fold_results)
+        tp_unified, sl_unified, ct_unified = unified_candidate["params"]
+        features_long = unified_candidate.get("selected_features_long") or []
+        features_short = unified_candidate.get("selected_features_short") or []
+        log(1, f"  Frozen setting: TP={tp_unified:.2f} SL={sl_unified:.2f} CT={ct_unified} "
+               f"timeout={unified_candidate.get('timeout_bars')} "
+               f"features={len(features_long)} long, {len(features_short)} short", sym)
+        if unified_candidate.get("model_hyperparameters"):
+            log(2, f"    Model HP: {unified_candidate['model_hyperparameters']}", sym)
+        if unified_candidate.get("exit_modifier_params"):
+            log(2, f"    Exit modifier: {unified_candidate['exit_modifier_params']}", sym)
+        replay_candidates = causal_candidates(wf_folds, all_fold_results)
 
         # Pass signal data prep for signal models
         if ctx.model_type == "signal":
@@ -763,7 +753,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             prepare_fn = None  # uses default (prepare_fold_data)
 
         unified_fold_results = run_unified_simulation(
-            wf_folds, [unified_candidate] * len(wf_folds),
+            wf_folds, replay_candidates,
             fold_indicators, precomputed_raw_df, preprocessing_configs,
             ctx, sym, prepare_data_fn=prepare_fn,
         )
@@ -772,7 +762,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         del fold_indicators, precomputed_raw_df, best_variant_data, df
         gc.collect()
 
-        tp_unified, sl_unified, ct_unified = unified_candidate["params"]
         b_config = {
             "tp": tp_unified,
             "sl": sl_unified,

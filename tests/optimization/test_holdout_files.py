@@ -139,8 +139,8 @@ def test_holdout_look_keeps_the_developments_selection_protocol(monkeypatch, tmp
     patch_holdout(monkeypatch)
     run_dir = run_inline(monkeypatch, tmp_path, holdout_cutoff=CUTOFF)
     development = json.loads((run_dir / "grid_details" / "EURUSD" / "development.json").read_text())
-    assert development["walk_forward"]["selection_protocol"] == SELECTION_PROTOCOL == 2
-    assert run_outcome(run_dir)[1]["EURUSD"]["selection_protocol"] == 2
+    assert development["walk_forward"]["selection_protocol"] == SELECTION_PROTOCOL == 3
+    assert run_outcome(run_dir)[1]["EURUSD"]["selection_protocol"] == 3
 
 
 @pytest.mark.parametrize("pairs", [WINNING, LOSING])
