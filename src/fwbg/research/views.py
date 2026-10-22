@@ -152,7 +152,7 @@ def card_summary(
     """One card's list entry as JSON-ready data; *own* are its trials.
 
     *running* is the number of its live runs, ``None`` if unknown; *unrankable*
-    maps the fingerprints not ranked before the inner-selection protocol to their
+    maps the fingerprints not ranked below RANKED_PROTOCOL to their
     reason (:func:`~fwbg.research.stats.unrankable_configs`).
     """
     best = best_result(own, unrankable)
