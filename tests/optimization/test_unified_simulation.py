@@ -409,6 +409,37 @@ class TestRunUnifiedSimulation:
                             exit_strategy="orb_based", exit_params={"col": "orb"})
         assert ctx1 == _Ctx()
 
+    def test_candidate_exit_params_override_same_exit_strategy(self, monkeypatch):
+        calls = []
+
+        def evaluate(test_df, train_df, candidate, ctx):
+            calls.append(ctx)
+            return {"trades": [], "n_trades": 0, "pnl": 0.0, "win_rate": 0.0}
+
+        monkeypatch.setattr(unified_simulation, "evaluate_on_holdout", evaluate)
+        candidate = _candidate(
+            1.0,
+            exit_strategy="orb_based",
+            exit_params={"range_column": "_orb_range_new"},
+        )
+        base_ctx = _Ctx(
+            exit_strategy="orb_based",
+            exit_params={"range_column": "_orb_range_old"},
+        )
+        run_unified_simulation(
+            WF_FOLDS[:1],
+            [candidate],
+            None,
+            None,
+            [],
+            base_ctx,
+            "EURUSD",
+            prepare_data_fn=_prepare,
+        )
+
+        assert calls[0].exit_strategy == "orb_based"
+        assert calls[0].exit_params == {"range_column": "_orb_range_new"}
+
     def test_each_traded_fold_carries_its_candidates_rrr(self, monkeypatch):
         monkeypatch.setattr(
             unified_simulation, "evaluate_on_holdout",

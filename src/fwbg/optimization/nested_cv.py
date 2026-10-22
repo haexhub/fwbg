@@ -792,13 +792,16 @@ def evaluate_on_holdout(
     # This ensures compute_targets uses the correct exit strategy regardless
     # of how the caller set up ctx (e.g. unified simulation uses base ctx
     # whose exit_strategy defaults to "fixed").
-    cand_exit = candidate.get("exit_strategy")
-    if cand_exit and cand_exit != ctx.exit_strategy:
+    cand_exit = candidate.get("exit_strategy") or ctx.exit_strategy
+    cand_exit_params = candidate.get("exit_params")
+    if cand_exit_params is None:
+        cand_exit_params = ctx.exit_params
+    if cand_exit != ctx.exit_strategy or cand_exit_params != ctx.exit_params:
         import dataclasses
         ctx = dataclasses.replace(
             ctx,
             exit_strategy=cand_exit,
-            exit_params=candidate.get("exit_params") or {},
+            exit_params=cand_exit_params,
         )
 
     # Berechne Targets (und optional Durations für Sample Weights)

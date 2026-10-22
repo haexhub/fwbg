@@ -456,7 +456,9 @@ class TestHoldoutUsesWinningCandidateParams:
 
     def test_fold_result_stores_winning_model_hyperparameters(self):
         """fold_result['best_config'] must include the winning model_hyperparameters."""
-        result = self._run_winning_fold({"pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": []})
+        result = self._run_winning_fold(
+            {"pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": []}
+        )
 
         assert result is not None
         assert result["best_config"]["model_hyperparameters"] == self.VARIANT_HP

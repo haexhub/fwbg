@@ -735,9 +735,17 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             for r in all_fold_results:
                 hp = r["best_config"].get("model_hyperparameters") or {}
                 is_majority = "✓" if hp_key(hp) == majority_hp_key else "✗"
-                log(2, f"    Fold {r['fold_id'] + 1}: hp={dict(hp) if hp else '{}'} {is_majority}", sym)
-            log(1, f"  Model HP inconsistent: {len(majority_folds)}/{len(all_fold_results)} folds agree; "
-                   "the frozen setting merges only those.", sym)
+                log(
+                    2,
+                    f"    Fold {r['fold_id'] + 1}: hp={dict(hp) if hp else '{}'} {is_majority}",
+                    sym,
+                )
+            log(
+                1,
+                f"  Model HP inconsistent: {len(majority_folds)}/{len(all_fold_results)} "
+                "folds agree; the frozen setting merges only those.",
+                sym,
+            )
 
         # === UNIFIED SIMULATION ===
         # The frozen (deployment) setting merges all folds. The replay behind the
@@ -800,7 +808,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Fold stability comes from the causal replay (an untraded fold is not profitable);
         # the per-fold test PnL of the frozen variant stays a diagnostic (bias ratios, PBO).
         replay_profitable_folds = sum(1 for r in unified_fold_results if r["pnl"] > 0)
-        replay_fold_stability = replay_profitable_folds / n_unified_folds if n_unified_folds else 0.0
+        replay_fold_stability = (
+            replay_profitable_folds / n_unified_folds if n_unified_folds else 0.0
+        )
 
         all_trades_pnl = [t["pnl_raw"] for t in all_trades]
         all_trades_binary = [t["result"] for t in all_trades]
