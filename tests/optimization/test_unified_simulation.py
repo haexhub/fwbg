@@ -382,8 +382,9 @@ class TestRunUnifiedSimulation:
         results = _simulate(WF_FOLDS[:2], [None, None], prepare)
         assert results == [
             {"trades": [], "trades_detailed": [], "pnl": 0.0, "win_rate": 0.0,
-             "n_trades": 0, "dropped_features": []},
-        ] * 2
+             "n_trades": 0, "dropped_features": [], "fold_id": fold.fold_id}
+            for fold in WF_FOLDS[:2]
+        ]
 
     def test_one_candidate_per_fold_required(self):
         with pytest.raises(ValueError):
@@ -417,3 +418,12 @@ class TestRunUnifiedSimulation:
         results = _simulate(WF_FOLDS[:4], [None, _candidate(1.0), _candidate(3.0), no_sl])
         assert "rrr" not in results[0]
         assert [r["rrr"] for r in results[1:]] == [0.5, 1.5, 1.0]
+
+    def test_every_result_carries_its_fold_id(self, monkeypatch):
+        monkeypatch.setattr(
+            unified_simulation, "evaluate_on_holdout",
+            lambda *args: {"trades": [], "n_trades": 0, "pnl": 0.0, "win_rate": 0.0},
+        )
+        folds = [WF_FOLDS[2], WF_FOLDS[0], WF_FOLDS[3]]
+        results = _simulate(folds, [_candidate(1.0), None, _candidate(2.0)])
+        assert [r["fold_id"] for r in results] == [2, 0, 3]

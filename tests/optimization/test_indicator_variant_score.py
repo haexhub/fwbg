@@ -70,3 +70,26 @@ def test_parallel_fold_results_are_ordered_by_fold_id(monkeypatch):
     best = _rank(monkeypatch, [(label, strategy)])
     assert [r["fold_id"] for r in best["all_fold_results"]] == [0, 1]
     assert best["score"] == (2, 1.5)
+
+
+def test_a_grid_keeps_a_light_record_of_every_variant(monkeypatch):
+    """The replay needs every variant's folds and context, never their indicator data."""
+    best = _rank(
+        monkeypatch,
+        [
+            _variant("A", [(1.0, 0.0), (1.0, 0.0)]),
+            _variant("B", [(5.0, 0.0), None]),
+            _variant("C", [(2.0, 0.0), (2.0, 0.0)]),
+        ],
+    )
+    assert best["label"] == "C"
+    assert best["frozen_index"] == 2
+    assert [record.label for record in best["variants"]] == ["A", "B", "C"]
+    assert [len(record.fold_results) for record in best["variants"]] == [2, 1, 2]
+    assert best["variants"][2].ctx is best["ctx"]
+    assert not any(hasattr(record, "fold_indicators") for record in best["variants"])
+
+
+def test_a_single_variant_keeps_no_records(monkeypatch):
+    best = _rank(monkeypatch, [_variant("base", [(1.0, 0.0), (1.0, 0.0)])])
+    assert "variants" not in best and "frozen_index" not in best

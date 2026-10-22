@@ -211,7 +211,7 @@ def run_unified_simulation(
     traded: it gets an empty result without preparing data.
 
     Returns:
-        List of per-fold result dicts from evaluate_on_holdout.
+        List of per-fold result dicts from evaluate_on_holdout, each with its fold_id.
     """
     if len(candidates) != len(wf_folds):
         raise ValueError(
@@ -229,17 +229,17 @@ def run_unified_simulation(
         report_phase(sym, f"Unified sim fold {fold_index + 1}/{len(wf_folds)}...")
 
         if candidate is None:
-            log(2, f"  Unified fold {fold_index + 1}: not traded (no successful fold up to this one)", sym)
+            log(2, f"  Unified fold {fold.fold_id + 1}: not traded (no successful fold up to this one)", sym)
             unified_fold_results.append({
                 "trades": [], "trades_detailed": [], "pnl": 0.0, "win_rate": 0.0,
-                "n_trades": 0, "dropped_features": [],
+                "n_trades": 0, "dropped_features": [], "fold_id": fold.fold_id,
             })
             continue
 
         tp, sl, ct = candidate["params"]
         features_long = candidate.get("selected_features_long") or []
         features_short = candidate.get("selected_features_short") or []
-        log(2, f"  Unified fold {fold_index + 1} settings: TP={tp:.2f} SL={sl:.2f} CT={ct} "
+        log(2, f"  Unified fold {fold.fold_id + 1} settings: TP={tp:.2f} SL={sl:.2f} CT={ct} "
                f"timeout={candidate.get('timeout_bars')} "
                f"features={len(features_long)} long, {len(features_short)} short", sym)
         if candidate.get("model_hyperparameters"):
@@ -253,7 +253,7 @@ def run_unified_simulation(
             preprocessing_configs, ctx, sym,
         )
         if fold_data is None:
-            log(2, f"  Unified fold {fold_index + 1}: SKIP (insufficient data)", sym)
+            log(2, f"  Unified fold {fold.fold_id + 1}: SKIP (insufficient data)", sym)
             continue
 
         train_df, test_df, _full_pool = fold_data
@@ -278,10 +278,12 @@ def run_unified_simulation(
         result["dropped_features"] = sorted(dropped)
         # The RRR this fold was traded with: causal reporting sizes the fold with it.
         result["rrr"] = tp / sl if sl > 0 else 1.0
+        # Lets a replay split across indicator variants be put back in fold order.
+        result["fold_id"] = fold.fold_id
 
         total_trades += result["n_trades"]
         pnl = result["pnl"]
-        log(2, f"  Unified fold {fold_index + 1}: "
+        log(2, f"  Unified fold {fold.fold_id + 1}: "
                f"PnL={pnl:.1f} Trades={result['n_trades']} "
                f"WR={result['win_rate']:.1%}", sym)
 
