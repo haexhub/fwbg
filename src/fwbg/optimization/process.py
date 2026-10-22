@@ -839,9 +839,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                    f"for {circuit_breaker['pause_bars']} bars", sym)
 
         # === CAUSAL REPORTING CALIBRATION ===
-        # Der Deployment-Call oben kalibriert auf ALLEN Folds — korrekt fürs
-        # Live-Sizing (assets.json/bot.py), aber Hindsight-Optimierung fürs
-        # Reporting. Für die reported Metriken wird Fold i deshalb nur mit
+        # Der Deployment-Call oben kalibriert auf den Trades ALLER Folds des
+        # kausalen Replays: die Out-of-Sample-Bilanz, die ein Trader gehabt
+        # hätte (WR aus Trades der Prefix-Settings, RRR des Frozen Settings).
+        # Das ist das Live-Sizing (assets.json/bot.py) und das Sizing des
+        # Holdouts (development tr_trace), aber Hindsight fürs Reporting.
+        # Für die reported Metriken wird Fold i deshalb nur mit
         # einer auf Folds 0..i-1 kalibrierten Sizing bewertet (Fold 0 entfällt).
         from .causal_reporting import compute_causal_reporting
         causal = compute_causal_reporting(

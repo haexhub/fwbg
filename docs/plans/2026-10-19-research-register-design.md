@@ -376,7 +376,10 @@ card's holdout once; use it when iterating is done. The per-symbol worker
    recorded (`dropped_features`).
 3. **Sizing without hindsight:** holdout trades are sized with the
    development's fk (`risk_per_trade`), circuit breaker and loss scale; no
-   parameter is fitted on holdout trades.
+   parameter is fitted on holdout trades. The development calibrates them on
+   the trades of its causal replay over all folds (protocol 3, operator
+   decision 2026-10-22): the out-of-sample track record a trader would have
+   had, the same sizing a deployment exports.
 4. **Metrics come from holdout trades only.** The Monte Carlo test on them
    decides `ok` or `not_significant`. `win_rate` is over all holdout trades;
    `pnl`, `sharpe`, `calmar` and the return statistics are over the trades
@@ -430,6 +433,11 @@ Known limitations:
   That is hindsight by design, for deployment. It can only remove a row from
   the ranking or let it through; it does not change the reported causal
   metrics.
+- The deployment sizing (`fk`, circuit breaker, loss scale; also the
+  holdout's) takes its win rate and loss sizes from the causal replay's
+  trades, which were traded with the prefix settings, but uses the frozen
+  setting's RRR. While the prefix settings differ from the frozen one, Kelly
+  mixes the two.
 - With fewer than 10 causal trades the reported returns fall back to the
   deployment sizing (`fk` calibrated on all folds, `causal_ok` in
   `src/fwbg/optimization/process.py`). `pnl_to_returns` multiplies every
@@ -508,15 +516,19 @@ a variant ranked over all folds was chosen partly on it. A variant that
 replays some folds without being the frozen one recomputes its indicators
 once for the replay, unless all its assigned folds are untraded. A fold
 before the first successful one is not traded (empty result); it still
-counts as a fold and in the test period. Each
+counts as a fold and in the test period. That differs from causal
+reporting's `untraded_folds`: folds that were replayed but get no causal
+size because Kelly on the trades of the earlier folds is ≤ 0. Each
 replayed fold is sized for causal Kelly reporting with the RRR of its own
 replay setting. The frozen setting (`development.json`, holdout,
 `best_config`, deployment) stays the merge over all folds of the frozen
 variant, the one best over all folds: what one would deploy after the last
-fold, where both variant choices coincide. The per-fold diagnostics
-(`fold_stability`, bias ratios, PBO, grid results) remain those of the
-frozen variant. ML folds are kept whatever their test trade count, like
-signal folds. Before protocol 3 the replay traded every test fold with the
+fold, where both variant choices coincide. `fold_stability` (a card
+criterion) and `walk_forward.profitable_folds` come from the replay: the
+share of replayed folds with PnL > 0, an untraded fold counting as not
+profitable. The per-fold diagnostics (bias ratios, PBO, the per-fold PnL
+statistics, grid results) remain those of the frozen variant. ML folds are
+kept whatever their test trade count, like signal folds. Before protocol 3 the replay traded every test fold with the
 frozen variant's merge over all folds, so an earlier fold was traded with a
 variant and settings chosen in later folds, whose training windows contain
 it, and ML folds with fewer than 5 test trades were dropped: the test set
@@ -540,8 +552,9 @@ product of its value lists, summed over indicators), else unified-merge. A
 config with several reasons counts once, in that order. An evaluation
 marked 2 chose its setting on inner windows; the merge over all folds, the
 variant choice over all folds (grid configs) and the ML test-trade filter
-kept it out. It is reported as unified-merge. Evaluations without metrics
-are not counted there (nothing to leave out). A study script that passes a config
+kept it out. It is reported as unified-merge. Rows below protocol 3 also
+carry the `fold_stability` of the frozen variant's per-fold test PnL, not
+the replay's. Evaluations without metrics are not counted there (nothing to leave out). A study script that passes a config
 with a `strategy.model` mapping counts as an optimizer evaluation
 (conservative). Evaluations without a stored config (studies, legacy runs)
 stay ranked; those with an unreadable config are ranked as unknown.
@@ -559,7 +572,8 @@ ML results changed with protocol 2 too, so old and new runs differ:
 - Mixed `None`/integer `timeout_bars` across the grid now get DSR and PBO
   instead of falling back to `dsr = 0`.
 - Folds with no test trade are left out of win-rate statistics (they still
-  count as folds and in `fold_stability`).
+  count as folds and in the per-fold PnL statistics; from protocol 3 on,
+  `fold_stability` comes from the causal replay).
 - `selection_protocol` is stamped on every result, ML included.
 
 ## Tooling
