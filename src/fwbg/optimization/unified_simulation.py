@@ -152,10 +152,13 @@ def causal_candidates(wf_folds, fold_results: List[Dict[str, Any]]) -> List[Opti
     Fold k gets merge_unified_settings over the successful folds with fold_id <= k: each
     chose its setting on its own training data, which ends before fold k's test data.
     None while no fold up to k has succeeded (that fold is not traded).
+    Fold results are ordered by fold_id first: parallel folds arrive in completion
+    order, and the merge's tie-breaks and first-fold choices depend on order.
     """
+    ordered = sorted(fold_results, key=lambda r: r["fold_id"])
     candidates = []
     for fold in wf_folds:
-        prefix = [r for r in fold_results if r["fold_id"] <= fold.fold_id]
+        prefix = [r for r in ordered if r["fold_id"] <= fold.fold_id]
         candidates.append(
             merge_unified_settings(consistent_folds(prefix), prefix) if prefix else None
         )
@@ -226,7 +229,7 @@ def run_unified_simulation(
         report_phase(sym, f"Unified sim fold {fold_index + 1}/{len(wf_folds)}...")
 
         if candidate is None:
-            log(2, f"  Unified fold {fold_index + 1}: not traded (no setting before this fold)", sym)
+            log(2, f"  Unified fold {fold_index + 1}: not traded (no successful fold up to this one)", sym)
             unified_fold_results.append({
                 "trades": [], "trades_detailed": [], "pnl": 0.0, "win_rate": 0.0,
                 "n_trades": 0, "dropped_features": [],
@@ -239,6 +242,10 @@ def run_unified_simulation(
         log(2, f"  Unified fold {fold_index + 1} settings: TP={tp:.2f} SL={sl:.2f} CT={ct} "
                f"timeout={candidate.get('timeout_bars')} "
                f"features={len(features_long)} long, {len(features_short)} short", sym)
+        if candidate.get("model_hyperparameters"):
+            log(2, f"    Model HP: {candidate['model_hyperparameters']}", sym)
+        if candidate.get("exit_modifier_params"):
+            log(2, f"    Exit modifier: {candidate['exit_modifier_params']}", sym)
 
         _prepare = prepare_data_fn or prepare_fold_data
         fold_data = _prepare(

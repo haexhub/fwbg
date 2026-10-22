@@ -3,7 +3,6 @@ import dataclasses
 from types import SimpleNamespace
 
 import pytest
-import numpy as np
 import pandas as pd
 
 from fwbg.optimization import unified_simulation
@@ -315,6 +314,16 @@ class TestCausalCandidates:
         candidates = causal_candidates(WF_FOLDS[:3], results)
         assert candidates[0]["model_hyperparameters"] == {"a": 1}
         assert candidates[2]["model_hyperparameters"] == {"a": 2}
+
+    def test_prefix_order_follows_fold_id_not_arrival(self):
+        results = [
+            _make_fold_result(i, tp=tp, sl=2.0, ct=0.5,
+                              model_hyperparameters={"a": hp}, features_long=feats)
+            for i, (tp, hp, feats) in enumerate(
+                [(1.0, 1, ["x"]), (3.0, 2, ["y", "x"]), (5.0, 2, ["y"]), (7.0, 1, ["z"])])
+        ]
+        shuffled = [results[3], results[1], results[2], results[0]]
+        assert causal_candidates(WF_FOLDS, shuffled) == causal_candidates(WF_FOLDS, results)
 
     def test_last_candidate_is_the_full_merge(self):
         results = [
