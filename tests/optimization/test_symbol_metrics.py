@@ -107,6 +107,7 @@ def test_folds_replay_the_setting_known_before_them_and_the_full_merge_is_frozen
         result = canned(fold)
         return {**result, "best_config": {**result["best_config"], "tp": 1.0 + 2 * fold.fold_id}}
 
+    # patch_development looks fold_result up at call time, so this override reaches it.
     monkeypatch.setattr(symbol_harness, "fold_result", fold_result)
     patch_development(monkeypatch, WINNING)
     replays = []

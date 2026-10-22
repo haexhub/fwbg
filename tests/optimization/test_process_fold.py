@@ -317,6 +317,8 @@ class TestHoldoutUsesWinningCandidateParams:
     """Verify that holdout evaluation uses the winning candidate's
     model_hyperparameters and exit_modifier_params, not the base ctx."""
 
+    VARIANT_HP = {"signal_column_long": "winner_long", "signal_column_short": "winner_short"}
+
     def test_holdout_receives_candidate_model_hyperparameters(self):
         """evaluate_on_holdout must be called with ctx containing the
         winning candidate's model_hyperparameters, not the base."""
@@ -468,8 +470,6 @@ class TestHoldoutUsesWinningCandidateParams:
 
         assert result is not None
         assert result["test_trades"] == n_trades
-
-    VARIANT_HP = {"signal_column_long": "winner_long", "signal_column_short": "winner_short"}
 
     def _run_winning_fold(self, test_result):
         """process_single_fold with one grid winner and *test_result* as its test evaluation."""
