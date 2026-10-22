@@ -152,7 +152,7 @@ def _evaluate(csv_path: str, strategy: StrategyConfig, development: dict) -> dic
     # holdout builds its context exactly like development; a dedicated function only if it diverges.
     evaluations = run_unified_simulation(
         [fold],
-        development["unified_candidate"],
+        [development["unified_candidate"]],
         fold_indicators,
         precomputed_raw_df,
         variant.get_preprocessing(),
