@@ -30,6 +30,7 @@ from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds, plan_walk_forward
 from .bias_checks import check_asset_bias, fold_bias_ratios
 from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
+from .causal_variants import VariantRecord, replay_prefix_variants, variant_score
 from .process_fold import precompute_indicators, process_single_fold
 from .selection_protocol import SELECTION_PROTOCOL
 
@@ -321,16 +322,15 @@ def _process_single_variant(variant_idx, variant_label, variant_strategy,
     # the merges must not depend on thread timing.
     all_fold_results.sort(key=lambda r: r["fold_id"])
 
-    n_successful = len(all_fold_results)
-    # Ranked on inner validation PnL: the test folds must not pick the variant.
-    mean_pnl = float(np.mean([r["inner_val_pnl"] for r in all_fold_results])) if n_successful else float("-inf")
+    score = variant_score(all_fold_results)
+    n_successful, mean_pnl = score
 
     if n_variants > 1:
         log(1, f"  Variant result: {n_successful}/{len(wf_folds)} folds"
                + (f", mean_inner_pnl={mean_pnl:.1f}" if n_successful else ""), sym)
 
     return {
-        "score": (n_successful, mean_pnl),
+        "score": score,
         "label": variant_label,
         "strategy": variant_strategy,
         "ctx": variant_ctx,
@@ -347,7 +347,9 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
 
     Sequential processing avoids multiplying RAM by the number of variants.
     Each variant's precomputed_raw_df (~180MB+) is released before the next
-    variant starts, unless it's the current best.
+    variant starts, unless it's the current best. A grid's result also carries
+    a light record of every variant ("variants") and the best's index
+    ("frozen_index") for the causal replay.
     """
     n_variants = len(variants)
 
@@ -359,11 +361,17 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
 
     best_score = (-1, float("-inf"))
     best_data = None
+    best_index = None
+    records = []
 
     for idx, (label, strat) in enumerate(variants):
         result = _process_single_variant(
             idx, label, strat, df, wf_folds, asset, sym, n_variants,
         )
+        records.append(VariantRecord(
+            result["label"], result["strategy"], result["ctx"],
+            result["preprocessing_configs"], result["all_fold_results"],
+        ))
         if result["score"] > best_score:
             # Release previous best's heavy data
             if best_data is not None:
@@ -371,12 +379,15 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
                 best_data.pop("fold_indicators", None)
             best_score = result["score"]
             best_data = result
+            best_index = idx
         else:
             # Release this variant's heavy data immediately
             result.pop("precomputed_raw_df", None)
             result.pop("fold_indicators", None)
         gc.collect()
 
+    best_data["variants"] = records
+    best_data["frozen_index"] = best_index
     return best_data
 
 
@@ -731,7 +742,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # === UNIFIED SIMULATION ===
         # The frozen (deployment) setting merges all folds. The replay behind the
-        # reported metrics is causal: fold k uses the merge of folds 0..k only.
+        # reported metrics is causal: fold k uses the merge of folds 0..k only and,
+        # for an indicator grid, the variant best on folds 0..k (causal_variants.py).
         unified_candidate = merge_unified_settings(majority_folds, all_fold_results)
         tp_unified, sl_unified, ct_unified = unified_candidate["params"]
         features_long = unified_candidate.get("selected_features_long") or []
@@ -743,20 +755,26 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             log(2, f"    Model HP: {unified_candidate['model_hyperparameters']}", sym)
         if unified_candidate.get("exit_modifier_params"):
             log(2, f"    Exit modifier: {unified_candidate['exit_modifier_params']}", sym)
-        replay_candidates = causal_candidates(wf_folds, all_fold_results)
-
-        # Pass signal data prep for signal models
-        if ctx.model_type == "signal":
-            from .signal_fold import prepare_signal_fold_data
-            prepare_fn = prepare_signal_fold_data
+        if best_variant_data.get("variants"):
+            unified_fold_results = replay_prefix_variants(
+                wf_folds, best_variant_data["variants"], best_variant_data["frozen_index"],
+                fold_indicators, precomputed_raw_df, df, sym,
+            )
         else:
-            prepare_fn = None  # uses default (prepare_fold_data)
+            replay_candidates = causal_candidates(wf_folds, all_fold_results)
 
-        unified_fold_results = run_unified_simulation(
-            wf_folds, replay_candidates,
-            fold_indicators, precomputed_raw_df, preprocessing_configs,
-            ctx, sym, prepare_data_fn=prepare_fn,
-        )
+            # Pass signal data prep for signal models
+            if ctx.model_type == "signal":
+                from .signal_fold import prepare_signal_fold_data
+                prepare_fn = prepare_signal_fold_data
+            else:
+                prepare_fn = None  # uses default (prepare_fold_data)
+
+            unified_fold_results = run_unified_simulation(
+                wf_folds, replay_candidates,
+                fold_indicators, precomputed_raw_df, preprocessing_configs,
+                ctx, sym, prepare_data_fn=prepare_fn,
+            )
 
         # Release heavy data no longer needed after unified simulation
         del fold_indicators, precomputed_raw_df, best_variant_data, df
