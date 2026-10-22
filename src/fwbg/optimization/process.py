@@ -760,7 +760,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             prepare_fn = None  # uses default (prepare_fold_data)
 
         unified_fold_results = run_unified_simulation(
-            wf_folds, unified_candidate,
+            wf_folds, [unified_candidate] * len(wf_folds),
             fold_indicators, precomputed_raw_df, preprocessing_configs,
             ctx, sym, prepare_data_fn=prepare_fn,
         )

@@ -123,7 +123,7 @@ def patch_holdout(monkeypatch, pairs=HOLDOUT, evaluations=None) -> list[dict]:
 
     def simulate(
         folds,
-        candidate,
+        candidates,
         fold_indicators,
         precomputed_raw_df,
         preprocessing_configs,
@@ -132,7 +132,7 @@ def patch_holdout(monkeypatch, pairs=HOLDOUT, evaluations=None) -> list[dict]:
         prepare_data_fn=None,
     ):
         calls.append(
-            {"folds": folds, "candidate": candidate, "ctx": ctx, "prepare": prepare_data_fn}
+            {"folds": folds, "candidates": candidates, "ctx": ctx, "prepare": prepare_data_fn}
         )
         return evaluations if evaluations is not None else [unified_fold(folds[0], pairs)]
 
