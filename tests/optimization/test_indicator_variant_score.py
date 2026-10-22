@@ -10,7 +10,8 @@ FOLDS = [SimpleNamespace(fold_id=0), SimpleNamespace(fold_id=1)]
 def _variant(label, folds):
     """A variant whose folds report (inner_val_pnl, test_pnl); None = failed fold."""
     results = [
-        None if pnls is None else {"inner_val_pnl": pnls[0], "test_pnl": pnls[1]} for pnls in folds
+        None if pnls is None else {"fold_id": i, "inner_val_pnl": pnls[0], "test_pnl": pnls[1]}
+        for i, pnls in enumerate(folds)
     ]
     strategy = SimpleNamespace(
         resources=SimpleNamespace(max_parallel_folds=1),
@@ -59,3 +60,13 @@ def test_failed_variant_still_ranks_last(monkeypatch):
     )
     assert best["label"] == "negative"
     assert best["score"] == (2, -3.0)
+
+
+def test_parallel_fold_results_are_ordered_by_fold_id(monkeypatch):
+    """Folds finishing in reverse order leave the same fold list and score."""
+    label, strategy = _variant("A", [(1.0, 0.0), (2.0, 0.0)])
+    strategy.resources.max_parallel_folds = 2
+    monkeypatch.setattr(process, "as_completed", lambda futures: reversed(list(futures)))
+    best = _rank(monkeypatch, [(label, strategy)])
+    assert [r["fold_id"] for r in best["all_fold_results"]] == [0, 1]
+    assert best["score"] == (2, 1.5)

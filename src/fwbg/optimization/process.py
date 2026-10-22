@@ -317,6 +317,9 @@ def _process_single_variant(variant_idx, variant_label, variant_strategy,
             variant_ctx, sym, total_indicators,
             all_fold_results, accumulated_grid_results,
         )
+    # Parallel folds arrive in completion order; per-fold stats, the HP majority and
+    # the merges must not depend on thread timing.
+    all_fold_results.sort(key=lambda r: r["fold_id"])
 
     n_successful = len(all_fold_results)
     # Ranked on inner validation PnL: the test folds must not pick the variant.
