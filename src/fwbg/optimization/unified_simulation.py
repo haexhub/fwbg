@@ -147,7 +147,9 @@ def consistent_folds(fold_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     return [r for r, key in zip(fold_results, hp_keys) if key == majority_hp_key]
 
 
-def causal_candidates(wf_folds, fold_results: List[Dict[str, Any]]) -> List[Optional[Dict[str, Any]]]:
+def causal_candidates(
+    wf_folds, fold_results: List[Dict[str, Any]]
+) -> List[Optional[Dict[str, Any]]]:
     """Per walk-forward fold, the unified setting known before its test period.
 
     Fold k gets merge_unified_settings over the successful folds with fold_id <= k: each
@@ -182,13 +184,15 @@ def _candidate_context(ctx, candidate: Dict[str, Any]):
 
     # Propagate exit strategy from the candidate (critical for non-fixed
     # strategies like orb_based that need specific exit_params for TP/SL).
-    exit_strategy_name = candidate.get("exit_strategy")
+    exit_strategy_name = candidate.get("exit_strategy") or ctx.exit_strategy
     exit_params = candidate.get("exit_params")
-    if exit_strategy_name and exit_strategy_name != ctx.exit_strategy:
+    if exit_params is None:
+        exit_params = ctx.exit_params
+    if exit_strategy_name != ctx.exit_strategy or exit_params != ctx.exit_params:
         holdout_context = dataclasses.replace(
             holdout_context,
             exit_strategy=exit_strategy_name,
-            exit_params=exit_params or {},
+            exit_params=exit_params,
         )
     return holdout_context
 
@@ -230,7 +234,12 @@ def run_unified_simulation(
         report_phase(sym, f"Unified sim fold {fold_index + 1}/{len(wf_folds)}...")
 
         if candidate is None:
-            log(2, f"  Unified fold {fold.fold_id + 1}: not traded (no successful fold up to this one)", sym)
+            log(
+                2,
+                f"  Unified fold {fold.fold_id + 1}: "
+                "not traded (no successful fold up to this one)",
+                sym,
+            )
             unified_fold_results.append({
                 "trades": [], "trades_detailed": [], "pnl": 0.0, "win_rate": 0.0,
                 "n_trades": 0, "dropped_features": [], "fold_id": fold.fold_id,
