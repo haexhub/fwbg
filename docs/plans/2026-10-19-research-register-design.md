@@ -430,6 +430,13 @@ Known limitations:
   That is hindsight by design, for deployment. It can only remove a row from
   the ranking or let it through; it does not change the reported causal
   metrics.
+- With fewer than 10 causal trades the reported returns fall back to the
+  deployment sizing (`fk` calibrated on all folds, `causal_ok` in
+  `src/fwbg/optimization/process.py`). `pnl_to_returns` multiplies every
+  PnL by one positive scalar (`fk` over the mean loss), so Sharpe,
+  per-trade SR, skew and kurtosis, which the register ranks and deflates,
+  are unaffected; drawdown, Calmar and annual return in that case still use
+  hindsight sizing.
 - Externally cached signal data (e.g. provider probabilities that
   `jev_signal` reads) trained past the cutoff contaminates development and
   holdout alike; the pipeline cannot detect it.

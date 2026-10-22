@@ -7,6 +7,7 @@ imports this module.
 # Protocol 2: fold settings and the indicator variant are scored on inner training windows.
 # Protocol 3: in addition, each test fold is replayed with the setting merged from the
 # folds up to it (never a later fold's), and ML folds are kept whatever their test trade
-# count. No known test-set influence on the reported development metrics remains.
+# count. Reported Sharpe and return statistics no longer depend on the test folds; no_edge
+# and the sizing fallback with few causal trades still use all folds (register design doc).
 # Runs without the marker predate protocol 2.
 SELECTION_PROTOCOL = 3
