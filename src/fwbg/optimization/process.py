@@ -30,8 +30,13 @@ from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds, plan_walk_forward
 from .bias_checks import check_asset_bias, fold_bias_ratios
 from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
+from .causal_variants import VariantRecord, replay_prefix_variants, replay_view, variant_score
 from .process_fold import precompute_indicators, process_single_fold
 from .selection_protocol import SELECTION_PROTOCOL
+from .unified_simulation import (
+    causal_candidates, consistent_folds, hp_key, merge_unified_settings,
+    run_unified_simulation,
+)
 
 
 def _compute_trade_analytics(trades_detailed):
@@ -317,17 +322,19 @@ def _process_single_variant(variant_idx, variant_label, variant_strategy,
             variant_ctx, sym, total_indicators,
             all_fold_results, accumulated_grid_results,
         )
+    # Parallel folds arrive in completion order; per-fold stats, the HP majority and
+    # the merges must not depend on thread timing.
+    all_fold_results.sort(key=lambda r: r["fold_id"])
 
-    n_successful = len(all_fold_results)
-    # Ranked on inner validation PnL: the test folds must not pick the variant.
-    mean_pnl = float(np.mean([r["inner_val_pnl"] for r in all_fold_results])) if n_successful else float("-inf")
+    score = variant_score(all_fold_results)
+    n_successful, mean_pnl = score
 
     if n_variants > 1:
         log(1, f"  Variant result: {n_successful}/{len(wf_folds)} folds"
                + (f", mean_inner_pnl={mean_pnl:.1f}" if n_successful else ""), sym)
 
     return {
-        "score": (n_successful, mean_pnl),
+        "score": score,
         "label": variant_label,
         "strategy": variant_strategy,
         "ctx": variant_ctx,
@@ -344,7 +351,9 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
 
     Sequential processing avoids multiplying RAM by the number of variants.
     Each variant's precomputed_raw_df (~180MB+) is released before the next
-    variant starts, unless it's the current best.
+    variant starts, unless it's the current best. A grid's result also carries
+    a light record of every variant ("variants") and the best's index
+    ("frozen_index") for the causal replay.
     """
     n_variants = len(variants)
 
@@ -356,11 +365,17 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
 
     best_score = (-1, float("-inf"))
     best_data = None
+    best_index = None
+    records = []
 
     for idx, (label, strat) in enumerate(variants):
         result = _process_single_variant(
             idx, label, strat, df, wf_folds, asset, sym, n_variants,
         )
+        records.append(VariantRecord(
+            result["label"], result["strategy"], result["ctx"],
+            result["preprocessing_configs"], replay_view(result["all_fold_results"]),
+        ))
         if result["score"] > best_score:
             # Release previous best's heavy data
             if best_data is not None:
@@ -368,12 +383,15 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
                 best_data.pop("fold_indicators", None)
             best_score = result["score"]
             best_data = result
+            best_index = idx
         else:
             # Release this variant's heavy data immediately
             result.pop("precomputed_raw_df", None)
             result.pop("fold_indicators", None)
         gc.collect()
 
+    best_data["variants"] = records
+    best_data["frozen_index"] = best_index
     return best_data
 
 
@@ -653,7 +671,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # Aggregate metrics across all folds
         # A fold whose chosen setting traded nothing (kept: the test set must not filter
-        # folds) has no win rate; it still counts as a fold and in fold_stability.
+        # folds) has no win rate; it still counts as a fold in the per-fold PnL statistics.
         win_rates = [r["test_win_rate"] for r in all_fold_results if r["test_trades"] > 0]
         pnls = [r["test_pnl"] for r in all_fold_results]
         trades_counts = [r["test_trades"] for r in all_fold_results]
@@ -708,68 +726,67 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # === MODEL HYPERPARAMETERS CONSISTENCY ===
         # For rule-based signal strategies, model_hyperparameters define the strategy
-        # (rl level, hour window). Different HP = different strategy. Only aggregate
-        # trades from folds that agree on the same HP to avoid mixing strategies.
-        hp_list = [r["best_config"].get("model_hyperparameters") or {} for r in all_fold_results]
-
-        def _hp_key(hp):
-            """Hashable key for model_hyperparameters (ignoring None values)."""
-            if not hp:
-                return ()
-            def _make_hashable(v):
-                if isinstance(v, list):
-                    return tuple(v)
-                return v
-            return tuple(sorted((k, _make_hashable(v)) for k, v in hp.items() if v is not None))
-
-        hp_keys = [_hp_key(hp) for hp in hp_list]
-        hp_counts = {}
-        for key in hp_keys:
-            hp_counts[key] = hp_counts.get(key, 0) + 1
-        majority_hp_key = max(hp_counts, key=hp_counts.get) if hp_counts else ()
-        majority_hp_count = hp_counts.get(majority_hp_key, 0)
-        hp_consistent = majority_hp_count == len(all_fold_results)
-
-        if not hp_consistent:
-            # Only aggregate trades from folds with majority model_hyperparameters
-            consistent_folds = [
-                r for r, key in zip(all_fold_results, hp_keys)
-                if key == majority_hp_key
-            ]
-            inconsistent_count = len(all_fold_results) - len(consistent_folds)
+        # (rl level, hour window). Different HP = different strategy. The frozen merge
+        # uses only the majority-HP folds; each causal prefix applies the same rule.
+        majority_folds = consistent_folds(all_fold_results)
+        if len(majority_folds) < len(all_fold_results):
+            majority_hp_key = hp_key(majority_folds[0]["best_config"].get("model_hyperparameters"))
             # Show what each fold picked
-            for i, (r, hp) in enumerate(zip(all_fold_results, hp_list)):
-                is_majority = "✓" if hp_keys[i] == majority_hp_key else "✗"
-                log(2, f"    Fold {i+1}: hp={dict(hp) if hp else '{}'} {is_majority}", sym)
-            log(1, f"  Model HP inconsistent: {majority_hp_count}/{len(all_fold_results)} folds agree. "
-                   f"Dropping {inconsistent_count} inconsistent fold(s).", sym)
-        else:
-            consistent_folds = all_fold_results
+            for r in all_fold_results:
+                hp = r["best_config"].get("model_hyperparameters") or {}
+                is_majority = "✓" if hp_key(hp) == majority_hp_key else "✗"
+                log(
+                    2,
+                    f"    Fold {r['fold_id'] + 1}: hp={dict(hp) if hp else '{}'} {is_majority}",
+                    sym,
+                )
+            log(
+                1,
+                f"  Model HP inconsistent: {len(majority_folds)}/{len(all_fold_results)} "
+                "folds agree; the frozen setting merges only those.",
+                sym,
+            )
 
         # === UNIFIED SIMULATION ===
-        # Derive one setting from consistent folds, re-simulate all folds.
-        from .unified_simulation import merge_unified_settings, run_unified_simulation
-
-        unified_candidate = merge_unified_settings(consistent_folds, all_fold_results)
-
-        # Pass signal data prep for signal models
-        if ctx.model_type == "signal":
-            from .signal_fold import prepare_signal_fold_data
-            prepare_fn = prepare_signal_fold_data
+        # The frozen (deployment) setting merges all folds. The replay behind the
+        # reported metrics is causal: fold k uses the merge of folds 0..k only and,
+        # for an indicator grid, the variant best on folds 0..k (causal_variants.py).
+        unified_candidate = merge_unified_settings(majority_folds, all_fold_results)
+        tp_unified, sl_unified, ct_unified = unified_candidate["params"]
+        features_long = unified_candidate.get("selected_features_long") or []
+        features_short = unified_candidate.get("selected_features_short") or []
+        log(1, f"  Frozen setting: TP={tp_unified:.2f} SL={sl_unified:.2f} CT={ct_unified} "
+               f"timeout={unified_candidate.get('timeout_bars')} "
+               f"features={len(features_long)} long, {len(features_short)} short", sym)
+        if unified_candidate.get("model_hyperparameters"):
+            log(2, f"    Model HP: {unified_candidate['model_hyperparameters']}", sym)
+        if unified_candidate.get("exit_modifier_params"):
+            log(2, f"    Exit modifier: {unified_candidate['exit_modifier_params']}", sym)
+        if best_variant_data.get("variants"):
+            unified_fold_results = replay_prefix_variants(
+                wf_folds, best_variant_data["variants"], best_variant_data["frozen_index"],
+                fold_indicators, precomputed_raw_df, df, sym,
+            )
         else:
-            prepare_fn = None  # uses default (prepare_fold_data)
+            replay_candidates = causal_candidates(wf_folds, all_fold_results)
 
-        unified_fold_results = run_unified_simulation(
-            wf_folds, unified_candidate,
-            fold_indicators, precomputed_raw_df, preprocessing_configs,
-            ctx, sym, prepare_data_fn=prepare_fn,
-        )
+            # Pass signal data prep for signal models
+            if ctx.model_type == "signal":
+                from .signal_fold import prepare_signal_fold_data
+                prepare_fn = prepare_signal_fold_data
+            else:
+                prepare_fn = None  # uses default (prepare_fold_data)
+
+            unified_fold_results = run_unified_simulation(
+                wf_folds, replay_candidates,
+                fold_indicators, precomputed_raw_df, preprocessing_configs,
+                ctx, sym, prepare_data_fn=prepare_fn,
+            )
 
         # Release heavy data no longer needed after unified simulation
         del fold_indicators, precomputed_raw_df, best_variant_data, df
         gc.collect()
 
-        tp_unified, sl_unified, ct_unified = unified_candidate["params"]
         b_config = {
             "tp": tp_unified,
             "sl": sl_unified,
@@ -788,6 +805,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             all_trades_detailed.extend(unified_fold_result.get("trades_detailed") or [])
 
         n_unified_folds = len(unified_fold_results)
+        # Fold stability comes from the causal replay (an untraded fold is not profitable);
+        # the per-fold test PnL of the frozen variant stays a diagnostic (bias ratios, PBO).
+        replay_profitable_folds = sum(1 for r in unified_fold_results if r["pnl"] > 0)
+        replay_fold_stability = (
+            replay_profitable_folds / n_unified_folds if n_unified_folds else 0.0
+        )
 
         all_trades_pnl = [t["pnl_raw"] for t in all_trades]
         all_trades_binary = [t["result"] for t in all_trades]
@@ -826,9 +849,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                    f"for {circuit_breaker['pause_bars']} bars", sym)
 
         # === CAUSAL REPORTING CALIBRATION ===
-        # Der Deployment-Call oben kalibriert auf ALLEN Folds — korrekt fürs
-        # Live-Sizing (assets.json/bot.py), aber Hindsight-Optimierung fürs
-        # Reporting. Für die reported Metriken wird Fold i deshalb nur mit
+        # Der Deployment-Call oben kalibriert auf den Trades ALLER Folds des
+        # kausalen Replays: die Out-of-Sample-Bilanz, die ein Trader gehabt
+        # hätte (WR aus Trades der Prefix-Settings, RRR des Frozen Settings).
+        # Das ist das Live-Sizing (assets.json/bot.py) und das Sizing des
+        # Holdouts (development tr_trace), aber Hindsight fürs Reporting.
+        # Für die reported Metriken wird Fold i deshalb nur mit
         # einer auf Folds 0..i-1 kalibrierten Sizing bewertet (Fold 0 entfällt).
         from .causal_reporting import compute_causal_reporting
         causal = compute_causal_reporting(
@@ -918,8 +944,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             config_inconsistent=config_inconsistent,
             folds_without_bias_ratio=bias["folds_without_bias_ratio"],
         )
-        # Override total_trades with unified simulation count
+        # Override total_trades and fold stability with the unified simulation's values
         wf_summary["total_trades"] = total_trades
+        wf_summary["profitable_folds"] = replay_profitable_folds
+        wf_summary["fold_stability"] = replay_fold_stability
         wf_summary["causal_reporting"] = {
             "causal": causal_ok,
             "fold_0_excluded": True,
@@ -948,7 +976,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # Test period duration (used for annual return, sharpe, etc.)
         # Use all wf_folds (not just successful ones) because unified simulation
-        # re-simulates every fold with the merged config.
+        # replays every fold with its causal candidate; untraded leading folds
+        # still count in the test period.
         bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
         total_test_bars = sum(f.test_end - f.test_start for f in wf_folds)
         test_period_years = total_test_bars / bars_per_year if bars_per_year > 0 else 1
@@ -1090,14 +1119,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if mc_summary["bankruptcy_rate"] > 0.1:
             log(1, f"WARNING: {mc_summary['bankruptcy_rate']:.1%} Bankruptcy-Rate", sym)
 
-        # OOS fold stability: fraction of walk-forward folds with positive OOS PnL
-        oos_fold_stability = sum(1 for p in pnls if p > 0) / len(pnls) if pnls else 0
-
         result = {
             "symbol": sym,
             "status": "ok",
             "pnl": mean_pnl,
-            "fold_stability": oos_fold_stability,
+            "fold_stability": replay_fold_stability,
             "config": {
                 "risk_per_trade": fk,
                 "point_value": asset.point,

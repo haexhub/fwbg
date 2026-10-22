@@ -17,14 +17,21 @@ from fwbg.research.ledger import Trial, TrialKind
 from fwbg.research.repo import config_path
 
 MIN_RETURN_SAMPLES = 2
-# Hand-curated: the walk_forward.selection_protocol from which signal models and
-# indicator-grid variants are chosen on inner windows of each fold's training data.
-# Rows below it chose on test folds. Keep it at 2 when protocol 3 (causal unified
-# merge) arrives: that must not unrank protocol-2 rows unless decided separately.
-INNER_SELECTION_PROTOCOL = 2
-# Why an evaluation from before INNER_SELECTION_PROTOCOL is not ranked.
+# Hand-curated: the walk_forward.selection_protocol from which an optimizer run's
+# reported metrics are free of known test-fold influence. Protocol 2 chose signal
+# models and indicator-grid variants on inner windows of each fold's training data;
+# protocol 3 also replays each test fold with the indicator variant and the setting
+# chosen on the folds up to it. Remaining hindsight: no_edge and the sizing fallback
+# with few causal trades use all folds. Optimizer rows below it count in N but are
+# never ranked.
+RANKED_PROTOCOL = 3
+# From protocol 2 on, settings were chosen on training data; the all-fold merge,
+# variant choice and the ML test-trade filter kept such rows out.
+_INNER_SELECTION = 2
+# Why an evaluation from before RANKED_PROTOCOL is not ranked.
 SIGNAL_MODEL = "signal-model"
 INDICATOR_GRID = "indicator-grid"
+UNIFIED_MERGE = "unified-merge"
 _RETURN_INPUTS = ("sr_per_trade", "n_returns", "skew", "kurtosis")
 
 # criterion -> (metric, comparison that passes, sign shown on pass, sign shown on fail)
@@ -84,13 +91,16 @@ def development_trials(trials: Iterable[Trial]) -> list[Trial]:
 
 
 def unrankable_configs(research_dir: Path, trials: Iterable[Trial]) -> dict[str, str]:
-    """Development fingerprints whose stored config chose its setting on test folds.
+    """Development fingerprints of optimizer configs, which need RANKED_PROTOCOL.
 
-    Maps each to its reason: ``SIGNAL_MODEL`` or, for other models, ``INDICATOR_GRID``
-    (a config with both counts as a signal model). Each distinct config is read once.
-    A trial without a stored config (studies, legacy runs) stays rankable; so does
-    one whose config cannot be read or parsed: it is logged, not raised, so a corrupt
-    file never blocks a verdict (``show`` still refuses it in its coverage section).
+    An optimizer config is a stored config with a ``strategy.model`` mapping; a study
+    script that passes such a config counts as one. Maps each to the reason an
+    unmarked run of it is not ranked: ``SIGNAL_MODEL``, else ``INDICATOR_GRID`` for a
+    multi-variant indicator grid, else ``UNIFIED_MERGE`` (a config with several counts
+    once, in that order). Each distinct config is read once. A trial without a stored
+    config (studies, legacy runs) stays rankable; so does one whose config cannot be
+    read or parsed: it is logged, not raised, so a corrupt file never blocks a verdict
+    (``show`` still refuses it in its coverage section).
     """
     found = {}
     for fingerprint in dict.fromkeys(trial.fingerprint for trial in development_trials(trials)):
@@ -107,6 +117,8 @@ def unrankable_configs(research_dir: Path, trials: Iterable[Trial]) -> dict[str,
             found[fingerprint] = SIGNAL_MODEL
         elif _grid_variants(_mapping(strategy.get("optimization")).get("indicator_grid")) > 1:
             found[fingerprint] = INDICATOR_GRID
+        elif isinstance(strategy.get("model"), dict):
+            found[fingerprint] = UNIFIED_MERGE
     return found
 
 
@@ -133,21 +145,27 @@ def _ranked(
 ) -> bool:
     """Whether a development evaluation may be ranked.
 
-    Before INNER_SELECTION_PROTOCOL, signal models chose their setting and every
-    model its indicator-grid variant on the test folds: such evaluations count
-    in N but are never the best result or a return sample.
+    Before RANKED_PROTOCOL, an optimizer run's reported metrics depended on its
+    test folds (setting choice or unified merge): such evaluations count in N but
+    are never the best result or a return sample.
     """
+    return _protocol(values) >= RANKED_PROTOCOL or fingerprint not in unrankable
+
+
+def _protocol(values: Mapping[str, float | int | None]) -> float:
+    """The row's selection_protocol; 0 if it is unmarked."""
     protocol = values.get("selection_protocol")
-    marked = isinstance(protocol, (int, float)) and protocol >= INNER_SELECTION_PROTOCOL
-    return marked or fingerprint not in unrankable
+    return protocol if isinstance(protocol, (int, float)) else 0
 
 
 def unranked_evaluations(trials: Iterable[Trial], unrankable: Mapping[str, str]) -> dict[str, int]:
     """Development symbol evaluations left out of the ranking, per reason.
 
     Only evaluations that would otherwise be ranked (a Sharpe ratio or return
-    statistics) are counted; a metric-less one has nothing to leave out.
-    *unrankable* comes from :func:`unrankable_configs`.
+    statistics) are counted; a metric-less one has nothing to leave out. A row
+    marked with protocol 2 or later chose its setting on training data; the
+    all-fold merge, variant choice and ML test-trade filter kept it out (reported
+    as unified-merge). *unrankable* comes from :func:`unrankable_configs`.
     """
     counts: dict[str, int] = {}
     for trial in development_trials(trials):
@@ -155,7 +173,11 @@ def unranked_evaluations(trials: Iterable[Trial], unrankable: Mapping[str, str])
             if _ranked(trial.fingerprint, values, unrankable):
                 continue
             if isinstance(values.get("sharpe"), (int, float)) or _return_sample("", symbol, values):
-                reason = unrankable[trial.fingerprint]
+                reason = (
+                    UNIFIED_MERGE
+                    if _protocol(values) >= _INNER_SELECTION
+                    else unrankable[trial.fingerprint]
+                )
                 counts[reason] = counts.get(reason, 0) + 1
     return counts
 
@@ -167,10 +189,10 @@ def unranked_note(counts: Mapping[str, int]) -> str | None:
         return None
     reasons = ", ".join(
         f"{counts[reason]} {reason}"
-        for reason in (SIGNAL_MODEL, INDICATOR_GRID)
+        for reason in (SIGNAL_MODEL, INDICATOR_GRID, UNIFIED_MERGE)
         if reason in counts
     )
-    noun = f"pre-protocol-{INNER_SELECTION_PROTOCOL} evaluation"
+    noun = f"pre-protocol-{RANKED_PROTOCOL} evaluation"
     return f"{plural(total, noun)} not ranked (counted in N): {reasons}"
 
 

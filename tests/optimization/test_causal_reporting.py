@@ -115,6 +115,32 @@ class TestComputeCausalReporting:
         assert out1 == out2
 
 
+class RrrRiskManager(StubRiskManager):
+    """fk proportional to the RRR it is calibrated with."""
+
+    def compute_risk_params(self, trades, win_rate, rrr, rv_values=None, **params):
+        result = super().compute_risk_params(trades, win_rate, rrr, rv_values, **params)
+        return {**result, "risk_per_trade": 0.01 * rrr}
+
+
+class TestPerFoldRrr:
+    """Fold i is sized with the RRR of the setting it was replayed with."""
+
+    def test_each_fold_is_sized_with_its_own_rrr(self):
+        folds = [
+            {**_fold([(1.0, 0.003), (-1.0, -0.002)]), "rrr": 4.0},
+            {**_fold([(1.0, 0.004)]), "rrr": 1.0},
+            {**_fold([(-1.0, -0.001)]), "rrr": 3.0},
+        ]
+        out = compute_causal_reporting(folds, RrrRiskManager(), 2.0, {})
+        assert out["per_fold_risk"] == [None, pytest.approx(0.01), pytest.approx(0.03)]
+
+    def test_folds_without_rrr_fall_back_to_the_given_rrr(self):
+        folds = [_fold([(1.0, 0.003), (-1.0, -0.002)]), _fold([(1.0, 0.004)])]
+        out = compute_causal_reporting(folds, RrrRiskManager(), 2.0, {})
+        assert out["per_fold_risk"] == [None, pytest.approx(0.02)]
+
+
 class TestHindsightRemoval:
     """Kern-Eigenschaft: die kausale Kalibrierung kennt spätere Loss-Cluster
     nicht — die naive (Hindsight-)Kalibrierung skaliert das Risiko anhand

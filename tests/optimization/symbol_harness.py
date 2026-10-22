@@ -13,7 +13,7 @@ import pandas as pd
 from fwbg.core.config import StrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.data import config as data_config
-from fwbg.optimization import holdout, process, unified_simulation
+from fwbg.optimization import holdout, process
 from fwbg.optimization.resource_manager import SimplePoolManager
 from fwbg.results import storage
 from fwbg.utils import progress
@@ -111,7 +111,7 @@ def patch_development(monkeypatch, pairs) -> None:
     monkeypatch.setattr(process, "load_data_aligned", lambda path: hourly_frame())
     monkeypatch.setattr(process, "_run_indicator_variants", variants)
     monkeypatch.setattr(
-        unified_simulation,
+        process,
         "run_unified_simulation",
         lambda folds, *args, **kwargs: [unified_fold(fold, pairs) for fold in folds],
     )
@@ -123,7 +123,7 @@ def patch_holdout(monkeypatch, pairs=HOLDOUT, evaluations=None) -> list[dict]:
 
     def simulate(
         folds,
-        candidate,
+        candidates,
         fold_indicators,
         precomputed_raw_df,
         preprocessing_configs,
@@ -132,7 +132,7 @@ def patch_holdout(monkeypatch, pairs=HOLDOUT, evaluations=None) -> list[dict]:
         prepare_data_fn=None,
     ):
         calls.append(
-            {"folds": folds, "candidate": candidate, "ctx": ctx, "prepare": prepare_data_fn}
+            {"folds": folds, "candidates": candidates, "ctx": ctx, "prepare": prepare_data_fn}
         )
         return evaluations if evaluations is not None else [unified_fold(folds[0], pairs)]
 

@@ -376,7 +376,10 @@ card's holdout once; use it when iterating is done. The per-symbol worker
    recorded (`dropped_features`).
 3. **Sizing without hindsight:** holdout trades are sized with the
    development's fk (`risk_per_trade`), circuit breaker and loss scale; no
-   parameter is fitted on holdout trades.
+   parameter is fitted on holdout trades. The development calibrates them on
+   the trades of its causal replay over all folds (protocol 3, operator
+   decision 2026-10-22): the out-of-sample track record a trader would have
+   had, the same sizing a deployment exports.
 4. **Metrics come from holdout trades only.** The Monte Carlo test on them
    decides `ok` or `not_significant`. `win_rate` is over all holdout trades;
    `pnl`, `sharpe`, `calmar` and the return statistics are over the trades
@@ -423,19 +426,34 @@ shortcut: data is loaded and indicators precomputed twice per symbol.
 
 Known limitations:
 
-- ML folds are still dropped when the chosen setting makes fewer than 5
-  trades on the test fold (`src/fwbg/optimization/process_fold.py`), so the
-  test set still filters ML folds and with them the folds counted in the
-  variant score and `fold_stability`. Signal folds are no longer filtered
-  (see Selection protocol). Candidate for the next step together with the
-  unified merge.
-- The unified simulation (`src/fwbg/optimization/unified_simulation.py`)
-  merges the settings of all folds (medians, majority votes) and
-  re-simulates every test fold with the merged setting. An earlier test fold
-  is thereby traded with settings chosen in later folds, whose training
-  windows contain it, so the unified development metrics stay optimistic
-  (signal and ML models). Next step: a causal unified simulation, recorded
-  as `selection_protocol` 3.
+- The `no_edge` decision (whether a symbol has an edge; without one its
+  Sharpe is null) still uses the deployment sizing, calibrated on all
+  folds' replayed trades with the frozen setting's RRR (the risk management
+  call in `src/fwbg/optimization/process.py`, before causal reporting).
+  That is hindsight by design, for deployment. It can only remove a row from
+  the ranking or let it through; it does not change the reported causal
+  metrics.
+- The deployment sizing (`fk`, circuit breaker, loss scale; also the
+  holdout's) takes its win rate and loss sizes from the causal replay's
+  trades, which were traded with the prefix settings, but uses the frozen
+  setting's RRR. While the prefix settings differ from the frozen one, Kelly
+  mixes the two.
+- With fewer than 10 causal trades the reported returns fall back to the
+  deployment sizing (`fk` calibrated on all folds, `causal_ok` in
+  `src/fwbg/optimization/process.py`). `pnl_to_returns` multiplies every
+  PnL by one positive scalar (`fk` over the mean loss), so Sharpe,
+  per-trade SR, skew and kurtosis, which the register ranks and deflates,
+  are unaffected; drawdown, Calmar and annual return in that case still use
+  hindsight sizing.
+- If fold 0 fails, fold 1 is the first traded fold and has no prior trades,
+  so causal reporting excludes its trades, yet its bars still count in the
+  annualised test period (`reporting_test_bars` in
+  `src/fwbg/optimization/process.py` leaves out fold 0 only). Conservative:
+  annualised Sharpe and return read low; per-trade SR and DSR are
+  unaffected.
+- An unmarked run of a strategy file without `model` is stored without a
+  `strategy.model` mapping, so the register does not see it as an optimizer
+  evaluation and keeps it ranked (workspace configs set `model`).
 - Externally cached signal data (e.g. provider probabilities that
   `jev_signal` reads) trained past the cutoff contaminates development and
   holdout alike; the pipeline cannot detect it.
@@ -482,27 +500,72 @@ the share of folds whose best-of-grid test PnL was positive. Now
 - **Cost:** C combos × K inner windows plus one test evaluation per fold,
   instead of C test evaluations.
 
-**Register.** A development evaluation without
-`selection_protocol ≥ INNER_SELECTION_PROTOCOL` (`src/fwbg/research/stats.py`,
-hand-curated, 2) chose something on test folds if its stored config
-(`configs/<fingerprint>.json`) has `model.type == "signal"` (the setting
-itself) or an `optimization.indicator_grid` with more than one variant
-(before protocol 2 the variant was ranked by mean test PnL, for ML models
-too; the register counts variants as `expand_indicator_grid` does: per
-indicator the product of its value lists, summed over indicators). Such an
-evaluation counts in N but is never ranked: not the best development result
-(also in `list`, CLI and API), not a V[SR] sample, not the DSR's best. The
-verdict and `show` state how many were left out per reason, e.g. "3
-pre-protocol-2 evaluations not ranked (counted in N): 2 signal-model, 1
-indicator-grid"; a signal model with a grid counts once, as signal-model.
-Evaluations without metrics are not counted there (nothing to leave out).
-Earlier ML evaluations without a multi-variant grid stay rankable: their
-only setting choice was on inner windows. Evaluations without a stored
-config (studies, legacy runs) or with an unreadable one are ranked as
-unknown. Protocol 3 (causal unified merge) does not raise this threshold
-unless decided separately. Rerunning is the operator's call.
+Protocol 3 adds a causal unified replay
+(`src/fwbg/optimization/unified_simulation.py`, `causal_candidates`). Test
+fold k is replayed with `merge_unified_settings` over the successful folds
+with `fold_id ≤ k`, the model-HP majority rule applied to that prefix
+(folds ordered by `fold_id`): each of them chose its setting on its own
+training data, which ends before fold k's test data. With a multi-variant
+`optimization.indicator_grid`, protocol 3 also chooses the indicator
+variant per prefix (`src/fwbg/optimization/causal_variants.py`): fold k is
+replayed with the variant whose score (successful folds, then mean inner
+validation PnL; ties go to the earlier variant) is best over the folds with
+`fold_id ≤ k`, and with that variant's causal candidate for fold k. Folds
+are anchored, so a later fold's inner windows contain fold k's test period;
+a variant ranked over all folds was chosen partly on it. A variant that
+replays some folds without being the frozen one recomputes its indicators
+once for the replay, unless all its assigned folds are untraded. A fold
+before the first successful one is not traded (empty result); it still
+counts as a fold and in the test period. That differs from causal
+reporting's `untraded_folds`: folds that were replayed but get no causal
+size because Kelly on the trades of the earlier folds is ≤ 0. Each
+replayed fold is sized for causal Kelly reporting with the RRR of its own
+replay setting. The frozen setting (`development.json`, holdout,
+`best_config`, deployment) stays the merge over all folds of the frozen
+variant, the one best over all folds: what one would deploy after the last
+fold, where both variant choices coincide. `fold_stability` (a card
+criterion) and `walk_forward.profitable_folds` come from the replay: the
+share of replayed folds with PnL > 0, an untraded fold counting as not
+profitable and a fold without enough data for its replay not counting at
+all. A fold whose own selection failed is still replayed with the setting
+of the folds before it, so `profitable_folds` counts replayed folds and can
+exceed `n_folds` (the successful folds). The per-fold diagnostics (bias
+ratios, PBO, the per-fold PnL statistics, grid results) remain those of
+the frozen variant. ML folds are kept whatever their test trade count,
+like signal folds. Before protocol 3 the replay traded every test fold with
+the frozen variant's merge over all folds, so an earlier fold was traded with a
+variant and settings chosen in later folds, whose training windows contain
+it, and ML folds with fewer than 5 test trades were dropped: the test set
+shaped the reported development metrics of signal and ML models alike.
 
-ML results change too, so old and new runs differ:
+**Register.** An optimizer evaluation (its stored config
+`configs/<fingerprint>.json` has a `strategy.model` mapping) without
+`selection_protocol ≥ RANKED_PROTOCOL` (`src/fwbg/research/stats.py`,
+hand-curated, 3) has development metrics that depended on its test folds.
+Such an evaluation counts in N but is never ranked: not the best
+development result (also in `list`, CLI and API), not a V[SR] sample, not
+the DSR's best. The verdict and `show` state how many were left out per
+reason, e.g. "4 pre-protocol-3 evaluations not ranked (counted in N): 1
+signal-model, 1 indicator-grid, 2 unified-merge". The reason of an evaluation
+without the marker comes from its config: signal-model for
+`model.type == "signal"` (the setting itself was chosen on test folds),
+else indicator-grid for an `optimization.indicator_grid` with more than one
+variant (the variant was ranked by mean test PnL, for ML models too; the
+register counts variants as `expand_indicator_grid` does: per indicator the
+product of its value lists, summed over indicators), else unified-merge. A
+config with several reasons counts once, in that order. An evaluation
+marked 2 chose its setting on inner windows; the merge over all folds, the
+variant choice over all folds (grid configs) and the ML test-trade filter
+kept it out. It is reported as unified-merge. Rows below protocol 3 also
+carry the `fold_stability` of the frozen variant's per-fold test PnL, not
+the replay's. Evaluations without metrics are not counted there (nothing
+to leave out). A study script that passes a config
+with a `strategy.model` mapping counts as an optimizer evaluation
+(conservative). Evaluations without a stored config (studies, legacy runs)
+stay ranked; those with an unreadable config are ranked as unknown.
+Rerunning is the operator's call.
+
+ML results changed with protocol 2 too, so old and new runs differ:
 
 - Variants ranked by mean inner validation PnL (before: mean test PnL).
 - `mean_bias_ratio` is Σ test PnL / Σ inner PnL over the folds with a
@@ -514,7 +577,8 @@ ML results change too, so old and new runs differ:
 - Mixed `None`/integer `timeout_bars` across the grid now get DSR and PBO
   instead of falling back to `dsr = 0`.
 - Folds with no test trade are left out of win-rate statistics (they still
-  count as folds and in `fold_stability`).
+  count as folds and in the per-fold PnL statistics; from protocol 3 on,
+  `fold_stability` comes from the causal replay).
 - `selection_protocol` is stamped on every result, ML included.
 
 ## Tooling
@@ -546,8 +610,8 @@ Auto-computed (`src/fwbg/research/commands.py`, `stats.py`): N (counted
 trials and symbol evaluations of the card, plus the register's for
 context), the distinct `criteria_hash` values used, holdout state, the best
 development result (by Sharpe) against the current criteria, the Deflated
-Sharpe Ratio, one line per holdout look and how many signal-model
-evaluations predate selection protocol 2 (counted in N, not ranked; see
+Sharpe Ratio, one line per holdout look and how many optimizer
+evaluations predate `RANKED_PROTOCOL` (counted in N, not ranked; see
 Selection protocol). Manual: reason and **reopen condition** (what new
 evidence or capability would justify another round).
 
@@ -561,8 +625,8 @@ of Bailey & López de Prado 2014, stdlib only):
 - **V[SR]:** the unbiased sample variance (n − 1) of the per-trade SRs of
   the card's development evaluations that carry return statistics. Legacy
   evaluations of runs before step 5 and `no_edge` evaluations have none;
-  they count in N only, as do signal-model evaluations from before
-  selection protocol 2 (their SRs were chosen on the test folds).
+  they count in N only, as do optimizer evaluations below
+  `RANKED_PROTOCOL` (their SRs depended on the test folds).
 - **V[SR] floor** (operator decision 2026-10-21): V[SR] is at least the mean
   over those evaluations of 1/(T − 1), T being each one's return count.
   Under the null of zero true SR, a per-trade SR estimated from T returns
@@ -580,9 +644,10 @@ of Bailey & López de Prado 2014, stdlib only):
   "> 0.9999".
 - Fewer than 2 evaluations with return statistics → "too few trials with
   return statistics". Skew and kurtosis that leave no positive SR variance
-  → "not defined". Development metrics stay optimistic through the unified
-  merge (see Holdout look, Known limitations), so the best SR is still
-  biased upward.
+  → "not defined". Ranked optimizer evaluations (protocol 3) take their
+  per-trade returns from the causal replay; which of them are `no_edge`,
+  and so left without return statistics, is still decided with hindsight
+  (see Holdout look, Known limitations).
 
 Holdout result: one line per holdout trial with the evaluated period
 (`holdout <cutoff>..<end or open>`), each symbol checked against the current

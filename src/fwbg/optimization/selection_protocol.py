@@ -4,9 +4,10 @@ The research register reads the recorded value from the run files (JSON); it nev
 imports this module.
 """
 
-# Protocol 2: each fold's setting (signal and ML models) and the indicator variant are
-# scored on inner windows of the fold's training data, never on the fold's test set.
-# Known remaining test-set influences: ML folds are dropped when they have too few test
-# trades (process_fold.py), and the unified merge applies settings from later folds to
-# earlier test folds (D6, protocol 3). Runs without the marker predate protocol 2.
-SELECTION_PROTOCOL = 2
+# Protocol 2: fold settings and the indicator variant are scored on inner training windows.
+# Protocol 3: in addition, each test fold is replayed with the indicator variant and the
+# setting merged from the folds up to it (never a later fold's), and ML folds are kept
+# whatever their test trade count. Remaining hindsight: no_edge and the sizing fallback
+# with few causal trades still use all folds (register design doc).
+# Runs without the marker predate protocol 2.
+SELECTION_PROTOCOL = 3
