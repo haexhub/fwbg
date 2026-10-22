@@ -32,6 +32,20 @@ class VariantRecord:
     fold_results: List[Dict[str, Any]]
 
 
+_REPLAY_KEYS = (
+    "fold_id",
+    "inner_val_pnl",
+    "best_config",
+    "selected_features_long",
+    "selected_features_short",
+)
+
+
+def replay_view(fold_results: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The fold results reduced to what scoring and merging read (no test trades)."""
+    return [{key: r[key] for key in _REPLAY_KEYS if key in r} for r in fold_results]
+
+
 def variant_score(fold_results: Sequence[Dict[str, Any]]) -> Tuple[int, float]:
     """(successful folds, mean inner validation PnL or -inf without any).
 
@@ -77,6 +91,17 @@ def replay_prefix_variants(
     the frozen variant's data plus one other variant's is held at a time.
     """
     choice = prefix_variant_choice(wf_folds, [variant.fold_results for variant in variants])
+    # The last prefix holds every fold, so it must pick the frozen variant; anything
+    # else means the two rankings diverged and the replay would not end on the frozen one.
+    if choice and choice[-1] != frozen_index:
+        raise ValueError(
+            f"last fold chose variant {choice[-1]}, but the frozen variant is {frozen_index}"
+        )
+    if len(set(choice)) > 1:
+        mapping = " ".join(
+            f"{fold.fold_id + 1}:{variants[index].label}" for fold, index in zip(wf_folds, choice)
+        )
+        log(1, f"  Replay variants per fold: {mapping}", sym)
     results: List[Dict[str, Any]] = []
     for index in sorted(set(choice)):
         variant = variants[index]
@@ -87,20 +112,13 @@ def replay_prefix_variants(
 
         if index == frozen_index:
             indicators, raw_df = frozen_indicators, frozen_raw_df
+        elif all(candidate is None for candidate in candidates):
+            indicators, raw_df = None, None  # untraded folds prepare no data
         else:
-            log(
-                1,
-                f"  Replay folds {[fold.fold_id + 1 for fold in folds]} "
-                f"with variant {variant.label}",
-                sym,
-            )
-            if all(candidate is None for candidate in candidates):
-                indicators, raw_df = None, None  # untraded folds prepare no data
-            else:
-                # ponytail: a non-frozen variant recomputes its indicators once for the
-                # replay (memory over CPU, as the variant loop does); caching them would
-                # hold every variant's data at once.
-                indicators, raw_df, _ = precompute_indicators(df, variant.strategy, sym)
+            # ponytail: a non-frozen variant recomputes its indicators once for the
+            # replay (memory over CPU, as the variant loop does); caching them would
+            # hold every variant's data at once.
+            indicators, raw_df, _ = precompute_indicators(df, variant.strategy, sym)
 
         prepare = prepare_signal_fold_data if variant.ctx.model_type == "signal" else None
         results.extend(

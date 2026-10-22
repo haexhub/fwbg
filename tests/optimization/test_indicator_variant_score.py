@@ -10,7 +10,18 @@ FOLDS = [SimpleNamespace(fold_id=0), SimpleNamespace(fold_id=1)]
 def _variant(label, folds):
     """A variant whose folds report (inner_val_pnl, test_pnl); None = failed fold."""
     results = [
-        None if pnls is None else {"fold_id": i, "inner_val_pnl": pnls[0], "test_pnl": pnls[1]}
+        (
+            None
+            if pnls is None
+            else {
+                "fold_id": i,
+                "inner_val_pnl": pnls[0],
+                "test_pnl": pnls[1],
+                "best_config": {"tp": 2.0, "sl": 1.0, "ct": 0.5},
+                "test_trades_trace": [{"pnl_raw": pnls[1]}],
+                "test_trades_detail": [{"pnl_raw": pnls[1]}],
+            }
+        )
         for i, pnls in enumerate(folds)
     ]
     strategy = SimpleNamespace(
@@ -88,6 +99,10 @@ def test_a_grid_keeps_a_light_record_of_every_variant(monkeypatch):
     assert [len(record.fold_results) for record in best["variants"]] == [2, 1, 2]
     assert best["variants"][2].ctx is best["ctx"]
     assert not any(hasattr(record, "fold_indicators") for record in best["variants"])
+    # Test trades are not needed by the replay; the frozen variant keeps its own in full.
+    kept = [set(r) for record in best["variants"] for r in record.fold_results]
+    assert not any({"test_trades_trace", "test_trades_detail"} & keys for keys in kept)
+    assert all("test_trades_trace" in r for r in best["all_fold_results"])
 
 
 def test_a_single_variant_keeps_no_records(monkeypatch):
