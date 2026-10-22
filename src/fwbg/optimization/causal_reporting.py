@@ -132,7 +132,8 @@ def compute_causal_reporting(
     den Trades der Folds 0..i-1 aufgerufen; das Ergebnis (risk_per_trade,
     Circuit-Breaker) wird ohne erneute Suche auf Fold i angewandt. Auch die
     Loss-Skala der Return-Umrechnung (avg. Loss, vgl. ``pnl_to_returns``)
-    stammt ausschließlich aus den Prior-Folds.
+    stammt ausschließlich aus den Prior-Folds. Das RRR ist das des Settings,
+    mit dem Fold i getradet wurde (``fold_result["rrr"]``), sonst ``rrr``.
 
     Fold 0 hat keine Prior-Daten und wird ausgeschlossen. Liefert die
     Prior-Kalibrierung fk <= 0, gilt der Fold als nicht getradet.
@@ -175,7 +176,7 @@ def compute_causal_reporting(
         else:
             prior_wr = sum(1 for b in prior_binary if b > 0) / len(prior_binary)
             risk_result = risk_mgr.compute_risk_params(
-                prior_binary, prior_wr, rrr,
+                prior_binary, prior_wr, fold_result.get("rrr", rrr),
                 rv_values=prior_rv if len(prior_rv) == len(prior_binary) else None,
                 **risk_params,
             )
