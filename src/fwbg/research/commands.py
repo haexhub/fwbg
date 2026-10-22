@@ -259,7 +259,7 @@ def verdict_entry(
 
     *pending* is the number of pending runs (of other cards) not yet in *trials*;
     *actor*, if given, is recorded after the reopen condition. *unrankable* maps
-    the fingerprints not ranked below RANKED_PROTOCOL to their
+    the fingerprints whose runs below RANKED_PROTOCOL are not ranked to their
     reason (:func:`~fwbg.research.stats.unrankable_configs`).
     """
     own = [trial for trial in trials if trial.strategy == card.id]
