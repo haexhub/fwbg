@@ -12,9 +12,11 @@ from fwbg.optimization.causal_variants import (
     VariantRecord,
     prefix_variant_choice,
     replay_prefix_variants,
+    replay_view,
     variant_score,
 )
 from fwbg.optimization.process import process_symbol
+from fwbg.optimization.signal_fold import prepare_signal_fold_data
 from tests.optimization import symbol_harness
 from tests.optimization.symbol_harness import STRATEGY, SYMBOL_FILE, WINNING
 
@@ -141,7 +143,7 @@ def _patch_two_variants(monkeypatch):
     return strategies, contexts, precomputed, replays
 
 
-def test_each_fold_is_replayed_once_with_the_variant_best_up_to_it(monkeypatch):
+def test_each_fold_is_replayed_once_with_the_variant_best_up_to_it(monkeypatch, capsys):
     strategies, contexts, precomputed, replays = _patch_two_variants(monkeypatch)
     reported = []
     compute = causal_reporting.compute_causal_reporting
@@ -170,19 +172,25 @@ def test_each_fold_is_replayed_once_with_the_variant_best_up_to_it(monkeypatch):
     # The frozen setting stays the frozen variant's full merge.
     assert result["indicator_variant"] == "late"
     assert result["unified_candidate"]["params"][0] == BASE_TP["late"] + (n_folds - 1) / 2
+    mapping = " ".join(f"{k + 1}:{'early' if k < 2 else 'late'}" for k in range(n_folds))
+    assert f"Replay variants per fold: {mapping}" in capsys.readouterr().err
+
+
+def _record_simulations(monkeypatch):
+    """Replace the fold simulation with a recorder of (folds, candidates, data, prepare)."""
+    calls = []
+
+    def simulate(folds, candidates, indicators, *args, prepare_data_fn=None):
+        calls.append((folds, candidates, indicators, prepare_data_fn))
+        return [{"fold_id": fold.fold_id} for fold in folds]
+
+    monkeypatch.setattr(causal_variants, "run_unified_simulation", simulate)
+    return calls
 
 
 def test_a_variant_without_a_setting_on_its_folds_is_not_recomputed(monkeypatch):
-    calls = []
+    calls = _record_simulations(monkeypatch)
     monkeypatch.setattr(causal_variants, "precompute_indicators", pytest.fail)
-    monkeypatch.setattr(
-        causal_variants,
-        "run_unified_simulation",
-        lambda folds, candidates, indicators, *args, **kwargs: calls.append(
-            (folds, candidates, indicators)
-        )
-        or [{"fold_id": fold.fold_id} for fold in folds],
-    )
     ctx = SimpleNamespace(model_type="xgboost")
     records = [
         VariantRecord("first", None, ctx, [], _results([None, 1.0, 1.0, 1.0])),
@@ -191,8 +199,55 @@ def test_a_variant_without_a_setting_on_its_folds_is_not_recomputed(monkeypatch)
     results = replay_prefix_variants(FOLDS, records, 1, "frozen-indicators", None, None, "TEST")
 
     assert [r["fold_id"] for r in results] == [0, 1, 2, 3]
-    (first_folds, first_candidates, first_data), (frozen_folds, _, frozen_data) = calls
+    (first_folds, first_candidates, first_data, _), (frozen_folds, _, frozen_data, _) = calls
     assert [fold.fold_id for fold in first_folds] == [0] and first_candidates == [None]
     assert first_data is None
     assert [fold.fold_id for fold in frozen_folds] == [1, 2, 3]
     assert frozen_data == "frozen-indicators"
+
+
+def test_a_signal_variant_prepares_signal_fold_data(monkeypatch):
+    calls = _record_simulations(monkeypatch)
+    monkeypatch.setattr(causal_variants, "precompute_indicators", lambda *args: (None, None, 0))
+    records = [
+        VariantRecord(
+            "signal",
+            None,
+            SimpleNamespace(model_type="signal"),
+            [],
+            _results([9.0, 0.0, 0.0, -20.0]),
+        ),
+        VariantRecord("ml", None, SimpleNamespace(model_type="xgboost"), [], _results([1.0] * 4)),
+    ]
+    replay_prefix_variants(FOLDS, records, 1, None, None, None, "TEST")
+
+    assert [prepare for *_, prepare in calls] == [prepare_signal_fold_data, None]
+
+
+def test_the_last_fold_must_replay_the_frozen_variant(monkeypatch):
+    _record_simulations(monkeypatch)
+    ctx = SimpleNamespace(model_type="xgboost")
+    records = [
+        VariantRecord("worse", None, ctx, [], _results([1.0] * 4)),
+        VariantRecord("best", None, ctx, [], _results([2.0] * 4)),
+    ]
+    with pytest.raises(ValueError, match="frozen"):
+        replay_prefix_variants(FOLDS, records, 0, None, None, None, "TEST")
+
+
+def test_replay_view_keeps_only_what_the_replay_reads():
+    result = {
+        **_results([1.0])[0],
+        "selected_features_long": ["f1"],
+        "test_trades_trace": [{"pnl_raw": 1.0}],
+        "test_trades_detail": [{"entry_time": "t"}],
+        "test_pnl": 3.0,
+    }
+    assert replay_view([result]) == [
+        {
+            "fold_id": 0,
+            "inner_val_pnl": 1.0,
+            "best_config": result["best_config"],
+            "selected_features_long": ["f1"],
+        }
+    ]

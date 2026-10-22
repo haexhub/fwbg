@@ -30,7 +30,7 @@ from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds, plan_walk_forward
 from .bias_checks import check_asset_bias, fold_bias_ratios
 from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
-from .causal_variants import VariantRecord, replay_prefix_variants, variant_score
+from .causal_variants import VariantRecord, replay_prefix_variants, replay_view, variant_score
 from .process_fold import precompute_indicators, process_single_fold
 from .selection_protocol import SELECTION_PROTOCOL
 
@@ -370,7 +370,7 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
         )
         records.append(VariantRecord(
             result["label"], result["strategy"], result["ctx"],
-            result["preprocessing_configs"], result["all_fold_results"],
+            result["preprocessing_configs"], replay_view(result["all_fold_results"]),
         ))
         if result["score"] > best_score:
             # Release previous best's heavy data
