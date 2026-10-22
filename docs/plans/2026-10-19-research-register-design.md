@@ -488,18 +488,29 @@ Protocol 3 adds a causal unified replay
 fold k is replayed with `merge_unified_settings` over the successful folds
 with `fold_id ≤ k`, the model-HP majority rule applied to that prefix
 (folds ordered by `fold_id`): each of them chose its setting on its own
-training data, which ends before fold k's test data. A fold before the
-first successful one is not traded (empty result); it still counts as a
-fold and in the test period. Each replayed fold is sized for causal Kelly
-reporting with the RRR of its own replay setting. The frozen setting
-(`development.json`, holdout, `best_config`, deployment) stays the merge
-over all folds: what one would deploy after the last fold. ML folds are
-kept whatever their test trade count, like signal folds. Before protocol 3
-the replay traded every test fold with the merge over all folds, so an
-earlier fold was traded with settings chosen in later folds, whose training
-windows contain it, and ML folds with fewer than 5 test trades were dropped:
-the test set shaped the reported development metrics of signal and ML
-models alike.
+training data, which ends before fold k's test data. With a multi-variant
+`optimization.indicator_grid`, protocol 3 also chooses the indicator
+variant per prefix (`src/fwbg/optimization/causal_variants.py`): fold k is
+replayed with the variant whose score (successful folds, then mean inner
+validation PnL; ties go to the earlier variant) is best over the folds with
+`fold_id ≤ k`, and with that variant's causal candidate for fold k. Folds
+are anchored, so a later fold's inner windows contain fold k's test period;
+a variant ranked over all folds was chosen partly on it. A variant that
+replays some folds without being the frozen one recomputes its indicators
+once for the replay. A fold before the first successful one is not traded
+(empty result); it still counts as a fold and in the test period. Each
+replayed fold is sized for causal Kelly reporting with the RRR of its own
+replay setting. The frozen setting (`development.json`, holdout,
+`best_config`, deployment) stays the merge over all folds of the frozen
+variant, the one best over all folds: what one would deploy after the last
+fold, where both variant choices coincide. The per-fold diagnostics
+(`fold_stability`, bias ratios, PBO, grid results) remain those of the
+frozen variant. ML folds are kept whatever their test trade count, like
+signal folds. Before protocol 3 the replay traded every test fold with the
+frozen variant's merge over all folds, so an earlier fold was traded with a
+variant and settings chosen in later folds, whose training windows contain
+it, and ML folds with fewer than 5 test trades were dropped: the test set
+shaped the reported development metrics of signal and ML models alike.
 
 **Register.** An optimizer evaluation (its stored config
 `configs/<fingerprint>.json` has a `strategy.model` mapping) without
