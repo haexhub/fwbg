@@ -711,8 +711,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
 
         # === MODEL HYPERPARAMETERS CONSISTENCY ===
         # For rule-based signal strategies, model_hyperparameters define the strategy
-        # (rl level, hour window). Different HP = different strategy. Only aggregate
-        # trades from folds that agree on the same HP to avoid mixing strategies.
+        # (rl level, hour window). Different HP = different strategy. The frozen merge
+        # uses only the majority-HP folds; each causal prefix applies the same rule.
         from .unified_simulation import (
             causal_candidates, consistent_folds, hp_key, merge_unified_settings,
             run_unified_simulation,
@@ -722,12 +722,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         if len(majority_folds) < len(all_fold_results):
             majority_hp_key = hp_key(majority_folds[0]["best_config"].get("model_hyperparameters"))
             # Show what each fold picked
-            for i, r in enumerate(all_fold_results):
+            for r in all_fold_results:
                 hp = r["best_config"].get("model_hyperparameters") or {}
                 is_majority = "✓" if hp_key(hp) == majority_hp_key else "✗"
-                log(2, f"    Fold {i+1}: hp={dict(hp) if hp else '{}'} {is_majority}", sym)
-            log(1, f"  Model HP inconsistent: {len(majority_folds)}/{len(all_fold_results)} folds agree. "
-                   f"Dropping {len(all_fold_results) - len(majority_folds)} inconsistent fold(s).", sym)
+                log(2, f"    Fold {r['fold_id'] + 1}: hp={dict(hp) if hp else '{}'} {is_majority}", sym)
+            log(1, f"  Model HP inconsistent: {len(majority_folds)}/{len(all_fold_results)} folds agree; "
+                   "the frozen setting merges only those.", sym)
 
         # === UNIFIED SIMULATION ===
         # The frozen (deployment) setting merges all folds. The replay behind the
