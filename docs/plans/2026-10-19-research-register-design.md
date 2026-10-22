@@ -526,10 +526,14 @@ variant, the one best over all folds: what one would deploy after the last
 fold, where both variant choices coincide. `fold_stability` (a card
 criterion) and `walk_forward.profitable_folds` come from the replay: the
 share of replayed folds with PnL > 0, an untraded fold counting as not
-profitable. The per-fold diagnostics (bias ratios, PBO, the per-fold PnL
-statistics, grid results) remain those of the frozen variant. ML folds are
-kept whatever their test trade count, like signal folds. Before protocol 3 the replay traded every test fold with the
-frozen variant's merge over all folds, so an earlier fold was traded with a
+profitable and a fold without enough data for its replay not counting at
+all. A fold whose own selection failed is still replayed with the setting
+of the folds before it, so `profitable_folds` counts replayed folds and can
+exceed `n_folds` (the successful folds). The per-fold diagnostics (bias
+ratios, PBO, the per-fold PnL statistics, grid results) remain those of
+the frozen variant. ML folds are kept whatever their test trade count,
+like signal folds. Before protocol 3 the replay traded every test fold with
+the frozen variant's merge over all folds, so an earlier fold was traded with a
 variant and settings chosen in later folds, whose training windows contain
 it, and ML folds with fewer than 5 test trades were dropped: the test set
 shaped the reported development metrics of signal and ML models alike.
@@ -554,7 +558,8 @@ marked 2 chose its setting on inner windows; the merge over all folds, the
 variant choice over all folds (grid configs) and the ML test-trade filter
 kept it out. It is reported as unified-merge. Rows below protocol 3 also
 carry the `fold_stability` of the frozen variant's per-fold test PnL, not
-the replay's. Evaluations without metrics are not counted there (nothing to leave out). A study script that passes a config
+the replay's. Evaluations without metrics are not counted there (nothing
+to leave out). A study script that passes a config
 with a `strategy.model` mapping counts as an optimizer evaluation
 (conservative). Evaluations without a stored config (studies, legacy runs)
 stay ranked; those with an unreadable config are ranked as unknown.
