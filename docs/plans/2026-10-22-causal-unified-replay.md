@@ -238,6 +238,89 @@ becomes wrong.
 
 ---
 
+### Task 4: Causal indicator-variant choice in the replay (operator decision 2026-10-22)
+
+**Finding (final review):** with a multi-variant `indicator_grid`, `_run_indicator_variants`
+(`process.py:345`) keeps the variant with the best `(n_successful, mean inner_val_pnl)` over ALL
+folds (`process.py:324-333`). Folds are anchored, so fold j's inner windows contain the test
+periods of folds k < j: fold k's replay used a variant chosen partly on its own test data.
+
+**Decision D6:** replay fold k with the variant whose score over the folds with `fold_id <= k`
+is best (same score tuple, same tie rule: the earlier variant wins), and with that variant's
+causal candidate for fold k. The frozen variant (development.json, holdout, deployment,
+per-fold diagnostics: fold_stability, bias ratios, PBO, grid results) stays the best over all
+folds; at the last fold both coincide.
+
+**Files:**
+- Create: `src/fwbg/optimization/causal_variants.py` (≤ 150 LoC)
+- Modify: `src/fwbg/optimization/process.py` (`_process_single_variant` score, `_run_indicator_variants`
+  return value, replay call)
+- Modify: `src/fwbg/optimization/unified_simulation.py` (each result carries `fold_id`)
+- Test: `tests/optimization/test_causal_variants.py`, `tests/optimization/test_indicator_variant_score.py`,
+  `tests/optimization/test_unified_simulation.py`
+
+**Design:**
+- `variant_score(fold_results) -> (n_successful, mean inner_val_pnl or -inf)`: the score
+  `_process_single_variant` computes today, moved here and used by both.
+- `prefix_variant_choice(wf_folds, variant_fold_results) -> list[int]`: per walk-forward fold k,
+  the index of the variant with the best `variant_score` over its results with
+  `fold_id <= k`; ties → lowest index (matches the strict `>` in `_run_indicator_variants`).
+- `_run_indicator_variants` additionally returns, for multi-variant grids, a light record per
+  variant (label, strategy, ctx, preprocessing_configs, all_fold_results sorted by fold_id) — no
+  heavy data. Single variant: unchanged.
+- Replay (`process.py`): one variant → as now. Several → `choice = prefix_variant_choice(...)`;
+  for each distinct chosen variant (in index order) take its causal candidates
+  (`causal_candidates(wf_folds, its fold results)`), keep only the folds assigned to it (other
+  folds get no call), prepare its indicators (`precompute_indicators`; reuse the frozen variant's
+  data when it is the frozen one), call `run_unified_simulation` on that fold subset, release
+  the data. Merge all results and sort by `fold_id`. `ponytail:` comment: non-frozen variants
+  recompute their indicators once for the replay (memory over CPU, as the variant loop does).
+- `run_unified_simulation` tags every result (untraded included) with the fold's `fold_id`.
+- Log at level 1 which variant replays which folds when they differ from the frozen variant.
+- The heavy-data `del` after the replay still runs.
+
+**Tests (TDD):**
+- `variant_score`: none successful → `(0, -inf)`; mean of inner_val_pnl otherwise.
+- `prefix_variant_choice`: variant A best on folds 0-1, B best overall → `[A, A, …, B]` at the
+  folds where B's prefix score overtakes; tie → lower index; a variant with more successful folds
+  in the prefix wins over a better mean (tuple order); fold results given unsorted give the same
+  result.
+- Replay through the process path with two fake variants (patch `_process_single_variant` /
+  `precompute_indicators` / `run_unified_simulation` as the existing variant-score tests do):
+  each fold is simulated exactly once, with its chosen variant's ctx and candidate; results come
+  back in fold order; the frozen variant's data is not recomputed; development.json still holds
+  the frozen variant's full merge.
+- `run_unified_simulation` results carry `fold_id`.
+
+**Register:** protocol 3 then covers grid configs too; `INDICATOR_GRID` stays only a reason for
+rows below protocol 3. Update the design doc (Selection protocol: protocol 3 also chooses the
+variant per prefix; per-fold diagnostics remain those of the frozen variant).
+
+**Commit:** `fix(optimization): choose the replay variant on folds up to each test fold`
+
+---
+
+### Task 5: Review follow-ups
+
+- `process.py:~942-943` stale comment "re-simulates every fold with the merged config" → replays
+  every fold with its causal candidate; untraded leading folds still count in the test period.
+- `stats.py` and design doc: a protocol-2 row was kept out by the merge AND the ML test-trade
+  filter (label stays unified-merge).
+- Design doc limitations: (a) if fold 0 fails, the bars of fold 1 still count in the annualised
+  test period although its trades are excluded from causal reporting (conservative: annualised
+  Sharpe and return read low; per-trade SR and DSR unaffected); (b) an unmarked run of a strategy
+  file without `model` is stored without a `strategy.model` mapping and stays ranked (workspace
+  configs set `model`).
+- `merge_unified_settings` parameter `consistent_folds` → `majority_folds` (shadows the function).
+- `commands.py:262`, `views.py:155` docstrings: "the fingerprints whose runs below
+  RANKED_PROTOCOL are not ranked".
+- `selection_protocol.py` / `stats.py` comments name only the remaining hindsight (no_edge,
+  sizing fallback) once Task 4 lands.
+
+**Commit:** `chore: protocol 3 review follow-ups`
+
+---
+
 ### Final
 
 - Whole-branch review.
