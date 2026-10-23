@@ -317,6 +317,8 @@ class TestHoldoutUsesWinningCandidateParams:
     """Verify that holdout evaluation uses the winning candidate's
     model_hyperparameters and exit_modifier_params, not the base ctx."""
 
+    VARIANT_HP = {"signal_column_long": "winner_long", "signal_column_short": "winner_short"}
+
     def test_holdout_receives_candidate_model_hyperparameters(self):
         """evaluate_on_holdout must be called with ctx containing the
         winning candidate's model_hyperparameters, not the base."""
@@ -454,9 +456,28 @@ class TestHoldoutUsesWinningCandidateParams:
 
     def test_fold_result_stores_winning_model_hyperparameters(self):
         """fold_result['best_config'] must include the winning model_hyperparameters."""
+        result = self._run_winning_fold(
+            {"pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": []}
+        )
+
+        assert result is not None
+        assert result["best_config"]["model_hyperparameters"] == self.VARIANT_HP
+
+    @pytest.mark.parametrize("n_trades", [2, 0])
+    def test_fold_with_few_test_trades_is_kept(self, n_trades):
+        """The test set must not filter folds: few or no test trades keep the fold."""
+        result = self._run_winning_fold(
+            {"pnl": -3.0, "win_rate": 0.5, "n_trades": n_trades, "trades": []}
+        )
+
+        assert result is not None
+        assert result["test_trades"] == n_trades
+
+    def _run_winning_fold(self, test_result):
+        """process_single_fold with one grid winner and *test_result* as its test evaluation."""
         from fwbg.optimization.process_fold import process_single_fold
 
-        variant_hp = {"signal_column_long": "winner_long", "signal_column_short": "winner_short"}
+        variant_hp = self.VARIANT_HP
 
         df = _make_ohlc_df()
         fold = _make_fold(df, fold_id=0)
@@ -493,9 +514,7 @@ class TestHoldoutUsesWinningCandidateParams:
 
         with patch("fwbg.optimization.process_fold.select_features", return_value=(features, features)), \
              patch("fwbg.optimization.process_fold.run_grid_search", side_effect=fake_grid_search), \
-             patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value={
-                 "pnl": 30.0, "win_rate": 0.55, "n_trades": 20, "trades": [],
-             }), \
+             patch("fwbg.optimization.process_fold.evaluate_on_holdout", return_value=test_result), \
              patch("fwbg.optimization.process_fold.nested_cv_split", return_value={
                  "inner_folds": [(train_df.iloc[:split].copy(), train_df.iloc[split:].copy())],
              }), \
@@ -509,9 +528,7 @@ class TestHoldoutUsesWinningCandidateParams:
                 preprocessing_configs=None,
                 ctx=ctx, sym="TEST", total_indicators=6,
             )
-
-        assert result is not None
-        assert result["best_config"]["model_hyperparameters"] == variant_hp
+        return result
 
 
 class TestRequiredFeaturesProtectedFromNanFilter:

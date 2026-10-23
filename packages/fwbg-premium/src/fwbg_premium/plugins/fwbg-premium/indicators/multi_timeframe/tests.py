@@ -226,3 +226,22 @@ class TestMTFVolatilityRatios:
         # With 2000 bars they remain NaN, but the columns must still be present.
         for col in ["mtf_w1_ema20_dist", "mtf_w1_ema50_dist", "mtf_w1_trend_strength"]:
             assert col in result.columns, f"Column not present: {col}"
+
+
+@pytest.mark.parametrize("ema_periods", [[10, 50], [10], []])
+def test_alignment_does_not_require_requested_ema20(ema_periods):
+    """Trend alignment keeps its EMA20 basis when output periods are customized."""
+    cls = get_indicator("multi_timeframe")
+    result = cls().compute(make_h1(n=2000), ema_periods=ema_periods)
+
+    for period in ema_periods:
+        assert f"mtf_h4_ema{period}_dist" in result
+        assert f"mtf_d1_ema{period}_dist" in result
+        assert f"mtf_w1_ema{period}_dist" in result
+    for column in [
+        "mtf_trend_alignment_h1h4",
+        "mtf_trend_alignment_h4d1",
+        "mtf_trend_alignment_d1w1",
+        "mtf_consensus",
+    ]:
+        assert column in result

@@ -107,6 +107,43 @@ def nested_cv_split(
     }
 
 
+def refit_stateful_features(
+    inner_folds: List[Tuple[pd.DataFrame, pd.DataFrame]],
+) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
+    """Refit stateful indicator features independently for every inner fold."""
+    from fwbg.pipeline.features import compute_indicator_pool
+
+    refit_folds = []
+    for train_df, val_df in inner_folds:
+        configs = train_df.attrs.get("fwbg_stateful_indicator_configs")
+        output_columns = train_df.attrs.get("fwbg_stateful_output_columns", [])
+        if not configs:
+            refit_folds.append((train_df, val_df))
+            continue
+
+        train_base = train_df.drop(columns=output_columns, errors="ignore")
+        val_base = val_df.drop(columns=output_columns, errors="ignore")
+        train_refit = compute_indicator_pool(
+            train_base,
+            indicators=configs,
+            fit_df=train_base,
+        )
+        val_refit = compute_indicator_pool(
+            val_base,
+            indicators=configs,
+            fit_df=train_base,
+        )
+        # The first row of each transform is shifted by design.  Drop rows
+        # consistently before targets and model arrays are built.
+        train_refit = train_refit.dropna()
+        val_refit = val_refit.dropna()
+        train_refit.attrs.update(train_df.attrs)
+        val_refit.attrs.update(val_df.attrs)
+        refit_folds.append((train_refit, val_refit))
+
+    return refit_folds
+
+
 def select_features_from_fold(
     train_df: pd.DataFrame,
     targets: np.ndarray,
@@ -755,13 +792,16 @@ def evaluate_on_holdout(
     # This ensures compute_targets uses the correct exit strategy regardless
     # of how the caller set up ctx (e.g. unified simulation uses base ctx
     # whose exit_strategy defaults to "fixed").
-    cand_exit = candidate.get("exit_strategy")
-    if cand_exit and cand_exit != ctx.exit_strategy:
+    cand_exit = candidate.get("exit_strategy") or ctx.exit_strategy
+    cand_exit_params = candidate.get("exit_params")
+    if cand_exit_params is None:
+        cand_exit_params = ctx.exit_params
+    if cand_exit != ctx.exit_strategy or cand_exit_params != ctx.exit_params:
         import dataclasses
         ctx = dataclasses.replace(
             ctx,
             exit_strategy=cand_exit,
-            exit_params=candidate.get("exit_params") or {},
+            exit_params=cand_exit_params,
         )
 
     # Berechne Targets (und optional Durations für Sample Weights)

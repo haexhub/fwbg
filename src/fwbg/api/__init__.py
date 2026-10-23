@@ -1,27 +1,18 @@
-"""FWBG REST API server (FastAPI)."""
+"""FWBG REST API server (FastAPI).
+
+The package itself stays importable without the optional ``api`` extra. API
+dependencies are loaded only when the application is created.
+"""
+
+from __future__ import annotations
+
 import hmac
 import logging
 import os
+from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, Request, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-
-from fwbg.api.workspace import init_workspace, seed_workspace_presets
-from fwbg.api.exploration import exit_optimization_router
-from fwbg.api.plugins import router as plugins_router, entry_modifiers_router, exit_modifiers_router
-from fwbg.api.presets import migrate_presets, migrate_strategy_refs, router as presets_router
-from fwbg.api.strategies import router as strategies_router
-from fwbg.api.runs import router as runs_router
-from fwbg.api.chart import router as chart_router
-from fwbg.api.custom_signals import router as custom_signals_router
-from fwbg.api.datasources import router as datasources_router
-from fwbg.api.assets import router as assets_router
-from fwbg.api.data import router as data_router
-from fwbg.api.signal_composer import router as signal_composer_router
-from fwbg.api.analysis import router as analysis_router
-from fwbg.api.discovery import router as discovery_router
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 log = logging.getLogger(__name__)
 
@@ -30,40 +21,68 @@ log = logging.getLogger(__name__)
 _AUTH_BYPASS_PATHS = ("/docs", "/redoc", "/openapi.json", "/health")
 
 
-class APIKeyMiddleware(BaseHTTPMiddleware):
-    """Simple X-API-Key check, enabled via FWBG_API_KEY env var.
-
-    When FWBG_API_KEY is unset the middleware is a no-op so existing
-    single-user setups keep working. When set, every request to /api/* must
-    carry a matching X-API-Key header.
-    """
-
-    def __init__(self, app, api_key: str):
-        super().__init__(app)
-        self._api_key = api_key
-
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        if not path.startswith("/api") or path.startswith(_AUTH_BYPASS_PATHS):
-            return await call_next(request)
-        provided = request.headers.get("x-api-key", "")
-        if not hmac.compare_digest(provided, self._api_key):
-            # BaseHTTPMiddleware does not route HTTPException through FastAPI's
-            # exception handlers, so we must return the response directly.
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Invalid or missing API key"},
-            )
-        return await call_next(request)
-
-
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    from fastapi import FastAPI, Request, status
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import JSONResponse
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    from fwbg.api.analysis import router as analysis_router
+    from fwbg.api.assets import router as assets_router
+    from fwbg.api.chart import router as chart_router
+    from fwbg.api.custom_signals import router as custom_signals_router
+    from fwbg.api.data import router as data_router
+    from fwbg.api.datasources import router as datasources_router
+    from fwbg.api.discovery import router as discovery_router
+    from fwbg.api.exploration import exit_optimization_router
+    from fwbg.api.plugins import (
+        entry_modifiers_router,
+        exit_modifiers_router,
+    )
+    from fwbg.api.plugins import router as plugins_router
+    from fwbg.api.presets import migrate_presets, migrate_strategy_refs
+    from fwbg.api.presets import router as presets_router
+    from fwbg.api.research import router as research_router
+    from fwbg.api.runs import router as runs_router
+    from fwbg.api.signal_composer import router as signal_composer_router
+    from fwbg.api.strategies import router as strategies_router
+    from fwbg.api.workspace import init_workspace, seed_workspace_presets
+
+    class APIKeyMiddleware(BaseHTTPMiddleware):
+        """Simple X-API-Key check, enabled via FWBG_API_KEY env var.
+
+        When FWBG_API_KEY is unset the middleware is a no-op so existing
+        single-user setups keep working. When set, every request to /api/* must
+        carry a matching X-API-Key header.
+        """
+
+        def __init__(self, app, api_key: str):
+            """Wrap the application and retain the configured API key for request checks."""
+            super().__init__(app)
+            self._api_key = api_key
+
+        async def dispatch(self, request: Request, call_next):
+            """Reject protected API requests whose key fails a constant-time comparison."""
+            path = request.url.path
+            if not path.startswith("/api") or path.startswith(_AUTH_BYPASS_PATHS):
+                return await call_next(request)
+            provided = request.headers.get("x-api-key", "")
+            if not hmac.compare_digest(provided, self._api_key):
+                # BaseHTTPMiddleware does not route HTTPException through FastAPI's
+                # exception handlers, so we must return the response directly.
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"detail": "Invalid or missing API key"},
+                )
+            return await call_next(request)
+
     ws = init_workspace()
     log.info(f"FWBG workspace: {ws}")
     seed_workspace_presets()
     migrate_presets()
     migrate_strategy_refs()
+    _record_interrupted_runs()
 
     app = FastAPI(
         title="FWBG API",
@@ -74,7 +93,10 @@ def create_app() -> FastAPI:
     # CORS: wildcard origins are incompatible with credentials. Configure
     # FWBG_CORS_ORIGINS as a comma-separated list of trusted origins for
     # browser deployments. Default keeps the dashboard origins.
-    cors_env = os.environ.get("FWBG_CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173")
+    cors_env = os.environ.get(
+        "FWBG_CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173",
+    )
     cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
@@ -85,7 +107,11 @@ def create_app() -> FastAPI:
     )
 
     api_key = os.environ.get("FWBG_API_KEY", "").strip()
-    allow_unauth = os.environ.get("FWBG_ALLOW_UNAUTHENTICATED_API", "").strip().lower() in ("1", "true", "yes")
+    allow_unauth = os.environ.get("FWBG_ALLOW_UNAUTHENTICATED_API", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if api_key:
         app.add_middleware(APIKeyMiddleware, api_key=api_key)
         log.info("API key authentication enabled")
@@ -118,8 +144,36 @@ def create_app() -> FastAPI:
     app.include_router(signal_composer_router, prefix="/api")
     app.include_router(analysis_router, prefix="/api")
     app.include_router(discovery_router, prefix="/api")
+    app.include_router(research_router, prefix="/api")
 
     return app
+
+
+def _record_interrupted_runs() -> None:
+    """Record the gated runs a previous API process left behind (best effort).
+
+    A container restart kills its runs; their pending markers name this host
+    (``hostname: fwbg-api``), so only this process can tell they are dead.
+    Never fails startup: a register problem is logged and left for
+    ``research reconcile``.
+    """
+    from fwbg.api.workspace import get_research_dir
+    from fwbg.research.ledger import LEDGER_FILENAME, LedgerError
+    from fwbg.research.pending import PendingError
+    from fwbg.research.repo import ResearchRepoError, register_lock
+    from fwbg.research.runs import gate_enabled, record_stale
+
+    if not gate_enabled():
+        return
+    research_dir = get_research_dir(create=False)
+    try:
+        # Inside the try: is_file() raises PermissionError on an unreadable register.
+        if not (research_dir / LEDGER_FILENAME).is_file():
+            return
+        with register_lock(research_dir):
+            record_stale(research_dir)
+    except (OSError, ValueError, LedgerError, PendingError, ResearchRepoError) as exc:
+        log.warning("research register: interrupted runs not recorded at startup: %s", exc)
 
 
 def __getattr__(name: str):
@@ -145,4 +199,5 @@ def __getattr__(name: str):
 def run_server(host: str = "0.0.0.0", port: int = 8420):
     """Start the API server."""
     import uvicorn
+
     uvicorn.run(create_app(), host=host, port=port, timeout_graceful_shutdown=5)

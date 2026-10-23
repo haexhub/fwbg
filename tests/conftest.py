@@ -2,6 +2,8 @@
 import glob
 import os
 
+import pytest
+
 
 def pytest_configure(config):
     """Set up test workspace + clear stale Numba caches.
@@ -24,6 +26,8 @@ def pytest_configure(config):
     # module import — rather than in a per-test fixture. Tests that exercise
     # auth override this explicitly via monkeypatch or a subprocess.
     os.environ.setdefault("FWBG_ALLOW_UNAUTHENTICATED_API", "1")
+    # The research gate needs a register; only tests that test it switch it on.
+    os.environ["FWBG_RESEARCH_GATE"] = "off"
 
     patterns = [
         os.path.join(project_root, "src", "**", "*.nbi"),
@@ -38,3 +42,20 @@ def pytest_configure(config):
             removed += 1
     if removed > 0:
         print(f"\n[conftest] {removed} stale Numba cache files removed")
+
+
+@pytest.fixture
+def git_env(tmp_path_factory, monkeypatch):
+    """Deterministic git: fixed identity, no user or system configuration."""
+    # Lazy: importing fwbg before pytest_configure sets FWBG_WORKSPACE pins the real data dir.
+    from fwbg.core.git_env import GIT_LOCAL_ENV_VARS
+
+    config = tmp_path_factory.mktemp("gitconfig") / "config"
+    config.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for name in GIT_LOCAL_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    for role in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{role}_NAME", "fwbg tests")
+        monkeypatch.setenv(f"GIT_{role}_EMAIL", "tests@fwbg.invalid")

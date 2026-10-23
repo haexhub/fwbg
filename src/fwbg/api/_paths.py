@@ -26,7 +26,7 @@ DEFAULT_JSON_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 def validate_id(value: str, field: str) -> str:
-    if not _SAFE_ID_RE.match(value or ""):
+    if value in {".", ".."} or not _SAFE_ID_RE.match(value or ""):
         raise HTTPException(400, f"Invalid {field}: {value!r}")
     return value
 
@@ -45,6 +45,8 @@ def safe_results_path(*parts: str) -> Path:
         candidate.relative_to(base)
     except ValueError:
         raise HTTPException(400, "Path traversal detected")
+    if candidate == base:
+        raise HTTPException(400, "Results root cannot be addressed")
     return candidate
 
 

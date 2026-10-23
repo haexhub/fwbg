@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from fwbg.api.deps import get_strategies_dir, get_plugin_registry
-from fwbg.core.config import _resolve_section
+from fwbg.core.presets import _resolve_section
 
 router = APIRouter(prefix="/signal-composer", tags=["signal-composer"])
 

@@ -8,14 +8,23 @@ Design rationale:
   - SL is anchored to the structural level that invalidates the trade thesis.
   - orb_sl_dist = full OR range. With sl_mult=1.0, SL sits at the opposite
     boundary (e.g. long entry at or_high → SL at or_low). sl_mult>1.0 adds buffer.
-  - When sl_dist_column is explicitly set (via exit_params), the column value
-    is the ABSOLUTE SL distance — used as-is, no sl_mult applied.
-  - When auto-detected (no explicit sl_dist_column), sl_mult is applied as a
-    buffer multiplier on the raw distance (1.0 = opposite boundary, >1.0 = beyond).
+  - sl_mult always scales the stop distance column, whether it is named by
+    exit_params.sl_dist_column or auto-detected (1.0 = the column's distance,
+    >1.0 = beyond it).
 
 tp_mode (exit_params):
   - "atr" (default): TP = ATR * tp_mult. Trailing uses ATR * trail_atr_mult.
   - "range": TP = range_column * tp_mult. Trailing uses range as trail distance.
+
+Column choice: auto-detection needs exactly one *_sl_dist (and, for
+tp_mode="range", one *_range) column. Several ORB sessions, ranges or
+retracement levels give several, and the run fails with AmbiguousColumnError
+until exit_params names the column (sl_dist_column, range_column; for sl_level
+also sl_level_column). Naming the column keeps the sl_mult scaling. A name may
+be an fnmatch glob pattern (e.g. "*_orb_s00_sl_dist") that must match exactly
+one column; it names the column across indicator-grid variants whose prefixes
+differ. A plain name missing from the frame falls back to auto-detection; a
+pattern that matches nothing is an error.
 """
 from typing import Tuple, Union, TYPE_CHECKING
 import numpy as np
@@ -25,6 +34,7 @@ from fwbg_sdk import BaseExitStrategy, register_exit_strategy
 from fwbg.simulation import _simulate_trade_numba, _simulate_trade_trailing_numba, compute_session_mask
 from fwbg.simulation.numba_core import _simulate_trade_session_numba
 from fwbg.core import GridParams
+from fwbg.core.columns import resolve_role_column
 
 if TYPE_CHECKING:
     from fwbg.core.context import SimulationContext
@@ -294,6 +304,9 @@ class OrbExitStrategy(BaseExitStrategy):
             "breakeven_trigger": 0.0,
             "breakeven_offset": 0.0,
             "trail_pips": 0,
+            "sl_dist_column": None,
+            "range_column": None,
+            "sl_level_column": None,
         }
 
     @classmethod
@@ -367,9 +380,44 @@ class OrbExitStrategy(BaseExitStrategy):
                 "default": "none",
                 "description": (
                     "SL an strukturellem Preisniveau verankern statt Entry ± sl_dist. "
-                    "sl_mult wirkt als Buffer-Multiplikator auf die Distanz zum Level."
+                    "sl_mult skaliert die Distanz Entry→Level: SL = Entry ∓ sl_mult × "
+                    "|Entry − Level| (1.0 = genau das Level). Level auf der falschen "
+                    "Seite des Entry → Entry ∓ sl_dist × sl_mult. Nur in der "
+                    "Trade-Simulation; Trainings-Targets ignorieren sl_level."
                 ),
                 "choices": ["none", "or_midpoint", "or_high", "or_low"],
+            },
+            "sl_dist_column": {
+                "type": "string",
+                "default": None,
+                "required": False,
+                "description": (
+                    "Stop distance column. Plain name or fnmatch glob pattern "
+                    "(e.g. '*_orb_s00_sl_dist') that must match exactly one column; "
+                    "the value is scaled by sl_mult. Unset: the single *_sl_dist column "
+                    "(several are refused)."
+                ),
+            },
+            "range_column": {
+                "type": "string",
+                "default": None,
+                "required": False,
+                "description": (
+                    "Range column for tp_mode='range'. Plain name or fnmatch glob pattern "
+                    "that must match exactly one column. Unset: the single *_range column "
+                    "(several are refused)."
+                ),
+            },
+            "sl_level_column": {
+                "type": "string",
+                "default": None,
+                "required": False,
+                "description": (
+                    "Level column for sl_level. Plain name or fnmatch glob pattern "
+                    "that must match exactly one column; sl_mult scales the distance "
+                    "from entry to the level. Unset: the single *_<sl_level> column "
+                    "(several are refused)."
+                ),
             },
             "entry_delay": {
                 "type": "int",
@@ -457,19 +505,15 @@ class OrbExitStrategy(BaseExitStrategy):
     def _get_range(df: pd.DataFrame, exit_params: dict = None) -> np.ndarray:
         """Return range array for tp_mode='range'.
 
-        Looks for range_column in exit_params, then auto-detects *_range columns
-        (excluding *_vs_atr variants). Falls back to zeros.
+        Looks for range_column in exit_params, then auto-detects the *_range
+        column (excluding *_vs_atr variants); several candidates raise
+        AmbiguousColumnError. Falls back to zeros.
         """
         ep = exit_params or {}
-        range_column = ep.get("range_column")
-        if range_column and range_column in df.columns:
-            return np.nan_to_num(df[range_column].values.astype(np.float64), nan=0.0)
-        # Auto-detect: first column ending in _range (but not _vs_atr or _vs_range)
-        col = next(
-            (c for c in df.columns
-             if (c == "orb_range" or c.endswith("_orb_range") or c.endswith("_range"))
-             and "_vs_" not in c),
-            None,
+        col = resolve_role_column(
+            df.columns, ep.get("range_column"),
+            lambda c: c.endswith("_range") and "_vs_" not in c,
+            "range_column",
         )
         if col is not None:
             return np.nan_to_num(df[col].values.astype(np.float64), nan=0.0)
@@ -484,28 +528,21 @@ class OrbExitStrategy(BaseExitStrategy):
     ) -> np.ndarray:
         """Return SL distances per bar.
 
-        When sl_dist_column is explicitly set: column value is the ABSOLUTE SL
-        distance (no sl_mult applied). NaN rows fall back to ATR * sl_mult.
+        The stop column (explicit sl_dist_column, else the single auto-detected
+        *_sl_dist) is scaled by sl_mult. NaN, non-finite and non-positive rows
+        fall back to ATR * sl_mult.
 
-        When auto-detected (no explicit sl_dist_column): applies sl_mult as
-        buffer multiplier on the raw distance. NaN rows fall back to ATR * sl_mult.
-
-        No column found at all: pure ATR * sl_mult.
+        No column found at all: pure ATR * sl_mult. Several auto-detect
+        candidates raise AmbiguousColumnError.
         """
-        explicit = sl_dist_column and sl_dist_column in df.columns
-        if explicit:
-            sl_col = sl_dist_column
-        else:
-            sl_col = next(
-                (c for c in df.columns if c == "orb_sl_dist" or c.endswith("_sl_dist")),
-                None,
-            )
+        sl_col = resolve_role_column(
+            df.columns, sl_dist_column, lambda c: c.endswith("_sl_dist"), "sl_dist_column",
+            note=" sl_mult still scales the named column.",
+        )
         if sl_col is not None:
             raw = df[sl_col].values.astype(np.float64)
-            fallback = atr_v * sl_mult
-            if explicit:
-                return np.where(np.isnan(raw), fallback, raw).astype(np.float64)
-            return np.where(np.isnan(raw), fallback, raw * sl_mult).astype(np.float64)
+            usable = np.isfinite(raw) & (raw > 0)
+            return np.where(usable, raw * sl_mult, atr_v * sl_mult).astype(np.float64)
         return (atr_v * sl_mult).astype(np.float64)
 
 

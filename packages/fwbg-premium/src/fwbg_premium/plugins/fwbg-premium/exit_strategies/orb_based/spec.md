@@ -31,12 +31,12 @@ Exit strategy for ORB (Opening Range Breakout) setups. Stop-loss distance is rea
 
 - `tp_mode` (choice, default='atr'): TP source: 'atr' = ATR * tp_mult, 'range' = range column * tp_mult (for ORB midpoint-entry setups).
 - `tp_mult` (float, default=2): TP multiplier applied to ATR (tp_mode='atr') or the range column (tp_mode='range').
-- `sl_mult` (float, default=1): Buffer multiplier on orb_sl_dist (1.0 = SL at opposite ORB boundary, >1.0 = beyond). Also used as ATR fallback multiplier when no SL column is available. Not applied when sl_dist_column is set explicitly via exit_params.
+- `sl_mult` (float, default=1): Buffer multiplier on orb_sl_dist (1.0 = SL at opposite ORB boundary, >1.0 = beyond). Also used as ATR fallback multiplier when no SL column is available. Applies to the explicit sl_dist_column as well as to the auto-detected column.
 - `atr_period` (int, default=14): ATR window used for TP (tp_mode='atr') and SL fallback when no ATR column is present in df.
 - `min_tp_pips` (int, default=8): Minimum TP distance expressed in spread multiples (floor applied via np.maximum / max).
 - `min_sl_pips` (int, default=5): Minimum SL distance expressed in spread multiples (floor applied via np.maximum / max).
 - `timeout_bars` (int, default=None): Close trade after N bars if neither TP nor SL is hit; None/0 = no timeout applied by the numba kernel.
-- `sl_level` (choice, default='none'): SL anchored at a structural ORB level ('none', 'or_midpoint', 'or_high', 'or_low'). Declared in schema; not consumed by compute_targets in this file.
+- `sl_level` (choice, default='none'): SL anchored at a structural ORB level ('none', 'or_midpoint', 'or_high', 'or_low'). Declared in schema; resolved by fwbg.optimization.targets.resolve_sl_levels, which refuses several '*_<sl_level>' columns unless exit_params['sl_level_column'] names one. In trade simulation (fwbg.simulation.trade.simulate_pro_trade) the stop is placed at entry - sl_mult*(entry - level) for longs and entry + sl_mult*(level - entry) for shorts, so sl_mult=1.0 is exactly the level; a level on the wrong side of entry falls back to entry -/+ the stop distance (column or ATR, already times sl_mult). Known gap: compute_targets (training targets) ignores sl_level, so models are trained against distance-based stops.
 - `entry_delay` (int, default=1): Bars between signal and entry (0 = signal-bar close for breakout stop-orders, 1 = next-bar open, no lookahead). Declared in schema; not consumed inside compute_targets.
 - `max_trades_per_signal` (int, default=1): Max trades per contiguous confidence>=ct signal event; 0 = unlimited. Declared in schema; not consumed inside compute_targets.
 - `breakeven_trigger` (float, default=0): Fraction of TP at which SL moves to breakeven (0.0 = disabled). Enables trailing/breakeven kernel when >0.
@@ -55,11 +55,11 @@ Exit strategy for ORB (Opening Range Breakout) setups. Stop-loss distance is rea
 - AC-001: compute_targets returns two float64 arrays of length len(df); positions where the long/short trade hit TP before SL/timeout equal 1.0, all others 0.0.
 - AC-002: When return_durations=True, compute_targets additionally returns int64 duration arrays where a filled bar equals (exit_bar - i), and a never-exited trade equals max_bars.
 - AC-003: The final bar (i = n-1) never opens a trade (loop iterates 0..n-2), so targets_long[-1] == targets_short[-1] == 0.0.
-- AC-004: When df contains an 'orb_sl_dist' or '*_sl_dist' column and no explicit sl_dist_column is set, SL distance = raw_column * sl_mult with NaN rows replaced by ATR*sl_mult, then floored to min_sl_pips*spread.
-- AC-005: When exit_params['sl_dist_column'] names a present column, its value is used as an ABSOLUTE SL distance (no sl_mult applied); NaN rows fall back to ATR*sl_mult.
+- AC-004: When df contains exactly one '*_sl_dist' column and no explicit sl_dist_column is set, SL distance = raw_column * sl_mult with NaN rows replaced by ATR*sl_mult, then floored to min_sl_pips*spread.
+- AC-005: When exit_params['sl_dist_column'] names a present column, SL distance = that column * sl_mult (the same rule as AC-004). In every path (named or auto-detected, signal or trained model) a NaN, non-finite or non-positive stop value is missing and falls back to ATR*sl_mult, then floored to min_sl_pips*spread; signal folds do not zero-fill named exit columns.
 - AC-006: When no *_sl_dist column exists in df, SL distance = ATR * sl_mult, floored to min_sl_pips*spread.
 - AC-007: When tp_mode='atr' (default), TP distance = max(atr[i]*tp_mult, min_tp_pips*spread).
-- AC-008: When tp_mode='range', TP distance = max(range_column[i]*tp_mult, min_tp_pips*spread) using the resolved range column (exit_params['range_column'] > 'orb_range' > '*_orb_range' > '*_range' excluding '*_vs_*').
+- AC-008: When tp_mode='range', TP distance = max(range_column[i]*tp_mult, min_tp_pips*spread) using the resolved range column (exit_params['range_column'], else the single '*_range' column excluding '*_vs_*').
 - AC-009: ATR array is read from df['_atr'] if present, else df['vol_atr'], else computed via ta.volatility.average_true_range; NaNs replaced with 0.0.
 - AC-010: When ctx defines integer (exit_)session_start_hour and (exit_)session_end_hour, session mask is built via compute_session_mask and the session-aware numba kernel is used (unless trailing is also enabled, which takes precedence).
 - AC-011: When breakeven_trigger>0, trail_pips>0, or an exit_modifier supplies trail_atr_mult>0, the trailing-numba kernel is used with trail distance = trail_pips*spread, else range[i] (tp_mode='range'), else atr[i]*trail_atr_mult.
@@ -70,12 +70,14 @@ Exit strategy for ORB (Opening Range Breakout) setups. Stop-loss distance is rea
 - AC-016: resolve_distances returns per-bar (tp_dists, sl_dists) arrays applying the same floors, tp_mode branching, and SL column resolution as compute_targets, without simulating trades.
 - AC-017: get_cache_key(params) returns the exact string 'orb_tp{tp_mult:.2f}_sl{sl_mult:.2f}_to{timeout_bars or "none"}'.
 - AC-018: Plugin is registered under the name 'orb_based' via @register_exit_strategy.
+- AC-019: Without a present explicit column, several '*_sl_dist' candidates (or several '*_range' candidates when tp_mode='range') raise AmbiguousColumnError naming the candidates and the exit_params key to set (sl_dist_column / range_column). Several ORB sessions, ranges or retracement levels produce several candidates. Naming the previously auto-detected column reproduces its stop, since sl_mult scales both (AC-005).
+- AC-020: sl_dist_column, range_column and sl_level_column may be fnmatch glob patterns (e.g. '*_orb_s00_sl_dist'). A plain name is used when present (exact match first); a pattern must match exactly one column of the frame (resolved per frame, so per indicator-grid variant): several matches raise AmbiguousColumnError naming them, no match raises ColumnRoleError. A plain name missing from the frame still falls back to auto-detection (see Edge Cases).
 
 ## Edge Cases
 
 - df with fewer than 2 rows: loop range(n-1) yields no iterations, so both targets arrays are all zeros (and duration arrays all zeros if requested).
 - No orb_sl_dist / *_sl_dist column present: SL falls back to pure ATR*sl_mult (still floored).
-- sl_dist_column set to a name that is NOT in df.columns: treated as auto-detected — the code searches for orb_sl_dist / *_sl_dist instead, applying sl_mult as a buffer multiplier.
+- sl_dist_column (or range_column / sl_level_column) set to a plain name that is NOT in df.columns: logged as a warning, then auto-detection applies (several candidates raise AmbiguousColumnError; one is used, scaled by sl_mult). A glob pattern that matches nothing raises ColumnRoleError instead.
 - ATR column contains NaNs: replaced with 0.0 by np.nan_to_num, so TP/SL floors (min_*_pips*spread) become the effective distances on those bars.
 - SL column value is NaN on a bar: replaced by ATR*sl_mult fallback in both explicit and auto-detected paths.
 - tp_mode='range' but no matching range column is present: _get_range returns zeros, so TP distance collapses to the min_tp_pips*spread floor.
@@ -99,5 +101,5 @@ Exit strategy for ORB (Opening Range Breakout) setups. Stop-loss distance is rea
 
 ## Needs Clarification
 
-- [NEEDS CLARIFICATION: sl_level, entry_delay, and max_trades_per_signal appear in the schema/defaults but are not referenced in compute_targets/resolve_distances — confirm whether they are consumed elsewhere in the pipeline (e.g. by the signal-to-trade layer) or are dead schema entries.]
+- [NEEDS CLARIFICATION: entry_delay and max_trades_per_signal appear in the schema/defaults but are not referenced in compute_targets/resolve_distances — confirm whether they are consumed elsewhere in the pipeline (e.g. by the signal-to-trade layer) or are dead schema entries.]
 - [NEEDS CLARIFICATION: The trail_atr_mult / trail_tp_atr_mult / breakeven_trigger inside the entry-modifier branch read from ctx.exit_modifier_params even though no exit_modifier is required in that branch — confirm whether this precomputation should also honor exit_params['breakeven_trigger'] / trail_pips as the non-modifier branch does.]

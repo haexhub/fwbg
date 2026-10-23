@@ -6,9 +6,14 @@ import json
 import hashlib
 import subprocess
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
+from fwbg.core.git_env import isolated_git_env, source_dir
 from fwbg.data import config as data_config
 from fwbg.data.config import convert_numpy
+from fwbg.results.code_patch import write_code_patch
+from fwbg.results.symbol_files import config_extras
 
 
 def _get_results_base_path() -> str:
@@ -94,14 +99,20 @@ STRATEGY_SCHEMA = {
 }
 
 
-def get_git_info():
-    """Holt Git-Informationen für Reproduzierbarkeit."""
-    git_info = {}
+def get_git_info(source: Path | None = None) -> dict[str, Any]:
+    """Holt Git-Informationen für Reproduzierbarkeit (des Repos, das *source* enthält)."""
+    git_info: dict[str, Any] = {}
+    cwd = source if source is not None else source_dir()
+    env = isolated_git_env()
     try:
         # Aktueller Commit
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             git_info["commit"] = result.stdout.strip()
@@ -109,15 +120,23 @@ def get_git_info():
         # Branch
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=5
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             git_info["branch"] = result.stdout.strip()
 
         # Dirty status
         result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True, text=True, timeout=5
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             git_info["dirty"] = len(result.stdout.strip()) > 0
@@ -125,7 +144,11 @@ def get_git_info():
         # Letzte Commit-Message
         result = subprocess.run(
             ["git", "log", "-1", "--pretty=%B"],
-            capture_output=True, text=True, timeout=5
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0:
             git_info["last_commit_message"] = result.stdout.strip()[:100]
@@ -263,7 +286,12 @@ def create_run_directory(run_id, description=None, strategy_metadata=None):
     os.makedirs(run_path, exist_ok=True)
 
     # Git-Info für Reproduzierbarkeit
-    git_info = get_git_info()
+    source = source_dir()
+    git_info = get_git_info(source)
+    if git_info.get("dirty"):
+        git_info["patch"], patch_error = write_code_patch(run_path, source)
+        if patch_error:
+            git_info["patch_error"] = patch_error
 
     # Technische Konfiguration
     config = {
@@ -318,7 +346,7 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
             "tr_trace": r["tr_trace"],  # Trade-Sequenz für Analyse speichern
             "trades_detailed": r.get("trades_detailed", []),  # Volle Trade-Details
             "monte_carlo": r.get("monte_carlo", {}),
-            "fold_stability": r.get("fold_stability", 0),
+            "fold_stability": r.get("fold_stability"),
             "nested_cv": r.get("nested_cv", {}),  # Nested CV Info
             "smoothness": r.get("smoothness", {}),  # Equity-Smoothness
             "long_short_stats": r.get("long_short_stats", {}),  # Separate L/S Statistiken
@@ -376,6 +404,7 @@ def save_run_results(run_path, raw_results, filtered_results, elite_results,
                     "calmar": r.get("calmar", 0),
                     "trades": len(r.get("tr_trace", [])),
                 }
+            config_data.update(convert_numpy(config_extras(r)))
             with open(os.path.join(sym_dir, "config.json"), "w") as f:
                 json.dump(config_data, f, indent=2)
 

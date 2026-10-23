@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "name": "Daily entry/exit study: six fixed rules, eight markets, two leverage levels",
+  "data_directory": "../../data/swing_v1",
+  "download_start": "2017-01-01",
+  "download_end_exclusive": "2026-01-01",
+  "evaluation_start": "2019-01-01",
+  "evaluation_end": "2025-12-31",
+  "split_date": "2021-01-01",
+  "base_currency": "USD",
+  "initial_capital": 10000,
+  "cash_return": 0.0,
+  "leverage": [1.0, 1.5],
+  "rules": ["rsi_sma", "rsi_level", "breakout_channel", "breakout_trail", "pullback_ema", "pullback_trail"],
+  "markets": [
+    {"symbol": "SPY", "dukascopy": "SPY.USUSD", "yahoo": "SPY", "cost_bps": 5},
+    {"symbol": "QQQ", "dukascopy": "QQQ.USUSD", "yahoo": "QQQ", "cost_bps": 5},
+    {"symbol": "GLD", "dukascopy": "GLD.USUSD", "yahoo": "GLD", "cost_bps": 5},
+    {"symbol": "XLK", "dukascopy": "XLK.USUSD", "yahoo": "XLK", "cost_bps": 5},
+    {"symbol": "XLE", "dukascopy": "XLE.USUSD", "yahoo": "XLE", "cost_bps": 5},
+    {"symbol": "XLF", "dukascopy": "XLF.USUSD", "yahoo": "XLF", "cost_bps": 5},
+    {"symbol": "BTC", "dukascopy": "BTCUSD", "yahoo": null, "cost_bps": 25},
+    {"symbol": "ETH", "dukascopy": "ETHUSD", "yahoo": null, "cost_bps": 25}
+  ],
+  "scenarios": [
+    {"id": "base", "cost_multiplier": 1, "borrow_rate": 0.08},
+    {"id": "cost2", "cost_multiplier": 2, "borrow_rate": 0.08},
+    {"id": "cost5_funding12", "cost_multiplier": 5, "borrow_rate": 0.12}
+  ],
+  "execution": "Signals on completed daily bars; market orders at next available open; pre-existing trailing stop fills at worse of stop or opening bid on gaps. Current-bar highs only update tomorrow's trailing stop. No same-bar optimistic stop raising.",
+  "positioning": "One long position per candidate. Leveraged positions rebalance to 1.5x at each session open, paying turnover costs. Borrowing is actual negative cash, charged for calendar days; unused positive cash earns zero. Full-notional CFD funding is NOT this margin-account model.",
+  "parameters": {"rsi_period": 2, "rsi_entry": 10, "rsi_exit": 70, "rsi_trend_sma": 200, "rsi_exit_sma": 5, "rsi_time_exit_sessions": 10, "breakout_entry_sessions": 55, "breakout_exit_sessions": 20, "ema_fast": 20, "ema_medium": 50, "ema_slow": 200, "atr_period": 14, "trailing_atr_multiple": 3},
+  "validation": {"folds": 6, "initial_months": 24, "permutations": 10000, "seed": 42, "holm_alpha": 0.05, "pbo_limit": 0.50, "minimum_cagr": 0.15, "max_drawdown": 0.40},
+  "pass_rule": "CAGR >15% and drawdown <=40% in full and post-2020 samples at ALL cost scenarios; all monthly/3m/6m native sign tests and N=1 PSR pass in full and chronological test samples; Holm correction across 192 hypotheses (profit and excess versus matched buy-and-hold, all 96 candidates); native PBO <=50% separately per market using six windows. Benchmark outperformance is a separate flag.",
+  "selection": "Choose one market/rule/leverage by highest mean monthly return in 2019-2020 at base costs, with no drawdown qualification using later data; report 2021-2025 frozen selection. Retrospective analysis, not untouched OOS.",
+  "limitations": ["Seven evaluation years are a short sample for a 15% long-run target.", "Dukascopy quotes are not IG execution quotes; bid/ask OHLC extremes need not occur simultaneously.", "ETF prices require independently checked corporate-action adjustment; failed data checks exclude an instrument before strategy performance is inspected, with reasons recorded.", "USD performance is not directly comparable with the preceding EUR allocation study.", "Cash/spot plus financed margin is modeled, not IG cash CFDs, perpetual funding, leveraged ETFs or guaranteed stops.", "Fixed annual financing assumptions of 8% and 12% are sensitivity scenarios, not reconstructed broker quotations.", "Earlier research and publication-selection bias remain unknown; all new trials are recorded."]
+}

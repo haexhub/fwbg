@@ -1,9 +1,10 @@
 """Tests for OrbExitStrategy plugin.
 
 The orb_based strategy uses structural-level SL and ATR-based TP:
-- Explicit sl_dist_column: raw distance used as-is (no sl_mult). E.g. pdl_sl_dist.
-- Auto-detect *_sl_dist: distance * sl_mult (buffer tuning). E.g. orb_sl_dist.
+- *_sl_dist column (explicit sl_dist_column or the single auto-detected one):
+  distance * sl_mult (buffer tuning). E.g. orb_sl_dist, pdl_sl_dist.
 - No column: ATR * sl_mult fallback.
+- Several auto-detect candidates and no explicit column: refused.
 - TP = ATR * tp_mult (optimizer searches best multiple)
 """
 import numpy as np
@@ -11,6 +12,7 @@ import pandas as pd
 import pytest
 
 from fwbg.plugins import import_plugin_module
+from fwbg.core.columns import AmbiguousColumnError, ColumnRoleError
 from fwbg.core.context import SimulationContext
 
 _orb_exit = import_plugin_module("fwbg-premium", "exit_strategies", "orb_based")
@@ -244,23 +246,50 @@ class TestOrbExitStrategySLDistColumn:
             f"Expected SL from pdl_sl_dist=500, got min={sl_dists.min():.2f}"
         )
 
-    def test_explicit_sl_dist_column_ignores_sl_mult(self, ohlc_df):
-        """When sl_dist_column is explicitly set, sl_mult must NOT be applied.
+    @pytest.mark.parametrize("sl_mult, expected", [(1.0, 100.0), (2.0, 200.0)])
+    def test_explicit_sl_dist_column_is_scaled_by_sl_mult(self, ohlc_df, sl_mult, expected):
+        """An explicit sl_dist_column is scaled by sl_mult like an auto-detected one.
 
-        The raw column value is the absolute SL distance (e.g. distance to PDL/PDH).
+        It used to be taken as the absolute stop distance, so naming the column
+        dropped sl_mult and collapsed an sl_mult grid to a single stop.
         """
-        strategy = OrbExitStrategy()
         df = ohlc_df.copy()
+        df["orb_sl_dist"] = 30.0
         df["hl_ses_pdl_sl_dist"] = 100.0
 
-        atr_v = strategy._get_atr(df, 14)
-
-        # With explicit sl_dist_column: raw=100, sl_mult=3.0 → result should be 100 (NOT 300)
-        sl_dists = strategy._get_sl_dist(df, atr_v, sl_mult=3.0, sl_dist_column="hl_ses_pdl_sl_dist")
-        np.testing.assert_allclose(
-            sl_dists, 100.0,
-            err_msg="Explicit sl_dist_column must use raw value, NOT apply sl_mult",
+        ctx = SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"atr_period": 14, "min_tp_pips": 1, "min_sl_pips": 1,
+                         "sl_dist_column": "hl_ses_pdl_sl_dist"},
         )
+        _, sl_dists = OrbExitStrategy().resolve_distances(df, tp=2.0, sl=sl_mult, ctx=ctx)
+        np.testing.assert_allclose(sl_dists, expected)
+
+    @pytest.mark.parametrize("sl_dist_column", [None, "hl_ses_pdl_sl_dist"])
+    def test_non_positive_or_non_finite_stops_fall_back_to_atr(self, ohlc_df, sl_dist_column):
+        """A zero (e.g. a zero-filled NaN) or infinite stop distance is missing."""
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        values = np.full(len(df), 100.0)
+        values[1], values[2], values[3] = 0.0, -5.0, np.inf
+        df["hl_ses_pdl_sl_dist"] = values
+
+        atr_v = strategy._get_atr(df, 14)
+        sl_dists = strategy._get_sl_dist(df, atr_v, sl_mult=2.0, sl_dist_column=sl_dist_column)
+        np.testing.assert_allclose(sl_dists[1:4], atr_v[1:4] * 2.0)
+        assert sl_dists[0] == 200.0
+
+    def test_explicit_sl_dist_column_nan_rows_fall_back_to_atr(self, ohlc_df):
+        strategy = OrbExitStrategy()
+        df = ohlc_df.copy()
+        df["hl_ses_pdl_sl_dist"] = np.nan
+
+        atr_v = strategy._get_atr(df, 14)
+        sl_dists = strategy._get_sl_dist(
+            df, atr_v, sl_mult=2.0, sl_dist_column="hl_ses_pdl_sl_dist",
+        )
+        np.testing.assert_allclose(sl_dists, atr_v * 2.0)
 
     def test_auto_detect_sl_dist_applies_sl_mult(self, ohlc_df):
         """When no sl_dist_column is set, auto-detect applies sl_mult as buffer."""
@@ -277,8 +306,9 @@ class TestOrbExitStrategySLDistColumn:
             err_msg="Auto-detect sl_dist must apply sl_mult as buffer multiplier",
         )
 
-    def test_without_sl_dist_column_picks_first(self, ohlc_df):
-        """Without sl_dist_column, auto-detect picks the first *_sl_dist column."""
+    def test_without_sl_dist_column_uses_the_single_candidate(self, ohlc_df):
+        """Without sl_dist_column, auto-detect uses the one *_sl_dist column
+        (several are refused, see TestOrbExitStrategyAmbiguousColumns)."""
         strategy = OrbExitStrategy()
         df = ohlc_df.copy()
         df["orb_sl_dist"] = 100.0
@@ -321,7 +351,8 @@ class TestOrbExitStrategySLDistColumn:
         ctx_orb = SimulationContext(
             symbol="DAX", asset_class="index", spread=1.0, point=0.1,
             min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
-            exit_params={"atr_period": 14, "min_tp_pips": 1, "min_sl_pips": 1},
+            exit_params={"atr_period": 14, "min_tp_pips": 1, "min_sl_pips": 1,
+                         "sl_dist_column": "orb_sl_dist"},
         )
         ctx_pdl = SimulationContext(
             symbol="DAX", asset_class="index", spread=1.0, point=0.1,
@@ -502,3 +533,126 @@ class TestOrbExitStrategyDefaults:
         schema = OrbExitStrategy.get_param_schema()
         assert "tp_mult" in schema
         assert "sl_mult" in schema
+
+    @pytest.mark.parametrize("param", ["sl_dist_column", "range_column", "sl_level_column"])
+    def test_schema_declares_the_optional_column_params(self, param):
+        entry = OrbExitStrategy.get_param_schema()[param]
+        assert entry["type"] == "string"
+        assert entry["default"] is None
+        assert entry["required"] is False
+        assert "pattern" in entry["description"]
+
+
+class TestOrbExitStrategyAmbiguousColumns:
+    """Several auto-detect candidates without an explicit column fail closed:
+    picking the first one made the stop depend on column order."""
+
+    @staticmethod
+    def _ctx(**exit_params):
+        return SimulationContext(
+            symbol="DAX", asset_class="index", spread=1.0, point=0.1,
+            min_trades=10, max_trade_bars=100, exit_strategy="orb_based",
+            exit_params={"atr_period": 14, "min_tp_pips": 1, "min_sl_pips": 1, **exit_params},
+        )
+
+    def test_several_sl_dist_columns_are_refused(self, ohlc_df):
+        df = ohlc_df.copy()
+        df["rb4_orb_s00_sl_dist"] = 100.0
+        df["rb4_orb_s00_rl50_sl_dist"] = 50.0
+
+        with pytest.raises(AmbiguousColumnError) as err:
+            OrbExitStrategy().resolve_distances(df, tp=2.0, sl=1.0, ctx=self._ctx())
+        message = str(err.value)
+        assert "rb4_orb_s00_sl_dist" in message
+        assert "rb4_orb_s00_rl50_sl_dist" in message
+        assert "sl_dist_column" in message
+
+    def test_explicit_sl_dist_column_resolves_the_ambiguity(self, ohlc_df):
+        df = ohlc_df.copy()
+        df["rb4_orb_s00_sl_dist"] = 100.0
+        df["rb4_orb_s00_rl50_sl_dist"] = 50.0
+
+        ctx = self._ctx(sl_dist_column="rb4_orb_s00_rl50_sl_dist")
+        _, sl_dists = OrbExitStrategy().resolve_distances(df, tp=2.0, sl=1.0, ctx=ctx)
+        np.testing.assert_allclose(sl_dists, 50.0)
+
+    def test_compute_targets_refuses_several_sl_dist_columns(self, ohlc_df):
+        df = ohlc_df.copy()
+        df["rb4_orb_s00_sl_dist"] = 100.0
+        df["rb4_orb_s08_sl_dist"] = 80.0
+
+        with pytest.raises(AmbiguousColumnError, match="sl_dist_column"):
+            OrbExitStrategy().compute_targets(df, self._ctx(), tp_mult=2.0, sl_mult=1.0)
+
+    def test_several_range_columns_are_refused_in_range_mode(self, ohlc_df):
+        df = ohlc_df.copy()
+        df["rb4_orb_s00_range"] = 100.0
+        df["rb4_orb_s08_range"] = 80.0
+
+        with pytest.raises(AmbiguousColumnError) as err:
+            OrbExitStrategy().resolve_distances(
+                df, tp=1.0, sl=1.0, ctx=self._ctx(tp_mode="range"),
+            )
+        message = str(err.value)
+        assert "rb4_orb_s00_range" in message and "rb4_orb_s08_range" in message
+        assert "range_column" in message
+
+    def test_explicit_range_column_resolves_the_ambiguity(self, ohlc_df):
+        df = ohlc_df.copy()
+        df["rb4_orb_s00_range"] = 100.0
+        df["rb4_orb_s08_range"] = 80.0
+
+        ctx = self._ctx(tp_mode="range", range_column="rb4_orb_s08_range")
+        tp_dists, _ = OrbExitStrategy().resolve_distances(df, tp=1.0, sl=1.0, ctx=ctx)
+        np.testing.assert_allclose(tp_dists, 80.0)
+
+    def test_range_columns_are_not_read_in_atr_mode(self, ohlc_df):
+        df = ohlc_df.copy()
+        df["rb4_orb_s00_range"] = 100.0
+        df["rb4_orb_s08_range"] = 80.0
+
+        tp_dists, _ = OrbExitStrategy().resolve_distances(df, tp=1.0, sl=1.0, ctx=self._ctx())
+        assert len(tp_dists) == len(df)
+
+
+class TestOrbExitStrategyColumnPatterns:
+    """sl_dist_column / range_column may be glob patterns that match one column,
+    so one config names the stop across indicator-grid variants."""
+
+    @staticmethod
+    def _ctx(**exit_params):
+        return TestOrbExitStrategyAmbiguousColumns._ctx(**exit_params)
+
+    @staticmethod
+    def _df(ohlc_df):
+        df = ohlc_df.copy()
+        df["rb4_prb2_orb_s00_sl_dist"] = 100.0
+        df["rb4_prb2_orb_s00_rl50_sl_dist"] = 50.0
+        df["hl_ses_rl50_pdl_sl_dist"] = 70.0
+        df["rb4_prb2_orb_s00_range"] = 40.0
+        df["wor_stat_avg_range"] = 90.0
+        return df
+
+    def test_a_pattern_matching_one_column_selects_it(self, ohlc_df):
+        ctx = self._ctx(sl_dist_column="*_orb_s00_sl_dist")
+        _, sl_dists = OrbExitStrategy().resolve_distances(self._df(ohlc_df), 2.0, 1.0, ctx)
+        np.testing.assert_allclose(sl_dists, 100.0)
+
+    def test_a_range_pattern_matching_one_column_selects_it(self, ohlc_df):
+        ctx = self._ctx(
+            tp_mode="range", range_column="*_orb_s00_range", sl_dist_column="*_orb_s00_sl_dist",
+        )
+        tp_dists, _ = OrbExitStrategy().resolve_distances(self._df(ohlc_df), 1.0, 1.0, ctx)
+        np.testing.assert_allclose(tp_dists, 40.0)
+
+    def test_a_pattern_matching_several_columns_is_refused(self, ohlc_df):
+        ctx = self._ctx(sl_dist_column="*_s00_*sl_dist")
+        with pytest.raises(AmbiguousColumnError) as err:
+            OrbExitStrategy().resolve_distances(self._df(ohlc_df), 2.0, 1.0, ctx)
+        assert "rb4_prb2_orb_s00_sl_dist" in str(err.value)
+        assert "rb4_prb2_orb_s00_rl50_sl_dist" in str(err.value)
+
+    def test_a_pattern_matching_nothing_is_refused(self, ohlc_df):
+        ctx = self._ctx(sl_dist_column="*_orb_s09_sl_dist")
+        with pytest.raises(ColumnRoleError, match=r"\*_orb_s09_sl_dist"):
+            OrbExitStrategy().resolve_distances(self._df(ohlc_df), 2.0, 1.0, ctx)

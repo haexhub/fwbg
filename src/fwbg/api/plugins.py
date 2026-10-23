@@ -2,6 +2,7 @@
 import importlib.util
 import inspect
 import json
+import logging
 import mimetypes
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from fwbg.api.deps import get_plugin_registry
+from fwbg.pipeline.registry import PluginNotFoundError
 from fwbg_sdk import BasePlugin, PluginPhase
 from fwbg_sdk.registry import ENTRY_MODIFIER_REGISTRY, EXIT_MODIFIER_REGISTRY
 
@@ -22,6 +24,7 @@ exit_modifiers_router = APIRouter(prefix="/exit-modifiers", tags=["exit-modifier
 entry_modifiers_router = APIRouter(prefix="/entry-modifiers", tags=["entry-modifiers"])
 
 _AGENT_AUTHORED_NAMESPACE = "agent-authored"
+logger = logging.getLogger(__name__)
 
 # Singular PluginKind (fwbg-agents) → plural category dir (fwbg registry)
 _KIND_TO_CATEGORY: dict[str, str] = {
@@ -104,55 +107,26 @@ def _plugin_to_dict(fqn: str) -> dict:
     namespace, plugin_name = fqn.split(":", 1)
     manifest = registry.get_plugin_manifest(fqn)
 
-    # Some plugins override get_default_params/get_param_schema as instance methods
-    try:
-        defaults = plugin_cls.get_default_params()
-    except TypeError:
-        defaults = plugin_cls().get_default_params()
-
-    try:
-        param_schema = plugin_cls.get_param_schema()
-    except TypeError:
-        param_schema = plugin_cls().get_param_schema()
+    defaults = plugin_cls.get_default_params()
+    param_schema = plugin_cls.get_param_schema()
+    plugin_instance = plugin_cls()
 
     # Get feature columns for indicator plugins
     feature_columns: list[str] = []
     signal_columns: list[str] = []
     plot_columns: list[str] = []
     if hasattr(plugin_cls, "get_feature_columns"):
-        try:
-            feature_columns = plugin_cls.get_feature_columns()
-        except TypeError:
-            try:
-                feature_columns = plugin_cls().get_feature_columns()
-            except Exception:
-                pass
+        feature_columns = plugin_instance.get_feature_columns()
     if hasattr(plugin_cls, "get_signal_columns"):
-        try:
-            signal_columns = plugin_cls.get_signal_columns()
-        except TypeError:
-            try:
-                signal_columns = plugin_cls().get_signal_columns()
-            except Exception:
-                pass
+        signal_columns = plugin_instance.get_signal_columns()
     if hasattr(plugin_cls, "get_plot_columns"):
-        try:
-            plot_columns = plugin_cls.get_plot_columns()
-        except TypeError:
-            try:
-                plot_columns = plugin_cls().get_plot_columns()
-            except Exception:
-                plot_columns = [c for c in feature_columns if c not in signal_columns]
+        plot_columns = plugin_instance.get_plot_columns()
+    elif feature_columns:
+        plot_columns = [c for c in feature_columns if c not in signal_columns]
 
     column_group_labels: dict[str, str] = {}
     if hasattr(plugin_cls, "get_column_group_labels"):
-        try:
-            column_group_labels = plugin_cls.get_column_group_labels()
-        except TypeError:
-            try:
-                column_group_labels = plugin_cls().get_column_group_labels()
-            except Exception:
-                pass
+        column_group_labels = plugin_instance.get_column_group_labels()
 
     return {
         "fqn": fqn,
@@ -305,7 +279,44 @@ def list_plugins(
             raise HTTPException(400, f"Invalid phase: {phase}")
 
     fqns = registry.list_plugins(phase=phase_filter, namespace=namespace)
-    return [_plugin_to_dict(fqn) for fqn in sorted(fqns)]
+    result = []
+    for fqn in sorted(fqns):
+        try:
+            result.append(_plugin_to_dict(fqn))
+        except Exception as exc:
+            logger.exception("Plugin metadata failed: %s", fqn)
+            namespace, _, plugin_name = fqn.partition(":")
+            try:
+                plugin_cls = registry.get(fqn)
+            except Exception:
+                plugin_cls = None
+            phase = getattr(plugin_cls, "phase", "unknown")
+            if isinstance(phase, PluginPhase):
+                phase = phase.value
+            result.append(
+                {
+                    "fqn": fqn,
+                    "name": plugin_name or fqn,
+                    "namespace": namespace,
+                    "phase": str(phase),
+                    "version": getattr(plugin_cls, "version", "unknown"),
+                    "param_schema": {},
+                    "defaults": {},
+                    "description": "",
+                    "group": getattr(plugin_cls, "group", "custom"),
+                    "stateful": getattr(plugin_cls, "stateful", False),
+                    "cacheable": getattr(plugin_cls, "cacheable", True),
+                    "depends_on": list(getattr(plugin_cls, "depends_on", [])),
+                    "has_docs": False,
+                    "feature_columns": [],
+                    "signal_columns": [],
+                    "plot_columns": [],
+                    "column_group_labels": {},
+                    "broken": True,
+                    "metadata_error": str(exc),
+                }
+            )
+    return result
 
 
 # --- Docs endpoints (must be before the catch-all GET /{fqn:path}) ---
@@ -519,11 +530,12 @@ def run_plugin_tests(fqn: str) -> dict:
 @router.get("/{fqn:path}")
 def get_plugin(fqn: str) -> dict:
     """Get plugin details by fully qualified name."""
-    _registry = get_plugin_registry()
+    registry = get_plugin_registry()
     try:
-        return _plugin_to_dict(fqn)
-    except Exception:
-        raise HTTPException(404, f"Plugin not found: {fqn}")
+        registry.get(fqn)
+    except (PluginNotFoundError, ValueError) as exc:
+        raise HTTPException(404, f"Plugin not found: {fqn}") from exc
+    return _plugin_to_dict(fqn)
 
 
 # --- Exit Modifiers ---
@@ -543,15 +555,8 @@ def list_exit_modifiers_endpoint() -> list[dict]:
                 manifest = m
                 break
 
-        try:
-            defaults = cls.get_default_params()
-        except TypeError:
-            defaults = cls().get_default_params()
-
-        try:
-            param_schema = cls.get_param_schema()
-        except TypeError:
-            param_schema = cls().get_param_schema()
+        defaults = cls.get_default_params()
+        param_schema = cls.get_param_schema()
 
         result.append({
             "name": name,
@@ -581,15 +586,8 @@ def list_entry_modifiers_endpoint() -> list[dict]:
                 manifest = m
                 break
 
-        try:
-            defaults = cls.get_default_params()
-        except TypeError:
-            defaults = cls().get_default_params()
-
-        try:
-            param_schema = cls.get_param_schema()
-        except TypeError:
-            param_schema = cls().get_param_schema()
+        defaults = cls.get_default_params()
+        param_schema = cls.get_param_schema()
 
         result.append({
             "name": name,

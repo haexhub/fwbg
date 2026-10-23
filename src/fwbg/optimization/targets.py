@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Tuple, Optional, TYPE_CHECKING
 
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_exit_strategy, GridParams
+from fwbg.core.columns import resolve_role_column
 
 if TYPE_CHECKING:
     from fwbg_sdk.models import BaseModel
@@ -87,8 +88,14 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
         np.ndarray der Level-Preise oder None (sl_level nicht gesetzt/none
         oder keine passende Spalte).
 
+    ``sl_level_column`` in exit_params wählt die Spalte explizit (Name oder
+    fnmatch-Glob-Muster mit genau einem Treffer); ohne sie müssen die
+    Kandidaten eindeutig sein (z. B. nur eine ORB-Session).
+
     Raises:
         ValueError: wenn der Suffix nicht in den Schema-Choices enthalten ist.
+        ColumnRoleError: wenn mehrere Spalten passen und ``sl_level_column``
+            fehlt, oder ein Muster keine bzw. mehrere Spalten trifft.
     """
     sl_level_suffix = exit_params.get("sl_level")
     if not sl_level_suffix or sl_level_suffix == "none":
@@ -101,13 +108,16 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
             f"Invalid sl_level '{sl_level_suffix}' for exit strategy "
             f"'{ctx.exit_strategy}'; allowed: {choices}"
         )
-    sl_col = next(
-        (c for c in df.columns if c.endswith(f"_{sl_level_suffix}")),
-        None,
+    sl_col = resolve_role_column(
+        df.columns, exit_params.get("sl_level_column"),
+        lambda c: c.endswith(f"_{sl_level_suffix}"), "sl_level_column",
     )
     if sl_col is None:
         return None
-    return df[sl_col].values.astype(np.float64)
+    # A non-positive or non-finite level (e.g. a zero-filled NaN) is no level:
+    # the row falls back to the distance stop instead of a stop near zero.
+    levels = df[sl_col].values.astype(np.float64)
+    return np.where(np.isfinite(levels) & (levels > 0), levels, np.nan)
 
 
 def simulate_trades(
@@ -238,22 +248,20 @@ def simulate_trades(
 
     # Signal rules pre-filter: when _composed_signal_long/short columns exist,
     # only allow entries on bars where the signal is active (== 1.0).
-    # This lets signal_rules act as entry gates for ML models.
-    # Skipped when return_detailed=False during inner-CV evaluation (too few
-    # signal bars in small validation windows would starve the grid search).
+    # This lets signal_rules act as entry gates for ML models.  The filter is
+    # independent of return_detailed: that flag controls only extra output.
     signal_long = None
     signal_short = None
-    if return_detailed:
-        signal_long = (
-            df["_composed_signal_long"].values
-            if "_composed_signal_long" in df.columns
-            else None
-        )
-        signal_short = (
-            df["_composed_signal_short"].values
-            if "_composed_signal_short" in df.columns
-            else None
-        )
+    signal_long = (
+        df["_composed_signal_long"].values
+        if "_composed_signal_long" in df.columns
+        else None
+    )
+    signal_short = (
+        df["_composed_signal_short"].values
+        if "_composed_signal_short" in df.columns
+        else None
+    )
 
     # Signal event limiting: prevent re-entry into the same persistent signal.
     # A "signal event" is a contiguous run of bars where P(win) >= ct.
@@ -332,9 +340,10 @@ def simulate_trades(
                 timeout_bars=timeout_bars,
                 in_session=in_session,
                 sl_level_abs=sl_abs,
+                sl_level_mult=sl,
                 entry_delay=entry_delay,
                 breakeven_trigger=breakeven_trigger,
-                trail_distance=td if breakeven_trigger > 0.0 else 0.0,
+                trail_distance=td,
                 scale_levels=scale_levels,
                 scale_qty_mult=scale_qty_mult,
             )
