@@ -9,7 +9,9 @@ name: Main Auto-Merge
 # enforce-main-base.yml's allowlist.
 
 on:
-  pull_request:
+  # Run the trusted base-branch workflow because this job exposes RELEASE_PAT.
+  # The job deliberately does not check out or execute PR code.
+  pull_request_target:
     branches:
       - main
 
@@ -29,5 +31,8 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PAT (not GITHUB_TOKEN) - GitHub suppresses push-triggered workflow
+          # runs (release-please.yml, CI) for events produced by GITHUB_TOKEN,
+          # so a GITHUB_TOKEN merge to main silently drops the release cycle.
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
         run: gh pr merge "$PR_NUMBER" --merge --auto --repo "$REPO"
