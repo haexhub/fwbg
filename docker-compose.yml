@@ -35,6 +35,10 @@ services:
   api:
     image: ghcr.io/haexhub/fwbg:latest
     container_name: fwbg-api
+    # Pending research markers carry the host name, and a marker from another
+    # host always looks alive. A stable name lets a restarted container record
+    # its own interrupted runs.
+    hostname: fwbg-api
     restart: unless-stopped
     command: ["uvicorn", "fwbg.api:app", "--host", "0.0.0.0", "--port", "8420"]
     volumes:
@@ -48,6 +52,13 @@ services:
       # Agent-authored plugins: shared with ig-bot so registered plugins
       # persist across redeploys and are available to the bot as well.
       - fwbg-agent-plugins:/root/.fwbg/plugins
+      # Research register: the host's private git repo, so CLI and API record
+      # into one register. Must exist (python -m fwbg.cli research init); never created here.
+      - type: bind
+        source: ${FWBG_RESEARCH_HOST_DIR:-${HOME}/fwbg/research}
+        target: /root/fwbg/research
+        bind:
+          create_host_path: false
     environment:
       - TZ=Europe/Berlin
       - LOG_DIR=/app/logs
@@ -62,6 +73,11 @@ services:
       # over the bypass, so both may be present.
       - FWBG_API_KEY=${FWBG_API_KEY:-}
       - FWBG_ALLOW_UNAUTHENTICATED_API=1
+      # Committer of register commits made by API-started runs (no signing key in the image).
+      - GIT_AUTHOR_NAME=fwbg-api
+      - GIT_AUTHOR_EMAIL=fwbg-api@localhost
+      - GIT_COMMITTER_NAME=fwbg-api
+      - GIT_COMMITTER_EMAIL=fwbg-api@localhost
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     logging:

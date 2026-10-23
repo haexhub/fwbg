@@ -502,12 +502,13 @@ class OpeningRangeIndicator(BaseIndicator):
         # Structural columns are NOT shifted: they represent completed-range
         # levels (or_high, or_low, sl_dist, etc.) needed by the exit strategy
         # at the breakout bar itself (especially with entry_delay=0).
-        signal_keys = set(self._signal_columns)
-        structural_keys = {
+        # A list in feature order, not a set: the column layout must not depend
+        # on PYTHONHASHSEED. orb_based refuses several *_sl_dist candidates
+        # unless exit_params names one, but other consumers still see the order.
+        no_shift = [
             k for k in features
-            if any(k.endswith(s) for s in ORB_STRUCTURAL_SUFFIXES)
-        }
-        no_shift = signal_keys | structural_keys
+            if any(k.endswith(s) for s in ORB_SIGNAL_SUFFIXES + ORB_STRUCTURAL_SUFFIXES)
+        ]
         shifted = {k: v for k, v in features.items() if k not in no_shift}
         features_df = shift_features(shifted, df.index)
         for k in no_shift:

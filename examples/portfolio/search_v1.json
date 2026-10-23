@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "base_config": "trend_10m.json",
+  "name": "Seven fixed monthly allocation rules; zero cash yield",
+  "declared_before_new_candidate_runs": true,
+  "candidates": [
+    {"id": "sma_10", "strategy": "sma", "lookback_months": 10},
+    {"id": "absolute_12", "strategy": "absolute_momentum", "lookback_months": 12},
+    {"id": "relative_12_top2", "strategy": "relative_momentum", "lookback_months": 12},
+    {"id": "dual_12_top2", "strategy": "dual_momentum", "lookback_months": 12},
+    {"id": "equity_dual_12", "strategy": "equity_dual_momentum", "lookback_months": 12},
+    {"id": "reversal_1_top2", "strategy": "reversal", "lookback_months": 1},
+    {"id": "inverse_vol_12", "strategy": "inverse_volatility", "lookback_months": 12}
+  ],
+  "selection_count": 2,
+  "equity_assets": ["SPY", "EFA", "EEM"],
+  "defensive_asset": "IEF",
+  "cost_multipliers": [1, 2, 5],
+  "permutations": 10000,
+  "seed": 42,
+  "pbo_score": "mean monthly return in each of eight chronological test windows",
+  "multiple_testing": "Holm over 14 hypotheses: seven profitability and seven static-benchmark comparisons; each uses the largest monthly/3m/6m p-value across full and chronological samples",
+  "pass_rule": "Original fixed-rule profitability checks at every cost level, Holm adjusted profitability p < 0.05 at every cost level, native PBO <= 0.50 at every cost level. Benchmark superiority is evaluated separately.",
+  "selection_rule": "Choose maximum mean monthly return in 2006-2015; assess this frozen choice in 2016-2025. Previously viewed historical data, not an untouched holdout.",
+  "sources": [
+    "https://www.aqr.com/Insights/Research/Journal-Article/Time-Series-Momentum",
+    "https://www.optimalmomentum.com/dual-relative-absolute-momentum/"
+  ],
+  "limitations": [
+    "Long-only unlevered ETF adaptations, not exact replications of futures research or proprietary models.",
+    "Reversal and inverse-volatility are exploratory controls, not claimed replications of cited momentum research.",
+    "Known surviving ETF universe and previously inspected history; unknown earlier searches/publication bias remain uncorrected.",
+    "ETF costs are assumptions; no CFD funding, taxes or broker-specific execution model. Cash earns exactly zero."
+  ]
+}

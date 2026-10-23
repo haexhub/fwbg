@@ -84,3 +84,48 @@ class TestWrongSideSlLevelGuard:
         assert trade is not None
         assert trade["sl_level"] == pytest.approx(1.2650)
         assert trade["result"] == -1.0
+
+
+class TestSlLevelScaledBySlMult:
+    """sl_mult scales the distance from entry to the level: sl_mult 1 is the level."""
+
+    SPREAD = 0.0003
+    # Flat bars after entry: the stop is placed but never hit.
+    PRICES = [(1.2600, 1.2601, 1.2599, 1.2600)] * 3
+
+    def _trade(self, direction, level, sl_mult):
+        o, h, lo, c = _mk_arrays(self.PRICES)
+        return simulate_pro_trade(
+            c, h, lo, idx=0, direction=direction,
+            tp_distance=0.0100, sl_distance=0.0024 * sl_mult, spread=self.SPREAD,
+            opens=o, sl_level_abs=level, sl_level_mult=sl_mult, timeout_bars=1,
+        )
+
+    @pytest.mark.parametrize("sl_mult", [1.0, 1.5])
+    def test_long_stop_sits_sl_mult_times_the_level_distance_below_entry(self, sl_mult):
+        trade = self._trade(1, 1.2580, sl_mult)
+        entry = trade["entry_price"]
+        assert trade["sl_level"] == pytest.approx(entry - sl_mult * (entry - 1.2580))
+
+    @pytest.mark.parametrize("sl_mult", [1.0, 1.5])
+    def test_short_stop_sits_sl_mult_times_the_level_distance_above_entry(self, sl_mult):
+        trade = self._trade(-1, 1.2620, sl_mult)
+        entry = trade["entry_price"]
+        assert trade["sl_level"] == pytest.approx(entry + sl_mult * (1.2620 - entry))
+
+    def test_level_on_the_wrong_side_falls_back_to_the_scaled_distance(self):
+        trade = self._trade(1, 5.0, 1.5)
+        assert trade["sl_level"] == pytest.approx(trade["entry_price"] - 0.0024 * 1.5)
+
+
+def test_legacy_positional_arguments_after_sl_level_remain_in_place():
+    """Adding sl_level_mult must not shift the existing positional API."""
+    prices = [(1.2600, 1.2601, 1.2599, 1.2600)] * 3
+    o, h, l, c = _mk_arrays(prices)
+    trade = simulate_pro_trade(
+        c, h, l, 0, 1, 0.0100, 0.0024, 0.0003,
+        None, None, None, o, 1, None, 1.2580, 0,
+        0.0, 0.0, None, 1.0,
+    )
+    assert trade is not None
+    assert trade["entry_idx"] == 0

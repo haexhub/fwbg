@@ -12,6 +12,12 @@ from typing import Any, Dict, List
 
 import numpy as np
 
+from fwbg.simulation.equity import simulate_equity_timeline
+from fwbg.simulation.trade import (
+    monte_carlo_equity_from_returns,
+    monte_carlo_permutation_test,
+)
+
 
 def circuit_breaker_mask(
     binary_trades: List[float],
@@ -47,6 +53,73 @@ def circuit_breaker_mask(
     return mask
 
 
+def sized_returns(trades, fk, circuit_breaker, prior_pnls):
+    """Size *trades* with risk parameters calibrated beforehand (no hindsight).
+
+    fk and circuit breaker come from earlier data; the loss scale (cf.
+    ``pnl_to_returns``) is the mean loss of *prior_pnls*. Returns (returns,
+    pnl, indices of the trades the circuit breaker let through).
+    """
+    mask = circuit_breaker_mask(
+        [t["result"] for t in trades],
+        circuit_breaker["pause_after_losses"] if circuit_breaker.get("enabled") else 0,
+        circuit_breaker.get("pause_bars", 0),
+    )
+    losses = [abs(p) for p in prior_pnls if p < 0]
+    scale = (
+        float(np.mean(losses)) if losses
+        else float(np.mean(np.abs(prior_pnls))) or 1.0
+    )
+    taken = [i for i, keep in enumerate(mask) if keep]
+    pnl = [trades[i]["pnl_raw"] for i in taken]
+    return [fk * p / scale for p in pnl], pnl, taken
+
+
+def monte_carlo_summary(pnl, returns) -> Dict[str, Any]:
+    """Permutation test on *pnl* and equity Monte Carlo on *returns*, as reported."""
+    mc_perm = monte_carlo_permutation_test(pnl, n_permutations=1000)
+    mc_equity = monte_carlo_equity_from_returns(returns, n_simulations=500)
+    return {
+        "p_value": mc_perm["p_value"],
+        "is_significant": mc_perm["is_significant"],
+        "percentile": mc_perm["percentile"],
+        "equity_median": mc_equity["median_equity"],
+        "equity_p5": mc_equity["p5_equity"],
+        "equity_p95": mc_equity["p95_equity"],
+        "bankruptcy_rate": mc_equity["bankruptcy_rate"],
+    }
+
+
+def equity_replay(exit_times, returns, max_points=2000) -> Dict[str, Any]:
+    """Replay *returns* at their real exit times (time-true equity curve).
+
+    Instead of compounding by trade index, the returns are replayed
+    chronologically over the whole history → max DD and annual return from
+    the real calendar span. Curves longer than *max_points* are thinned.
+    """
+    equity = simulate_equity_timeline(exit_times, returns)
+    pts = equity["equity_points"]
+    if len(pts) > max_points:
+        step = len(pts) // max_points + 1
+        equity["equity_points"] = pts[::step] + [pts[-1]]
+    return equity
+
+
+def slim_trades(trades_detailed) -> List[Dict[str, Any]]:
+    """The fields of each detailed trade that results.json keeps."""
+    return [
+        {
+            "entry_time": t.get("entry_time"),
+            "exit_time": t.get("exit_time"),
+            "direction": t.get("direction"),
+            "result": t.get("result"),
+            "pnl_raw": t.get("pnl_raw"),
+            "exit_reason": t.get("exit_reason"),
+        }
+        for t in trades_detailed
+    ]
+
+
 def compute_causal_reporting(
     unified_fold_results: List[Dict[str, Any]],
     risk_mgr,
@@ -59,7 +132,8 @@ def compute_causal_reporting(
     den Trades der Folds 0..i-1 aufgerufen; das Ergebnis (risk_per_trade,
     Circuit-Breaker) wird ohne erneute Suche auf Fold i angewandt. Auch die
     Loss-Skala der Return-Umrechnung (avg. Loss, vgl. ``pnl_to_returns``)
-    stammt ausschließlich aus den Prior-Folds.
+    stammt ausschließlich aus den Prior-Folds. Das RRR ist das des Settings,
+    mit dem Fold i getradet wurde (``fold_result["rrr"]``), sonst ``rrr``.
 
     Fold 0 hat keine Prior-Daten und wird ausgeschlossen. Liefert die
     Prior-Kalibrierung fk <= 0, gilt der Fold als nicht getradet.
@@ -102,7 +176,7 @@ def compute_causal_reporting(
         else:
             prior_wr = sum(1 for b in prior_binary if b > 0) / len(prior_binary)
             risk_result = risk_mgr.compute_risk_params(
-                prior_binary, prior_wr, rrr,
+                prior_binary, prior_wr, fold_result.get("rrr", rrr),
                 rv_values=prior_rv if len(prior_rv) == len(prior_binary) else None,
                 **risk_params,
             )
@@ -113,24 +187,13 @@ def compute_causal_reporting(
                 untraded_folds.append(fold_idx)
                 excluded_trades += len(fold_trades)
             else:
-                cb = risk_result["circuit_breaker"]
-                mask = circuit_breaker_mask(
-                    fold_binary,
-                    cb["pause_after_losses"] if cb.get("enabled") else 0,
-                    cb.get("pause_bars", 0),
+                returns, pnl, taken = sized_returns(
+                    fold_trades, fk, risk_result["circuit_breaker"], prior_pnls
                 )
-                prior_losses = [abs(p) for p in prior_pnls if p < 0]
-                scale = (
-                    float(np.mean(prior_losses)) if prior_losses
-                    else float(np.mean(np.abs(prior_pnls))) or 1.0
-                )
-                for i, (pnl, taken) in enumerate(zip(fold_pnls, mask)):
-                    if taken:
-                        causal_returns.append(fk * pnl / scale)
-                        causal_pnl.append(pnl)
-                        causal_trade_indices.append(flat_offset + i)
-                    else:
-                        excluded_trades += 1
+                causal_returns.extend(returns)
+                causal_pnl.extend(pnl)
+                causal_trade_indices.extend(flat_offset + i for i in taken)
+                excluded_trades += len(fold_trades) - len(taken)
 
         prior_binary.extend(fold_binary)
         prior_pnls.extend(fold_pnls)

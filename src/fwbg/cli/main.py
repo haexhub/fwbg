@@ -8,7 +8,9 @@ import json
 import math
 import warnings
 import argparse
-from functools import partial
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 import matplotlib
 matplotlib.use("Agg")
@@ -36,9 +38,10 @@ class _SafeJsonEncoder(json.JSONEncoder):
 
 
 from fwbg_sdk.enums import Timeframe  # noqa: E402
+from fwbg.statuses import EXECUTED_STATUSES  # noqa: E402
 from fwbg.data import config as data_config  # noqa: E402
 from fwbg.core.config import StrategyConfig  # noqa: E402
-from fwbg.optimization.process import process_symbol  # noqa: E402
+from fwbg.optimization.holdout import symbol_worker  # noqa: E402
 from fwbg.utils.progress import ProgressTracker, init_progress_queue, report_result  # noqa: E402
 from fwbg.results.storage import (  # noqa: E402
     generate_run_id,
@@ -49,6 +52,18 @@ from fwbg.results.storage import (  # noqa: E402
 from fwbg.optimization.resource_manager import SimplePoolManager, get_resource_info  # noqa: E402
 from fwbg.simulation.equity import simulate_equity_from_pnl, filter_correlated_assets  # noqa: E402
 from fwbg.results.plotting import create_asset_plot  # noqa: E402
+from fwbg.results import storage as results_storage  # noqa: E402
+from fwbg.results.symbol_files import config_extras, write_development  # noqa: E402
+from fwbg.api.workspace import get_research_dir  # noqa: E402
+from fwbg.research.runs import (  # noqa: E402
+    GATE_ENV,
+    BeforeRun,
+    ResearchRun,
+    add_run_arguments,
+    gate_enabled,
+    prepare_metadata,
+    run_gated,
+)
 from .commands import (  # noqa: E402
     show_runs,
     show_comparison,
@@ -60,29 +75,32 @@ from .commands import (  # noqa: E402
 warnings.filterwarnings("ignore")
 
 
-# Per-symbol statuses that mean a backtest actually executed (as opposed to
-# bailing out before evaluation: no_data, insufficient_data, no_signal_source,
-# no_successful_folds, missing_model_dependencies, error, ...).
-EXECUTED_STATUSES = frozenset({"ok", "no_edge", "not_significant", "no_unified_trades"})
-
-
 def _ran_real_backtest(raw_results) -> bool:
     """True if at least one symbol actually executed a backtest.
 
     A run where every symbol bailed out before evaluation is broken, not a
     legitimate "no edge found" — the caller fails it loudly instead of
-    reporting a silently "completed" empty run.
+    reporting a silently "completed" empty run. A holdout look's symbol ran iff
+    its holdout was looked at, the rule the research ledger counts by.
     """
-    return any(r and r.get("status") in EXECUTED_STATUSES for r in raw_results)
+    return any(
+        r and (
+            (r.get("holdout") or {}).get("evaluated") is True
+            if "holdout" in r
+            else r.get("status") in EXECUTED_STATUSES
+        )
+        for r in raw_results
+    )
 
 
 def run_optimizer(
-    description=None,
-    save_results=True,
-    strategy_metadata=None,
-    asset_filter=None,
-    run_id=None,
-):
+    description: str | None = None,
+    save_results: bool = True,
+    strategy_metadata: Mapping[str, Any] | None = None,
+    asset_filter: list[str] | None = None,
+    run_id: str | None = None,
+    before_run: BeforeRun | None = None,
+) -> dict[str, Any] | None:
     """
     Führt die Walk-Forward Optimierung aus.
 
@@ -91,12 +109,22 @@ def run_optimizer(
         save_results: Wenn True, werden Ergebnisse in test_results/ gespeichert
         strategy_metadata: Strukturierte Strategie-Metadaten (dict oder via create_strategy_metadata())
         asset_filter: Liste von Assets die getestet werden sollen (None = alle)
+        before_run: Research-Gate ``(metadata, symbols) -> metadata``; Pflicht solange das Gate an ist
     """
+    if before_run is None and gate_enabled():
+        raise RuntimeError(
+            f"run_optimizer needs the research gate (before_run) while {GATE_ENV} is on"
+        )
     # Strategy-Config für Worker erstellen
     if strategy_metadata:
         strategy = StrategyConfig.from_dict(strategy_metadata)
     else:
         strategy = StrategyConfig()
+    if before_run is None and strategy.holdout_cutoff:
+        # Ungated, the look would go unrecorded and later pass for development data.
+        print("Error: holdout_cutoff is set by the research gate (--holdout), "
+              "not by the strategy; refusing an ungated holdout look.")
+        return None
 
     # Datasource aus Strategy übernehmen (via Data-Source-Registry)
     if strategy.datasource:
@@ -192,6 +220,12 @@ def run_optimizer(
         print(f"Verfügbare Dateien: {glob.glob(f'{data_config.DATA_PATH}/*.csv')[:5]}...")
         return None
 
+    # Research gate: needs the concrete symbols and runs before anything is written.
+    if before_run is not None:
+        symbols = [os.path.basename(f).split("_")[0] for f in files]
+        strategy_metadata = before_run(strategy_metadata or {}, symbols)
+        strategy = StrategyConfig.from_dict(strategy_metadata)
+
     # Run-ID und Verzeichnis erstellen
     if not run_id:
         run_id = generate_run_id(description)
@@ -243,7 +277,6 @@ def run_optimizer(
     )
 
     # Progress-Tracker im Hauptprozess mit Queue für Worker-Updates
-    from pathlib import Path
     run_dir_path = Path(run_path) if run_path else None
     progress_tracker = ProgressTracker(
         len(files), asset_names, queue=progress_queue,
@@ -341,9 +374,11 @@ def run_optimizer(
             config_data["holdout_result"] = result["holdout_result"]
         if result.get("best_candidate"):
             config_data["best_candidate"] = result["best_candidate"]
+        config_data.update(config_extras(result))
 
         with open(os.path.join(sym_dir, "config.json"), "w") as f:
             json.dump(config_data, f, indent=2, cls=_SafeJsonEncoder)
+        write_development(sym_dir, result, _SafeJsonEncoder)
 
         # --- fold_results.json: Walk-Forward Folds + Bias-Check ---
         fold_data = {}
@@ -417,6 +452,10 @@ def run_optimizer(
             _ta = result.get("trade_analytics") or {}
             _n_long = (_ta.get("long_stats") or {}).get("total", 0)
             _n_short = (_ta.get("short_stats") or {}).get("total", 0)
+            if not _ta:
+                # A holdout look has no trade analytics; its trades carry their direction.
+                _directions = [t.get("direction") for t in result.get("trades_detailed") or []]
+                _n_long, _n_short = _directions.count("LONG"), _directions.count("SHORT")
 
             unified_metrics = {
                 "pnl": round(sum(_trades), 4),
@@ -439,6 +478,7 @@ def run_optimizer(
                 "n_long": _n_long,
                 "n_short": _n_short,
             }
+            unified_metrics.update(result.get("return_stats") or {})
             with open(os.path.join(sym_dir, "unified_metrics.json"), "w") as f:
                 json.dump(unified_metrics, f, indent=2)
 
@@ -466,7 +506,8 @@ def run_optimizer(
 
         # Zusammenfassung für später sammeln (wird nach Progress-UI ausgegeben)
         output_lines = []
-        if status in ["ok", "no_edge", "not_significant"]:
+        # A holdout look that was not evaluated carries no config (optimization.holdout).
+        if status in ["ok", "no_edge", "not_significant"] and (result.get("config") or result.get("best_config")):
             # Config extrahieren (entweder aus "config" oder "best_config")
             cfg = result.get("config") or result.get("best_config", {})
             tp = cfg.get("tp_mult", "?")
@@ -482,7 +523,7 @@ def run_optimizer(
 
             # Walk-Forward
             wf = result.get("walk_forward", {})
-            std_wr = wf.get("std_win_rate", 0)
+            std_wr = wf.get("std_win_rate") or 0  # None: no fold traded
             std_pnl = wf.get("std_pnl", 0)
             n_folds = wf.get("n_folds", 0)
             mean_bias = wf.get("mean_bias_ratio", 0)
@@ -505,8 +546,10 @@ def run_optimizer(
             # Details
             output_lines.append(f"  Best Config: TP={tp}, SL={sl}, CT={ct:.2f}")
             output_lines.append(f"  Walk-Forward: WR={wr:.1%}±{std_wr:.1%}, RRR={rrr:.2f}, PnL={pnl:.1f}±{std_pnl:.1f}")
-            output_lines.append(f"  Performance: Sharpe={sharpe:.2f}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
-            output_lines.append(f"  Bias: Mean={mean_bias:.2f}x, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
+            sharpe_text = "n/a" if sharpe is None else f"{sharpe:.2f}"
+            output_lines.append(f"  Performance: Sharpe={sharpe_text}, Calmar={calmar:.2f}, Trades={total_trades} ({n_folds} folds)")
+            mean_bias_text = "n/a" if mean_bias is None else f"{mean_bias:.2f}x"
+            output_lines.append(f"  Bias: Mean={mean_bias_text}, Ratios={[f'{r:.2f}' for r in bias_ratios]}")
 
             # Status-spezifische Zeilen
             if status == "ok":
@@ -539,7 +582,7 @@ def run_optimizer(
             if best_grid:
                 output_lines.append(f"  Best Grid: TP={best_grid.get('tp_mult', '?')}, "
                                     f"SL={best_grid.get('sl_mult', '?')}, "
-                                    f"CT={best_grid.get('conf_thresh', '?')}, "
+                                    f"CT={best_grid.get('conf_thresh', best_grid.get('ct', '?'))}, "
                                     f"Inner PnL={best_grid.get('inner_val_pnl', 0):.1f}, "
                                     f"Stability={best_grid.get('fold_stability', 0):.0%}")
 
@@ -554,8 +597,8 @@ def run_optimizer(
     print(f"\nStarte Verarbeitung von {len(files)} Assets...\n")
     progress_tracker.start()
 
-    # Worker-Funktion mit Strategy-Config via partial wrappen
-    worker_func = partial(process_symbol, strategy=strategy)
+    # Worker-Funktion mit Strategy-Config (Holdout-Look bei gesetztem Cutoff)
+    worker_func = symbol_worker(strategy)
 
     try:
         raw_results = pool_manager.map_adaptive(
@@ -604,6 +647,12 @@ def run_optimizer(
     # No symbol ran a real backtest → the run is broken. Return None so main()
     # exits non-zero and the API records the run as "failed" instead of a
     # silently "completed" few-second empty run.
+    if not ran_real_backtest and strategy.holdout_cutoff:
+        print(
+            "\nERROR: no symbol reached its holdout — every development ended before "
+            "the holdout look (e.g. no_edge, no_successful_folds). The run counts as failed."
+        )
+        return None
     if not ran_real_backtest:
         print(
             "\nFEHLER: Kein Symbol hat einen Backtest ausgeführt — alle Assets "
@@ -683,7 +732,10 @@ def run_optimizer(
             and fold_stability >= MIN_FOLD_STABILITY
         )
 
-        if is_profitable:
+        # A holdout look is an evaluation, never a deployment export.
+        if strategy.holdout_cutoff:
+            status = "HOLDOUT"
+        elif is_profitable:
             export_config = {k: v for k, v in e["config"].items()}
             final_assets[sym] = export_config
             status = "OK"
@@ -832,6 +884,17 @@ def main():
     import faulthandler
     faulthandler.enable()  # Dump Python traceback on SIGSEGV/SIGABRT (C-level crashes)
 
+    if len(sys.argv) > 1 and sys.argv[1] == "portfolio":
+        from fwbg.portfolio.cli import main as portfolio_main
+
+        portfolio_main(sys.argv[2:])
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "research":
+        from fwbg.research.cli import main as research_main
+
+        raise SystemExit(research_main(sys.argv[2:]))
+
     # Handle 'data' subcommand (ETL: raw → datasource)
     if len(sys.argv) > 1 and sys.argv[1] == "data":
         _run_data_command(sys.argv[2:])
@@ -858,14 +921,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Beispiele:
-  python -m fwbg.cli                                    # Standard-Run
+  python -m fwbg.cli portfolio --help                  # Monthly portfolio research
+  python -m fwbg.cli --strategy-file x.json --research-id S-NNNN --note "was und warum"
+                                                        # Run: jeder Run braucht --research-id und --note
   python -m fwbg.cli -d "Test mit neuen Makros"        # Mit Beschreibung
   python -m fwbg.cli --strategy                        # Interaktive Strategie-Eingabe
   python -m fwbg.cli --strategy-file strategies/configs/x.json # Strategie aus Datei laden
   python -m fwbg.cli --list                            # Alle Runs anzeigen
   python -m fwbg.cli --list --tags baseline            # Nach Tags filtern
   python -m fwbg.cli --compare RUN1 RUN2               # Runs vergleichen
-  python -m fwbg.cli --no-save                         # Ohne Speichern
   python -m fwbg.cli --assets EURUSD,GBPUSD            # Nur bestimmte Assets
   python -m fwbg.cli --reverse-worst RUN_ID            # Schlechteste Strategien umkehren
 
@@ -896,6 +960,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                         help="Backtest-Fenster Ende (ISO, überschreibt Strategy-end_date)")
     parser.add_argument("--cost-multiplier", type=float, metavar="X",
                         help="Spread/Slippage-Multiplikator (z.B. 2.0 für Kosten-Stresstest)")
+    add_run_arguments(parser)
 
     args = parser.parse_args()
 
@@ -924,6 +989,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
             strategy_metadata = load_strategy_from_file(args.strategy_file)
         elif args.strategy:
             strategy_metadata = prompt_strategy_metadata()
+        strategy_metadata_loaded = strategy_metadata
 
         # CLI --timeframe überschreibt Strategy-Timeframe
         if strategy_metadata is None:
@@ -969,12 +1035,48 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 print(f"Keine Assets für Klassen {classes} gefunden!")
                 return
 
-        result = run_optimizer(
-            description=args.description,
-            save_results=not args.no_save,
-            strategy_metadata=strategy_metadata if strategy_metadata else None,
-            asset_filter=asset_filter,
-            run_id=args.run_id,
+        research = None
+        run_id = args.run_id or generate_run_id(args.description)
+        if gate_enabled():
+            if args.no_save:
+                parser.error("--no-save runs cannot be recorded in the research register")
+            if (args.strategy_file or args.strategy) and not strategy_metadata_loaded:
+                sys.exit(1)  # loading failed or the prompt was aborted; never a default-config trial
+            try:
+                strategy_metadata = prepare_metadata(strategy_metadata, data_config.TIMEFRAME)
+            except (OSError, ValueError) as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                sys.exit(1)
+            research = ResearchRun(
+                get_research_dir(),
+                run_id,
+                (Path(results_storage.RESULTS_BASE_PATH) / run_id).resolve(),
+                research_id=args.research_id,
+                note=args.note,
+                reason=args.reason,
+                check_only=args.check or args.check_json,
+                holdout=args.holdout,
+            )
+        else:
+            if args.holdout:
+                parser.error(f"--holdout needs the research gate ({GATE_ENV} is off)")
+            if args.check or args.check_json:
+                parser.error(f"--check/--check-json needs the research gate ({GATE_ENV} is off)")
+            print(f"Warning: {GATE_ENV}=off - this run is neither gated nor recorded",
+                  file=sys.stderr)
+
+        def start(before_run=None):
+            return run_optimizer(
+                description=args.description,
+                save_results=not args.no_save,
+                strategy_metadata=strategy_metadata if strategy_metadata else None,
+                asset_filter=asset_filter,
+                run_id=run_id,
+                before_run=before_run,
+            )
+
+        result = (
+            start() if research is None else run_gated(research, start, as_json=args.check_json)
         )
         if result is None:
             sys.exit(1)

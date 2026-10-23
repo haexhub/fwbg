@@ -16,8 +16,8 @@ from fwbg.core.config import (
     OptimizationConfig,
     RegimeFilterGridConfig,
     StrategyConfig,
-    _load_json_preset,
 )
+from fwbg.core.presets import _load_json_preset
 
 
 # -- Fixtures --
