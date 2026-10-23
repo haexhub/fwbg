@@ -9,7 +9,9 @@ name: Main Auto-Merge
 # enforce-main-base.yml's allowlist.
 
 on:
-  pull_request:
+  # Run the trusted base-branch workflow because this job exposes RELEASE_PAT.
+  # The job deliberately does not check out or execute PR code.
+  pull_request_target:
     branches:
       - main
 
