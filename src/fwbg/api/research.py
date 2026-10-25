@@ -38,7 +38,13 @@ from fwbg.research.ledger import LEDGER_FILENAME, LedgerError, read_trials
 from fwbg.research.pending import PendingError, live_runs, read_pending
 from fwbg.research.repo import ResearchRepoError
 from fwbg.research.stats import unrankable_configs
-from fwbg.research.views import card_data, card_summary, coverage_section, iter_cards
+from fwbg.research.views import (
+    card_data,
+    card_detail,
+    card_summary,
+    coverage_section,
+    iter_cards,
+)
 
 router = APIRouter(prefix="/research", tags=["research"])
 
@@ -70,8 +76,13 @@ class StatusChange(BaseModel):
 
 
 @router.get("")
-def list_cards(status: Status | None = None, tag: str | None = None) -> dict[str, Any]:
+def list_cards(
+    status: Status | None = None, tag: str | None = None, detail: bool = False
+) -> dict[str, Any]:
     """Cards in id order; a card that does not load is listed with its error.
+
+    With ``detail`` each entry also carries the card's hypothesis, mechanism and
+    latest verdict, so a reader needs no request per card.
 
     If the pending markers cannot be read, ``running`` is ``null`` and
     ``pending_error`` says why.
@@ -94,7 +105,8 @@ def list_cards(status: Status | None = None, tag: str | None = None) -> dict[str
                 continue
             own = [trial for trial in trials if trial.strategy == card.id]
             count = None if running is None else running[card.id]
-            entries.append(card_summary(card, own, count, unrankable=unrankable))
+            entry = card_summary(card, own, count, unrankable=unrankable)
+            entries.append({**entry, **card_detail(card)} if detail else entry)
     return {"cards": entries, "pending_error": pending_error}
 
 
