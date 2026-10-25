@@ -376,6 +376,26 @@ def next_card_id(research_dir: Path, trials: Iterable[Trial]) -> str:
     return f"S-{number:04d}"
 
 
+def _headings(body: str) -> list[re.Match[str]]:
+    """The ``## `` heading matches of *body*, leaving out those inside code fences."""
+    fences = [m.span() for m in _FENCE_RE.finditer(body)]
+    return [
+        m
+        for m in _HEADING_RE.finditer(body)
+        if not any(start <= m.start() < end for start, end in fences)
+    ]
+
+
+def section_text(body: str, heading: str) -> str | None:
+    """The text under ``## <heading>`` in a card body, stripped; ``None`` if absent."""
+    heads = _headings(body)
+    own = next((m for m in heads if m.group(1) == heading), None)
+    if own is None:
+        return None
+    end = next((m.start() for m in heads if m.start() > own.start()), len(body))
+    return body[own.end() : end].strip()
+
+
 def add_section_entry(body: str, heading: str, entry: str, before: Sequence[str] = ()) -> str:
     """Append *entry* to the ``## <heading>`` section of a card body.
 
@@ -387,12 +407,7 @@ def add_section_entry(body: str, heading: str, entry: str, before: Sequence[str]
         CardError: the section appears more than once.
     """
     entry = entry.strip("\n")
-    fences = [m.span() for m in _FENCE_RE.finditer(body)]
-    heads = [
-        m
-        for m in _HEADING_RE.finditer(body)
-        if not any(start <= m.start() < end for start, end in fences)
-    ]
+    heads = _headings(body)
     owns = [m for m in heads if m.group(1) == heading]
     if len(owns) > 1:
         raise CardError(f"section {heading!r} appears {len(owns)} times; fix the card by hand")

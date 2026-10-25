@@ -8,7 +8,14 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from fwbg.research.card import CARD_FILE_RE, CardError, ResearchCard, Status, load_card
+from fwbg.research.card import (
+    CARD_FILE_RE,
+    CardError,
+    ResearchCard,
+    Status,
+    load_card,
+    section_text,
+)
 from fwbg.research.commands import CommandError
 from fwbg.research.fingerprint import canonical_json
 from fwbg.research.gate import criteria_denials
@@ -171,6 +178,24 @@ def card_summary(
         ),
         "holdout_used": any(trial.kind is TrialKind.HOLDOUT for trial in own),
         "running": running,
+    }
+
+
+def card_detail(card: ResearchCard) -> dict[str, Any]:
+    """The prose a reader needs to judge an idea without fetching the card.
+
+    ``verdict`` is the latest dated verdict entry's reason and reopen condition,
+    ``None`` while the card is open.
+    """
+    entries = re.split(r"^### ", section_text(card.body, "Verdict") or "", flags=re.MULTILINE)
+    verdict = None
+    if len(entries) > 1:
+        fields = dict(re.findall(r"^(Reason|Reopen if): (.*)$", entries[-1], re.MULTILINE))
+        verdict = {"reason": fields.get("Reason"), "reopen_if": fields.get("Reopen if")}
+    return {
+        "hypothesis": section_text(card.body, "Hypothesis"),
+        "mechanism": section_text(card.body, "Mechanism"),
+        "verdict": verdict,
     }
 
 
