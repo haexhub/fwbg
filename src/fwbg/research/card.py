@@ -32,7 +32,8 @@ CRITERIA_NAMES = frozenset(
 SLUG_RE = re.compile(r"(?=.{1,60}\Z)[a-z0-9]+(?:-[a-z0-9]+)*")
 _FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
 _HEADING_RE = re.compile(r"^## (.+?)[ \t]*$", re.MULTILINE)
-_FENCE_RE = re.compile(r"^(```|~~~).*?^\1[ \t]*$", re.MULTILINE | re.DOTALL)
+_FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})", re.MULTILINE)
+_FENCE_CLOSE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})[ \t]*$")
 _FIELDS = frozenset(
     {
         "id",
@@ -376,6 +377,44 @@ def next_card_id(research_dir: Path, trials: Iterable[Trial]) -> str:
     return f"S-{number:04d}"
 
 
+def _headings(body: str) -> list[re.Match[str]]:
+    """The ``## `` heading matches of *body*, leaving out those inside code fences."""
+    fences: list[tuple[int, int]] = []
+    opener: tuple[str, int, int] | None = None
+    offset = 0
+    for line in body.splitlines(keepends=True):
+        if opener is None:
+            match = _FENCE_RE.match(line)
+            if match is not None:
+                marker = match.group(1)
+                opener = (marker[0], len(marker), offset)
+        else:
+            match = _FENCE_CLOSE_RE.match(line)
+            if match is not None:
+                marker = match.group(1)
+                if marker[0] == opener[0] and len(marker) >= opener[1]:
+                    fences.append((opener[2], offset + len(line)))
+                    opener = None
+        offset += len(line)
+    if opener is not None:
+        fences.append((opener[2], len(body)))
+    return [
+        m
+        for m in _HEADING_RE.finditer(body)
+        if not any(start <= m.start() < end for start, end in fences)
+    ]
+
+
+def section_text(body: str, heading: str) -> str | None:
+    """The text under ``## <heading>`` in a card body, stripped; ``None`` if absent."""
+    heads = _headings(body)
+    own = next((m for m in heads if m.group(1) == heading), None)
+    if own is None:
+        return None
+    end = next((m.start() for m in heads if m.start() > own.start()), len(body))
+    return body[own.end() : end].strip()
+
+
 def add_section_entry(body: str, heading: str, entry: str, before: Sequence[str] = ()) -> str:
     """Append *entry* to the ``## <heading>`` section of a card body.
 
@@ -387,12 +426,7 @@ def add_section_entry(body: str, heading: str, entry: str, before: Sequence[str]
         CardError: the section appears more than once.
     """
     entry = entry.strip("\n")
-    fences = [m.span() for m in _FENCE_RE.finditer(body)]
-    heads = [
-        m
-        for m in _HEADING_RE.finditer(body)
-        if not any(start <= m.start() < end for start, end in fences)
-    ]
+    heads = _headings(body)
     owns = [m for m in heads if m.group(1) == heading]
     if len(owns) > 1:
         raise CardError(f"section {heading!r} appears {len(owns)} times; fix the card by hand")

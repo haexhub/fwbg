@@ -7,6 +7,7 @@ from fwbg.research.card import (
     load_card,
     next_card_id,
     replace_card,
+    section_text,
     write_card,
 )
 from tests.research.factories import make_card, make_trial
@@ -76,3 +77,16 @@ def test_add_section_entry_refuses_a_repeated_section():
     body = "## Verdict\n\na\n\n## Verdict\n\nb\n"
     with pytest.raises(CardError, match="section 'Verdict' appears 2 times"):
         add_section_entry(body, "Verdict", "x")
+
+
+def test_section_text_returns_the_section_and_ignores_fenced_headings():
+    body = "## Hypothesis\n\nOne.\n\n```\n## Mechanism\n```\n\n## Mechanism\n\nTwo.\n"
+    assert section_text(body, "Hypothesis") == "One.\n\n```\n## Mechanism\n```"
+    assert section_text(body, "Mechanism") == "Two."
+    assert section_text(body, "Verdict") is None
+
+
+def test_section_text_recognizes_long_fences():
+    body = "## Hypothesis\n\nOne.\n\n````python\n## Mechanism\n````\n\n## Mechanism\n\nTwo.\n"
+    assert section_text(body, "Hypothesis") == "One.\n\n````python\n## Mechanism\n````"
+    assert section_text(body, "Mechanism") == "Two."

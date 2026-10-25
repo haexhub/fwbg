@@ -421,3 +421,34 @@ def test_startup_without_a_register_creates_none(tmp_path, monkeypatch, gate_on)
     monkeypatch.setenv("FWBG_RESEARCH_DIR", str(tmp_path / "research"))
     create_app()
     assert not (tmp_path / "research").exists()
+
+
+def test_list_without_detail_carries_no_prose(client, card_id):
+    assert "hypothesis" not in cards(client)[0]
+
+
+def test_list_detail_open_card_has_prose_and_no_verdict(client, card_id):
+    entry = cards(client, "?detail=true")[0]
+    assert entry["hypothesis"] == "Events continue."
+    assert entry["mechanism"] == "Order flow persists."
+    assert entry["verdict"] is None
+
+
+def test_list_detail_shows_the_latest_verdict(client, card_id):
+    client.post(f"/api/research/{card_id}/status", json=VERDICT)
+    client.post(
+        f"/api/research/{card_id}/status",
+        json={"status": "active", "reason": "new data", "actor": "agent-7"},
+    )
+    assert cards(client, "?detail=true")[0]["verdict"] is None
+    client.post(
+        f"/api/research/{card_id}/status",
+        json={
+            **VERDICT,
+            "status": "rejected",
+            "reason": "still nothing",
+            "reopen_if": "other asset",
+        },
+    )
+    entry = cards(client, "?detail=true")[0]
+    assert entry["verdict"] == {"reason": "still nothing", "reopen_if": "other asset"}
