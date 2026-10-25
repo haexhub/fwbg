@@ -8,9 +8,12 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import json
+import logging
 import os
 
 from fwbg.core.presets import resolve_presets
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -387,9 +390,36 @@ class StrategyConfig:
     hypothesis: str = ""
     expected_outcome: str = ""
 
+    # Top-level keys from_dict reads; underscore keys are free-form metadata.
+    KNOWN_KEYS = frozenset({
+        "name", "description", "tags", "pipeline", "exit_strategies",
+        "risk_management", "risk_params", "optimization", "assets", "model",
+        "validation", "filters", "resources", "regime_filter", "datasource",
+        "timeframe", "start_date", "end_date", "holdout_cutoff",
+        "cost_multiplier", "signal_rules", "hypothesis", "expected_outcome",
+    })
+    # Keys older configs used; they are no longer read, so say what replaced them.
+    REMOVED_KEYS = {
+        "grids": "optimization.model_hyperparameters_grid, exit_strategies and model.required_features",
+        "exit_strategy": "exit_strategies",
+        "exit_params": "exit_strategies",
+    }
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "StrategyConfig":
         """Erstellt StrategyConfig aus Dictionary (z.B. aus JSON-Datei)."""
+        ignored = sorted(
+            k for k in data if not k.startswith("_") and k not in cls.KNOWN_KEYS
+        ) if isinstance(data, dict) else []
+        removed = [k for k in ignored if k in cls.REMOVED_KEYS]
+        if removed:
+            details = ", ".join(f"'{k}' (use {cls.REMOVED_KEYS[k]})" for k in removed)
+            raise ValueError(
+                f"Removed strategy config key(s): {details}. "
+                "They are no longer read, so the run would not do what the config says."
+            )
+        if ignored:
+            log.warning("Strategy config key(s) %s are not read and have no effect", ignored)
         # Resolve sections: string loads preset file, dict/None passes through
         resolved = resolve_presets(data)
         pipeline = resolved.get("pipeline", {})

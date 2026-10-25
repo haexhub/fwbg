@@ -645,7 +645,6 @@ class TestProbabilityCalibration:
                 "probability_calibration": True,
                 "calibration_method": "sigmoid",
             },
-            "exit_params": {"tp_mult": [10], "sl_mult": [20], "timeout_bars": [None]},
             "optimization": {"ct": [0.5]},
         })
 
