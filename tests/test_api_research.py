@@ -442,7 +442,12 @@ def test_list_detail_shows_the_latest_verdict(client, card_id):
     )
     client.post(
         f"/api/research/{card_id}/status",
-        json={**VERDICT, "status": "rejected", "reason": "still nothing", "reopen_if": "other asset"},
+        json={
+            **VERDICT,
+            "status": "rejected",
+            "reason": "still nothing",
+            "reopen_if": "other asset",
+        },
     )
     entry = cards(client, "?detail=true")[0]
     assert entry["verdict"] == {"reason": "still nothing", "reopen_if": "other asset"}
