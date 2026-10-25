@@ -551,7 +551,6 @@ class TestStrategyConfigDataLoading:
                 ],
                 "indicators": [],
             },
-            "grids": {"FOREX": {"tp": [20], "sl": [20], "ct": [0.55]}},
         }
 
         json_path = tmp_path / "test_strategy.json"
