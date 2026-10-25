@@ -440,6 +440,7 @@ def test_list_detail_shows_the_latest_verdict(client, card_id):
         f"/api/research/{card_id}/status",
         json={"status": "active", "reason": "new data", "actor": "agent-7"},
     )
+    assert cards(client, "?detail=true")[0]["verdict"] is None
     client.post(
         f"/api/research/{card_id}/status",
         json={

@@ -32,7 +32,8 @@ CRITERIA_NAMES = frozenset(
 SLUG_RE = re.compile(r"(?=.{1,60}\Z)[a-z0-9]+(?:-[a-z0-9]+)*")
 _FRONT_MATTER_RE = re.compile(r"\A---[ \t]*\n(.*?)\n---[ \t]*\n?(.*)\Z", re.DOTALL)
 _HEADING_RE = re.compile(r"^## (.+?)[ \t]*$", re.MULTILINE)
-_FENCE_RE = re.compile(r"^(```|~~~).*?^\1[ \t]*$", re.MULTILINE | re.DOTALL)
+_FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})", re.MULTILINE)
+_FENCE_CLOSE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})[ \t]*$")
 _FIELDS = frozenset(
     {
         "id",
@@ -378,7 +379,25 @@ def next_card_id(research_dir: Path, trials: Iterable[Trial]) -> str:
 
 def _headings(body: str) -> list[re.Match[str]]:
     """The ``## `` heading matches of *body*, leaving out those inside code fences."""
-    fences = [m.span() for m in _FENCE_RE.finditer(body)]
+    fences: list[tuple[int, int]] = []
+    opener: tuple[str, int, int] | None = None
+    offset = 0
+    for line in body.splitlines(keepends=True):
+        if opener is None:
+            match = _FENCE_RE.match(line)
+            if match is not None:
+                marker = match.group(1)
+                opener = (marker[0], len(marker), offset)
+        else:
+            match = _FENCE_CLOSE_RE.match(line)
+            if match is not None:
+                marker = match.group(1)
+                if marker[0] == opener[0] and len(marker) >= opener[1]:
+                    fences.append((opener[2], offset + len(line)))
+                    opener = None
+        offset += len(line)
+    if opener is not None:
+        fences.append((opener[2], len(body)))
     return [
         m
         for m in _HEADING_RE.finditer(body)

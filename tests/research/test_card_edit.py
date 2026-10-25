@@ -84,3 +84,9 @@ def test_section_text_returns_the_section_and_ignores_fenced_headings():
     assert section_text(body, "Hypothesis") == "One.\n\n```\n## Mechanism\n```"
     assert section_text(body, "Mechanism") == "Two."
     assert section_text(body, "Verdict") is None
+
+
+def test_section_text_recognizes_long_fences():
+    body = "## Hypothesis\n\nOne.\n\n````python\n## Mechanism\n````\n\n## Mechanism\n\nTwo.\n"
+    assert section_text(body, "Hypothesis") == "One.\n\n````python\n## Mechanism\n````"
+    assert section_text(body, "Mechanism") == "Two."

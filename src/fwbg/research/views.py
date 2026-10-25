@@ -187,11 +187,12 @@ def card_detail(card: ResearchCard) -> dict[str, Any]:
     ``verdict`` is the latest dated verdict entry's reason and reopen condition,
     ``None`` while the card is open.
     """
-    entries = re.split(r"^### ", section_text(card.body, "Verdict") or "", flags=re.MULTILINE)
     verdict = None
-    if len(entries) > 1:
-        fields = dict(re.findall(r"^(Reason|Reopen if): (.*)$", entries[-1], re.MULTILINE))
-        verdict = {"reason": fields.get("Reason"), "reopen_if": fields.get("Reopen if")}
+    if card.status is not Status.ACTIVE:
+        entries = re.split(r"^### ", section_text(card.body, "Verdict") or "", flags=re.MULTILINE)
+        if len(entries) > 1:
+            fields = dict(re.findall(r"^(Reason|Reopen if): (.*)$", entries[-1], re.MULTILINE))
+            verdict = {"reason": fields.get("Reason"), "reopen_if": fields.get("Reopen if")}
     return {
         "hypothesis": section_text(card.body, "Hypothesis"),
         "mechanism": section_text(card.body, "Mechanism"),
