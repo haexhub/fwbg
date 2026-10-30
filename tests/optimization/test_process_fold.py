@@ -787,6 +787,55 @@ class TestSignalModelSkipsDropna:
         # NaN rows should be dropped for xgboost
         assert len(train_df) < split
 
+    def _two_feature_fold(self, feat2_nan):
+        from fwbg.optimization.robust_validation import WalkForwardFold
+
+        n = 200
+        rng = np.random.default_rng(42)
+        price = 1.1 + np.cumsum(rng.normal(0, 0.0005, n))
+        feat2 = rng.standard_normal(n)
+        feat2[feat2_nan] = np.nan
+        df = pd.DataFrame({
+            "O": price, "H": price + 0.001, "L": price - 0.001, "C": price,
+            "_atr": np.full(n, 0.001), "_regime": np.full(n, 7, dtype=np.int8),
+            "feat1": rng.standard_normal(n), "feat2": feat2,
+        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        split = int(n * 0.7)
+        return WalkForwardFold(
+            fold_id=0, train_start=0, train_end=split, test_start=split, test_end=n,
+            train_df=df.iloc[:split].copy(), test_df=df.iloc[split:].copy(),
+        ), n - split
+
+    def test_interior_nan_keeps_the_bar(self):
+        """Dropping a bar would let the simulator skip TP/SL hits inside the gap."""
+        from fwbg.optimization.process_fold import prepare_fold_data
+
+        fold, n_test = self._two_feature_fold(feat2_nan=[150, 151, 170])
+        ctx = _make_ctx(model_type="xgboost", min_trades=5)
+
+        _, test_df, _ = prepare_fold_data(
+            fold, fold_indicators=[], precomputed_raw_df=None,
+            preprocessing_configs=None, ctx=ctx, sym="TEST",
+        )
+
+        assert len(test_df) == n_test
+        assert test_df["feat2"].isna().sum() == 3
+
+    def test_feed_ending_before_test_leaves_pool_but_keeps_bars(self):
+        """A feature without any value in test is dropped; the test bars all stay."""
+        from fwbg.optimization.process_fold import prepare_fold_data
+
+        fold, n_test = self._two_feature_fold(feat2_nan=slice(140, None))
+        ctx = _make_ctx(model_type="xgboost", min_trades=5)
+
+        _, test_df, full_pool = prepare_fold_data(
+            fold, fold_indicators=[], precomputed_raw_df=None,
+            preprocessing_configs=None, ctx=ctx, sym="TEST",
+        )
+
+        assert "feat2" not in full_pool
+        assert len(test_df) == n_test
+
 
 def test_candidate_regime_replaces_another_combos_mask():
     """The frames still carry the last grid combo's mask; the winner's must apply."""
