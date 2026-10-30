@@ -364,9 +364,8 @@ class TestIGCandleListenerTimestamp:
         listener.onItemUpdate(update)
 
         bar = mock_adapter._notify_bar_callbacks.call_args[0][0]
-        # datetime.fromtimestamp() verwendet lokale Zeitzone
-        expected = datetime.fromtimestamp(1705327200)
-        assert bar.timestamp == expected
+        # Naive UTC, unabhängig von der Host-Zeitzone
+        assert bar.timestamp == datetime(2024, 1, 15, 14, 0)
 
     def test_stores_last_utm(self):
         """Letzte UTM sollte gespeichert werden."""
@@ -411,9 +410,47 @@ class TestIGCandleListenerBarData:
 
         assert bar.symbol == Symbol.GBPUSD
         assert bar.timeframe == Timeframe.H1
-        # datetime.fromtimestamp() verwendet lokale Zeitzone
-        assert bar.timestamp == datetime.fromtimestamp(1705327200)
+        # Naive UTC, unabhängig von der Host-Zeitzone
+        assert bar.timestamp == datetime(2024, 1, 15, 14, 0)
         assert bar.open == pytest.approx(1.2501, rel=1e-5)
         assert bar.high == pytest.approx(1.2601, rel=1e-5)
         assert bar.low == pytest.approx(1.2401, rel=1e-5)
         assert bar.close == pytest.approx(1.2551, rel=1e-5)
+
+
+@pytest.fixture
+def new_york_host():
+    """Run with a host clock west of UTC, where local and UTC times differ."""
+    import os
+    import time
+
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "America/New_York"
+    time.tzset()
+    yield
+    if old is None:
+        os.environ.pop("TZ", None)
+    else:
+        os.environ["TZ"] = old
+    time.tzset()
+
+
+def test_candle_time_is_utc_on_any_host(new_york_host):
+    """Streamed bars must share the history index's naive-UTC convention."""
+    from .streaming import IGCandleListener
+
+    mock_adapter = MagicMock()
+    listener = IGCandleListener(mock_adapter, Symbol.EURUSD)
+    values = {
+        "UTM": "1705327200000",  # 2024-01-15 14:00 UTC
+        "CONS_END": "1",
+        "BID_OPEN": "1.1", "BID_HIGH": "1.1", "BID_LOW": "1.1", "BID_CLOSE": "1.1",
+        "OFR_OPEN": "1.1", "OFR_HIGH": "1.1", "OFR_LOW": "1.1", "OFR_CLOSE": "1.1",
+    }
+    update = MagicMock()
+    update.getValue = MagicMock(side_effect=values.get)
+
+    listener.onItemUpdate(update)
+
+    bar = mock_adapter._notify_bar_callbacks.call_args[0][0]
+    assert bar.timestamp == datetime(2024, 1, 15, 14, 0)

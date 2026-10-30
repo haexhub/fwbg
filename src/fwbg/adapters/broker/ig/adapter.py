@@ -409,7 +409,8 @@ class IGBrokerAdapter(BrokerAdapter):
             })[["O", "H", "L", "C"]]
 
             if df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
+                # Exchange-local for some tickers: convert before dropping the zone.
+                df.index = df.index.tz_convert("UTC").tz_localize(None)
 
             if len(df) > limit:
                 df = df.tail(limit)

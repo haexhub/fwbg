@@ -195,3 +195,23 @@ def test_kill_signal_is_kept_when_broker_is_unavailable(tmp_path):
 
     assert bot._check_kill_switch() is True
     assert (tmp_path / "kill_signal").exists()
+
+
+def test_cache_holds_completed_utc_bars_only(monkeypatch):
+    import fwbg.bot as bot_module
+
+    hour = datetime(2025, 1, 3, 12)  # naive UTC, like the bar index
+    monkeypatch.setattr(bot_module, "_current_utc_hour", lambda: hour)
+    adapter = MagicMock()
+    adapter.get_historical_bars.return_value = pd.DataFrame(
+        {"O": 1.0, "H": 1.0, "L": 1.0, "C": 1.0},
+        index=pd.date_range(hour - timedelta(hours=2), hour, freq="h"),
+    )
+    bot = _make_bot(adapter)
+    bot._compute_features = lambda df: df
+
+    bot._update_cache_if_needed("EURUSD")
+    bot._update_cache_if_needed("EURUSD")
+
+    assert bot.ohlc_cache["EURUSD"].index[-1] == hour - timedelta(hours=1)
+    adapter.get_historical_bars.assert_called_once()

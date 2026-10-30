@@ -4,7 +4,7 @@ IG Markets Lightstreamer Streaming.
 Enthält den CandleListener für Live-Bar-Updates via Lightstreamer.
 """
 from typing import Callable, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 from fwbg_sdk import Symbol, Timeframe
@@ -72,7 +72,10 @@ class IGCandleListener(SubscriptionListener):
 
             # Check if candle complete
             if cons_end == "1" and all(k in self.current_candle for k in ["UTM", "O", "H", "L", "C"]):
-                candle_time = datetime.fromtimestamp(self.current_candle["UTM"] / 1000)
+                # Naive UTC like the history index; fromtimestamp() alone gives host-local time.
+                candle_time = datetime.fromtimestamp(
+                    self.current_candle["UTM"] / 1000, tz=timezone.utc
+                ).replace(tzinfo=None)
 
                 if self.last_utm is None or self.current_candle["UTM"] > self.last_utm:
                     self.last_utm = self.current_candle["UTM"]
