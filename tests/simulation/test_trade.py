@@ -473,8 +473,9 @@ class TestSimulateProTrade:
             spread=0.0, opens=opens, max_bars=15, timeout_bars=None,
         )
 
-        # No TP/SL hit, no timeout → None
-        assert trade is None
+        # No TP/SL hit, no timeout → closed when the configured horizon ends.
+        assert trade["exit_reason"] == "max_bars"
+        assert trade["exit_idx"] == 15  # entry_idx=1, 15 bars
 
 
 class TestCalculateSharpeRatio:

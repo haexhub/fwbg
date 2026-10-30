@@ -65,6 +65,14 @@ class RunService:
                 return job_id
 
     @staticmethod
+    def _terminate(process: Any) -> None:
+        if process.poll() is None:
+            try:
+                os.kill(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+    @staticmethod
     def _reap_locked(jobs: MutableMapping[str, Any], results_dir: Path) -> None:
         for job in list(jobs.values()):
             if job.get("status") not in ACTIVE_STATUSES:
@@ -163,18 +171,35 @@ class RunService:
         stdout_path: Path,
         stderr_path: Path,
         cmd: list[str],
-    ) -> None:
+    ) -> bool:
+        """Record the spawned *process* as the job's running process.
+
+        Returns False when the job left "starting" in the meantime (a cancel
+        that landed between ``reserve`` and here): the process is terminated
+        instead of attached and the caller must not report the run as started.
+        """
+        attached = False
         with lock:
-            job = jobs[job_id]
-            job.update(
-                process=process,
-                pid=process.pid,
-                status="running",
-                stdout_path=str(stdout_path),
-                stderr_path=str(stderr_path),
-                cmd=cmd,
-            )
-            self._write_state(results_dir, job)
+            job = jobs.get(job_id)
+            if job is not None and job.get("status") == "starting":
+                job.update(
+                    process=process,
+                    pid=process.pid,
+                    status="running",
+                    stdout_path=str(stdout_path),
+                    stderr_path=str(stderr_path),
+                    cmd=cmd,
+                )
+                try:
+                    self._write_state(results_dir, job)
+                except BaseException:
+                    # The caller records a failed spawn; don't leave its process running.
+                    self._terminate(process)
+                    raise
+                attached = True
+        if not attached:
+            self._terminate(process)
+        return attached
 
     def fail_spawn(
         self,
@@ -212,11 +237,8 @@ class RunService:
                 return dict(job)
             process = job.get("process")
             self._finish_locked(jobs, Path(results_dir), job_id, "cancelled", None)
-        if process is not None and process.poll() is None:
-            try:
-                os.kill(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
+        if process is not None:
+            self._terminate(process)
         return dict(job)
 
     def snapshot(

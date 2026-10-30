@@ -343,6 +343,35 @@ class TestRunDataLoading:
         finally:
             del _DATA_SOURCES["_test_bias"]
 
+    @pytest.mark.parametrize("stamp", ["T22:00:00", "T00:00:00-05:00"])
+    def test_macro_dates_with_time_or_timezone_still_align(self, tmp_path, stamp):
+        """Daily rows stamped with a time of day or an offset keep their date."""
+        from fwbg.data.loader import run_data_loading
+        from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
+
+        pd.DataFrame({
+            "Date": [f"2024-01-0{d}{stamp}" for d in (1, 2, 3)],
+            "Close": [100.0, 200.0, 300.0],
+        }).to_csv(tmp_path / "TEST_DAY.csv", index=False)
+        register_csv_source(name="_test_stamp", path=tmp_path)
+
+        try:
+            df = pd.DataFrame(
+                {"O": np.ones(72), "C": np.ones(72)},
+                index=pd.date_range("2024-01-01", periods=72, freq="h"),
+            )
+            configs = [{
+                "source": "_test_stamp",
+                "params": {"indicators": {"TEST_DAY": "test"}},
+            }]
+
+            result = run_data_loading(df, configs)
+
+            assert result.loc["2024-01-02 09:00:00", "macro_test"] == 100.0
+            assert result.loc["2024-01-03 09:00:00", "macro_test"] == 200.0
+        finally:
+            del _DATA_SOURCES["_test_stamp"]
+
     def test_release_date_column_blocks_pre_release_lookahead(self, tmp_path):
         """CSVs that carry a `release_date` column must be merged via the
         release-date contract, not the legacy prev-day shift.

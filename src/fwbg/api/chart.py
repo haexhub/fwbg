@@ -9,6 +9,8 @@ from pydantic import BaseModel
 
 from fwbg_sdk.enums import Timeframe
 
+from fwbg.api._paths import validate_id
+
 from fwbg.data.resample import (
     TIMEFRAME_ORDER as _TIMEFRAME_ORDER,
     resample_ohlcv as _resample_ohlcv,
@@ -201,6 +203,8 @@ def get_ohlcv(
     drop_flat_bars: bool = Query(False),
 ) -> dict:
     """Load OHLCV data from a CSV data source for charting."""
+    validate_id(symbol, "symbol")
+    validate_id(timeframe, "timeframe")
     from fwbg.core.data_sources import get_data_source, CSVSourceConfig
     from fwbg.data.loader import load_data_aligned
 
@@ -404,6 +408,8 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             raise HTTPException(404, str(e))
         if not isinstance(ds, CSVSourceConfig):
             raise HTTPException(400, f"Source '{source}' is not CSV. Provide credentials for broker.")
+        validate_id(body.symbol, "symbol")
+        validate_id(body.timeframe, "timeframe")
         path = ds.get_file_path(body.symbol, body.timeframe)
         native_tf = body.timeframe
         if not path.exists():

@@ -50,6 +50,11 @@ from fwbg.core.risk_state import RiskState
 logger = logging.getLogger(__name__)
 
 
+def _current_utc_hour() -> datetime:
+    """Start of the current hour as naive UTC, the convention of the bar index."""
+    return datetime.now(timezone.utc).replace(tzinfo=None, minute=0, second=0, microsecond=0)
+
+
 @dataclass
 class AssetConfig:
     """Konfiguration für ein einzelnes Asset (vom Optimizer)."""
@@ -255,6 +260,12 @@ class TradingBot:
                 logger.warning(f"⚠️ {symbol}: No data available")
                 return False
 
+            # Historical providers can include the still-forming current hour.
+            df = df[df.index < _current_utc_hour()]
+            if df.empty:
+                logger.warning(f"⚠️ {symbol}: No completed bars available")
+                return False
+
             if len(df) < self.min_training_samples:
                 logger.warning(f"⚠️ {symbol}: Not enough data ({len(df)} < {self.min_training_samples})")
                 return False
@@ -430,8 +441,7 @@ class TradingBot:
 
     def _check_all_signals(self):
         """Prüft Signale für alle Symbole (Polling-Modus)."""
-        now = datetime.now()
-        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        current_hour = _current_utc_hour()
 
         for symbol in self.models.keys():
             # Verhindere mehrfache Signale pro Stunde
@@ -446,16 +456,19 @@ class TradingBot:
 
     def _update_cache_if_needed(self, symbol: str):
         """Aktualisiert den Cache wenn eine neue Stunde begonnen hat."""
-        now = datetime.now()
-        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        current_hour = _current_utc_hour()
 
+        # The newest complete bar opened an hour ago; the current one is still forming.
         last_time = self.last_bar_time.get(symbol)
-        if last_time is not None and last_time >= current_hour:
+        if last_time is not None and last_time >= current_hour - timedelta(hours=1):
             return  # Cache ist aktuell
 
         # Neue Daten holen
         try:
             df = self.adapter.get_historical_bars(symbol, timeframe="1H", limit=24)
+            if df is not None:
+                # Training used completed bars only: never predict on the forming one.
+                df = df[df.index < current_hour]
             if df is not None and not df.empty:
                 # Mit bestehendem Cache mergen
                 if symbol in self.ohlc_cache:
@@ -483,8 +496,7 @@ class TradingBot:
         if not cfg:
             return
 
-        now = datetime.now()
-        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        current_hour = _current_utc_hour()
 
         # Verhindere mehrfache Signale pro Stunde
         if self.last_signal_hour.get(symbol) == current_hour:
@@ -651,18 +663,23 @@ class TradingBot:
         self._stop_event.set()
         self._running = False
 
-    def kill(self, close_positions: bool = True):
+    def kill(self, close_positions: bool = True) -> bool:
         """
         Emergency Kill Switch - Stoppt sofort allen Handel.
 
         Args:
             close_positions: Wenn True, werden alle offenen Positionen geschlossen
+
+        Returns:
+            False wenn Positionen geschlossen werden sollten und das nicht
+            vollständig gelang
         """
         logger.critical("🚨 KILL SWITCH ACTIVATED")
         self._killed = True
         self._stop_event.set()
         self._running = False
 
+        all_closed = True
         if close_positions:
             logger.warning("🚨 Closing ALL positions...")
             try:
@@ -672,10 +689,13 @@ class TradingBot:
                 logger.warning(f"🚨 Closed {closed}/{len(results)} positions")
                 for r in failed:
                     logger.error(f"❌ Position NOT closed: {r.message}")
+                all_closed = not failed
             except Exception as e:
                 logger.error(f"❌ Failed to close positions: {e}")
+                all_closed = False
 
         self._write_status("KILLED")
+        return all_closed
 
     def _check_kill_switch(self) -> bool:
         """
@@ -690,11 +710,13 @@ class TradingBot:
         # Prüfe auf Kill-Signal-Datei
         kill_file = os.path.join(self.stats_dir, "kill_signal")
         if os.path.exists(kill_file):
-            try:
-                os.remove(kill_file)
-            except Exception:
-                pass
-            self.kill(close_positions=True)
+            # Keep the signal while positions may still be open, so the next
+            # start retries closing them instead of trading on.
+            if self.kill(close_positions=True):
+                try:
+                    os.remove(kill_file)
+                except OSError:
+                    pass
             return True
 
         return False

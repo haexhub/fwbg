@@ -1,4 +1,5 @@
 """Walk-forward fold processing — extracted from process.py."""
+import dataclasses
 import time
 
 import numpy as np
@@ -42,6 +43,33 @@ def _attach_regime_to_fold(
     """
     df["_regime"] = compute_regime_bitmask(df, regime_params)
     return df
+
+
+# Settings a winning candidate selected besides TP/SL/CT and features. They
+# travel candidate -> best_config -> merged replay candidate; dropping one
+# evaluates a different strategy than the one the grid selected.
+CONTEXT_SETTING_KEYS = (
+    "exit_strategy", "exit_params", "exit_modifier", "exit_modifier_params",
+    "entry_modifier", "entry_modifier_params", "model_hyperparameters",
+)
+SELECTED_SETTING_KEYS = CONTEXT_SETTING_KEYS + ("regime_filter",)
+
+
+def candidate_context(ctx, candidate: dict):
+    """*ctx* with the settings *candidate* selected; a missing/None value keeps ctx's."""
+    overrides = {
+        key: candidate[key] for key in CONTEXT_SETTING_KEYS if candidate.get(key) is not None
+    }
+    return dataclasses.replace(ctx, **overrides) if overrides else ctx
+
+
+def apply_candidate_regime(train_df: pd.DataFrame, test_df: pd.DataFrame, candidate: dict) -> None:
+    """Attach the candidate's regime mask; the frames may still carry another combo's."""
+    if candidate.get("regime_filter") is None:
+        return
+    regime_params = RegimeFilterConfig.from_dict(candidate["regime_filter"])
+    _attach_regime_to_fold(train_df, regime_params)
+    _attach_regime_to_fold(test_df, regime_params)
 
 
 def precompute_indicators(df, strategy, sym):
@@ -151,16 +179,19 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
                 train_ctx = PipelineContext(
                     df=pp_train_raw.copy(), symbol=sym, asset_class=ctx.asset_class
                 )
-                train_ctx = pp.execute(train_ctx, **pp_params)
-                pp_train_raw = train_ctx.df
+                train_out = pp.execute(train_ctx, **pp_params).df
 
                 test_ctx = PipelineContext(
                     df=pp_test_raw.copy(), symbol=sym, asset_class=ctx.asset_class
                 )
-                test_ctx = pp.execute(test_ctx, **pp_params)
-                pp_test_raw = test_ctx.df
+                test_out = pp.execute(test_ctx, **pp_params).df
             except Exception as e:
-                log(1, f"  Preprocessing {pp_name} failed: {e}", sym)
+                # Skipped for both splits: a step applied to train only would
+                # leave the model trained on data unlike what it is tested on.
+                log(1, f"  Preprocessing {pp_name} failed, skipped: {e}", sym)
+                continue
+            pp_train_raw = train_out
+            pp_test_raw = test_out
 
         log(2, f"  Preprocessing: Train {len(fold.train_df)}→{len(pp_train_raw)}, "
                f"Test {len(fold.test_df)}→{len(pp_test_raw)}", sym)
@@ -288,6 +319,18 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
     }
 
 
+def _drop_warmup(df: pd.DataFrame) -> pd.DataFrame:
+    """Cut the leading rows until every column that has values has started.
+
+    Interior NaN rows stay: dropping them would leave gaps in the bar arrays
+    the trade simulation walks, so TP/SL hits inside a gap went unseen. The
+    XGBoost models and the feature selectors handle NaN features; a column
+    without any value stays NaN (a missing feature) instead of emptying the frame.
+    """
+    starts = [start for start in (df[c].first_valid_index() for c in df.columns) if start is not None]
+    return df.loc[max(starts):] if starts else df
+
+
 def _finalize_fold_data(train_df, test_df, full_pool,
                         orig_train_ohlc, orig_test_ohlc, fold, sym):
     """Restore original OHLC after preprocessing and validate data sizes.
@@ -323,7 +366,8 @@ def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
                       indicator_progress_callback=None):
     """Prepare train/test DataFrames for ML models.
 
-    Drops columns with >10% NaN or inf, then drops NaN rows.
+    Drops columns with >10% NaN or inf in train or without any value in test,
+    then the indicator warm-up rows; NaN inside the frame stays for the models.
     """
     common = _prepare_fold_common(
         fold, fold_indicators, precomputed_raw_df,
@@ -342,8 +386,8 @@ def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
     log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features "
            f"(excl: {common['excluded_inf']} inf, {common['excluded_nan']} nan)", sym)
 
-    train_df = train_df.dropna()
-    test_df = test_df.dropna()
+    train_df = _drop_warmup(train_df)
+    test_df = _drop_warmup(test_df)
 
     return _finalize_fold_data(
         train_df, test_df, full_pool,
@@ -505,19 +549,9 @@ def process_single_fold(
         return None, all_grid_results
 
     # === TEST EVALUATION (on this fold's test set) ===
-    # Apply winning candidate's full context (exit strategy, entry modifier,
-    # model hyperparameters) so holdout evaluation matches grid search.
-    import dataclasses
-    holdout_ctx = dataclasses.replace(
-        ctx,
-        exit_strategy=b.get("exit_strategy", ctx.exit_strategy),
-        exit_params=b.get("exit_params", ctx.exit_params),
-        exit_modifier_params=b.get("exit_modifier_params", ctx.exit_modifier_params),
-        entry_modifier=b.get("entry_modifier", ctx.entry_modifier),
-        entry_modifier_params=b.get("entry_modifier_params", ctx.entry_modifier_params),
-        model_hyperparameters=b.get("model_hyperparameters", ctx.model_hyperparameters),
-    )
-    test_result = evaluate_on_holdout(test_df, train_df, b, holdout_ctx)
+    # Apply the winning candidate's settings so holdout evaluation matches grid search.
+    apply_candidate_regime(train_df, test_df, b)
+    test_result = evaluate_on_holdout(test_df, train_df, b, candidate_context(ctx, b))
 
     # A fold is kept whatever its test trade count: dropping it would let the
     # test set filter folds.
@@ -544,10 +578,7 @@ def process_single_fold(
             "ct": b["params"][2],
             "rrr": b["rrr"],
             "timeout_bars": b.get("timeout_bars"),
-            "model_hyperparameters": b.get("model_hyperparameters"),
-            "exit_modifier_params": b.get("exit_modifier_params"),
-            "exit_strategy": b.get("exit_strategy"),
-            "exit_params": b.get("exit_params"),
+            **{key: b.get(key) for key in SELECTED_SETTING_KEYS},
             "ct_votes": b.get("ct_votes"),
             "ct_diagnostics": b.get("ct_diagnostics"),
         },

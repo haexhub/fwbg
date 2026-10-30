@@ -17,6 +17,7 @@ from fwbg.core import get_feature_selector, get_model
 
 from fwbg.simulation.trade import analyze_sl_potential, analyze_tp_potential, attach_regime_labels
 from .targets import (
+    _apply_meta_filter,
     _validate_targets,
     compute_targets,
     _get_probs,
@@ -29,8 +30,8 @@ from .targets import (
 def _compact_trades_by_ct(fold_result):
     """Strip trade dicts in trades_by_ct to only pnl_raw and result.
 
-    After the first-fold sanity check, _aggregate_cv_folds only reads
-    t["pnl_raw"] and len(trades).  Dropping other fields (mae, mfe,
+    _aggregate_cv_folds only reads t["pnl_raw"], t["result"] (first-fold
+    sanity check) and len(trades).  Dropping other fields (mae, mfe,
     entry/exit times, etc.) frees memory without changing semantics.
     """
     trades_by_ct = fold_result.get("trades_by_ct")
@@ -40,7 +41,9 @@ def _compact_trades_by_ct(fold_result):
     def _strip(trades):
         if not trades or not isinstance(trades, list):
             return trades
-        return [{"pnl_raw": t["pnl_raw"]} for t in trades if isinstance(t, dict)]
+        return [
+            {"pnl_raw": t["pnl_raw"], "result": t["result"]} for t in trades if isinstance(t, dict)
+        ]
 
     compacted = {}
     for key, value in trades_by_ct.items():
@@ -458,6 +461,38 @@ def _train_meta_model(
     return meta_model
 
 
+def _train_meta_models(
+    df: pd.DataFrame,
+    targets_long: np.ndarray,
+    targets_short: np.ndarray,
+    feat_long: Optional[List[str]],
+    feat_short: Optional[List[str]],
+    mod_long: Optional[BaseModel],
+    mod_short: Optional[BaseModel],
+    ctx: SimulationContext,
+    timeout_bars: Optional[int],
+) -> Tuple[Optional[BaseModel], Optional[BaseModel]]:
+    """Meta-models filtering each direction's primary predictions (None when off/untrainable).
+
+    Shared by inner CV and holdout: the CT is tuned on meta-filtered
+    probabilities, so test and replay must filter the same way.
+    """
+    if not ctx.meta_labeling:
+        return None, None
+    meta_long = meta_short = None
+    if mod_long is not None and feat_long:
+        oof_long = _generate_oof_predictions(
+            df, targets_long, feat_long, ctx, label_horizon=timeout_bars
+        )
+        meta_long = _train_meta_model(df, targets_long, feat_long, oof_long, ctx)
+    if mod_short is not None and feat_short:
+        oof_short = _generate_oof_predictions(
+            df, targets_short, feat_short, ctx, label_horizon=timeout_bars
+        )
+        meta_short = _train_meta_model(df, targets_short, feat_short, oof_short, ctx)
+    return meta_long, meta_short
+
+
 def _evaluate_single_fold(
     fold_idx: int,
     train_df: pd.DataFrame,
@@ -537,19 +572,10 @@ def _evaluate_single_fold(
     ) if has_short else None
 
     # Meta-Labeling: train meta-models to filter primary predictions
-    meta_mod_long = None
-    meta_mod_short = None
-    if ctx.meta_labeling:
-        if mod_long is not None and feat_long:
-            oof_long = _generate_oof_predictions(
-                train_df, targets_long, feat_long, ctx, label_horizon=timeout_bars
-            )
-            meta_mod_long = _train_meta_model(train_df, targets_long, feat_long, oof_long, ctx)
-        if mod_short is not None and feat_short:
-            oof_short = _generate_oof_predictions(
-                train_df, targets_short, feat_short, ctx, label_horizon=timeout_bars
-            )
-            meta_mod_short = _train_meta_model(train_df, targets_short, feat_short, oof_short, ctx)
+    meta_mod_long, meta_mod_short = _train_meta_models(
+        train_df, targets_long, targets_short, feat_long, feat_short,
+        mod_long, mod_short, ctx, timeout_bars,
+    )
 
     best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
         val_df, mod_long, mod_short,
@@ -572,6 +598,38 @@ def _evaluate_single_fold(
     }
 
 
+def _first_fold_catastrophic(fold_result: Dict[str, Any], ctx: SimulationContext) -> bool:
+    """Whether a successful first inner fold fails the sanity check.
+
+    Catastrophic: low win rate and a large loss over enough trades, or no
+    trade at all at the chosen CT.
+    """
+    if not getattr(ctx, "first_fold_sanity_check", True):
+        return False
+    min_win_rate = getattr(ctx, "first_fold_min_win_rate", 0.25)
+    min_pnl = getattr(ctx, "first_fold_min_pnl", -10.0)
+    min_trades = getattr(ctx, "first_fold_min_trades", 5)
+
+    trades_by_ct = fold_result["trades_by_ct"]
+    best_ct = fold_result["best_ct"]
+    # For separate_long_short, trades_by_ct has "combined" dict
+    # with a "trades" key instead of ct→trades mapping.
+    if isinstance(best_ct, tuple) and "combined" in trades_by_ct:
+        fold_trades = trades_by_ct["combined"].get("trades", [])
+    elif best_ct in trades_by_ct:
+        fold_trades = trades_by_ct[best_ct]
+    else:
+        return False
+    if not fold_trades:
+        return min_trades > 0
+    win_rate = sum(1 for t in fold_trades if t["result"] == 1.0) / len(fold_trades)
+    return (
+        win_rate < min_win_rate
+        and fold_result["pnl"] < min_pnl
+        and len(fold_trades) >= min_trades
+    )
+
+
 def _aggregate_cv_folds(
     fold_results: List[Dict[str, Any]],
     total_folds: int,
@@ -583,7 +641,13 @@ def _aggregate_cv_folds(
     Aggregate per-fold results into final inner CV result.
 
     Computes average PnL, majority CT vote, fold stability, and merged feature list.
+    Applies the selection rules (first-fold sanity, min_fold_stability) here, so
+    the early-terminating and the successive-halving path select alike.
     """
+    first = fold_results[0] if fold_results else None
+    if first is not None and first.get("success") and _first_fold_catastrophic(first, ctx):
+        return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
+
     inner_val_pnls = []
     best_ct_votes = {}
     ct_pnl_summary = {}  # {ct: [pnl_fold0, pnl_fold1, ...]}
@@ -633,6 +697,8 @@ def _aggregate_cv_folds(
 
     profitable_folds = sum(1 for pnl in inner_val_pnls if pnl > 0)
     fold_stability = profitable_folds / total_folds if total_folds > 0 else 0
+    if fold_stability < getattr(ctx, "min_fold_stability", 0.5):
+        return {"success": False, "low_fold_stability": True}
 
     best_ct = max(best_ct_votes.keys(), key=lambda x: best_ct_votes[x])
 
@@ -691,6 +757,7 @@ def run_inner_cv(
     Early Termination:
         Wenn early_termination aktiviert ist und der Kandidat mathematisch
         nicht mehr min_fold_stability erreichen kann, wird vorzeitig abgebrochen.
+        Reine Abkürzung: _aggregate_cv_folds verwirft solche Kandidaten ohnehin.
     """
     total_folds = len(inner_folds)
     min_fold_stability = getattr(ctx, 'min_fold_stability', 0.5)
@@ -698,11 +765,6 @@ def run_inner_cv(
     min_profitable = int(np.ceil(total_folds * min_fold_stability))
     profitable_count = 0
     failed_count = 0
-
-    first_fold_sanity_check = getattr(ctx, 'first_fold_sanity_check', True)
-    first_fold_min_win_rate = getattr(ctx, 'first_fold_min_win_rate', 0.25)
-    first_fold_min_pnl = getattr(ctx, 'first_fold_min_pnl', -10.0)
-    first_fold_min_trades = getattr(ctx, 'first_fold_min_trades', 5)
 
     fold_results = []
 
@@ -734,29 +796,9 @@ def run_inner_cv(
             else:
                 failed_count += 1
 
-            # First-Fold Sanity Check
-            if fold_idx == 0 and first_fold_sanity_check:
-                trades_by_ct = fold_result["trades_by_ct"]
-                best_ct = fold_result["best_ct"]
-                # For separate_long_short, trades_by_ct has "combined" dict
-                # with a "trades" key instead of ct→trades mapping.
-                if isinstance(best_ct, tuple) and "combined" in trades_by_ct:
-                    fold_trades = trades_by_ct["combined"].get("trades", [])
-                else:
-                    fold_trades = trades_by_ct.get(best_ct, [])
-                n_fold_trades = len(fold_trades)
-
-                if n_fold_trades > 0:
-                    fold_win_rate = sum(1 for t in fold_trades if t["result"] == 1.0) / n_fold_trades
-                    is_catastrophic = (
-                        fold_win_rate < first_fold_min_win_rate and
-                        fold_result["pnl"] < first_fold_min_pnl and
-                        n_fold_trades >= first_fold_min_trades
-                    )
-                    if is_catastrophic:
-                        return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
-                elif n_fold_trades < first_fold_min_trades:
-                    return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
+            # First-Fold Sanity Check (shortcut; _aggregate_cv_folds applies it too)
+            if fold_idx == 0 and _first_fold_catastrophic(fold_result, ctx):
+                return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
 
             # Compact trades_by_ct: replace full trade dicts with
             # lightweight summaries (pnl + count) for _aggregate_cv_folds.
@@ -843,6 +885,20 @@ def evaluate_on_holdout(
 
     probs_long, long_win_idx = _get_probs(mod_long, holdout_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, holdout_df, features_short)
+
+    # Meta-Labeling as in inner CV, where the CT was chosen on filtered probabilities
+    meta_mod_long, meta_mod_short = _train_meta_models(
+        inner_df, targets_long, targets_short, features_long, features_short,
+        mod_long, mod_short, ctx, timeout_bars,
+    )
+    if probs_long is not None:
+        probs_long = _apply_meta_filter(
+            holdout_df, probs_long, long_win_idx, features_long, meta_mod_long
+        )
+    if probs_short is not None:
+        probs_short = _apply_meta_filter(
+            holdout_df, probs_short, short_win_idx, features_short, meta_mod_short
+        )
 
     # Per-trade TP/SL overrides from model
     per_trade_params = None
