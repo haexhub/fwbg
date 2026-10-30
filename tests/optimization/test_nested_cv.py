@@ -666,3 +666,42 @@ class TestSeparateCTEvaluation:
             assert isinstance(best_ct, tuple)
             # ct_long sollte ein Fallback-Wert sein
             assert best_ct[0] in ctx.grid_ct or best_ct[0] == 0.55
+
+
+def _fold_stub(pnl, n_trades=10, win=True):
+    trades = [{"pnl_raw": pnl / n_trades, "result": 1.0 if win else -1.0}] * n_trades
+    return {
+        "success": True, "pnl": pnl, "best_ct": 0.5, "trades_by_ct": {0.5: trades},
+        "selected_features_long": ["f"], "selected_features_short": [],
+    }
+
+
+def test_aggregation_enforces_min_fold_stability_on_every_path():
+    """2/5 profitable folds: early termination may never trigger (order F F P P F),
+    and the successive-halving path has none, so aggregation must reject."""
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(min_fold_stability=0.5, first_fold_sanity_check=False,
+                          separate_long_short=False)
+    folds = [_fold_stub(p) for p in (-1.0, -1.0, 2.0, 2.0, -1.0)]
+
+    assert _aggregate_cv_folds(folds, 5, ctx, ["f"], [])["success"] is False
+    folds[-1] = _fold_stub(2.0)
+    assert _aggregate_cv_folds(folds, 5, ctx, ["f"], [])["success"] is True
+
+
+def test_aggregation_applies_the_first_fold_sanity_check():
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(min_fold_stability=0.0, first_fold_sanity_check=True,
+                          separate_long_short=False)
+    catastrophic = _fold_stub(-50.0, n_trades=10, win=False)
+    folds = [catastrophic, _fold_stub(5.0), _fold_stub(5.0)]
+
+    result = _aggregate_cv_folds(folds, 3, ctx, ["f"], [])
+
+    assert result["success"] is False and result["first_fold_failed"] is True
