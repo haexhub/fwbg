@@ -3,7 +3,7 @@ Test Results Management - Persistierung von Optimierungs-Ergebnissen
 """
 import os
 import json
-import hashlib
+import uuid
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -262,9 +262,8 @@ def generate_run_id(description=None):
     Format: YYYYMMDD_HHMMSS_[short_hash]
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    config_str = f"{data_config.TIMEFRAME}_{data_config.WALK_FORWARD_FOLDS}"
-    short_hash = hashlib.md5(f"{timestamp}_{config_str}".encode()).hexdigest()[:6]
-    return f"{timestamp}_{short_hash}"
+    # Random suffix: runs started in the same second must not share an id.
+    return f"{timestamp}_{uuid.uuid4().hex[:6]}"
 
 
 def create_run_directory(run_id, description=None, strategy_metadata=None):
