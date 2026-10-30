@@ -197,3 +197,41 @@ def test_start_run_threads_window_and_cost_flags_to_cli(_single_slot, tmp_path, 
     assert cmd[cmd.index("--start-date") + 1] == "2024-01-01"
     assert cmd[cmd.index("--end-date") + 1] == "2024-12-31"
     assert cmd[cmd.index("--cost-multiplier") + 1] == "2.0"
+
+
+def test_run_cancelled_before_attach_is_terminated_not_started(_single_slot, tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from fwbg.api import create_app
+
+    strategies_dir = tmp_path / "configs"
+    strategies_dir.mkdir()
+    (strategies_dir / "demo.json").write_text('{"name": "demo"}')
+    monkeypatch.setenv("FWBG_STRATEGIES_DIR", str(strategies_dir))
+    results_dir = tmp_path / "results"
+    monkeypatch.setattr(_single_slot, "get_test_results_dir", lambda: results_dir)
+    killed = []
+    monkeypatch.setattr("fwbg.api.run_service.os.kill", lambda pid, sig: killed.append(pid))
+
+    def _spawn_then_cancel(cmd, env, run_dir):
+        # A /cancel landing after the slot was reserved but before attach.
+        job_id = run_dir.name
+        _single_slot._run_service.cancel(
+            _single_slot._active_jobs, _single_slot._active_jobs_lock, results_dir, job_id,
+        )
+        proc = _FakeProc(None)
+        proc.pid = 4242
+        return proc, run_dir / "out.log", run_dir / "err.log"
+
+    monkeypatch.setattr(_single_slot, "_spawn_cli_process", _spawn_then_cancel)
+
+    with TestClient(create_app()) as client:
+        resp = client.post("/api/runs/start", json={"strategy_name": "demo"})
+
+    assert resp.status_code == 409
+    assert killed == [4242]
+    [job] = _single_slot._active_jobs.values()
+    assert job["status"] == "cancelled"
+    assert job["process"] is None
+    state = _single_slot._run_service.disk_state(results_dir, job["job_id"])
+    assert state["status"] == "cancelled"

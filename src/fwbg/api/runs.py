@@ -185,7 +185,7 @@ def start_run(body: RunStartRequest) -> dict:
         process, stdout_path, stderr_path = _spawn_cli_process(
             cmd, env, results_dir / job_id
         )
-        _run_service.attach(
+        if not _run_service.attach(
             _active_jobs,
             _active_jobs_lock,
             results_dir,
@@ -194,7 +194,8 @@ def start_run(body: RunStartRequest) -> dict:
             stdout_path,
             stderr_path,
             cmd,
-        )
+        ):
+            raise HTTPException(409, "run was cancelled before it started")
     except HTTPException:
         raise  # handled above; not a spawn failure
     except Exception as e:
