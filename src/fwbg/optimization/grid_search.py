@@ -13,6 +13,7 @@ from typing import Tuple, Optional, List
 import numpy as np
 
 from fwbg.core.columns import ColumnRoleError
+from fwbg.research.fingerprint import canonical_json
 from fwbg.utils.logging import log
 from .nested_cv import (
     run_inner_cv, select_features_from_fold,
@@ -348,19 +349,15 @@ def _target_cache_key(tp, sl, timeout_bars, ctx):
     """Build a hashable key for target deduplication.
 
     Only parameters that affect compute_targets output are included.
-    Signal columns and hour filters do NOT affect targets.
+    Signal columns and hour filters do NOT affect targets. Canonical JSON keeps
+    nested/list params (e.g. scale-in levels) hashable and order-independent;
+    other values (numpy scalars, ...) fall back to their repr.
     """
-    sl_dist_col = (ctx.exit_params or {}).get("sl_dist_column", "")
-    exit_mod = ctx.exit_modifier_params or {}
-    entry_mod = ctx.entry_modifier_params or {}
-    return (
-        ctx.exit_strategy, tp, sl, timeout_bars,
-        tuple(sorted(ctx.exit_params.items())) if ctx.exit_params else (),
-        sl_dist_col,
-        tuple(sorted(exit_mod.items())) if exit_mod else (),
-        ctx.entry_modifier or "",
-        tuple(sorted(entry_mod.items())) if entry_mod else (),
-    )
+    return canonical_json([
+        ctx.exit_strategy, tp, sl, timeout_bars, ctx.exit_params or {},
+        ctx.exit_modifier or "", ctx.exit_modifier_params or {},
+        ctx.entry_modifier or "", ctx.entry_modifier_params or {},
+    ], default=repr)
 
 
 def _run_with_successive_halving(
