@@ -910,7 +910,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=26.0" },
-    { name = "dukascopy-python", specifier = ">=4.0" },
+    { name = "dukascopy-python", specifier = ">=4.0,<5" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
     { name = "fwbg", extras = ["analytics", "ig", "api"], marker = "extra == 'full'" },
     { name = "fwbg-premium", editable = "packages/fwbg-premium" },

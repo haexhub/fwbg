@@ -99,6 +99,8 @@ def apply_date_window(df: pd.DataFrame, start_date: str | None, end_date: str | 
         return df.loc[(df.index >= start) & (df.index < end)]
     if start is not None:
         return df.loc[df.index >= start]
+    if end is None:
+        return df
     return df.loc[df.index < end]
 
 
