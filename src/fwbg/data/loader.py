@@ -249,7 +249,12 @@ def run_data_loading(df, data_loading_configs):
                     # Legacy 1-calendar-day shift for daily series without a
                     # release calendar.  See docs/data/macro-release-dates.md
                     # for the known limitations of this path.
-                    lookup = raw_df["Close"].to_dict()
+                    # Key by calendar date: a daily series stamped with a time
+                    # of day or a timezone would otherwise match no bar date.
+                    days = pd.DatetimeIndex(raw_df.index)
+                    if days.tz is not None:
+                        days = days.tz_localize(None)
+                    lookup = dict(zip(days.normalize(), raw_df["Close"]))
                     df[macro_col] = prev_date.map(
                         lambda d, lk=lookup: lk.get(d, np.nan)
                     ).ffill()
