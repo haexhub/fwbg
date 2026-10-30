@@ -376,7 +376,8 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             Level). Level auf der falschen Seite → entry ± sl_distance.
 
     Returns:
-        dict mit Trade-Details oder None bei ungültigem Trade
+        dict mit Trade-Details (ohne Exit bis Datenende: Close des letzten Bars,
+        exit_reason="end_of_data") oder None, wenn kein Bar nach dem Entry existiert
     """
     entry_idx = idx + entry_delay
     if entry_idx >= len(closes):
@@ -492,6 +493,15 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
 
         return res
 
+    def close_at_bar(exit_idx, exit_reason):
+        """Exit at the bar's close (timeout, or no exit before the data ends)."""
+        exit_price = closes[exit_idx]
+        trade_result = make_result(
+            _outcome(direction, exit_price, avg_price, total_qty), exit_idx, exit_price
+        )
+        trade_result["exit_reason"] = exit_reason
+        return trade_result
+
     # MAE/MFE tracking (always active, near-zero overhead)
     low_min = entry
     high_max = entry
@@ -550,11 +560,7 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
 
         # Timeout check (counts only session bars when session-aware)
         if timeout_bars is not None and timeout_bars > 0 and session_bars_elapsed >= timeout_bars:
-            exit_price = closes[j]
-            trade_result = make_result(
-                _outcome(direction, exit_price, avg_price, total_qty), j, exit_price
-            )
-            trade_result["exit_reason"] = "timeout"
+            trade_result = close_at_bar(j, "timeout")
             trade_result["timeout_bars"] = timeout_bars
             return trade_result
 
@@ -566,8 +572,13 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                 trail_distance, 0.0,
             )
 
-    # Kein Exit (weder TP/SL noch Timeout innerhalb max_bars)
-    return None
+    # No exit before the data (or max_bars) ended: close at the last bar, so an
+    # open position is neither dropped from the results nor overlapped by the
+    # next entry.
+    last_idx = min(exit_start_idx + max_bars, len(closes)) - 1
+    if last_idx < exit_start_idx:
+        return None
+    return close_at_bar(last_idx, "end_of_data")
 
 
 def analyze_sl_potential(trades, closes, highs, lows, max_scan_bars=500):
