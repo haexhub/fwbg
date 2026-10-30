@@ -9,6 +9,9 @@ private research register in `$FWBG_WORKSPACE/research`.
   with its hypothesis and mechanism written before the first run.
 - Every run passes `--research-id S-NNNN --note "<what changed and why>"`;
   re-running an identical configuration needs `--reason`. Dry-run with `--check`.
+- `python -m fwbg.cli analyze` (MFE/MAE exit analysis) takes the same
+  `--research-id`/`--note`/`--reason`, reads only data before the card's cutoff
+  and is recorded too.
 - A holdout look (`--holdout`) evaluates the frozen setting once on data after
   the card's cutoff; use it when iterating is done. A further look needs `--reason`.
 - Scripts that evaluate strategies outside `python -m fwbg.cli` record every
