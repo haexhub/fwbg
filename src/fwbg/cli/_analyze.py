@@ -4,6 +4,8 @@ import argparse
 import os
 import sys
 
+from fwbg_sdk.enums import Timeframe
+
 from fwbg.core.config import StrategyConfig
 from fwbg.exploration.exit_analyzer import analyze_asset, format_terminal_output, write_json
 from fwbg.data import config as data_config
@@ -24,7 +26,12 @@ Examples:
         "--asset-class",
         help="Analyze all assets of a class (FOREX, INDEX, COMMODITY, CRYPTO)",
     )
-    parser.add_argument("--strategy-file", help="Strategy JSON for exit strategy config")
+    parser.add_argument(
+        "--strategy-file", help="Strategy JSON: exit strategy, datasource and timeframe"
+    )
+    parser.add_argument(
+        "--data-path", metavar="DIR", help="Data directory (overrides the strategy's datasource)"
+    )
     parser.add_argument(
         "--max-bars", type=int, default=48, help="Forward window in bars (default: 48)"
     )
@@ -42,14 +49,19 @@ Examples:
 
     exit_strategy = "atr_based"
     exit_params = {"atr_period": 14}
+    strategy = StrategyConfig()
+    timeframe = data_config.TIMEFRAME
     if args.strategy_file:
         try:
             strategy = StrategyConfig.from_json_file(args.strategy_file)
+            if strategy.timeframe:
+                timeframe = Timeframe.from_str(strategy.timeframe).canonical
         except (OSError, ValueError) as exc:
             parser.error(f"--strategy-file {args.strategy_file}: {exc}")
         exit_strategy, exit_params = _exit_strategy(strategy, exit_strategy, exit_params)
 
-    files = _resolve_files(args.asset, args.asset_class)
+    data_config.use_data_path(strategy.datasource, args.data_path)
+    files = _resolve_files(args.asset, args.asset_class, timeframe)
     os.makedirs(args.output_dir, exist_ok=True)
 
     for data_file in files:
@@ -80,7 +92,7 @@ def _exit_strategy(strategy, default_name, default_params):
     return first.name, dict(first.params)
 
 
-def _resolve_files(asset, asset_class):
+def _resolve_files(asset, asset_class, timeframe):
     """Resolve data file paths from asset name or asset class."""
     if asset:
         # Try direct/absolute path first (no DATA_PATH needed)
@@ -104,7 +116,7 @@ def _resolve_files(asset, asset_class):
     symbols = registry.symbols_by_class(asset_class.upper())
     files = []
     for sym in symbols:
-        path = os.path.join(data_config.DATA_PATH, f"{sym}_{data_config.TIMEFRAME}.csv")
+        path = os.path.join(data_config.DATA_PATH, f"{sym}_{timeframe}.csv")
         if os.path.exists(path):
             files.append(path)
     if not files:

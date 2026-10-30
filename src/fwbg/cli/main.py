@@ -126,20 +126,10 @@ def run_optimizer(
               "not by the strategy; refusing an ungated holdout look.")
         return None
 
-    # Datasource aus Strategy übernehmen (via Data-Source-Registry)
-    if strategy.datasource:
-        from fwbg.core.data_sources import get_data_source, CSVSourceConfig
-        try:
-            ds = get_data_source(strategy.datasource)
-            if isinstance(ds, CSVSourceConfig) and ds.exists():
-                data_config.DATA_PATH = str(ds.path)
-        except ValueError:
-            print(f"Warnung: Datasource '{strategy.datasource}' nicht gefunden")
-
-    # CLI --data-path hat höchste Priorität
-    cli_data_path = (strategy_metadata or {}).get("_cli_data_path")
-    if cli_data_path:
-        data_config.DATA_PATH = cli_data_path
+    # Datasource aus Strategy (Data-Source-Registry); CLI --data-path hat höchste Priorität
+    data_config.use_data_path(
+        strategy.datasource, (strategy_metadata or {}).get("_cli_data_path")
+    )
 
     # Timeframe aus Strategy übernehmen (überschreibt Modul-Globals)
     if strategy.timeframe:
