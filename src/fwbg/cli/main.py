@@ -172,12 +172,18 @@ def run_optimizer(
     files = sorted(glob.glob(f"{data_config.DATA_PATH}/*_{data_config.TIMEFRAME}.csv"))
 
     # Fallback: resample from a lower timeframe if no files found
+    source_tf = None
     if not files:
         from fwbg.data.resample import find_fallback_files
         files, source_tf = find_fallback_files(data_config.DATA_PATH, data_config.TIMEFRAME)
         if files:
-            data_config.RESAMPLE_FROM = source_tf
             print(f"No {data_config.TIMEFRAME} files found — will resample from {source_tf}")
+    # Like TIMEFRAME above: workers re-import data_config, so the env carries it.
+    data_config.RESAMPLE_FROM = source_tf
+    if source_tf:
+        os.environ["RESAMPLE_FROM"] = source_tf
+    else:
+        os.environ.pop("RESAMPLE_FROM", None)
 
     # Strategy-Metadaten auswerten für Filter
     if strategy_metadata:
@@ -1033,7 +1039,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 asset_filter = class_assets
             if not asset_filter:
                 print(f"Keine Assets für Klassen {classes} gefunden!")
-                return
+                sys.exit(1)
 
         research = None
         run_id = args.run_id or generate_run_id(args.description)
