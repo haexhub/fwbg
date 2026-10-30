@@ -103,3 +103,31 @@ def test_trailed_stop_gapped_below_entry_is_a_loss(direction):
     assert _python(o, c, h, lo, direction, 50, 3, trail=3.0) == pytest.approx(expected)
     for got in _kernels(o, c, h, lo, direction, 50, 3, trail=3.0):
         assert got == pytest.approx(expected)
+
+
+def _scale_in(o, c, h, lo, direction):
+    """(result, exit_idx, exit_price, n_fills) from evaluator and kernel: TP 10, SL 10, level 0.5."""
+    t = simulate_pro_trade(c, h, lo, 0, direction, 10, 10, 0.0, opens=o,
+                           scale_levels=[0.5], scale_qty_mult=1.0)
+    k = _simulate_trade_scale_in_numba(o, c, h, lo, 0, direction, 10.0, 10.0, 0.0, 0.0,
+                                       100, 0, np.array([0.5]), 1, 1.0, 0.0, 0.0, 0.0)
+    return [(t["result"], t["exit_idx"], t["exit_price"], t.get("n_fills", 1)),
+            (k[0], k[1], k[2], k[6])]
+
+
+def test_tp_lowered_by_a_fill_applies_from_the_next_bar(direction):
+    # Bar 1 fills at 95 (TP drops 110 -> 107.5) and reaches 108: that only
+    # closes the trade if the low came first, so it exits on bar 2 instead.
+    o, c, h, lo = _scenario(
+        direction, FLAT, (100, 108, 94, 100), (100, 108, 99, 104), FLAT,
+    )
+
+    for got in _scale_in(o, c, h, lo, direction):
+        assert got == pytest.approx((1.0, 2, _price(direction, 107.5), 2))
+
+
+def test_pre_fill_tp_on_a_fill_bar_exits_without_the_fill(direction):
+    o, c, h, lo = _scenario(direction, FLAT, (100, 111, 94, 100), FLAT)
+
+    for got in _scale_in(o, c, h, lo, direction):
+        assert got == pytest.approx((1.0, 1, _price(direction, 110), 1))
