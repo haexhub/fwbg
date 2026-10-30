@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import json
 import logging
+import os
 import re
 
 import pandas as pd
@@ -284,7 +285,11 @@ class CSVSourceConfig(DataSourceConfig):
         """Gibt den vollständigen Dateipfad für ein Symbol zurück."""
         tf_value = self.timeframe_map.get(timeframe, timeframe) if timeframe else ""
         filename = self.file_pattern.format(symbol=symbol, timeframe=tf_value)
-        return self.path / filename
+        path = self.path / filename
+        # Lexical check (not resolve()) so symlinked data files keep working.
+        if not Path(os.path.abspath(path)).is_relative_to(os.path.abspath(self.path)):
+            raise ValueError(f"Data file escapes source directory: {filename!r}")
+        return path
 
     def exists(self) -> bool:
         """Prüft ob der Daten-Pfad existiert."""
