@@ -14,6 +14,7 @@ import numpy as np
 
 from fwbg.simulation.equity import simulate_equity_timeline
 from fwbg.simulation.trade import (
+    kelly_inputs,
     monte_carlo_equity_from_returns,
     monte_carlo_permutation_test,
 )
@@ -132,8 +133,10 @@ def compute_causal_reporting(
     den Trades der Folds 0..i-1 aufgerufen; das Ergebnis (risk_per_trade,
     Circuit-Breaker) wird ohne erneute Suche auf Fold i angewandt. Auch die
     Loss-Skala der Return-Umrechnung (avg. Loss, vgl. ``pnl_to_returns``)
-    stammt ausschließlich aus den Prior-Folds. Das RRR ist das des Settings,
-    mit dem Fold i getradet wurde (``fold_result["rrr"]``), sonst ``rrr``.
+    stammt ausschließlich aus den Prior-Folds, ebenso Gewinnrate und Payoff
+    (Ø Gewinn / Ø Verlust, ``kelly_inputs``). Das RRR des Settings, mit dem
+    Fold i getradet wurde (``fold_result["rrr"]``, sonst ``rrr``), dient nur als
+    Payoff-Fallback, solange Prior-Gewinne oder -Verluste fehlen.
 
     Fold 0 hat keine Prior-Daten und wird ausgeschlossen. Liefert die
     Prior-Kalibrierung fk <= 0, gilt der Fold als nicht getradet.
@@ -158,25 +161,26 @@ def compute_causal_reporting(
     untraded_folds: List[int] = []
     excluded_trades = 0
 
-    prior_binary: List[float] = []
+    prior_trades: List[Dict[str, Any]] = []
     prior_pnls: List[float] = []
     prior_rv: List[float] = []
     flat_offset = 0
 
     for fold_idx, fold_result in enumerate(unified_fold_results):
         fold_trades = fold_result["trades"]
-        fold_binary = [t["result"] for t in fold_trades]
         fold_pnls = [t["pnl_raw"] for t in fold_trades]
         fold_rv = [t["rv_at_entry"] for t in fold_trades if "rv_at_entry" in t]
 
-        if not prior_binary:
+        if not prior_trades:
             # Fold 0 (bzw. führende leere Folds): keine Prior-Daten.
             per_fold_risk.append(None)
             excluded_trades += len(fold_trades)
         else:
-            prior_wr = sum(1 for b in prior_binary if b > 0) / len(prior_binary)
+            prior_binary, prior_wr, prior_payoff = kelly_inputs(
+                prior_trades, fold_result.get("rrr", rrr)
+            )
             risk_result = risk_mgr.compute_risk_params(
-                prior_binary, prior_wr, fold_result.get("rrr", rrr),
+                prior_binary, prior_wr, prior_payoff,
                 rv_values=prior_rv if len(prior_rv) == len(prior_binary) else None,
                 **risk_params,
             )
@@ -195,7 +199,7 @@ def compute_causal_reporting(
                 causal_trade_indices.extend(flat_offset + i for i in taken)
                 excluded_trades += len(fold_trades) - len(taken)
 
-        prior_binary.extend(fold_binary)
+        prior_trades.extend(fold_trades)
         prior_pnls.extend(fold_pnls)
         prior_rv.extend(fold_rv)
         flat_offset += len(fold_trades)
