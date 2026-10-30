@@ -308,10 +308,13 @@ class IGBrokerAdapter(BrokerAdapter):
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Keep IG's raw price dicts; the default formatter returns a
+                # DataFrame that the parser below cannot iterate.
                 response = self._ig.fetch_historical_prices_by_epic(
                     epic=epic,
                     resolution=resolution,
                     numpoints=limit,
+                    format=lambda prices, _version: prices,
                 )
                 break
             except Exception as e:
