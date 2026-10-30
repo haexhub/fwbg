@@ -3,6 +3,7 @@ Test Results Management - Persistierung von Optimierungs-Ergebnissen
 """
 import os
 import json
+import sys
 import uuid
 import subprocess
 from datetime import datetime
@@ -568,35 +569,12 @@ def list_runs(tags=None):
     for run_id in sorted(os.listdir(RESULTS_BASE_PATH), reverse=True):
         run_path = os.path.join(RESULTS_BASE_PATH, run_id)
         if os.path.isdir(run_path):
-            run_info = {"run_id": run_id, "path": run_path}
-
-            # Config laden
-            config_path = os.path.join(run_path, "config.json")
-            if os.path.exists(config_path):
-                with open(config_path) as f:
-                    config = json.load(f)
-                    run_info["timestamp"] = config.get("timestamp")
-                    run_info["description"] = config.get("description")
-                    run_info["timeframe"] = config.get("timeframe")
-                    run_info["account"] = config.get("account_name")
-
-            # Strategy-Metadaten laden
-            strategy_path = os.path.join(run_path, "strategy.json")
-            if os.path.exists(strategy_path):
-                with open(strategy_path) as f:
-                    strategy = json.load(f)
-                    run_info["strategy_name"] = strategy.get("name")
-                    run_info["tags"] = strategy.get("tags", [])
-                    run_info["hypothesis"] = strategy.get("hypothesis")
-                    model = strategy.get("model", {})
-                    run_info["model_architecture"] = model.get("architecture") if isinstance(model, dict) else None
-
-            # Assets zählen
-            assets_path = os.path.join(run_path, "assets.json")
-            if os.path.exists(assets_path):
-                with open(assets_path) as f:
-                    assets = json.load(f)
-                    run_info["profitable_count"] = len(assets)
+            try:
+                run_info = _run_summary(run_id, run_path)
+            except (OSError, ValueError) as exc:
+                # One truncated or unreadable file must not hide every other run.
+                print(f"Warning: skipping run {run_id}: {exc}", file=sys.stderr)
+                continue
 
             # Filter anwenden
             if tags:
@@ -607,6 +585,41 @@ def list_runs(tags=None):
             runs.append(run_info)
 
     return runs
+
+
+def _run_summary(run_id, run_path):
+    """Listing fields of one run; raises OSError/ValueError for an unreadable file."""
+    run_info = {"run_id": run_id, "path": run_path}
+
+    # Config laden
+    config_path = os.path.join(run_path, "config.json")
+    if os.path.exists(config_path):
+        with open(config_path) as f:
+            config = json.load(f)
+            run_info["timestamp"] = config.get("timestamp")
+            run_info["description"] = config.get("description")
+            run_info["timeframe"] = config.get("timeframe")
+            run_info["account"] = config.get("account_name")
+
+    # Strategy-Metadaten laden
+    strategy_path = os.path.join(run_path, "strategy.json")
+    if os.path.exists(strategy_path):
+        with open(strategy_path) as f:
+            strategy = json.load(f)
+            run_info["strategy_name"] = strategy.get("name")
+            run_info["tags"] = strategy.get("tags", [])
+            run_info["hypothesis"] = strategy.get("hypothesis")
+            model = strategy.get("model", {})
+            run_info["model_architecture"] = model.get("architecture") if isinstance(model, dict) else None
+
+    # Assets zählen
+    assets_path = os.path.join(run_path, "assets.json")
+    if os.path.exists(assets_path):
+        with open(assets_path) as f:
+            assets = json.load(f)
+            run_info["profitable_count"] = len(assets)
+
+    return run_info
 
 
 def load_run(run_id):

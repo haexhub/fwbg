@@ -361,3 +361,25 @@ class TestDataConfig:
         # Legacy-/Kurzformen werden über resolve_tf_config normalisiert
         assert resolve_tf_config("HOUR") is TIMEFRAME_CONFIG["HOUR_1"]
         assert resolve_tf_config("DAY") is TIMEFRAME_CONFIG["DAY_1"]
+
+
+class TestListRuns:
+    """Tests für das Run-Listing (--list)."""
+
+    def test_unreadable_run_is_skipped_with_a_warning(self, tmp_path, monkeypatch, capsys):
+        from fwbg.results import storage
+
+        monkeypatch.setattr(storage, "RESULTS_BASE_PATH", str(tmp_path))
+        good = tmp_path / "run-good"
+        good.mkdir()
+        (good / "config.json").write_text(json.dumps({"description": "ok"}), encoding="utf-8")
+        (good / "strategy.json").write_text(json.dumps({"tags": ["a"]}), encoding="utf-8")
+        broken = tmp_path / "run-broken"
+        broken.mkdir()
+        (broken / "assets.json").write_text('{"EURUSD": ', encoding="utf-8")
+
+        runs = storage.list_runs()
+
+        assert [run["run_id"] for run in runs] == ["run-good"]
+        assert runs[0]["description"] == "ok"
+        assert "run-broken" in capsys.readouterr().err
