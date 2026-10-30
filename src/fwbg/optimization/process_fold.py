@@ -316,6 +316,18 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
     }
 
 
+def _drop_warmup(df: pd.DataFrame) -> pd.DataFrame:
+    """Cut the leading rows until every column that has values has started.
+
+    Interior NaN rows stay: dropping them would leave gaps in the bar arrays
+    the trade simulation walks, so TP/SL hits inside a gap went unseen. The
+    XGBoost models and the feature selectors handle NaN features; a column
+    without any value stays NaN (a missing feature) instead of emptying the frame.
+    """
+    starts = [start for start in (df[c].first_valid_index() for c in df.columns) if start is not None]
+    return df.loc[max(starts):] if starts else df
+
+
 def _finalize_fold_data(train_df, test_df, full_pool,
                         orig_train_ohlc, orig_test_ohlc, fold, sym):
     """Restore original OHLC after preprocessing and validate data sizes.
@@ -351,7 +363,8 @@ def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
                       indicator_progress_callback=None):
     """Prepare train/test DataFrames for ML models.
 
-    Drops columns with >10% NaN or inf, then drops NaN rows.
+    Drops columns with >10% NaN or inf in train or without any value in test,
+    then the indicator warm-up rows; NaN inside the frame stays for the models.
     """
     common = _prepare_fold_common(
         fold, fold_indicators, precomputed_raw_df,
@@ -370,8 +383,8 @@ def prepare_fold_data(fold, fold_indicators, precomputed_raw_df,
     log(2, f"  Fold {fold.fold_id + 1}: {len(full_pool)} clean features "
            f"(excl: {common['excluded_inf']} inf, {common['excluded_nan']} nan)", sym)
 
-    train_df = train_df.dropna()
-    test_df = test_df.dropna()
+    train_df = _drop_warmup(train_df)
+    test_df = _drop_warmup(test_df)
 
     return _finalize_fold_data(
         train_df, test_df, full_pool,
