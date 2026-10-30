@@ -9,24 +9,39 @@ import os
 from datetime import datetime, timezone
 
 import numpy as np
-import pandas as pd
 from tabulate import tabulate
 
+from fwbg.data.loader import apply_date_window, load_data_aligned
 from fwbg.exploration.mfe_mae import compute_capture_rates, compute_mfe_mae
 
 _PERCENTILES = [10, 25, 50, 60, 75, 85, 90, 95]
 _SCAN_RANGE = np.round(np.arange(0.2, 4.1, 0.1), 1)
 
 
-def analyze_asset(data_file, exit_strategy="atr_based", exit_params=None, max_bars=48):
+def analyze_asset(
+    data_file,
+    exit_strategy="atr_based",
+    exit_params=None,
+    max_bars=48,
+    start_date=None,
+    end_date=None,
+):
     """Run full MFE/MAE analysis on a single asset.
 
-    Returns a dict with mfe_mae stats, capture_matrix, and suggested_grid.
+    The data is loaded and restricted to ``[start_date, end_date)`` exactly as a
+    backtest run loads it. Returns a dict with mfe_mae stats, capture_matrix,
+    and suggested_grid.
     """
     if exit_params is None:
         exit_params = {"atr_period": 14}
 
-    df = _load_ohlcv(data_file)
+    df = load_data_aligned(data_file)
+    if df is None:
+        raise ValueError(f"cannot load {data_file}")
+    if start_date or end_date:
+        df = apply_date_window(df, start_date, end_date)
+    if df.empty:
+        raise ValueError(f"{data_file} has no data in the window {start_date}..{end_date}")
     open_ = df["O"].values.astype(np.float64)
     high = df["H"].values.astype(np.float64)
     low = df["L"].values.astype(np.float64)
@@ -84,6 +99,7 @@ def analyze_asset(data_file, exit_strategy="atr_based", exit_params=None, max_ba
         "data_file": os.path.basename(data_file),
         "bars_analyzed": int(np.sum(valid)),
         "max_bars_forward": max_bars,
+        "window": {"start": start_date, "end": end_date},
         "exit_strategy": exit_strategy,
         "exit_params": exit_params,
         "analyzed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -152,15 +168,6 @@ def write_json(result, output_path):
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-def _load_ohlcv(data_file):
-    """Load OHLCV from CSV. Expects columns T,O,H,L,C,V or positional."""
-    df = pd.read_csv(data_file)
-    if "O" not in df.columns:
-        # Positional: Date, Open, High, Low, Close, Volume
-        df.columns = ["T", "O", "H", "L", "C", "V"][:len(df.columns)]
-    return df
-
 
 def _compute_atr(high, low, close, period):
     """Compute ATR via exponential moving average of True Range."""
