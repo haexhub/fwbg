@@ -74,6 +74,34 @@ def _parse_timestamp_col(series):
     return pd.to_datetime(series)
 
 
+def apply_date_window(df: pd.DataFrame, start_date: str | None, end_date: str | None) -> pd.DataFrame:
+    """Restrict `df` (DatetimeIndex) to a half-open date window [start_date, end_date).
+
+    `start_date` is inclusive, `end_date` is exclusive — this keeps in-sample
+    and holdout windows that share a boundary date from overlapping. Either
+    bound may be omitted. Raises `ValueError` naming the bad value if a date
+    string cannot be parsed.
+    """
+    start = None
+    end = None
+    if start_date is not None:
+        try:
+            start = pd.Timestamp(start_date)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid start_date {start_date!r}: {exc}") from exc
+    if end_date is not None:
+        try:
+            end = pd.Timestamp(end_date)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid end_date {end_date!r}: {exc}") from exc
+
+    if start is not None and end is not None:
+        return df.loc[(df.index >= start) & (df.index < end)]
+    if start is not None:
+        return df.loc[df.index >= start]
+    return df.loc[df.index < end]
+
+
 def load_data_aligned(path, is_sentiment=False):
     """Lädt OHLC-Daten aus CSV mit Zeitzone-Alignment."""
     try:
