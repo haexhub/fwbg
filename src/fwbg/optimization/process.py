@@ -21,7 +21,7 @@ from fwbg.data.assets import get_asset
 from fwbg.core.context import SimulationContext
 from fwbg.data.loader import load_data_aligned, run_data_loading
 from fwbg.simulation.trade import (
-    calculate_sharpe_ratio, calculate_calmar_from_returns, pnl_to_returns,
+    calculate_sharpe_ratio, calculate_calmar_from_returns, pnl_to_returns, kelly_inputs,
 )
 from fwbg.core import get_risk_manager
 from fwbg.research.dsr import return_statistics
@@ -813,7 +813,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         )
 
         all_trades_pnl = [t["pnl_raw"] for t in all_trades]
-        all_trades_binary = [t["result"] for t in all_trades]
         rv_values = [t["rv_at_entry"] for t in all_trades if "rv_at_entry" in t]
 
         # Recalculate metrics from unified trades
@@ -833,9 +832,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         rrr = b_config["rrr"]
         risk_mgr_cls = get_risk_manager(strategy.risk_management)
         risk_mgr = risk_mgr_cls()
+        kelly_binary, kelly_wr, kelly_payoff = kelly_inputs(all_trades, rrr)
         risk_result = risk_mgr.compute_risk_params(
-            all_trades_binary, mean_wr, rrr,
-            rv_values=rv_values if len(rv_values) == len(all_trades_binary) else None,
+            kelly_binary, kelly_wr, kelly_payoff,
+            rv_values=rv_values if len(rv_values) == len(kelly_binary) else None,
             **strategy.risk_params
         )
         fk = risk_result["risk_per_trade"]

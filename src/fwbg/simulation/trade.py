@@ -1006,6 +1006,28 @@ def monte_carlo_equity_from_returns(trade_returns, n_simulations=1000, random_se
     }
 
 
+def kelly_inputs(trades, default_payoff):
+    """Binary outcomes, win rate and payoff ratio for the risk-manager plugins.
+
+    Kelly must see what trades actually paid: a timeout or trailed exit that
+    closed barely positive is not a full win at the nominal TP/SL ratio. Wins
+    and losses follow ``result`` (noise exits count as losses); the payoff is
+    the average win over the average loss of ``pnl_raw``. Without both wins and
+    losses the payoff is undefined and *default_payoff* is used.
+
+    Returns:
+        (binary, win_rate, payoff)
+    """
+    binary = [1.0 if t["result"] > 0 else -1.0 for t in trades]
+    wins = [t["pnl_raw"] for t in trades if t["result"] > 0]
+    losses = [max(-t["pnl_raw"], 0.0) for t in trades if t["result"] <= 0]
+    win_rate = len(wins) / len(trades) if trades else 0.0
+    payoff = default_payoff
+    if wins and losses and sum(losses) > 0:
+        payoff = (sum(wins) / len(wins)) / (sum(losses) / len(losses))
+    return binary, win_rate, payoff
+
+
 def adjust_risk_for_target_dd(trades, base_risk, rrr, target_max_dd=0.30):
     """
     Passt den Risk-Faktor an, um einen Ziel-Max-Drawdown zu erreichen.
