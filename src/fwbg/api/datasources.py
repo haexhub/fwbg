@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
+from fwbg.api._paths import validate_id
 from fwbg.core.data_sources import (
     _DATA_SOURCES,
     AssetInfo,
@@ -63,6 +64,21 @@ def _safe_child_path(parent: Path, child_name: str) -> Path:
     except ValueError:
         raise HTTPException(status_code=400, detail="Path traversal detected")
     return candidate
+
+
+def _check_source_paths(body: dict, current: Optional[dict] = None) -> None:
+    """Reject API-supplied source directories outside the data root.
+
+    Sources discovered from config files may live elsewhere; an update that
+    resends such an unchanged path stays allowed.
+    """
+    root = get_data_root().resolve()
+    for key in ("path", "raw_path"):
+        value = body.get(key)
+        if not value or (current is not None and str(value) == current.get(key)):
+            continue
+        if not Path(value).resolve().is_relative_to(root):
+            raise HTTPException(status_code=400, detail=f"{key} must be inside the data root")
 
 
 def _raw_dir(name: str) -> Path:
@@ -169,6 +185,7 @@ def create_source(body: dict):
         datasource_dir.mkdir(parents=True, exist_ok=True)
         raw_dir.mkdir(parents=True, exist_ok=True)
         body["path"] = str(datasource_dir)
+        _check_source_paths(body)
     else:
         # Non-CSV: just ensure the directory exists
         (get_data_root() / name).mkdir(parents=True, exist_ok=True)
@@ -208,6 +225,7 @@ def update_source(name: str, body: dict):
     # Merge: body overwrites current, but keep name/type immutable
     body.pop("name", None)
     body.pop("type", None)
+    _check_source_paths(body, current)
     current.update(body)
     current["name"] = name
 
@@ -294,7 +312,7 @@ def delete_datasource_file(name: str, filename: str):
 def preview_raw_file(name: str, filename: str, rows: int = 5):
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
-    f = _raw_dir(name) / filename
+    f = _safe_child_path(_raw_dir(name), _safe_filename(filename))
     if not f.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
     try:
@@ -328,7 +346,9 @@ def process_raw_file(name: str, req: ProcessRequest):
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
 
-    raw_file = _raw_dir(name) / req.filename
+    raw_file = _safe_child_path(_raw_dir(name), _safe_filename(req.filename))
+    validate_id(req.symbol, "symbol")
+    validate_id(req.timeframe, "timeframe")
     if not raw_file.exists():
         raise HTTPException(status_code=404, detail=f"Raw file not found: {req.filename}")
 

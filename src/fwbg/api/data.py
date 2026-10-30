@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from fwbg.api._paths import validate_id
 from fwbg.core.data_sources import _DATA_SOURCES, CSVSourceConfig
 
 log = logging.getLogger(__name__)
@@ -99,6 +100,7 @@ def ensure_data(req: EnsureRequest):
     from fwbg.data.dukascopy import DukascopyError, TIMEFRAMES, download, resolve_instrument
 
     symbol = _normalize_symbol(req.symbol)
+    validate_id(req.timeframe, "timeframe")
 
     # Determine the desired date range up front. Without an explicit date_from
     # the full available history is requested (date_from defaults to the

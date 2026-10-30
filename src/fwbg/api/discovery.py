@@ -24,7 +24,6 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from fwbg.api.deps import get_test_results_dir
 from fwbg.api._paths import safe_load_json, safe_results_path, validate_id
 from fwbg.data import load_data_aligned
 from fwbg.pipeline.features import compute_indicator_pool
@@ -480,7 +479,7 @@ def _sse_event(event: str, data: dict) -> str:
 
 
 def _cache_path(run_id: str, symbol: str) -> Path:
-    return get_test_results_dir() / run_id / "discovery" / f"{symbol}.json"
+    return safe_results_path(run_id, "discovery", f"{symbol}.json")
 
 
 def _load_cached_discovery(run_id: str, symbol: str) -> dict | None:
@@ -687,6 +686,10 @@ async def get_feature_discovery(run_id: str, symbol: str, force: bool = False):
     Results are cached in test_results/{run_id}/discovery/{symbol}.json.
     Pass ?force=true to recompute even if a cache exists.
     """
+    # Validate before streaming starts: an error inside the generator can no
+    # longer become an HTTP status.
+    validate_id(run_id, "run_id")
+    validate_id(symbol, "symbol")
     return StreamingResponse(
         _discovery_stream(run_id, symbol, force=force),
         media_type="text/event-stream",
