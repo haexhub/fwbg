@@ -52,7 +52,7 @@ def _safe_filename(filename: str) -> str:
 
 
 def _validate_source_name(name: str) -> None:
-    if not _SAFE_NAME_RE.match(name):
+    if name in {".", ".."} or not _SAFE_NAME_RE.match(name):
         raise HTTPException(status_code=400, detail=f"Invalid source name: {name!r}")
 
 
@@ -183,11 +183,12 @@ def create_source(body: dict):
         root = get_data_root()
         datasource_dir = root / name / "datasource"
         raw_dir = root / name / "raw"
-        datasource_dir.mkdir(parents=True, exist_ok=True)
-        raw_dir.mkdir(parents=True, exist_ok=True)
         body["path"] = str(datasource_dir)
         _check_source_paths(body)
+        datasource_dir.mkdir(parents=True, exist_ok=True)
+        raw_dir.mkdir(parents=True, exist_ok=True)
     else:
+        _check_source_paths(body)
         # Non-CSV: just ensure the directory exists
         (get_data_root() / name).mkdir(parents=True, exist_ok=True)
 

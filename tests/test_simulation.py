@@ -91,7 +91,7 @@ class TestSimulateTrade:
             0, 1, self.tp_distance, self.sl_distance, self.spread, max_bars=10
         )
         # An open position is closed, not dropped: here at a loss (close 1.0 < entry 1.015)
-        assert trade_result["exit_reason"] == "end_of_data"
+        assert trade_result["exit_reason"] == "max_bars"
         assert trade_result["exit_idx"] == 10
         assert trade_result["result"] == -1.0
 

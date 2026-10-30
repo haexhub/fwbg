@@ -260,6 +260,12 @@ class TradingBot:
                 logger.warning(f"⚠️ {symbol}: No data available")
                 return False
 
+            # Historical providers can include the still-forming current hour.
+            df = df[df.index < _current_utc_hour()]
+            if df.empty:
+                logger.warning(f"⚠️ {symbol}: No completed bars available")
+                return False
+
             if len(df) < self.min_training_samples:
                 logger.warning(f"⚠️ {symbol}: Not enough data ({len(df)} < {self.min_training_samples})")
                 return False

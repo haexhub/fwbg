@@ -705,3 +705,19 @@ def test_aggregation_applies_the_first_fold_sanity_check():
     result = _aggregate_cv_folds(folds, 3, ctx, ["f"], [])
 
     assert result["success"] is False and result["first_fold_failed"] is True
+
+
+def test_missing_best_ct_trade_key_does_not_count_as_no_trades():
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _first_fold_catastrophic
+
+    ctx = SimpleNamespace(
+        first_fold_sanity_check=True,
+        first_fold_min_win_rate=0.25,
+        first_fold_min_pnl=-10.0,
+        first_fold_min_trades=5,
+    )
+    fold_result = {"best_ct": (0.2, 0.8), "trades_by_ct": {0.2: [{"result": 1.0}]}, "pnl": 1.0}
+
+    assert _first_fold_catastrophic(fold_result, ctx) is False

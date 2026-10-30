@@ -90,6 +90,15 @@ def test_discovery_completes_and_caches_its_result(results_dir, monkeypatch):
 
     assert response.status_code == 200
     assert "event: done" in response.text
-    cached = json.loads((results_dir / "run-1" / "discovery" / "EURUSD.json").read_text())
+    cached = json.loads(discovery_mod._cache_path("run-1", "EURUSD").read_text())
     assert cached["total_trades"] == 24
     assert cached["results"][0]["feature"] == "feat"
+
+
+def test_discovery_cache_filename_is_bounded_for_max_length_symbol(results_dir):
+    symbol = "A" * 128
+
+    path = discovery_mod._cache_path("run-1", symbol)
+
+    assert len(path.name) <= 128
+    assert path == discovery_mod._cache_path("run-1", symbol)

@@ -616,8 +616,10 @@ def _first_fold_catastrophic(fold_result: Dict[str, Any], ctx: SimulationContext
     # with a "trades" key instead of ct→trades mapping.
     if isinstance(best_ct, tuple) and "combined" in trades_by_ct:
         fold_trades = trades_by_ct["combined"].get("trades", [])
+    elif best_ct in trades_by_ct:
+        fold_trades = trades_by_ct[best_ct]
     else:
-        fold_trades = trades_by_ct.get(best_ct, [])
+        return False
     if not fold_trades:
         return min_trades > 0
     win_rate = sum(1 for t in fold_trades if t["result"] == 1.0) / len(fold_trades)

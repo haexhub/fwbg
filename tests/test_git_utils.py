@@ -7,7 +7,7 @@ from fwbg.api.git_utils import file_at_commit
 
 
 @pytest.fixture
-def repo(tmp_path):
+def repo(tmp_path, git_env):
     def git(*args):
         subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
 

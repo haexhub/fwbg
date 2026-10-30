@@ -72,6 +72,8 @@ def _apply_op(left: pd.Series, op: str, right: pd.Series | float | int) -> pd.Se
     """Apply a comparison *op* element-wise, filling NaN results with False."""
     if op not in _VALID_OPS:
         raise ValueError(f"Unsupported operator '{op}'. Valid: {sorted(_VALID_OPS)}")
+    if not isinstance(right, pd.Series) and pd.isna(right):
+        return pd.Series(False, index=left.index, dtype=bool)
 
     if op == "==":
         result = left == right
