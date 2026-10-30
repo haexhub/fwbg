@@ -172,3 +172,26 @@ def test_minimum_lot_is_not_allowed_to_exceed_risk_budget():
     bot._execute_signal("EURUSD", OrderSide.BUY, 0.9, bot.assets["EURUSD"])
 
     adapter.submit_order.assert_not_called()
+
+
+@pytest.mark.parametrize("close_ok, signal_kept", [(True, False), (False, True)])
+def test_kill_signal_is_kept_until_positions_are_closed(tmp_path, close_ok, signal_kept):
+    adapter = MagicMock()
+    adapter.close_all_positions.return_value = [MagicMock(success=close_ok, message="x")]
+    bot = _make_bot(adapter)
+    bot.stats_dir = str(tmp_path)
+    (tmp_path / "kill_signal").touch()
+
+    assert bot._check_kill_switch() is True
+    assert (tmp_path / "kill_signal").exists() is signal_kept
+
+
+def test_kill_signal_is_kept_when_broker_is_unavailable(tmp_path):
+    adapter = MagicMock()
+    adapter.close_all_positions.side_effect = ConnectionError("broker down")
+    bot = _make_bot(adapter)
+    bot.stats_dir = str(tmp_path)
+    (tmp_path / "kill_signal").touch()
+
+    assert bot._check_kill_switch() is True
+    assert (tmp_path / "kill_signal").exists()
