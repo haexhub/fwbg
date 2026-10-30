@@ -651,18 +651,23 @@ class TradingBot:
         self._stop_event.set()
         self._running = False
 
-    def kill(self, close_positions: bool = True):
+    def kill(self, close_positions: bool = True) -> bool:
         """
         Emergency Kill Switch - Stoppt sofort allen Handel.
 
         Args:
             close_positions: Wenn True, werden alle offenen Positionen geschlossen
+
+        Returns:
+            False wenn Positionen geschlossen werden sollten und das nicht
+            vollständig gelang
         """
         logger.critical("🚨 KILL SWITCH ACTIVATED")
         self._killed = True
         self._stop_event.set()
         self._running = False
 
+        all_closed = True
         if close_positions:
             logger.warning("🚨 Closing ALL positions...")
             try:
@@ -672,10 +677,13 @@ class TradingBot:
                 logger.warning(f"🚨 Closed {closed}/{len(results)} positions")
                 for r in failed:
                     logger.error(f"❌ Position NOT closed: {r.message}")
+                all_closed = not failed
             except Exception as e:
                 logger.error(f"❌ Failed to close positions: {e}")
+                all_closed = False
 
         self._write_status("KILLED")
+        return all_closed
 
     def _check_kill_switch(self) -> bool:
         """
@@ -690,11 +698,13 @@ class TradingBot:
         # Prüfe auf Kill-Signal-Datei
         kill_file = os.path.join(self.stats_dir, "kill_signal")
         if os.path.exists(kill_file):
-            try:
-                os.remove(kill_file)
-            except Exception:
-                pass
-            self.kill(close_positions=True)
+            # Keep the signal while positions may still be open, so the next
+            # start retries closing them instead of trading on.
+            if self.kill(close_positions=True):
+                try:
+                    os.remove(kill_file)
+                except OSError:
+                    pass
             return True
 
         return False
