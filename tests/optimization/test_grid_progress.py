@@ -332,6 +332,10 @@ class TestSuccessiveHalving:
         ctx.early_pruning_min_folds_before_pruning_ratio = min_folds_before_pruning_ratio
         ctx.sample_weights = False
         ctx.separate_long_short = False
+        # Pruning mechanics only: the fold stubs carry no trades, so the
+        # selection rules applied at aggregation are switched off here.
+        ctx.first_fold_sanity_check = False
+        ctx.min_fold_stability = 0.0
         return ctx
 
     def _make_combos(self, n):
@@ -340,7 +344,7 @@ class TestSuccessiveHalving:
         for i in range(n):
             combos.append((
                 10 + i, 20, None, i,
-                ["feat1"], [], MagicMock(), {},
+                ["feat1"], [], self._make_ctx(), {},
                 0, n, None,
                 ["feat1"], ["feat1"],
             ))
