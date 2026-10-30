@@ -121,13 +121,6 @@ def _get_available_indicators() -> list[str]:
     return sorted(names)
 
 
-def _ensure_registry_initialized() -> None:
-    """Pre-initialize the plugin registry once (avoids repeated auto_discover)."""
-    from fwbg.pipeline.registry import get_registry
-    registry = get_registry()
-    registry.auto_discover()
-
-
 def _compute_single_indicator(
     df: pd.DataFrame, ind_name: str,
     params: dict | None = None,
@@ -501,23 +494,26 @@ def _save_discovery_cache(run_id: str, symbol: str, result: dict) -> None:
 async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> AsyncGenerator[str, None]:
     """Async generator that yields SSE events during discovery.
 
-    Indicators are computed in parallel via asyncio.run_in_executor so that
-    cancellation propagates cleanly when the client disconnects or the server
-    is shut down with Ctrl+C — no thread-join deadlock.
+    Every blocking step (file I/O, data loading, plugin discovery, the
+    statistical analysis) runs in a worker thread so one discovery cannot
+    stall the event loop for other requests. Indicators are computed in
+    parallel via asyncio.run_in_executor so that cancellation propagates
+    cleanly when the client disconnects or the server is shut down with
+    Ctrl+C — no thread-join deadlock.
     """
     if not force:
-        cached = _load_cached_discovery(run_id, symbol)
+        cached = await asyncio.to_thread(_load_cached_discovery, run_id, symbol)
         if cached is not None:
             cached["cached"] = True
             yield _sse_event("done", cached)
             return
 
     try:
-        strategy = _load_strategy_config(run_id)
-        run_config = _load_run_config(run_id)
+        strategy = await asyncio.to_thread(_load_strategy_config, run_id)
+        run_config = await asyncio.to_thread(_load_run_config, run_id)
         timeframe = run_config.get("timeframe") or strategy.get("timeframe") or "HOUR"
-        trades = _load_trades(run_id, symbol)
-        csv_path = _resolve_csv_path(strategy, symbol, timeframe)
+        trades = await asyncio.to_thread(_load_trades, run_id, symbol)
+        csv_path = await asyncio.to_thread(_resolve_csv_path, strategy, symbol, timeframe)
     except HTTPException as exc:
         yield _sse_event("error", {"message": exc.detail})
         return
@@ -534,7 +530,7 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
     loss_mask = pnls < 0
 
     # Load OHLCV data
-    df = load_data_aligned(str(csv_path))
+    df = await asyncio.to_thread(load_data_aligned, str(csv_path))
     if df is None or df.empty:
         yield _sse_event("error", {"message": f"Failed to load data from {csv_path}"})
         return
@@ -547,9 +543,6 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
     end_idx = min(len(df), df.index.searchsorted(last_trade) + 1)
     df = df.iloc[start_idx:end_idx].copy()
 
-    # Pre-initialize registry once before spawning workers
-    _ensure_registry_initialized()
-
     # Build params lookup from the strategy's pipeline config so that
     # indicators already in the pipeline are computed with the same params
     # (producing the same column names the strategy actually uses).
@@ -558,7 +551,8 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
         if isinstance(ind_cfg, dict) and ind_cfg.get("name"):
             pipeline_params[ind_cfg["name"]] = ind_cfg.get("params", {})
 
-    indicator_names = _get_available_indicators()
+    # Also initializes the plugin registry before the workers start.
+    indicator_names = await asyncio.to_thread(_get_available_indicators)
     total_steps = len(indicator_names)
 
     yield _sse_event("init", {
@@ -632,47 +626,50 @@ async def _discovery_stream(run_id: str, symbol: str, force: bool = False) -> As
             task.cancel()
         pool.shutdown(wait=False, cancel_futures=True)
 
-    # ── Merge all indicator results at once ──
-    df_full = df
-    if all_new_cols:
-        df_full = pd.concat([df, *all_new_cols.values()], axis=1)
-
-    feature_cols = [c for c in df_full.columns
-                    if c not in base_cols and not c.startswith("_")]
-
     yield _sse_event("progress", {
         "step": total_steps,
         "total": total_steps,
         "indicator": "Finale Analyse & Kombinationen...",
     })
 
-    # ── Statistical analysis (single pass) ──
-    sampled = df_full.reindex(entry_times, method="nearest", tolerance=pd.Timedelta("2h"))
-    all_results = _analyze_features(sampled, feature_cols, win_mask, loss_mask, indicator_map)
-    direction_results = _analyze_direction(
-        sampled, feature_cols, directions, pnls, win_mask, loss_mask, indicator_map,
-    )
-    combinations = _analyze_combinations(
-        sampled, direction_results, directions, pnls, win_mask, indicator_map,
-    )
+    def _analyze() -> dict:
+        # ── Merge all indicator results at once ──
+        df_full = df
+        if all_new_cols:
+            df_full = pd.concat([df, *all_new_cols.values()], axis=1)
 
-    done_payload = {
-        "run_id": run_id,
-        "symbol": symbol,
-        "strategy_name": strategy.get("name", ""),
-        "total_trades": len(trades),
-        "wins": int(win_mask.sum()),
-        "losses": int(loss_mask.sum()),
-        "total_features": len(feature_cols),
-        "analyzed_features": len(all_results),
-        "indicators_computed": computed_indicators,
-        "results": all_results[:100],
-        "direction": direction_results,
-        "combinations": combinations,
-    }
+        feature_cols = [c for c in df_full.columns
+                        if c not in base_cols and not c.startswith("_")]
+
+        # ── Statistical analysis (single pass) ──
+        sampled = df_full.reindex(entry_times, method="nearest", tolerance=pd.Timedelta("2h"))
+        all_results = _analyze_features(sampled, feature_cols, win_mask, loss_mask, indicator_map)
+        direction_results = _analyze_direction(
+            sampled, feature_cols, directions, pnls, win_mask, loss_mask, indicator_map,
+        )
+        combinations = _analyze_combinations(
+            sampled, direction_results, directions, pnls, win_mask, indicator_map,
+        )
+
+        return {
+            "run_id": run_id,
+            "symbol": symbol,
+            "strategy_name": strategy.get("name", ""),
+            "total_trades": len(trades),
+            "wins": int(win_mask.sum()),
+            "losses": int(loss_mask.sum()),
+            "total_features": len(feature_cols),
+            "analyzed_features": len(all_results),
+            "indicators_computed": computed_indicators,
+            "results": all_results[:100],
+            "direction": direction_results,
+            "combinations": combinations,
+        }
+
+    done_payload = await asyncio.to_thread(_analyze)
 
     try:
-        _save_discovery_cache(run_id, symbol, done_payload)
+        await asyncio.to_thread(_save_discovery_cache, run_id, symbol, done_payload)
     except Exception as e:
         log.warning("Failed to cache discovery results for %s/%s: %s", run_id, symbol, e)
 
