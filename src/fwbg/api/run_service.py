@@ -190,7 +190,12 @@ class RunService:
                     stderr_path=str(stderr_path),
                     cmd=cmd,
                 )
-                self._write_state(results_dir, job)
+                try:
+                    self._write_state(results_dir, job)
+                except BaseException:
+                    # The caller records a failed spawn; don't leave its process running.
+                    self._terminate(process)
+                    raise
                 attached = True
         if not attached:
             self._terminate(process)
