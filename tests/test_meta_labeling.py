@@ -428,3 +428,27 @@ class TestMetaLabelingEndToEnd:
         # Result can be success or failure depending on trade count
         assert isinstance(result, dict)
         assert "success" in result
+
+    def test_holdout_filters_with_meta_models_like_inner_cv(self, monkeypatch):
+        """The CT was tuned on meta-filtered probabilities; the holdout must filter too."""
+        from fwbg.optimization import nested_cv
+
+        ctx = _make_ctx(meta_labeling=True)
+        df, _ = _make_data(500)
+        features = ["feat1", "feat2", "feat3"]
+        seen = []
+
+        def reject_all(frame, probs, win_idx, feats, meta_model):
+            seen.append(meta_model)
+            return np.zeros_like(probs)
+
+        monkeypatch.setattr(nested_cv, "_apply_meta_filter", reject_all)
+        candidate = {
+            "params": (20, 30, 0.5), "timeout_bars": 20,
+            "selected_features_long": features, "selected_features_short": features,
+        }
+
+        result = nested_cv.evaluate_on_holdout(df.iloc[350:], df.iloc[:350], candidate, ctx)
+
+        assert seen and any(model is not None for model in seen)
+        assert result["n_trades"] == 0

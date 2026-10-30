@@ -17,6 +17,7 @@ from fwbg.core import get_feature_selector, get_model
 
 from fwbg.simulation.trade import analyze_sl_potential, analyze_tp_potential, attach_regime_labels
 from .targets import (
+    _apply_meta_filter,
     _validate_targets,
     compute_targets,
     _get_probs,
@@ -458,6 +459,38 @@ def _train_meta_model(
     return meta_model
 
 
+def _train_meta_models(
+    df: pd.DataFrame,
+    targets_long: np.ndarray,
+    targets_short: np.ndarray,
+    feat_long: Optional[List[str]],
+    feat_short: Optional[List[str]],
+    mod_long: Optional[BaseModel],
+    mod_short: Optional[BaseModel],
+    ctx: SimulationContext,
+    timeout_bars: Optional[int],
+) -> Tuple[Optional[BaseModel], Optional[BaseModel]]:
+    """Meta-models filtering each direction's primary predictions (None when off/untrainable).
+
+    Shared by inner CV and holdout: the CT is tuned on meta-filtered
+    probabilities, so test and replay must filter the same way.
+    """
+    if not ctx.meta_labeling:
+        return None, None
+    meta_long = meta_short = None
+    if mod_long is not None and feat_long:
+        oof_long = _generate_oof_predictions(
+            df, targets_long, feat_long, ctx, label_horizon=timeout_bars
+        )
+        meta_long = _train_meta_model(df, targets_long, feat_long, oof_long, ctx)
+    if mod_short is not None and feat_short:
+        oof_short = _generate_oof_predictions(
+            df, targets_short, feat_short, ctx, label_horizon=timeout_bars
+        )
+        meta_short = _train_meta_model(df, targets_short, feat_short, oof_short, ctx)
+    return meta_long, meta_short
+
+
 def _evaluate_single_fold(
     fold_idx: int,
     train_df: pd.DataFrame,
@@ -537,19 +570,10 @@ def _evaluate_single_fold(
     ) if has_short else None
 
     # Meta-Labeling: train meta-models to filter primary predictions
-    meta_mod_long = None
-    meta_mod_short = None
-    if ctx.meta_labeling:
-        if mod_long is not None and feat_long:
-            oof_long = _generate_oof_predictions(
-                train_df, targets_long, feat_long, ctx, label_horizon=timeout_bars
-            )
-            meta_mod_long = _train_meta_model(train_df, targets_long, feat_long, oof_long, ctx)
-        if mod_short is not None and feat_short:
-            oof_short = _generate_oof_predictions(
-                train_df, targets_short, feat_short, ctx, label_horizon=timeout_bars
-            )
-            meta_mod_short = _train_meta_model(train_df, targets_short, feat_short, oof_short, ctx)
+    meta_mod_long, meta_mod_short = _train_meta_models(
+        train_df, targets_long, targets_short, feat_long, feat_short,
+        mod_long, mod_short, ctx, timeout_bars,
+    )
 
     best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
         val_df, mod_long, mod_short,
@@ -843,6 +867,20 @@ def evaluate_on_holdout(
 
     probs_long, long_win_idx = _get_probs(mod_long, holdout_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, holdout_df, features_short)
+
+    # Meta-Labeling as in inner CV, where the CT was chosen on filtered probabilities
+    meta_mod_long, meta_mod_short = _train_meta_models(
+        inner_df, targets_long, targets_short, features_long, features_short,
+        mod_long, mod_short, ctx, timeout_bars,
+    )
+    if probs_long is not None:
+        probs_long = _apply_meta_filter(
+            holdout_df, probs_long, long_win_idx, features_long, meta_mod_long
+        )
+    if probs_short is not None:
+        probs_short = _apply_meta_filter(
+            holdout_df, probs_short, short_win_idx, features_short, meta_mod_short
+        )
 
     # Per-trade TP/SL overrides from model
     per_trade_params = None
