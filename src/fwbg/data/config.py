@@ -47,7 +47,9 @@ def resolve_tf_config(timeframe: "str | Timeframe") -> dict:
     return TIMEFRAME_CONFIG[Timeframe.from_str(timeframe).canonical]
 
 
-RESAMPLE_FROM = None  # Set by CLI when loading lower-TF files for resampling
+# Set by the CLI when loading lower-TF files for resampling. Read from the
+# environment like TIMEFRAME so re-imported (forkserver/spawn) workers see it.
+RESAMPLE_FROM = os.environ.get("RESAMPLE_FROM") or None
 
 tf_cfg = resolve_tf_config(TIMEFRAME)
 WINDOW_SIZE = tf_cfg["window_size"]
