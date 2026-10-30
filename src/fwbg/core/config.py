@@ -442,6 +442,20 @@ class StrategyConfig:
                 )
             else:
                 regime_filter = RegimeFilterConfig.from_dict(regime_data)
+        if regime_filter.conditions:
+            # The grid is what the optimizer reads: a static condition becomes a
+            # single-value grid, so it applies in every combination.
+            fixed = [
+                {"column": c.column, "operator": c.operator, "values": [c.value],
+                 "directions": c.directions, "else_directions": c.else_directions}
+                for c in regime_filter.conditions
+            ]
+            optimization = dataclasses.replace(
+                optimization,
+                regime_filter_grid=RegimeFilterGridConfig(
+                    condition_grids=optimization.regime_filter_grid.condition_grids + fixed,
+                ),
+            )
 
         # Parse exit_strategies array
         raw_exits = data.get("exit_strategies", [])
