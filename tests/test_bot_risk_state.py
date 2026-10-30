@@ -215,3 +215,29 @@ def test_cache_holds_completed_utc_bars_only(monkeypatch):
 
     assert bot.ohlc_cache["EURUSD"].index[-1] == hour - timedelta(hours=1)
     adapter.get_historical_bars.assert_called_once()
+
+
+def test_initial_training_cache_excludes_forming_bar(monkeypatch):
+    import fwbg.bot as bot_module
+
+    hour = datetime(2025, 1, 3, 12)  # naive UTC, like the bar index
+    monkeypatch.setattr(bot_module, "_current_utc_hour", lambda: hour)
+    adapter = MagicMock()
+    adapter.get_historical_bars.return_value = pd.DataFrame(
+        {"O": 1.0, "H": 1.0, "L": 1.0, "C": 1.0},
+        index=pd.date_range(hour - timedelta(hours=9), hour, freq="h"),
+    )
+    trained = {}
+
+    class Model:
+        def train(self, features, _target, _context, **_kwargs):
+            trained["index"] = features.index
+
+    monkeypatch.setattr(bot_module, "get_model", lambda _name: Model)
+    bot = _make_bot(adapter)
+    bot.min_training_samples = 5
+    bot._compute_features = lambda df: df
+
+    assert bot._train_model("EURUSD", bot.assets["EURUSD"]) is True
+    assert bot.last_bar_time["EURUSD"] == hour - timedelta(hours=1)
+    assert trained["index"].max() < hour

@@ -10,6 +10,7 @@ Pipeline:
 Uses SSE (Server-Sent Events) to stream progress and partial results.
 """
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -472,7 +473,8 @@ def _sse_event(event: str, data: dict) -> str:
 
 
 def _cache_path(run_id: str, symbol: str) -> Path:
-    return safe_results_path(run_id, "discovery", f"{symbol}.json")
+    symbol_hash = hashlib.sha256(symbol.encode("utf-8")).hexdigest()
+    return safe_results_path(run_id, "discovery", f"{symbol_hash}.json")
 
 
 def _load_cached_discovery(run_id: str, symbol: str) -> dict | None:

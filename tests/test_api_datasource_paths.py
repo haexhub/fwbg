@@ -77,6 +77,17 @@ def test_update_keeps_unchanged_path(client, source):
     assert r.status_code == 200
 
 
+@pytest.mark.parametrize("name", [".", ".."])
+def test_create_source_rejects_dot_segments_before_creating_dirs(client, monkeypatch, tmp_path, name):
+    root = tmp_path / "data"
+    monkeypatch.setattr(ds_api, "get_data_root", lambda: root)
+
+    response = client.post("/api/datasources", json={"name": name, "type": "csv"})
+
+    assert response.status_code == 400
+    assert not root.exists()
+
+
 def test_chart_rejects_symbol_path(client):
     r = client.get("/api/chart/ohlcv", params={"symbol": "/etc/x", "timeframe": "HOUR"})
 

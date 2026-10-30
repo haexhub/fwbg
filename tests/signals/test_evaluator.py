@@ -132,6 +132,13 @@ class TestValueCheck:
         assert not result.iloc[0]
         assert result.iloc[1]
 
+    def test_null_scalar_threshold_never_matches(self, df):
+        cond = {"type": "value_check", "column": "adx_14", "op": "!=", "value": np.nan}
+
+        result = evaluate_condition(cond, df)
+
+        assert not result.any()
+
     def test_col_compare_not_equal_is_false_on_nan(self, df):
         df_copy = df.copy()
         df_copy.loc[df_copy.index[0], "ema_21"] = np.nan
