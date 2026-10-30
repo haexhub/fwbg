@@ -263,11 +263,12 @@ class TestTrailingStopModifier:
         lows = ohlc_with_atr["L"].values
         atr_values = ohlc_with_atr["_atr"].values
 
-        # tp_mult=0.5 → TP within single-bar range → many TP hits
+        # tp_mult=1.5 → TP beyond the entry bar's range, so the trailing TP
+        # (applied from the next bar on) gets a chance to move it
         # breakeven_trigger=0.0 → trailing TP starts immediately
         # trail_atr_mult=0.0 → no trailing SL, only trailing TP matters
         shared = dict(
-            tp_mult=0.5, sl_mult=3.0, spread=0.0, slippage=0.0,
+            tp_mult=1.5, sl_mult=3.0, spread=0.0, slippage=0.0,
             min_tp_distance=0.0, min_sl_distance=0.0,
             max_bars=150, timeout_val=0,
             breakeven_trigger=0.0, trail_atr_mult=0.0,
