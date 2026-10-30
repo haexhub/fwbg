@@ -185,7 +185,7 @@ def start_run(body: RunStartRequest) -> dict:
         process, stdout_path, stderr_path = _spawn_cli_process(
             cmd, env, results_dir / job_id
         )
-        _run_service.attach(
+        if not _run_service.attach(
             _active_jobs,
             _active_jobs_lock,
             results_dir,
@@ -194,7 +194,8 @@ def start_run(body: RunStartRequest) -> dict:
             stdout_path,
             stderr_path,
             cmd,
-        )
+        ):
+            raise HTTPException(409, "run was cancelled before it started")
     except HTTPException:
         raise  # handled above; not a spawn failure
     except Exception as e:
@@ -250,8 +251,8 @@ def preview_signals(body: PreviewRequest) -> dict:
     if not isinstance(ds, CSVSourceConfig) or not ds.exists():
         raise HTTPException(400, f"Datasource '{ds_name}' is not a CSV source or path missing")
 
-    symbol = body.symbol
-    csv_path = ds.get_file_path(symbol, timeframe)
+    symbol = _validate_id(body.symbol, "symbol")
+    csv_path = ds.get_file_path(symbol, _validate_id(timeframe, "timeframe"))
     if not csv_path.exists():
         available = [f.stem.rsplit(f"_{timeframe}", 1)[0]
                      for f in ds.list_files(f"*_{timeframe}.csv")]

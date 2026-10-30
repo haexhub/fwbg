@@ -172,6 +172,46 @@ class TestIGBrokerAdapterSymbolMapping:
 class TestIGBrokerAdapterHistoricalData:
     """Tests für historische Daten."""
 
+    def test_fetch_ig_historical_against_real_igservice(self, monkeypatch):
+        """Die echte IGService (return_dataframe=True) muss die Resolution
+        akzeptieren und Rohpreise liefern — ein MagicMock verdeckt beides."""
+        import json
+        from trading_ig import rest
+        from .adapter import IGBrokerAdapter
+
+        sent = {}
+
+        def fake_req(action, endpoint, params, session, version):
+            sent.update(params)
+            body = {
+                "prices": [{
+                    "snapshotTimeUTC": "2024-01-15T14:00:00",
+                    "openPrice": {"bid": 1.10, "ask": 1.1002},
+                    "highPrice": {"bid": 1.11, "ask": 1.1102},
+                    "lowPrice": {"bid": 1.09, "ask": 1.0902},
+                    "closePrice": {"bid": 1.105, "ask": 1.1052},
+                }],
+                "metadata": {
+                    "pageData": {"pageNumber": 1, "totalPages": 1},
+                    "allowance": {"remainingAllowance": 1, "totalAllowance": 1,
+                                  "allowanceExpiry": 1},
+                },
+            }
+            return MagicMock(text=json.dumps(body))
+
+        adapter = IGBrokerAdapter(username="u", password="p", api_key="k")
+        adapter._ig = rest.IGService("u", "p", "k", "DEMO")
+        monkeypatch.setattr(adapter._ig, "_req", fake_req)
+        monkeypatch.setattr(rest.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(adapter, "_ensure_session_valid", lambda: True)
+        adapter._last_request_time = 0
+
+        df = adapter._fetch_ig_historical(Symbol.EURUSD, Timeframe.H1, limit=1)
+
+        assert sent["resolution"] == "HOUR"
+        assert df is not None and len(df) == 1
+        assert df["C"].iloc[0] == pytest.approx(1.1051)
+
     @pytest.mark.skip(
         reason="pre-existing: setting adapter._ig directly no longer suffices — "
         "_ensure_session_valid() (added by the reconnect refactor) also checks "

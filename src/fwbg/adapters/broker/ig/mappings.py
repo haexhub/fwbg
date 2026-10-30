@@ -168,19 +168,20 @@ SYMBOL_POINT_VALUE: Dict[Symbol, float] = {
     Symbol.ETHUSD: 0.01,
 }
 
-# IG Resolution Mapping (IG API format)
-# Gültige Werte: SECOND, MINUTE, MINUTE_2, MINUTE_3, MINUTE_5, MINUTE_10,
-#                MINUTE_15, MINUTE_30, HOUR, HOUR_2, HOUR_3, HOUR_4, DAY, WEEK, MONTH
+# IG Resolution Mapping (pandas offset strings)
+# trading_ig's IGService defaults to return_dataframe=True and then passes the
+# resolution through conv_resol(), which only accepts pandas offsets and maps
+# them to the IG API names (HOUR, MINUTE_15, ...). IG names would raise there.
 TIMEFRAME_TO_RESOLUTION: Dict[Timeframe, str] = {
-    Timeframe.M1: "MINUTE",
-    Timeframe.M5: "MINUTE_5",
-    Timeframe.M15: "MINUTE_15",
-    Timeframe.M30: "MINUTE_30",
-    Timeframe.H1: "HOUR",
-    Timeframe.H2: "HOUR_2",
-    Timeframe.H4: "HOUR_4",
-    Timeframe.D1: "DAY",
-    Timeframe.W1: "WEEK",
+    Timeframe.M1: "1min",
+    Timeframe.M5: "5min",
+    Timeframe.M15: "15min",
+    Timeframe.M30: "30min",
+    Timeframe.H1: "1h",
+    Timeframe.H2: "2h",
+    Timeframe.H4: "4h",
+    Timeframe.D1: "D",
+    Timeframe.W1: "W",
 }
 
 # yfinance Interval Mapping

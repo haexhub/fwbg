@@ -172,3 +172,72 @@ def test_minimum_lot_is_not_allowed_to_exceed_risk_budget():
     bot._execute_signal("EURUSD", OrderSide.BUY, 0.9, bot.assets["EURUSD"])
 
     adapter.submit_order.assert_not_called()
+
+
+@pytest.mark.parametrize("close_ok, signal_kept", [(True, False), (False, True)])
+def test_kill_signal_is_kept_until_positions_are_closed(tmp_path, close_ok, signal_kept):
+    adapter = MagicMock()
+    adapter.close_all_positions.return_value = [MagicMock(success=close_ok, message="x")]
+    bot = _make_bot(adapter)
+    bot.stats_dir = str(tmp_path)
+    (tmp_path / "kill_signal").touch()
+
+    assert bot._check_kill_switch() is True
+    assert (tmp_path / "kill_signal").exists() is signal_kept
+
+
+def test_kill_signal_is_kept_when_broker_is_unavailable(tmp_path):
+    adapter = MagicMock()
+    adapter.close_all_positions.side_effect = ConnectionError("broker down")
+    bot = _make_bot(adapter)
+    bot.stats_dir = str(tmp_path)
+    (tmp_path / "kill_signal").touch()
+
+    assert bot._check_kill_switch() is True
+    assert (tmp_path / "kill_signal").exists()
+
+
+def test_cache_holds_completed_utc_bars_only(monkeypatch):
+    import fwbg.bot as bot_module
+
+    hour = datetime(2025, 1, 3, 12)  # naive UTC, like the bar index
+    monkeypatch.setattr(bot_module, "_current_utc_hour", lambda: hour)
+    adapter = MagicMock()
+    adapter.get_historical_bars.return_value = pd.DataFrame(
+        {"O": 1.0, "H": 1.0, "L": 1.0, "C": 1.0},
+        index=pd.date_range(hour - timedelta(hours=2), hour, freq="h"),
+    )
+    bot = _make_bot(adapter)
+    bot._compute_features = lambda df: df
+
+    bot._update_cache_if_needed("EURUSD")
+    bot._update_cache_if_needed("EURUSD")
+
+    assert bot.ohlc_cache["EURUSD"].index[-1] == hour - timedelta(hours=1)
+    adapter.get_historical_bars.assert_called_once()
+
+
+def test_initial_training_cache_excludes_forming_bar(monkeypatch):
+    import fwbg.bot as bot_module
+
+    hour = datetime(2025, 1, 3, 12)  # naive UTC, like the bar index
+    monkeypatch.setattr(bot_module, "_current_utc_hour", lambda: hour)
+    adapter = MagicMock()
+    adapter.get_historical_bars.return_value = pd.DataFrame(
+        {"O": 1.0, "H": 1.0, "L": 1.0, "C": 1.0},
+        index=pd.date_range(hour - timedelta(hours=9), hour, freq="h"),
+    )
+    trained = {}
+
+    class Model:
+        def train(self, features, _target, _context, **_kwargs):
+            trained["index"] = features.index
+
+    monkeypatch.setattr(bot_module, "get_model", lambda _name: Model)
+    bot = _make_bot(adapter)
+    bot.min_training_samples = 5
+    bot._compute_features = lambda df: df
+
+    assert bot._train_model("EURUSD", bot.assets["EURUSD"]) is True
+    assert bot.last_bar_time["EURUSD"] == hour - timedelta(hours=1)
+    assert trained["index"].max() < hour

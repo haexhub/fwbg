@@ -63,3 +63,16 @@ def test_fresh_interpreter_normalizes_legacy_env_spelling():
     tf, bph, window, oos = r.stdout.split()
     assert tf == "DAY_1"
     assert oos == "500"
+
+
+def test_fresh_interpreter_sees_resample_source_from_env():
+    # Same mechanism for the lower-TF resample fallback: without it, workers
+    # would run MINUTE_15 bars as if they were the target timeframe.
+    r = subprocess.run(
+        [sys.executable, "-c", "import fwbg.data.config as c; print(c.RESAMPLE_FROM)"],
+        env={**os.environ, "TIMEFRAME": "HOUR_4", "RESAMPLE_FROM": "MINUTE_15"},
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == "MINUTE_15"

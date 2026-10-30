@@ -12,7 +12,7 @@ from fwbg.optimization.unified_simulation import (
     hp_key,
     merge_unified_settings,
     run_unified_simulation,
-    _majority_vote_dict,
+    _majority_vote,
 )
 
 
@@ -212,30 +212,49 @@ class TestMergeUnifiedSettings:
         assert result["selected_features_long"] == ["f1"]
         assert result["selected_features_short"] == ["f2"]
 
+    def test_modifiers_and_regime_are_voted_as_one_fold_choice(self):
+        trail = {"exit_modifier": "trailing_stop", "exit_modifier_params": {"trail": 1},
+                 "entry_modifier": "scale_in", "entry_modifier_params": {"levels": [0.5]},
+                 "regime_filter": {"conditions": [
+                     {"column": "adx", "operator": ">=", "value": 25}]}}
+        folds = [_make_fold_result(i, tp=2.0, sl=1.0, ct=0.5) for i in range(3)]
+        for fold in folds[:2]:
+            fold["best_config"].update(trail)
+
+        result = merge_unified_settings(folds, folds)
+
+        assert {key: result[key] for key in trail} == trail
+
 
 # ---------------------------------------------------------------------------
-# _majority_vote_dict
+# _majority_vote
 # ---------------------------------------------------------------------------
 
-class TestMajorityVoteDict:
+class TestMajorityVote:
+
+    def test_nested_values_compare_by_content(self):
+        regime = {"conditions": [{"column": "adx", "operator": ">=", "value": 25}]}
+        votes = [regime, {"conditions": []}, {"conditions": [
+            {"value": 25, "operator": ">=", "column": "adx"}]}]
+        assert _majority_vote(votes) == regime
 
     def test_clear_winner(self):
         dicts = [{"a": 1}, {"a": 1}, {"b": 2}]
-        assert _majority_vote_dict(dicts) == {"a": 1}
+        assert _majority_vote(dicts) == {"a": 1}
 
     def test_all_same(self):
         dicts = [{"x": 10}] * 5
-        assert _majority_vote_dict(dicts) == {"x": 10}
+        assert _majority_vote(dicts) == {"x": 10}
 
     def test_all_none(self):
-        assert _majority_vote_dict([None, None, None]) is None
+        assert _majority_vote([None, None, None]) is None
 
     def test_none_vs_dict(self):
         dicts = [None, None, {"a": 1}]
-        assert _majority_vote_dict(dicts) is None  # None is majority
+        assert _majority_vote(dicts) is None  # None is majority
 
     def test_empty_list(self):
-        assert _majority_vote_dict([]) is None
+        assert _majority_vote([]) is None
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +363,10 @@ class TestCausalCandidates:
 @dataclasses.dataclass(frozen=True)
 class _Ctx:
     model_hyperparameters: dict = dataclasses.field(default_factory=dict)
+    exit_modifier: str | None = None
     exit_modifier_params: dict = dataclasses.field(default_factory=dict)
+    entry_modifier: str | None = None
+    entry_modifier_params: dict = dataclasses.field(default_factory=dict)
     exit_strategy: str = "fixed"
     exit_params: dict = dataclasses.field(default_factory=dict)
 
@@ -408,6 +430,28 @@ class TestRunUnifiedSimulation:
         assert ctx0 == _Ctx(model_hyperparameters={"a": 1}, exit_modifier_params={"be": 0.5},
                             exit_strategy="orb_based", exit_params={"col": "orb"})
         assert ctx1 == _Ctx()
+
+    def test_replay_applies_modifiers_and_regime_filter(self, monkeypatch):
+        calls = []
+
+        def evaluate(test_df, train_df, candidate, ctx):
+            calls.append((test_df.copy(), ctx))
+            return {"trades": [], "n_trades": 0, "pnl": 0.0, "win_rate": 0.0}
+
+        monkeypatch.setattr(unified_simulation, "evaluate_on_holdout", evaluate)
+        candidate = {
+            **_candidate(1.0),
+            "exit_modifier": "trailing_stop", "exit_modifier_params": {"trail": 1},
+            "entry_modifier": "scale_in", "entry_modifier_params": {"levels": [0.5]},
+            "regime_filter": {"conditions": [
+                {"column": "f1", "operator": ">", "value": 0.15}]},
+        }
+        _simulate(WF_FOLDS[:1], [candidate])
+
+        (test_df, ctx), = calls
+        assert (ctx.exit_modifier, ctx.entry_modifier) == ("trailing_stop", "scale_in")
+        assert ctx.entry_modifier_params == {"levels": [0.5]}
+        assert test_df["_regime"].nunique() == 2  # f1 = 0.1 blocked, 0.2 allowed
 
     def test_candidate_exit_params_override_same_exit_strategy(self, monkeypatch):
         calls = []

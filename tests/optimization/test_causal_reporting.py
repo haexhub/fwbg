@@ -123,22 +123,23 @@ class RrrRiskManager(StubRiskManager):
         return {**result, "risk_per_trade": 0.01 * rrr}
 
 
-class TestPerFoldRrr:
-    """Fold i is sized with the RRR of the setting it was replayed with."""
+class TestPayoffFromPriorTrades:
+    """Fold i is sized with the payoff the prior folds' trades realised."""
 
-    def test_each_fold_is_sized_with_its_own_rrr(self):
+    def test_payoff_is_the_prior_average_win_over_average_loss(self):
         folds = [
             {**_fold([(1.0, 0.003), (-1.0, -0.002)]), "rrr": 4.0},
             {**_fold([(1.0, 0.004)]), "rrr": 1.0},
             {**_fold([(-1.0, -0.001)]), "rrr": 3.0},
         ]
         out = compute_causal_reporting(folds, RrrRiskManager(), 2.0, {})
-        assert out["per_fold_risk"] == [None, pytest.approx(0.01), pytest.approx(0.03)]
+        # fold 1: 0.003 / 0.002; fold 2: mean(0.003, 0.004) / 0.002
+        assert out["per_fold_risk"] == [None, pytest.approx(0.015), pytest.approx(0.0175)]
 
-    def test_folds_without_rrr_fall_back_to_the_given_rrr(self):
-        folds = [_fold([(1.0, 0.003), (-1.0, -0.002)]), _fold([(1.0, 0.004)])]
+    def test_fold_rrr_is_the_fallback_while_priors_lack_a_loss(self):
+        folds = [_fold([(1.0, 0.003)]), {**_fold([(1.0, 0.004)]), "rrr": 3.0}, _fold([])]
         out = compute_causal_reporting(folds, RrrRiskManager(), 2.0, {})
-        assert out["per_fold_risk"] == [None, pytest.approx(0.02)]
+        assert out["per_fold_risk"] == [None, pytest.approx(0.03), pytest.approx(0.02)]
 
 
 class TestHindsightRemoval:

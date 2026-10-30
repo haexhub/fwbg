@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from fwbg.core.presets import PRESET_SECTIONS
@@ -53,14 +53,18 @@ def _normalize(value: Any) -> Any:
     return value
 
 
-def canonical_json(value: Any) -> str:
-    """Serialize *value* deterministically: sorted keys, no whitespace."""
+def canonical_json(value: Any, default: Callable[[Any], Any] | None = None) -> str:
+    """Serialize *value* deterministically: sorted keys, no whitespace.
+
+    Non-JSON values raise unless *default* converts them (as in ``json.dumps``).
+    """
     return json.dumps(
         _normalize(value),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
         allow_nan=False,
+        default=default,
     )
 
 

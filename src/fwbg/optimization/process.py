@@ -19,9 +19,9 @@ from fwbg.data import config as data_config
 from fwbg.core.config import StrategyConfig
 from fwbg.data.assets import get_asset
 from fwbg.core.context import SimulationContext
-from fwbg.data.loader import load_data_aligned, run_data_loading
+from fwbg.data.loader import apply_date_window, load_data_aligned, run_data_loading
 from fwbg.simulation.trade import (
-    calculate_sharpe_ratio, calculate_calmar_from_returns, pnl_to_returns,
+    calculate_sharpe_ratio, calculate_calmar_from_returns, pnl_to_returns, kelly_inputs,
 )
 from fwbg.core import get_risk_manager
 from fwbg.research.dsr import return_statistics
@@ -395,34 +395,6 @@ def _run_indicator_variants(variants, df, wf_folds, asset, sym):
     return best_data
 
 
-def _apply_date_window(df: pd.DataFrame, start_date: str | None, end_date: str | None) -> pd.DataFrame:
-    """Restrict `df` (DatetimeIndex) to a half-open date window [start_date, end_date).
-
-    `start_date` is inclusive, `end_date` is exclusive — this keeps in-sample
-    and holdout windows that share a boundary date from overlapping. Either
-    bound may be omitted. Raises `ValueError` naming the bad value if a date
-    string cannot be parsed.
-    """
-    start = None
-    end = None
-    if start_date is not None:
-        try:
-            start = pd.Timestamp(start_date)
-        except (ValueError, TypeError) as exc:
-            raise ValueError(f"Invalid start_date {start_date!r}: {exc}") from exc
-    if end_date is not None:
-        try:
-            end = pd.Timestamp(end_date)
-        except (ValueError, TypeError) as exc:
-            raise ValueError(f"Invalid end_date {end_date!r}: {exc}") from exc
-
-    if start is not None and end is not None:
-        return df.loc[(df.index >= start) & (df.index < end)]
-    if start is not None:
-        return df.loc[df.index >= start]
-    return df.loc[df.index < end]
-
-
 def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.DataFrame | None:
     """Load *csv_path* as the run sees it: resampled, date-windowed, flat bars
     dropped, data-loading pipeline applied. None without data (in the window).
@@ -445,10 +417,10 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
     # The DatetimeIndex makes all downstream fold/holdout splitting (which is
     # purely positional) operate on the window automatically — no fold-logic
     # change needed. Used to reserve a holdout tail or run a holdout window.
-    # Half-open: start_date inclusive, end_date exclusive (see _apply_date_window).
+    # Half-open: start_date inclusive, end_date exclusive (see apply_date_window).
     if strategy.start_date or strategy.end_date:
         n_before = len(df)
-        df = _apply_date_window(df, strategy.start_date, strategy.end_date)
+        df = apply_date_window(df, strategy.start_date, strategy.end_date)
         log(2, f"Datumsfenster {strategy.start_date}..{strategy.end_date}: "
                 f"{n_before} → {len(df)} Zeilen", sym)
         if df.empty:
@@ -498,7 +470,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     Note:
         The configured backtest window (`strategy.start_date`/`end_date`) is
         half-open: `start_date` is inclusive, `end_date` is exclusive. See
-        `_apply_date_window`.
+        `apply_date_window`.
     """
     sym = os.path.basename(csv_path).split("_")[0]
     t_start = time.time()
@@ -813,7 +785,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         )
 
         all_trades_pnl = [t["pnl_raw"] for t in all_trades]
-        all_trades_binary = [t["result"] for t in all_trades]
         rv_values = [t["rv_at_entry"] for t in all_trades if "rv_at_entry" in t]
 
         # Recalculate metrics from unified trades
@@ -833,9 +804,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         rrr = b_config["rrr"]
         risk_mgr_cls = get_risk_manager(strategy.risk_management)
         risk_mgr = risk_mgr_cls()
+        kelly_binary, kelly_wr, kelly_payoff = kelly_inputs(all_trades, rrr)
         risk_result = risk_mgr.compute_risk_params(
-            all_trades_binary, mean_wr, rrr,
-            rv_values=rv_values if len(rv_values) == len(all_trades_binary) else None,
+            kelly_binary, kelly_wr, kelly_payoff,
+            rv_values=rv_values if len(rv_values) == len(kelly_binary) else None,
             **strategy.risk_params
         )
         fk = risk_result["risk_per_trade"]
@@ -1041,7 +1013,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Sharpe/Calmar (needed for both not_significant and ok paths)
         actual_trades_per_year = len(reporting_pnl) * bars_per_year / reporting_test_bars if reporting_test_bars > 0 else len(reporting_pnl)
         sharpe = calculate_sharpe_ratio(reporting_returns, trades_per_year=actual_trades_per_year)
-        calmar = calculate_calmar_from_returns(reporting_returns)
+        calmar = calculate_calmar_from_returns(
+            reporting_returns,
+            years=reporting_test_bars / bars_per_year if bars_per_year else None,
+        )
 
         # === TIME-BASED EQUITY REPLAY (Reporting, see equity_replay) ===
         detailed_aligned = (

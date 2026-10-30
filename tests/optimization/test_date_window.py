@@ -1,6 +1,6 @@
-"""Tests for the half-open date-window slice in process.py (Plan 014).
+"""Tests for the half-open date-window slice of the data loader (Plan 014).
 
-`_apply_date_window` restricts a DatetimeIndex-ed DataFrame to
+`apply_date_window` restricts a DatetimeIndex-ed DataFrame to
 [start_date, end_date) — start inclusive, end exclusive — so an in-sample
 window ending at boundary date B and a holdout window starting at B never
 share a row.
@@ -11,7 +11,8 @@ import pytest
 
 from fwbg.core.config import StrategyConfig
 from fwbg.optimization import process
-from fwbg.optimization.process import _apply_date_window, load_symbol_frame
+from fwbg.data.loader import apply_date_window
+from fwbg.optimization.process import load_symbol_frame
 
 
 def _make_df(n_days: int = 10) -> pd.DataFrame:
@@ -22,20 +23,20 @@ def _make_df(n_days: int = 10) -> pd.DataFrame:
 def test_half_open_slice_excludes_end_date():
     df = _make_df(10)
     # D0 = 2024-01-01 ... D5 = 2024-01-06
-    out = _apply_date_window(df, "2024-01-01", "2024-01-06")
+    out = apply_date_window(df, "2024-01-01", "2024-01-06")
     assert list(out.index) == list(pd.date_range("2024-01-01", "2024-01-05", freq="D"))
 
 
 def test_only_start_date_is_inclusive():
     df = _make_df(10)
-    out = _apply_date_window(df, "2024-01-06", None)
+    out = apply_date_window(df, "2024-01-06", None)
     assert out.index.min() == pd.Timestamp("2024-01-06")
     assert len(out) == 5  # 01-06 .. 01-10
 
 
 def test_only_end_date_is_exclusive():
     df = _make_df(10)
-    out = _apply_date_window(df, None, "2024-01-06")
+    out = apply_date_window(df, None, "2024-01-06")
     assert out.index.max() == pd.Timestamp("2024-01-05")
     assert len(out) == 5  # 01-01 .. 01-05
 
@@ -45,8 +46,8 @@ def test_adjacent_windows_share_no_row():
     and a holdout window starting at B must not both include B."""
     df = _make_df(10)
     boundary = "2024-01-06"
-    in_sample = _apply_date_window(df, None, boundary)
-    holdout = _apply_date_window(df, boundary, None)
+    in_sample = apply_date_window(df, None, boundary)
+    holdout = apply_date_window(df, boundary, None)
     assert set(in_sample.index).isdisjoint(set(holdout.index))
     assert len(in_sample) + len(holdout) == len(df)
 
@@ -54,13 +55,13 @@ def test_adjacent_windows_share_no_row():
 def test_malformed_start_date_raises_value_error_naming_value():
     df = _make_df(5)
     with pytest.raises(ValueError, match="not-a-date"):
-        _apply_date_window(df, "not-a-date", None)
+        apply_date_window(df, "not-a-date", None)
 
 
 def test_malformed_end_date_raises_value_error_naming_value():
     df = _make_df(5)
     with pytest.raises(ValueError, match="also-bad"):
-        _apply_date_window(df, None, "also-bad")
+        apply_date_window(df, None, "also-bad")
 
 
 def _hourly(n: int = 48) -> pd.DataFrame:

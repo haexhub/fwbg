@@ -512,3 +512,24 @@ class TestIntegration:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestCalmarFromReturns:
+    """Calmar = annual return / max drawdown, over the period the trades cover."""
+
+    RETURNS = [0.1, -0.05, 0.1]  # +14.95 % total, 5 % max drawdown
+
+    def test_two_years_use_the_annualised_return(self):
+        from fwbg.simulation.trade import calculate_calmar_from_returns
+
+        annual = 1.1495 ** 0.5 - 1
+        assert calculate_calmar_from_returns(self.RETURNS, years=2) == pytest.approx(
+            annual / 0.05, rel=1e-3
+        )
+
+    def test_one_year_equals_total_return(self):
+        from fwbg.simulation.trade import calculate_calmar_from_returns
+
+        assert calculate_calmar_from_returns(self.RETURNS, years=1) == pytest.approx(
+            calculate_calmar_from_returns(self.RETURNS)
+        )

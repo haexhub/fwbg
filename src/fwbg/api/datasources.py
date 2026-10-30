@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
+from fwbg.api._paths import validate_id
 from fwbg.core.data_sources import (
     _DATA_SOURCES,
     AssetInfo,
@@ -32,6 +33,7 @@ _tasks_lock = threading.Lock()
 
 # Max bytes accepted per uploaded file (100 MB)
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 # Datasource names must be safe filesystem identifiers.
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
@@ -50,7 +52,7 @@ def _safe_filename(filename: str) -> str:
 
 
 def _validate_source_name(name: str) -> None:
-    if not _SAFE_NAME_RE.match(name):
+    if name in {".", ".."} or not _SAFE_NAME_RE.match(name):
         raise HTTPException(status_code=400, detail=f"Invalid source name: {name!r}")
 
 
@@ -63,6 +65,21 @@ def _safe_child_path(parent: Path, child_name: str) -> Path:
     except ValueError:
         raise HTTPException(status_code=400, detail="Path traversal detected")
     return candidate
+
+
+def _check_source_paths(body: dict, current: Optional[dict] = None) -> None:
+    """Reject API-supplied source directories outside the data root.
+
+    Sources discovered from config files may live elsewhere; an update that
+    resends such an unchanged path stays allowed.
+    """
+    root = get_data_root().resolve()
+    for key in ("path", "raw_path"):
+        value = body.get(key)
+        if not value or (current is not None and str(value) == current.get(key)):
+            continue
+        if not Path(value).resolve().is_relative_to(root):
+            raise HTTPException(status_code=400, detail=f"{key} must be inside the data root")
 
 
 def _raw_dir(name: str) -> Path:
@@ -166,10 +183,12 @@ def create_source(body: dict):
         root = get_data_root()
         datasource_dir = root / name / "datasource"
         raw_dir = root / name / "raw"
+        body["path"] = str(datasource_dir)
+        _check_source_paths(body)
         datasource_dir.mkdir(parents=True, exist_ok=True)
         raw_dir.mkdir(parents=True, exist_ok=True)
-        body["path"] = str(datasource_dir)
     else:
+        _check_source_paths(body)
         # Non-CSV: just ensure the directory exists
         (get_data_root() / name).mkdir(parents=True, exist_ok=True)
 
@@ -208,6 +227,7 @@ def update_source(name: str, body: dict):
     # Merge: body overwrites current, but keep name/type immutable
     body.pop("name", None)
     body.pop("type", None)
+    _check_source_paths(body, current)
     current.update(body)
     current["name"] = name
 
@@ -233,8 +253,30 @@ def list_raw_files(name: str):
     return [_file_info(f) for f in sorted(raw_path.iterdir()) if f.is_file()]
 
 
+def _store_upload(file: UploadFile, dest: Path, display_name: str) -> None:
+    """Copy *file* to *dest* in chunks, rejecting it once it exceeds MAX_UPLOAD_SIZE.
+
+    The copy goes to a temp file beside *dest* and is renamed into place, so an
+    oversized or failed upload never leaves a partial file under its real name.
+    """
+    temp = dest.with_name(f".{dest.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        size = 0
+        with temp.open("wb") as out:
+            while chunk := file.file.read(_UPLOAD_CHUNK_SIZE):
+                size += len(chunk)
+                if size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(status_code=413, detail=f"File too large: {display_name}")
+                out.write(chunk)
+        os.replace(temp, dest)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+# Plain def: FastAPI runs it in its threadpool, so the blocking copies below
+# stay off the event loop.
 @router.post("/datasources/{name}/raw", status_code=201)
-async def upload_raw_files(name: str, files: List[UploadFile] = File(...)):
+def upload_raw_files(name: str, files: List[UploadFile] = File(...)):
     _validate_source_name(name)
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
@@ -243,11 +285,8 @@ async def upload_raw_files(name: str, files: List[UploadFile] = File(...)):
     saved = []
     for file in files:
         safe_name = _safe_filename(file.filename or "")
-        data = await file.read()
-        if len(data) > MAX_UPLOAD_SIZE:
-            raise HTTPException(status_code=413, detail=f"File too large: {safe_name}")
         dest = _safe_child_path(raw_path, safe_name)
-        dest.write_bytes(data)
+        _store_upload(file, dest, safe_name)
         saved.append(safe_name)
     return {"saved": saved}
 
@@ -294,7 +333,7 @@ def delete_datasource_file(name: str, filename: str):
 def preview_raw_file(name: str, filename: str, rows: int = 5):
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
-    f = _raw_dir(name) / filename
+    f = _safe_child_path(_raw_dir(name), _safe_filename(filename))
     if not f.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
     try:
@@ -328,7 +367,9 @@ def process_raw_file(name: str, req: ProcessRequest):
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
 
-    raw_file = _raw_dir(name) / req.filename
+    raw_file = _safe_child_path(_raw_dir(name), _safe_filename(req.filename))
+    validate_id(req.symbol, "symbol")
+    validate_id(req.timeframe, "timeframe")
     if not raw_file.exists():
         raise HTTPException(status_code=404, detail=f"Raw file not found: {req.filename}")
 

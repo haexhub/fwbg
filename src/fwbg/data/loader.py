@@ -74,6 +74,36 @@ def _parse_timestamp_col(series):
     return pd.to_datetime(series)
 
 
+def apply_date_window(df: pd.DataFrame, start_date: str | None, end_date: str | None) -> pd.DataFrame:
+    """Restrict `df` (DatetimeIndex) to a half-open date window [start_date, end_date).
+
+    `start_date` is inclusive, `end_date` is exclusive — this keeps in-sample
+    and holdout windows that share a boundary date from overlapping. Either
+    bound may be omitted. Raises `ValueError` naming the bad value if a date
+    string cannot be parsed.
+    """
+    start = None
+    end = None
+    if start_date is not None:
+        try:
+            start = pd.Timestamp(start_date)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid start_date {start_date!r}: {exc}") from exc
+    if end_date is not None:
+        try:
+            end = pd.Timestamp(end_date)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid end_date {end_date!r}: {exc}") from exc
+
+    if start is not None and end is not None:
+        return df.loc[(df.index >= start) & (df.index < end)]
+    if start is not None:
+        return df.loc[df.index >= start]
+    if end is None:
+        return df
+    return df.loc[df.index < end]
+
+
 def load_data_aligned(path, is_sentiment=False):
     """Lädt OHLC-Daten aus CSV mit Zeitzone-Alignment."""
     try:
@@ -249,7 +279,12 @@ def run_data_loading(df, data_loading_configs):
                     # Legacy 1-calendar-day shift for daily series without a
                     # release calendar.  See docs/data/macro-release-dates.md
                     # for the known limitations of this path.
-                    lookup = raw_df["Close"].to_dict()
+                    # Key by calendar date: a daily series stamped with a time
+                    # of day or a timezone would otherwise match no bar date.
+                    days = pd.DatetimeIndex(raw_df.index)
+                    if days.tz is not None:
+                        days = days.tz_localize(None)
+                    lookup = dict(zip(days.normalize(), raw_df["Close"]))
                     df[macro_col] = prev_date.map(
                         lambda d, lk=lookup: lk.get(d, np.nan)
                     ).ffill()

@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from fwbg.api._paths import validate_id
 from fwbg.api.deps import get_strategies_dir, get_plugin_registry
 from fwbg.core.presets import _resolve_section
 
@@ -95,7 +96,7 @@ def get_available_columns(strategy_name: str) -> dict[str, Any]:
     for populating column dropdowns in the signal composer UI.
     """
     strategies_dir = get_strategies_dir()
-    filepath = strategies_dir / f"{strategy_name}.json"
+    filepath = strategies_dir / f"{validate_id(strategy_name, 'strategy_name')}.json"
 
     if not filepath.exists():
         raise HTTPException(404, f"Strategy not found: {strategy_name}")
@@ -195,9 +196,12 @@ def preview_signal(req: SignalPreviewRequest) -> dict:
     from fwbg.pipeline.features import compute_indicator_pool
     from fwbg.signals.evaluator import evaluate_rules
 
+    validate_id(req.symbol, "symbol")
+    validate_id(req.timeframe, "timeframe")
+
     # --- Load strategy & resolve indicator configs ---
     strategies_dir = get_strategies_dir()
-    filepath = strategies_dir / f"{req.strategy_name}.json"
+    filepath = strategies_dir / f"{validate_id(req.strategy_name, 'strategy_name')}.json"
 
     if not filepath.exists():
         raise HTTPException(404, f"Strategy not found: {req.strategy_name}")

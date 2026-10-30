@@ -126,20 +126,10 @@ def run_optimizer(
               "not by the strategy; refusing an ungated holdout look.")
         return None
 
-    # Datasource aus Strategy übernehmen (via Data-Source-Registry)
-    if strategy.datasource:
-        from fwbg.core.data_sources import get_data_source, CSVSourceConfig
-        try:
-            ds = get_data_source(strategy.datasource)
-            if isinstance(ds, CSVSourceConfig) and ds.exists():
-                data_config.DATA_PATH = str(ds.path)
-        except ValueError:
-            print(f"Warnung: Datasource '{strategy.datasource}' nicht gefunden")
-
-    # CLI --data-path hat höchste Priorität
-    cli_data_path = (strategy_metadata or {}).get("_cli_data_path")
-    if cli_data_path:
-        data_config.DATA_PATH = cli_data_path
+    # Datasource aus Strategy (Data-Source-Registry); CLI --data-path hat höchste Priorität
+    data_config.use_data_path(
+        strategy.datasource, (strategy_metadata or {}).get("_cli_data_path")
+    )
 
     # Timeframe aus Strategy übernehmen (überschreibt Modul-Globals)
     if strategy.timeframe:
@@ -172,12 +162,18 @@ def run_optimizer(
     files = sorted(glob.glob(f"{data_config.DATA_PATH}/*_{data_config.TIMEFRAME}.csv"))
 
     # Fallback: resample from a lower timeframe if no files found
+    source_tf = None
     if not files:
         from fwbg.data.resample import find_fallback_files
         files, source_tf = find_fallback_files(data_config.DATA_PATH, data_config.TIMEFRAME)
         if files:
-            data_config.RESAMPLE_FROM = source_tf
             print(f"No {data_config.TIMEFRAME} files found — will resample from {source_tf}")
+    # Like TIMEFRAME above: workers re-import data_config, so the env carries it.
+    data_config.RESAMPLE_FROM = source_tf
+    if source_tf:
+        os.environ["RESAMPLE_FROM"] = source_tf
+    else:
+        os.environ.pop("RESAMPLE_FROM", None)
 
     # Strategy-Metadaten auswerten für Filter
     if strategy_metadata:
@@ -1033,7 +1029,7 @@ Kategorien: baseline, feature_test, model_test, hyperparameter, production, expe
                 asset_filter = class_assets
             if not asset_filter:
                 print(f"Keine Assets für Klassen {classes} gefunden!")
-                return
+                sys.exit(1)
 
         research = None
         run_id = args.run_id or generate_run_id(args.description)

@@ -2,15 +2,16 @@
 Numba-optimierte Kernfunktionen für Trade-Simulation.
 
 Cache versioning: bump _CACHE_VERSION whenever the return signature of any
-@njit function changes.  At import time we compare against a stamp file;
+@njit function changes, or a kernel's behaviour changes: cached callers in
+plugins keep their compiled copy of a changed callee otherwise.  At import time we compare against a stamp file;
 on mismatch we wipe every .nbi/.nbc we can find and rewrite the stamp.
 """
 import pathlib
 import numpy as np
 from numba import njit, prange
 
-# Bump this whenever a @njit function signature/return type changes.
-_CACHE_VERSION = "6"
+# Bump this whenever a @njit function signature/return type or kernel behaviour changes.
+_CACHE_VERSION = "8"
 
 _THIS_DIR = pathlib.Path(__file__).resolve().parent
 _STAMP_FILE = _THIS_DIR / "__pycache__" / ".numba_cache_version"
@@ -66,6 +67,102 @@ def _check_cache_version():
 _check_cache_version()
 
 
+# --- Shared exit rules -------------------------------------------------------
+# One definition of how a bar exits a trade, used by every kernel below and,
+# via ``.py_func``, by the Python evaluator ``simulate_pro_trade``.  Order per
+# bar: TP/SL against the levels active at the bar's start, then the timeout at
+# the bar's close, then trailing updates that take effect from the next bar
+# (OHLC has no intrabar order).
+
+
+@njit(cache=True)
+def _entry_levels(direction, entry_price, spread, slippage, tp_distance, sl_distance):
+    """Cost-adjusted entry and TP/SL trigger levels.
+
+    Spread and slippage always work against the trader and are folded into the
+    entry, so exits at the trigger levels are already net of costs.
+    """
+    if direction == 1:
+        entry = entry_price + spread + slippage
+        return entry, entry + tp_distance, entry - sl_distance
+    entry = entry_price - spread - slippage
+    return entry, entry - tp_distance, entry + sl_distance
+
+
+@njit(cache=True)
+def _timeout_index(entry_idx, timeout_bars, n):
+    """Bar index at which a bar-count timeout fires (-1 = no timeout)."""
+    if timeout_bars > 0:
+        return min(entry_idx + timeout_bars - 1, n - 1)
+    return -1
+
+
+@njit(cache=True)
+def _bar_hits(direction, high, low, tp, sl):
+    """(tp_hit, sl_hit) for one bar."""
+    if direction == 1:
+        return high >= tp, low <= sl
+    return low <= tp, high >= sl
+
+
+@njit(cache=True)
+def _stop_fill(direction, sl, bar_open):
+    """Stop exit price: a gap through the stop fills at the open."""
+    if direction == 1:
+        return min(sl, bar_open)
+    return max(sl, bar_open)
+
+
+@njit(cache=True)
+def _pnl(direction, exit_price, ref_price, qty):
+    if direction == 1:
+        return (exit_price - ref_price) * qty
+    return (ref_price - exit_price) * qty
+
+
+@njit(cache=True)
+def _outcome(direction, exit_price, ref_price, qty):
+    """1.0 if exiting at *exit_price* is a net win against *ref_price*, else -1.0."""
+    return 1.0 if _pnl(direction, exit_price, ref_price, qty) > 0 else -1.0
+
+
+@njit(cache=True)
+def _scale_in_triggered(direction, high, low, trigger, sl):
+    """A scale-in level fills when touched, unless it lies beyond the stop."""
+    if direction == 1:
+        return low <= trigger and trigger > sl
+    return high >= trigger and trigger < sl
+
+
+@njit(cache=True)
+def _trail_after_bar(direction, high, low, best_price, sl, tp, trailing_active,
+                     use_breakeven, be_trigger_price, be_sl,
+                     trail_distance, trail_tp_dist):
+    """Advance breakeven/trailing levels after a bar has been checked.
+
+    Returns (best_price, sl, tp, trailing_active).  Levels only ever tighten.
+    """
+    if direction == 1:
+        best_price = max(best_price, high)
+        if not trailing_active and use_breakeven and best_price >= be_trigger_price:
+            trailing_active = True
+            sl = max(sl, be_sl)
+        if trailing_active and trail_distance > 0.0:
+            sl = max(sl, best_price - trail_distance)
+        if trailing_active and trail_tp_dist > 0.0:
+            tp = max(tp, best_price + trail_tp_dist)
+    else:
+        best_price = min(best_price, low)
+        if not trailing_active and use_breakeven and best_price <= be_trigger_price:
+            trailing_active = True
+            sl = min(sl, be_sl)
+        if trailing_active and trail_distance > 0.0:
+            sl = min(sl, best_price + trail_distance)
+        if trailing_active and trail_tp_dist > 0.0:
+            tp = min(tp, best_price - trail_tp_dist)
+    return best_price, sl, tp, trailing_active
+
+
 @njit(cache=True)
 def _simulate_trade_numba(
     opens: np.ndarray,
@@ -106,62 +203,22 @@ def _simulate_trade_numba(
     if entry_idx >= n:
         return 0.0, -1, 0.0, -1
 
-    # Entry-Preis
-    entry_price = opens[entry_idx]
-
-    # TP/SL-Levels berechnen
-    # WICHTIG: Slippage wirkt IMMER gegen den Trader:
-    # - Entry-Slippage: schlechterer Einstieg
-    # - Exit-Slippage: wird bei PnL-Berechnung berücksichtigt, nicht bei Level
-    # Die TP/SL-Levels sind die TRIGGER-Levels, der tatsächliche Exit-Preis
-    # wäre schlechter durch Slippage (bereits in entry eingerechnet für Netto-PnL)
-    if direction == 1:  # Long
-        entry = entry_price + spread + slippage  # Kaufe teurer
-        tp = entry + tp_distance  # TP-Level (Trigger)
-        sl = entry - sl_distance  # SL-Level (Trigger)
-    else:  # Short
-        entry = entry_price - spread - slippage  # Verkaufe billiger
-        tp = entry - tp_distance  # TP-Level (Trigger)
-        sl = entry + sl_distance  # SL-Level (Trigger)
-
-    # Maximale Simulation-Länge
+    entry, tp, sl = _entry_levels(
+        direction, opens[entry_idx], spread, slippage, tp_distance, sl_distance
+    )
     end_idx = min(entry_idx + max_bars, n)
+    timeout_idx = _timeout_index(entry_idx, timeout_bars, n)
 
-    # Timeout-Index berechnen (falls aktiviert)
-    # WICHTIG: Timeout wird INNERHALB des Loops geprüft, nicht erst danach!
-    timeout_idx = -1
-    if timeout_bars > 0:
-        timeout_idx = min(entry_idx + timeout_bars - 1, n - 1)
-
-    # Simulation-Loop
     for j in range(entry_idx, end_idx):
-        # Timeout-Check ZUERST (Timeout hat Priorität über TP/SL nach timeout_bars)
-        if timeout_idx > 0 and j >= timeout_idx:
-            exit_price = closes[j]
-            # PnL berechnen (Exit-Slippage bereits in entry eingerechnet)
-            if direction == 1:
-                pnl = exit_price - entry
-            else:
-                pnl = entry - exit_price
-            result = 1.0 if pnl > 0 else -1.0
-            return result, j, exit_price, 2  # exit_reason=2 (Timeout)
-
-        if direction == 1:  # Long
-            tp_hit = highs[j] >= tp
-            sl_hit = lows[j] <= sl
-        else:  # Short
-            tp_hit = lows[j] <= tp
-            sl_hit = highs[j] >= sl
-
-        if tp_hit and sl_hit:
-            # Beide im selben Bar - konservativ: Loss
-            return -1.0, j, sl, 1
-
+        tp_hit, sl_hit = _bar_hits(direction, highs[j], lows[j], tp, sl)
+        # Beide im selben Bar - konservativ: SL
+        if sl_hit:
+            fill = _stop_fill(direction, sl, opens[j])
+            return _outcome(direction, fill, entry, 1.0), j, fill, 1
         if tp_hit:
             return 1.0, j, tp, 0
-
-        if sl_hit:
-            return -1.0, j, sl, 1
+        if timeout_idx > 0 and j >= timeout_idx:
+            return _outcome(direction, closes[j], entry, 1.0), j, closes[j], 2
 
     # Kein Exit (weder TP/SL noch Timeout innerhalb max_bars)
     return 0.0, -1, 0.0, -1
@@ -202,17 +259,9 @@ def _simulate_trade_session_numba(
     if entry_idx >= n:
         return 0.0, -1, 0.0, -1
 
-    entry_price = opens[entry_idx]
-
-    if direction == 1:
-        entry = entry_price + spread + slippage
-        tp = entry + tp_distance
-        sl = entry - sl_distance
-    else:
-        entry = entry_price - spread - slippage
-        tp = entry - tp_distance
-        sl = entry + sl_distance
-
+    entry, tp, sl = _entry_levels(
+        direction, opens[entry_idx], spread, slippage, tp_distance, sl_distance
+    )
     end_idx = min(entry_idx + max_bars, n)
     session_bars_elapsed = 0
 
@@ -222,29 +271,14 @@ def _simulate_trade_session_numba(
 
         session_bars_elapsed += 1
 
-        # Timeout check (counts only session bars)
-        if timeout_bars > 0 and session_bars_elapsed >= timeout_bars:
-            exit_price = closes[j]
-            if direction == 1:
-                pnl = exit_price - entry
-            else:
-                pnl = entry - exit_price
-            result = 1.0 if pnl > 0 else -1.0
-            return result, j, exit_price, 2
-
-        if direction == 1:
-            tp_hit = highs[j] >= tp
-            sl_hit = lows[j] <= sl
-        else:
-            tp_hit = lows[j] <= tp
-            sl_hit = highs[j] >= sl
-
-        if tp_hit and sl_hit:
-            return -1.0, j, sl, 1
+        tp_hit, sl_hit = _bar_hits(direction, highs[j], lows[j], tp, sl)
+        if sl_hit:
+            fill = _stop_fill(direction, sl, opens[j])
+            return _outcome(direction, fill, entry, 1.0), j, fill, 1
         if tp_hit:
             return 1.0, j, tp, 0
-        if sl_hit:
-            return -1.0, j, sl, 1
+        if timeout_bars > 0 and session_bars_elapsed >= timeout_bars:
+            return _outcome(direction, closes[j], entry, 1.0), j, closes[j], 2
 
     return 0.0, -1, 0.0, -1
 
@@ -293,92 +327,32 @@ def _simulate_trade_trailing_numba(
     if entry_idx >= n:
         return 0.0, -1, 0.0, -1
 
-    entry_price = opens[entry_idx]
-
-    if direction == 1:  # Long
-        entry = entry_price + spread + slippage
-        tp = entry + tp_distance
-        sl = entry - sl_distance
-        be_trigger_price = entry + tp_distance * breakeven_trigger
-    else:  # Short
-        entry = entry_price - spread - slippage
-        tp = entry - tp_distance
-        sl = entry + sl_distance
-        be_trigger_price = entry - tp_distance * breakeven_trigger
-
+    entry, tp, sl = _entry_levels(
+        direction, opens[entry_idx], spread, slippage, tp_distance, sl_distance
+    )
+    be_trigger_price = entry + direction * tp_distance * breakeven_trigger
+    be_sl = entry + direction * breakeven_offset * tp_distance
     end_idx = min(entry_idx + max_bars, n)
-
-    timeout_idx = -1
-    if timeout_bars > 0:
-        timeout_idx = min(entry_idx + timeout_bars - 1, n - 1)
+    timeout_idx = _timeout_index(entry_idx, timeout_bars, n)
 
     best_price = entry
     trailing_active = breakeven_trigger <= 0.0
 
     for j in range(entry_idx, end_idx):
-        if timeout_idx > 0 and j >= timeout_idx:
-            exit_price = closes[j]
-            if direction == 1:
-                pnl = exit_price - entry
-            else:
-                pnl = entry - exit_price
-            return (1.0 if pnl > 0 else -1.0), j, exit_price, 2
-
-        if direction == 1:
-            if highs[j] > best_price:
-                best_price = highs[j]
-        else:
-            if lows[j] < best_price:
-                best_price = lows[j]
-
-        if not trailing_active and breakeven_trigger > 0.0:
-            if direction == 1 and best_price >= be_trigger_price:
-                trailing_active = True
-                be_sl = entry + breakeven_offset * tp_distance
-                if be_sl > sl:
-                    sl = be_sl
-            elif direction == -1 and best_price <= be_trigger_price:
-                trailing_active = True
-                be_sl = entry - breakeven_offset * tp_distance
-                if be_sl < sl:
-                    sl = be_sl
-
-        if trailing_active and trail_distance > 0.0:
-            if direction == 1:
-                new_sl = best_price - trail_distance
-                if new_sl > sl:
-                    sl = new_sl
-            else:
-                new_sl = best_price + trail_distance
-                if new_sl < sl:
-                    sl = new_sl
-
-        if trailing_active and trail_tp_dist > 0.0:
-            if direction == 1:
-                new_tp = best_price + trail_tp_dist
-                if new_tp > tp:
-                    tp = new_tp
-            else:
-                new_tp = best_price - trail_tp_dist
-                if new_tp < tp:
-                    tp = new_tp
-
-        if direction == 1:
-            tp_hit = highs[j] >= tp
-            sl_hit = lows[j] <= sl
-        else:
-            tp_hit = lows[j] <= tp
-            sl_hit = highs[j] >= sl
-
+        tp_hit, sl_hit = _bar_hits(direction, highs[j], lows[j], tp, sl)
         if sl_hit:
-            if direction == 1:
-                result = 1.0 if sl > entry else -1.0
-            else:
-                result = 1.0 if sl < entry else -1.0
-            return result, j, sl, 1
-
+            fill = _stop_fill(direction, sl, opens[j])
+            return _outcome(direction, fill, entry, 1.0), j, fill, 1
         if tp_hit:
             return 1.0, j, tp, 0
+        if timeout_idx > 0 and j >= timeout_idx:
+            return _outcome(direction, closes[j], entry, 1.0), j, closes[j], 2
+
+        best_price, sl, tp, trailing_active = _trail_after_bar(
+            direction, highs[j], lows[j], best_price, sl, tp, trailing_active,
+            breakeven_trigger > 0.0, be_trigger_price, be_sl,
+            trail_distance, trail_tp_dist,
+        )
 
     return 0.0, -1, 0.0, -1
 
@@ -431,16 +405,9 @@ def _simulate_trade_scale_in_numba(
     if entry_idx >= n:
         return 0.0, -1, 0.0, -1, 0.0, 0.0, 0
 
-    entry_price = opens[entry_idx]
-
-    if direction == 1:  # Long
-        entry = entry_price + spread + slippage
-        tp = entry + tp_distance
-        sl = entry - sl_distance
-    else:  # Short
-        entry = entry_price - spread - slippage
-        tp = entry - tp_distance
-        sl = entry + sl_distance
+    entry, tp, sl = _entry_levels(
+        direction, opens[entry_idx], spread, slippage, tp_distance, sl_distance
+    )
 
     # --- Scale-in preparation ---
     total_qty = 1.0
@@ -448,130 +415,53 @@ def _simulate_trade_scale_in_numba(
     avg_price = entry
     n_fills = 1
 
-    # Precompute scale-in trigger prices
     scale_price = np.empty(n_levels, dtype=np.float64)
     levels_filled = np.zeros(n_levels, dtype=np.int8)
     for k in range(n_levels):
-        if direction == 1:
-            scale_price[k] = entry - scale_levels[k] * sl_distance
-        else:
-            scale_price[k] = entry + scale_levels[k] * sl_distance
+        scale_price[k] = entry - direction * scale_levels[k] * sl_distance
 
-    # --- Trailing / breakeven state ---
     end_idx = min(entry_idx + max_bars, n)
-
-    timeout_idx = -1
-    if timeout_bars > 0:
-        timeout_idx = min(entry_idx + timeout_bars - 1, n - 1)
+    timeout_idx = _timeout_index(entry_idx, timeout_bars, n)
 
     best_price = entry
     trailing_active = breakeven_trigger <= 0.0
 
-    # Breakeven trigger computed from avg_price
-    if direction == 1:
-        be_trigger_price = avg_price + tp_distance * breakeven_trigger
-    else:
-        be_trigger_price = avg_price - tp_distance * breakeven_trigger
-
     for j in range(entry_idx, end_idx):
-        # --- Timeout check ---
-        if timeout_idx > 0 and j >= timeout_idx:
-            exit_price = closes[j]
-            if direction == 1:
-                pnl = (exit_price - avg_price) * total_qty
-            else:
-                pnl = (avg_price - exit_price) * total_qty
-            result = 1.0 if pnl > 0 else -1.0
-            return result, j, exit_price, 2, avg_price, total_qty, n_fills
+        # Position state at the bar's start: see the TP exit below.
+        tp_bar, avg_bar, qty_bar, fills_bar = tp, avg_price, total_qty, n_fills
 
-        # --- Scale-in trigger check ---
+        # --- Scale-in fills (TP and breakeven follow the new average) ---
         for k in range(n_levels):
             if levels_filled[k] == 1:
                 continue
-            if direction == 1:
-                if lows[j] <= scale_price[k] and scale_price[k] > sl:
-                    fill_price = scale_price[k]
-                    weighted_sum += fill_price * scale_qty_mult
-                    total_qty += scale_qty_mult
-                    avg_price = weighted_sum / total_qty
-                    tp = avg_price + tp_distance
-                    levels_filled[k] = 1
-                    n_fills += 1
-                    # Recalculate breakeven trigger from new avg_price
-                    if breakeven_trigger > 0.0:
-                        be_trigger_price = avg_price + tp_distance * breakeven_trigger
-            else:
-                if highs[j] >= scale_price[k] and scale_price[k] < sl:
-                    fill_price = scale_price[k]
-                    weighted_sum += fill_price * scale_qty_mult
-                    total_qty += scale_qty_mult
-                    avg_price = weighted_sum / total_qty
-                    tp = avg_price - tp_distance
-                    levels_filled[k] = 1
-                    n_fills += 1
-                    # Recalculate breakeven trigger from new avg_price
-                    if breakeven_trigger > 0.0:
-                        be_trigger_price = avg_price - tp_distance * breakeven_trigger
+            if _scale_in_triggered(direction, highs[j], lows[j], scale_price[k], sl):
+                weighted_sum += scale_price[k] * scale_qty_mult
+                total_qty += scale_qty_mult
+                avg_price = weighted_sum / total_qty
+                tp = avg_price + direction * tp_distance
+                levels_filled[k] = 1
+                n_fills += 1
 
-        # --- Update best price ---
-        if direction == 1:
-            if highs[j] > best_price:
-                best_price = highs[j]
-        else:
-            if lows[j] < best_price:
-                best_price = lows[j]
-
-        # --- Breakeven activation ---
-        if not trailing_active and breakeven_trigger > 0.0:
-            if direction == 1 and best_price >= be_trigger_price:
-                trailing_active = True
-                if avg_price > sl:
-                    sl = avg_price
-            elif direction == -1 and best_price <= be_trigger_price:
-                trailing_active = True
-                if avg_price < sl:
-                    sl = avg_price
-
-        # --- Trailing stop ---
-        if trailing_active and trail_distance > 0.0:
-            if direction == 1:
-                new_sl = best_price - trail_distance
-                if new_sl > sl:
-                    sl = new_sl
-            else:
-                new_sl = best_price + trail_distance
-                if new_sl < sl:
-                    sl = new_sl
-
-        # --- Trailing TP ---
-        if trailing_active and trail_tp_dist > 0.0:
-            if direction == 1:
-                new_tp = best_price + trail_tp_dist
-                if new_tp > tp:
-                    tp = new_tp
-            else:
-                new_tp = best_price - trail_tp_dist
-                if new_tp < tp:
-                    tp = new_tp
-
-        # --- TP / SL hit check ---
-        if direction == 1:
-            tp_hit = highs[j] >= tp
-            sl_hit = lows[j] <= sl
-        else:
-            tp_hit = lows[j] <= tp
-            sl_hit = highs[j] >= sl
-
+        tp_hit, sl_hit = _bar_hits(direction, highs[j], lows[j], tp_bar, sl)
         if sl_hit:
-            if direction == 1:
-                pnl = (sl - avg_price) * total_qty
-            else:
-                pnl = (avg_price - sl) * total_qty
-            result = 1.0 if pnl > 0 else -1.0
-            return result, j, sl, 1, avg_price, total_qty, n_fills
-
+            # Scale-in levels lie before the stop, so this bar's fills came first.
+            fill = _stop_fill(direction, sl, opens[j])
+            result = _outcome(direction, fill, avg_price, total_qty)
+            return result, j, fill, 1, avg_price, total_qty, n_fills
         if tp_hit:
-            return 1.0, j, tp, 0, avg_price, total_qty, n_fills
+            # A TP lowered by this bar's fill applies from the next bar: the
+            # pre-fill TP may have been reached before the fill (conservative).
+            return 1.0, j, tp_bar, 0, avg_bar, qty_bar, fills_bar
+        if timeout_idx > 0 and j >= timeout_idx:
+            result = _outcome(direction, closes[j], avg_price, total_qty)
+            return result, j, closes[j], 2, avg_price, total_qty, n_fills
+
+        best_price, sl, tp, trailing_active = _trail_after_bar(
+            direction, highs[j], lows[j], best_price, sl, tp, trailing_active,
+            breakeven_trigger > 0.0,
+            avg_price + direction * tp_distance * breakeven_trigger, avg_price,
+            trail_distance, trail_tp_dist,
+        )
 
     return 0.0, -1, 0.0, -1, avg_price, total_qty, n_fills
 
