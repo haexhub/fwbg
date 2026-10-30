@@ -52,3 +52,38 @@ def test_strategy_file_with_removed_exit_keys_is_refused(tmp_path, capsys):
 
     assert exc.value.code == 2
     assert "exit_strategies" in capsys.readouterr().err
+
+
+def test_asset_class_reads_files_from_data_path(tmp_path, monkeypatch):
+    from fwbg.data import config as data_config
+
+    monkeypatch.setattr(data_config, "DATA_PATH", None)
+    monkeypatch.setattr(data_config, "TIMEFRAME", "HOUR_1")
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "EURUSD_HOUR_1.csv")
+    out = tmp_path / "out"
+
+    run_analyze(["--asset-class", "FOREX", "--data-path", str(data), "--output-dir", str(out)])
+
+    assert [path.name for path in out.glob("*.json")] == ["EURUSD_HOUR_1.json"]
+
+
+def test_asset_class_uses_the_strategy_timeframe(tmp_path, monkeypatch):
+    from fwbg.data import config as data_config
+
+    monkeypatch.setattr(data_config, "DATA_PATH", None)
+    monkeypatch.setattr(data_config, "TIMEFRAME", "HOUR_1")
+    data = tmp_path / "data"
+    data.mkdir()
+    _write_csv(data / "EURUSD_HOUR_1.csv")
+    _write_csv(data / "GBPUSD_HOUR_4.csv")
+    strategy = _write_strategy(tmp_path / "s.json", {"timeframe": "H4"})
+    out = tmp_path / "out"
+
+    run_analyze([
+        "--asset-class", "FOREX", "--strategy-file", str(strategy),
+        "--data-path", str(data), "--output-dir", str(out),
+    ])
+
+    assert [path.name for path in out.glob("*.json")] == ["GBPUSD_HOUR_4.json"]
