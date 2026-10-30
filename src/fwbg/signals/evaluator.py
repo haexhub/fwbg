@@ -86,7 +86,11 @@ def _apply_op(left: pd.Series, op: str, right: pd.Series | float | int) -> pd.Se
     else:  # >=
         result = left >= right
 
-    return result.fillna(False).astype(bool)
+    # pandas evaluates NaN != x as True; a missing value never satisfies a condition.
+    valid = left.notna()
+    if isinstance(right, pd.Series):
+        valid &= right.notna()
+    return (result & valid).astype(bool)
 
 
 # ---------------------------------------------------------------------------

@@ -123,6 +123,21 @@ class TestValueCheck:
         # index 0 was 10 (True) but is now NaN → should be False
         assert result.iloc[0] is np.bool_(False)
 
+    def test_not_equal_is_false_on_nan(self, df):
+        df_copy = df.copy()
+        df_copy.loc[df_copy.index[0], "adx_14"] = np.nan
+        cond = {"type": "value_check", "column": "adx_14", "op": "!=", "value": 25}
+        result = evaluate_condition(cond, df_copy)
+        # NaN (warm-up) must not satisfy any condition, `!=` included
+        assert not result.iloc[0]
+        assert result.iloc[1]
+
+    def test_col_compare_not_equal_is_false_on_nan(self, df):
+        df_copy = df.copy()
+        df_copy.loc[df_copy.index[0], "ema_21"] = np.nan
+        cond = {"type": "col_compare", "column_a": "ema_9", "op": "!=", "column_b": "ema_21"}
+        assert not evaluate_condition(cond, df_copy).iloc[0]
+
 
 # ===================================================================
 # TestColCompare
