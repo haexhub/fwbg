@@ -519,6 +519,8 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
     for j in range(exit_start_idx, min(exit_start_idx + max_bars, len(closes))):
         # --- Scale-in trigger check (before session/TP/SL checks) ---
         # Scale-in fills are price triggers, not time-dependent (fire on any bar).
+        # Position state at the bar's start: see the TP exit below.
+        tp_bar, avg_bar, qty_bar, fills_bar = tp, avg_price, total_qty, n_fills
         if use_scale_in:
             for k in range(len(scale_levels)):
                 trigger = scale_trigger_prices[k]
@@ -545,17 +547,26 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
 
         # Exit order per bar (shared with the numba kernels): TP/SL, then the
         # timeout at the close, then trailing updates for the next bar.
-        tp_hit, sl_hit = _bar_hits(direction, highs[j], lows[j], tp, sl)
+        tp_hit, sl_hit = _bar_hits(direction, highs[j], lows[j], tp_bar, sl)
         sl_fill = _stop_fill(direction, sl, opens[j]) if opens is not None else sl
 
         if tp_hit and sl_hit and timestamps is not None and symbol is not None:
-            result = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp, sl)
-            if result is not None:
-                return make_result(result, j, tp if result > 0 else sl_fill)
+            # Sub-hourly data decides which level the price reached first
+            collision = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp_bar, sl)
+            if collision is not None:
+                sl_hit = collision < 0
+                tp_hit = not sl_hit
         if sl_hit:
-            # After breakeven an SL exit beyond avg_price (or entry) is a win
+            # Scale-in levels lie before the stop, so a fill on this bar came
+            # first. After breakeven an SL exit beyond avg_price (or entry) is a win.
             return make_result(_outcome(direction, sl_fill, avg_price, 1.0), j, sl_fill)
         if tp_hit:
+            # A TP lowered by this bar's fill applies from the next bar: when the
+            # pre-fill TP was reached, the high may have come first and closed the
+            # trade before the fill — the conservative reading.
+            if n_fills != fills_bar:
+                avg_price, total_qty, n_fills, tp = avg_bar, qty_bar, fills_bar, tp_bar
+                del positions[fills_bar:]
             return make_result(1.0, j, tp)
 
         # Timeout check (counts only session bars when session-aware)

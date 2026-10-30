@@ -11,7 +11,7 @@ import numpy as np
 from numba import njit, prange
 
 # Bump this whenever a @njit function signature/return type or kernel behaviour changes.
-_CACHE_VERSION = "7"
+_CACHE_VERSION = "8"
 
 _THIS_DIR = pathlib.Path(__file__).resolve().parent
 _STAMP_FILE = _THIS_DIR / "__pycache__" / ".numba_cache_version"
@@ -427,6 +427,9 @@ def _simulate_trade_scale_in_numba(
     trailing_active = breakeven_trigger <= 0.0
 
     for j in range(entry_idx, end_idx):
+        # Position state at the bar's start: see the TP exit below.
+        tp_bar, avg_bar, qty_bar, fills_bar = tp, avg_price, total_qty, n_fills
+
         # --- Scale-in fills (TP and breakeven follow the new average) ---
         for k in range(n_levels):
             if levels_filled[k] == 1:
@@ -439,13 +442,16 @@ def _simulate_trade_scale_in_numba(
                 levels_filled[k] = 1
                 n_fills += 1
 
-        tp_hit, sl_hit = _bar_hits(direction, highs[j], lows[j], tp, sl)
+        tp_hit, sl_hit = _bar_hits(direction, highs[j], lows[j], tp_bar, sl)
         if sl_hit:
+            # Scale-in levels lie before the stop, so this bar's fills came first.
             fill = _stop_fill(direction, sl, opens[j])
             result = _outcome(direction, fill, avg_price, total_qty)
             return result, j, fill, 1, avg_price, total_qty, n_fills
         if tp_hit:
-            return 1.0, j, tp, 0, avg_price, total_qty, n_fills
+            # A TP lowered by this bar's fill applies from the next bar: the
+            # pre-fill TP may have been reached before the fill (conservative).
+            return 1.0, j, tp_bar, 0, avg_bar, qty_bar, fills_bar
         if timeout_idx > 0 and j >= timeout_idx:
             result = _outcome(direction, closes[j], avg_price, total_qty)
             return result, j, closes[j], 2, avg_price, total_qty, n_fills
