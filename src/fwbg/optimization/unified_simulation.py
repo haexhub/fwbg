@@ -4,7 +4,6 @@ The replay is causal: test fold k is replayed with the setting merged from the
 successful folds 0..k, each chosen on training data that ends before fold k's
 test data. The frozen (deployment) setting is the merge over all folds.
 """
-import dataclasses
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
@@ -12,8 +11,9 @@ import numpy as np
 
 from fwbg.utils.logging import log
 from fwbg.utils.progress import report_phase
+from fwbg.research.fingerprint import canonical_json
 from .nested_cv import evaluate_on_holdout
-from .process_fold import prepare_fold_data
+from .process_fold import apply_candidate_regime, candidate_context, prepare_fold_data
 
 
 def merge_unified_settings(
@@ -26,7 +26,9 @@ def merge_unified_settings(
     - TP, SL, CT: median across folds
     - timeout_bars: median (None treated as infinity, excluded from median)
     - model_hyperparameters: taken from first fold (all majority folds share same HP)
-    - exit_modifier_params: majority vote (whole dict)
+    - exit/entry modifier with their params and the regime filter: majority vote
+      over the combination one fold chose, so a modifier never meets another
+      fold's params
     - Features: stability >= 50% across ALL successful folds (not just the majority)
 
     Args:
@@ -63,11 +65,11 @@ def merge_unified_settings(
     # model_hyperparameters: all majority folds share the same HP (by definition)
     model_hyperparameters = configs[0].get("model_hyperparameters")
 
-    # exit_modifier_params: majority vote (whole dict as hashable key)
-    exit_modifier_params_list = [
-        config.get("exit_modifier_params") for config in configs
-    ]
-    exit_modifier_params = _majority_vote_dict(exit_modifier_params_list)
+    voted_keys = (
+        "exit_modifier", "exit_modifier_params",
+        "entry_modifier", "entry_modifier_params", "regime_filter",
+    )
+    voted = _majority_vote([{key: config.get(key) for key in voted_keys} for config in configs])
 
     # Features: stability >= 50% across ALL successful folds
     n_successful_folds = len(all_fold_results)
@@ -99,27 +101,19 @@ def merge_unified_settings(
         "selected_features_long": stable_features_long,
         "selected_features_short": stable_features_short,
         "model_hyperparameters": model_hyperparameters,
-        "exit_modifier_params": exit_modifier_params,
+        **voted,
         "exit_strategy": exit_strategy,
         "exit_params": exit_params,
     }
 
 
-def _majority_vote_dict(dict_list: List[Optional[Dict]]) -> Optional[Dict]:
-    """Pick the most common dict from a list (majority vote)."""
-    if not dict_list:
+def _majority_vote(values: List[Any]) -> Any:
+    """Most common value (first seen wins ties); dicts and lists compare by content."""
+    if not values:
         return None
-
-    def _hashable(d):
-        if d is None:
-            return None
-        return tuple(sorted(d.items()))
-
-    counter = Counter(_hashable(d) for d in dict_list)
-    winner_key = counter.most_common(1)[0][0]
-    if winner_key is None:
-        return None
-    return dict(winner_key)
+    keys = [canonical_json(value, default=repr) for value in values]
+    winner = Counter(keys).most_common(1)[0][0]
+    return values[keys.index(winner)]
 
 
 def hp_key(hp: Optional[Dict[str, Any]]) -> tuple:
@@ -166,35 +160,6 @@ def causal_candidates(
             merge_unified_settings(consistent_folds(prefix), prefix) if prefix else None
         )
     return candidates
-
-
-def _candidate_context(ctx, candidate: Dict[str, Any]):
-    """The simulation context with the candidate's model HP, exit modifier and exit strategy."""
-    holdout_context = ctx
-    model_hp = candidate.get("model_hyperparameters")
-    exit_mod = candidate.get("exit_modifier_params")
-    if model_hp and model_hp != ctx.model_hyperparameters:
-        holdout_context = dataclasses.replace(
-            holdout_context, model_hyperparameters=model_hp,
-        )
-    if exit_mod and exit_mod != ctx.exit_modifier_params:
-        holdout_context = dataclasses.replace(
-            holdout_context, exit_modifier_params=exit_mod,
-        )
-
-    # Propagate exit strategy from the candidate (critical for non-fixed
-    # strategies like orb_based that need specific exit_params for TP/SL).
-    exit_strategy_name = candidate.get("exit_strategy") or ctx.exit_strategy
-    exit_params = candidate.get("exit_params")
-    if exit_params is None:
-        exit_params = ctx.exit_params
-    if exit_strategy_name != ctx.exit_strategy or exit_params != ctx.exit_params:
-        holdout_context = dataclasses.replace(
-            holdout_context,
-            exit_strategy=exit_strategy_name,
-            exit_params=exit_params,
-        )
-    return holdout_context
 
 
 def run_unified_simulation(
@@ -282,8 +247,9 @@ def run_unified_simulation(
                 fold_candidate[key] = [f for f in feats if f in available]
                 dropped.update(f for f in feats if f not in available)
 
+        apply_candidate_regime(train_df, test_df, candidate)
         result = evaluate_on_holdout(
-            test_df, train_df, fold_candidate, _candidate_context(ctx, candidate),
+            test_df, train_df, fold_candidate, candidate_context(ctx, candidate),
         )
         result["dropped_features"] = sorted(dropped)
         # The RRR this fold was traded with: causal reporting sizes the fold with it.
