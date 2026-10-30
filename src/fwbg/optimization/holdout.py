@@ -241,7 +241,7 @@ def _holdout_result(
         "win_rate": win_rate,
         "rrr": development["rrr"],
         "sharpe": sharpe,
-        "calmar": calculate_calmar_from_returns(returns),
+        "calmar": calculate_calmar_from_returns(returns, years=years),
         "tr_trace": [t["pnl_raw"] for t in trades],
         "test_period_years": years,
         "config": config,

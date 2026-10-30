@@ -1041,7 +1041,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Sharpe/Calmar (needed for both not_significant and ok paths)
         actual_trades_per_year = len(reporting_pnl) * bars_per_year / reporting_test_bars if reporting_test_bars > 0 else len(reporting_pnl)
         sharpe = calculate_sharpe_ratio(reporting_returns, trades_per_year=actual_trades_per_year)
-        calmar = calculate_calmar_from_returns(reporting_returns)
+        calmar = calculate_calmar_from_returns(
+            reporting_returns,
+            years=reporting_test_bars / bars_per_year if bars_per_year else None,
+        )
 
         # === TIME-BASED EQUITY REPLAY (Reporting, see equity_replay) ===
         detailed_aligned = (

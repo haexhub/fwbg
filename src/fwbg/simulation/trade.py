@@ -78,7 +78,8 @@ def calculate_sharpe_ratio(returns, risk_free_rate=0.0, trades_per_year=None):
                         Wenn None, wird sqrt(len(returns)) verwendet (konservativ)
 
     Returns:
-        Annualisierte Sharpe Ratio
+        Annualisierte Sharpe Ratio. Bei Standardabweichung 0 ist sie undefiniert;
+        dann 0.0 als konservativer Wert (inf würde JSON und min_sharpe brechen).
     """
     if len(returns) < 2:
         return 0.0
@@ -186,15 +187,22 @@ def calculate_calmar_ratio(returns, risk_per_trade, rrr):
     return min(10.0, total_return / max_dd)
 
 
-def calculate_calmar_from_returns(trade_returns):
-    """Calmar Ratio from pre-computed per-trade returns (for variable position sizing)."""
+def calculate_calmar_from_returns(trade_returns, years=None):
+    """Calmar Ratio (annual return / max drawdown) from per-trade returns.
+
+    *years* is the period the trades cover. Without it the total return stands
+    in for the annual one, which is only comparable across equally long periods.
+    """
     if not trade_returns:
         return 0.0
 
     equity = _simulate_equity_from_returns(trade_returns)
     max_dd = max(compute_drawdown_from_equity(equity), 0.01)
     total_return = (equity[-1] - equity[0]) / equity[0]
-    return min(10.0, total_return / max_dd)
+    annual_return = total_return
+    if years and years > 0 and total_return > -1:
+        annual_return = (1 + total_return) ** (1 / years) - 1
+    return min(10.0, annual_return / max_dd)
 
 
 def _load_ohlc_csv(path):
