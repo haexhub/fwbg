@@ -54,7 +54,7 @@ dependencies = [
     "PyYAML>=6.0",
     "holidays>=0.70",
     # Historical data download (Dukascopy adapter)
-    "dukascopy-python>=4.0",
+    "dukascopy-python>=4.0,<5",
     # HTTP client (scripts/jev provider client)
     "requests>=2.32",
 ]

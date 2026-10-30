@@ -376,8 +376,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             Level). Level auf der falschen Seite → entry ± sl_distance.
 
     Returns:
-        dict mit Trade-Details (ohne Exit bis Datenende: Close des letzten Bars,
-        exit_reason="end_of_data") oder None, wenn kein Bar nach dem Entry existiert
+        dict mit Trade-Details (bei Datenende zum letzten Close, sonst bei
+        Erreichen von max_bars; Grund jeweils in ``exit_reason``) oder None,
+        wenn kein Bar nach dem Entry existiert
     """
     entry_idx = idx + entry_delay
     if entry_idx >= len(closes):
@@ -583,13 +584,13 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                 trail_distance, 0.0,
             )
 
-    # No exit before the data (or max_bars) ended: close at the last bar, so an
-    # open position is neither dropped from the results nor overlapped by the
-    # next entry.
+    # Close at the last observed bar when the dataset ended. If the configured
+    # simulation horizon ran out first, preserve that distinction in the result.
     last_idx = min(exit_start_idx + max_bars, len(closes)) - 1
     if last_idx < exit_start_idx:
         return None
-    return close_at_bar(last_idx, "end_of_data")
+    reason = "end_of_data" if last_idx == len(closes) - 1 else "max_bars"
+    return close_at_bar(last_idx, reason)
 
 
 def analyze_sl_potential(trades, closes, highs, lows, max_scan_bars=500):

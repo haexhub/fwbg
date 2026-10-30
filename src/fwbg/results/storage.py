@@ -596,6 +596,8 @@ def _run_summary(run_id, run_path):
     if os.path.exists(config_path):
         with open(config_path) as f:
             config = json.load(f)
+            if not isinstance(config, dict):
+                raise ValueError("config.json must contain an object")
             run_info["timestamp"] = config.get("timestamp")
             run_info["description"] = config.get("description")
             run_info["timeframe"] = config.get("timeframe")
@@ -606,6 +608,8 @@ def _run_summary(run_id, run_path):
     if os.path.exists(strategy_path):
         with open(strategy_path) as f:
             strategy = json.load(f)
+            if not isinstance(strategy, dict):
+                raise ValueError("strategy.json must contain an object")
             run_info["strategy_name"] = strategy.get("name")
             run_info["tags"] = strategy.get("tags", [])
             run_info["hypothesis"] = strategy.get("hypothesis")
@@ -617,6 +621,8 @@ def _run_summary(run_id, run_path):
     if os.path.exists(assets_path):
         with open(assets_path) as f:
             assets = json.load(f)
+            if not isinstance(assets, dict):
+                raise ValueError("assets.json must contain an object")
             run_info["profitable_count"] = len(assets)
 
     return run_info
