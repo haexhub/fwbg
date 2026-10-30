@@ -1,9 +1,10 @@
 """CLI handler for `fwbg analyze` — MFE/MAE exit analysis."""
 
 import argparse
-import json
 import os
+import sys
 
+from fwbg.core.config import StrategyConfig
 from fwbg.exploration.exit_analyzer import analyze_asset, format_terminal_output, write_json
 from fwbg.data import config as data_config
 
@@ -39,14 +40,14 @@ Examples:
     if not args.asset and not args.asset_class:
         parser.error("Either asset file or --asset-class required")
 
-    # Load exit strategy config from strategy file
     exit_strategy = "atr_based"
     exit_params = {"atr_period": 14}
     if args.strategy_file:
-        with open(args.strategy_file) as f:
-            strat = json.load(f)
-        exit_strategy = strat.get("exit_strategy", "atr_based")
-        exit_params = strat.get("exit_params", {})
+        try:
+            strategy = StrategyConfig.from_json_file(args.strategy_file)
+        except (OSError, ValueError) as exc:
+            parser.error(f"--strategy-file {args.strategy_file}: {exc}")
+        exit_strategy, exit_params = _exit_strategy(strategy, exit_strategy, exit_params)
 
     files = _resolve_files(args.asset, args.asset_class)
     os.makedirs(args.output_dir, exist_ok=True)
@@ -63,6 +64,20 @@ Examples:
         out_path = os.path.join(args.output_dir, f"{symbol}.json")
         write_json(result, out_path)
         print(f"\n  -> {out_path}")
+
+
+def _exit_strategy(strategy, default_name, default_params):
+    """Name and params of the strategy's first exit strategy, else the defaults."""
+    if not strategy.exit_strategies:
+        return default_name, default_params
+    first = strategy.exit_strategies[0]
+    if len(strategy.exit_strategies) > 1:
+        print(
+            f"Note: the strategy has {len(strategy.exit_strategies)} exit strategies; "
+            f"analyzing with the first ({first.name})",
+            file=sys.stderr,
+        )
+    return first.name, dict(first.params)
 
 
 def _resolve_files(asset, asset_class):
