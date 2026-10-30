@@ -185,6 +185,7 @@ def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_
         "regime_filter": regime_config,
         "exit_strategy": ctx.exit_strategy,
         "exit_params": ctx.exit_params,
+        "exit_modifier": ctx.exit_modifier,
         "exit_modifier_params": ctx.exit_modifier_params,
         "entry_modifier": ctx.entry_modifier,
         "entry_modifier_params": ctx.entry_modifier_params,

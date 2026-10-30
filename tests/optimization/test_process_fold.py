@@ -786,3 +786,18 @@ class TestSignalModelSkipsDropna:
 
         # NaN rows should be dropped for xgboost
         assert len(train_df) < split
+
+
+def test_candidate_regime_replaces_another_combos_mask():
+    """The frames still carry the last grid combo's mask; the winner's must apply."""
+    import pandas as pd
+
+    from fwbg.optimization.process_fold import apply_candidate_regime
+
+    train_df = pd.DataFrame({"adx": [10.0, 30.0], "_regime": [0, 0]})
+    test_df = pd.DataFrame({"adx": [30.0, 10.0], "_regime": [0, 0]})
+    winner = {"regime_filter": {"conditions": []}}
+
+    apply_candidate_regime(train_df, test_df, winner)
+
+    assert (train_df["_regime"] != 0).all() and (test_df["_regime"] != 0).all()

@@ -1,4 +1,5 @@
 """Walk-forward fold processing — extracted from process.py."""
+import dataclasses
 import time
 
 import numpy as np
@@ -42,6 +43,33 @@ def _attach_regime_to_fold(
     """
     df["_regime"] = compute_regime_bitmask(df, regime_params)
     return df
+
+
+# Settings a winning candidate selected besides TP/SL/CT and features. They
+# travel candidate -> best_config -> merged replay candidate; dropping one
+# evaluates a different strategy than the one the grid selected.
+CONTEXT_SETTING_KEYS = (
+    "exit_strategy", "exit_params", "exit_modifier", "exit_modifier_params",
+    "entry_modifier", "entry_modifier_params", "model_hyperparameters",
+)
+SELECTED_SETTING_KEYS = CONTEXT_SETTING_KEYS + ("regime_filter",)
+
+
+def candidate_context(ctx, candidate: dict):
+    """*ctx* with the settings *candidate* selected; a missing/None value keeps ctx's."""
+    overrides = {
+        key: candidate[key] for key in CONTEXT_SETTING_KEYS if candidate.get(key) is not None
+    }
+    return dataclasses.replace(ctx, **overrides) if overrides else ctx
+
+
+def apply_candidate_regime(train_df: pd.DataFrame, test_df: pd.DataFrame, candidate: dict) -> None:
+    """Attach the candidate's regime mask; the frames may still carry another combo's."""
+    if candidate.get("regime_filter") is None:
+        return
+    regime_params = RegimeFilterConfig.from_dict(candidate["regime_filter"])
+    _attach_regime_to_fold(train_df, regime_params)
+    _attach_regime_to_fold(test_df, regime_params)
 
 
 def precompute_indicators(df, strategy, sym):
@@ -505,19 +533,9 @@ def process_single_fold(
         return None, all_grid_results
 
     # === TEST EVALUATION (on this fold's test set) ===
-    # Apply winning candidate's full context (exit strategy, entry modifier,
-    # model hyperparameters) so holdout evaluation matches grid search.
-    import dataclasses
-    holdout_ctx = dataclasses.replace(
-        ctx,
-        exit_strategy=b.get("exit_strategy", ctx.exit_strategy),
-        exit_params=b.get("exit_params", ctx.exit_params),
-        exit_modifier_params=b.get("exit_modifier_params", ctx.exit_modifier_params),
-        entry_modifier=b.get("entry_modifier", ctx.entry_modifier),
-        entry_modifier_params=b.get("entry_modifier_params", ctx.entry_modifier_params),
-        model_hyperparameters=b.get("model_hyperparameters", ctx.model_hyperparameters),
-    )
-    test_result = evaluate_on_holdout(test_df, train_df, b, holdout_ctx)
+    # Apply the winning candidate's settings so holdout evaluation matches grid search.
+    apply_candidate_regime(train_df, test_df, b)
+    test_result = evaluate_on_holdout(test_df, train_df, b, candidate_context(ctx, b))
 
     # A fold is kept whatever its test trade count: dropping it would let the
     # test set filter folds.
@@ -544,10 +562,7 @@ def process_single_fold(
             "ct": b["params"][2],
             "rrr": b["rrr"],
             "timeout_bars": b.get("timeout_bars"),
-            "model_hyperparameters": b.get("model_hyperparameters"),
-            "exit_modifier_params": b.get("exit_modifier_params"),
-            "exit_strategy": b.get("exit_strategy"),
-            "exit_params": b.get("exit_params"),
+            **{key: b.get(key) for key in SELECTED_SETTING_KEYS},
             "ct_votes": b.get("ct_votes"),
             "ct_diagnostics": b.get("ct_diagnostics"),
         },
