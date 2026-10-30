@@ -179,16 +179,19 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
                 train_ctx = PipelineContext(
                     df=pp_train_raw.copy(), symbol=sym, asset_class=ctx.asset_class
                 )
-                train_ctx = pp.execute(train_ctx, **pp_params)
-                pp_train_raw = train_ctx.df
+                train_out = pp.execute(train_ctx, **pp_params).df
 
                 test_ctx = PipelineContext(
                     df=pp_test_raw.copy(), symbol=sym, asset_class=ctx.asset_class
                 )
-                test_ctx = pp.execute(test_ctx, **pp_params)
-                pp_test_raw = test_ctx.df
+                test_out = pp.execute(test_ctx, **pp_params).df
             except Exception as e:
-                log(1, f"  Preprocessing {pp_name} failed: {e}", sym)
+                # Skipped for both splits: a step applied to train only would
+                # leave the model trained on data unlike what it is tested on.
+                log(1, f"  Preprocessing {pp_name} failed, skipped: {e}", sym)
+                continue
+            pp_train_raw = train_out
+            pp_test_raw = test_out
 
         log(2, f"  Preprocessing: Train {len(fold.train_df)}→{len(pp_train_raw)}, "
                f"Test {len(fold.test_df)}→{len(pp_test_raw)}", sym)
