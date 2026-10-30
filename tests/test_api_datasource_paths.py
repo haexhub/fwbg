@@ -1,6 +1,9 @@
 """Request-supplied names must not move data-file paths out of their source."""
 
+import io
+
 import pytest
+from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 
 from fwbg.api import create_app
@@ -78,3 +81,38 @@ def test_chart_rejects_symbol_path(client):
     r = client.get("/api/chart/ohlcv", params={"symbol": "/etc/x", "timeframe": "HOUR"})
 
     assert r.status_code == 400
+
+
+def test_upload_writes_raw_file_without_leftovers(client, source, tmp_path):
+    r = client.post(
+        "/api/datasources/t1/raw",
+        files={"files": ("prices.csv", b"d,o,h,l,c\n", "text/csv")},
+    )
+
+    assert r.status_code == 201
+    raw = tmp_path / "data" / "t1" / "raw"
+    assert [p.name for p in raw.iterdir()] == ["prices.csv"]
+    assert (raw / "prices.csv").read_bytes() == b"d,o,h,l,c\n"
+
+
+class _CountingReader(io.BytesIO):
+    def __init__(self, data):
+        super().__init__(data)
+        self.bytes_read = 0
+
+    def read(self, size=-1):
+        chunk = super().read(size)
+        self.bytes_read += len(chunk)
+        return chunk
+
+
+def test_oversized_upload_is_rejected_before_it_is_read_whole(source, tmp_path, monkeypatch):
+    monkeypatch.setattr(ds_api, "MAX_UPLOAD_SIZE", 1024)
+    upload = _CountingReader(b"x" * (8 * 1024 * 1024))
+
+    with pytest.raises(HTTPException) as exc_info:
+        ds_api.upload_raw_files("t1", [UploadFile(file=upload, filename="big.csv")])
+
+    assert exc_info.value.status_code == 413
+    assert upload.bytes_read < len(upload.getvalue())
+    assert list((tmp_path / "data" / "t1" / "raw").iterdir()) == []

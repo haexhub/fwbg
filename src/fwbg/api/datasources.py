@@ -33,6 +33,7 @@ _tasks_lock = threading.Lock()
 
 # Max bytes accepted per uploaded file (100 MB)
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 # Datasource names must be safe filesystem identifiers.
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}$")
@@ -251,8 +252,30 @@ def list_raw_files(name: str):
     return [_file_info(f) for f in sorted(raw_path.iterdir()) if f.is_file()]
 
 
+def _store_upload(file: UploadFile, dest: Path, display_name: str) -> None:
+    """Copy *file* to *dest* in chunks, rejecting it once it exceeds MAX_UPLOAD_SIZE.
+
+    The copy goes to a temp file beside *dest* and is renamed into place, so an
+    oversized or failed upload never leaves a partial file under its real name.
+    """
+    temp = dest.with_name(f".{dest.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        size = 0
+        with temp.open("wb") as out:
+            while chunk := file.file.read(_UPLOAD_CHUNK_SIZE):
+                size += len(chunk)
+                if size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(status_code=413, detail=f"File too large: {display_name}")
+                out.write(chunk)
+        os.replace(temp, dest)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+# Plain def: FastAPI runs it in its threadpool, so the blocking copies below
+# stay off the event loop.
 @router.post("/datasources/{name}/raw", status_code=201)
-async def upload_raw_files(name: str, files: List[UploadFile] = File(...)):
+def upload_raw_files(name: str, files: List[UploadFile] = File(...)):
     _validate_source_name(name)
     if name not in _DATA_SOURCES:
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
@@ -261,11 +284,8 @@ async def upload_raw_files(name: str, files: List[UploadFile] = File(...)):
     saved = []
     for file in files:
         safe_name = _safe_filename(file.filename or "")
-        data = await file.read()
-        if len(data) > MAX_UPLOAD_SIZE:
-            raise HTTPException(status_code=413, detail=f"File too large: {safe_name}")
         dest = _safe_child_path(raw_path, safe_name)
-        dest.write_bytes(data)
+        _store_upload(file, dest, safe_name)
         saved.append(safe_name)
     return {"saved": saved}
 
