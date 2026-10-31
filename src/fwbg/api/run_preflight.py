@@ -83,11 +83,15 @@ def preflight(cmd: list[str], env: dict) -> None:
             422, {"message": "research preflight failed", "output": _output_tail(result)}
         )
     if not payload["allowed"]:
-        denials = payload.get("denials", [])
-        status = 409 if any(d.get("status") == 409 for d in denials) else 422
-        raise HTTPException(
-            status, {"message": "research gate refused the run", "denials": denials}
-        )
+        raise gate_refusal(payload.get("denials", []), "run")
+
+
+def gate_refusal(denials: list[dict], subject: str) -> HTTPException:
+    """409 if any denial conflicts with the register, else 422; ``"denials"`` in the detail."""
+    status = 409 if any(d.get("status") == 409 for d in denials) else 422
+    return HTTPException(
+        status, {"message": f"research gate refused the {subject}", "denials": denials}
+    )
 
 
 def _is_denial_list(denials: object) -> bool:
