@@ -47,15 +47,23 @@ class SignalExitStrategy(BaseExitStrategy):
         """
         exit_params = dict(params.extra) if params is not None else dict(kwargs)
         closes = df["C"].values.astype(np.float64)
+        entry_delay = exit_params.get("entry_delay", 0)
+        if entry_delay not in (0, 1):
+            raise ValueError("signal_exit entry_delay must be 0 or 1")
+        entries = closes.copy()
+        valid_entry = np.ones(len(df), dtype=bool)
+        if entry_delay == 1:
+            valid_entry[-1:] = False
+            entries[:-1] = df["O"].values.astype(np.float64)[1:]
         cost = ctx.spread * 1.5
         n = len(df)
         results = []
         for direction, param in ((1, "exit_signal_long_column"), (-1, "exit_signal_short_column")):
             flags = self._flags(df, exit_params.get(param))
             nxt = next_flag_index(flags)
-            has_exit = nxt < n
+            has_exit = (nxt < n) & valid_entry
             exit_close = closes[np.minimum(nxt, n - 1)]
-            pnl = direction * (exit_close - closes) - cost
+            pnl = direction * (exit_close - entries) - cost
             results.append((np.where(has_exit & (pnl > 0), 1.0, 0.0), np.where(has_exit, nxt - np.arange(n), 0)))
         (tgt_l, dur_l), (tgt_s, dur_s) = results
         if return_durations:

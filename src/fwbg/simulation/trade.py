@@ -544,8 +544,11 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         low_min = min(low_min, lows[j])
         high_max = max(high_max, highs[j])
 
-        # Skip off-session bars — no exits outside trading hours
+        # Rule exits may close outside the session (for example, a missing
+        # session-close bar). Price and timeout exits remain session-bound.
         if in_session is not None and not in_session[j]:
+            if exit_signal is not None and exit_signal[j]:
+                return close_at_bar(j, "exit_signal")
             continue
 
         session_bars_elapsed += 1

@@ -46,6 +46,18 @@ def test_without_flags_the_trade_runs_to_the_end_of_data():
     assert trade["exit_reason"] == "end_of_data"
 
 
+def test_rule_exit_is_processed_outside_the_session():
+    closes = np.array([100.0, 101.0, 102.0])
+    trade = simulate_pro_trade(
+        closes=closes, highs=closes + 0.5, lows=closes - 0.5, opens=closes,
+        idx=0, direction=1, tp_distance=FAR, sl_distance=FAR, spread=0.0,
+        entry_delay=0, in_session=np.array([True, False, True]),
+        exit_signal=np.array([False, True, False]),
+    )
+    assert trade["exit_idx"] == 1
+    assert trade["exit_reason"] == "exit_signal"
+
+
 def _frame(closes, long_sig, short_sig, exit_long, exit_short):
     closes = np.asarray(closes, dtype=float)
     return pd.DataFrame(

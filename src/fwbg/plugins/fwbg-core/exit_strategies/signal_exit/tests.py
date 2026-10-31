@@ -51,6 +51,28 @@ def test_labels_pay_the_entry_cost():
     assert tgt_l.tolist() == [0.0, 0.0]  # +1 move does not cover 1.5 spread
 
 
+def test_next_open_entry_labels_use_the_next_bar_open():
+    df = _df([100, 105, 103], exit_long=[0, 0, 1], exit_short=[0, 0, 0])
+    df["O"] = [99, 102, 103]
+    tgt_l, _, dur_l, _ = SignalExitStrategy().compute_targets(
+        df, _ctx(), params=_params(
+            exit_signal_long_column="xl", entry_delay=1
+        ), return_durations=True
+    )
+    assert tgt_l.tolist() == [1.0, 0.0, 0.0]  # enter at 102, exit at 103
+    assert dur_l.tolist() == [2, 1, 0]  # duration includes the signal-to-entry bar
+
+
+def test_next_open_entry_cannot_be_labeled_on_the_final_bar():
+    df = _df([100, 101], exit_long=[0, 1], exit_short=[0, 0])
+    _, _, dur_l, _ = SignalExitStrategy().compute_targets(
+        df, _ctx(), params=_params(
+            exit_signal_long_column="xl", entry_delay=1
+        ), return_durations=True
+    )
+    assert dur_l.tolist() == [1, 0]
+
+
 def test_missing_exit_column_raises():
     df = _df([100, 101], exit_long=[0, 1], exit_short=[0, 0])
     with pytest.raises(KeyError, match="nope"):
