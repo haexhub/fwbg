@@ -184,10 +184,15 @@ class VolatilityIndicators(BaseIndicator):
 
         # === Realized Vol vs Implied Vol (VIX) ===
         rv_window = params.get("rv_window", 20)
+        # rv_window counts days; bars_per_day converts it to bars and annualises
+        # (24 = hourly bars around the clock, 1 = daily or session bars).
+        bars_per_day = params.get("bars_per_day", 24)
+        if not isinstance(bars_per_day, (int, float)) or bars_per_day <= 0:
+            raise ValueError(f"volatility: bars_per_day must be a positive number, not {bars_per_day!r}")
+        rv_bars = max(2, int(round(rv_window * bars_per_day)))
         log_returns = np.log(df["C"] / (df["C"].shift(1) + EPSILON))
-        # Annualized realized vol (24h bars * 252 trading days)
-        rv = log_returns.rolling(rv_window * 24, min_periods=rv_window * 12).std()
-        rv_annualized = rv * np.sqrt(252 * 24) * 100  # as percentage
+        rv = log_returns.rolling(rv_bars, min_periods=max(2, rv_bars // 2)).std()
+        rv_annualized = rv * np.sqrt(252 * bars_per_day) * 100  # as percentage
         features[f"vol_rv_{rv_window}"] = rv_annualized
 
         if "macro_vix" in df.columns:
@@ -236,6 +241,7 @@ class VolatilityIndicators(BaseIndicator):
             "atr_periods": [7, 14, 21],
             "bb_period": 20,
             "vol_est_windows": [20, 50],
+            "bars_per_day": 24,
         }
 
     @classmethod
@@ -262,6 +268,13 @@ class VolatilityIndicators(BaseIndicator):
                 "description": "Rolling window sizes for OHLC-based volatility estimators (Garman-Klass, Parkinson, Yang-Zhang). These estimators are more statistically efficient than close-only volatility. Shorter windows react faster to regime changes, longer windows provide more stable estimates.",
                 "min": 5,
                 "max": 500,
+            },
+            "bars_per_day": {
+                "type": "float",
+                "default": 24,
+                "description": "Bars per trading day for the realised volatility vol_rv_20 (20 days): 24 for hourly bars around the clock, 96 for M15, 1 for daily or session bars. Sets the rolling window in bars and the annualisation.",
+                "min": 0.1,
+                "max": 1440,
             },
         }
 
