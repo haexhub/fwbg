@@ -126,6 +126,9 @@ class SimulationContext:
     # sl_level_column): kept through the fold clean-up, not forced into the model
     exit_columns: List[str] = field(default_factory=list)
 
+    # Overnight financing as a fraction p.a. of the entry price, per calendar night held
+    financing_rate: float = 0.0
+
     # Time-based entry filters (from FilterConfig)
     allowed_hours: Optional[list] = None
     allowed_days: Optional[list] = None
@@ -207,6 +210,7 @@ class SimulationContext:
             exit_session_end_hour=None,
             required_features=req_feats,
             exit_columns=exit_cols,
+            financing_rate=strategy.financing_pct / 100.0,
             # Time-based entry filters
             allowed_hours=strategy.filters.allowed_hours,
             allowed_days=strategy.filters.allowed_days,

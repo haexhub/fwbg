@@ -94,6 +94,7 @@ def create_mock_context(
     ctx.preprocessing_plugins = []  # No preprocessing by default
     ctx.exit_strategy = "fixed"
     ctx.exit_params = {}
+    ctx.financing_rate = 0.0
     ctx.entry_modifier = None
     ctx.entry_modifier_params = {}
     ctx.probability_calibration = False
