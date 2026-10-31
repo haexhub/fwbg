@@ -6,14 +6,11 @@ import sys
 
 from fwbg_sdk.enums import Timeframe
 
-from fwbg.api.workspace import get_research_dir
 from fwbg.core.config import StrategyConfig
 from fwbg.exploration.exit_analyzer import analyze_asset, format_terminal_output, write_json
 from fwbg.data import config as data_config
-from fwbg.research.card import CARD_ID_RE, CardError, load_card
-from fwbg.research.gate import Denial, DenialCode
+from fwbg.research.analysis import analysis_config, record_analysis
 from fwbg.research.runs import GATE_ENV, GateDenied, gate_enabled
-from fwbg.research.study import register_trial
 
 
 def run_analyze(argv):
@@ -81,18 +78,16 @@ Examples:
         if not args.research_id:
             parser.error("--research-id S-NNNN is required: the register must know which data "
                          "shaped a strategy")
-        config = {
-            "analysis": "mfe_mae",
-            "exit_strategies": [{"name": exit_strategy, "params": exit_params}],
-            "max_bars": args.max_bars,
-            "timeframe": _file_timeframe(files[0], timeframe),
-            "datasource": strategy.datasource,
-            "_cli_data_path": os.path.abspath(args.data_path) if args.data_path else None,
+        config = analysis_config(
+            exit_strategy,
+            exit_params,
+            args.max_bars,
+            _file_timeframe(files[0], timeframe),
+            datasource=strategy.datasource,
+            data_path=os.path.abspath(args.data_path) if args.data_path else None,
             **window,
-        }
-        window = _record_analysis(
-            args, {key: value for key, value in config.items() if value is not None}, files
         )
+        window = _record_analysis(args, config, files)
     else:
         print(f"Warning: {GATE_ENV}=off - this analysis is neither gated nor recorded",
               file=sys.stderr)
@@ -118,19 +113,12 @@ Examples:
 def _record_analysis(args, config, files):
     """Put the analysis on record before it reads data; return its window.
 
-    Like a gated run, the analysis is recorded before it reads any data, so a
-    refusal leaves the data unseen, and an open-ended window ends at the card's
-    holdout cutoff (end exclusive). It is an iteration without metrics: it
-    evaluates no strategy, so it adds no evaluation to the card's trial count,
-    but its configuration and window are on record and a repeat needs --reason.
-    Exits with 2 if the register refuses it.
+    Exits with 2 if the register refuses it (see :func:`record_analysis`).
     """
-    symbols = [_file_symbol(path) for path in files]
     try:
-        if "end_date" not in config:
-            config["end_date"] = _holdout_cutoff(args.research_id)
-        trial = register_trial(
-            args.research_id, config, symbols, {}, args.note, reason=args.reason
+        trial, window = record_analysis(
+            args.research_id, config, [_file_symbol(path) for path in files], args.note,
+            reason=args.reason,
         )
     except GateDenied as exc:
         print("Research gate refused the analysis:", file=sys.stderr)
@@ -138,22 +126,8 @@ def _record_analysis(args, config, files):
             print(f"  - [{denial.code.value}] {denial.message}", file=sys.stderr)
         raise SystemExit(2) from None
     print(f"Research: recorded as {trial.trial_id} of {trial.strategy}; "
-          f"data before {config['end_date']} (end exclusive)")
-    return {"start_date": config.get("start_date"), "end_date": config["end_date"]}
-
-
-def _holdout_cutoff(research_id):
-    """The card's holdout cutoff as YYYY-MM-DD; raises GateDenied without a readable card."""
-    try:
-        card = None
-        if CARD_ID_RE.fullmatch(research_id):
-            card = load_card(get_research_dir(create=False), research_id)
-    except (OSError, CardError) as exc:
-        denial = Denial(DenialCode.REGISTER_UNREADABLE, f"research register: {exc}")
-        raise GateDenied([denial]) from exc
-    if card is None:
-        raise GateDenied([Denial(DenialCode.CARD_NOT_FOUND, f"no research card {research_id}")])
-    return card.holdout_cutoff.isoformat()
+          f"data before {window['end_date']} (end exclusive)")
+    return window
 
 
 def _file_symbol(path):
