@@ -132,7 +132,11 @@ def test_load_mapping_reads_a_yaml_draft(runs):
             "  - {variant: b, symbols: [EURUSD], date: 2026-09-26, note: second}\n",
             "line 6, column 3: duplicate key 'studies'",
         ),
-        ("cards:\n- {id: S-0001, title: x, studies: [{date: 2026-02-30}]}\n", "out of range"),
+        (
+            "cards:\n- {id: S-0001, title: x, studies: [{date: 2026-02-30}]}\n",
+            # Python 3.14 reworded the date error ("day 30 must be in range 1..28 ...").
+            r"not valid YAML: day .*range",
+        ),
         ("cards: [\n", "line 2, column 1"),
     ],
     ids=["duplicate-key", "impossible-date", "syntax"],
