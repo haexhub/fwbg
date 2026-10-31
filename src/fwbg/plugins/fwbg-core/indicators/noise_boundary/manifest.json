@@ -1,0 +1,7 @@
+{
+  "name": "noise_boundary",
+  "version": "1.0.0",
+  "description": "Time-of-day noise bands around the session open (Zarattini/Aziz/Barbon 2024) with half-hour entry and trailing exit flags",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

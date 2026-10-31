@@ -9,7 +9,13 @@ from collections.abc import Callable, Iterable
 from fnmatch import fnmatchcase
 from functools import lru_cache
 
-EXIT_COLUMN_PARAMS = ("sl_dist_column", "range_column", "sl_level_column")
+EXIT_COLUMN_PARAMS = (
+    "sl_dist_column",
+    "range_column",
+    "sl_level_column",
+    "exit_signal_long_column",
+    "exit_signal_short_column",
+)
 """exit_params keys that name a frame column an exit strategy reads."""
 
 _GLOB_CHARS = frozenset("*?[")
