@@ -1,0 +1,6 @@
+{
+  "name": "signal_exit",
+  "version": "1.0.0",
+  "description": "Rule exits: trades close at the bar close where an indicator's exit column fires; no take-profit or stop-loss",
+  "phase": "exit_strategy"
+}
