@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Tuple, Optional, TYPE_CHECKING
 
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_exit_strategy, GridParams
-from fwbg.core.columns import resolve_role_column
+from fwbg.core.columns import ColumnRoleError, resolve_role_column
 
 if TYPE_CHECKING:
     from fwbg_sdk.models import BaseModel
@@ -120,6 +120,34 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
     return np.where(np.isfinite(levels) & (levels > 0), levels, np.nan)
 
 
+EXIT_SIGNAL_PARAMS = ("exit_signal_long_column", "exit_signal_short_column")
+
+
+def resolve_exit_signals(
+    df: pd.DataFrame, exit_params: dict
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """Per-bar rule-exit flags for long and short trades, or None per side.
+
+    ``exit_signal_long_column`` / ``exit_signal_short_column`` in exit_params
+    name columns whose value 1 closes an open trade of that side at the bar's
+    close. A named column that is missing raises: trading on without the rule's
+    exits would hold positions the strategy meant to close.
+
+    Raises:
+        ColumnRoleError: a configured column is not in the frame.
+    """
+    flags = []
+    for param in EXIT_SIGNAL_PARAMS:
+        name = exit_params.get(param)
+        if not name:
+            flags.append(None)
+            continue
+        if name not in df.columns:
+            raise ColumnRoleError(f"exit_params.{param} '{name}' is not a column in the frame.")
+        flags.append(np.nan_to_num(df[name].values.astype(np.float64), nan=0.0) >= 1.0)
+    return flags[0], flags[1]
+
+
 def simulate_trades(
     df: pd.DataFrame,
     probs_long: Optional[np.ndarray],
@@ -189,6 +217,7 @@ def simulate_trades(
     # sl_level is a suffix like "or_midpoint" — auto-detect the full column name.
     exit_params = ctx.exit_params if ctx.exit_params else {}
     sl_levels = resolve_sl_levels(df, ctx, exit_params)
+    exit_signal_long, exit_signal_short = resolve_exit_signals(df, exit_params)
 
     # Entry delay: 0 = entry at signal bar close (breakout stop-orders),
     # 1 = entry at next bar open (default, no look-ahead).
@@ -346,6 +375,7 @@ def simulate_trades(
                 trail_distance=td,
                 scale_levels=scale_levels,
                 scale_qty_mult=scale_qty_mult,
+                exit_signal=exit_signal_long if direction == 1 else exit_signal_short,
             )
             if trade:
                 t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"],
@@ -355,7 +385,10 @@ def simulate_trades(
                     if not np.isnan(rv_val):
                         t["rv_at_entry"] = rv_val
                 trades.append(t)
-                next_allowed_entry = trade["exit_idx"] + 1
+                # A rule exit fills at the bar's close, so with close entries the
+                # same bar may open the next trade (e.g. a flip to the other side).
+                same_bar = entry_delay == 0 and trade.get("exit_reason") == "exit_signal"
+                next_allowed_entry = trade["exit_idx"] + (0 if same_bar else 1)
 
                 # Record trade against its signal event
                 if max_per_signal > 0:

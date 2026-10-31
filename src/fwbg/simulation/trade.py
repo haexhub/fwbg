@@ -326,7 +326,8 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                        opens=None, timeout_bars=None, in_session=None,
                        sl_level_abs=None, entry_delay=1,
                        breakeven_trigger=0.0, trail_distance=0.0,
-                       scale_levels=None, scale_qty_mult=1.0, sl_level_mult=1.0):
+                       scale_levels=None, scale_qty_mult=1.0, sl_level_mult=1.0,
+                       exit_signal=None):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
@@ -374,6 +375,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         sl_level_abs: Optional - absolutes SL-Level (Preis) statt entry ± sl_distance
         sl_level_mult: Skaliert die Distanz Entry→Level (sl_mult; 1.0 = genau das
             Level). Level auf der falschen Seite → entry ± sl_distance.
+        exit_signal: Optional - per-bar Flags der Strategie-Regel; ein gesetztes
+            Flag schließt den Trade zum Close dieses Bars (nach TP/SL und Timeout,
+            ``exit_reason="exit_signal"``). None = keine Regel-Exits.
 
     Returns:
         dict mit Trade-Details (bei Datenende zum letzten Close, sonst bei
@@ -575,6 +579,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             trade_result = close_at_bar(j, "timeout")
             trade_result["timeout_bars"] = timeout_bars
             return trade_result
+
+        if exit_signal is not None and exit_signal[j]:
+            return close_at_bar(j, "exit_signal")
 
         if use_trailing:
             best_price, sl, tp, trailing_active = _trail_after_bar(
