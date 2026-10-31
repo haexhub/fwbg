@@ -8,6 +8,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import json
+import math
 import logging
 import os
 
@@ -328,6 +329,17 @@ class ResourceConfig:
         )
 
 
+def _financing_pct(value: Any) -> float:
+    """The strategy's ``financing_pct``: a finite, non-negative number."""
+    try:
+        pct = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"financing_pct must be a number, not {value!r}") from exc
+    if not math.isfinite(pct) or pct < 0:
+        raise ValueError(f"financing_pct must be a finite number >= 0, not {value!r}")
+    return pct
+
+
 @dataclass
 class StrategyConfig:
     """
@@ -383,6 +395,10 @@ class StrategyConfig:
     # 1.0 = as configured; 2.0 = cost-stress run.
     cost_multiplier: float = 1.0
 
+    # Overnight financing of CFD positions in % p.a. of the entry price, charged
+    # per calendar night a trade is held (e.g. benchmark rate + broker markup).
+    financing_pct: float = 0.0
+
     # Signal rules for composed entry signals (visual rule builder)
     signal_rules: Optional[Dict[str, Any]] = None
 
@@ -396,7 +412,7 @@ class StrategyConfig:
         "risk_management", "risk_params", "optimization", "assets", "model",
         "validation", "filters", "resources", "regime_filter", "datasource",
         "timeframe", "start_date", "end_date", "holdout_cutoff",
-        "cost_multiplier", "signal_rules", "hypothesis", "expected_outcome",
+        "cost_multiplier", "financing_pct", "signal_rules", "hypothesis", "expected_outcome",
     })
     # Keys older configs used; they are no longer read, so say what replaced them.
     REMOVED_KEYS = {
@@ -482,6 +498,7 @@ class StrategyConfig:
             end_date=data.get("end_date"),
             holdout_cutoff=data.get("holdout_cutoff"),
             cost_multiplier=data.get("cost_multiplier", 1.0),
+            financing_pct=_financing_pct(data.get("financing_pct", 0.0)),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
             signal_rules=data.get("signal_rules"),
