@@ -27,6 +27,7 @@ from fwbg.core.config import StrategyConfig
 from fwbg.core.context import SimulationContext
 from fwbg.data import config as data_config
 from fwbg.data.assets import get_asset
+from fwbg.data.validation import DataCheckError
 from fwbg.research.dsr import return_statistics
 from fwbg.simulation.trade import calculate_calmar_from_returns, calculate_sharpe_ratio
 from fwbg.utils.logging import log
@@ -47,7 +48,7 @@ from .unified_simulation import run_unified_simulation
 # Statuses the holdout phase itself assigns (a development that is not "ok"
 # passes its own status through).
 HOLDOUT_STATUSES = frozenset(
-    {"ok", "not_significant", "no_unified_trades", "insufficient_data", "no_data", "error"}
+    {"ok", "not_significant", "no_unified_trades", "insufficient_data", "no_data", "data_invalid", "error"}
 )
 _DEVELOPMENT_KEYS = (
     "status",
@@ -96,6 +97,9 @@ def _holdout_look(csv_path: str, strategy: StrategyConfig) -> dict:
     report_phase(sym, "Holdout evaluation...")
     try:
         result = _evaluate(csv_path, strategy, development)
+    except DataCheckError as exc:  # the data after the cutoff failed its checks
+        result = _not_evaluated(development, cutoff, str(exc), status="data_invalid")
+        result["data_checks"] = exc.report.to_dict()
     except Exception as exc:  # before any holdout trade exists: not evaluated
         result = _failed(development, {"cutoff": cutoff, "evaluated": False}, exc)
     report_done(sym, result["status"])

@@ -46,6 +46,7 @@ def _signal_strategy(**filter_kwargs) -> StrategyConfig:
             )
         ],
         signal_rules=None,
+        data_checks="off",  # synthetic hours around the clock; this tests the guard, not the data
     )
 
 

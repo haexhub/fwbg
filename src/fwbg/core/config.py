@@ -340,6 +340,16 @@ def _financing_pct(value: Any) -> float:
     return pct
 
 
+DATA_CHECK_MODES = ("strict", "warn", "off")
+
+
+def _data_checks(value: Any) -> str:
+    """The strategy's ``data_checks`` mode: errors block the run, are only logged, or no checks."""
+    if value not in DATA_CHECK_MODES:
+        raise ValueError(f"data_checks must be one of {', '.join(DATA_CHECK_MODES)}, not {value!r}")
+    return value
+
+
 @dataclass
 class StrategyConfig:
     """
@@ -399,6 +409,10 @@ class StrategyConfig:
     # per calendar night a trade is held (e.g. benchmark rate + broker markup).
     financing_pct: float = 0.0
 
+    # Data checks before the run (fwbg.data.validation): "strict" stops a symbol on
+    # a data error, "warn" only logs it, "off" skips the checks and keeps filler bars.
+    data_checks: str = "strict"
+
     # Signal rules for composed entry signals (visual rule builder)
     signal_rules: Optional[Dict[str, Any]] = None
 
@@ -408,6 +422,7 @@ class StrategyConfig:
 
     def __post_init__(self) -> None:
         self.financing_pct = _financing_pct(self.financing_pct)
+        self.data_checks = _data_checks(self.data_checks)
 
     # Top-level keys from_dict reads; underscore keys are free-form metadata.
     KNOWN_KEYS = frozenset({
@@ -415,7 +430,7 @@ class StrategyConfig:
         "risk_management", "risk_params", "optimization", "assets", "model",
         "validation", "filters", "resources", "regime_filter", "datasource",
         "timeframe", "start_date", "end_date", "holdout_cutoff",
-        "cost_multiplier", "financing_pct", "signal_rules", "hypothesis", "expected_outcome",
+        "cost_multiplier", "financing_pct", "data_checks", "signal_rules", "hypothesis", "expected_outcome",
     })
     # Keys older configs used; they are no longer read, so say what replaced them.
     REMOVED_KEYS = {
@@ -502,6 +517,7 @@ class StrategyConfig:
             holdout_cutoff=data.get("holdout_cutoff"),
             cost_multiplier=data.get("cost_multiplier", 1.0),
             financing_pct=_financing_pct(data.get("financing_pct", 0.0)),
+            data_checks=_data_checks(data.get("data_checks", "strict")),
             hypothesis=data.get("hypothesis", ""),
             expected_outcome=data.get("expected_outcome", ""),
             signal_rules=data.get("signal_rules"),
