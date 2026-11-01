@@ -1,0 +1,7 @@
+{
+  "name": "gotobi",
+  "version": "1.0.0",
+  "description": "Japanese settlement (gotobi) days with entry and exit flags for bars closing at fixed Tokyo hours",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
