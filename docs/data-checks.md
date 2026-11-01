@@ -77,3 +77,20 @@ Bars are labelled with the local date of the session close. The source passes th
 data checks first (filler bars dropped). Next to `NAS100_DAY_1.csv` the command
 writes `NAS100_DAY_1.session.json` (session, source, sessions seen and dropped,
 source checks) and a datasource `config.json` when there is none.
+
+## Entry hours per strategy
+
+`filters.entry_hours` restricts entries to bars that close inside a session, in the
+session's own time zone (daylight saving included):
+
+```json
+"filters": {"entry_hours": "cash"}
+"filters": {"entry_hours": {"tz": "Europe/London", "windows": [{"days": "Mon-Fri", "start": "08:00", "end": "17:00"}]}}
+```
+
+A name refers to one of the asset's sessions (e.g. `cash` for US index CFDs); a
+symbol without that session stops with an error. A bar may enter when its close
+lies in (open, close] of a window, so the bar ending at the session close can still
+enter at the closing price. Entry hours need intraday bars. Exits are not
+restricted. Unlike `allowed_hours` (UTC hours of the bar start), the filter works in
+local time and on the decision time.

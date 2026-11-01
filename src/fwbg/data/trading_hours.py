@@ -201,3 +201,31 @@ def asset_sessions(symbol: str) -> dict[str, TradingHours]:
     if symbol in symbols:
         return dict(symbols[symbol])
     return dict(classes.get(_asset_class(symbol) or "", {}))
+
+
+def resolve_entry_hours(spec: Any, symbol: str) -> TradingHours | None:
+    """``filters.entry_hours`` for *symbol*: a session name of the asset or a definition."""
+    if spec is None:
+        return None
+    if isinstance(spec, str):
+        sessions = asset_sessions(symbol)
+        if spec not in sessions:
+            known = ", ".join(sorted(sessions)) or "none"
+            raise TradingHoursError(
+                f"{symbol}: filters.entry_hours names session {spec!r}, the asset has: {known}"
+            )
+        return sessions[spec]
+    return parse_trading_hours(spec)
+
+
+def open_at_bar_close(
+    hours: TradingHours, starts: pd.DatetimeIndex, bar_minutes: int
+) -> np.ndarray:
+    """True for bars whose close (the decision time of an entry) falls inside *hours*.
+
+    A close counts when it lies in (open, close] of a window: the bar ending at the
+    session close may still enter (at the closing price), the one ending at the open
+    may not.
+    """
+    last_minute = starts + pd.Timedelta(minutes=bar_minutes - 1)
+    return hours.overlaps(pd.DatetimeIndex(last_minute), 1)

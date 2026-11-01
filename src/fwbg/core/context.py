@@ -7,6 +7,8 @@ Parameter die für eine einzelne Asset-Optimierung benötigt werden.
 from dataclasses import dataclass, field
 from typing import List, Optional, TYPE_CHECKING
 
+from fwbg.data.trading_hours import TradingHours, resolve_entry_hours
+
 from .columns import EXIT_COLUMN_PARAMS
 
 if TYPE_CHECKING:
@@ -132,6 +134,8 @@ class SimulationContext:
     # Time-based entry filters (from FilterConfig)
     allowed_hours: Optional[list] = None
     allowed_days: Optional[list] = None
+    # filters.entry_hours resolved for this asset (fwbg.data.trading_hours.TradingHours)
+    entry_hours: Optional["TradingHours"] = None
 
     # Signal rules for composed entry signals (from strategy config)
     signal_rules: Optional[dict] = None
@@ -214,6 +218,7 @@ class SimulationContext:
             # Time-based entry filters
             allowed_hours=strategy.filters.allowed_hours,
             allowed_days=strategy.filters.allowed_days,
+            entry_hours=resolve_entry_hours(strategy.filters.entry_hours, asset.symbol),
             # Signal rules for composed entry signals
             signal_rules=getattr(strategy, 'signal_rules', None),
             # Regime-Filter Grid (from optimization)
