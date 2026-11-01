@@ -823,6 +823,40 @@ def run_optimizer(
     }
 
 
+def _session_bars_command(args) -> None:
+    """``fwbg data session-bars``: daily bars of one session into a CSV datasource."""
+    from pathlib import Path
+
+    from fwbg.core.data_sources import get_data_root
+    from fwbg.data.loader import load_data_aligned
+    from fwbg.data.resample import parse_symbol_timeframe
+    from fwbg.data.session_bars import build_session_bars, write_session_bars
+    from fwbg.data.trading_hours import asset_sessions
+    from fwbg.data.validation import DataCheckError
+    from fwbg_sdk.enums import Timeframe
+
+    source = Path(args.input).expanduser()
+    parsed = parse_symbol_timeframe(source.stem)
+    if parsed is None:
+        raise SystemExit(f"{source.name}: expected a name like SYMBOL_MINUTE_15.csv")
+    symbol = args.symbol or parsed[0]
+    hours = asset_sessions(symbol).get(args.session)
+    if hours is None:
+        known = ", ".join(asset_sessions(symbol)) or "none"
+        raise SystemExit(f"{symbol}: no '{args.session}' session in the trading hours (known: {known})")
+    df = load_data_aligned(str(source))
+    if df is None:
+        raise SystemExit(f"{source}: could not be loaded")
+    try:
+        built = build_session_bars(df, symbol=symbol, hours=hours, bar_minutes=Timeframe.from_str(parsed[1]).minutes)
+    except (DataCheckError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+    out_dir = get_data_root() / args.datasource / "datasource"
+    csv = write_session_bars(built, out_dir=out_dir, symbol=symbol, session=args.session, source=source, hours=hours)
+    print(f"{csv}: {len(built.bars)} {args.session} bars from {built.sessions} sessions "
+          f"({built.incomplete} incomplete dropped)")
+
+
 def _run_data_command(argv):
     """Führt Daten-ETL-Kommandos aus (fwbg data <subcommand>)."""
     data_parser = argparse.ArgumentParser(
@@ -836,7 +870,19 @@ def _run_data_command(argv):
 
     _list_parser = subparsers.add_parser("list", help="Registrierte Datenquellen anzeigen")
 
+    sb_parser = subparsers.add_parser(
+        "session-bars", help="Tagesbars einer Handelssession aus Intraday-Bars bauen (docs/data-checks.md)"
+    )
+    sb_parser.add_argument("--input", required=True, help="Intraday-CSV, z.B. .../NAS100_MINUTE_15.csv")
+    sb_parser.add_argument("--symbol", help="Symbol (Default: aus dem Dateinamen)")
+    sb_parser.add_argument("--session", default="cash", help="Session-Name aus den Handelszeiten (Default: cash)")
+    sb_parser.add_argument("--datasource", required=True, help="Ziel-Datenquelle, z.B. dukascopy_cash")
+
     args = data_parser.parse_args(argv)
+
+    if args.subcmd == "session-bars":
+        _session_bars_command(args)
+        return
 
     from fwbg.core.data_sources import get_data_source, discover_sources, _DATA_SOURCES, CSVSourceConfig
 
