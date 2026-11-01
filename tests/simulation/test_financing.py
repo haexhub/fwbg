@@ -42,6 +42,22 @@ def test_nights_are_calendar_nights_across_a_weekend():
     assert trade["financing"] == pytest.approx(100 * 0.001 * 3)
 
 
+def test_scale_in_financing_starts_at_each_fill_date():
+    timestamps = pd.date_range("2024-01-01", periods=5, freq="D").values
+    trade = simulate_pro_trade(
+        closes=np.array([100, 98.5, 97, 99, 100], dtype=float),
+        highs=np.array([100, 100, 98, 100, 101], dtype=float),
+        lows=np.array([100, 98, 96, 98, 99], dtype=float),
+        opens=np.array([100, 99, 97, 99, 100], dtype=float),
+        idx=0, direction=1, tp_distance=50, sl_distance=10, spread=0.0,
+        entry_delay=0, scale_levels=[0.15], timestamps=timestamps,
+        exit_signal=np.array([False, False, False, False, True]), financing_rate=0.365,
+    )
+    assert trade["n_fills"] == 2
+    # Initial fill: four nights at 0.1/day; scale-in fill on day 2: three nights.
+    assert trade["financing"] == pytest.approx(100 * 0.001 * 4 + 98.5 * 0.001 * 3)
+
+
 def test_without_timestamps_or_rate_nothing_is_charged():
     assert _trade([100, 101, 102], exit_at=2, rate=0.365, timestamps=None)["financing"] == 0.0
     assert _trade([100, 101, 102], exit_at=2, rate=0.0)["financing"] == 0.0
@@ -62,3 +78,8 @@ def test_strategy_financing_pct_reaches_the_context_as_a_fraction():
 def test_invalid_financing_pct_is_rejected(bad):
     with pytest.raises(ValueError, match="financing_pct"):
         _strategy(financing_pct=bad)
+
+
+def test_direct_strategy_construction_validates_financing_pct():
+    with pytest.raises(ValueError, match="financing_pct"):
+        StrategyConfig(financing_pct=float("nan"))

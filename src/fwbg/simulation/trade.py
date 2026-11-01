@@ -456,7 +456,13 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
 
         # avg_price == entry and total_qty == 1 without scale-in
         pnl_raw = _pnl(direction, exit_price, avg_price, total_qty)
-        financing = _financing_cost(avg_price * total_qty, financing_rate, timestamps, entry_idx, exit_idx)
+        if use_scale_in:
+            financing = sum(
+                _financing_cost(price * quantity, financing_rate, timestamps, fill_idx, exit_idx)
+                for price, quantity, fill_idx in positions
+            )
+        else:
+            financing = _financing_cost(avg_price * total_qty, financing_rate, timestamps, entry_idx, exit_idx)
         pnl_raw -= financing
 
         # Breakeven-stop exits where the trailing SL barely moved above entry
