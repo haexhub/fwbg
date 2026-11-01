@@ -20,6 +20,9 @@ from fwbg.core.config import StrategyConfig
 from fwbg.data.assets import get_asset
 from fwbg.core.context import SimulationContext
 from fwbg.data.loader import apply_date_window, load_data_aligned, run_data_loading
+from fwbg.data.trading_hours import asset_sessions
+from fwbg.data.validation import DataCheckError, check_bars
+from fwbg_sdk.enums import Timeframe
 from fwbg.simulation.trade import (
     calculate_sharpe_ratio, calculate_calmar_from_returns, pnl_to_returns, kelly_inputs,
 )
@@ -435,6 +438,7 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
                 f"({n_before} → {len(df)})", sym)
 
     log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
+    df = _checked(df, strategy, sym)
 
     # === DATA LOADING (generic orchestrator) ===
     data_loading_configs = strategy.get_data_loading()
@@ -444,6 +448,28 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
         df = run_data_loading(df, data_loading_configs)
         log(2, f"Data Loading abgeschlossen ({time.time()-t0:.1f}s)", sym)
     return df
+
+
+def _checked(df: pd.DataFrame, strategy: StrategyConfig, sym: str) -> pd.DataFrame:
+    """Apply the strategy's data checks: drop filler bars, log findings, stop on errors.
+
+    The report travels in ``df.attrs["data_checks"]`` for the run result.
+    """
+    if strategy.data_checks == "off":
+        return df
+    hours = asset_sessions(sym).get("tradable")
+    if hours is None:
+        log(1, "Datencheck: keine Handelszeiten für das Symbol hinterlegt, nur Kurs-Checks", sym)
+    clean, report = check_bars(
+        df, symbol=sym, bar_minutes=Timeframe.from_str(data_config.TIMEFRAME).minutes, hours=hours
+    )
+    for finding in report.findings:
+        log(1 if finding.severity.value != "info" else 2,
+            f"Datencheck {finding.severity.value}: {finding.code} ({finding.count}) {finding.message}", sym)
+    if report.errors and strategy.data_checks == "strict":
+        raise DataCheckError(report)
+    clean.attrs["data_checks"] = report.to_dict()
+    return clean
 
 
 def _records_selection_protocol(func):
@@ -476,6 +502,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     t_start = time.time()
     start_log_capture()
     result = {}
+    data_checks = None
     try:
         if sym in ["VIX", "DXY"]:
             log(2, "Übersprungen (Makro-Asset)", sym)
@@ -485,10 +512,17 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         log(1, "START", sym)
         report_phase(sym, "Lade Daten...")
 
-        df = load_symbol_frame(csv_path, strategy, sym)
+        try:
+            df = load_symbol_frame(csv_path, strategy, sym)
+        except DataCheckError as exc:
+            log(1, f"SKIP - {exc}", sym)
+            report_done(sym, "data_invalid")
+            result = {"symbol": sym, "status": "data_invalid", "data_checks": exc.report.to_dict()}
+            return result
         if df is None:
             result = {"symbol": sym, "status": "no_data"}
             return result
+        data_checks = df.attrs.pop("data_checks", None)
 
         # === LOOKAHEAD BIAS PREVENTION ===
         # KRITISCH: Walk-Forward Splits VOR Indikator-Berechnung!
@@ -1161,4 +1195,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         result = {"symbol": sym, "status": "error", "error": f"{e}\n{tb}"}
         return result
     finally:
+        if data_checks is not None:
+            result.setdefault("data_checks", data_checks)
         result["logs"] = stop_log_capture()
