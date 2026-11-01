@@ -34,7 +34,7 @@ SETTLEMENT_DAYS = (5, 10, 15, 20, 25)
 def _closed(day: pd.Timestamp, jp: holidays.HolidayBase) -> bool:
     """Return whether *day* is not an open Japanese settlement day."""
     bank_closure = (day.month == 12 and day.day == 31) or (day.month == 1 and day.day <= 3)
-    return day.dayofweek >= 5 or day in jp or bank_closure
+    return day.day_of_week >= 5 or day in jp or bank_closure
 
 
 def gotobi_dates(first: pd.Timestamp, last: pd.Timestamp) -> pd.DatetimeIndex:
