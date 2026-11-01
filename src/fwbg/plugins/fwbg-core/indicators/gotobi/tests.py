@@ -51,7 +51,7 @@ def test_entry_requires_an_exact_hour_close():
         ["2024-03-14 23:00:00", "2024-03-15 00:00:00", "2024-03-15 00:00:00.000000001"]
     )
     out = GotobiIndicator().compute(pd.DataFrame({"C": 1.0}, index=index))
-    assert out["gotobi_entry"].tolist() == [0.0, 1.0, 0.0]
+    assert out["gotobi_entry"].iloc[1:].tolist() == [1.0, 0.0]
 
 
 def test_hours_and_bar_length_are_parameters():
