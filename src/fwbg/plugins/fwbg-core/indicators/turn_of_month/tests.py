@@ -34,6 +34,22 @@ def test_counts_follow_the_exchange_calendar():
     assert weekdays["tom_days_left"].iloc[0] == 1.0
 
 
+def test_calendar_trading_week_controls_generated_dates(monkeypatch):
+    # XSAU trades Sunday through Thursday; Friday is not a trading day.
+    monkeypatch.setattr(mod, "CALENDARS", [*mod.CALENDARS, "XSAU"])
+    monkeypatch.setattr(mod.holidays, "financial_holidays", lambda *args, **kwargs: {})
+    days = mod.trading_days("XSAU", pd.Timestamp("2024-09-01"), pd.Timestamp("2024-09-08"))
+    assert days.strftime("%Y-%m-%d").tolist()[:6] == [
+        "2024-09-01",
+        "2024-09-02",
+        "2024-09-03",
+        "2024-09-04",
+        "2024-09-05",
+        "2024-09-08",
+    ]
+    assert not any(day.dayofweek in (4, 5) for day in days)
+
+
 def test_missing_bars_do_not_shift_the_counts():
     full = compute(pd.bdate_range("2024-05-20", "2024-06-07"))
     sparse = compute(["2024-05-30", "2024-06-05"])  # Memorial Day 27 May is closed

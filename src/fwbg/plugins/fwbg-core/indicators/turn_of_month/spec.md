@@ -8,7 +8,7 @@ Counts exchange trading days within each calendar month and flags an entry a set
 
 ## Summary
 
-Trading days are weekdays that are not holidays of an exchange calendar from `holidays.financial_holidays` (e.g. `NYSE`, `ECB`), or every weekday for `calendar="weekdays"`. The counts come from the calendar, not from the bars in the data, so a missing bar does not shift them. Entering at `entry_days_left = 1` and exiting at `exit_day = 3` holds the classic turn-of-month window from trading day -1 to +3 (Ariel 1987; Lakonishok & Smidt 1988; McConnell & Xu 2008). The flag columns have fixed names, so an indicator grid can vary the parameters while the rules stay the same.
+Trading days follow the selected market's trading week and exclude holidays from `holidays.financial_holidays` (e.g. `NYSE`, `ECB`); `calendar="weekdays"` uses Monday through Friday without holidays. The counts come from the calendar, not from the bars in the data, so a missing bar does not shift them. Entering at `entry_days_left = 1` and exiting at `exit_day = 3` holds the classic turn-of-month window from trading day -1 to +3 (Ariel 1987; Lakonishok & Smidt 1988; McConnell & Xu 2008). The flag columns have fixed names, so an indicator grid can vary the parameters while the rules stay the same.
 
 ## Inputs
 

@@ -4,9 +4,9 @@ Counts exchange trading days within each calendar month, so rules can hold a
 position from the last trading days of one month into the first trading days of
 the next (Ariel 1987; Lakonishok & Smidt 1988; McConnell & Xu 2008).
 
-Trading days are weekdays that are not holidays of the chosen exchange calendar
-(``holidays.financial_holidays``, e.g. ``NYSE``) or every weekday for
-``calendar="weekdays"``. The counts come from the calendar, not from the bars in
+Trading days follow the selected exchange's trading week and exclude its
+holidays (``holidays.financial_holidays``, e.g. ``NYSE``); ``calendar="weekdays"``
+uses every Monday-Friday date. The counts come from the calendar, not from the bars in
 the data, so a missing bar does not shift them. The exchange calendar is
 published in advance, so the columns are unshifted: each refers to the bar's own
 trading date and is meant for a decision at that bar's close (``entry_delay=0``).
@@ -34,17 +34,23 @@ from fwbg_sdk import BaseIndicator, register_indicator
 TOM_COLUMNS = ["tom_day", "tom_days_left", "tom_entry_long", "tom_exit_long"]
 WEEKDAYS = "weekdays"
 CALENDARS = [WEEKDAYS, *sorted(holidays.list_supported_financial())]
+TRADING_WEEKMASKS = {"XSAU": "Sun Mon Tue Wed Thu"}
 
 
 def trading_days(calendar: str, first: pd.Timestamp, last: pd.Timestamp) -> pd.DatetimeIndex:
     """Trading dates of *calendar* covering the whole months from *first* to *last*."""
     start = first.normalize().replace(day=1)
     end = last.normalize() + pd.offsets.MonthEnd(0)
-    days = pd.bdate_range(start, end)
+    if calendar != WEEKDAYS and calendar not in CALENDARS:
+        raise ValueError(f"turn_of_month: unknown calendar {calendar!r}; use one of {CALENDARS}")
+    weekmask = TRADING_WEEKMASKS.get(calendar, "Mon Tue Wed Thu Fri")
+    days = pd.date_range(
+        start,
+        end,
+        freq=pd.offsets.CustomBusinessDay(weekmask=weekmask),
+    )
     if calendar == WEEKDAYS:
         return days
-    if calendar not in CALENDARS:
-        raise ValueError(f"turn_of_month: unknown calendar {calendar!r}; use one of {CALENDARS}")
     closed = holidays.financial_holidays(calendar, years=range(start.year, end.year + 1))
     return days[~days.isin(pd.DatetimeIndex(list(closed.keys())))]
 
@@ -59,6 +65,7 @@ class TurnOfMonthIndicator(BaseIndicator):
     benefits_from_stationary = False
 
     def compute(self, df: pd.DataFrame, **params) -> pd.DataFrame:
+        """Append trading-day positions and turn-of-month entry and exit flags."""
         p = {**self.get_default_params(), **params}
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("turn_of_month needs a DatetimeIndex")
@@ -83,17 +90,21 @@ class TurnOfMonthIndicator(BaseIndicator):
         return pd.concat([df, out], axis=1)
 
     def get_feature_columns(self, params=None) -> List[str]:
+        """Return the names of the indicator's feature columns."""
         return list(TOM_COLUMNS)
 
     def get_signal_columns(self, params=None) -> List[str]:
+        """Return the entry and exit signal column names."""
         return ["tom_entry_long", "tom_exit_long"]
 
     @classmethod
     def get_default_params(cls) -> dict:
+        """Return the default exchange calendar and turn-of-month window."""
         return {"calendar": "NYSE", "entry_days_left": 1, "exit_day": 3}
 
     @classmethod
     def get_param_schema(cls) -> dict:
+        """Describe the supported calendar and window parameters."""
         return {
             "calendar": {
                 "type": "choice",
