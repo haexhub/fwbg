@@ -32,6 +32,7 @@ SETTLEMENT_DAYS = (5, 10, 15, 20, 25)
 
 
 def _closed(day: pd.Timestamp, jp: holidays.HolidayBase) -> bool:
+    """Return whether *day* is not an open Japanese settlement day."""
     bank_closure = (day.month == 12 and day.day == 31) or (day.month == 1 and day.day <= 3)
     return day.dayofweek >= 5 or day in jp or bank_closure
 
@@ -44,7 +45,7 @@ def gotobi_dates(first: pd.Timestamp, last: pd.Timestamp) -> pd.DatetimeIndex:
     for start in months:
         days = [start.replace(day=k) for k in SETTLEMENT_DAYS]
         for day in [*days, start + pd.offsets.MonthEnd(0)]:
-            while _closed(day, jp) and day > start:
+            while _closed(day, jp):
                 day -= pd.Timedelta(days=1)
             if not _closed(day, jp):
                 out.add(day)
@@ -61,6 +62,7 @@ class GotobiIndicator(BaseIndicator):
     benefits_from_stationary = False
 
     def compute(self, df: pd.DataFrame, **params) -> pd.DataFrame:
+        """Append gotobi flags using each bar's Tokyo-local closing timestamp."""
         p = {**self.get_default_params(), **params}
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("gotobi needs a DatetimeIndex")
@@ -70,7 +72,12 @@ class GotobiIndicator(BaseIndicator):
             closes = (utc + pd.Timedelta(minutes=int(p["bar_minutes"]))).tz_convert(TOKYO)
             dates = closes.tz_localize(None).normalize()
             gotobi = dates.isin(gotobi_dates(dates.min(), dates.max()))
-            on_hour = closes.minute == 0
+            on_hour = (
+                (closes.minute == 0)
+                & (closes.second == 0)
+                & (closes.microsecond == 0)
+                & (closes.nanosecond == 0)
+            )
             out["gotobi_day"] = gotobi.astype(float)
             out["gotobi_entry"] = (gotobi & on_hour & (closes.hour == p["entry_hour"])).astype(
                 float
@@ -91,6 +98,7 @@ class GotobiIndicator(BaseIndicator):
 
     @classmethod
     def get_param_schema(cls) -> dict:
+        """Describe supported entry, exit, and bar-length parameters."""
         return {
             "entry_hour": {
                 "type": "int",

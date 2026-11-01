@@ -29,8 +29,9 @@ def test_settlement_days_roll_back_over_weekends_holidays_and_bank_closures():
     ]
     # 31 Dec is a bank closure; 2024-12-31 is a Tuesday -> 30th
     assert dates("2024-12-01", "2024-12-31")[-1] == "12-30"
-    # 5 January 2025 is a Sunday, 4th Saturday, 1st-3rd closed: no rollback into the closure
-    assert dates("2025-01-01", "2025-01-31")[0] == "01-10"
+    # 5 January 2025 is a Sunday; rollback crosses New Year's closure into December.
+    january_dates = mod.gotobi_dates(pd.Timestamp("2025-01-01"), pd.Timestamp("2025-01-31"))
+    assert january_dates[0] == pd.Timestamp("2024-12-30")
 
 
 def test_flags_follow_the_tokyo_close_of_each_bar():
@@ -43,6 +44,14 @@ def test_flags_follow_the_tokyo_close_of_each_bar():
     # the 23:00 UTC bar of the 14th closes at 09:00 on the 15th in Tokyo: a gotobi bar
     assert out.loc["2024-03-14 23:00", "gotobi_day"] == 1.0
     assert out.loc["2024-03-14 13:00", "gotobi_day"] == 0.0
+
+
+def test_entry_requires_an_exact_hour_close():
+    index = pd.DatetimeIndex(
+        ["2024-03-14 23:00:00", "2024-03-15 00:00:00", "2024-03-15 00:00:00.000000001"]
+    )
+    out = GotobiIndicator().compute(pd.DataFrame({"C": 1.0}, index=index))
+    assert out["gotobi_entry"].tolist() == [0.0, 1.0, 0.0]
 
 
 def test_hours_and_bar_length_are_parameters():
