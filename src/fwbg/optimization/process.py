@@ -572,7 +572,9 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 (ctx.signal_rules.get(d) or {}).get("conditions")
                 for d in ("long", "short")
             )
-            has_time_filter = bool(ctx.allowed_hours) or bool(ctx.allowed_days)
+            has_time_filter = (
+                bool(ctx.allowed_hours) or bool(ctx.allowed_days) or ctx.entry_hours is not None
+            )
             has_required_features = bool(strategy.model.required_features)
             if not (has_signal_rules or has_time_filter or has_required_features):
                 log(1, "SKIP - Signal model has no entry-signal source", sym)
@@ -583,7 +585,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                         "Signal model has no entry-signal source: needs "
                         "signal_rules with conditions, non-empty "
                         "model.required_features, or an allowed_hours/"
-                        "allowed_days time filter."
+                        "allowed_days/entry_hours time filter."
                     ),
                 }
                 return result

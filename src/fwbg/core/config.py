@@ -13,6 +13,7 @@ import logging
 import os
 
 from fwbg.core.presets import resolve_presets
+from fwbg.data.trading_hours import TradingHoursError, parse_trading_hours
 
 log = logging.getLogger(__name__)
 
@@ -256,6 +257,19 @@ class ValidationConfig:
         )
 
 
+def _entry_hours(value: Any) -> Any:
+    """``filters.entry_hours``: a session name, a valid session definition, or None."""
+    if value is None or (isinstance(value, str) and value.strip()):
+        return value
+    if isinstance(value, dict):
+        try:
+            parse_trading_hours(value)
+        except TradingHoursError as exc:
+            raise ValueError(f"filters.entry_hours: {exc}") from exc
+        return value
+    raise ValueError(f"filters.entry_hours must be a session name or a session definition, not {value!r}")
+
+
 @dataclass
 class FilterConfig:
     """Filter-Parameter für Strategie-Auswahl."""
@@ -268,6 +282,10 @@ class FilterConfig:
     min_fold_stability: float = 0.0
     allowed_hours: Optional[List[int]] = None
     allowed_days: Optional[List[int]] = None
+    # Entries only when the entry bar closes inside these hours: the name of one of
+    # the asset's sessions (e.g. "cash", see fwbg.data.trading_hours) or a session
+    # definition {"tz": ..., "windows": [...]}. Time zone and DST aware.
+    entry_hours: Optional[Any] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FilterConfig":
@@ -281,6 +299,7 @@ class FilterConfig:
             min_fold_stability=data.get("min_fold_stability", 0.0),
             allowed_hours=data.get("allowed_hours"),
             allowed_days=data.get("allowed_days"),
+            entry_hours=_entry_hours(data.get("entry_hours")),
         )
 
 
@@ -605,6 +624,7 @@ class StrategyConfig:
                 "max_drawdown": self.filters.max_drawdown,
                 **({"allowed_hours": self.filters.allowed_hours} if self.filters.allowed_hours else {}),
                 **({"allowed_days": self.filters.allowed_days} if self.filters.allowed_days else {}),
+                **({"entry_hours": self.filters.entry_hours} if self.filters.entry_hours else {}),
             },
             "hypothesis": self.hypothesis,
             "expected_outcome": self.expected_outcome,
