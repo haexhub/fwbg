@@ -7,6 +7,7 @@ EXECUTED_STATUSES = frozenset({"ok", "no_edge", "not_significant", "no_unified_t
 # Per-symbol statuses that end before a backtest was evaluated.
 NOT_EXECUTED_STATUSES = frozenset(
     {
+        "data_invalid",
         "error",
         "insufficient_data",
         "insufficient_data_for_folds",

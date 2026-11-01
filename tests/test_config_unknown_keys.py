@@ -60,6 +60,7 @@ def test_every_key_the_loader_reads_is_known(caplog):
         "holdout_cutoff": None,
         "cost_multiplier": 1.0,
         "financing_pct": 0.0,
+        "data_checks": "strict",
         "signal_rules": None,
         "hypothesis": "",
         "expected_outcome": "",
