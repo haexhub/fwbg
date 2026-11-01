@@ -58,3 +58,22 @@ A window opens on each listed day (`"Mon-Fri"`, `"Sun-Thu"`, `"Mon,Wed"`) at `st
 local time and closes at `end`, on the next day when `end` is not after `start`
 (`"17:00"` to `"17:00"` is 24 hours). Holidays and early closes are not modelled.
 Bar time stamps without a time zone are UTC and mark the bar's start.
+
+## Session bars
+
+Daily bars of one session (e.g. the US `cash` session 09:30-16:00 New York) are
+built from intraday bars by fwbg, not by hand:
+
+```
+python -m fwbg.cli data session-bars --input ~/fwbg/data/dukascopy/datasource/NAS100_MINUTE_15.csv \
+    --session cash --datasource dukascopy_cash
+```
+
+A source bar joins a session only when it lies entirely inside the session window
+(minutes of the week, so a bar just before midnight never passes for one before
+16:00). A session counts when its first bar starts at the open, its last bar ends
+at the close and at least half its bars exist; early closes and holes are dropped.
+Bars are labelled with the local date of the session close. The source passes the
+data checks first (filler bars dropped). Next to `NAS100_DAY_1.csv` the command
+writes `NAS100_DAY_1.session.json` (session, source, sessions seen and dropped,
+source checks) and a datasource `config.json` when there is none.
