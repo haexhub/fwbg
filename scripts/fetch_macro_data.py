@@ -25,13 +25,13 @@ HOURLY_TICKERS = {
     "VIX": "^VIX",
 }
 
-# Bond yields via FRED (daily/monthly, forward-filled to daily)
+# Bond yields via FRED (daily Treasury, monthly OECD)
 FRED_YIELD_SERIES = {
     # US Treasury yields (daily)
     "US2Y": "DGS2",             # US 2Y Treasury
     "US5Y": "DGS5",             # US 5Y Treasury
     "US30Y": "DGS30",           # US 30Y Treasury
-    # International yields (monthly, forward-filled)
+    # International yields (monthly OECD series with release dates)
     "DE10Y": "IRLTLT01DEM156N",  # Germany 10Y
     "JP10Y": "IRLTLT01JPM156N",  # Japan 10Y
     "GB10Y": "IRLTLT01GBM156N",  # UK 10Y
@@ -118,7 +118,7 @@ def _download_fred_yield(name, series_id):
         df.index.name = "Datetime"
         filename = f"{DATA_PATH}/{name}_DAY.csv"
         df.to_csv(filename)
-        print(f"    {len(df)} daily rows ({df.index[0].date()} to {df.index[-1].date()})")
+        print(f"    {len(df)} rows ({df.index[0].date()} to {df.index[-1].date()})")
     except Exception as e:
         print(f"    Error: {e}")
 

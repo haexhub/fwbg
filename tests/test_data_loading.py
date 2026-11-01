@@ -429,7 +429,6 @@ class TestRunDataLoading:
         from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
         # scripts/ is not on the import path.
         import sys
-        from pathlib import Path
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
         from fetch_macro_data import compute_oecd_release_date
 
