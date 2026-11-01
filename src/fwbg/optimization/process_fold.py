@@ -5,7 +5,9 @@ import time
 import numpy as np
 import pandas as pd
 
+from fwbg.data import config as data_config
 from fwbg.data.config import MIN_TRADES
+from fwbg_sdk.enums import Timeframe
 from fwbg.core.columns import named_columns
 from fwbg.core.config import RegimeFilterConfig
 from fwbg.pipeline import (
@@ -283,6 +285,12 @@ def _prepare_fold_common(fold, fold_indicators, precomputed_raw_df,
         time_conditions.append({"type": "hour_filter", "hours": ctx.allowed_hours})
     if getattr(ctx, "allowed_days", None):
         time_conditions.append({"type": "day_filter", "days": ctx.allowed_days})
+    if getattr(ctx, "entry_hours", None) is not None:
+        time_conditions.append({
+            "type": "session_filter",
+            "hours": ctx.entry_hours,
+            "bar_minutes": Timeframe.from_str(data_config.TIMEFRAME).minutes,
+        })
 
     # Compose signal rules + time filters into _composed_signal_long/short columns
     signal_rules = getattr(ctx, "signal_rules", None)
