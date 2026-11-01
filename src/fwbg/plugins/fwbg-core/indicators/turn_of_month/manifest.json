@@ -1,0 +1,7 @@
+{
+  "name": "turn_of_month",
+  "version": "1.0.0",
+  "description": "Trading day of the month and trading days left from an exchange holiday calendar, with turn-of-month entry and exit flags",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
