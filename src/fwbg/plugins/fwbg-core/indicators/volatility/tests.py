@@ -304,3 +304,27 @@ class TestVolatilityCompression:
         compress_rate = valid.mean()
         assert compress_rate < 0.5, \
             f"High volatility should rarely compress, got rate={compress_rate:.1%}"
+
+
+
+def test_rv_on_daily_bars_uses_days_and_annualises_with_252():
+    from fwbg.plugins import import_plugin_module
+    ind = import_plugin_module("fwbg-core", "indicators", "volatility").VolatilityIndicators()
+    rng = np.random.default_rng(0)
+    daily_ret = rng.normal(0, 0.01, 300)  # 1 % daily -> ~15.9 % annualised
+    close = 100 * np.exp(np.cumsum(daily_ret))
+    df = pd.DataFrame({"O": close, "H": close * 1.005, "L": close * 0.995, "C": close},
+                      index=pd.date_range("2024-01-01", periods=300, freq="B"))
+    rv = ind.compute(df, bars_per_day=1)["vol_rv_20"]
+    assert rv.iloc[:11].isna().all() and rv.iloc[12:].notna().all()  # 20-day window, half filled + shift
+    assert rv.iloc[50:].mean() == pytest.approx(100 * 0.01 * np.sqrt(252), rel=0.2)
+
+
+@pytest.mark.parametrize("bars_per_day", [0, -1, True, float("nan"), float("inf")])
+def test_rv_rejects_invalid_bars_per_day(bars_per_day):
+    from fwbg.plugins import import_plugin_module
+    ind = import_plugin_module("fwbg-core", "indicators", "volatility").VolatilityIndicators()
+    df = pd.DataFrame({"O": [1.0] * 30, "H": [1.1] * 30, "L": [0.9] * 30, "C": [1.0] * 30},
+                      index=pd.date_range("2024-01-01", periods=30, freq="B"))
+    with pytest.raises(ValueError, match="bars_per_day"):
+        ind.compute(df, bars_per_day=bars_per_day)
