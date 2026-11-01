@@ -1,0 +1,7 @@
+{
+  "name": "zscore",
+  "version": "1.0.0",
+  "description": "Rolling z-score of the (log) close against its mean, with back-to-mean exit flags",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
