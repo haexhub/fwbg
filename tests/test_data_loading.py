@@ -421,6 +421,49 @@ class TestRunDataLoading:
         finally:
             del _DATA_SOURCES["_test_release"]
 
+    def test_oecd_monthly_bar_sees_nan_until_release_buffer(self, tmp_path):
+        """OECD-style monthly rows (stamped with the reference month's first
+        day) must stay invisible until ``release_date``, not be forward-filled
+        from the observation date."""
+        from fwbg.data.loader import run_data_loading
+        from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
+        # scripts/ is not on the import path.
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+        from fetch_macro_data import compute_oecd_release_date
+
+        obs = pd.to_datetime(["2024-01-01", "2024-02-01"])
+        pd.DataFrame({
+            "Datetime": obs,
+            "Close": [2.0, 2.5],
+            "release_date": [compute_oecd_release_date(d) for d in obs],
+        }).to_csv(tmp_path / "DE10Y_DAY.csv", index=False)
+        register_csv_source(name="_test_oecd", path=tmp_path)
+
+        try:
+            df = pd.DataFrame(
+                {"O": 1.0, "C": 1.0},
+                index=pd.date_range("2024-01-01", "2024-05-31", freq="D"),
+            )
+            configs = [{
+                "source": "_test_oecd",
+                "params": {"indicators": {"DE10Y_DAY": "de10y"}},
+            }]
+            result = run_data_loading(df, configs)["macro_de10y"]
+
+            # Mid reference month and the weeks after: nothing published yet.
+            assert pd.isna(result.loc["2024-01-15"])
+            assert pd.isna(result.loc["2024-02-15"])
+            assert pd.isna(result.loc["2024-03-26"])  # day before Jan release
+            # Jan release = Jan 31 + 8w = 2024-03-27 21:00 UTC.
+            assert result.loc["2024-03-28"] == 2.0
+            assert result.loc["2024-04-24"] == 2.0
+            # Feb release = Feb 29 + 8w = 2024-04-25 21:00 UTC.
+            assert result.loc["2024-04-26"] == 2.5
+        finally:
+            del _DATA_SOURCES["_test_oecd"]
+
 
 # ============================================================================
 # Step 7: StrategyConfig.get_data_loading()
