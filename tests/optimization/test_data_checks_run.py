@@ -43,6 +43,22 @@ def test_warn_mode_runs_without_the_filler_bars_and_keeps_the_report(weekend_dat
     assert [f["code"] for f in report["infos"]][0] == "filler_bars_dropped"
 
 
+def test_data_loading_replacement_preserves_the_data_check_report(weekend_data, monkeypatch):
+    monkeypatch.setattr(
+        process,
+        "run_data_loading",
+        lambda df, configs: pd.DataFrame({"C": df["C"]}, index=df.index),
+    )
+    strategy = StrategyConfig(
+        data_checks="warn",
+        pipeline={"data_loading": [{"name": "test_loader"}]},
+    )
+
+    df = load_symbol_frame("EURUSD_HOUR_1.csv", strategy, "EURUSD")
+
+    assert df.attrs["data_checks"]["errors"][0]["code"] == "outside_trading_hours"
+
+
 def test_off_mode_leaves_the_data_alone(weekend_data):
     df = load_symbol_frame("EURUSD_HOUR_1.csv", StrategyConfig(data_checks="off"), "EURUSD")
     pd.testing.assert_frame_equal(df, around_the_clock())

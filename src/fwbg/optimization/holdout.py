@@ -282,4 +282,6 @@ def _not_evaluated(
     }
     if status is None and "error" in development:
         result["error"] = development["error"]
+    if status is None and "data_checks" in development:
+        result["data_checks"] = development["data_checks"]
     return result
