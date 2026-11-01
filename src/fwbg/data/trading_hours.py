@@ -56,14 +56,16 @@ class TradingHours:
     tz: str
     windows: tuple[Window, ...]
 
-    def open_minutes(self, starts: pd.DatetimeIndex, bar_minutes: int) -> np.ndarray:
-        """Minutes of each bar ``[start, start + bar_minutes)`` the session is open.
-
-        Naive timestamps are UTC, as fwbg stores them.
-        """
+    def _week_minutes(self, starts: pd.DatetimeIndex) -> tuple[pd.DatetimeIndex, np.ndarray]:
+        """Local start times and their minute of the week. Naive timestamps are UTC."""
         idx = starts if starts.tz is not None else starts.tz_localize("UTC")
         local = idx.tz_convert(self.tz)
         m0 = np.asarray(local.dayofweek * 1440 + local.hour * 60 + local.minute, dtype=np.int64)
+        return local, m0
+
+    def open_minutes(self, starts: pd.DatetimeIndex, bar_minutes: int) -> np.ndarray:
+        """Minutes of each bar ``[start, start + bar_minutes)`` the session is open."""
+        _, m0 = self._week_minutes(starts)
         m1 = m0 + bar_minutes
         total = np.zeros(len(m0), dtype=np.int64)
         for window in self.windows:
@@ -73,6 +75,30 @@ class TradingHours:
                         np.minimum(m1, end + shift) - np.maximum(m0, start + shift), 0, None
                     )
         return np.minimum(total, bar_minutes)
+
+    def session_bounds(
+        self, starts: pd.DatetimeIndex, bar_minutes: int
+    ) -> tuple[pd.DatetimeIndex, pd.DatetimeIndex]:
+        """Local open and close of the session each bar lies in entirely; NaT for other bars.
+
+        Works on minutes of the week, never on clock times, so a bar just before
+        midnight cannot pass for one inside a window that ends in the afternoon.
+        """
+        local, m0 = self._week_minutes(starts)
+        m1 = m0 + bar_minutes
+        offset = np.full(len(m0), -1, dtype=np.int64)  # minutes since the session opened
+        length = np.zeros(len(m0), dtype=np.int64)
+        for window in self.windows:
+            for start, end in window.intervals():
+                for shift in (-WEEK_MINUTES, 0, WEEK_MINUTES):
+                    inside = (offset < 0) & (m0 >= start + shift) & (m1 <= end + shift)
+                    offset[inside] = m0[inside] - start - shift
+                    length[inside] = end - start
+        naive = local.tz_localize(None).floor("min")
+        found = offset >= 0
+        opens = pd.DatetimeIndex(np.where(found, naive - pd.to_timedelta(offset, "min"), pd.NaT))
+        closes = pd.DatetimeIndex(np.where(found, opens + pd.to_timedelta(length, "min"), pd.NaT))
+        return opens, closes
 
     def overlaps(self, starts: pd.DatetimeIndex, bar_minutes: int) -> np.ndarray:
         """True for each bar that is open for at least one minute."""
