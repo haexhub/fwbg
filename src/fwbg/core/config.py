@@ -406,6 +406,9 @@ class StrategyConfig:
     hypothesis: str = ""
     expected_outcome: str = ""
 
+    def __post_init__(self) -> None:
+        self.financing_pct = _financing_pct(self.financing_pct)
+
     # Top-level keys from_dict reads; underscore keys are free-form metadata.
     KNOWN_KEYS = frozenset({
         "name", "description", "tags", "pipeline", "exit_strategies",
