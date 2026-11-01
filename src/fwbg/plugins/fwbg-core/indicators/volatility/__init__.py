@@ -4,6 +4,7 @@ Volatility Indicator Plugin.
 Enthält: ATR, Bollinger Bands, Keltner Channel, Donchian Channel,
 Garman-Klass, Parkinson, Yang-Zhang Volatility Estimators.
 """
+import math
 from typing import List
 import numpy as np
 import pandas as pd
@@ -187,7 +188,12 @@ class VolatilityIndicators(BaseIndicator):
         # rv_window counts days; bars_per_day converts it to bars and annualises
         # (24 = hourly bars around the clock, 1 = daily or session bars).
         bars_per_day = params.get("bars_per_day", 24)
-        if not isinstance(bars_per_day, (int, float)) or bars_per_day <= 0:
+        if (
+            isinstance(bars_per_day, bool)
+            or not isinstance(bars_per_day, (int, float))
+            or not math.isfinite(bars_per_day)
+            or bars_per_day <= 0
+        ):
             raise ValueError(f"volatility: bars_per_day must be a positive number, not {bars_per_day!r}")
         rv_bars = max(2, int(round(rv_window * bars_per_day)))
         log_returns = np.log(df["C"] / (df["C"].shift(1) + EPSILON))
