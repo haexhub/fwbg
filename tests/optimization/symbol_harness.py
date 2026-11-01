@@ -31,6 +31,9 @@ METADATA = {
     "model": {"type": "xgboost"},
     "validation": {"folds": 4},
     "exit_strategies": [{"name": "atr_based", "params": {"tp_mult": 2.0, "sl_mult": 1.0}}],
+    # The synthetic hours run around the clock (weekends included); the harness
+    # tests the orchestration, not the data, so the forex-hours check is off.
+    "data_checks": "off",
 }
 STRATEGY = StrategyConfig.from_dict(METADATA)
 WINNING = [(2.0, 1.0)] * 12 + [(-1.0, 0.0)] * 8  # per fold, (pnl_raw, result): WR 0.6
