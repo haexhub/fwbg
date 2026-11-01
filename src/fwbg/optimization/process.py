@@ -439,6 +439,7 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
 
     log(2, f"Daten geladen: {len(df)} Zeilen ({time.time()-t0:.1f}s)", sym)
     df = _checked(df, strategy, sym)
+    data_checks = df.attrs.get("data_checks")
 
     # === DATA LOADING (generic orchestrator) ===
     data_loading_configs = strategy.get_data_loading()
@@ -447,6 +448,8 @@ def load_symbol_frame(csv_path: str, strategy: StrategyConfig, sym: str) -> pd.D
         report_phase(sym, "Data Loading...")
         df = run_data_loading(df, data_loading_configs)
         log(2, f"Data Loading abgeschlossen ({time.time()-t0:.1f}s)", sym)
+    if data_checks is not None:
+        df.attrs["data_checks"] = data_checks
     return df
 
 

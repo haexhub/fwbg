@@ -207,6 +207,18 @@ def test_no_data_after_the_cutoff_is_not_evaluated(monkeypatch):
     assert calls == []
 
 
+def test_development_data_check_report_survives_an_unevaluated_holdout():
+    report = {"symbol": "EURUSD", "errors": [{"code": "outside_trading_hours"}]}
+
+    result = holdout._not_evaluated(
+        {"symbol": "EURUSD", "status": "data_invalid", "data_checks": report},
+        CUTOFF,
+        "development ended in data_invalid",
+    )
+
+    assert result["data_checks"] == report
+
+
 def test_embargo_without_training_bars_is_not_evaluated(monkeypatch):
     frame = hourly_frame()
     strategy = replace(LOOK, validation=ValidationConfig(embargo_bars=len(frame)))
