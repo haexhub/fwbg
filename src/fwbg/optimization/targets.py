@@ -376,6 +376,7 @@ def simulate_trades(
                 scale_levels=scale_levels,
                 scale_qty_mult=scale_qty_mult,
                 exit_signal=exit_signal_long if direction == 1 else exit_signal_short,
+                financing_rate=getattr(ctx, "financing_rate", 0.0),
             )
             if trade:
                 t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"],
