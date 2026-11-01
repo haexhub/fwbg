@@ -343,6 +343,36 @@ class TestRunDataLoading:
         finally:
             del _DATA_SOURCES["_test_bias"]
 
+    def test_monday_bars_see_fridays_close(self, tmp_path):
+        """A bar sees the last close on or before the previous calendar day: on a
+        Monday that is Friday's close, not Thursday's (no weekend rows in the series)."""
+        from fwbg.data.loader import run_data_loading
+        from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
+
+        pd.DataFrame({
+            "Date": ["2024-01-04", "2024-01-05", "2024-01-08", "2024-01-09"],  # Thu, Fri, Mon, Tue
+            "Close": [4.0, 5.0, 8.0, 9.0],
+        }).to_csv(tmp_path / "TEST_DAY.csv", index=False)
+        register_csv_source(name="_test_monday", path=tmp_path)
+
+        try:
+            daily = pd.DataFrame(
+                {"O": np.ones(4), "C": np.ones(4)},
+                index=pd.DatetimeIndex(["2024-01-04", "2024-01-05", "2024-01-08", "2024-01-09"]),
+            )
+            configs = [{"source": "_test_monday", "params": {"indicators": {"TEST_DAY": "test"}}}]
+            result = run_data_loading(daily, configs)
+            assert np.isnan(result["macro_test"].iloc[0])  # nothing before Thursday
+            assert result["macro_test"].tolist()[1:] == [4.0, 5.0, 8.0]
+
+            hourly = pd.DataFrame(
+                {"O": np.ones(3), "C": np.ones(3)},
+                index=pd.DatetimeIndex(["2024-01-08 00:00", "2024-01-08 15:00", "2024-01-09 09:00"]),
+            )
+            assert run_data_loading(hourly, configs)["macro_test"].tolist() == [5.0, 5.0, 8.0]
+        finally:
+            del _DATA_SOURCES["_test_monday"]
+
     @pytest.mark.parametrize("stamp", ["T22:00:00", "T00:00:00-05:00"])
     def test_macro_dates_with_time_or_timezone_still_align(self, tmp_path, stamp):
         """Daily rows stamped with a time of day or an offset keep their date."""
