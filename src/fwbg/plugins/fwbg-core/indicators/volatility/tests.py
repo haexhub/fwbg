@@ -320,10 +320,11 @@ def test_rv_on_daily_bars_uses_days_and_annualises_with_252():
     assert rv.iloc[50:].mean() == pytest.approx(100 * 0.01 * np.sqrt(252), rel=0.2)
 
 
-def test_rv_rejects_a_non_positive_bars_per_day():
+@pytest.mark.parametrize("bars_per_day", [0, -1, True, float("nan"), float("inf")])
+def test_rv_rejects_invalid_bars_per_day(bars_per_day):
     from fwbg.plugins import import_plugin_module
     ind = import_plugin_module("fwbg-core", "indicators", "volatility").VolatilityIndicators()
     df = pd.DataFrame({"O": [1.0] * 30, "H": [1.1] * 30, "L": [0.9] * 30, "C": [1.0] * 30},
                       index=pd.date_range("2024-01-01", periods=30, freq="B"))
     with pytest.raises(ValueError, match="bars_per_day"):
-        ind.compute(df, bars_per_day=0)
+        ind.compute(df, bars_per_day=bars_per_day)
