@@ -1,0 +1,7 @@
+{
+  "name": "ibs",
+  "version": "1.0.0",
+  "description": "Internal bar strength (close location within the bar's range) with down-close and close-above-previous-high flags",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}

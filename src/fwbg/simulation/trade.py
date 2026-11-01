@@ -321,13 +321,23 @@ def resolve_tp_sl_collision_m15(symbol, hour_timestamp, direction, tp, sl):
     return resolve_tp_sl_collision(symbol, hour_timestamp, direction, tp, sl)
 
 
+def _financing_cost(notional, rate, timestamps, entry_idx, exit_idx):
+    """Overnight financing in price units: *notional* x *rate* p.a. per calendar night held."""
+    if rate <= 0.0 or timestamps is None:
+        return 0.0
+    entry_day = np.datetime64(timestamps[entry_idx], "D")
+    exit_day = np.datetime64(timestamps[exit_idx], "D")
+    nights = int((exit_day - entry_day) / np.timedelta64(1, "D"))
+    return notional * rate * nights / 365.0
+
+
 def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_distance, spread,
                        max_bars=None, timestamps=None, symbol=None,
                        opens=None, timeout_bars=None, in_session=None,
                        sl_level_abs=None, entry_delay=1,
                        breakeven_trigger=0.0, trail_distance=0.0,
                        scale_levels=None, scale_qty_mult=1.0, sl_level_mult=1.0,
-                       exit_signal=None):
+                       exit_signal=None, financing_rate=0.0):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
@@ -378,6 +388,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         exit_signal: Optional - per-bar Flags der Strategie-Regel; ein gesetztes
             Flag schließt den Trade zum Close dieses Bars (nach TP/SL und Timeout,
             ``exit_reason="exit_signal"``). None = keine Regel-Exits.
+        financing_rate: Overnight-Finanzierung als Anteil p. a. des Entry-Preises,
+            je Kalendernacht zwischen Entry- und Exit-Datum (braucht ``timestamps``);
+            mindert ``pnl_raw`` vor der Win/Loss-Entscheidung. 0.0 = keine.
 
     Returns:
         dict mit Trade-Details (bei Datenende zum letzten Close, sonst bei
@@ -443,6 +456,14 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
 
         # avg_price == entry and total_qty == 1 without scale-in
         pnl_raw = _pnl(direction, exit_price, avg_price, total_qty)
+        if use_scale_in:
+            financing = sum(
+                _financing_cost(price * quantity, financing_rate, timestamps, fill_idx, exit_idx)
+                for price, quantity, fill_idx in positions
+            )
+        else:
+            financing = _financing_cost(avg_price * total_qty, financing_rate, timestamps, entry_idx, exit_idx)
+        pnl_raw -= financing
 
         # Breakeven-stop exits where the trailing SL barely moved above entry
         # produce near-zero pnl_raw (floating-point noise, e.g. 7e-8) and
@@ -479,6 +500,7 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             "tp_distance": float(tp_distance),
             "sl_distance": float(abs(entry - sl)) if sl_level_abs is not None else float(sl_distance),
             "pnl_raw": float(pnl_raw),
+            "financing": float(financing),
             "mae": float(-_pnl(direction, adverse_price, entry, 1.0)),
             "mfe": float(_pnl(direction, favorable_price, entry, 1.0)),
         }
