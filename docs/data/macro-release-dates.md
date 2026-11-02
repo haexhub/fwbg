@@ -47,8 +47,9 @@ forward-leak source.  Negligible in most backtests, but not zero.
 
 `src/fwbg/data/loader.py` exposes the release-date contract only when a
 source CSV carries the `release_date` column.  Sources that do not
-(everything except COT today) keep the legacy 1-calendar-day shift via
-`prev_date.map()`.  A future task is to extend the `DataSource` interface
+(everything except COT today) keep the legacy 1-calendar-day shift: a bar
+sees the last close dated on or before the previous calendar day (as of), so
+a Monday bar sees Friday's close.  A future task is to extend the `DataSource` interface
 to surface release dates uniformly so the legacy fallback can be retired.
 
 ### Bar-clock vs. release-clock skew
