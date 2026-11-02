@@ -841,7 +841,7 @@ wheels = [
 
 [[package]]
 name = "fwbg"
-version = "2.20.4"
+version = "2.21.0"
 source = { editable = "." }
 dependencies = [
     { name = "dukascopy-python" },
