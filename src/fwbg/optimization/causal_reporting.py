@@ -113,6 +113,7 @@ def slim_trades(trades_detailed) -> List[Dict[str, Any]]:
             "entry_time": t.get("entry_time"),
             "exit_time": t.get("exit_time"),
             "direction": t.get("direction"),
+            "entry_price": t.get("entry_price"),
             "result": t.get("result"),
             "pnl_raw": t.get("pnl_raw"),
             "exit_reason": t.get("exit_reason"),

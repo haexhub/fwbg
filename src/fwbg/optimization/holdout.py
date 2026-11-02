@@ -133,9 +133,52 @@ def development_summary(development: dict) -> dict:
 
 
 def _evaluate(csv_path: str, strategy: StrategyConfig, development: dict) -> dict:
-    sym = development["symbol"]
+    run = _run_frozen(csv_path, strategy, development)
+    if isinstance(run, dict):
+        return run
+    fold, evaluation, embargo = run
+    holdout = _look(fold, evaluation, strategy.holdout_cutoff, embargo)
+    try:
+        return _holdout_result(development, evaluation, fold, holdout)
+    except Exception as exc:  # the holdout trades exist: the data was looked at
+        return _failed(development, holdout, exc)
+
+
+def frozen_trades_after_cutoff(
+    csv_path: str, strategy: StrategyConfig, development: dict
+) -> tuple[dict, list[dict]] | dict:
+    """Evaluate *development*'s frozen setting once on [cutoff, end), unsized.
+
+    For a portfolio holdout: the sleeve's own development status does not gate the
+    look (the portfolio is the hypothesis), only a frozen setting must exist.
+    Returns ``(look, trades)`` with the slim trades after the cutoff, or a
+    not-evaluated result.
+    """
+    if not development.get("unified_candidate"):
+        return _not_evaluated(
+            development,
+            strategy.holdout_cutoff,
+            f"no frozen setting (development ended in {development.get('status')})",
+        )
+    run = _run_frozen(csv_path, strategy, development)
+    if isinstance(run, dict):
+        return run
+    fold, evaluation, embargo = run
+    look = _look(fold, evaluation, strategy.holdout_cutoff, embargo)
+    detailed = evaluation.get("trades_detailed") or []
+    if len(detailed) != len(evaluation["trades"]):
+        raise ValueError("holdout trades without details; cannot date them")
+    return look, slim_trades(detailed)
+
+
+def _run_frozen(
+    csv_path: str, strategy: StrategyConfig, development: dict
+) -> tuple[WalkForwardFold, dict, int] | dict:
+    """Simulate the frozen setting on [cutoff, end): ``(fold, evaluation, embargo)`` or a
+    not-evaluated result."""
     cutoff = strategy.holdout_cutoff
-    df = load_symbol_frame(csv_path, strategy, sym)
+    df = load_symbol_frame(csv_path, strategy, development["symbol"])
+    sym = development["symbol"]
     n_dev = 0 if df is None else int(df.index.searchsorted(pd.Timestamp(cutoff)))
     if df is None or n_dev == len(df):
         return _not_evaluated(development, cutoff, "no data after the cutoff", status="no_data")
@@ -168,11 +211,7 @@ def _evaluate(csv_path: str, strategy: StrategyConfig, development: dict) -> dic
         return _not_evaluated(
             development, cutoff, "holdout window too short to evaluate", status="insufficient_data"
         )
-    holdout = _look(fold, evaluations[0], cutoff, ctx.embargo_bars)
-    try:
-        return _holdout_result(development, evaluations[0], fold, holdout)
-    except Exception as exc:  # the holdout trades exist: the data was looked at
-        return _failed(development, holdout, exc)
+    return fold, evaluations[0], ctx.embargo_bars
 
 
 def _variant(strategy: StrategyConfig, label: str | None) -> StrategyConfig:

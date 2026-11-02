@@ -3,7 +3,6 @@ Hauptprogramm für den Walk-Forward Optimizer
 """
 
 import os
-import glob
 import json
 import math
 import warnings
@@ -37,11 +36,11 @@ class _SafeJsonEncoder(json.JSONEncoder):
         return obj
 
 
-from fwbg_sdk.enums import Timeframe  # noqa: E402
 from fwbg.statuses import EXECUTED_STATUSES  # noqa: E402
 from fwbg.data import config as data_config  # noqa: E402
 from fwbg.core.config import StrategyConfig  # noqa: E402
 from fwbg.optimization.holdout import symbol_worker  # noqa: E402
+from fwbg.optimization.run_files import select_run_files  # noqa: E402
 from fwbg.utils.progress import ProgressTracker, init_progress_queue, report_result  # noqa: E402
 from fwbg.results.storage import (  # noqa: E402
     generate_run_id,
@@ -126,95 +125,10 @@ def run_optimizer(
               "not by the strategy; refusing an ungated holdout look.")
         return None
 
-    # Datasource aus Strategy (Data-Source-Registry); CLI --data-path hat höchste Priorität
-    data_config.use_data_path(
-        strategy.datasource, (strategy_metadata or {}).get("_cli_data_path")
-    )
-
-    # Timeframe aus Strategy übernehmen (überschreibt Modul-Globals)
-    if strategy.timeframe:
-        # Auf die kanonische Langform normalisieren (HOUR_1, DAY_1, …), damit
-        # Config-Lookup, Datei-Globbing und die Worker denselben String sehen.
-        # Eine unbekannte Bezeichnung soll laut scheitern statt still auf HOUR
-        # zurückzufallen (der frühere Fallback ließ DAY_1 mit oos_size=4000 laufen
-        # → 49500 Balken nötig → jeder Run brach als insufficient_data ab).
-        tf = Timeframe.from_str(strategy.timeframe).canonical
-        # CRITICAL: also set the env var, not just the module globals. Optimizer
-        # workers run in a ProcessPoolExecutor; on Python 3.14 the default start
-        # method is "forkserver" (not "fork"), so workers re-import data_config
-        # fresh and would otherwise fall back to the HOUR defaults — inflating
-        # test_period_years ~4x and halving the annualized Sharpe on M15. The
-        # re-import reads TIMEFRAME from the environment, so propagate it there.
-        os.environ["TIMEFRAME"] = tf
-        data_config.TIMEFRAME = tf
-        tf_cfg = data_config.resolve_tf_config(tf)
-        data_config.tf_cfg = tf_cfg
-        data_config.OOS_SIZE = tf_cfg["oos_size"]
-        data_config.WINDOW_SIZE = tf_cfg["window_size"]
-
-    # Prüfe ob DATA_PATH gesetzt ist
-    if not data_config.DATA_PATH:
-        print("Fehler: Kein Datenpfad konfiguriert!")
-        print("Bitte 'datasource' in der Strategy setzen oder --data-path übergeben.")
+    files = select_run_files(strategy, strategy_metadata, asset_filter)
+    if files is None:
         return None
-
-    # Lade nur Dateien für das gewählte Timeframe
-    files = sorted(glob.glob(f"{data_config.DATA_PATH}/*_{data_config.TIMEFRAME}.csv"))
-
-    # Fallback: resample from a lower timeframe if no files found
-    source_tf = None
-    if not files:
-        from fwbg.data.resample import find_fallback_files
-        files, source_tf = find_fallback_files(data_config.DATA_PATH, data_config.TIMEFRAME)
-        if files:
-            print(f"No {data_config.TIMEFRAME} files found — will resample from {source_tf}")
-    # Like TIMEFRAME above: workers re-import data_config, so the env carries it.
-    data_config.RESAMPLE_FROM = source_tf
-    if source_tf:
-        os.environ["RESAMPLE_FROM"] = source_tf
-    else:
-        os.environ.pop("RESAMPLE_FROM", None)
-
-    # Strategy-Metadaten auswerten für Filter
-    if strategy_metadata:
-        # Assets aus Strategy
-        strat_assets = strategy_metadata.get("assets", {})
-        if strat_assets:
-            # Filter: nur diese Assets
-            if strat_assets.get("filter"):
-                asset_filter = asset_filter or []
-                asset_filter.extend(strat_assets["filter"])
-            # Exclude: diese Assets ausschließen
-            if strat_assets.get("exclude"):
-                exclude_assets = strat_assets["exclude"]
-                files = [f for f in files if not any(a in f for a in exclude_assets)]
-            # Classes: nur bestimmte Asset-Klassen
-            if strat_assets.get("classes"):
-                from fwbg.data.assets import AssetRegistry
-                ASSET_CONFIG = AssetRegistry.DEFAULT_ASSETS
-
-                allowed_classes = strat_assets["classes"]
-                files = [
-                    f
-                    for f in files
-                    if any(
-                        ASSET_CONFIG.get(os.path.basename(f).split("_")[0], {}).get(
-                            "class"
-                        )
-                        in allowed_classes
-                        for _ in [1]
-                    )
-                ]
-
     max_concurrent_assets = strategy.resources.max_concurrent_assets
-
-    # Filter nach bestimmten Assets wenn angegeben
-    if asset_filter:
-        files = [f for f in files if any(a in f for a in asset_filter)]
-    if not files:
-        print(f"Keine Dateien für Timeframe {data_config.TIMEFRAME} gefunden!")
-        print(f"Verfügbare Dateien: {glob.glob(f'{data_config.DATA_PATH}/*.csv')[:5]}...")
-        return None
 
     # Research gate: needs the concrete symbols and runs before anything is written.
     if before_run is not None:
@@ -930,6 +844,12 @@ def main():
         from fwbg.portfolio.cli import main as portfolio_main
 
         portfolio_main(sys.argv[2:])
+        return
+
+    if len(sys.argv) > 1 and sys.argv[1] == "combine":
+        from fwbg.cli.combine import main as combine_main
+
+        combine_main(sys.argv[2:])
         return
 
     if len(sys.argv) > 1 and sys.argv[1] == "research":
