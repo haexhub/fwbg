@@ -71,9 +71,10 @@ def event_dates(
     column and ``OSError`` on an unreadable file."""
     file = Path(path).expanduser()
     events = _read_events(str(file), file.stat().st_mtime)
-    for column in (date_column, filter_column):
-        if column and column not in events.columns:
-            raise ValueError(f"scheduled_events: column {column!r} not in {file}")
+    if not date_column or date_column not in events.columns:
+        raise ValueError(f"scheduled_events: column {date_column!r} not in {file}")
+    if filter_column and filter_column not in events.columns:
+        raise ValueError(f"scheduled_events: column {filter_column!r} not in {file}")
     if filter_column:
         events = events[events[filter_column].isin(list(filter_values))]
     dates = pd.to_datetime(events[date_column], errors="coerce").dropna()
@@ -107,7 +108,8 @@ class ScheduledEventsIndicator(BaseIndicator):
             # Include a following month so a closed date at month end (for
             # example, a Sunday event) can map to its next trading day.
             last += pd.offsets.MonthEnd(1)
-            days = _trading_days(p["calendar"], dates.min(), last)
+            prior_month_end = dates.min().replace(day=1) - pd.Timedelta(days=1)
+            days = _trading_days(p["calendar"], prior_month_end, last)
             # an event or a bar on a closed day counts from the next trading day
             event_pos = np.unique(days.searchsorted(events[events >= days[0]], side="left"))
             event_pos = event_pos[event_pos < len(days)]
