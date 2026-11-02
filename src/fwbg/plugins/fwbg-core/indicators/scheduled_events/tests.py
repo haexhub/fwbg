@@ -49,6 +49,15 @@ def test_first_row_is_nan(events):
     assert out["evt_days_ahead"].iloc[1] == 5.0  # Jan 3 -> Jan 10
 
 
+def test_event_on_closed_day_before_first_trading_day_maps_forward(tmp_path):
+    path = tmp_path / "events.csv"
+    pd.DataFrame({"date": ["2024-01-01"]}).to_csv(path, index=False)  # NYSE holiday
+
+    out = compute(["2024-01-02"], events_file=str(path))
+
+    assert out["evt_days_ahead"].iloc[0] == 0.0
+
+
 def test_days_ahead_counts_exchange_trading_days(events):
     # Jan 15 2024 (MLK day) is an NYSE holiday: from Jan 12 to Jan 25 are 8 trading days
     out = compute(["2024-01-10", "2024-01-11", "2024-01-12"], events_file=events)
@@ -99,7 +108,7 @@ def test_month_end_event_on_closed_day_maps_to_next_month_trading_day(tmp_path):
 
     out = compute(["2024-03-28"], events_file=str(path))
 
-    assert out["evt_days_ahead"].iloc[0] == 2.0  # Mar 29 and Apr 1
+    assert out["evt_days_ahead"].iloc[0] == 1.0  # Mar 29 is an NYSE holiday; next day is Apr 1
 
 
 def test_no_later_event_is_nan(events):
@@ -108,7 +117,8 @@ def test_no_later_event_is_nan(events):
 
 
 @pytest.mark.parametrize(
-    "params", [{}, {"events_file": "/nonexistent/events.csv"}, {"date_column": "when"}]
+    "params",
+    [{}, {"events_file": "/nonexistent/events.csv"}, {"date_column": "when"}, {"date_column": ""}],
 )
 def test_missing_file_or_column_warns_and_gives_nan(events, caplog, params):
     params = {"events_file": events, **params} if "events_file" not in params and params else params
