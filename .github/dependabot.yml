@@ -16,6 +16,10 @@ updates:
       prefix: "chore(deps)"
     labels:
       - "dependencies"
+    ignore:
+      # Skip 5.0.0 until the adapter supports Dukascopy 5.x; allow later 5.x releases.
+      - dependency-name: "dukascopy-python"
+        versions: ["5.0.0"]
     groups:
       ml:
         patterns:
