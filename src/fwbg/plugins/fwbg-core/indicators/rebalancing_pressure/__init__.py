@@ -70,6 +70,7 @@ class RebalancingPressureIndicator(BaseIndicator):
             last_pos = pd.Series(np.arange(len(days)), index=days).groupby(months).max()
             bar_months = dates.to_period("M")
             pos = days.searchsorted(dates, side="right") - 1
+            is_trading_day = days.get_indexer(dates) >= 0
             days_left = last_pos.reindex(bar_months).to_numpy() - pos
             is_first = dates == first_day.reindex(bar_months).to_numpy()
             month_key = pd.Series(bar_months, index=df.index)
@@ -83,11 +84,11 @@ class RebalancingPressureIndicator(BaseIndicator):
                 return ret.mean(axis=1)
 
             drift = mtd(stocks) - mtd(bonds)
-            entry_bar = days_left == p["entry_days_left"]
+            entry_bar = is_trading_day & (days_left == p["entry_days_left"])
             out["rebal_drift"] = drift
             out["rebal_entry_long"] = (entry_bar & (drift < -p["threshold"])).astype(float)
             out["rebal_entry_short"] = (entry_bar & (drift > p["threshold"])).astype(float)
-            out["rebal_exit"] = (days_left == 0).astype(float)
+            out["rebal_exit"] = (is_trading_day & (days_left == 0)).astype(float)
         if len(out):
             out.iloc[0] = np.nan  # indicator contract: the first row is NaN
         return pd.concat([df, out], axis=1)

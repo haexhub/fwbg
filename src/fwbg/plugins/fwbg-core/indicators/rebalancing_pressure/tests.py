@@ -48,6 +48,16 @@ def test_entry_three_trading_days_before_the_holiday_shortened_month_end():
     ]  # 02-29 is the first row (NaN)
 
 
+def test_weekend_bars_do_not_repeat_month_end_signals():
+    df = frame(np.full(len(MARCH), 100.0), np.full(len(MARCH), 50.0))
+    weekend = pd.DataFrame(
+        {"C": 1.0, "macro_spy": 100.0, "macro_tlt": 50.0, "macro_ief": 50.0},
+        index=pd.DatetimeIndex(["2024-03-30", "2024-03-31"]),
+    )
+    out = run(pd.concat([df, weekend]).sort_index())
+    assert list(out.index[out["rebal_exit"] == 1].strftime("%Y-%m-%d")) == ["2024-03-28"]
+
+
 def test_long_entry_below_threshold_and_none_inside_it():
     n = len(MARCH)
     falling = run(frame(np.full(n, 100.0), np.r_[50.0, np.full(n - 1, 52.0)]))  # bonds +4 %
