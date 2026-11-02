@@ -1,0 +1,7 @@
+{
+  "name": "scheduled_events",
+  "version": "1.0.0",
+  "description": "Exchange trading days to the next event of a dated events file, with a window flag a set number of trading days before the events",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
