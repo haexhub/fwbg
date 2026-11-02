@@ -222,7 +222,7 @@ class TestSharedHelpers:
         assert thin["equity_points"][-1] == full["equity_points"][-1]
 
     def test_slim_trades_keep_the_reported_fields(self):
-        trade = {"entry_time": "a", "exit_time": "b", "direction": "LONG", "result": 1.0,
-                 "pnl_raw": 2.0, "exit_reason": "tp", "mae": 0.5}
+        trade = {"entry_time": "a", "exit_time": "b", "direction": "LONG", "entry_price": 101.0,
+                 "result": 1.0, "pnl_raw": 2.0, "exit_reason": "tp", "mae": 0.5}
 
         assert slim_trades([trade]) == [{k: v for k, v in trade.items() if k != "mae"}]

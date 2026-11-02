@@ -1117,7 +1117,12 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "trades_detailed": slim_trades_detailed,
                 "reason": f"Not statistically significant (p={mc_summary['p_value']:.3f})",
                 "grid_results": accumulated_grid_results,
+                # The frozen setting, so a portfolio holdout can evaluate this sleeve
+                # after the cutoff although it is not significant on its own.
+                "unified_candidate": unified_candidate,
             }
+            if indicator_variant_label:
+                result["indicator_variant"] = indicator_variant_label
 
             bias_check_result = check_asset_bias(result, verbose=True)
             result["bias_check"] = bias_check_result
