@@ -1,0 +1,7 @@
+{
+  "name": "rebalancing_pressure",
+  "version": "1.0.0",
+  "description": "Month-to-date stock-minus-bond drift with month-end entry and exit flags for fixed-weight rebalancing flows",
+  "phase": "indicators",
+  "benefits_from_stationary": false
+}
