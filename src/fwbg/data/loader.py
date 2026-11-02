@@ -281,13 +281,19 @@ def run_data_loading(df, data_loading_configs):
                     # for the known limitations of this path.
                     # Key by calendar date: a daily series stamped with a time
                     # of day or a timezone would otherwise match no bar date.
+                    # A bar sees the last close dated on or before the previous
+                    # calendar day (as of), so Monday bars see Friday's close
+                    # and a missing day falls back to the close before it.
                     days = pd.DatetimeIndex(raw_df.index)
                     if days.tz is not None:
                         days = days.tz_localize(None)
-                    lookup = dict(zip(days.normalize(), raw_df["Close"]))
-                    df[macro_col] = prev_date.map(
-                        lambda d, lk=lookup: lk.get(d, np.nan)
-                    ).ffill()
+                    closes = pd.Series(raw_df["Close"].to_numpy(dtype=float), index=days.normalize())
+                    closes = closes[~closes.index.duplicated(keep="last")].sort_index().dropna()
+                    df[macro_col] = (
+                        closes.asof(pd.DatetimeIndex(prev_date.to_numpy())).to_numpy()
+                        if len(closes)
+                        else np.nan
+                    )
 
             log.debug(f"Loaded {len(result.data)} items from source '{source_name}'")
 
