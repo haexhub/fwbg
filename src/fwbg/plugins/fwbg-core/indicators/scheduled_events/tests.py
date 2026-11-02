@@ -93,6 +93,15 @@ def test_events_after_the_last_bar_are_counted(events):
     assert out["evt_days_ahead"].iloc[0] == 3.0  # Feb 19 is Presidents Day
 
 
+def test_month_end_event_on_closed_day_maps_to_next_month_trading_day(tmp_path):
+    path = tmp_path / "events.csv"
+    pd.DataFrame({"date": ["2024-03-31"]}).to_csv(path, index=False)  # Sunday
+
+    out = compute(["2024-03-28"], events_file=str(path))
+
+    assert out["evt_days_ahead"].iloc[0] == 2.0  # Mar 29 and Apr 1
+
+
 def test_no_later_event_is_nan(events):
     out = compute(["2024-03-01"], events_file=events)
     assert np.isnan(out["evt_days_ahead"].iloc[0]) and out["evt_window"].iloc[0] == 0.0

@@ -104,6 +104,9 @@ class ScheduledEventsIndicator(BaseIndicator):
             dates = df.index.tz_localize(None) if df.index.tz is not None else df.index
             dates = dates.normalize()
             last = max(dates.max(), events.max()) if len(events) else dates.max()
+            # Include a following month so a closed date at month end (for
+            # example, a Sunday event) can map to its next trading day.
+            last += pd.offsets.MonthEnd(1)
             days = _trading_days(p["calendar"], dates.min(), last)
             # an event or a bar on a closed day counts from the next trading day
             event_pos = np.unique(days.searchsorted(events[events >= days[0]], side="left"))
