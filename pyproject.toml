@@ -53,7 +53,9 @@ dependencies = [
     "psutil>=7.0",
     "PyYAML>=6.0",
     "holidays>=0.70",
-    # Historical data download (Dukascopy adapter)
+    # Historical data download (Dukascopy adapter). 5.0.0 rewrote the API (the old
+    # fetch/INTERVAL_* names moved to dukascopy_python.compat) and fails to import on
+    # Python < 3.14 (NameError: requests in an annotation), so stay on 4.x for now.
     "dukascopy-python>=4.0,<5",
     # HTTP client (scripts/jev provider client)
     "requests>=2.32",
