@@ -288,7 +288,8 @@ def run_data_loading(df, data_loading_configs):
                     if days.tz is not None:
                         days = days.tz_localize(None)
                     closes = pd.Series(raw_df["Close"].to_numpy(dtype=float), index=days.normalize())
-                    closes = closes[~closes.index.duplicated(keep="last")].sort_index().dropna()
+                    closes = closes[closes.index.notna()].dropna()
+                    closes = closes[~closes.index.duplicated(keep="last")].sort_index()
                     df[macro_col] = (
                         closes.asof(pd.DatetimeIndex(prev_date.to_numpy())).to_numpy()
                         if len(closes)

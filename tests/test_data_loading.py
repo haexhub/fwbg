@@ -373,6 +373,27 @@ class TestRunDataLoading:
         finally:
             del _DATA_SOURCES["_test_monday"]
 
+    def test_asof_lookup_ignores_missing_dates_and_keeps_last_non_null_close(self, tmp_path):
+        """Bad rows must not break as-of sorting or hide a date's last valid close."""
+        from fwbg.data.loader import run_data_loading
+        from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
+
+        pd.DataFrame({
+            "Date": ["2024-01-05", "2024-01-05", "", "2024-01-08"],
+            "Close": [5.0, np.nan, 999.0, 8.0],
+        }).to_csv(tmp_path / "TEST_DAY.csv", index=False)
+        register_csv_source(name="_test_bad_rows", path=tmp_path)
+
+        try:
+            bars = pd.DataFrame(
+                {"O": np.ones(2), "C": np.ones(2)},
+                index=pd.DatetimeIndex(["2024-01-08", "2024-01-09"]),
+            )
+            configs = [{"source": "_test_bad_rows", "params": {"indicators": {"TEST_DAY": "test"}}}]
+            assert run_data_loading(bars, configs)["macro_test"].tolist() == [5.0, 8.0]
+        finally:
+            del _DATA_SOURCES["_test_bad_rows"]
+
     @pytest.mark.parametrize("stamp", ["T22:00:00", "T00:00:00-05:00"])
     def test_macro_dates_with_time_or_timezone_still_align(self, tmp_path, stamp):
         """Daily rows stamped with a time of day or an offset keep their date."""
