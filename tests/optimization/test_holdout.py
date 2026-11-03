@@ -275,6 +275,20 @@ def test_every_holdout_status_is_classified():
     assert HOLDOUT_STATUSES <= EXECUTED_STATUSES | NOT_EXECUTED_STATUSES
 
 
+def test_a_portfolio_holdout_evaluates_a_sleeve_without_an_edge(monkeypatch):
+    """A sleeve's no_edge development still has trades and a frozen setting for combine."""
+    patch_development(monkeypatch, LOSING)
+    calls = patch_holdout(monkeypatch)
+    development = process_symbol(SYMBOL_FILE, replace(STRATEGY, end_date=CUTOFF))
+    assert development["status"] == "no_edge"
+    assert len(development["trades_detailed"]) == len(development["tr_trace"]) > 0
+    assert all("entry_price" in t for t in development["trades_detailed"])
+    look, trades = holdout.frozen_trades_after_cutoff(SYMBOL_FILE, LOOK, development)
+    assert look["evaluated"] is True
+    assert calls[0]["candidates"] == [development["unified_candidate"]]
+    assert len(trades) == len(HOLDOUT)
+
+
 @pytest.mark.parametrize("pairs, status", [(WINNING, "ok"), (LOSING, "no_edge")])
 def test_a_holdout_run_completes_whether_or_not_it_looked(monkeypatch, tmp_path, pairs, status):
     patch_development(monkeypatch, pairs)

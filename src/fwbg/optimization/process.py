@@ -11,6 +11,7 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -509,7 +510,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
     try:
         if sym in ["VIX", "DXY"]:
             log(2, "Übersprungen (Makro-Asset)", sym)
-            result = {"symbol": sym, "status": "macro_asset"}
+            result: dict[str, Any] = {"symbol": sym, "status": "macro_asset"}
             return result
 
         log(1, "START", sym)
@@ -998,6 +999,10 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         else:
             reporting_test_bars = total_test_bars
 
+        slim_trades_detailed = (
+            slim_trades(all_trades_detailed) if len(all_trades_detailed) == total_trades else []
+        )
+
         # === NO EDGE ===
         if fk <= 0:
             ct_long, ct_short, ct_display = _parse_ct_value(b_config["ct"])
@@ -1026,8 +1031,14 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 "overfitting": overfitting,
                 "feature_stability": feature_stability,
                 "trade_analytics": trade_analytics,
-                "reason": f"No profitable edge (WR={mean_wr*100:.1f}%, RRR={rrr:.2f})"
+                "trades_detailed": slim_trades_detailed,
+                "reason": f"No profitable edge (WR={mean_wr*100:.1f}%, RRR={rrr:.2f})",
+                # The frozen setting, so a portfolio holdout can evaluate this sleeve
+                # after the cutoff although it has no edge on its own.
+                "unified_candidate": unified_candidate,
             }
+            if indicator_variant_label:
+                result["indicator_variant"] = indicator_variant_label
 
             bias_check_result = check_asset_bias(result, verbose=True)
             result["bias_check"] = bias_check_result
@@ -1076,10 +1087,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             "pnl_trace": reporting_pnl,
             "equity": reporting_equity,
         }
-        slim_trades_detailed = (
-            slim_trades(all_trades_detailed) if len(all_trades_detailed) == total_trades else []
-        )
-
         ct_long, ct_short, ct_display = _parse_ct_value(b_config["ct"])
 
         # === NOT SIGNIFICANT ===
