@@ -66,11 +66,12 @@ An iteration combines the sleeves' walk-forward trades (development window only)
 
 `--holdout` develops every sleeve on `[start, cutoff)` and evaluates its frozen setting
 once on `[cutoff, end)`, **whatever the sleeve's own development status**: the portfolio,
-not the sleeve, is the hypothesis, so a sleeve that is not significant alone is still
-evaluated. The reported metrics come from the portfolio's returns after the cutoff alone;
-the weights there use volatility estimated on the development trades before it. If a
-sleeve has no frozen setting or no trades after the cutoff the run is an `error`; the look
-still counts once any sleeve's data after the cutoff was evaluated.
+not the sleeve, is the hypothesis, so a sleeve that is not significant alone, or has no
+edge alone (`no_edge`, Kelly fraction <= 0), is still evaluated. The reported metrics
+come from the portfolio's returns after the cutoff alone; the weights there use
+volatility estimated on the development trades before it. If a sleeve has no frozen
+setting or no trades after the cutoff the run is an `error`; the look still counts once
+any sleeve's data after the cutoff was evaluated.
 
 ## Output
 
