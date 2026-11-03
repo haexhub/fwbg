@@ -13,6 +13,7 @@ from fwbg.optimization.causal_reporting import sized_returns
 from fwbg.optimization.holdout import HOLDOUT_STATUSES, process_symbol_holdout, symbol_worker
 from fwbg.optimization.process import process_symbol
 from fwbg.optimization.signal_fold import prepare_signal_fold_data
+from fwbg.optimization.sleeves import trade_returns
 from fwbg.research.dsr import return_statistics
 from fwbg.simulation.trade import monte_carlo_permutation_test
 from fwbg.statuses import EXECUTED_STATUSES, NOT_EXECUTED_STATUSES
@@ -283,10 +284,12 @@ def test_a_portfolio_holdout_evaluates_a_sleeve_without_an_edge(monkeypatch):
     assert development["status"] == "no_edge"
     assert len(development["trades_detailed"]) == len(development["tr_trace"]) > 0
     assert all("entry_price" in t for t in development["trades_detailed"])
+    assert not trade_returns(development["trades_detailed"]).empty
     look, trades = holdout.frozen_trades_after_cutoff(SYMBOL_FILE, LOOK, development)
     assert look["evaluated"] is True
     assert calls[0]["candidates"] == [development["unified_candidate"]]
     assert len(trades) == len(HOLDOUT)
+    assert not trade_returns(trades).empty
 
 
 @pytest.mark.parametrize("pairs, status", [(WINNING, "ok"), (LOSING, "no_edge")])

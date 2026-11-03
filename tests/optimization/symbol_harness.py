@@ -61,6 +61,7 @@ def unified_fold(fold, pairs) -> dict:
                 "entry_time": str(t),
                 "exit_time": str(t),
                 "direction": "LONG",
+                "entry_price": 100.0,
                 "result": res,
                 "pnl_raw": pnl,
             }
