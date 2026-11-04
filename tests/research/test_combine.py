@@ -63,8 +63,9 @@ def test_weights_are_inverse_to_volatility_and_causal():
     changed_returns, changed = combine(later, PARAMS, {"AAA": None, "BBB": None})
     day = pd.Timestamp("2025-01-02")
     pd.testing.assert_frame_equal(changed.loc[:day], notional.loc[:day])
-    pd.testing.assert_series_equal(changed_returns.loc[: day - pd.Timedelta(days=1)],
-                                   returns.loc[: day - pd.Timedelta(days=1)])
+    pd.testing.assert_series_equal(
+        changed_returns.loc[: day - pd.Timedelta(days=1)], returns.loc[: day - pd.Timedelta(days=1)]
+    )
 
 
 def test_max_notional_caps_a_sleeve():
@@ -80,8 +81,10 @@ def write(path, data):
 @pytest.fixture
 def sleeve_files(tmp_path):
     for sym in ("AAA", "BBB"):
-        write(tmp_path / f"{sym.lower()}.json",
-              {"name": sym, "timeframe": "DAY_1", "assets": {"filter": [sym]}, "model": {}})
+        write(
+            tmp_path / f"{sym.lower()}.json",
+            {"name": sym, "timeframe": "DAY_1", "assets": {"filter": [sym]}, "model": {}},
+        )
     return tmp_path
 
 
@@ -105,7 +108,10 @@ def spec(directory, **extra):
         ({"leverage": 2}, "unknown portfolio keys"),
         ({"min_days": 300}, "min_days"),
         ({"sleeves": [{"strategy_file": "aaa.json"}, {"strategy_file": "aaa.json"}]}, "duplicate"),
-        ({"sleeves": [{"strategy_file": "aaa.json"}, {"strategy_file": "nope.json"}]}, "cannot load"),
+        (
+            {"sleeves": [{"strategy_file": "aaa.json"}, {"strategy_file": "nope.json"}]},
+            "cannot load",
+        ),
     ],
 )
 def test_bad_specs_are_refused(sleeve_files, change, match):
@@ -133,27 +139,37 @@ class Fakes:
         self.developed = []
         self.looked = []
         self.no_frozen = set()
+        self.extra = []  # symbols every sleeve also selects
+        self.idle = set()  # symbols without any trades
 
     def select(self, strategy, metadata, asset_filter=None):
-        return [f"/data/{metadata['assets']['filter'][0]}_DAY_1.csv"]
+        """Select the configured symbol plus any symbols shared by the test case."""
+        symbols = [metadata["assets"]["filter"][0], *self.extra]
+        return [f"/data/{s}_DAY_1.csv" for s in symbols]
 
     def process(self, csv_path, strategy):
+        """Return synthetic development trades, optionally leaving a symbol idle."""
         sym = sleeves.symbol_of(csv_path)
         self.developed.append((sym, strategy.end_date, strategy.holdout_cutoff))
         end = pd.Timestamp(strategy.end_date) if strategy.end_date else LAST
         return {
             "symbol": sym,
             "status": self.statuses[sym],
-            "trades_detailed": trades(sym, pd.Timestamp("2023-01-01"), end),
+            "trades_detailed": (
+                [] if sym in self.idle else trades(sym, pd.Timestamp("2023-01-01"), end)
+            ),
             "unified_candidate": {"tp": 1.0},
         }
 
     def frozen(self, csv_path, strategy, development):
+        """Return synthetic holdout trades or the configured unevaluated result."""
         sym = development["symbol"]
         if sym in self.no_frozen:
             return {"symbol": sym, "holdout": {"evaluated": False, "reason": "no frozen setting"}}
         self.looked.append((sym, strategy.holdout_cutoff))
         look = {"cutoff": strategy.holdout_cutoff, "evaluated": True}
+        if sym in self.idle:
+            return look, []
         return look, trades(sym, pd.Timestamp(strategy.holdout_cutoff), LAST + pd.Timedelta(days=1))
 
 
@@ -183,8 +199,17 @@ def portfolio(results, run_id):
 
 
 def test_iteration_is_gated_clamped_to_the_cutoff_and_recorded(gated, monkeypatch):
-    run_cli(monkeypatch, "--spec", str(gated.spec), "--research-id", "S-0007",
-            "--note", "two sleeves", "--run-id", "p1")
+    run_cli(
+        monkeypatch,
+        "--spec",
+        str(gated.spec),
+        "--research-id",
+        "S-0007",
+        "--note",
+        "two sleeves",
+        "--run-id",
+        "p1",
+    )
     assert gated.developed == [("AAA", "2025-04-30", None), ("BBB", "2025-04-30", None)]
     assert gated.looked == []
     [trial] = read_trials(gated.register / LEDGER_FILENAME)
@@ -193,12 +218,25 @@ def test_iteration_is_gated_clamped_to_the_cutoff_and_recorded(gated, monkeypatc
     assert metrics["sharpe"] > 0 and metrics["trades"] > 0
     result = portfolio(gated.results, "p1")
     assert result["mean_notional"]["calm"] > result["mean_notional"]["wild"]
-    assert pd.read_csv(gated.results / "p1" / "grid_details" / "PORTFOLIO" / "daily.csv")["date"].max() < "2025-04-30"
+    assert (
+        pd.read_csv(gated.results / "p1" / "grid_details" / "PORTFOLIO" / "daily.csv")["date"].max()
+        < "2025-04-30"
+    )
 
 
 def test_holdout_evaluates_every_sleeve_once_and_reports_after_the_cutoff(gated, monkeypatch):
-    run_cli(monkeypatch, "--spec", str(gated.spec), "--research-id", "S-0007",
-            "--note", "look", "--run-id", "h1", "--holdout")
+    run_cli(
+        monkeypatch,
+        "--spec",
+        str(gated.spec),
+        "--research-id",
+        "S-0007",
+        "--note",
+        "look",
+        "--run-id",
+        "h1",
+        "--holdout",
+    )
     # each sleeve develops before the cutoff; the not significant one is looked at too
     assert gated.developed == [("AAA", "2025-04-30", None), ("BBB", "2025-04-30", None)]
     assert gated.looked == [("AAA", "2025-04-30"), ("BBB", "2025-04-30")]
@@ -214,13 +252,54 @@ def test_holdout_evaluates_every_sleeve_once_and_reports_after_the_cutoff(gated,
 
 def test_holdout_with_a_sleeve_that_cannot_be_evaluated_is_an_error(gated, monkeypatch):
     gated.no_frozen.add("BBB")
-    run_cli(monkeypatch, "--spec", str(gated.spec), "--research-id", "S-0007",
-            "--note", "look", "--run-id", "h2", "--holdout")
+    run_cli(
+        monkeypatch,
+        "--spec",
+        str(gated.spec),
+        "--research-id",
+        "S-0007",
+        "--note",
+        "look",
+        "--run-id",
+        "h2",
+        "--holdout",
+    )
     result = portfolio(gated.results, "h2")
     assert result["status"] == "error" and "wild" in result["reason"]
     assert result["holdout"]["evaluated"] is True  # AAA's data after the cutoff was seen
     [trial] = read_trials(gated.register / LEDGER_FILENAME)
     assert trial.kind is TrialKind.HOLDOUT
+
+
+def test_trade_returns_of_no_trades_is_an_empty_dated_series():
+    """Empty trade sets retain the date index expected by portfolio comparisons."""
+    empty = trade_returns([])
+    assert empty.empty and isinstance(empty.index, pd.DatetimeIndex)
+
+
+@pytest.mark.parametrize("look, status", [(False, "data_invalid"), (True, "not_significant")])
+def test_a_sleeve_symbol_without_trades_adds_nothing(gated, monkeypatch, look, status):
+    """A symbol that never traded (e.g. refused by its data check) is a flat leg, not a crash."""
+    gated.extra, gated.idle = ["CCC"], {"CCC"}
+    gated.statuses["CCC"] = status
+    holdout = ["--holdout"] if look else []
+    run_cli(
+        monkeypatch,
+        "--spec",
+        str(gated.spec),
+        "--research-id",
+        "S-0007",
+        "--note",
+        "idle symbol",
+        "--run-id",
+        "i1",
+        *holdout,
+    )
+    result = portfolio(gated.results, "i1")
+    assert result["status"] in ("ok", "not_significant")
+    assert result["metrics"]["trades"] > 0
+    counts = {s["symbol"]: s["development_trade_count"] for s in result["sleeves"]["calm"]}
+    assert counts["CCC"] == 0 and counts["AAA"] > 0
 
 
 def test_combine_without_a_research_id_is_refused(gated, monkeypatch):
