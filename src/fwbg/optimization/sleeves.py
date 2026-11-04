@@ -177,8 +177,8 @@ def trade_returns(trades: list[Mapping[str, Any]]) -> pd.Series:
     ]
     if len(rows) != len(trades):
         raise ValueError("trades without exit time or entry price cannot be dated")
-    if not rows:
-        return pd.Series(dtype=float)
+    if not rows:  # dated like any other symbol's series, so it compares with dates
+        return pd.Series(dtype=float, index=pd.DatetimeIndex([]))
     days, values = zip(*rows)
     index = pd.DatetimeIndex(days)
     if index.tz is not None:
