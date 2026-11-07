@@ -72,9 +72,19 @@ def test_process_symbol_reports_data_invalid(weekend_data):
 
 
 def test_process_symbol_uses_canonical_symbol_for_asset_lookup(monkeypatch):
-    """Lowercase data filenames still use the matching registry configuration."""
-    symbols = []
+    """Lowercase filenames use canonical symbols in data and asset lookups."""
+    symbols: dict[str, list[str]] = {"data": [], "asset": []}
     original_get_asset = process.get_asset
+
+    def load_frame(path, strategy, symbol):
+        symbols["data"].append(symbol)
+        return around_the_clock(days=60)
+
+    monkeypatch.setattr(
+        process,
+        "load_symbol_frame",
+        load_frame,
+    )
 
     def stop_after_asset_lookup(*args, **kwargs):
         raise ValueError("stop after asset lookup")
@@ -82,16 +92,14 @@ def test_process_symbol_uses_canonical_symbol_for_asset_lookup(monkeypatch):
     monkeypatch.setattr(
         process,
         "get_asset",
-        lambda symbol: (symbols.append(symbol), original_get_asset(symbol))[1],
+        lambda symbol: (symbols["asset"].append(symbol), original_get_asset(symbol))[1],
     )
-    monkeypatch.setattr(process.data_config, "TIMEFRAME", "HOUR_1")
     monkeypatch.setattr(process.data_config, "MIN_TRADES", 1)
-    monkeypatch.setattr(process, "load_data_aligned", lambda path: around_the_clock(days=60))
     monkeypatch.setattr(process, "create_walk_forward_folds", stop_after_asset_lookup)
 
     process_symbol("eurusd_HOUR_1.csv", StrategyConfig(data_checks="off"))
 
-    assert symbols == ["EURUSD"]
+    assert symbols == {"data": ["EURUSD"], "asset": ["EURUSD"]}
 
 
 @pytest.mark.parametrize("bad", ["loose", None, 1])
