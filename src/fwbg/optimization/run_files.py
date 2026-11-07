@@ -18,6 +18,11 @@ from fwbg_sdk.enums import Timeframe
 from fwbg.data import config as data_config
 
 
+def file_symbol(path: str) -> str:
+    """The symbol of a ``SYMBOL_TIMEFRAME.csv`` data file: its name up to the first underscore."""
+    return os.path.basename(path).partition("_")[0].upper()
+
+
 def select_run_files(
     strategy: StrategyConfig,
     strategy_metadata: Mapping[str, Any] | None,
@@ -84,8 +89,8 @@ def select_run_files(
                 asset_filter.extend(strat_assets["filter"])
             # Exclude: diese Assets ausschließen
             if strat_assets.get("exclude"):
-                exclude_assets = strat_assets["exclude"]
-                files = [f for f in files if not any(a in f for a in exclude_assets)]
+                excluded = {a.upper() for a in strat_assets["exclude"]}
+                files = [f for f in files if file_symbol(f) not in excluded]
             # Classes: nur bestimmte Asset-Klassen
             if strat_assets.get("classes"):
                 from fwbg.data.assets import AssetRegistry
@@ -97,7 +102,7 @@ def select_run_files(
                     f
                     for f in files
                     if any(
-                        ASSET_CONFIG.get(os.path.basename(f).split("_")[0], {}).get("class")
+                        ASSET_CONFIG.get(file_symbol(f), {}).get("class")
                         in allowed_classes
                         for _ in [1]
                     )
@@ -105,7 +110,8 @@ def select_run_files(
 
     # Filter nach bestimmten Assets wenn angegeben
     if asset_filter:
-        files = [f for f in files if any(a in f for a in asset_filter)]
+        wanted = {a.upper() for a in asset_filter}
+        files = [f for f in files if file_symbol(f) in wanted]
     if not files:
         print(f"Keine Dateien für Timeframe {data_config.TIMEFRAME} gefunden!")
         print(f"Verfügbare Dateien: {glob.glob(f'{data_config.DATA_PATH}/*.csv')[:5]}...")

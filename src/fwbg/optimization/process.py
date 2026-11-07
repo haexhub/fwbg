@@ -502,7 +502,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         half-open: `start_date` is inclusive, `end_date` is exclusive. See
         `apply_date_window`.
     """
-    sym = os.path.basename(csv_path).split("_")[0]
+    sym = os.path.basename(csv_path).split("_")[0].upper()
     t_start = time.time()
     start_log_capture()
     result = {}
