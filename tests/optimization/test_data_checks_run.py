@@ -71,6 +71,37 @@ def test_process_symbol_reports_data_invalid(weekend_data):
     assert result["data_checks"]["errors"][0]["code"] == "outside_trading_hours"
 
 
+def test_process_symbol_uses_canonical_symbol_for_asset_lookup(monkeypatch):
+    """Lowercase filenames use canonical symbols in data and asset lookups."""
+    symbols: dict[str, list[str]] = {"data": [], "asset": []}
+    original_get_asset = process.get_asset
+
+    def load_frame(path, strategy, symbol):
+        symbols["data"].append(symbol)
+        return around_the_clock(days=60)
+
+    monkeypatch.setattr(
+        process,
+        "load_symbol_frame",
+        load_frame,
+    )
+
+    def stop_after_asset_lookup(*args, **kwargs):
+        raise ValueError("stop after asset lookup")
+
+    monkeypatch.setattr(
+        process,
+        "get_asset",
+        lambda symbol: (symbols["asset"].append(symbol), original_get_asset(symbol))[1],
+    )
+    monkeypatch.setattr(process.data_config, "MIN_TRADES", 1)
+    monkeypatch.setattr(process, "create_walk_forward_folds", stop_after_asset_lookup)
+
+    process_symbol("eurusd_HOUR_1.csv", StrategyConfig(data_checks="off"))
+
+    assert symbols == {"data": ["EURUSD"], "asset": ["EURUSD"]}
+
+
 @pytest.mark.parametrize("bad", ["loose", None, 1])
 def test_data_checks_mode_is_validated(bad):
     with pytest.raises(ValueError, match="data_checks"):
