@@ -538,7 +538,7 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
             return result
 
         # Asset-Konfiguration laden
-        asset = get_asset(sym)
+        asset = get_asset(sym.upper())
 
         # SimulationContext erstellen (wird durch alle Funktionen gereicht)
         ctx = SimulationContext.create(asset, strategy)
