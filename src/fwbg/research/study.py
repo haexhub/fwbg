@@ -32,7 +32,6 @@ from fwbg.research.ledger import (
     LEDGER_FILENAME,
     LedgerError,
     Trial,
-    TrialKind,
     TrialStatus,
     append_trial,
     read_trials,
@@ -68,6 +67,7 @@ def register_trial(
     failed: bool = False,
     run_id: str | None = None,
     research_dir: Path | None = None,
+    holdout: bool = False,
 ) -> Trial:
     """Record one evaluated variant of a study script as an iteration trial.
 
@@ -78,6 +78,8 @@ def register_trial(
     *run_id* follows the CLI's run-id rules.
     The register's gate applies (active card, frozen criteria and cutoff, end on
     or before the cutoff, duplicate configuration needs *reason*).
+    ``holdout=True`` records the card's holdout look instead: the window must
+    reach past the cutoff, the first look needs no reason, a further one does.
 
     Raises:
         GateDenied: the register refused the trial (nothing was written for it) or
@@ -85,7 +87,7 @@ def register_trial(
     """
     if research_dir is None:
         research_dir = get_research_dir(create=False)
-    request = _request(research_id, config, symbols, note, reason)
+    request = _request(research_id, config, symbols, note, reason, holdout)
     upper_metrics = _metrics(metrics, request.symbols)
     status = TrialStatus.FAILED if failed else TrialStatus.OK
     code = run_code({"git": get_git_info(source_dir())})
@@ -105,6 +107,7 @@ def _request(
     symbols: Sequence[str],
     note: str,
     reason: str | None,
+    holdout: bool = False,
 ) -> RunRequest:
     """The gate request for *config*, comparable with a CLI run's; raises :class:`GateDenied`."""
     end = config.get("end_date")
@@ -134,7 +137,7 @@ def _request(
         message = f"configuration cannot be prepared: {exc}"
         raise GateDenied([Denial(DenialCode.INVALID_CONFIG, message)]) from exc
     canonical = tuple(sorted({symbol.upper() for symbol in symbols}))
-    return RunRequest(research_id, metadata, canonical, note, reason)
+    return RunRequest(research_id, metadata, canonical, note, reason, holdout)
 
 
 def _metrics(
@@ -192,7 +195,7 @@ def _record(
     trial = Trial(
         strategy=card.id,
         run_id=run_id,
-        kind=TrialKind.ITERATION,
+        kind=decision.kind,
         status=status,
         ts=datetime.now().isoformat(timespec="seconds"),
         fingerprint=decision.fingerprint,
