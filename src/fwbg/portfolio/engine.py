@@ -27,6 +27,7 @@ class PortfolioSettings:
     selection_count: int = 2
     equity_assets: tuple[str, ...] = ()
     defensive_asset: str | None = None
+    overlay: pd.Series | None = None
 
     def validate(self) -> None:
         """Reject invalid allocation weights, strategy parameters, costs and dates."""
@@ -68,6 +69,13 @@ class PortfolioSettings:
                     raise ValueError("start/end must be timezone-free dates")
         if self.start and self.end and pd.Timestamp(self.start) > pd.Timestamp(self.end):
             raise ValueError("start must precede end")
+        if self.overlay is not None and (
+            not isinstance(self.overlay, pd.Series)
+            or not self.overlay.index.is_monotonic_increasing
+            or not self.overlay.index.is_unique
+            or self.overlay.dtype != bool
+        ):
+            raise ValueError("overlay must be a sorted, unique boolean Series")
 
 
 @dataclass
@@ -150,6 +158,14 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
     weight_rows, signal_rows, trade_rows = [], [], []
     boundary_lookup = {int(pos): n for n, pos in enumerate(boundaries)}
     price_values = prices.to_numpy()
+    # An overlay sets the whole book to cash for the next month when its condition
+    # is false; it is read on the same completed month end as the allocation.
+    overlay = None
+    if settings.overlay is not None:
+        overlay = settings.overlay.reindex(prices.index, method="ffill")
+        if overlay.isna().any():
+            raise ValueError("overlay does not cover the evaluated price dates")
+        overlay = overlay.to_numpy()
 
     for i in range(first, len(prices)):
         date = prices.index[i]
@@ -161,7 +177,12 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
             target, statistic = allocation(
                 price_values[month_end_positions], base, assets, settings
             )
-            targets = {"trend": target, "static": base}
+            if overlay is not None and not overlay[i - 1]:
+                target = np.zeros(len(assets))
+            targets = {
+                "trend": target,
+                "static": np.zeros(len(assets)) if overlay is not None and not overlay[i - 1] else base,
+            }
             for j, asset in enumerate(assets):
                 signal_rows.append(
                     {
@@ -174,7 +195,9 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
                     }
                 )
         if i == first:
-            targets["equity_buy_hold"] = benchmark
+            targets["equity_buy_hold"] = (
+                np.zeros(len(assets)) if overlay is not None and not overlay[i - 1] else benchmark
+            )
 
         row = {}
         for name in names:

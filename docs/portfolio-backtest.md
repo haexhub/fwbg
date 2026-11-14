@@ -59,6 +59,30 @@ Backtests read only local inputs and do not download or silently refresh data.
 The downloader is an optional fixed-universe example, not a general market-data
 service. It downloads ETF prices and EUR/USD valuation rates only.
 
+## Macro overlays
+
+A config may add an `overlay` block that sets the whole book to cash for the
+next month when a condition on already-published macro values is false:
+
+```json
+"overlay": {
+  "name": "fed_net_liquidity",
+  "weeks": 13,
+  "lag_days": 9,
+  "threshold": 0.0,
+  "data_directory": "../../data/fred"
+}
+```
+
+`fed_net_liquidity` uses WALCL − WTREGEN − RRPONTSYD, `fed_balance_sheet` WALCL
+alone and `us_japan_10y_spread` the US 10-year yield minus the OECD Japan 10-year
+yield. The statistic is the change over `weeks` weeks; the book stays invested
+while it is above `threshold`. Each value is shifted by `lag_days` to its
+publication date, and a month-end decision takes effect on the first session
+after that month end — never on the month-end session itself. The overlay applies
+to `trend`, `static` and `equity_buy_hold` alike, so the comparison stays matched.
+Input fingerprints and the invested share are recorded in `results.json`.
+
 ## Inputs and data limitations
 
 The JSON paths are relative to the config file, not the shell working directory.
