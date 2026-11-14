@@ -1,5 +1,6 @@
 import json
 import subprocess
+from datetime import date
 
 import pytest
 
@@ -284,3 +285,41 @@ def test_malformed_symbols_or_metrics_are_refused(gate_register, symbols, metric
         register_trial("S-0007", CONFIG, symbols, metrics, "x", research_dir=gate_register)
     assert denial_codes(denied) == [DenialCode.INVALID_CONFIG]
     assert read_trials(gate_register / LEDGER_FILENAME) == []
+
+
+def test_holdout_look_is_recorded_as_holdout_kind(gate_register):
+    trial = record(
+        gate_register,
+        {**CONFIG, "end_date": "2025-09-01"},
+        holdout=True,
+        run_id="study-h1",
+    )
+    assert trial.trial_id == "T-000001" and trial.kind is TrialKind.HOLDOUT
+    assert trial.status is TrialStatus.OK and trial.counted
+    assert trial.holdout_cutoff == date(2025, 4, 30)
+    assert trial.window == {"start": "2024-01-01", "end": "2025-09-01"}
+
+
+def test_a_second_holdout_look_needs_a_reason(gate_register):
+    record(gate_register, {**CONFIG, "end_date": "2025-09-01"}, holdout=True)
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, {**CONFIG, "end_date": "2025-11-01"}, holdout=True)
+    assert denial_codes(denied) == [DenialCode.HOLDOUT_REPEAT]
+
+
+def test_a_second_holdout_look_with_a_reason_is_allowed(gate_register):
+    record(gate_register, {**CONFIG, "end_date": "2025-09-01"}, holdout=True)
+    trial = record(
+        gate_register,
+        {**CONFIG, "end_date": "2025-11-01"},
+        note="further look",
+        reason="new data",
+        holdout=True,
+    )
+    assert trial.kind is TrialKind.HOLDOUT and trial.counted
+
+
+def test_holdout_end_on_the_cutoff_is_refused(gate_register):
+    with pytest.raises(GateDenied) as denied:
+        record(gate_register, {**CONFIG, "end_date": "2025-04-30"}, holdout=True)
+    assert denial_codes(denied) == [DenialCode.INVALID_WINDOW]
