@@ -159,7 +159,9 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
     boundary_lookup = {int(pos): n for n, pos in enumerate(boundaries)}
     price_values = prices.to_numpy()
     # An overlay sets the whole book to cash for the next month when its condition
-    # is false; it is read on the same completed month end as the allocation.
+    # is false. ``exposure_mask`` already delays a month-end decision to the first
+    # session after that month end, so a rebalance executing on session ``i`` reads
+    # the mask at ``i`` -- reading ``i - 1`` would apply a second month of delay.
     overlay = None
     if settings.overlay is not None:
         overlay = settings.overlay.reindex(prices.index, method="ffill")
@@ -167,6 +169,7 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
             raise ValueError("overlay does not cover the evaluated price dates")
         overlay = overlay.to_numpy()
 
+    held = None
     for i in range(first, len(prices)):
         date = prices.index[i]
         ratios = price_values[i] / price_values[i - 1]
@@ -177,12 +180,10 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
             target, statistic = allocation(
                 price_values[month_end_positions], base, assets, settings
             )
-            if overlay is not None and not overlay[i - 1]:
+            invested = overlay is None or bool(overlay[i])
+            if not invested:
                 target = np.zeros(len(assets))
-            targets = {
-                "trend": target,
-                "static": np.zeros(len(assets)) if overlay is not None and not overlay[i - 1] else base,
-            }
+            targets = {"trend": target, "static": base if invested else np.zeros(len(assets))}
             for j, asset in enumerate(assets):
                 signal_rows.append(
                     {
@@ -194,10 +195,11 @@ def run_portfolio(prices: pd.DataFrame, settings: PortfolioSettings) -> Portfoli
                         "target_weight": float(target[j]),
                     }
                 )
-        if i == first:
-            targets["equity_buy_hold"] = (
-                np.zeros(len(assets)) if overlay is not None and not overlay[i - 1] else benchmark
-            )
+        # Buy-and-hold is set once, unless an overlay moves it to cash and back.
+        hold = overlay is None or bool(overlay[i])
+        if i == first or (overlay is not None and i in boundary_lookup and hold != held):
+            targets["equity_buy_hold"] = benchmark if hold else np.zeros(len(assets))
+            held = hold
 
         row = {}
         for name in names:
