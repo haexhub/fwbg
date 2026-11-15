@@ -226,14 +226,16 @@ def write_verdict(
 def reopen(
     research_dir: Path, card_id: str, reason: str, today: date, *, actor: str | None = None
 ) -> ResearchCard:
-    """Turn a parked or rejected card active again, recording why (and who, if given)."""
+    """Turn a parked, rejected or candidate card active again, recording why (and who, if given)."""
     _one_line(reason, "reason")
     if actor is not None:
         _one_line(actor, "actor")
     with register_lock(research_dir):
         card = _require(research_dir, card_id)
-        if card.status not in (Status.PARKED, Status.REJECTED):
-            raise CommandError(f"{card_id} is {card.status.value}; only parked or rejected reopen")
+        if card.status not in (Status.PARKED, Status.REJECTED, Status.CANDIDATE):
+            raise CommandError(
+                f"{card_id} is {card.status.value}; only parked, rejected or candidate reopen"
+            )
         by = f" by {actor}" if actor is not None else ""
         entry = f"- {today.isoformat()}: reopened from {card.status.value}{by}: {reason}"
         body = add_section_entry(card.body, "History", entry, before=("Verdict",))
