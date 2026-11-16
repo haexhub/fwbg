@@ -2,12 +2,13 @@
 
 import hashlib
 import json
-from dataclasses import fields
+from dataclasses import asdict, fields, replace
 from pathlib import Path
 
 import pandas as pd
 
 from .engine import PortfolioSettings, validate_daily_index
+from .overlay import OverlaySettings, exposure_mask, input_files, overlay_condition
 
 
 def read_daily_csv(path: Path) -> pd.DataFrame:
@@ -41,6 +42,7 @@ def load_inputs(config_path: Path) -> tuple[dict, PortfolioSettings, pd.DataFram
         "price_basis",
         "metadata",
         "split_date",
+        "overlay",
     }
     if extra := set(config) - allowed:
         raise ValueError(f"unknown portfolio config fields: {sorted(extra)}")
@@ -51,7 +53,7 @@ def load_inputs(config_path: Path) -> tuple[dict, PortfolioSettings, pd.DataFram
     for key in ("name", "prices", "weights", "equity_benchmark"):
         if not config.get(key):
             raise ValueError(f"missing required config field: {key}")
-    setting_names = {f.name for f in fields(PortfolioSettings)}
+    setting_names = {f.name for f in fields(PortfolioSettings)} - {"overlay"}
     settings = PortfolioSettings(**{k: v for k, v in config.items() if k in setting_names})
     settings.validate()
     price_path = config_path.parent / config["prices"]
@@ -61,9 +63,33 @@ def load_inputs(config_path: Path) -> tuple[dict, PortfolioSettings, pd.DataFram
         "prices": file_fingerprint(price_path),
         "implementation": {
             name: file_fingerprint(Path(__file__).with_name(name))
-            for name in ("engine.py", "rules.py", "data.py", "cli.py", "robustness.py")
+            for name in ("engine.py", "rules.py", "data.py", "cli.py", "robustness.py", "overlay.py")
         },
     }
+    if "overlay" in config:
+        overlay_config = config["overlay"]
+        if not isinstance(overlay_config, dict):
+            raise ValueError("overlay must be an object")
+        if set(overlay_config) - {"name", "weeks", "lag_days", "threshold", "data_directory"}:
+            raise ValueError("unknown overlay config fields")
+        for key in ("name", "data_directory"):
+            if not overlay_config.get(key):
+                raise ValueError(f"missing required overlay field: {key}")
+        data_directory = (config_path.parent / overlay_config["data_directory"]).resolve()
+        overlay_settings = OverlaySettings(
+            **{k: v for k, v in overlay_config.items() if k != "data_directory"}
+        )
+        condition = overlay_condition(overlay_settings, data_directory)
+        settings = replace(settings, overlay=exposure_mask(condition, prices.index))
+        provenance["overlay"] = {
+            "settings": asdict(overlay_settings),
+            "first_condition": condition.index[0].date().isoformat(),
+            "invested_share": float(settings.overlay.mean()),
+            "inputs": {
+                path.name: file_fingerprint(path)
+                for path in input_files(overlay_settings, data_directory)
+            },
+        }
     if config.get("metadata"):
         meta_path = config_path.parent / config["metadata"]
         provenance["metadata"] = json.loads(meta_path.read_text())

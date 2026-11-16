@@ -59,6 +59,40 @@ Backtests read only local inputs and do not download or silently refresh data.
 The downloader is an optional fixed-universe example, not a general market-data
 service. It downloads ETF prices and EUR/USD valuation rates only.
 
+## Macro overlays
+
+A config may add an `overlay` block that sets the whole book to cash for the
+next month when a condition on already-published macro values is false:
+
+```json
+"overlay": {
+  "name": "fed_net_liquidity",
+  "weeks": 13,
+  "lag_days": 9,
+  "threshold": 0.0,
+  "data_directory": "../../data/fred"
+}
+```
+
+`fed_net_liquidity` uses WALCL − WTREGEN − RRPONTSYD, `fed_balance_sheet` WALCL
+alone and `us_japan_10y_spread` the US 10-year yield minus the OECD Japan 10-year
+yield. The inputs are the native FRED CSV exports (`observation_date` plus one
+value column): WALCL and WTREGEN in millions of dollars, RRPONTSYD in billions —
+it is converted to millions before the subtraction.
+
+The statistic is the change over `weeks` **calendar** weeks, measured against the
+last value published that long before; the book stays invested while it is above
+`threshold`. Every series is shifted to its publication date by `lag_days`, which
+acts as a lower bound for all components. The OECD Japan yield is additionally
+never read earlier than 60 days after its observation date. A month-end decision
+takes effect on the first session after that month end — never on the month-end
+session itself — and is the exposure held for the following month. The overlay
+applies to `trend`, `static` and `equity_buy_hold` alike, so the comparison stays
+matched; `equity_buy_hold` moves to cash and back at month boundaries when the
+overlay changes. Dates before the first available condition are held in cash.
+Settings, the first condition date, the invested share and fingerprints of the
+input files actually read are recorded in `results.json`.
+
 ## Inputs and data limitations
 
 The JSON paths are relative to the config file, not the shell working directory.
