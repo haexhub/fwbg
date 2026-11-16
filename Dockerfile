@@ -1,5 +1,5 @@
 # Schlankes Python-Image als Basis
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # Verhindert, dass Python .pyc Dateien schreibt und sorgt für sofortige Log-Ausgabe
 ENV PYTHONDONTWRITEBYTECODE=1
