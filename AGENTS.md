@@ -24,3 +24,29 @@ private research register in `$FWBG_WORKSPACE/research`.
   one failed configuration.
 - Never copy research results, hypotheses or card contents into this
   repository; it is public.
+
+## Study scripts
+
+Scripts that test rules outside `python -m fwbg.cli` (monthly regimes, macro
+signals, overlays) get their timing from helpers, not from hand-written shifts.
+These rules came from errors that invalidated earlier studies.
+
+- Monthly rule: take the daily position from
+  `fwbg.research.timing.monthly_position(condition, daily_index)`. A month-end
+  decision takes effect at the close of the first session after that month end
+  and earns from the session after that. Never write
+  `month_end_series.shift(1).reindex(daily_index, method="ffill")`: on the
+  monthly index it delays every decision by a whole extra month.
+- Windows are calendar time: use `fwbg.research.timing.change_over_weeks`, not
+  `Series.diff(n)` on a series that merges weekly and daily data, which counts
+  rows instead of weeks.
+- Check units before combining series (FRED mixes millions and billions, for
+  example WALCL/WTREGEN versus RRPONTSYD) and apply publication lags as a lower
+  bound to every component.
+- Test the timing on a toy series: a decision on a month end must not change any
+  position up to the executing session (see `tests/research/test_timing.py`).
+- The duplicate gate ignores the card: the same variant name, window and symbol
+  on two cards counts as identical. Pass `reason=` instead of renaming.
+- Study scripts and their lessons live in the private research repository
+  (`fwbg-research`), not here; read its `AGENTS.md` and `LESSONS.md` before
+  starting a study.
