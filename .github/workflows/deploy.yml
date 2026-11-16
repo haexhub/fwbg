@@ -46,18 +46,16 @@ jobs:
         run: ruff check src/ packages/
 
       # The tree is not formatted as a whole yet, so only the Python files a pull
-      # request touches are checked; format them with `ruff format <file>`.
+      # request into develop touches are checked; format them with `ruff format <file>`.
+      # Release pull requests into main are skipped: they carry every older change.
       - name: Format (changed files)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.base_ref == 'develop'
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          files=$(git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" -- '*.py')
-          if [ -z "$files" ]; then
-            echo "No Python files changed."
-          else
-            echo "$files" | xargs ruff format --check
-          fi
+          set -o pipefail
+          git diff --name-only -z --diff-filter=ACMR "origin/${BASE_REF}...HEAD" -- '*.py' \
+            | xargs -0 -r ruff format --check --
 
       - name: Run Tests
         run: python -m pytest
