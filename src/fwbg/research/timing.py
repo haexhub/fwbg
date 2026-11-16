@@ -24,10 +24,18 @@ def monthly_position(condition: pd.Series, index: pd.DatetimeIndex) -> pd.Series
 
     Multiply the result with the same day's return: ``position * returns``. The value
     on day ``d`` was decided on or before the close of the session before ``d``.
+
+    Pass the full session index and slice the result afterwards. For the first session
+    the preceding session is not part of ``index``; it is taken to be the previous
+    business day, so the position carries over a decision that executed before the
+    window. That is exact unless that business day was an exchange holiday.
     """
     if not isinstance(condition.index, pd.DatetimeIndex) or not isinstance(
         index, pd.DatetimeIndex
     ):
         raise ValueError("condition and index must be DatetimeIndex-based")
-    mask = exposure_mask(condition.dropna().astype(bool), index)
-    return mask.shift(1).fillna(False).astype(float)
+    if index.empty:
+        return pd.Series(dtype=float, index=index)
+    previous = index[0] - pd.offsets.BDay(1)
+    mask = exposure_mask(condition.dropna().astype(bool), index.insert(0, previous))
+    return mask.shift(1).iloc[1:].fillna(False).astype(float)

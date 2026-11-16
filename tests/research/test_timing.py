@@ -83,3 +83,26 @@ def test_change_over_weeks_is_exported_for_study_scripts():
         range(200), index=pd.bdate_range("2020-01-01", periods=200), dtype=float
     )
     assert change_over_weeks(daily, 13).iloc[-1] == pytest.approx(65.0)
+
+
+def test_window_starting_after_a_decision_keeps_the_invested_position():
+    """Jan 31 was True and executed on Feb 3: a window that starts on Feb 4 is already in."""
+    full = monthly_position(condition(True, False, True, True), SESSIONS)
+    window = monthly_position(
+        condition(True, False, True, True), SESSIONS[SESSIONS >= "2020-02-04"]
+    )
+    assert window.iloc[0] == 1
+    assert window.equals(full.loc["2020-02-04":])
+
+
+def test_window_starting_on_the_executing_session_is_not_yet_invested():
+    """A window that starts on Feb 3 earns nothing on that session, as in the full index."""
+    window = monthly_position(
+        condition(True, False, True, True), SESSIONS[SESSIONS >= "2020-02-03"]
+    )
+    assert window.iloc[0] == 0 and window.loc["2020-02-04"] == 1
+
+
+def test_empty_index_gives_an_empty_position():
+    empty = SESSIONS[:0]
+    assert monthly_position(condition(True), empty).empty
