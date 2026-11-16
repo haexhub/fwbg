@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -42,6 +44,20 @@ jobs:
 
       - name: Lint
         run: ruff check src/ packages/
+
+      # The tree is not formatted as a whole yet, so only the Python files a pull
+      # request touches are checked; format them with `ruff format <file>`.
+      - name: Format (changed files)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          files=$(git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" -- '*.py')
+          if [ -z "$files" ]; then
+            echo "No Python files changed."
+          else
+            echo "$files" | xargs ruff format --check
+          fi
 
       - name: Run Tests
         run: python -m pytest
