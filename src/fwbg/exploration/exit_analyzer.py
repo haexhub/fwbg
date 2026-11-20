@@ -41,7 +41,9 @@ def analyze_asset(
     if start_date or end_date:
         df = apply_date_window(df, start_date, end_date)
     if df.empty:
-        raise ValueError(f"{data_file} has no data in the window {start_date}..{end_date}")
+        raise ValueError(
+            f"{data_file} has no data in the window {start_date}..{end_date}"
+        )
     open_ = df["O"].values.astype(np.float64)
     high = df["H"].values.astype(np.float64)
     low = df["L"].values.astype(np.float64)
@@ -77,7 +79,9 @@ def analyze_asset(
     wr_long, wr_short, trade_counts = compute_capture_rates(
         open_, high, low, atr, tp_scan, sl_scan, max_bars
     )
-    capture_matrix = _build_capture_matrix(wr_long, wr_short, trade_counts, tp_scan, sl_scan)
+    capture_matrix = _build_capture_matrix(
+        wr_long, wr_short, trade_counts, tp_scan, sl_scan
+    )
 
     # --- Grid Suggestion ---
     suggested_grid = _suggest_grid(
@@ -119,34 +123,42 @@ def format_terminal_output(result):
         rows = []
         for p in _PERCENTILES:
             sp = str(p)
-            rows.append([
-                f"P{p}",
-                f"{data['mfe_percentiles'].get(sp, 0):.2f}",
-                f"{data['mae_percentiles'].get(sp, 0):.2f}",
-            ])
+            rows.append(
+                [
+                    f"P{p}",
+                    f"{data['mfe_percentiles'].get(sp, 0):.2f}",
+                    f"{data['mae_percentiles'].get(sp, 0):.2f}",
+                ]
+            )
         lines.append(f"\n  MFE/MAE Percentiles ({direction.upper()}) [ATR multiples]")
-        lines.append(tabulate(rows, headers=["Percentile", "MFE", "MAE"], tablefmt="simple"))
+        lines.append(
+            tabulate(rows, headers=["Percentile", "MFE", "MAE"], tablefmt="simple")
+        )
 
     # Top Capture Matrix entries
     matrix = result["capture_matrix"][:15]
     if matrix:
         rows = []
         for entry in matrix:
-            rows.append([
-                f"{entry['tp']:.1f}",
-                f"{entry['sl']:.1f}",
-                f"{entry['rrr']:.2f}",
-                f"{entry['win_rate_long']:.1%}",
-                f"{entry['win_rate_short']:.1%}",
-                f"{entry['edge_long']:+.3f}",
-                f"{entry['edge_short']:+.3f}",
-            ])
+            rows.append(
+                [
+                    f"{entry['tp']:.1f}",
+                    f"{entry['sl']:.1f}",
+                    f"{entry['rrr']:.2f}",
+                    f"{entry['win_rate_long']:.1%}",
+                    f"{entry['win_rate_short']:.1%}",
+                    f"{entry['edge_long']:+.3f}",
+                    f"{entry['edge_short']:+.3f}",
+                ]
+            )
         lines.append("\n  Top TP/SL Combinations (by long edge)")
-        lines.append(tabulate(
-            rows,
-            headers=["TP", "SL", "RRR", "WR Long", "WR Short", "Edge L", "Edge S"],
-            tablefmt="simple",
-        ))
+        lines.append(
+            tabulate(
+                rows,
+                headers=["TP", "SL", "RRR", "WR Long", "WR Short", "Edge L", "Edge S"],
+                tablefmt="simple",
+            )
+        )
 
     # Suggested Grid
     grid = result["suggested_grid"]
@@ -169,6 +181,7 @@ def write_json(result, output_path):
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _compute_atr(high, low, close, period):
     """Compute ATR via exponential moving average of True Range."""
     n = len(high)
@@ -190,7 +203,7 @@ def _compute_atr(high, low, close, period):
 
     # Fill leading NaN with first valid ATR
     first_valid = atr[period - 1]
-    atr[:period - 1] = first_valid
+    atr[: period - 1] = first_valid
 
     return atr
 
@@ -215,16 +228,18 @@ def _build_capture_matrix(wr_long, wr_short, trade_counts, tp_vals, sl_vals):
             # Edge = E[PnL] per trade in ATR units: WR*TP - (1-WR)*SL
             edge_l = wl * tp - (1 - wl) * sl
             edge_s = ws * tp - (1 - ws) * sl
-            entries.append({
-                "tp": round(float(tp), 1),
-                "sl": round(float(sl), 1),
-                "rrr": round(rrr, 2),
-                "win_rate_long": round(float(wl), 4),
-                "win_rate_short": round(float(ws), 4),
-                "edge_long": round(float(edge_l), 4),
-                "edge_short": round(float(edge_s), 4),
-                "resolved_trades": int(trade_counts[ti, si]),
-            })
+            entries.append(
+                {
+                    "tp": round(float(tp), 1),
+                    "sl": round(float(sl), 1),
+                    "rrr": round(rrr, 2),
+                    "win_rate_long": round(float(wl), 4),
+                    "win_rate_short": round(float(ws), 4),
+                    "edge_long": round(float(edge_l), 4),
+                    "edge_short": round(float(edge_s), 4),
+                    "resolved_trades": int(trade_counts[ti, si]),
+                }
+            )
 
     entries.sort(key=lambda e: e["edge_long"], reverse=True)
     return entries
