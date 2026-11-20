@@ -31,8 +31,14 @@ def source(monkeypatch, tmp_path):
 
 def _process_body(**overrides):
     body = {
-        "filename": "raw.csv", "symbol": "EURUSD", "timeframe": "HOUR",
-        "date_col": "d", "open_col": "o", "high_col": "h", "low_col": "l", "close_col": "c",
+        "filename": "raw.csv",
+        "symbol": "EURUSD",
+        "timeframe": "HOUR",
+        "date_col": "d",
+        "open_col": "o",
+        "high_col": "h",
+        "low_col": "l",
+        "close_col": "c",
     }
     body.update(overrides)
     return body
@@ -46,12 +52,15 @@ def test_get_file_path_rejects_escaping_symbol(tmp_path):
             src.get_file_path(bad, "HOUR")
 
 
-@pytest.mark.parametrize("override", [
-    {"filename": "/etc/passwd"},
-    {"filename": "../config.json"},
-    {"symbol": "/tmp/evil"},
-    {"timeframe": "../x"},
-])
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"filename": "/etc/passwd"},
+        {"filename": "../config.json"},
+        {"symbol": "/tmp/evil"},
+        {"timeframe": "../x"},
+    ],
+)
 def test_process_rejects_paths_outside_source(client, source, tmp_path, override):
     outside = tmp_path / "outside.csv"
     outside.write_text("d,o,h,l,c\n2024-01-01,1,1,1,1\n")
@@ -72,13 +81,17 @@ def test_update_rejects_path_outside_data_root(client, source, tmp_path):
 
 
 def test_update_keeps_unchanged_path(client, source):
-    r = client.put("/api/datasources/t1", json={"path": str(source.path), "description": "x"})
+    r = client.put(
+        "/api/datasources/t1", json={"path": str(source.path), "description": "x"}
+    )
 
     assert r.status_code == 200
 
 
 @pytest.mark.parametrize("name", [".", ".."])
-def test_create_source_rejects_dot_segments_before_creating_dirs(client, monkeypatch, tmp_path, name):
+def test_create_source_rejects_dot_segments_before_creating_dirs(
+    client, monkeypatch, tmp_path, name
+):
     root = tmp_path / "data"
     monkeypatch.setattr(ds_api, "get_data_root", lambda: root)
 
@@ -117,7 +130,9 @@ class _CountingReader(io.BytesIO):
         return chunk
 
 
-def test_oversized_upload_is_rejected_before_it_is_read_whole(source, tmp_path, monkeypatch):
+def test_oversized_upload_is_rejected_before_it_is_read_whole(
+    source, tmp_path, monkeypatch
+):
     monkeypatch.setattr(ds_api, "MAX_UPLOAD_SIZE", 1024)
     upload = _CountingReader(b"x" * (8 * 1024 * 1024))
 
