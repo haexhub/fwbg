@@ -340,6 +340,12 @@ class TradingBot:
         Trainiert ein XGBoost Model für ein Symbol.
 
         Füllt gleichzeitig den OHLC und Feature Cache.
+
+        Hinweis: Das Live-Modell ist NICHT das gebacktestete Modell. Es wird bei
+        jedem Start neu auf den letzten 1000 Stunden-Bars des Brokers trainiert
+        (feste Hyperparameter, kein Hold-out); aus der Optimizer-Konfiguration
+        stammen nur Features, Schwellen und SL/TP-Multiplikatoren. Backtest-
+        Ergebnisse sind daher kein Nachweis für dieses Modell.
         """
         try:
             logger.info(f"📊 {symbol}: Loading historical data...")
@@ -378,7 +384,12 @@ class TradingBot:
                 return False
 
             # Target erstellen
-            df["Target"] = (df["C"].shift(-1) > df["C"]).astype(int)
+            # The last bar has no next close: it must stay unlabelled (NaN), not
+            # become a "down" sample.
+            next_close = df["C"].shift(-1)
+            df["Target"] = (
+                (next_close > df["C"]).astype(float).where(next_close.notna())
+            )
             df_train = df.dropna(subset=cfg.features + ["Target"])
 
             if len(df_train) < self.min_training_samples:
@@ -393,7 +404,7 @@ class TradingBot:
             training_context = TrainingContext()
             model.train(
                 df_train[cfg.features],
-                df_train["Target"].values,
+                df_train["Target"].astype(int).values,
                 training_context,
                 n_estimators=100,
                 max_depth=5,

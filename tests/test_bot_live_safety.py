@@ -217,3 +217,37 @@ def test_signal_is_not_executed_when_state_cannot_be_persisted(tmp_path, monkeyp
 
     bot.adapter.submit_order.assert_not_called()
     assert "EURUSD" not in bot.last_signal_hour
+
+
+# ---------------------------------------------------------------------------
+# Training labels
+# ---------------------------------------------------------------------------
+
+
+def test_last_bar_is_not_trained_as_a_down_sample(tmp_path, monkeypatch):
+    import fwbg.bot as bot_module
+
+    hour = datetime(2025, 1, 3, 12)
+    monkeypatch.setattr(bot_module, "_current_utc_hour", lambda: hour)
+    closes = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8]  # strictly rising
+    adapter = MagicMock()
+    adapter.get_historical_bars.return_value = pd.DataFrame(
+        {"O": closes, "H": closes, "L": closes, "C": closes},
+        index=pd.date_range(hour - timedelta(hours=9), periods=9, freq="h"),
+    )
+    seen = {}
+
+    class Model:
+        def train(self, features, target, _context, **_kwargs):
+            seen["index"] = features.index
+            seen["target"] = list(target)
+
+    monkeypatch.setattr(bot_module, "get_model", lambda _name: Model)
+    bot = _bot(adapter, tmp_path)
+    bot.min_training_samples = 5
+    bot._compute_features = lambda df: df
+
+    assert bot._train_model("EURUSD", bot.assets["EURUSD"]) is True
+    # 9 completed bars, the last has no next close: 8 labelled samples, all "up".
+    assert seen["target"] == [1] * 8
+    assert seen["index"].max() == hour - timedelta(hours=2)
