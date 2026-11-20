@@ -838,3 +838,45 @@ def test_inner_score_falls_back_and_says_so_without_a_threshold_choice():
 
     assert result["inner_score_method"] == "per_fold_best_ct"
     assert result["avg_val_pnl"] == pytest.approx(2.5)
+
+
+class _SeedRecorder:
+    seen = []
+
+    def select_features(self, X, y, max_features=None, seed=None, **params):
+        type(self).seen.append(seed)
+        return list(X.columns), {}
+
+
+class _NoSeedSelector:
+    def select_features(self, X, y, max_features=None, **params):
+        assert "seed" not in params
+        return list(X.columns), {}
+
+
+def test_feature_selectors_get_a_deterministic_seed(monkeypatch):
+    """boruta/stability default to seed=None (global RNG): identical runs selected
+    different features. The caller now hands a seed to selectors that take one."""
+    import fwbg.optimization.nested_cv as nested_cv
+
+    _SeedRecorder.seen = []
+    monkeypatch.setattr(nested_cv, "get_feature_selector", lambda name: _SeedRecorder)
+    df = pd.DataFrame({"a": np.arange(40.0), "b": np.arange(40.0)[::-1]})
+    targets = np.array([0, 1] * 20)
+    plugins = [{"name": "x", "params": {}}, {"name": "y", "params": {"seed": 7}}]
+
+    nested_cv.select_features_from_fold(df, targets, ["a", "b"], 4, plugins)
+    nested_cv.select_features_from_fold(df, targets, ["a", "b"], 4, plugins, seed=99)
+
+    assert _SeedRecorder.seen == [42, 7, 99, 7]
+
+
+def test_a_selector_without_a_seed_parameter_is_not_given_one(monkeypatch):
+    import fwbg.optimization.nested_cv as nested_cv
+
+    monkeypatch.setattr(nested_cv, "get_feature_selector", lambda name: _NoSeedSelector)
+    df = pd.DataFrame({"a": np.arange(40.0), "b": np.arange(40.0)})
+    selected, _ = nested_cv.select_features_from_fold(
+        df, np.array([0, 1] * 20), ["a", "b"], 4, [{"name": "x", "params": {}}]
+    )
+    assert selected == ["a", "b"]

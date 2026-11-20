@@ -8,6 +8,8 @@ Struktur:
             (Walk-Forward Folds)                (NIE während Optimierung gesehen!)
 """
 
+import inspect
+
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
@@ -173,12 +175,24 @@ def refit_stateful_features(
     return refit_folds
 
 
+# Seed handed to feature selectors that take one (boruta shadow features and trees,
+# stability-selection bootstraps). Without it they draw from the global RNG and the
+# selected features differ between identical runs. A plugin's own "seed" param wins.
+FEATURE_SELECTION_SEED = 42
+
+
+def _accepts_seed(selector: Any) -> bool:
+    """Whether the selector's select_features names a ``seed`` parameter."""
+    return "seed" in inspect.signature(selector.select_features).parameters
+
+
 def select_features_from_fold(
     train_df: pd.DataFrame,
     targets: np.ndarray,
     group_features: List[str],
     min_trades: int,
     feature_selection_plugins: List[Dict] = None,
+    seed: int = FEATURE_SELECTION_SEED,
 ) -> Tuple[Optional[List[str]], Dict]:
     """
     Wählt Features über das Plugin-Interface aus.
@@ -193,6 +207,7 @@ def select_features_from_fold(
         min_trades: Minimum Trades
         feature_selection_plugins: Liste von Plugin-Configs
             [{"name": "boruta", "params": {"min_z_score": 0.5}}, ...]
+        seed: RNG-Seed für Selektoren mit ``seed``-Parameter (Plugin-Param hat Vorrang)
 
     Returns:
         (selected_features, metadata) oder (None, {})
@@ -218,6 +233,8 @@ def select_features_from_fold(
         selector = selector_cls()
 
         max_features = params.pop("max_features", None)
+        if _accepts_seed(selector):
+            params.setdefault("seed", seed)
         try:
             selected, meta = selector.select_features(
                 train_df[selected], targets, max_features=max_features, **params
