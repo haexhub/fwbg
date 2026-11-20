@@ -3,6 +3,7 @@ Fixed Exit Strategy Plugin.
 
 Verwendet fixe TP/SL-Werte basierend auf Spread-Multiplikatoren.
 """
+
 from typing import Tuple, TYPE_CHECKING
 import numpy as np
 import pandas as pd
@@ -30,7 +31,7 @@ class FixedExitStrategy(BaseExitStrategy):
         ctx: "SimulationContext",
         params=None,
         return_durations: bool = False,
-        **kwargs
+        **kwargs,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Berechnet Win/Loss Targets für Long und Short.
@@ -70,6 +71,7 @@ class FixedExitStrategy(BaseExitStrategy):
         entry_modifier_name = getattr(ctx, "entry_modifier", None)
         if entry_modifier_name and isinstance(entry_modifier_name, str):
             from fwbg.core.registry import get_entry_modifier
+
             entry_mod_cls = get_entry_modifier(entry_modifier_name)
             entry_mod = entry_mod_cls()
             entry_mod_params = getattr(ctx, "entry_modifier_params", {}) or {}
@@ -120,9 +122,16 @@ class FixedExitStrategy(BaseExitStrategy):
             )
 
         result = compute_targets_numba(
-            opn_v, cls_v, hgh_v, low_v,
-            tp_distances, sl_distances, ctx.spread, slippage,
-            max_bars, timeout_val
+            opn_v,
+            cls_v,
+            hgh_v,
+            low_v,
+            tp_distances,
+            sl_distances,
+            ctx.spread,
+            slippage,
+            max_bars,
+            timeout_val,
         )
         if return_durations:
             return result  # (tgt_l, tgt_s, dur_l, dur_s)

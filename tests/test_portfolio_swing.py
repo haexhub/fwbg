@@ -33,7 +33,9 @@ def bars_from_close(close):
 @pytest.fixture
 def flat_bars():
     """Provide flat daily bars with enough warm-up history for swing indicators."""
-    return bars_from_close(pd.Series(100.0, index=pd.bdate_range("2018-01-01", "2019-02-28")))
+    return bars_from_close(
+        pd.Series(100.0, index=pd.bdate_range("2018-01-01", "2019-02-28"))
+    )
 
 
 def test_leverage_target_is_self_financed_after_bidask_and_fees():
@@ -66,7 +68,12 @@ def test_buy_hold_uses_ask_and_cash_has_no_yield(flat_bars):
 def test_financing_charges_actual_borrow_for_weekend_calendar_days(flat_bars):
     """Monday funding includes three calendar days of actual borrowed cash."""
     settings = SwingSettings(
-        "buy_hold", start="2019-01-04", end="2019-01-08", leverage=1.5, cost_bps=0, borrow_rate=0.08
+        "buy_hold",
+        start="2019-01-04",
+        end="2019-01-08",
+        leverage=1.5,
+        cost_bps=0,
+        borrow_rate=0.08,
     )
     result = run_swing(flat_bars, settings)
     monday = result.positions.set_index("date").loc["2019-01-07"]
@@ -85,7 +92,9 @@ def test_new_high_cannot_raise_stop_retroactively_within_same_bar(flat_bars):
     features["breakout_entry"] = False
     features.loc["2019-01-03", "breakout_entry"] = True
     features["atr"] = 2.0
-    settings = SwingSettings("breakout_trail", start="2019-01-04", end="2019-01-07", cost_bps=0)
+    settings = SwingSettings(
+        "breakout_trail", start="2019-01-04", end="2019-01-07", cost_bps=0
+    )
     with patch("fwbg.portfolio.swing.indicators", return_value=features):
         result = run_swing(flat_bars, settings)
     assert result.ledger.reason.tolist() == ["entry", "gap_stop"]
@@ -104,7 +113,9 @@ def test_entry_bar_can_hit_initial_stop_and_cannot_capture_opening_jump(flat_bar
     with patch("fwbg.portfolio.swing.indicators", return_value=features):
         result = run_swing(
             flat_bars,
-            SwingSettings("breakout_trail", start="2019-01-04", end="2019-01-04", cost_bps=0),
+            SwingSettings(
+                "breakout_trail", start="2019-01-04", end="2019-01-04", cost_bps=0
+            ),
         )
     assert result.ledger.reason.tolist() == ["entry", "intraday_stop"]
     assert result.ledger.iloc[-1].fill == 194
@@ -137,7 +148,10 @@ def test_rsi_time_exit_is_at_next_open_after_ten_sessions(flat_bars):
     features["rsi_level_exit"] = False
     with patch("fwbg.portfolio.swing.indicators", return_value=features):
         result = run_swing(
-            flat_bars, SwingSettings("rsi_level", start="2019-01-04", end="2019-01-22", cost_bps=0)
+            flat_bars,
+            SwingSettings(
+                "rsi_level", start="2019-01-04", end="2019-01-22", cost_bps=0
+            ),
         )
     assert result.ledger.reason.tolist() == ["entry", "time_exit"]
     assert result.ledger.iloc[-1].date == pd.Timestamp("2019-01-18")
@@ -150,7 +164,9 @@ def test_future_bars_cannot_change_prior_results(rule, leverage):
     dates = pd.bdate_range("2018-01-01", "2020-06-30")
     rng = np.random.default_rng(39)
     bars = bars_from_close(
-        pd.Series(100 * np.exp(rng.normal(0.0002, 0.02, len(dates)).cumsum()), index=dates)
+        pd.Series(
+            100 * np.exp(rng.normal(0.0002, 0.02, len(dates)).cumsum()), index=dates
+        )
     )
     settings = SwingSettings(rule, end="2020-06-30", leverage=leverage)
     first = run_swing(bars, settings)
@@ -170,7 +186,9 @@ def test_bankruptcy_cannot_disappear_from_returns(flat_bars):
     flat_bars.loc["2019-01-07":] = 1.0
     result = run_swing(
         flat_bars,
-        SwingSettings("buy_hold", start="2019-01-04", end="2019-01-09", leverage=1.5, cost_bps=0),
+        SwingSettings(
+            "buy_hold", start="2019-01-04", end="2019-01-09", leverage=1.5, cost_bps=0
+        ),
     )
     assert result.bankrupt
     assert result.equity.loc["2019-01-07":].eq(0).all()
@@ -198,7 +216,9 @@ def test_corporate_split_is_not_mistaken_for_a_crash():
 
 def test_bad_quotes_fail_closed(flat_bars):
     """A negative opening or closing spread fails bar validation."""
-    flat_bars.loc[flat_bars.index[-1], ["ask_open", "ask_high", "ask_low", "ask_close"]] = 99
+    flat_bars.loc[
+        flat_bars.index[-1], ["ask_open", "ask_high", "ask_low", "ask_close"]
+    ] = 99
     with pytest.raises(ValueError, match="negative"):
         validate_bars(flat_bars)
 
