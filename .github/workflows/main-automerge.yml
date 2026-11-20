@@ -21,10 +21,13 @@ permissions:
 
 jobs:
   automerge:
+    # The branch name alone is attacker-controlled on a fork, so the head must
+    # live in this repository as well.
     if: |
-      github.event.pull_request.head.ref == 'develop' ||
-      startsWith(github.event.pull_request.head.ref, 'release-please--') ||
-      startsWith(github.event.pull_request.head.ref, 'sync-')
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.pull_request.head.ref == 'develop' ||
+       startsWith(github.event.pull_request.head.ref, 'release-please--') ||
+       startsWith(github.event.pull_request.head.ref, 'sync-'))
     runs-on: ubuntu-latest
     steps:
       - name: Enable auto-merge
