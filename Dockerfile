@@ -36,6 +36,12 @@ RUN pip install --no-cache-dir \
 # Verzeichnisse für Volumes erstellen (damit Berechtigungen stimmen)
 RUN mkdir -p accounts data logs stats_export strategies
 
+# Security note: the container runs as root. The compose file mounts named
+# volumes at /root/fwbg and /root/.fwbg/plugins (root-owned, populated by earlier
+# deployments) and bind-mounts the host's research register at /root/fwbg/research;
+# switching to an unprivileged user would require chown-ing those volumes and
+# moving the paths, so it is a deliberate migration, not a default.
+
 # API Port
 EXPOSE 8420
 
