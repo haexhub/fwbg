@@ -176,14 +176,6 @@ class BalanceZonesIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
-    def get_signal_columns(self) -> List[str]:
-        return [
-            "bz_breakout_bull",
-            "bz_breakout_bear",
-            "bz_fake_bear",
-            "bz_fake_bull",
-        ]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {

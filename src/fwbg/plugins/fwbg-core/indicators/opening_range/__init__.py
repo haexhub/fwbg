@@ -14,11 +14,14 @@ Berechnet Features basierend auf dem Opening Range Konzept:
 
 Spalten-Konvention (wie ibs/zscore/gotobi): Signal- (``_breakout_up/down``,
 ``_retest_bull/bear``) und Struktur-Spalten (``_range``, ``_sl_dist``, ``_or_*``) sind
-NICHT geshiftet: sie tragen den Wert der eigenen Bar und sind für eine Entscheidung am
-Bar-Close gedacht (Entry im Backtest am nächsten Open). Sie stehen in
+NICHT geshiftet. Die Signal-Spalten tragen den Wert der eigenen Bar und sind für eine
+Entscheidung am Bar-Close gedacht (Entry im Backtest am nächsten Open): sie stehen in
 ``get_feature_columns()``, sind aber über ``get_signal_columns()`` als Entscheidungs-
-Spalten markiert und gehören nicht als Modell-Features in eine ML-Pipeline
-(Lookahead um eine Bar); alle übrigen Features sind per ``shift_features`` geshiftet.
+Spalten markiert; der ML-Feature-Pool schließt sie aus (Lookahead um eine Bar), mit
+``signal_columns_as_features`` kommen stattdessen ``<col>_prev``-Kopien hinein. Die
+Struktur-Spalten sind NaN, solange die Range noch entsteht, und danach konstant: ihr
+Wert in Zeile ``i`` steht schon vor dem Open von Bar ``i`` fest, sie bleiben im Pool.
+Alle übrigen Features sind per ``shift_features`` geshiftet.
 
 Timeframe-Kompatibilität: Intraday (M1-H4). Auf DAY-Bars → NaN.
 

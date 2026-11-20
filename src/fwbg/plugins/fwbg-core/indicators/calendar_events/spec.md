@@ -39,7 +39,7 @@ Derives up to eight calendar-based feature columns from the DataFrame's Datetime
 - AC-004: When include_proximity=True, the two continuous columns are produced as float64 with the documented formulas.
 - AC-005: Setting include_binary=False suppresses the six binary columns; setting include_proximity=False suppresses the two continuous columns.
 - AC-006: get_feature_columns() returns the full eight-column list regardless of parameters.
-- AC-007: get_signal_columns() returns exactly the six binary event columns.
+- AC-007: get_signal_columns() returns exactly the six binary event columns; get_calendar_columns() returns the same six (they follow the date alone, so they stay in the ML feature pool).
 - AC-008: 3rd-Friday computation (_third_friday) is used for both cal_triple_witching (restricted to Mar/Jun/Sep/Dec) and cal_monthly_opex (all months), each with a +/-2-day window.
 
 ## Edge Cases

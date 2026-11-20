@@ -43,7 +43,7 @@ Derives nine per-bar price-action features that quantify candle conviction and b
 - AC-007: disp_consecutive_dir accumulates signed sign(C - O) while the direction matches the previous bar, resets to the current signed direction on direction change, and resets to 0 on a doji (C == O). The first bar starts the run with its own direction.
 - AC-008: disp_range_expansion equals current (H - L) divided by a rolling mean of (H - L) over range_avg_period bars (min_periods=1); avg <= EPSILON falls back to 1.0.
 - AC-009: disp_close_position equals (C - L) / (H - L) for valid ranges (1 = close at high, 0 = close at low).
-- AC-010: get_signal_columns() returns ['disp_fvg_formed'].
+- AC-010: get_signal_columns() returns an empty list (disp_fvg_formed is shifted).
 - AC-011: get_default_params() returns {'atr_period': 14, 'range_avg_period': 20, 'impulse_threshold': 1.5} and get_param_schema() declares int bounds atr_period in [2, 100] and range_avg_period in [5, 100].
 - AC-012: disp_impulse is +1 (bullish) / -1 (bearish) when |C - O| / ATR >= impulse_threshold, else 0.
 

@@ -47,7 +47,7 @@ Scans the OHLC series for Smart Money Concepts Fair Value Gaps — bullish when 
 - AC-009: fvg_bull_confirmed / fvg_bear_confirmed flip to 1.0 on a bar strictly after the gap's creation bar when a canonical engulfing candle (opposite colour to the previous candle, real body fully covering the previous real body) of the matching direction reaches into an active gap of that type; remain 1.0 for as long as that confirmed gap stays active.
 - AC-010: All returned feature columns are shifted by one bar via shift_features so that row i's features depend only on data through bar i-1.
 - AC-011: ATR is computed from true range with a rolling mean of window atr_period (min_periods=1); when ATR <= EPSILON the denominator falls back to 1.0.
-- AC-012: get_feature_columns returns exactly the ten _FEATURES names in order; get_signal_columns returns fvg_bull_active, fvg_bear_active, fvg_in_gap, fvg_bull_confirmed, fvg_bear_confirmed.
+- AC-012: get_feature_columns returns exactly the ten _FEATURES names in order; get_signal_columns returns an empty list (the fvg_* flags are shifted).
 
 ## Edge Cases
 

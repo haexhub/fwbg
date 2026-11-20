@@ -190,9 +190,6 @@ class VwapIndicator(BaseIndicator):
         cols += ["vwap_band_pos", "vwap_above"]
         return cols
 
-    def get_signal_columns(self) -> List[str]:
-        return ["vwap_above"]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {

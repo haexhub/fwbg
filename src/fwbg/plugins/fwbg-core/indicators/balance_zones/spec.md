@@ -49,7 +49,7 @@ Builds a rolling balance zone from candle body extremes (max/min of Open/Close o
 - AC-008: bz_balance_bars[i] = min(consecutive_in_zone, balance_bars_max) / balance_bars_max, where consecutive_in_zone increments while bz_in_zone==1 and resets to 0 otherwise; output is bounded in [0, 1].
 - AC-009: ATR is a simple rolling mean of True Range with min_periods=1, with tr[0] = high[0]-low[0]; when atr_i <= EPSILON the normaliser falls back to 1.0 to avoid division blow-ups.
 - AC-010: All emitted features are passed through shift_features(...) before being concatenated to df, guaranteeing no lookahead bias.
-- AC-011: get_signal_columns() returns ['bz_breakout_bull', 'bz_breakout_bear', 'bz_fake_bear', 'bz_fake_bull'].
+- AC-011: get_signal_columns() returns an empty list: the bz_* flags are shifted like every feature.
 - AC-012: get_default_params() returns {'lookback': 10, 'balance_atr_threshold': 2.0, 'atr_period': 14, 'balance_bars_max': 20}, matching the compute() defaults.
 
 ## Edge Cases
