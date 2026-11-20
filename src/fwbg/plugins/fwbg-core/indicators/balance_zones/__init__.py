@@ -104,8 +104,17 @@ class BalanceZonesIndicator(BaseIndicator):
             prev_zt = zone_top[i - 1]
             prev_zb = zone_bottom[i - 1]
 
-            # Warm-up: no complete zone / ATR yet -> leave the row NaN
-            if np.isnan(prev_zt) or np.isnan(prev_zb) or np.isnan(atr[i]):
+            # The balance-bar count depends on the prior zone, not ATR.
+            if np.isnan(prev_zt) or np.isnan(prev_zb):
+                continue
+            is_in_zone = prev_zb <= c <= prev_zt
+            if is_in_zone:
+                consecutive_in_zone += 1
+            else:
+                consecutive_in_zone = 0
+
+            # ATR-dependent outputs stay NaN throughout ATR warm-up.
+            if np.isnan(atr[i]):
                 continue
             atr_i = atr[i] if atr[i] > EPSILON else 1.0
 
@@ -115,7 +124,6 @@ class BalanceZonesIndicator(BaseIndicator):
             in_balance[i] = 1.0 if width <= balance_atr_threshold else 0.0
 
             # In-zone detection
-            is_in_zone = prev_zb <= c <= prev_zt
             in_zone[i] = 1.0 if is_in_zone else 0.0
 
             # Distance features (clamped: 0 when price is on the "wrong" side)
@@ -145,10 +153,6 @@ class BalanceZonesIndicator(BaseIndicator):
                     fake_bull[i] = 1.0
 
             # Consecutive bars in zone (normalised)
-            if is_in_zone:
-                consecutive_in_zone += 1
-            else:
-                consecutive_in_zone = 0
             balance_bars[i] = (
                 min(consecutive_in_zone, balance_bars_max) / balance_bars_max
             )

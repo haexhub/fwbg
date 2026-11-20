@@ -448,20 +448,22 @@ class TestBalanceBars:
     def test_balance_bars_increases_while_in_zone(self):
         """bz_balance_bars should increase as price stays inside zone."""
         lb = 10
-        df = _make_balanced_df(lookback=lb, n_post=0)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
+        df = _make_df(
+            highs=[101.5] * 15,
+            lows=[98.5] * 15,
+            closes=[101.0] * 15,
+            opens=[99.0] * 15,
+        )
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=9)
 
-        # While in zone (bars 1..lb-1), balance_bars should grow monotonically
-        # After shift: visible at iloc[2..lb]
-        prev_val = -1.0
-        for i in range(2, lb + 1):
-            val = result["bz_balance_bars"].iloc[i]
-            if not np.isnan(val):
-                assert val >= prev_val, (
-                    f"bz_balance_bars should be non-decreasing while in zone, "
-                    f"dropped at iloc[{i}]: {prev_val} → {val}"
-                )
-                prev_val = val
+        # Balance-bar counts are independent of ATR warm-up. The complete
+        # prior zone at raw row 10 appears in the shifted output at row 11.
+        finite = result["bz_balance_bars"].dropna().to_numpy()
+        assert len(finite) >= 2
+        assert result["bz_balance_bars"].iloc[lb + 1] == 1 / 20
+        assert np.all(np.diff(finite) >= 0), (
+            "bz_balance_bars should accumulate during the stable in-zone phase"
+        )
 
     def test_balance_bars_drops_after_breakout(self):
         """After a breakout, bz_balance_bars should drop (reset or decrease)."""

@@ -1133,6 +1133,36 @@ class TestPDLMidnightCrossing:
             "Break state should reset at 23:00 (session start), allowing breakout on Day 2"
         )
 
+    def test_resampled_confirmation_does_not_cross_trading_day(self):
+        idx = pd.date_range("2024-01-01", periods=120, freq="h")
+        opens = np.full(len(idx), 100.0)
+        highs = np.full(len(idx), 101.0)
+        lows = np.full(len(idx), 99.0)
+        closes = np.full(len(idx), 100.0)
+
+        # Establish PDH=110 for the trading day containing Jan 2 at 18:00.
+        highs[idx.get_loc("2024-01-01 23:00")] = 110.0
+        # The next trading day has PDH=112, while the 18:00 resampled bar
+        # closes above the previous PDH but below this day's new PDH.
+        highs[idx.get_loc("2024-01-02 10:00")] = 112.0
+        closes[idx.get_loc("2024-01-02 18:00")] = 111.0
+        highs[idx.get_loc("2024-01-02 18:00")] = 111.5
+        df = pd.DataFrame(
+            {"O": opens, "H": highs, "L": lows, "C": closes}, index=idx
+        )
+
+        result = _get_indicator().compute(
+            df,
+            session_start_hour=22,
+            session_end_hour=6,
+            range_scope=["all"],
+            resample_tf="4h",
+        )
+
+        # The confirmation is mapped through 21:00, but Jan 2 22:00 starts a
+        # new trading day. After the one-bar feature shift it appears at 23:00.
+        assert result.loc["2024-01-02 23:00", "hl_all_pdl_high_break"] == 0.0
+
     def test_non_crossing_session_unchanged(self):
         """Non-midnight-crossing session (e.g. DAX 8-17) produces identical
         results with the new code path."""

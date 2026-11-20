@@ -500,16 +500,15 @@ class TestRetestNeverOnBreakBar:
         assert res["retest_bear"].tolist() == [0.0, 0.0, 0.0, 0.0]
 
     def test_retracement_tracking_starts_after_break_bar(self):
-        # min_retracement=0.5 -> threshold 100.  Break bar 1 has low 99
-        # (would satisfy it), bar 2 only reaches 101: the retracement must
-        # not be credited from the break bar, so nothing fires on bar 2.
+        # min_retracement=0.8 -> threshold 97.6. The breakout bar reaches
+        # below the threshold, but tracking starts on the following bar.
         res = self._run(
             close=[100.0, 105.0, 102.0, 102.0, 100.5],
             high=[101.0, 106.0, 105.0, 105.0, 104.0],
-            low=[99.0, 99.0, 101.0, 101.0, 99.0],
+            low=[99.0, 97.0, 99.0, 99.0, 97.0],
             bh=[False, True, True, True, True],
             bl=[False] * 5,
-            min_retracement=0.5,
+            min_retracement=0.8,
         )
         assert res["retest_bull"].tolist() == [0.0, 0.0, 0.0, 0.0, 1.0]
 

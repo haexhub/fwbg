@@ -368,6 +368,17 @@ def _compute_range_variant(
             .fillna(False)
             .values.astype(bool)
         )
+        # A resampled bin can end on the next trading day when its interval
+        # crosses the session boundary. Its confirmation belongs to the source
+        # day only and must not survive the native bar's day reset.
+        confirmation_day = (
+            pd.Series(r_day_group, index=r_df.index + end_offset)
+            .reindex(df.index, method="ffill")
+            .values
+        )
+        same_trading_day = confirmation_day == day_group.values
+        above &= same_trading_day
+        below &= same_trading_day
 
         # Ensure NaN PDH bars don't trigger breakout
         nan_mask = np.isnan(pdh)
