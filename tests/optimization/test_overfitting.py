@@ -14,7 +14,12 @@ from fwbg.optimization.overfitting import (
     sr_std,
 )
 from fwbg.optimization.signal_fold import process_signal_fold
-from tests.optimization.signal_harness import SIGNALS, one_fold, signal_ctx, signal_frame
+from tests.optimization.signal_harness import (
+    SIGNALS,
+    one_fold,
+    signal_ctx,
+    signal_frame,
+)
 
 
 # === DSR Tests ===
@@ -67,43 +72,37 @@ class TestSRStd:
 class TestDeflatedSharpeRatio:
     def test_high_sr_few_strategies(self):
         """SR=2.0 with only 5 strategies → DSR should be high (> 0.95)."""
-        result = deflated_sharpe_ratio(
-            observed_sr=2.0, n_trades=500, n_strategies=5
-        )
+        result = deflated_sharpe_ratio(observed_sr=2.0, n_trades=500, n_strategies=5)
         assert result["dsr"] > 0.95
         assert result["is_significant"] is True
         assert result["n_strategies"] == 5
 
     def test_modest_sr_many_strategies(self):
         """SR=1.5 with 500 strategies → DSR should be low (< 0.50)."""
-        result = deflated_sharpe_ratio(
-            observed_sr=1.5, n_trades=300, n_strategies=500
-        )
+        result = deflated_sharpe_ratio(observed_sr=1.5, n_trades=300, n_strategies=500)
         assert result["dsr"] < 0.50
         assert result["is_significant"] is False
 
     def test_zero_sr(self):
         """SR=0 should always yield low DSR."""
-        result = deflated_sharpe_ratio(
-            observed_sr=0.0, n_trades=200, n_strategies=10
-        )
+        result = deflated_sharpe_ratio(observed_sr=0.0, n_trades=200, n_strategies=10)
         assert result["dsr"] < 0.10
 
     def test_result_keys(self):
         """Result dict must have all expected keys."""
-        result = deflated_sharpe_ratio(
-            observed_sr=1.0, n_trades=200, n_strategies=50
-        )
+        result = deflated_sharpe_ratio(observed_sr=1.0, n_trades=200, n_strategies=50)
         assert set(result.keys()) == {
-            "dsr", "observed_sr", "expected_max_sr", "n_strategies", "is_significant"
+            "dsr",
+            "observed_sr",
+            "expected_max_sr",
+            "n_strategies",
+            "is_significant",
         }
 
     def test_dsr_bounded_0_1(self):
         """DSR (a probability) must be between 0 and 1."""
         for sr, n in [(0.0, 100), (3.0, 5), (1.0, 1000)]:
-            result = deflated_sharpe_ratio(
-                observed_sr=sr, n_trades=200, n_strategies=n
-            )
+            result = deflated_sharpe_ratio(observed_sr=sr, n_trades=200, n_strategies=n)
             assert 0.0 <= result["dsr"] <= 1.0
 
 
@@ -128,7 +127,12 @@ class TestBuildPerformanceMatrix:
             1: [
                 {"tp_mult": 10, "sl_mult": 20, "timeout_bars": 0, "inner_val_pnl": 1.2},
                 {"tp_mult": 15, "sl_mult": 25, "timeout_bars": 0, "inner_val_pnl": 1.8},
-                {"tp_mult": 99, "sl_mult": 99, "timeout_bars": 0, "inner_val_pnl": 0.5},  # only in fold 1
+                {
+                    "tp_mult": 99,
+                    "sl_mult": 99,
+                    "timeout_bars": 0,
+                    "inner_val_pnl": 0.5,
+                },  # only in fold 1
             ],
         }
         matrix, combo_keys = build_performance_matrix(grid_results_by_fold)
@@ -139,8 +143,12 @@ class TestBuildPerformanceMatrix:
     def test_missing_combos_filtered(self):
         """Combos not present in ALL folds should be excluded."""
         grid_results_by_fold = {
-            0: [{"tp_mult": 10, "sl_mult": 20, "timeout_bars": 0, "inner_val_pnl": 1.0}],
-            1: [{"tp_mult": 99, "sl_mult": 99, "timeout_bars": 0, "inner_val_pnl": 2.0}],
+            0: [
+                {"tp_mult": 10, "sl_mult": 20, "timeout_bars": 0, "inner_val_pnl": 1.0}
+            ],
+            1: [
+                {"tp_mult": 99, "sl_mult": 99, "timeout_bars": 0, "inner_val_pnl": 2.0}
+            ],
         }
         matrix, combo_keys = build_performance_matrix(grid_results_by_fold)
         # No common combos
@@ -149,15 +157,20 @@ class TestBuildPerformanceMatrix:
     def test_preserves_fold_order(self):
         """Columns should correspond to fold order."""
         grid_results_by_fold = {
-            0: [{"tp_mult": 10, "sl_mult": 20, "timeout_bars": 0, "inner_val_pnl": 5.0}],
-            1: [{"tp_mult": 10, "sl_mult": 20, "timeout_bars": 0, "inner_val_pnl": 3.0}],
-            2: [{"tp_mult": 10, "sl_mult": 20, "timeout_bars": 0, "inner_val_pnl": 7.0}],
+            0: [
+                {"tp_mult": 10, "sl_mult": 20, "timeout_bars": 0, "inner_val_pnl": 5.0}
+            ],
+            1: [
+                {"tp_mult": 10, "sl_mult": 20, "timeout_bars": 0, "inner_val_pnl": 3.0}
+            ],
+            2: [
+                {"tp_mult": 10, "sl_mult": 20, "timeout_bars": 0, "inner_val_pnl": 7.0}
+            ],
         }
         matrix, _ = build_performance_matrix(grid_results_by_fold)
         assert matrix[0, 0] == 5.0
         assert matrix[0, 1] == 3.0
         assert matrix[0, 2] == 7.0
-
 
     def test_performance_matrix_reads_signal_grid_entries(self):
         """Signal folds' grid entries (inner metrics + fold_id) feed the PBO matrix."""
@@ -166,38 +179,84 @@ class TestBuildPerformanceMatrix:
             train_df = _reaches_every_tp(signal_frame(960, start=start))
             test_df = signal_frame(240, start=train_df.index[-1] + train_df.index.freq)
             fold = one_fold(train_df, test_df, fold_id)
-            _, grid = process_signal_fold(fold, train_df, test_df, SIGNALS, signal_ctx(), "TEST")
+            _, grid = process_signal_fold(
+                fold, train_df, test_df, SIGNALS, signal_ctx(), "TEST"
+            )
             for gr in grid:
                 grid_results_by_fold.setdefault(gr["fold_id"], []).append(gr)
 
-        assert all(gr["inner_trades"] > 0 for grid in grid_results_by_fold.values() for gr in grid)
+        assert all(
+            gr["inner_trades"] > 0
+            for grid in grid_results_by_fold.values()
+            for gr in grid
+        )
         matrix, combo_keys = build_performance_matrix(grid_results_by_fold)
         # tp 2 / ct 0.5, tp 6 / ct 0.5 and tp 6 / ct 0.6: the CT pair keeps two rows.
         assert matrix.shape == (3, 2)
         assert len(set(combo_keys)) == 3
 
     def test_combos_differing_only_by_ct_or_hp_keep_their_rows(self):
-        base = {"exit_strategy": "fixed", "tp_mult": 2, "sl_mult": 4, "timeout_bars": None}
+        base = {
+            "exit_strategy": "fixed",
+            "tp_mult": 2,
+            "sl_mult": 4,
+            "timeout_bars": None,
+        }
         entries = [
-            {**base, "ct": 0.5, "model_hyperparameters": {"a": [1, 2]}, "inner_val_pnl": 1.0},
-            {**base, "ct": 0.6, "model_hyperparameters": {"a": [1, 2]}, "inner_val_pnl": 2.0},
-            {**base, "ct": 0.5, "model_hyperparameters": {"a": [3]}, "inner_val_pnl": 3.0},
+            {
+                **base,
+                "ct": 0.5,
+                "model_hyperparameters": {"a": [1, 2]},
+                "inner_val_pnl": 1.0,
+            },
+            {
+                **base,
+                "ct": 0.6,
+                "model_hyperparameters": {"a": [1, 2]},
+                "inner_val_pnl": 2.0,
+            },
+            {
+                **base,
+                "ct": 0.5,
+                "model_hyperparameters": {"a": [3]},
+                "inner_val_pnl": 3.0,
+            },
         ]
         matrix, _ = build_performance_matrix({0: entries, 1: entries})
         assert sorted(matrix[:, 0]) == [1.0, 2.0, 3.0]
 
     def test_combos_differing_only_by_entry_settings_keep_their_rows(self):
-        base = {"exit_strategy": "fixed", "tp_mult": 2, "sl_mult": 4, "timeout_bars": None}
+        base = {
+            "exit_strategy": "fixed",
+            "tp_mult": 2,
+            "sl_mult": 4,
+            "timeout_bars": None,
+        }
         entries = [
-            {**base, "entry_modifier": "plain", "entry_modifier_params": {}, "inner_val_pnl": 1.0},
-            {**base, "entry_modifier": "scale_in", "entry_modifier_params": {"levels": [0.5]}, "inner_val_pnl": 2.0},
+            {
+                **base,
+                "entry_modifier": "plain",
+                "entry_modifier_params": {},
+                "inner_val_pnl": 1.0,
+            },
+            {
+                **base,
+                "entry_modifier": "scale_in",
+                "entry_modifier_params": {"levels": [0.5]},
+                "inner_val_pnl": 2.0,
+            },
         ]
         matrix, _ = build_performance_matrix({0: entries, 1: entries})
         assert sorted(matrix[:, 0]) == [1.0, 2.0]
 
     def test_ml_entries_match_across_folds_despite_their_chosen_ct(self):
         """An ML entry's conf_thresh is chosen per fold, not a grid dimension."""
-        entry = {"exit_strategy": "atr_based", "tp_mult": 2, "sl_mult": 1, "timeout_bars": 0}
+        entry = {
+            "exit_strategy": "atr_based",
+            "tp_mult": 2,
+            "sl_mult": 1,
+            "timeout_bars": 0,
+        }
         matrix, _ = build_performance_matrix(
             {
                 0: [{**entry, "conf_thresh": 0.55, "inner_val_pnl": 1.0}],
@@ -219,7 +278,12 @@ class TestBuildPerformanceMatrix:
 
     def test_unhashable_grid_values_are_skipped(self):
         entries = [
-            {"tp_mult": 2, "sl_mult": 4, "model_hyperparameters": {"a": {1}}, "inner_val_pnl": 1.0},
+            {
+                "tp_mult": 2,
+                "sl_mult": 4,
+                "model_hyperparameters": {"a": {1}},
+                "inner_val_pnl": 1.0,
+            },
             {"tp_mult": 6, "sl_mult": 4, "inner_val_pnl": 2.0},
         ]
         matrix, _ = build_performance_matrix({0: entries, 1: entries})
@@ -274,7 +338,11 @@ class TestProbabilityOfBacktestOverfitting:
         matrix = rng.normal(0, 1, (10, 8))
         result = probability_of_backtest_overfitting(matrix)
         assert set(result.keys()) == {
-            "pbo", "n_cscv_splits", "is_overfit", "degradation", "logit_mean"
+            "pbo",
+            "n_cscv_splits",
+            "is_overfit",
+            "degradation",
+            "logit_mean",
         }
 
     def test_too_few_folds(self):
@@ -316,12 +384,14 @@ class TestComputeOverfittingMetrics:
             for tp in [10, 20]:
                 for sl in [15, 30]:
                     for ct in [0.55, 0.60]:
-                        fold_results.append({
-                            "tp_mult": tp,
-                            "sl_mult": sl,
-                            "timeout_bars": 0,
-                            "inner_val_pnl": rng.normal(1.0, 0.5),
-                        })
+                        fold_results.append(
+                            {
+                                "tp_mult": tp,
+                                "sl_mult": sl,
+                                "timeout_bars": 0,
+                                "inner_val_pnl": rng.normal(1.0, 0.5),
+                            }
+                        )
             grid_results_by_fold[fid] = fold_results
 
         trade_returns = list(rng.normal(0.01, 0.1, 200))
