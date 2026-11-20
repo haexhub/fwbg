@@ -198,3 +198,70 @@ class TestXGBoostRRRModel:
         reduced = model_class.get_reduced_hyperparameters(hp)
         assert reduced["n_estimators"] == 100
         assert reduced["rrr_variants"] == [2.0, 3.0]
+
+
+class TestSlFirstLabels:
+    """A bar that touches both TP and SL is a stop, as in the simulation kernels."""
+
+    @staticmethod
+    def _df(rows):
+        a = np.array(rows, dtype=float)
+        return pd.DataFrame(
+            {"O": a[:, 0], "H": a[:, 1], "L": a[:, 2], "C": a[:, 3], "_atr": 1.0}
+        )
+
+    def test_long_bar_touching_both_levels_is_a_loss(self):
+        # entry 100, SL 99, TP 102; bar 1 spans 98.5..102.5
+        df = self._df(
+            [(100, 100, 100, 100), (100, 102.5, 98.5, 100), (100, 100, 100, 100)]
+        )
+        t = _compute_binary_targets(df, rrr=2.0, base_sl_atr=1.0, direction="long")
+        assert t[0] == 0
+
+    def test_short_bar_touching_both_levels_is_a_loss(self):
+        df = self._df(
+            [(100, 100, 100, 100), (100, 101.5, 97.5, 100), (100, 100, 100, 100)]
+        )
+        t = _compute_binary_targets(df, rrr=2.0, base_sl_atr=1.0, direction="short")
+        assert t[0] == 0
+
+    def test_clean_tp_bar_still_wins(self):
+        df = self._df(
+            [(100, 100, 100, 100), (100, 102.5, 99.5, 102), (100, 100, 100, 100)]
+        )
+        assert _compute_binary_targets(df, 2.0, 1.0, "long")[0] == 1
+        down = self._df(
+            [(100, 100, 100, 100), (100, 100.5, 97.5, 98), (100, 100, 100, 100)]
+        )
+        assert _compute_binary_targets(down, 2.0, 1.0, "short")[0] == 1
+
+
+class TestVariantSelectionByExpectedValue:
+    class _StubModel:
+        classes_ = np.array([0, 1])
+
+        def __init__(self, p_by_rrr):
+            self.p_by_rrr = p_by_rrr
+
+        def predict_proba(self, df):
+            p = np.array([self.p_by_rrr[r] for r in df["rrr"].values])
+            return np.column_stack([1 - p, p])
+
+    def _model(self, variants, p_by_rrr):
+        model = _rrr_mod.XGBoostRRRModel()
+        model._variants = variants
+        model._model = self._StubModel(p_by_rrr)
+        return model
+
+    def test_higher_payoff_beats_higher_win_probability(self):
+        # EV: rrr 1.0 at p=.60 -> .20 ; rrr 3.0 at p=.45 -> 0.80
+        model = self._model([1.0, 3.0], {1.0: 0.60, 3.0: 0.45})
+        probs = model._predict_probability_impl(pd.DataFrame({"f": [0.0, 1.0]}))
+        assert list(model.selected_rrr) == [3.0, 3.0]
+        assert probs[:, 1] == pytest.approx([0.45, 0.45])
+
+    def test_low_payoff_wins_when_it_has_the_higher_expected_value(self):
+        # EV: rrr 1.0 at p=.95 -> .90 ; rrr 3.0 at p=.45 -> .80
+        model = self._model([1.0, 3.0], {1.0: 0.95, 3.0: 0.45})
+        model._predict_probability_impl(pd.DataFrame({"f": [0.0]}))
+        assert list(model.selected_rrr) == [1.0]
