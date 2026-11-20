@@ -142,3 +142,48 @@ def test_oversized_upload_is_rejected_before_it_is_read_whole(
     assert exc_info.value.status_code == 413
     assert upload.bytes_read < len(upload.getvalue())
     assert list((tmp_path / "data" / "t1" / "raw").iterdir()) == []
+
+
+def _raw_body(**overrides):
+    return _process_body(volume_col="", **overrides)
+
+
+def test_process_stores_epoch_timestamps_as_utc_even_with_timezone(
+    client, source, tmp_path
+):
+    raw = tmp_path / "data" / "t1" / "raw" / "raw.csv"
+    raw.write_text("d,o,h,l,c\n1388534400000,1,2,0.5,1\n1388535300000,1,2,0.5,1\n")
+
+    r = client.post(
+        "/api/datasources/t1/process",
+        json=_raw_body(timestamp_format="unix_ms", timezone="Europe/Berlin"),
+    )
+
+    assert r.status_code == 200
+    lines = (source.path / "EURUSD_HOUR.csv").read_text().splitlines()
+    assert [row.split(",")[0] for row in lines[1:]] == [
+        "2014-01-01 00:00:00",
+        "2014-01-01 00:15:00",
+    ]
+
+
+def test_process_keeps_both_hours_of_the_dst_fallback(client, source, tmp_path):
+    raw = tmp_path / "data" / "t1" / "raw" / "raw.csv"
+    wall = ["01:00", "02:00", "02:00", "03:00"]  # 02:00 happens twice in Berlin
+    raw.write_text(
+        "d,o,h,l,c\n" + "".join(f"2024-10-27 {t}:00,1,2,0.5,1\n" for t in wall)
+    )
+
+    r = client.post(
+        "/api/datasources/t1/process", json=_raw_body(timezone="Europe/Berlin")
+    )
+
+    assert r.status_code == 200
+    assert r.json()["rows"] == 4
+    lines = (source.path / "EURUSD_HOUR.csv").read_text().splitlines()
+    assert [row.split(",")[0] for row in lines[1:]] == [
+        "2024-10-26 23:00:00",
+        "2024-10-27 00:00:00",
+        "2024-10-27 01:00:00",
+        "2024-10-27 02:00:00",
+    ]
