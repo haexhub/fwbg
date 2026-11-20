@@ -1243,7 +1243,6 @@ Latent Feature Extraction via PCA (Principal Component Analysis) — komprimiert
 |---------|--------------|----------------|
 | `ae_latent_0..N` | PCA-Komponenten | Hauptvariationsmodi über alle Indikatoren |
 | `ae_reconstruction_error` | L2 Rekonstruktionsfehler pro Zeile | Hoch = ungewöhnlicher Marktzustand (Anomalie-Detektion) |
-| `ae_explained_variance` | Kumulative erklärte Varianz | Wie viel Information die Latent-Features erfassen |
 
 **Besonderheit:** `ae_reconstruction_error` ist ein kraftvolles Anomalie-Signal — wenn der aktuelle Marktzustand schlecht durch die Hauptkomponenten erklärt wird, ist er "ungewöhnlich" relativ zur jüngsten Geschichte.
 

@@ -98,9 +98,11 @@ class TestFeatureColumns:
         result = indicator.compute(df_with_features)
         assert "ae_reconstruction_error" in result.columns
 
-    def test_explained_variance_present(self, indicator, df_with_features):
+    def test_explained_variance_not_a_column(self, indicator, df_with_features):
+        """The cumulative explained variance is fit metadata, not a constant column."""
         result = indicator.compute(df_with_features)
-        assert "ae_explained_variance" in result.columns
+        assert "ae_explained_variance" not in result.columns
+        assert indicator.explained_variance_total is not None
 
     def test_preserves_original_columns(self, indicator, df_with_features):
         result = indicator.compute(df_with_features)
@@ -132,7 +134,6 @@ class TestNoLookahead:
                 f"ae_latent_{i} first row should be NaN"
             )
         assert pd.isna(result["ae_reconstruction_error"].iloc[0])
-        assert pd.isna(result["ae_explained_variance"].iloc[0])
 
     def test_second_row_not_nan(self, indicator, df_with_features):
         result = indicator.compute(df_with_features)
@@ -163,9 +164,9 @@ class TestPCABehavior:
 
     def test_explained_variance_in_range(self, indicator, df_with_features):
         """Cumulative explained variance must be between 0 and 1."""
-        result = indicator.compute(df_with_features)
-        ev = result["ae_explained_variance"].dropna().iloc[0]
-        assert 0.0 < ev <= 1.0, f"Explained variance out of range: {ev}"
+        indicator.compute(df_with_features)
+        ev = indicator.explained_variance_total
+        assert ev is not None and 0.0 < ev <= 1.0, f"out of range: {ev}"
 
     def test_reconstruction_error_nonnegative(self, indicator, df_with_features):
         result = indicator.compute(df_with_features)
@@ -306,12 +307,72 @@ class TestPluginIntegration:
 
     def test_name_and_version(self, indicator):
         assert indicator.name == "autoencoder_features"
-        assert indicator.version == "1.0.0"
+        assert indicator.version == "1.1.0"
 
-    def test_get_feature_columns(self, indicator):
+    def test_get_feature_columns_before_fit_declares_requested_count(self, indicator):
         cols = indicator.get_feature_columns()
-        assert "ae_latent_0" in cols
-        assert "ae_latent_7" in cols
-        assert "ae_reconstruction_error" in cols
-        assert "ae_explained_variance" in cols
-        assert len(cols) == 10  # 8 latent + recon_error + explained_var
+        assert cols == [f"ae_latent_{i}" for i in range(8)] + [
+            "ae_reconstruction_error"
+        ]
+        assert indicator.get_feature_columns({"n_components": 3}) == [
+            "ae_latent_0",
+            "ae_latent_1",
+            "ae_latent_2",
+            "ae_reconstruction_error",
+        ]
+
+
+class TestDeclaredColumnsMatchProduced:
+    def test_fewer_features_than_components(self, indicator, df_few_features):
+        result = indicator.compute(df_few_features, n_components=8)
+        produced = [c for c in result.columns if c.startswith("ae_")]
+        assert sorted(indicator.get_feature_columns()) == sorted(produced)
+        assert len(produced) == 3  # 3 features -> 2 latent + reconstruction error
+
+    def test_full_rank_case(self, indicator, df_with_features):
+        result = indicator.compute(df_with_features, n_components=5)
+        produced = [c for c in result.columns if c.startswith("ae_")]
+        assert sorted(indicator.get_feature_columns()) == sorted(produced)
+
+    def test_nothing_produced_declares_nothing(self, indicator, df_ohlcv_only):
+        indicator.compute(df_ohlcv_only)
+        assert indicator.get_feature_columns() == []
+
+
+class TestOverlayAndLabelExclusion:
+    def test_selection_excludes_overlays_and_labels(self):
+        df = pd.DataFrame(
+            {
+                "O": [1.0, 2.0],
+                "_price_level": [1.0, 2.0],
+                "_ema_overlay": [1.0, 2.0],
+                "target": [0.0, 1.0],
+                "label_long": [0.0, 1.0],
+                "ae_old": [1.0, 2.0],
+                "feat_a": [1.0, 2.0],
+            }
+        )
+        assert _ae._select_feature_columns(df, ["ae_"]) == ["feat_a"]
+        # the overlay exclusion does not depend on the configurable prefixes
+        assert _ae._select_feature_columns(df, []) == ["ae_old", "feat_a"]
+
+    def test_price_level_overlay_does_not_change_latents(
+        self, indicator, df_with_features
+    ):
+        base = indicator.compute(df_with_features, n_components=3)
+        with_overlay = df_with_features.copy()
+        with_overlay["_sma_overlay"] = with_overlay["C"].rolling(5).mean() * 50
+        other = _ae.AutoencoderFeaturesIndicator()
+        out = other.compute(with_overlay, n_components=3)
+        cols = [f"ae_latent_{i}" for i in range(3)] + ["ae_reconstruction_error"]
+        pd.testing.assert_frame_equal(base[cols], out[cols])
+
+    def test_explained_variance_matches_pca(self, indicator, df_with_features):
+        from sklearn.decomposition import PCA
+        from sklearn.preprocessing import StandardScaler
+
+        indicator.compute(df_with_features, n_components=4)
+        feats = [c for c in df_with_features.columns if c.startswith("feat_")]
+        X = StandardScaler().fit_transform(df_with_features[feats].to_numpy())
+        expected = PCA(n_components=4).fit(X).explained_variance_ratio_.sum()
+        assert indicator.explained_variance_total == pytest.approx(expected)

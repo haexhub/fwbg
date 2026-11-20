@@ -59,7 +59,6 @@ def test_autoencoder_transform_isolated_from_future_tail():
         "ae_latent_0",
         "ae_latent_1",
         "ae_reconstruction_error",
-        "ae_explained_variance",
     ]
     np.testing.assert_allclose(
         baseline[output_columns].iloc[:30],
