@@ -12,6 +12,7 @@ Struktur:
       alphavantage/
         config.json
 """
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date
@@ -31,6 +32,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class AssetInfo:
     """Ein verfügbares Asset in einer Datenquelle."""
+
     symbol: str
     timeframes: List[str]
     date_from: Optional[date]
@@ -42,6 +44,7 @@ class AssetInfo:
 # Default Basis-Pfad für Daten — resolved from workspace env vars at import time
 def _default_data_root() -> Path:
     import os
+
     data_dir = os.environ.get("FWBG_DATA_DIR")
     if data_dir:
         return Path(data_dir)
@@ -50,12 +53,14 @@ def _default_data_root() -> Path:
         return Path(workspace) / "data"
     return Path.home() / "fwbg" / "data"
 
+
 DEFAULT_DATA_ROOT = _default_data_root()
 
 
 @dataclass
 class LoadResult:
     """Standardisiertes Ergebnis von DataSource.load()."""
+
     data: Dict[str, pd.DataFrame] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     source_name: str = ""
@@ -63,6 +68,7 @@ class LoadResult:
 
 class SourceType(str, Enum):
     """Typ der Datenquelle."""
+
     CSV = "csv"
     REST = "rest"
     WEBSOCKET = "websocket"
@@ -72,6 +78,7 @@ class SourceType(str, Enum):
 @dataclass
 class DataSourceConfig(ABC):
     """Basis-Konfiguration für alle Datenquellen."""
+
     name: str
     source_type: SourceType = field(init=False)
     description: str = ""
@@ -99,22 +106,23 @@ class DataSourceConfig(ABC):
 @dataclass
 class CSVSourceConfig(DataSourceConfig):
     """Konfiguration für CSV-Datenquellen."""
+
     path: Path = field(default_factory=lambda: Path("data"))
     file_pattern: str = "{symbol}_{timeframe}.csv"
     timeframe_map: Dict[str, str] = field(default_factory=dict)
     # ETL: raw → datasource conversion
     raw_path: Path = field(default=None)
     raw_pattern: str = "{raw_symbol}_m15.csv"
-    timestamp_unit: str = ""          # "s", "ms", or "" for ISO/auto
+    timestamp_unit: str = ""  # "s", "ms", or "" for ISO/auto
     symbol_map: Dict[str, str] = field(default_factory=dict)  # raw_prefix → symbol
-    timezone: str = ""                # IANA timezone, e.g. "Europe/Berlin"
+    timezone: str = ""  # IANA timezone, e.g. "Europe/Berlin"
     # Column mapping (raw CSV column names → standard TOHLCV)
     date_col: str = "timestamp"
     open_col: str = "open"
     high_col: str = "high"
     low_col: str = "low"
     close_col: str = "close"
-    volume_col: str = ""              # empty = no volume column, fill with 0
+    volume_col: str = ""  # empty = no volume column, fill with 0
 
     def __post_init__(self):
         self.source_type = SourceType.CSV
@@ -142,8 +150,14 @@ class CSVSourceConfig(DataSourceConfig):
         if self.timezone:
             d["timezone"] = self.timezone
         # Column mapping — only persist non-defaults
-        col_defaults = {"date_col": "timestamp", "open_col": "open", "high_col": "high",
-                        "low_col": "low", "close_col": "close", "volume_col": ""}
+        col_defaults = {
+            "date_col": "timestamp",
+            "open_col": "open",
+            "high_col": "high",
+            "low_col": "low",
+            "close_col": "close",
+            "volume_col": "",
+        }
         for attr, default in col_defaults.items():
             val = getattr(self, attr)
             if val != default:
@@ -163,8 +177,8 @@ class CSVSourceConfig(DataSourceConfig):
             return self.raw_pattern, lambda stem: stem
 
         idx = self.raw_pattern.index(placeholder)
-        suffix = self.raw_pattern[idx + len(placeholder):]  # e.g. "_m15.csv"
-        suffix_no_ext = suffix.removesuffix(".csv")          # e.g. "_m15"
+        suffix = self.raw_pattern[idx + len(placeholder) :]  # e.g. "_m15.csv"
+        suffix_no_ext = suffix.removesuffix(".csv")  # e.g. "_m15"
         glob_pat = self.raw_pattern.replace(placeholder, "*")
 
         def extract_prefix(stem: str) -> str:
@@ -174,7 +188,9 @@ class CSVSourceConfig(DataSourceConfig):
 
         return glob_pat, extract_prefix
 
-    def prepare(self, glob_override: str = "", excludes: List[str] | None = None) -> List[str]:
+    def prepare(
+        self, glob_override: str = "", excludes: List[str] | None = None
+    ) -> List[str]:
         """ETL: Konvertiert Rohdaten (raw_path) ins Standard-Format (path).
 
         Uses raw_pattern (or glob_override) for file discovery, symbol_map for
@@ -203,6 +219,7 @@ class CSVSourceConfig(DataSourceConfig):
 
         if glob_override:
             raw_files = sorted(raw_dir.glob(glob_override))
+
             # With a custom glob, prefix = full stem (user manages symbol_map accordingly)
             def extract_prefix(stem: str) -> str:
                 return stem
@@ -232,11 +249,15 @@ class CSVSourceConfig(DataSourceConfig):
 
                 # --- Timestamp ---
                 if self.date_col not in df.columns:
-                    log.warning(f"prepare(): Spalte '{self.date_col}' nicht in {raw_file.name}")
+                    log.warning(
+                        f"prepare(): Spalte '{self.date_col}' nicht in {raw_file.name}"
+                    )
                     continue
 
                 if self.timestamp_unit in ("s", "ms"):
-                    ts = pd.to_datetime(df[self.date_col], unit=self.timestamp_unit, utc=True)
+                    ts = pd.to_datetime(
+                        df[self.date_col], unit=self.timestamp_unit, utc=True
+                    )
                     if self.timezone:
                         ts = ts.dt.tz_convert(self.timezone)
                     df["T"] = ts.dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -257,7 +278,9 @@ class CSVSourceConfig(DataSourceConfig):
                 ohlc_cols = [self.open_col, self.high_col, self.low_col, self.close_col]
                 missing = [c for c in ohlc_cols if c not in df.columns]
                 if missing:
-                    log.warning(f"prepare(): {raw_file.name}: fehlende Spalten {missing}")
+                    log.warning(
+                        f"prepare(): {raw_file.name}: fehlende Spalten {missing}"
+                    )
                     continue
 
                 out = df[["T"] + ohlc_cols].copy()
@@ -305,10 +328,8 @@ class CSVSourceConfig(DataSourceConfig):
         """Baut einen Regex aus file_pattern mit benannten Gruppen für symbol + timeframe."""
         try:
             escaped = re.escape(self.file_pattern.removesuffix(".csv"))
-            pattern = (
-                escaped
-                .replace(r"\{symbol\}", r"(?P<symbol>.+?)")
-                .replace(r"\{timeframe\}", r"(?P<timeframe>.+)")
+            pattern = escaped.replace(r"\{symbol\}", r"(?P<symbol>.+?)").replace(
+                r"\{timeframe\}", r"(?P<timeframe>.+)"
             )
             return re.compile(f"^{pattern}$")
         except re.error:
@@ -318,6 +339,7 @@ class CSVSourceConfig(DataSourceConfig):
         """Liest erstes und letztes Datum aus einer CSV-Datei (nur erste Spalte)."""
         try:
             import pandas as pd
+
             df = pd.read_csv(path, usecols=[0], index_col=0, parse_dates=True)
             if df.empty:
                 return None, None
@@ -347,14 +369,16 @@ class CSVSourceConfig(DataSourceConfig):
             timeframes = sorted(tf_map.keys())
             all_froms = [v[0] for v in tf_map.values() if v[0]]
             all_tos = [v[1] for v in tf_map.values() if v[1]]
-            assets.append(AssetInfo(
-                symbol=symbol,
-                timeframes=timeframes,
-                date_from=min(all_froms) if all_froms else None,
-                date_to=max(all_tos) if all_tos else None,
-                source=self.name,
-                source_type="csv",
-            ))
+            assets.append(
+                AssetInfo(
+                    symbol=symbol,
+                    timeframes=timeframes,
+                    date_from=min(all_froms) if all_froms else None,
+                    date_to=max(all_tos) if all_tos else None,
+                    source=self.name,
+                    source_type="csv",
+                )
+            )
         return assets
 
     def load(self, items: Dict[str, str], **params) -> LoadResult:
@@ -369,12 +393,21 @@ class CSVSourceConfig(DataSourceConfig):
                 raw_df = pd.read_csv(csv_path, nrows=1)
                 cols = list(raw_df.columns)
                 date_col = None
-                for candidate in ["DATE", "Datetime", "datetime", "Time", "time", "Date"]:
+                for candidate in [
+                    "DATE",
+                    "Datetime",
+                    "datetime",
+                    "Time",
+                    "time",
+                    "Date",
+                ]:
                     if candidate in cols:
                         date_col = candidate
                         break
                 if date_col:
-                    df = pd.read_csv(csv_path, parse_dates=[date_col], index_col=date_col)
+                    df = pd.read_csv(
+                        csv_path, parse_dates=[date_col], index_col=date_col
+                    )
                 else:
                     df = pd.read_csv(csv_path, parse_dates=[0], index_col=0)
                 data[prefix] = df
@@ -394,7 +427,7 @@ class CSVSourceConfig(DataSourceConfig):
                 data_path=str(self.path),
                 file_pattern=pattern,
                 timeframe=timeframe,
-                **kwargs
+                **kwargs,
             )
 
         raise NotImplementedError(
@@ -406,6 +439,7 @@ class CSVSourceConfig(DataSourceConfig):
 @dataclass
 class RESTSourceConfig(DataSourceConfig):
     """Konfiguration für REST API Datenquellen."""
+
     base_url: str = ""
     api_key: str = ""
     api_key_param: str = "apikey"
@@ -472,6 +506,7 @@ class RESTSourceConfig(DataSourceConfig):
 @dataclass
 class WebSocketSourceConfig(DataSourceConfig):
     """Konfiguration für WebSocket Streaming Datenquellen."""
+
     url: str = ""
     headers: Dict[str, str] = field(default_factory=dict)
     subscribe_message: Dict[str, Any] = field(default_factory=dict)
@@ -495,7 +530,9 @@ class WebSocketSourceConfig(DataSourceConfig):
             "max_reconnect_attempts": self.max_reconnect_attempts,
         }
 
-    def get_subscribe_message(self, symbol: str, timeframe: str = "1m") -> Dict[str, Any]:
+    def get_subscribe_message(
+        self, symbol: str, timeframe: str = "1m"
+    ) -> Dict[str, Any]:
         msg_str = json.dumps(self.subscribe_message)
         msg_str = msg_str.replace("{symbol}", symbol.lower())
         msg_str = msg_str.replace("{timeframe}", timeframe)
@@ -523,6 +560,7 @@ class WebSocketSourceConfig(DataSourceConfig):
 @dataclass
 class DBSourceConfig(DataSourceConfig):
     """Konfiguration für Datenbank-Datenquellen."""
+
     connection_string: str = ""
     driver: str = "sqlalchemy"
 
@@ -772,7 +810,8 @@ def list_data_sources(source_type: SourceType = None) -> List[str]:
     if source_type is None:
         return list(_DATA_SOURCES.keys())
     return [
-        name for name, source in _DATA_SOURCES.items()
+        name
+        for name, source in _DATA_SOURCES.items()
         if source.source_type == source_type
     ]
 
