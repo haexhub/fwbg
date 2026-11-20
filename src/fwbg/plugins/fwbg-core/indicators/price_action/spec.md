@@ -1,6 +1,6 @@
 # Plugin Spec — price_action
 
-**Kind**: indicator  •  **Version**: 2.0.0
+**Kind**: indicator  •  **Version**: 2.1.0
 
 ## Capability
 
@@ -8,7 +8,7 @@ Computes candle-structure, trend-structure (HH/LL/HL/LH), gap, streak, range-exp
 
 ## Summary
 
-Price-action indicator that derives a family of features directly from OHLC bars: candle body/shadow ratios and direction, Higher-Highs / Lower-Lows / Higher-Lows / Lower-Highs rolling counters and a combined trend-structure score, gap size / direction / fill flag, consecutive bullish/bearish streaks, range expansion vs a 20-bar mean, inside- and outside-bar flags, and — when a volume column (V or Volume) is present and compute_volume is True — OBV change over 5 bars, Money Flow Index, relative volume vs a 20-bar mean, and a volume-weighted body-direction "price trend". All features are shifted by one bar before being returned to prevent lookahead bias.
+Price-action indicator that derives a family of features directly from OHLC bars: candle body/shadow ratios and direction, Higher-Highs / Lower-Lows / Higher-Lows / Lower-Highs rolling counters and a combined trend-structure score, gap size / direction / fill flag, consecutive bullish/bearish streaks, range expansion vs a 20-bar mean, inside- and outside-bar flags, and — when a volume column (V or Volume) is present and compute_volume is True — OBV change over 5 bars (relative to the 5-bar volume sum), Money Flow Index, relative volume vs a 20-bar mean, and a volume-weighted body-direction "price trend". All features are shifted by one bar before being returned to prevent lookahead bias.
 
 ## Inputs
 
@@ -59,7 +59,7 @@ Price-action indicator that derives a family of features directly from OHLC bars
 - AC-010: pa_bullish_streak counts consecutive bars with C > O (0 on non-bullish bars); pa_bearish_streak is computed with the same grouping logic on bearish bars and is masked by the bullish flag (existing behaviour of the code).
 - AC-011: pa_range_expansion equals current bar range divided by its 20-bar rolling mean.
 - AC-012: pa_inside_bar equals 1 iff H < H[-1] AND L > L[-1]; pa_outside_bar equals 1 iff H > H[-1] AND L < L[-1].
-- AC-013: When compute_volume is True and a V or Volume column exists, vol_obv_change is (OBV - OBV[-5]) / OBV[-5], vol_mfi is ta.volume.money_flow_index(H, L, C, V), vol_relative is V / V.rolling(20).mean(), and vol_price_trend equals pa_body_dir * vol_relative.
+- AC-013: When compute_volume is True and a V or Volume column exists, vol_obv_change is (OBV - OBV[-5]) / sum(V over the last 5 bars), i.e. the signed volume of the last 5 bars relative to the volume of the same bars (start-independent, bounded to [-1, 1]), vol_mfi is ta.volume.money_flow_index(H, L, C, V), vol_relative is V / V.rolling(20).mean(), and vol_price_trend equals pa_body_dir * vol_relative.
 - AC-014: When compute_volume is False or no volume column is present, the vol_* columns are not added by compute().
 - AC-015: All feature columns are shifted by one bar (shift_features) before being concatenated with df, so row i features only depend on data up to row i-1.
 - AC-016: get_feature_columns() always lists all 23 feature names including the four vol_* columns (vol_obv_change, vol_mfi, vol_relative, vol_price_trend), regardless of compute_volume or whether a volume column is present; callers must not assume vol_* columns exist in the output DataFrame when compute_volume is False or no volume column is available (see AC-014 and volume edge case). get_signal_columns() returns pa_body_dir, pa_gap_dir, pa_gap_filled, pa_inside_bar, pa_outside_bar.
@@ -71,7 +71,7 @@ Price-action indicator that derives a family of features directly from OHLC bars
 - First bar has no previous close, so pa_gap, pa_gap_abs, pa_gap_dir, pa_gap_filled, and HH/LL/HL/LH shift-based features are NaN/0 for the initial rows before being shifted again.
 - First hh_ll_period bars produce NaN for pa_hh/pa_ll/pa_hl/pa_lh (rolling sum warmup) and consequently for pa_trend_structure.
 - First 20 bars produce NaN for pa_range_expansion and (when volume is used) vol_relative due to rolling(20).mean() warmup.
-- Previous close of zero would make gap and vol_obv_change divisions unsafe; safe_divide guards these to avoid inf/NaN.
+- Previous close of zero would make the gap division unsafe, and a zero 5-bar volume sum the vol_obv_change division unsafe; safe_divide guards these to avoid inf/NaN.
 - compute_volume=True but no V/Volume column present: volume features are silently skipped and their columns are absent from the returned DataFrame (though still listed in get_feature_columns()).
 - Flat bar with C == O: pa_body_dir is 0, so it counts as neither bullish nor bearish for streaks (both streaks reset via the groupby of (flag != flag.shift()).cumsum()).
 - Gap exactly at the 0.001 threshold: treated as no significant gap (strict > / <).

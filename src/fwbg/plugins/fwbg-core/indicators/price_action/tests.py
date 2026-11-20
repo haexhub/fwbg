@@ -11,14 +11,18 @@ if _pa is None:
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+
 def _make_ohlc(close, freq="h"):
     n = len(close)
-    return pd.DataFrame({
-        "O": close * 0.999,
-        "H": close * 1.005,
-        "L": close * 0.995,
-        "C": close,
-    }, index=pd.date_range("2022-01-03", periods=n, freq=freq))
+    return pd.DataFrame(
+        {
+            "O": close * 0.999,
+            "H": close * 1.005,
+            "L": close * 0.995,
+            "C": close,
+        },
+        index=pd.date_range("2022-01-03", periods=n, freq=freq),
+    )
 
 
 def _get_ind(**params):
@@ -36,69 +40,91 @@ def _get_ind(**params):
 
 # ── body ratio ───────────────────────────────────────────────────────────────
 
+
 class TestBodyRatio:
     def test_marubozu_body_ratio_near_one(self):
         """Candle where H=C and L=O (full body, no wicks) → body_ratio ≈ 1."""
         n = 100
         close = np.full(n, 100.0)
-        df = pd.DataFrame({
-            "O": close - 1.0,
-            "C": close,
-            "H": close,
-            "L": close - 1.0,
-        }, index=pd.date_range("2022-01-03", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": close - 1.0,
+                "C": close,
+                "H": close,
+                "L": close - 1.0,
+            },
+            index=pd.date_range("2022-01-03", periods=n, freq="h"),
+        )
         result = _get_ind().compute(df)
         if "pa_body_ratio" in result.columns:
             valid = result["pa_body_ratio"].dropna()
-            assert (valid > 0.9).all(), f"Marubozu should have body_ratio near 1, got min={valid.min():.3f}"
+            assert (valid > 0.9).all(), (
+                f"Marubozu should have body_ratio near 1, got min={valid.min():.3f}"
+            )
 
     def test_doji_body_ratio_near_zero(self):
         """Candle where O==C but H-L is wide → body_ratio ≈ 0."""
         n = 100
         close = np.full(n, 100.0)
-        df = pd.DataFrame({
-            "O": close,
-            "C": close,
-            "H": close + 2.0,
-            "L": close - 2.0,
-        }, index=pd.date_range("2022-01-03", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": close,
+                "C": close,
+                "H": close + 2.0,
+                "L": close - 2.0,
+            },
+            index=pd.date_range("2022-01-03", periods=n, freq="h"),
+        )
         result = _get_ind().compute(df)
         if "pa_body_ratio" in result.columns:
             valid = result["pa_body_ratio"].dropna()
-            assert (valid < 0.1).all(), f"Doji should have body_ratio near 0, got max={valid.max():.3f}"
+            assert (valid < 0.1).all(), (
+                f"Doji should have body_ratio near 0, got max={valid.max():.3f}"
+            )
 
     def test_range_pos_above_half_when_close_in_upper_half(self):
         """When close is in the upper half of the bar range, pa_range_pos > 0.5."""
         n = 100
         close = np.full(n, 100.0)
-        df = pd.DataFrame({
-            "O": close - 0.5,
-            "C": close + 0.8,
-            "H": close + 1.0,
-            "L": close - 1.0,
-        }, index=pd.date_range("2022-01-03", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": close - 0.5,
+                "C": close + 0.8,
+                "H": close + 1.0,
+                "L": close - 1.0,
+            },
+            index=pd.date_range("2022-01-03", periods=n, freq="h"),
+        )
         result = _get_ind().compute(df)
         if "pa_range_pos" in result.columns:
             valid = result["pa_range_pos"].dropna()
-            assert (valid > 0.5).all(), f"Close in upper half → range_pos > 0.5, got min={valid.min():.3f}"
+            assert (valid > 0.5).all(), (
+                f"Close in upper half → range_pos > 0.5, got min={valid.min():.3f}"
+            )
 
     def test_range_pos_below_half_when_close_in_lower_half(self):
         """When close is in the lower half of the bar range, pa_range_pos < 0.5."""
         n = 100
         close = np.full(n, 100.0)
-        df = pd.DataFrame({
-            "O": close + 0.5,
-            "C": close - 0.8,
-            "H": close + 1.0,
-            "L": close - 1.0,
-        }, index=pd.date_range("2022-01-03", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": close + 0.5,
+                "C": close - 0.8,
+                "H": close + 1.0,
+                "L": close - 1.0,
+            },
+            index=pd.date_range("2022-01-03", periods=n, freq="h"),
+        )
         result = _get_ind().compute(df)
         if "pa_range_pos" in result.columns:
             valid = result["pa_range_pos"].dropna()
-            assert (valid < 0.5).all(), f"Close in lower half → range_pos < 0.5, got max={valid.max():.3f}"
+            assert (valid < 0.5).all(), (
+                f"Close in lower half → range_pos < 0.5, got max={valid.max():.3f}"
+            )
 
 
 # ── streaks ───────────────────────────────────────────────────────────────────
+
 
 class TestBullishStreak:
     def test_bullish_streak_increments_on_consecutive_bullish_candles(self):
@@ -106,35 +132,50 @@ class TestBullishStreak:
         n = 50
         open_ = np.concatenate([np.full(40, 100.0), np.linspace(100, 109, 10)])
         close = np.concatenate([np.full(40, 100.0), np.linspace(101, 110, 10)])
-        df = pd.DataFrame({
-            "O": open_,
-            "C": close,
-            "H": close + 0.3,
-            "L": open_ - 0.3,
-        }, index=pd.date_range("2022-01-03", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": open_,
+                "C": close,
+                "H": close + 0.3,
+                "L": open_ - 0.3,
+            },
+            index=pd.date_range("2022-01-03", periods=n, freq="h"),
+        )
         result = _get_ind().compute(df)
         if "pa_bullish_streak" in result.columns:
             streak = result["pa_bullish_streak"].dropna().iloc[-5:]
-            assert streak.iloc[-1] > streak.iloc[0],                 f"Streak should grow during bullish run, got {streak.values}"
+            assert streak.iloc[-1] > streak.iloc[0], (
+                f"Streak should grow during bullish run, got {streak.values}"
+            )
 
     def test_streak_reset_after_direction_change(self):
         """After bearish candles following bullish run, bearish_streak > 0."""
         n = 100
         open_ = np.concatenate([np.linspace(100, 109, 90), np.full(10, 110.0)])
         close = np.concatenate([np.linspace(101, 110, 90), np.full(10, 108.0)])
-        df = pd.DataFrame({
-            "O": open_,
-            "C": close,
-            "H": np.maximum(open_, close) + 0.5,
-            "L": np.minimum(open_, close) - 0.5,
-        }, index=pd.date_range("2022-01-03", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": open_,
+                "C": close,
+                "H": np.maximum(open_, close) + 0.5,
+                "L": np.minimum(open_, close) - 0.5,
+            },
+            index=pd.date_range("2022-01-03", periods=n, freq="h"),
+        )
         result = _get_ind().compute(df)
-        bull_ok = "pa_bullish_streak" not in result.columns or result["pa_bullish_streak"].dropna().iloc[-1] == 0
-        bear_ok = "pa_bearish_streak" in result.columns and result["pa_bearish_streak"].dropna().iloc[-1] > 0
+        bull_ok = (
+            "pa_bullish_streak" not in result.columns
+            or result["pa_bullish_streak"].dropna().iloc[-1] == 0
+        )
+        bear_ok = (
+            "pa_bearish_streak" in result.columns
+            and result["pa_bearish_streak"].dropna().iloc[-1] > 0
+        )
         assert bull_ok or bear_ok, "After bearish candles, streak should change"
 
 
 # ── inside / outside bars ────────────────────────────────────────────────────
+
 
 class TestInsideOutsideBar:
     def test_inside_bar_detected(self):
@@ -176,6 +217,7 @@ class TestInsideOutsideBar:
 
 # ── plugin attributes ─────────────────────────────────────────────────────────
 
+
 class TestPluginAttributes:
     def test_feature_columns_declared(self):
         ind = _get_ind()
@@ -200,7 +242,9 @@ class TestPluginAttributes:
         result = ind.compute(df)
         for col in ind.get_feature_columns():
             if col in result.columns:
-                assert pd.isna(result[col].iloc[0]), f"{col} row 0 should be NaN (shift required)"
+                assert pd.isna(result[col].iloc[0]), (
+                    f"{col} row 0 should be NaN (shift required)"
+                )
 
     def test_only_declared_features_added(self):
         """No extra columns beyond what get_feature_columns() declares."""
@@ -213,3 +257,46 @@ class TestPluginAttributes:
         declared = set(ind.get_feature_columns())
         undeclared = new_cols - declared
         assert not undeclared, f"Undeclared columns added: {undeclared}"
+
+
+class TestObvChange:
+    """vol_obv_change = signed 5-bar volume / 5-bar volume (start independent)."""
+
+    @staticmethod
+    def _ohlcv(n=400, seed=7):
+        rng = np.random.default_rng(seed)
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, n)))
+        df = _make_ohlc(close)
+        df["V"] = rng.integers(100, 1000, n).astype(float)
+        return df
+
+    def test_matches_reference_signed_volume_ratio(self):
+        df = self._ohlcv()
+        out = _get_ind().compute(df)
+        c = df["C"].to_numpy()
+        v = df["V"].to_numpy()
+        # signed volume as used by OBV: -V on a down close, +V otherwise
+        signed = np.where(c < np.roll(c, 1), -v, v)
+        signed[0] = v[0]
+        ref = np.full(len(df), np.nan)
+        for i in range(5, len(df)):
+            ref[i] = signed[i - 4 : i + 1].sum() / v[i - 4 : i + 1].sum()
+        expected = pd.Series(ref, index=df.index).shift(1)
+        got = out["vol_obv_change"]
+        pd.testing.assert_series_equal(
+            got.iloc[6:], expected.iloc[6:], check_names=False, rtol=1e-9, atol=1e-12
+        )
+
+    def test_bounded_and_no_outliers(self):
+        out = _get_ind().compute(self._ohlcv())
+        vals = out["vol_obv_change"].dropna()
+        assert vals.abs().max() <= 1.0 + 1e-12
+
+    def test_independent_of_series_start(self):
+        df = self._ohlcv()
+        full = _get_ind().compute(df)["vol_obv_change"]
+        tail = _get_ind().compute(df.iloc[137:])["vol_obv_change"]
+        common = tail.index[10:]
+        pd.testing.assert_series_equal(
+            full.loc[common], tail.loc[common], check_names=False, rtol=1e-9, atol=1e-12
+        )

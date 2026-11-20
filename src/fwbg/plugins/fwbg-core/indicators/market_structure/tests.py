@@ -1,4 +1,5 @@
 """Tests for the market_structure indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,6 +14,7 @@ if _ms is None:
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_df(highs, lows, closes, opens=None):
     """Build a minimal OHLC DataFrame from arrays."""
@@ -39,9 +41,9 @@ def _make_bull_bos_df(swing_lookback=5, n_post=4):
     Bars after:               C=107, price stays above
     """
     _n = swing_lookback + 1 + n_post
-    highs  = [100.0] * swing_lookback + [106.0] + [107.0] * n_post
-    lows   = [98.0]  * swing_lookback + [104.0] + [105.0] * n_post
-    closes = [99.0]  * swing_lookback + [106.0] + [107.0] * n_post
+    highs = [100.0] * swing_lookback + [106.0] + [107.0] * n_post
+    lows = [98.0] * swing_lookback + [104.0] + [105.0] * n_post
+    closes = [99.0] * swing_lookback + [106.0] + [107.0] * n_post
     return _make_df(highs, lows, closes)
 
 
@@ -53,8 +55,8 @@ def _make_bear_bos_df(swing_lookback=5, n_post=4):
     Bars after:               C=93, price stays below
     """
     _n = swing_lookback + 1 + n_post
-    highs  = [102.0] * swing_lookback + [99.0] + [98.0] * n_post
-    lows   = [100.0] * swing_lookback + [93.0] + [92.0] * n_post
+    highs = [102.0] * swing_lookback + [99.0] + [98.0] * n_post
+    lows = [100.0] * swing_lookback + [93.0] + [92.0] * n_post
     closes = [101.0] * swing_lookback + [94.0] + [93.0] * n_post
     return _make_df(highs, lows, closes)
 
@@ -68,8 +70,8 @@ def _make_choch_df(swing_lookback=5, n_post=4):
     sw = swing_lookback
     # Phase 1: descending — swing low at bar sw, close breaks below → bear BOS
     _n = sw + 1 + 1 + n_post
-    lows   = [100.0 - i for i in range(sw)] + [90.0] + [92.0] + [94.0] * n_post
-    highs  = [102.0 - i for i in range(sw)] + [94.0] + [105.0] + [103.0] * n_post
+    lows = [100.0 - i for i in range(sw)] + [90.0] + [92.0] + [94.0] * n_post
+    highs = [102.0 - i for i in range(sw)] + [94.0] + [105.0] + [103.0] * n_post
     closes = [101.0 - i for i in range(sw)] + [91.0] + [104.0] + [103.0] * n_post
     return _make_df(highs, lows, closes)
 
@@ -97,6 +99,7 @@ def _make_random_df(n=500, seed=42):
 # Bullish BOS detection
 # ---------------------------------------------------------------------------
 
+
 class TestBullishBOS:
     """Tests for bullish Break-of-Structure detection."""
 
@@ -108,8 +111,8 @@ class TestBullishBOS:
 
         # BOS at bar sw; after shift appears at iloc[sw+1]
         assert result["ms_bos_bull"].iloc[sw + 1] == 1.0, (
-            f"Expected ms_bos_bull=1 at iloc[{sw+1}], "
-            f"got {result['ms_bos_bull'].iloc[sw+1]}"
+            f"Expected ms_bos_bull=1 at iloc[{sw + 1}], "
+            f"got {result['ms_bos_bull'].iloc[sw + 1]}"
         )
 
     def test_no_bos_bull_when_close_stays_at_swing_high(self):
@@ -133,13 +136,14 @@ class TestBullishBOS:
 
         for offset in range(1, 4):
             assert result["ms_trend"].iloc[sw + 1 + offset] == 1.0, (
-                f"Expected ms_trend=+1 at iloc[{sw+1+offset}]"
+                f"Expected ms_trend=+1 at iloc[{sw + 1 + offset}]"
             )
 
 
 # ---------------------------------------------------------------------------
 # Bearish BOS detection
 # ---------------------------------------------------------------------------
+
 
 class TestBearishBOS:
     """Tests for bearish Break-of-Structure detection."""
@@ -151,8 +155,8 @@ class TestBearishBOS:
         result = _ms.MarketStructureIndicator().compute(df, swing_lookback=sw)
 
         assert result["ms_bos_bear"].iloc[sw + 1] == 1.0, (
-            f"Expected ms_bos_bear=1 at iloc[{sw+1}], "
-            f"got {result['ms_bos_bear'].iloc[sw+1]}"
+            f"Expected ms_bos_bear=1 at iloc[{sw + 1}], "
+            f"got {result['ms_bos_bear'].iloc[sw + 1]}"
         )
 
     def test_no_bos_bear_when_close_stays_at_swing_low(self):
@@ -175,7 +179,7 @@ class TestBearishBOS:
 
         for offset in range(1, 4):
             assert result["ms_trend"].iloc[sw + 1 + offset] == -1.0, (
-                f"Expected ms_trend=-1 at iloc[{sw+1+offset}]"
+                f"Expected ms_trend=-1 at iloc[{sw + 1 + offset}]"
             )
 
 
@@ -183,16 +187,18 @@ class TestBearishBOS:
 # Trend state
 # ---------------------------------------------------------------------------
 
+
 class TestTrendState:
     """Tests for ms_trend state machine."""
 
     def test_trend_starts_neutral(self):
-        """Before any BOS, ms_trend should be 0."""
+        """Before any BOS (and after warm-up), ms_trend should be 0."""
         sw = 5
-        df = _make_bull_bos_df(swing_lookback=sw)
+        # 10 flat bars, BOS on bar 10; the channel is valid from bar sw on
+        df = _make_bull_bos_df(swing_lookback=10)
         result = _ms.MarketStructureIndicator().compute(df, swing_lookback=sw)
-        # All bars before the BOS (after shift: iloc[1..sw]) should be neutral
-        pre_bos = result["ms_trend"].iloc[1: sw + 1]
+        # bars sw..9 are valid and neutral (after shift: iloc[sw+1..10])
+        pre_bos = result["ms_trend"].iloc[sw + 1 : 11]
         assert (pre_bos == 0.0).all(), (
             f"Expected ms_trend=0 before BOS, got {pre_bos.values}"
         )
@@ -214,6 +220,7 @@ class TestTrendState:
 # CHOCH detection
 # ---------------------------------------------------------------------------
 
+
 class TestCHOCH:
     """Tests for Change of Character detection."""
 
@@ -226,8 +233,8 @@ class TestCHOCH:
         # bear BOS at bar sw → trend=-1; bull BOS at bar sw+1 → CHOCH
         choch_bar = sw + 1
         assert result["ms_choch_bull"].iloc[choch_bar + 1] == 1.0, (
-            f"Expected ms_choch_bull=1 at iloc[{choch_bar+1}], "
-            f"got {result['ms_choch_bull'].iloc[choch_bar+1]}"
+            f"Expected ms_choch_bull=1 at iloc[{choch_bar + 1}], "
+            f"got {result['ms_choch_bull'].iloc[choch_bar + 1]}"
         )
 
     def test_choch_bull_only_fires_once(self):
@@ -258,21 +265,22 @@ class TestCHOCH:
         # Bar sw:       C=106 > swing_high(=102) → bull BOS, trend=+1
         # Bar sw+1:     C=108
         # Bar sw+2:     C=94 < swing_low_prev → bear BOS → CHOCH_bear
-        highs  = [102.0] * sw + [106.0, 108.0, 96.0] + [95.0] * 4
-        lows   = [100.0] * sw + [104.0, 106.0, 93.0] + [92.0] * 4
+        highs = [102.0] * sw + [106.0, 108.0, 96.0] + [95.0] * 4
+        lows = [100.0] * sw + [104.0, 106.0, 93.0] + [92.0] * 4
         closes = [101.0] * sw + [106.0, 107.0, 94.0] + [93.0] * 4
         df = _make_df(highs, lows, closes)
         result = _ms.MarketStructureIndicator().compute(df, swing_lookback=sw)
 
         choch_bar = sw + 2
         assert result["ms_choch_bear"].iloc[choch_bar + 1] == 1.0, (
-            f"Expected ms_choch_bear=1 at iloc[{choch_bar+1}]"
+            f"Expected ms_choch_bear=1 at iloc[{choch_bar + 1}]"
         )
 
 
 # ---------------------------------------------------------------------------
 # Distance features
 # ---------------------------------------------------------------------------
+
 
 class TestDistanceFeatures:
     """Tests for BOS-level distance and swing-distance features."""
@@ -317,6 +325,7 @@ class TestDistanceFeatures:
 # Feature properties
 # ---------------------------------------------------------------------------
 
+
 class TestFeatureProperties:
     """Tests for feature shapes, types and values."""
 
@@ -341,7 +350,9 @@ class TestFeatureProperties:
         indicator = _ms.MarketStructureIndicator()
         result = indicator.compute(_make_random_df())
         vals = result["ms_trend"].dropna().unique()
-        assert set(vals).issubset({-1.0, 0.0, 1.0}), f"ms_trend has unexpected values: {vals}"
+        assert set(vals).issubset({-1.0, 0.0, 1.0}), (
+            f"ms_trend has unexpected values: {vals}"
+        )
 
     def test_recency_in_unit_interval(self):
         indicator = _ms.MarketStructureIndicator()
@@ -388,9 +399,11 @@ class TestFeatureProperties:
 # Plugin integration
 # ---------------------------------------------------------------------------
 
+
 class TestPluginIntegration:
     def test_plugin_discoverable(self):
         from fwbg.core import discover_plugins, get_indicator
+
         discover_plugins()
         cls = get_indicator("market_structure")
         assert cls is not None
@@ -400,3 +413,45 @@ class TestPluginIntegration:
         result = indicator.compute(_make_random_df(n=200))
         for col in indicator.get_feature_columns():
             assert col in result.columns, f"Declared {col} missing from output"
+
+
+class TestWarmupAndDonchianSemantics:
+    """BOS needs a full channel window; warm-up rows are NaN."""
+
+    @staticmethod
+    def _rising(n=40):
+        # strictly rising series: every bar breaks the channel of the past
+        x = np.arange(n, dtype=float) + 100.0
+        return _make_df(x + 0.5, x - 0.5, x)
+
+    def test_no_bos_during_warmup(self):
+        sw = 10
+        df = self._rising()
+        result = _ms.MarketStructureIndicator().compute(df, swing_lookback=sw)
+        # bar i is evaluated against bars i-sw..i-1, so bars < sw have no channel;
+        # after the 1-bar shift rows 0..sw are NaN, not a fabricated 0/1.
+        for col in ("ms_bos_bull", "ms_bos_bear", "ms_trend", "ms_choch_recency"):
+            assert result[col].iloc[: sw + 1].isna().all(), col
+        # first valid bar sw is a BOS on a rising series (row sw+1 after shift)
+        assert result["ms_bos_bull"].iloc[sw + 1] == 1.0
+        assert result["ms_trend"].iloc[sw + 1] == 1.0
+
+    def test_bos_matches_donchian_reference(self):
+        rng = np.random.default_rng(3)
+        n, sw = 300, 12
+        c = 100 + np.cumsum(rng.normal(0, 1, n))
+        h = c + rng.uniform(0.1, 1, n)
+        low = c - rng.uniform(0.1, 1, n)
+        df = _make_df(h, low, c)
+        result = _ms.MarketStructureIndicator().compute(df, swing_lookback=sw)
+        ref_bull = np.full(n, np.nan)
+        ref_bear = np.full(n, np.nan)
+        for i in range(sw, n):
+            ref_bull[i] = float(c[i] > h[i - sw : i].max())
+            ref_bear[i] = float(c[i] < low[i - sw : i].min())
+        np.testing.assert_array_equal(
+            result["ms_bos_bull"].to_numpy()[1:], np.r_[np.nan, ref_bull[:-1]][1:]
+        )
+        np.testing.assert_array_equal(
+            result["ms_bos_bear"].to_numpy()[1:], np.r_[np.nan, ref_bear[:-1]][1:]
+        )

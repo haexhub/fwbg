@@ -2,7 +2,13 @@
 Market Structure Indicator.
 
 Detects Break-of-Structure (BOS) and Change of Character (CHOCH) events,
-the two core market-structure signals in ICT/SMC trading:
+the two core market-structure signals in ICT/SMC trading.
+
+Note: this is a Donchian-channel based structure proxy, not a swing-point
+(fractal pivot) structure. "Swing high / low" here is the plain rolling
+max / min of the last ``swing_lookback`` bars and a BOS is a close beyond that
+channel, i.e. a Donchian breakout. Rows without a full ``swing_lookback``
+window (warm-up) are NaN.
 
   BOS (bullish): close > rolling-max high over the last N bars.
                  Confirms bullish trend continuation.
@@ -21,6 +27,7 @@ Trend state machine: neutral (0) → bullish (+1) on bull BOS,
 Distance features capture how far price is from the most recent BOS level
 and from the current rolling swing extremes — useful for ML as proximity signals.
 """
+
 from typing import List
 
 import numpy as np
@@ -34,19 +41,19 @@ class MarketStructureIndicator(BaseIndicator):
     """Market structure (BOS / CHOCH) features for ML trading."""
 
     name = "market_structure"
-    version = "1.0.0"
+    version = "1.1.0"
 
     _FEATURES = [
-        "ms_bos_bull",         # 1 if bullish BOS at this bar
-        "ms_bos_bear",         # 1 if bearish BOS at this bar
-        "ms_choch_bull",       # 1 if bullish CHOCH (first bull BOS after bearish trend)
-        "ms_choch_bear",       # 1 if bearish CHOCH (first bear BOS after bullish trend)
-        "ms_trend",            # current trend: +1 bull, -1 bear, 0 neutral
-        "ms_bull_bos_dist",    # ATR-normalised distance from close to last bull BOS level
-        "ms_bear_bos_dist",    # ATR-normalised distance from close to last bear BOS level
+        "ms_bos_bull",  # 1 if bullish BOS at this bar
+        "ms_bos_bear",  # 1 if bearish BOS at this bar
+        "ms_choch_bull",  # 1 if bullish CHOCH (first bull BOS after bearish trend)
+        "ms_choch_bear",  # 1 if bearish CHOCH (first bear BOS after bullish trend)
+        "ms_trend",  # current trend: +1 bull, -1 bear, 0 neutral
+        "ms_bull_bos_dist",  # ATR-normalised distance from close to last bull BOS level
+        "ms_bear_bos_dist",  # ATR-normalised distance from close to last bear BOS level
         "ms_swing_high_dist",  # ATR-normalised distance from close to rolling swing high
-        "ms_swing_low_dist",   # ATR-normalised distance from close to rolling swing low
-        "ms_choch_recency",    # recency of most recent CHOCH (1=just happened, 0=old)
+        "ms_swing_low_dist",  # ATR-normalised distance from close to rolling swing low
+        "ms_choch_recency",  # recency of most recent CHOCH (1=just happened, 0=old)
     ]
 
     def compute(
@@ -73,9 +80,10 @@ class MarketStructureIndicator(BaseIndicator):
         tr[0] = highs[0] - lows[0]
         atr = pd.Series(tr).rolling(atr_period, min_periods=1).mean().values
 
-        # Rolling swing high / low (no lookahead: values up to bar i)
-        swing_high = pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
-        swing_low = pd.Series(lows).rolling(swing_lookback, min_periods=1).min().values
+        # Rolling swing high / low (no lookahead: values up to bar i). Full
+        # window only: a partial window would call every early new extreme a BOS.
+        swing_high = pd.Series(highs).rolling(swing_lookback).max().values
+        swing_low = pd.Series(lows).rolling(swing_lookback).min().values
 
         # Output arrays
         bos_bull = np.zeros(n)
@@ -90,7 +98,7 @@ class MarketStructureIndicator(BaseIndicator):
         choch_recency = np.zeros(n)
 
         # State
-        current_trend = 0         # -1, 0, +1
+        current_trend = 0  # -1, 0, +1
         last_bull_bos_level = np.nan
         last_bear_bos_level = np.nan
         last_choch_bar = -1
@@ -140,6 +148,19 @@ class MarketStructureIndicator(BaseIndicator):
             if last_choch_bar >= 0:
                 age = min(i - last_choch_bar, choch_lookback)
                 choch_recency[i] = 1.0 - age / choch_lookback
+
+        # Warm-up: bar i evaluates against the channel of bars i-L..i-1, which
+        # needs swing_lookback bars of history. Earlier rows carry no information.
+        warmup = min(swing_lookback, n)
+        for arr in (
+            bos_bull,
+            bos_bear,
+            choch_bull,
+            choch_bear,
+            trend,
+            choch_recency,
+        ):
+            arr[:warmup] = np.nan
 
         features = {
             "ms_bos_bull": bos_bull,
