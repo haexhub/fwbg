@@ -1,6 +1,6 @@
 # Plugin Spec — scheduled_events
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -18,7 +18,7 @@ Events come from a CSV file with one dated event per row, for example Treasury a
 ## Parameters
 
 - `events_file` (string, default empty): CSV file with the events; `~` is expanded. Empty, unreadable, or missing a named column: a warning and all values NaN
-- `date_column` (string, default `date`): column holding the event date; unparseable dates are skipped
+- `date_column` (string, default `date`): column holding the event date. Each cell is parsed on its own, so formats may be mixed (`2024-01-10`, `2024-01-11 14:00`, `Jan 12, 2024`); a timezone offset is dropped and the date as written is kept; blank cells are skipped; a cell without a four-digit year or any other unparsable cell raises `EventDateError` (a `ValueError`) instead of dropping the row. Ambiguous numeric dates such as `01/02/2024` are read month first, so prefer ISO dates
 - `filter_column` (string, default empty) and `filter_values` (list of strings, default empty): when `filter_column` is set, only rows whose value is in `filter_values` are events
 - `calendar` (choice, default `NYSE`): an exchange calendar of `holidays.list_supported_financial()` or `weekdays`
 - `window_start` (int, default 6) and `window_end` (int, default 2): `evt_window` is 1 when an event lies between `window_end` and `window_start` trading days ahead, inclusive; `window_end > window_start` raises `ValueError`
@@ -26,9 +26,9 @@ Events come from a CSV file with one dated event per row, for example Treasury a
 ## Outputs
 
 - `evt_days_ahead`: trading days from the bar's date to the next event on or after it (0 on an event day; NaN when no later event is in the file)
-- `evt_window`: 1 inside the window, else 0
-- `evt_window_start`: 1 on the bar where `evt_window` turns on (previous bar off)
-- `evt_window_end`: 1 on the bar where `evt_window` turns off (previous bar on), an exit column for `signal_exit`
+- `evt_window`: 1 inside the window, else 0; NaN where `evt_days_ahead` is NaN, i.e. after the file's last event, because later events are unknown rather than absent
+- `evt_window_start`: 1 on the bar where `evt_window` turns on (previous bar off); NaN after the file's last event
+- `evt_window_end`: 1 on the bar where `evt_window` turns off (previous bar on), an exit column for `signal_exit`; NaN after the file's last event
 
 An event or a bar dated on a closed day counts from the next trading day. Entering at the close of `evt_window_start` and exiting at the close of `evt_window_end` with `window_start=6`, `window_end=2` holds the returns of the five trading days before each event.
 
