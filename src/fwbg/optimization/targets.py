@@ -366,7 +366,8 @@ def simulate_trades(
         if i < next_allowed_entry:
             continue
 
-        direction = None
+        long_ok = False
+        short_ok = False
         # Long-Check: regime bitmask must have REGIME_LONG bit set
         if direction_filter in (None, 1):
             if (
@@ -379,12 +380,11 @@ def simulate_trades(
                 # Check signal event limit
                 if max_per_signal > 0 and long_event_ids is not None:
                     eid = long_event_ids[i]
-                    if eid > 0 and long_event_trades.get(eid, 0) < max_per_signal:
-                        direction = 1
+                    long_ok = eid > 0 and long_event_trades.get(eid, 0) < max_per_signal
                 else:
-                    direction = 1
+                    long_ok = True
         # Short-Check: regime bitmask must have REGIME_SHORT bit set
-        if direction is None and direction_filter in (None, -1):
+        if direction_filter in (None, -1):
             if (
                 regime[i] & REGIME_SHORT
                 and ctx.short_enabled
@@ -394,10 +394,18 @@ def simulate_trades(
             ):
                 if max_per_signal > 0 and short_event_ids is not None:
                     eid = short_event_ids[i]
-                    if eid > 0 and short_event_trades.get(eid, 0) < max_per_signal:
-                        direction = -1
+                    short_ok = (
+                        eid > 0 and short_event_trades.get(eid, 0) < max_per_signal
+                    )
                 else:
-                    direction = -1
+                    short_ok = True
+
+        # Opposite signals on the same bar cancel out: neither side gets
+        # priority, so a tie is no trade (with a single-direction run via
+        # direction_filter the other side is never evaluated).
+        direction = None
+        if long_ok != short_ok:
+            direction = 1 if long_ok else -1
 
         if direction:
             sl_abs = None
