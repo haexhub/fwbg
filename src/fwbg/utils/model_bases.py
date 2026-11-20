@@ -6,6 +6,7 @@ copy of the feature matrix per variant (`rrr` / `sl_atr`), compute
 per-variant targets, fit a single XGBoost model on the stacked data, and
 at inference time score every variant and pick the best per sample.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -90,12 +91,14 @@ class BaseStackedXGBoostModel(BaseModel, ABC):
         direction = training_context.direction or "long"
 
         X_stacked, y_stacked, sample_weight = self._build_stacked_dataset(
-            features, targets, training_context, train_df, direction,
+            features,
+            targets,
+            training_context,
+            train_df,
+            direction,
         )
 
-        self.progress.begin_stage(
-            "prepare_parameters", "Preparing XGBoost parameters"
-        )
+        self.progress.begin_stage("prepare_parameters", "Preparing XGBoost parameters")
         params = hyperparameters.copy()
         params.setdefault("random_state", 42)
         params.setdefault("verbosity", 0)
@@ -184,9 +187,7 @@ class BaseStackedXGBoostModel(BaseModel, ABC):
         self.logger.warning("CUDA error — falling back to CPU")
         disable_gpu()
         cpu_params = {
-            k: v
-            for k, v in params.items()
-            if k not in ("device", "tree_method")
+            k: v for k, v in params.items() if k not in ("device", "tree_method")
         }
         cpu_params["tree_method"] = "hist"
         cpu_params["device"] = "cpu"
