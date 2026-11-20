@@ -1,4 +1,5 @@
 """CRUD API for custom signal definitions."""
+
 import json
 import re
 from pathlib import Path
@@ -63,14 +64,16 @@ def list_signals() -> List[Dict[str, Any]]:
     for f in sorted(defs_dir.glob("*.json")):
         try:
             data = json.loads(f.read_text())
-            signals.append({
-                "name": data.get("name", f.stem),
-                "description": data.get("description", ""),
-                "version": data.get("version", "1.0.0"),
-                "filename": f.stem,
-                "rules_count": len(data.get("rules", [])),
-                "dependencies": data.get("dependencies", []),
-            })
+            signals.append(
+                {
+                    "name": data.get("name", f.stem),
+                    "description": data.get("description", ""),
+                    "version": data.get("version", "1.0.0"),
+                    "filename": f.stem,
+                    "rules_count": len(data.get("rules", [])),
+                    "dependencies": data.get("dependencies", []),
+                }
+            )
         except (json.JSONDecodeError, IOError):
             continue
     return signals

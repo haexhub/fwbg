@@ -7,6 +7,7 @@ new discrete signal columns (0 or 1).
 Signal definitions are auto-discovered by the PluginRegistry and
 registered as separate plugins under the "custom" namespace.
 """
+
 import operator
 from typing import Any, Dict, List
 
