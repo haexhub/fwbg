@@ -26,19 +26,19 @@ For ML models, the raw integer features work well with tree-based models (LightG
 | `time_session_overlap` | Session overlap flag: 1 during London-Asia overlap (08:00-12:00 UTC) or London-NY overlap (13:00-16:00 UTC). Higher liquidity periods. |
 | `season_month` | Month of the year (1-12). Raw integer value for tree-based models. |
 | `season_quarter` | Quarter of the year (1-4). Raw integer value. |
-| `season_week` | ISO week of the year (1-52). Raw integer value. |
+| `season_week` | ISO week of the year (1-53). Raw integer value. |
 | `season_dayofmonth` | Day of the month (1-31). Raw integer value. |
 | `season_month_sin` | Sine component of month cyclical encoding. sin(2*pi*month/12). |
 | `season_month_cos` | Cosine component of month cyclical encoding. cos(2*pi*month/12). |
 | `season_quarter_sin` | Sine component of quarter cyclical encoding. sin(2*pi*quarter/4). |
 | `season_quarter_cos` | Cosine component of quarter cyclical encoding. cos(2*pi*quarter/4). |
-| `season_week_sin` | Sine component of ISO week cyclical encoding. sin(2*pi*week/52). |
-| `season_week_cos` | Cosine component of ISO week cyclical encoding. cos(2*pi*week/52). |
+| `season_week_sin` | Sine component of ISO week cyclical encoding. sin(2*pi*week/weeks_in_year), where weeks_in_year is 52 or 53 for the ISO year, so week 53 does not coincide with week 1. |
+| `season_week_cos` | Cosine component of ISO week cyclical encoding. cos(2*pi*week/weeks_in_year). |
 | `season_dayofmonth_sin` | Sine component of day-of-month cyclical encoding. sin(2*pi*day/31). |
 | `season_dayofmonth_cos` | Cosine component of day-of-month cyclical encoding. cos(2*pi*day/31). |
-| `time_month_start` | Month start flag: 1 when day of month is 1-3, 0 otherwise. Captures institutional month-start rebalancing flows. |
-| `time_month_end` | Month end flag: 1 when day of month is 28 or later, 0 otherwise. Captures institutional month-end rebalancing and window dressing. |
-| `time_quarter_end` | Quarter end flag: 1 when month is March/June/September/December and day >= 28, 0 otherwise. Captures strong institutional rebalancing at fiscal quarter boundaries. |
+| `time_month_start` | Month start flag: 1 on the first `month_edge_days` (default 3) trading days of the month, 0 otherwise. Captures institutional month-start rebalancing flows. |
+| `time_month_end` | Month end flag: 1 on the last `month_edge_days` (default 3) trading days of the month (a weekend after the last trading day keeps the flag), 0 otherwise. Captures institutional month-end rebalancing and window dressing. |
+| `time_quarter_end` | Quarter end flag: 1 when `time_month_end` is 1 in March/June/September/December, 0 otherwise. Captures strong institutional rebalancing at fiscal quarter boundaries. |
 | `time_week_start` | Week start flag: 1 on Mondays, 0 otherwise. Captures weekend gap effects and Monday positioning. |
 | `time_week_end` | Week end flag: 1 on Fridays, 0 otherwise. Captures end-of-week position squaring and weekend risk reduction. |
 | `time_year_progress` | Linear year progress: day-of-year divided by days-in-year (365 or 366). Ranges from 0.0 (January 1) to 1.0 (December 31). Handles leap years. |
@@ -47,15 +47,19 @@ For ML models, the raw integer features work well with tree-based models (LightG
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `include_raw` | bool | True | Include raw (integer) time features: hour of day (0-23), day of week (0-6), month (1-12), quarter (1-4), ISO week (1-52), day of month (1-31). Useful for tree-based models that can split on ordinal values directly. |
+| `include_raw` | bool | True | Include raw (integer) time features: hour of day (0-23), day of week (0-6), month (1-12), quarter (1-4), ISO week (1-53), day of month (1-31). Useful for tree-based models that can split on ordinal values directly. |
 | `include_encoded` | bool | True | Include sin/cos cyclical encoding of time features. Maps periodic values (hour, day, month, etc.) onto a unit circle so that e.g. hour 23 and hour 0 are close together. Essential for neural networks and linear models that cannot learn cyclical patterns from raw integers. |
+| `calendar` | choice | `weekdays` | Trading-day calendar for the month start/end and quarter end flags: `weekdays` or an exchange holiday calendar such as `NYSE`. |
+| `month_edge_days` | int | 3 | Number of trading days flagged at the start and at the end of a month. |
+| `sessions` | dict | asia/london/ny | `{name: [start_hour, end_hour]}` in UTC, or `{name: [start_hour, end_hour, "Area/City"]}` for local hours of a time zone. |
 
 ## Usage Notes
 
 - This plugin does not benefit from stationarity transformations (`benefits_from_stationary: false`), as time features are inherently deterministic and stationary.
-- All features are shifted by 1 bar for consistency with other plugins, even though time features do not use OHLC data and would not cause lookahead bias.
+- Features are NOT shifted: every column describes the bar's own timestamp. The calendar and the session clock are fixed in advance and no price data is read, so this is not lookahead, and a shift would make Monday's row describe Friday. Only the first row is NaN.
 - The input DataFrame must have a `DatetimeIndex`. A `ValueError` is raised if the index is not a `DatetimeIndex`.
-- Trading session hours are defined in UTC. If your data uses a different timezone, the session flags will be incorrect. Convert your DataFrame index to UTC before applying this plugin.
+- Trading session hours are UTC by default (naive timestamps are UTC). A session can be given as `[start, end, "Area/City"]`, e.g. `{"ny": [9, 17, "America/New_York"]}`, to evaluate the hours in that time zone's local time, which follows daylight saving time. The default sessions stay in fixed UTC hours.
+- Month start/end and quarter end count trading days of the `calendar` parameter (default `weekdays`; use e.g. `NYSE` to skip exchange holidays), so the last trading day of a month is always flagged.
 - The session overlap periods (08:00-12:00 and 13:00-16:00 UTC) typically have the highest liquidity and tightest spreads, making them important for execution-aware models.
 - Setting `include_raw=False` while keeping `include_encoded=True` is recommended for neural network and linear model pipelines. Setting `include_encoded=False` while keeping `include_raw=True` is sufficient for pure tree-based models.
 - Year progress is a monotonically increasing feature within each year. It captures broad seasonal trends but is not cyclically encoded (use month/quarter encodings for cyclical seasonality).

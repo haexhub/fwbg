@@ -382,6 +382,8 @@ Zeit-Features kodieren Intraday-Muster und Trading-Sessions. Finanzmärkte zeige
 
 **Trading-Relevanz:** Session-Timing bestimmt Spread, Liquidität und Volatilität. Breakout-Strategien funktionieren besser am Session-Open, Mean-Reversion besser in ruhigen Phasen. Wochentags-Effekte (Montag-Reversals, Freitag-Profit-Taking) sind empirisch gut dokumentiert.
 
+Die Features sind nicht um einen Bar verschoben: jede Zeile beschreibt den eigenen Zeitstempel des Bars (Kalender und Session-Uhr stehen im Voraus fest), nur die erste Zeile ist NaN. Sessions gelten in UTC; `[start, end, "Area/City"]` wertet die Stunden in der lokalen Zeit der Zeitzone aus (Sommerzeit inklusive). Monats-/Quartalsende zählen Handelstage des Parameters `calendar` (Default `weekdays`).
+
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
 | `time_hour` | Stunde (0-23) | Session-Timing |
@@ -405,7 +407,7 @@ Saisonale Features erfassen kalendrische Muster über Tage, Wochen, Monate und Q
 | `season_month_sin/cos` | Zyklischer Monat | Für ML-Modelle |
 | `season_quarter` | Quartal (1-4) | Quartals-Effekte |
 | `season_quarter_sin/cos` | Zyklisches Quartal | Für ML-Modelle |
-| `season_week` | Kalenderwoche (1-52) | Wochen-Effekte |
+| `season_week` | Kalenderwoche (ISO, 1-53) | Wochen-Effekte |
 | `season_week_sin/cos` | Zyklische Woche | Für ML-Modelle |
 | `season_dayofmonth` | Tag im Monat (1-31) | Monatsanfang/-ende |
 | `season_dayofmonth_sin/cos` | Zyklischer Tag | Für ML-Modelle |
