@@ -19,7 +19,10 @@ for a decision at that close, e.g. ``entry_delay=0``):
   and on every bar outside the session
 
 The index is read as UTC (naive timestamps are UTC, as the loader provides them)
-and converted to ``session_tz``; a bar is labelled by its start time.
+and converted to ``session_tz``; a bar is labelled by its start time. The bar
+grid must fit the session (bars start at ``session_open``, the last one ends at
+``session_close``, bars shorter than the session): otherwise no band can be
+built and ``compute`` raises ``ValueError`` instead of returning NaN columns.
 """
 
 from typing import List
@@ -60,7 +63,7 @@ class NoiseBoundaryIndicator(BaseIndicator):
     """Time-of-day noise bands around the session open with entry and exit flags."""
 
     name = "noise_boundary"
-    version = "1.0.0"
+    version = "1.1.0"
     group = "session"
     benefits_from_stationary = False
 
@@ -96,6 +99,22 @@ class NoiseBoundaryIndicator(BaseIndicator):
             & (end_min <= close_min)
             & np.asarray(end.dayofweek < 5)
         )
+        bar_minutes = bar / pd.Timedelta(minutes=1)
+        if bar_minutes > close_min - open_min:
+            raise ValueError(
+                f"noise_boundary: bars of {bar} are not shorter than the session "
+                f"{session_open}-{session_close}; the indicator needs intraday bars"
+            )
+        observed = end_min[in_session]
+        if ((open_min + bar_minutes - observed) % bar_minutes != 0).any() or (
+            (close_min - observed) % bar_minutes != 0
+        ).any():
+            raise ValueError(
+                f"noise_boundary: the {bar} bar grid does not match the session "
+                f"{session_open}-{session_close} ({session_tz}): bars are labelled by "
+                f"their start time and the first bar of the session must start at "
+                f"session_open and the last must end at session_close"
+            )
 
         frame = pd.DataFrame(
             {

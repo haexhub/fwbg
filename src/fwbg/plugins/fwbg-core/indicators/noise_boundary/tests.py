@@ -134,3 +134,56 @@ def test_prefix_stable(breakout_day):
     prefix = NoiseBoundaryIndicator().compute(df.iloc[: len(df) - 30])
     cols = ["nb_upper", "nb_lower", "nb_vwap"] + SIGNALS
     pd.testing.assert_frame_equal(full.loc[prefix.index, cols], prefix[cols])
+
+
+def _hourly_us_bars(start_minute):
+    """Hourly bars (labelled by start) of five New York days, naive UTC index."""
+    frames = []
+    for day in business_days("2025-02-24", 5):
+        local = pd.date_range(
+            f"{day} 08:{start_minute:02d}",
+            periods=12,
+            freq="60min",
+            tz="America/New_York",
+        )
+        frame = pd.DataFrame(
+            {"O": 100.0, "H": 101.0, "L": 99.0, "C": 100.0, "V": 1.0},
+            index=local.tz_convert("UTC").tz_localize(None),
+        )
+        frames.append(frame)
+    return pd.concat(frames)
+
+
+def test_bar_grid_that_does_not_match_session_open_is_an_error():
+    # hourly bars start on the hour but the session opens at 09:30
+    with pytest.raises(ValueError, match="bar grid does not match the session"):
+        NoiseBoundaryIndicator().compute(_hourly_us_bars(0))
+
+
+def test_bars_aligned_to_session_open_and_close_are_accepted():
+    # hourly bars from 09:30 end on :30 -> session 09:30-16:30
+    out = NoiseBoundaryIndicator().compute(
+        _hourly_us_bars(30),
+        session_close="16:30",
+        first_check="10:30",
+        last_check="16:00",
+        check_every_minutes=30,
+        lookback_sessions=2,
+    )
+    assert out["nb_upper"].notna().any()
+
+
+def test_daily_bars_are_an_error():
+    df = pd.DataFrame(
+        {"O": 1.0, "H": 1.1, "L": 0.9, "C": 1.0, "V": 1.0},
+        index=pd.bdate_range("2025-01-01", periods=30),
+    )
+    with pytest.raises(ValueError, match="not shorter than the session"):
+        NoiseBoundaryIndicator().compute(df)
+
+
+def test_grid_check_does_not_reject_a_slice_that_misses_the_open(breakout_day):
+    df, _ = breakout_day
+    # a trailing window starting mid-session still fits the grid: NaN, not an error
+    out = NoiseBoundaryIndicator().compute(df.iloc[10:20])
+    assert out["nb_upper"].isna().all()
