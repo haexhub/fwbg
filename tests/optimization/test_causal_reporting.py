@@ -1,4 +1,5 @@
 """Tests für die kausale Reporting-Kalibrierung (Plan: Look-Ahead-Fix)."""
+
 import pandas as pd
 import pytest
 
@@ -134,10 +135,18 @@ class TestPayoffFromPriorTrades:
         ]
         out = compute_causal_reporting(folds, RrrRiskManager(), 2.0, {})
         # fold 1: 0.003 / 0.002; fold 2: mean(0.003, 0.004) / 0.002
-        assert out["per_fold_risk"] == [None, pytest.approx(0.015), pytest.approx(0.0175)]
+        assert out["per_fold_risk"] == [
+            None,
+            pytest.approx(0.015),
+            pytest.approx(0.0175),
+        ]
 
     def test_fold_rrr_is_the_fallback_while_priors_lack_a_loss(self):
-        folds = [_fold([(1.0, 0.003)]), {**_fold([(1.0, 0.004)]), "rrr": 3.0}, _fold([])]
+        folds = [
+            _fold([(1.0, 0.003)]),
+            {**_fold([(1.0, 0.004)]), "rrr": 3.0},
+            _fold([]),
+        ]
         out = compute_causal_reporting(folds, RrrRiskManager(), 2.0, {})
         assert out["per_fold_risk"] == [None, pytest.approx(0.03), pytest.approx(0.02)]
 
@@ -176,7 +185,10 @@ class TestSharedHelpers:
     """Helpers shared by process_symbol and the holdout look (extracted from process.py)."""
 
     def test_sized_returns_apply_the_circuit_breaker_and_prior_loss_scale(self):
-        trades = [{"result": r, "pnl_raw": p} for r, p in [(-1.0, -1.0), (-1.0, -2.0), (1.0, 4.0), (1.0, 5.0)]]
+        trades = [
+            {"result": r, "pnl_raw": p}
+            for r, p in [(-1.0, -1.0), (-1.0, -2.0), (1.0, 4.0), (1.0, 5.0)]
+        ]
         cb = {"enabled": True, "pause_after_losses": 2, "pause_bars": 1}
 
         returns, pnl, taken = sized_returns(trades, 0.02, cb, [-2.0, -4.0, 3.0])
@@ -222,7 +234,15 @@ class TestSharedHelpers:
         assert thin["equity_points"][-1] == full["equity_points"][-1]
 
     def test_slim_trades_keep_the_reported_fields(self):
-        trade = {"entry_time": "a", "exit_time": "b", "direction": "LONG", "entry_price": 101.0,
-                 "result": 1.0, "pnl_raw": 2.0, "exit_reason": "tp", "mae": 0.5}
+        trade = {
+            "entry_time": "a",
+            "exit_time": "b",
+            "direction": "LONG",
+            "entry_price": 101.0,
+            "result": 1.0,
+            "pnl_raw": 2.0,
+            "exit_reason": "tp",
+            "mae": 0.5,
+        }
 
         assert slim_trades([trade]) == [{k: v for k, v in trade.items() if k != "mae"}]
