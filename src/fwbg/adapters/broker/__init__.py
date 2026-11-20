@@ -330,6 +330,21 @@ class BrokerAdapter(BaseAdapter):
     # Optionale Methoden - können überschrieben werden
     # =========================================================================
 
+    def get_value_per_point(
+        self, symbol: Symbol, point_value: float
+    ) -> Optional[float]:
+        """
+        Account-currency P&L of a one-point move per 1.0 of order size.
+
+        Position sizing needs this: ``size = risk / (stop_points * value)``.
+        ``point_value`` is the price increment of one point (e.g. 0.0001).
+
+        Returns:
+            The value, or None when the broker cannot establish it. Callers
+            must then refuse to trade instead of guessing a contract value.
+        """
+        return None
+
     def get_current_price(self, symbol: Symbol) -> Optional[Dict[str, float]]:
         """
         Ruft aktuellen Preis ab.

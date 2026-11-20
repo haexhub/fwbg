@@ -606,13 +606,35 @@ class TradingBot:
             risk_cash = min(
                 balance * cfg.risk_per_trade, balance * self.max_risk_percent
             )
+            if not cfg.point_value > 0:
+                logger.warning(f"⚠️ {symbol}: invalid point_value — skipping signal")
+                return
             sl_dist = max(10, int((atr * cfg.sl_mult) / cfg.point_value))
             tp_dist = int((atr * cfg.tp_mult) / cfg.point_value)
-            requested_size = round(risk_cash / sl_dist, 2)
+
+            # Risk per size unit = stop distance (points) x account-currency value
+            # of one point, which depends on the contract and FX conversion. The
+            # broker supplies it; without it the risk cannot be bounded, so the
+            # trade is refused instead of guessing.
+            value_per_point = self.adapter.get_value_per_point(symbol, cfg.point_value)
+            if (
+                not isinstance(value_per_point, (int, float))
+                or not math.isfinite(value_per_point)
+                or value_per_point <= 0
+            ):
+                logger.warning(
+                    f"⚠️ {symbol}: value per point unavailable — refusing to size "
+                    "the trade without instrument metadata"
+                )
+                return
+            # Round down: the risk budget is a ceiling.
+            requested_size = (
+                math.floor(risk_cash / (sl_dist * value_per_point) * 100 + 1e-9) / 100
+            )
             if requested_size < self.min_lot_size:
                 logger.warning(
                     f"⚠️ {symbol}: Minimum lot {self.min_lot_size} exceeds risk budget "
-                    f"({risk_cash:.2f} / {sl_dist})"
+                    f"({risk_cash:.2f} / ({sl_dist} x {value_per_point:.6g}))"
                 )
                 return
             size = max(self.min_lot_size, requested_size)

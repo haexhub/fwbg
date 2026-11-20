@@ -118,6 +118,10 @@ class _StubBrokerAdapter(BrokerAdapter):
         """The offline test broker exposes a known-empty close history."""
         return []
 
+    def get_value_per_point(self, symbol, point_value) -> Optional[float]:
+        """The offline test broker is quoted 1:1 in the account currency."""
+        return 1.0
+
     def get_broker_symbol(self, symbol) -> Optional[str]:
         return str(symbol)
 

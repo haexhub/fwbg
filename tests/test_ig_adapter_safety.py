@@ -312,3 +312,78 @@ def test_order_after_token_expiry_is_sent_on_the_fresh_session():
     assert result.success is True
     fresh.create_open_position.assert_called_once()
     expired.create_open_position.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Value per point from instrument metadata
+# ---------------------------------------------------------------------------
+
+
+def _instrument(**overrides) -> dict:
+    instrument = {
+        "contractSize": "10000",
+        "currencies": [{"code": "USD", "exchangeRate": 0.92, "isDefault": True}],
+    }
+    instrument.update(overrides)
+    return {"instrument": instrument}
+
+
+def test_value_per_point_converts_contract_value_into_account_currency():
+    adapter = _adapter(currency="EUR")
+    adapter._ig.fetch_market_by_epic.return_value = _instrument()
+
+    # 10 000 units x 0.0001 per point = 1 USD per point, x 0.92 EUR per USD.
+    assert adapter.get_value_per_point(Symbol.EURUSD, 0.0001) == pytest.approx(0.92)
+    adapter._ig.fetch_market_by_epic.assert_called_once_with("CS.D.EURUSD.CFD.IP")
+
+
+def test_value_per_point_needs_no_conversion_in_account_currency():
+    adapter = _adapter(currency="EUR")
+    adapter._ig.fetch_market_by_epic.return_value = _instrument(
+        contractSize="1", currencies=[{"code": "EUR", "isDefault": True}]
+    )
+
+    assert adapter.get_value_per_point(Symbol.DAX, 1.0) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(
+    "market",
+    [
+        None,
+        {},
+        {"instrument": {}},
+        _instrument(contractSize=None),
+        _instrument(contractSize="0"),
+        _instrument(contractSize="abc"),
+        _instrument(currencies=[]),
+        # foreign dealing currency without a usable rate
+        _instrument(currencies=[{"code": "USD", "isDefault": True}]),
+        _instrument(currencies=[{"code": "USD", "exchangeRate": 0, "isDefault": True}]),
+        # several currencies and no single default: ambiguous
+        _instrument(
+            currencies=[
+                {"code": "USD", "exchangeRate": 0.92},
+                {"code": "GBP", "exchangeRate": 1.17},
+            ]
+        ),
+    ],
+)
+def test_value_per_point_is_none_when_metadata_is_unusable(market):
+    adapter = _adapter(currency="EUR")
+    adapter._ig.fetch_market_by_epic.return_value = market
+
+    assert adapter.get_value_per_point(Symbol.EURUSD, 0.0001) is None
+
+
+def test_value_per_point_is_none_when_the_lookup_fails():
+    adapter = _adapter(currency="EUR")
+    adapter._ig.fetch_market_by_epic.side_effect = TimeoutError("down")
+
+    assert adapter.get_value_per_point(Symbol.EURUSD, 0.0001) is None
+
+
+def test_value_per_point_is_none_for_an_invalid_point_value():
+    adapter = _adapter(currency="EUR")
+
+    assert adapter.get_value_per_point(Symbol.EURUSD, 0.0) is None
+    adapter._ig.fetch_market_by_epic.assert_not_called()

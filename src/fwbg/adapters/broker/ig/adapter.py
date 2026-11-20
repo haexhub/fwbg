@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
 from threading import Lock
 import logging
+import math
 import os
 import re
 import time
@@ -87,6 +88,15 @@ def _is_auth_error(exc: BaseException) -> bool:
     return isinstance(exc, TokenInvalidException) or bool(
         _AUTH_ERROR_PATTERN.search(str(exc))
     )
+
+
+def _positive_number(value: Any) -> Optional[float]:
+    """``value`` as a finite float > 0, else None (IG sends numbers as strings)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) and number > 0 else None
 
 
 def _is_definite_rejection(exc: BaseException) -> bool:
@@ -524,6 +534,59 @@ class IGBrokerAdapter(BrokerAdapter):
         except Exception as e:
             self.log_warning(f"yfinance error for {symbol}: {e}")
             return None
+
+    # =========================================================================
+    # Instrument metadata
+    # =========================================================================
+
+    def get_value_per_point(
+        self, symbol: Symbol, point_value: float
+    ) -> Optional[float]:
+        """Account-currency P&L of a one-point move per 1.0 of order size.
+
+        value = contractSize * point_value * fx, where ``contractSize`` comes
+        from the IG instrument and ``fx`` converts the instrument's dealing
+        currency (the ``isDefault`` entry of ``currencies``) into the account
+        currency: 1.0 when they match, otherwise that entry's ``exchangeRate``
+        (account currency per unit of the dealing currency).
+
+        Returns None, and sizing must then refuse the trade, when the epic is
+        unknown, the metadata cannot be fetched, or any required field is
+        missing, non-numeric or not positive. Nothing is guessed.
+        """
+        epic = SYMBOL_TO_EPIC.get(symbol)
+        if not epic or not _positive_number(point_value):
+            return None
+        self._rate_limit()
+        try:
+            market = self._call_ig("fetch_market_by_epic", epic)
+        except Exception as exc:
+            self.log_warning(
+                f"Instrument metadata unavailable for {symbol}: {type(exc).__name__}"
+            )
+            return None
+        instrument = market.get("instrument") if isinstance(market, dict) else None
+        if not isinstance(instrument, dict):
+            return None
+
+        contract_size = _positive_number(instrument.get("contractSize"))
+        currencies = [
+            c for c in instrument.get("currencies") or [] if isinstance(c, dict)
+        ]
+        defaults = [c for c in currencies if c.get("isDefault")]
+        dealing = defaults[0] if len(defaults) == 1 else None
+        if dealing is None and len(currencies) == 1:
+            dealing = currencies[0]
+        if contract_size is None or dealing is None:
+            return None
+
+        if dealing.get("code") == self.currency:
+            fx = 1.0
+        else:
+            fx = _positive_number(dealing.get("exchangeRate"))
+            if fx is None:
+                return None
+        return contract_size * float(point_value) * fx
 
     # =========================================================================
     # Current Price
