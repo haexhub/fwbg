@@ -119,6 +119,22 @@ def _compute_signal_events(
     return events
 
 
+def labelled_rows(targets: np.ndarray) -> np.ndarray:
+    """Mask of the rows whose label is known (not NaN).
+
+    A label window that runs past the end of the data has no outcome yet; the
+    label kernels mark it NaN (``nan_incomplete``).  Such rows are not training
+    examples: fitting and scoring drop them instead of reading them as losses.
+    """
+    return ~np.isnan(np.asarray(targets, dtype=np.float64))
+
+
+def count_positive_labels(targets: np.ndarray) -> int:
+    """Number of non-zero labels among the known ones (NaN is not a win)."""
+    targets = np.asarray(targets)
+    return int(np.count_nonzero(targets[labelled_rows(targets)]))
+
+
 def _validate_targets(
     targets_long: np.ndarray, targets_short: np.ndarray, ctx: SimulationContext
 ) -> Tuple[bool, bool]:
@@ -143,22 +159,6 @@ def _validate_targets(
 
 def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
     """Löst den ``sl_level``-Suffix aus exit_params in absolute SL-Preise auf.
-
-def labelled_rows(targets: np.ndarray) -> np.ndarray:
-    """Mask of the rows whose label is known (not NaN).
-
-    A label window that runs past the end of the data has no outcome yet; the
-    label kernels mark it NaN (``nan_incomplete``).  Such rows are not training
-    examples: fitting and scoring drop them instead of reading them as losses.
-    """
-    return ~np.isnan(np.asarray(targets, dtype=np.float64))
-
-
-def count_positive_labels(targets: np.ndarray) -> int:
-    """Number of non-zero labels among the known ones (NaN is not a win)."""
-    targets = np.asarray(targets)
-    return int(np.count_nonzero(targets[labelled_rows(targets)]))
-
 
     Validiert den Suffix gegen die ``choices`` aus dem Plugin-Schema: ein
     ungültiger Wert (z. B. "range") würde sonst per ``endswith``-Auto-Detect
@@ -297,6 +297,11 @@ def simulate_trades(
         tp_dists = per_trade_params[:, 0].copy()
         sl_dists = per_trade_params[:, 1].copy()
 
+    # A bar whose TP or SL distance cannot be computed (NaN, e.g. while the ATR
+    # behind a model's per-trade distances warms up) is not tradable: such a
+    # signal opens no trade, and no NaN level ever reaches the simulator.
+    tradable = np.isfinite(tp_dists) & np.isfinite(sl_dists)
+
     # Absolute SL levels: when sl_level is set in exit_params, SL is
     # anchored to the structural price level from that column (e.g. OR midpoint)
     # instead of computed as entry ± sl_dist.
@@ -313,12 +318,12 @@ def simulate_trades(
     breakeven_trigger, trail_atr_mult, trail_pips = resolve_trailing_params(
         ctx, exit_params
     )
+    breakeven_offset = resolve_breakeven_offset(ctx, exit_params)
 
     # Resolve per-bar trail distances: range mode uses the OR range as trail
     # distance (structural), ATR mode uses ATR * trail_atr_mult.
     trail_dists = np.zeros(len(df), dtype=np.float64)
     if trail_pips > 0:
-    breakeven_offset = resolve_breakeven_offset(ctx, exit_params)
         trail_dists[:] = ctx.spread * trail_pips
     elif trail_atr_mult > 0.0 or (
         breakeven_trigger > 0.0 and exit_params.get("tp_mode", "atr") == "range"
@@ -456,6 +461,8 @@ def simulate_trades(
         direction = None
         if long_ok != short_ok:
             direction = 1 if long_ok else -1
+        if direction and not tradable[i]:
+            direction = None
 
         if direction:
             sl_abs = None
@@ -483,6 +490,7 @@ def simulate_trades(
                 sl_level_mult=sl,
                 entry_delay=entry_delay,
                 breakeven_trigger=breakeven_trigger,
+                breakeven_offset=breakeven_offset,
                 trail_distance=td,
                 scale_levels=scale_levels,
                 scale_qty_mult=scale_qty_mult,
@@ -490,7 +498,6 @@ def simulate_trades(
                 financing_rate=getattr(ctx, "financing_rate", 0.0),
             )
             if trade:
-                breakeven_offset=breakeven_offset,
                 t = {
                     "result": trade["result"],
                     "pnl_raw": trade["pnl_raw"],
