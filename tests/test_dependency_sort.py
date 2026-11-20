@@ -8,6 +8,7 @@ Tests:
 - Plugins without depends_on are unaffected
 - Short name resolution works with FQ names in PluginConfig
 """
+
 import pytest
 
 from fwbg_sdk import BasePlugin, PluginPhase
@@ -17,6 +18,7 @@ from fwbg.pipeline.runner import PipelineRunner, _topological_sort, _short_name
 
 
 # === Test Plugins ===
+
 
 class PluginA(BasePlugin):
     name = "plugin_a"
@@ -73,6 +75,7 @@ class PluginNoDeps(BasePlugin):
 
 # === Fixtures ===
 
+
 @pytest.fixture
 def registry():
     reg = PluginRegistry()
@@ -87,9 +90,10 @@ def registry():
 
 # === Tests ===
 
+
 class TestShortName:
     def test_fq_name(self):
-        assert _short_name("fwbg-premium:regime") == "regime"
+        assert _short_name("external-pkg:regime") == "regime"
 
     def test_already_short(self):
         assert _short_name("regime") == "regime"
@@ -165,6 +169,7 @@ class TestPipelineRunnerDependencies:
     def test_runner_validates_on_initialize(self, registry):
         """Runner raises ValueError for missing dependency during init."""
         from fwbg.pipeline.config import PipelineConfig
+
         config = PipelineConfig(
             indicators=[PluginConfig(name="test:plugin_b", params={})]
         )
@@ -175,6 +180,7 @@ class TestPipelineRunnerDependencies:
     def test_runner_sorts_correctly(self, registry):
         """Runner sorts plugins with dependencies in correct order."""
         from fwbg.pipeline.config import PipelineConfig
+
         config = PipelineConfig(
             indicators=[
                 PluginConfig(name="test:plugin_b", params={}),

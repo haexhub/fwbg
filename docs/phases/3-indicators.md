@@ -163,6 +163,8 @@ The decision is up to the plugin developer. Rule of thumb:
 
 ### Premium Package (fwbg-premium)
 
+> Optional, separately installed plugin package; not bundled with fwbg. These plugins are available only when it is installed in the same environment.
+
 | Plugin | Description | Feature Prefix |
 |--------|-------------|----------------|
 | `regime` | Hurst Exponent, Entropy, Variance Ratio | `regime_` |

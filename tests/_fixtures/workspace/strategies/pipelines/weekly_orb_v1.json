@@ -56,21 +56,6 @@
       }
     },
     {
-      "name": "microstructure",
-      "params": {
-        "atr_period": 14,
-        "rolling_window": 5
-      }
-    },
-    {
-      "name": "volume_profile",
-      "params": {
-        "atr_period": 14,
-        "n_levels": 50,
-        "value_area_pct": 0.7
-      }
-    },
-    {
       "name": "volatility",
       "params": {
         "atr_periods": [

@@ -40,7 +40,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e packages/fwbg-sdk
-          pip install --no-deps -e packages/fwbg-premium
           pip install -e ".[dev,api,ig]"
           pip install --no-deps -e packages/fwbg-broker-ig
           pip install -e packages/fwbg-mcp

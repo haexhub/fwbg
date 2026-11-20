@@ -50,6 +50,8 @@ class BaseExitStrategy(BasePlugin, ABC):
 
 ## Available Plugins
 
+> **Note:** Plugins marked `(fwbg-premium)` ship in the optional `fwbg-premium` plugin package, which is installed separately and is not part of this repository. Without it, a configuration that requests one of them fails with an error naming the missing plugin.
+
 ### fixed (fwbg-core)
 
 Constant TP/SL distances as **spread multipliers**:

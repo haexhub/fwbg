@@ -85,6 +85,7 @@ def _api_headers() -> dict[str, str]:
 # Strategy management
 # ---------------------------------------------------------------------------
 
+
 @mcp.tool()
 def list_strategies() -> list[dict]:
     """List all available strategy configs.
@@ -99,7 +100,7 @@ def list_strategies() -> list[dict]:
 def get_strategy(name: str) -> dict:
     """Load a strategy config by filename (without .json extension).
 
-    Preset references (e.g. `"pipeline": "sr_trend_v1"`) are resolved to
+    Preset references (e.g. `"pipeline": "orb_simple_v1"`) are resolved to
     their full inline content so you see the complete configuration.
     The `_refs` key preserves the original preset names.
     """
@@ -120,7 +121,7 @@ def save_strategy(name: str, config: dict) -> dict:
       "datasource": "dukascopy",
       "timeframe": "MINUTE_15",
       "assets": {"filter": ["NAS100"]},
-      "pipeline": "sr_trend_v1",          // preset name OR inline dict
+      "pipeline": "orb_simple_v1",          // preset name OR inline dict
       "model": "xgboost_depth3_v1",       // preset name OR inline dict
       "validation": "walk_forward_sr_trend_v1",
       "filters": "sr_strict_v1",
@@ -143,6 +144,7 @@ def save_strategy(name: str, config: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Run management
 # ---------------------------------------------------------------------------
+
 
 @mcp.tool()
 def start_run(
@@ -293,13 +295,18 @@ def list_recent_runs(
     result = _get("/runs", limit=min(limit, 100))
     items = result.get("items", result) if isinstance(result, dict) else result
     if strategy:
-        items = [r for r in items if strategy.lower() in (r.get("strategy_name") or "").lower()]
+        items = [
+            r
+            for r in items
+            if strategy.lower() in (r.get("strategy_name") or "").lower()
+        ]
     return items
 
 
 # ---------------------------------------------------------------------------
 # Discovery: indicators, exit strategies, presets
 # ---------------------------------------------------------------------------
+
 
 @mcp.tool()
 def list_indicators() -> list[dict]:
@@ -328,7 +335,8 @@ def get_indicator_schema(name: str) -> dict:
     `name` can be the short name (e.g. "opening_range") or full fqn
     (e.g. "fwbg-core:opening_range"). Use the fqn from list_indicators.
     """
-    # Try the known namespaces (incl. agent-authored plugins) before the raw name.
+    # Try the known namespaces (incl. the optional separately installed
+    # fwbg-premium package and agent-authored plugins) before the raw name.
     for fqn in [
         f"fwbg-core:{name}",
         f"fwbg-premium:{name}",
@@ -373,14 +381,22 @@ def list_presets(preset_type: str) -> list[str]:
                      "regime_filters", or "risk_params".
 
     Returns list of preset names (use as string values in strategy config,
-    e.g. `"pipeline": "sr_trend_v1"`).
+    e.g. `"pipeline": "orb_simple_v1"`).
     """
     allowed = {
-        "pipelines", "exit_params", "models", "validations", "filters",
-        "resources", "regime_filters", "risk_params",
+        "pipelines",
+        "exit_params",
+        "models",
+        "validations",
+        "filters",
+        "resources",
+        "regime_filters",
+        "risk_params",
     }
     if preset_type not in allowed:
-        raise ValueError(f"Invalid preset_type {preset_type!r}; expected one of {sorted(allowed)}")
+        raise ValueError(
+            f"Invalid preset_type {preset_type!r}; expected one of {sorted(allowed)}"
+        )
 
     presets = _get(f"/presets/{preset_type}")
     return [p.get("id", p.get("name", "")) for p in presets]
@@ -389,6 +405,7 @@ def list_presets(preset_type: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main():
     mcp.run(transport="stdio")
