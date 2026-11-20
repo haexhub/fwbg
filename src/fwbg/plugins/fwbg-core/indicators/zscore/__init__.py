@@ -115,11 +115,7 @@ class ZscoreIndicator(BaseIndicator):
         )
 
     def get_signal_columns(self, params: Optional[dict] = None) -> List[str]:
-        return [
-            c
-            for c in self.get_feature_columns(params)
-            if c.endswith("_mean") or c in ENTRY_COLUMNS
-        ]
+        return self.get_feature_columns(params)
 
     @classmethod
     def get_default_params(cls) -> dict:

@@ -46,7 +46,7 @@ class IbsIndicator(BaseIndicator):
         return list(IBS_COLUMNS)
 
     def get_signal_columns(self, params=None) -> List[str]:
-        return ["ibs_down", "ibs_above_prev_high"]
+        return list(IBS_COLUMNS)
 
     @classmethod
     def get_default_params(cls) -> dict:

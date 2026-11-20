@@ -203,11 +203,23 @@ class BaseIndicator(BasePlugin, ABC):
 
     def get_signal_columns(self, params=None) -> List[str]:
         """
-        Gibt Liste der Signal-Spalten zurück (diskrete Werte: -1, 0, 1).
+        Gibt Liste der Signal-Spalten zurück: diskrete Entscheidungs-/Event-Spalten
+        (z.B. -1, 0, 1), die bewusst NICHT mit ``shift_features()`` verschoben sind.
 
-        Signal-Spalten repräsentieren diskrete Zustände/Events,
-        keine kontinuierlichen Werte. Sie werden im Chart als
-        Histogramm dargestellt statt als Linie.
+        Zeile ``i`` einer Signal-Spalte beschreibt die Entscheidung am Close von
+        Bar ``i`` (Regeln in ``signal_rules`` / Exit-Spalten; Entry am nächsten
+        Open bei ``entry_delay=1``, am Close des Signal-Bars bei ``entry_delay=0``).
+
+        Konsequenzen:
+        - Signal-Spalten gehören NICHT in den ML-Feature-Pool (sie wären gegenüber
+          der 1-Bar-Konvention um einen Bar im Vorsprung). Der Pool schließt sie
+          standardmäßig aus; ``signal_columns_as_features`` nimmt stattdessen um
+          einen Bar verschobene Kopien ``<col>_prev`` auf.
+        - Spalten, die mit ``shift_features()`` verschoben sind, gehören hier nicht
+          hinein, auch wenn ihre Werte diskret sind.
+        - Spalten, die nur vom Zeitstempel und einem im Voraus feststehenden
+          Kalender abhängen, dürfen hier stehen (Entry-Regeln, Chart-Ausrichtung),
+          müssen dann aber zusätzlich in ``get_calendar_columns()`` stehen.
 
         Args:
             params: Optionale Indicator-Parameter (siehe get_feature_columns).
@@ -216,6 +228,24 @@ class BaseIndicator(BasePlugin, ABC):
             Liste der Signal-Spaltennamen, oder leere Liste
         """
         return self._signal_columns
+
+    def get_calendar_columns(self, params=None) -> List[str]:
+        """
+        Unshifted Spalten, die nur vom Zeitstempel und einem im Voraus bekannten
+        Kalender abhängen (kein Preis- und kein Close-Input).
+
+        Teilmenge von ``get_signal_columns()``. Der Wert für Bar ``i`` steht schon
+        vor dem Open von Bar ``i`` fest, ist also kein Lookahead und bleibt im
+        ML-Feature-Pool. Eine Spalte, die den Preis des Bars selbst liest, gehört
+        nicht hierher.
+
+        Args:
+            params: Optionale Indicator-Parameter (siehe get_feature_columns).
+
+        Returns:
+            Liste der Kalender-Spaltennamen, oder leere Liste
+        """
+        return []
 
     def get_plot_columns(self) -> List[str]:
         """

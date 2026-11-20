@@ -272,9 +272,6 @@ class LiquidityLevelsIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
-    def get_signal_columns(self) -> List[str]:
-        return ["liq_eqh_active", "liq_eql_active", "liq_sweep_up", "liq_sweep_down"]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {

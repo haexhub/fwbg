@@ -219,9 +219,6 @@ class SupplyDemandFlipIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
-    def get_signal_columns(self) -> List[str]:
-        return ["sdf_bull_active", "sdf_bear_active"]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {

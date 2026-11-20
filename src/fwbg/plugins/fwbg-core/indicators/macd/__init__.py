@@ -92,9 +92,6 @@ class MACDIndicator(BaseIndicator):
             "macd_hist_flip",
         ]
 
-    def get_signal_columns(self, params=None) -> List[str]:
-        return ["macd_above_zero", "macd_hist_flip"]
-
     def get_overlay_columns(self, params=None) -> List[str]:
         return []
 

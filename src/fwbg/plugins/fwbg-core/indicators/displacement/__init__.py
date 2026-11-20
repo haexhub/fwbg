@@ -137,9 +137,6 @@ class DisplacementIndicator(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
 
-    def get_signal_columns(self) -> List[str]:
-        return ["disp_fvg_formed"]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {"atr_period": 14, "range_avg_period": 20, "impulse_threshold": 1.5}
