@@ -377,3 +377,59 @@ class TestPluginAttributes:
             pytest.skip(f"{col} not in result")
         valid = result[col].dropna()
         assert (valid >= 0).all(), f"{col} should be non-negative"
+
+
+# ── Trading-week start, time-window range, stats honour range_bars ──────────
+
+
+def _week_frame(*spans):
+    idx = pd.DatetimeIndex([])
+    for start, end in spans:
+        idx = idx.append(pd.date_range(start, end, freq="15min"))
+    return pd.DataFrame({k: 100.0 for k in "OHLC"}, index=idx)
+
+
+class TestWORTradingWeek:
+    def test_fx_sunday_evening_bars_open_the_next_trading_week(self):
+        df = _week_frame(
+            ("2024-01-07 22:00", "2024-01-12 21:45"),  # Sun evening .. Fri close
+            ("2024-01-14 22:00", "2024-01-19 21:45"),
+        )
+        for ts in ("2024-01-07 22:00", "2024-01-07 22:15"):
+            df.loc[pd.Timestamp(ts), ["H", "L"]] = [101.0, 99.0]
+        # Decoy: the first Monday bars must not define the range.
+        df.loc[pd.Timestamp("2024-01-08 00:00"), ["H", "L"]] = [130.0, 70.0]
+        result = _get_ind().compute(df, range_bars=2, enable_stats=False)
+        sl = result["wor_rb2_sl_dist"]
+        assert sl.loc["2024-01-10 12:00"] == pytest.approx(2.0)
+        assert pd.isna(
+            sl.loc["2024-01-07 22:30"]
+        )  # shifted: row 22:30 sees the 22:15 bar
+        assert sl.loc["2024-01-07 22:45"] == pytest.approx(2.0)
+
+    def test_range_is_a_time_window_with_a_missing_bar(self):
+        df = _week_frame(("2024-01-01 00:00", "2024-01-05 23:45"))
+        df.loc[pd.Timestamp("2024-01-01 00:00"), ["H", "L"]] = [101.0, 99.0]
+        df.loc[pd.Timestamp("2024-01-01 00:30"), ["H", "L"]] = [140.0, 60.0]
+        df = df.drop(pd.Timestamp("2024-01-01 00:15"))
+        result = _get_ind().compute(df, range_bars=2, enable_stats=False)
+        # Window [00:00, 00:30) has only the first bar; the 00:30 spike is outside.
+        assert result["wor_rb2_sl_dist"].loc["2024-01-03 12:00"] == pytest.approx(2.0)
+
+    def test_stats_use_the_configured_range_bars(self):
+        weeks = [
+            (f"2024-01-{d:02d} 00:00", f"2024-01-{d + 4:02d} 23:45")
+            for d in (1, 8, 15, 22)
+        ]
+        df = _week_frame(*weeks)
+        for start, _ in weeks:
+            t0 = pd.Timestamp(start)
+            df.loc[t0, ["H", "L"]] = [101.0, 99.0]
+            df.loc[t0 + pd.Timedelta(minutes=15), ["H", "L"]] = [103.0, 97.0]
+        result = _get_ind().compute(df, range_bars=2, stat_window=4)
+        # Range over both range bars = 6 (relative to close 100), not the first bar's 2.
+        avg = result["wor_stat_avg_range"].loc["2024-01-24 12:00"]
+        assert avg == pytest.approx(0.06)
+        assert result["wor_stat_range_vs_avg"].loc["2024-01-24 12:00"] == pytest.approx(
+            1.0
+        )
