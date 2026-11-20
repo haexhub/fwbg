@@ -138,6 +138,11 @@ class PreviewRequest(BaseModel):
     tp: Optional[float] = None
     sl: Optional[float] = None
     last_n_bars: Optional[int] = Field(default=None, ge=1)
+    # The research register, as for ``POST /api/runs/start``: the card the preview
+    # serves, one line on what it is for, and why an identical preview runs again.
+    research_id: Optional[str] = None
+    note: Optional[str] = None
+    reason: Optional[str] = None
 
 
 @router.post("/start")
@@ -230,10 +235,16 @@ def preview_signals(body: PreviewRequest) -> dict:
 
     Returns trades in the same format as /runs/{id}/trades/{symbol}
     so the frontend can display them without format conversion.
+
+    The preview simulates PnL on market data, so it is gated like a run: it is
+    recorded in the research register before it reads data (``research_id`` and
+    ``note`` required, ``reason`` for an identical repeat) and reads only data
+    before the card's holdout cutoff. A refusal is a 409/422 with
+    ``{"message", "denials"}`` like ``POST /api/runs/start``.
     """
     from fwbg.core.config import StrategyConfig
     from fwbg.core.data_sources import get_data_source, CSVSourceConfig
-    from fwbg.data.loader import load_data_aligned
+    from fwbg.data.loader import apply_date_window, load_data_aligned
     from fwbg.data.assets import get_asset
     from fwbg.data.config import convert_numpy
     from fwbg.pipeline.features import compute_indicator_pool
@@ -274,10 +285,54 @@ def preview_signals(body: PreviewRequest) -> dict:
             f"No data for {symbol}/{timeframe}. Available symbols: {sorted(available)}",
         )
 
+    # StrategyConfig has no top-level exit_params since exit_strategies became a
+    # list; the preview uses its first exit strategy.
+    ep = strategy.exit_strategies[0].params if strategy.exit_strategies else {}
+    tp_list = ep.get("tp_mult", [])
+    sl_list = ep.get("sl_mult", [])
+    tp_val = body.tp or (float(statistics.median(tp_list)) if tp_list else None)
+    sl_val = body.sl or (float(statistics.median(sl_list)) if sl_list else None)
+
+    # Record the preview before any market data is read.
+    window: dict[str, Optional[str]] = {"start_date": None, "end_date": None}
+    if gate_enabled():
+        from fwbg.api.run_preflight import gate_refusal
+        from fwbg.research.analysis import preview_config, record_analysis
+        from fwbg.research.runs import GateDenied, denial_payload
+
+        config = preview_config(
+            strategy.get_indicators(),
+            strategy.signal_rules,
+            ep,
+            timeframe,
+            ds_name,
+            tp_val,
+            sl_val,
+            body.last_n_bars,
+        )
+        try:
+            _, window = record_analysis(
+                body.research_id,
+                config,
+                [symbol.upper()],
+                body.note,
+                reason=body.reason,
+            )
+        except GateDenied as exc:
+            raise gate_refusal(denial_payload(exc.denials), "preview") from None
+
     # Load data
     df = load_data_aligned(str(csv_path))
     if df is None:
         raise HTTPException(500, f"Failed to load data from {csv_path}")
+
+    if window["start_date"] or window["end_date"]:
+        df = apply_date_window(df, window["start_date"], window["end_date"])
+        if df.empty:
+            raise HTTPException(
+                400,
+                f"No data for {symbol}/{timeframe} before the holdout cutoff {window['end_date']}",
+            )
 
     if body.last_n_bars and len(df) > body.last_n_bars:
         df = df.tail(body.last_n_bars)
@@ -319,12 +374,6 @@ def preview_signals(body: PreviewRequest) -> dict:
 
     # Simulate trades with TP/SL if possible
     asset = get_asset(symbol)
-    ep = strategy.exit_params
-    tp_list = ep.get("tp_mult", [])
-    sl_list = ep.get("sl_mult", [])
-    tp_val = body.tp or (float(statistics.median(tp_list)) if tp_list else None)
-    sl_val = body.sl or (float(statistics.median(sl_list)) if sl_list else None)
-
     if tp_val is not None and sl_val is not None:
         sim_trades = _simulate_preview_trades(
             df_ind,
@@ -463,8 +512,9 @@ def _simulate_preview_trades(
         short_win_idx=1 if probs_short is not None else None,
         ct_long=0.5,
         ct_short=0.5,
-        tp=int(tp),
-        sl=int(sl),
+        # ATR multipliers: int() would turn 1.5 into 1 and 0.5 into 0.
+        tp=float(tp),
+        sl=float(sl),
         ctx=ctx,
         return_detailed=True,
     )

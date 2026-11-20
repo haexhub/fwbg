@@ -1,8 +1,9 @@
 """Put an MFE/MAE exit analysis on record before it reads data.
 
-``fwbg analyze`` and ``POST /api/exploration/exit-optimization`` both go
-through :func:`record_analysis`, so an analysis is gated alike from the CLI
-and the dashboard, and an identical one is a duplicate whichever path ran it.
+``fwbg analyze``, ``POST /api/exploration/exit-optimization`` and
+``POST /api/runs/preview`` all go through :func:`record_analysis`, so an
+analysis is gated alike from the CLI and the dashboard, and an identical one is
+a duplicate whichever path ran it.
 """
 
 from __future__ import annotations
@@ -38,6 +39,35 @@ def analysis_config(
         "_cli_data_path": data_path,
         "start_date": start_date,
         "end_date": end_date,
+    }
+    return {key: value for key, value in config.items() if value is not None}
+
+
+def preview_config(
+    indicators: Sequence[Mapping[str, Any]],
+    signal_rules: Mapping[str, Any] | None,
+    exit_params: Mapping[str, Any],
+    timeframe: str,
+    datasource: str,
+    tp: float | None,
+    sl: float | None,
+    last_n_bars: int | None,
+) -> dict[str, Any]:
+    """The configuration a signal preview (``POST /api/runs/preview``) is fingerprinted by.
+
+    A preview simulates trades with a fixed TP/SL, so it evaluates the strategy's
+    signal rules and exit settings like a run does; they are part of the config.
+    """
+    config = {
+        "analysis": "signal_preview",
+        "timeframe": timeframe,
+        "datasource": datasource,
+        "indicators": list(indicators),
+        "signal_rules": dict(signal_rules) if signal_rules else None,
+        "exit_params": dict(exit_params),
+        "tp": tp,
+        "sl": sl,
+        "last_n_bars": last_n_bars,
     }
     return {key: value for key, value in config.items() if value is not None}
 
