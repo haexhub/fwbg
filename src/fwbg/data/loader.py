@@ -74,7 +74,9 @@ def _parse_timestamp_col(series):
     return pd.to_datetime(series)
 
 
-def apply_date_window(df: pd.DataFrame, start_date: str | None, end_date: str | None) -> pd.DataFrame:
+def apply_date_window(
+    df: pd.DataFrame, start_date: str | None, end_date: str | None
+) -> pd.DataFrame:
     """Restrict `df` (DatetimeIndex) to a half-open date window [start_date, end_date).
 
     `start_date` is inclusive, `end_date` is exclusive — this keeps in-sample
@@ -261,9 +263,8 @@ def run_data_loading(df, data_loading_configs):
                 if RELEASE_COL in raw_df.columns:
                     # Source declares a release calendar (e.g. COT) — asof-join
                     # on release_date so bars before publication see NaN.
-                    macro_df = (
-                        raw_df.reset_index()[[RELEASE_COL, "Close"]]
-                        .rename(columns={"Close": macro_col})
+                    macro_df = raw_df.reset_index()[[RELEASE_COL, "Close"]].rename(
+                        columns={"Close": macro_col}
                     )
                     macro_df[RELEASE_COL] = pd.to_datetime(macro_df[RELEASE_COL])
                     # Normalise tz so a tz-naive bar index can compare against
@@ -272,7 +273,9 @@ def run_data_loading(df, data_loading_configs):
                     # tz-naive; we keep that domain.
                     if df.index.tz is None and macro_df[RELEASE_COL].dt.tz is not None:
                         macro_df[RELEASE_COL] = (
-                            macro_df[RELEASE_COL].dt.tz_convert("UTC").dt.tz_localize(None)
+                            macro_df[RELEASE_COL]
+                            .dt.tz_convert("UTC")
+                            .dt.tz_localize(None)
                         )
                     df = merge_respect_release(df, macro_df, prefix, [macro_col])
                 else:
@@ -287,7 +290,9 @@ def run_data_loading(df, data_loading_configs):
                     days = pd.DatetimeIndex(raw_df.index)
                     if days.tz is not None:
                         days = days.tz_localize(None)
-                    closes = pd.Series(raw_df["Close"].to_numpy(dtype=float), index=days.normalize())
+                    closes = pd.Series(
+                        raw_df["Close"].to_numpy(dtype=float), index=days.normalize()
+                    )
                     closes = closes[closes.index.notna()].dropna()
                     closes = closes[~closes.index.duplicated(keep="last")].sort_index()
                     df[macro_col] = (
