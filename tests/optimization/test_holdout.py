@@ -403,6 +403,8 @@ PIPELINES = {
 def test_the_real_holdout_fold_trains_before_the_embargo_and_tests_after_the_cutoff(
     monkeypatch, pipeline
 ):
+    if pipeline.get("preprocessing"):
+        pytest.importorskip("fwbg_premium")
     look = replace(
         LOOK, pipeline=pipeline, validation=ValidationConfig(folds=4, embargo_bars=5)
     )
