@@ -10,6 +10,7 @@ Features encode:
 - H1 (loops/cycles): cyclical patterns and mean-reversion signals
 - Persistence statistics: strength and distribution of topological features
 """
+
 from typing import List
 
 import numpy as np
@@ -17,6 +18,21 @@ import pandas as pd
 import ripser
 
 from fwbg_sdk import BaseIndicator, shift_features, safe_divide, register_indicator
+
+
+# Emitted features per window. The raw H0 count is not among them: for n embedded
+# points ripser returns n - 1 finite H0 bars, so it only reflects the window size
+# (constant), and H1/H0 count ratios are then just a rescaled h1_count.
+_FEATURE_NAMES = [
+    "h1_count",
+    "h0_max_pers",
+    "h1_max_pers",
+    "h0_mean_pers",
+    "h1_mean_pers",
+    "persistence_entropy",
+    "persistence_l2_norm",
+    "max_loop_persistence",
+]
 
 
 def _takens_embedding(
@@ -90,11 +106,12 @@ def _extract_features(diagrams: list) -> dict:
     feats["persistence_entropy"] = (
         _persistence_entropy(all_pers) if len(all_pers) > 0 else 0.0
     )
-    feats["wasserstein_amp"] = (
+    # Euclidean norm of the finite persistences (H0 and H1 pooled). Equal to
+    # sqrt(2) times the 2-Wasserstein amplitude of the diagram with a Euclidean
+    # ground metric, but reported under its plain name.
+    feats["persistence_l2_norm"] = (
         float(np.sqrt(np.sum(all_pers**2))) if len(all_pers) > 0 else 0.0
     )
-    feats["h1_ratio"] = None  # computed via safe_divide later
-    feats["max_loop_persistence"] = None  # computed via safe_divide later
     return feats
 
 
@@ -111,32 +128,27 @@ def _rolling_tda(
         Dict of feature_name -> np.ndarray of length len(close).
     """
     n = len(close)
-    log_returns = np.diff(np.log(close), prepend=np.log(close[0]))
+    # log_returns[j] is the return of bar j + 1; bar 0 has no return, so no
+    # window ever contains a fabricated first return.
+    log_returns = np.diff(np.log(close))
 
-    feature_names = [
-        "h0_count", "h1_count", "h0_max_pers", "h1_max_pers",
-        "h0_mean_pers", "h1_mean_pers", "persistence_entropy",
-        "wasserstein_amp", "h1_ratio", "max_loop_persistence",
-    ]
-    arrays = {name: np.full(n, np.nan) for name in feature_names}
+    feature_names = [name for name in _FEATURE_NAMES if name != "max_loop_persistence"]
+    arrays = {name: np.full(n, np.nan) for name in _FEATURE_NAMES}
 
-    for i in range(window - 1, n):
-        segment = log_returns[i - window + 1 : i + 1]
+    for i in range(window, n):
+        segment = log_returns[i - window : i]
         cloud = _takens_embedding(segment, embedding_dim, time_delay)
         if cloud is None or len(cloud) < 3:
             continue
         try:
             result = ripser.ripser(cloud, maxdim=maxdim)
-        except Exception:
+        except ValueError:
             continue
         feats = _extract_features(result["dgms"])
         for name in feature_names:
-            if name in ("h1_ratio", "max_loop_persistence"):
-                continue
             arrays[name][i] = feats[name]
 
-    # Compute ratio features via safe_divide
-    arrays["h1_ratio"] = safe_divide(arrays["h1_count"], arrays["h0_count"])
+    # Compute ratio feature via safe_divide
     arrays["max_loop_persistence"] = safe_divide(
         arrays["h1_max_pers"], arrays["h0_max_pers"]
     )
@@ -148,7 +160,7 @@ class TopologicalFeaturesIndicator(BaseIndicator):
     """Topological Data Analysis features for ML trading."""
 
     name = "topological_features"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def compute(
         self,
@@ -165,35 +177,24 @@ class TopologicalFeaturesIndicator(BaseIndicator):
 
         close = df["C"].values
         features: dict = {}
-        feature_names = [
-            "h0_count", "h1_count", "h0_max_pers", "h1_max_pers",
-            "h0_mean_pers", "h1_mean_pers", "persistence_entropy",
-            "wasserstein_amp", "h1_ratio", "max_loop_persistence",
-        ]
 
         for w in windows:
             arrays = _rolling_tda(close, w, embedding_dim, time_delay, maxdim)
-            for name in feature_names:
+            for name in _FEATURE_NAMES:
                 features[f"tda_{name}_{w}"] = arrays[name]
 
         self._feature_columns = sorted(features.keys())
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
-    def get_feature_columns(self) -> List[str]:
-        if self._feature_columns:
+    def get_feature_columns(self, params=None) -> List[str]:
+        if params and "windows" in params:
+            windows = params["windows"]
+        elif self._feature_columns:
             return self._feature_columns
-        params = self.get_default_params()
-        cols = []
-        names = [
-            "h0_count", "h1_count", "h0_max_pers", "h1_max_pers",
-            "h0_mean_pers", "h1_mean_pers", "persistence_entropy",
-            "wasserstein_amp", "h1_ratio", "max_loop_persistence",
-        ]
-        for w in params["windows"]:
-            for name in names:
-                cols.append(f"tda_{name}_{w}")
-        return sorted(cols)
+        else:
+            windows = self.get_default_params()["windows"]
+        return sorted(f"tda_{name}_{w}" for w in windows for name in _FEATURE_NAMES)
 
     @classmethod
     def get_default_params(cls) -> dict:

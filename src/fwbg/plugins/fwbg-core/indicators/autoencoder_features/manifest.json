@@ -1,6 +1,6 @@
 {
   "name": "autoencoder_features",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Latent feature extraction via PCA -- compresses indicator features into low-dimensional representations",
   "phase": "indicators",
   "benefits_from_stationary": false,

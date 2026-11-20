@@ -1,18 +1,18 @@
 # Plugin Spec — autoencoder_features
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
-Extracts low-dimensional PCA latent features, per-row reconstruction error, and cumulative explained variance from all numeric non-OHLCV indicator columns. PCA state is fitted on training data and reused for later transforms.
+Extracts low-dimensional PCA latent features, and per-row reconstruction error from all numeric non-OHLCV indicator columns; the fitted cumulative explained variance is exposed as metadata. PCA state is fitted on training data and reused for later transforms.
 
 ## Summary
 
-A PCA-based indicator that compresses all numeric feature columns (excluding OHLCV and configurable prefixes) into a bounded number of orthogonal latent components. It also emits a per-row squared reconstruction error (anomaly signal) and a constant cumulative-explained-variance column. Inputs are standardized after Inf→NaN cleanup and column-median imputation; outputs are shifted by one bar to avoid lookahead.
+A PCA-based indicator that compresses all numeric feature columns (excluding OHLCV and configurable prefixes) into a bounded number of orthogonal latent components. It also emits a per-row squared reconstruction error (anomaly signal). The cumulative explained variance is one number per fit and is available as the `explained_variance_total` property, not as a (constant) feature column. Inputs are standardized after Inf→NaN cleanup and column-median imputation; outputs are shifted by one bar to avoid lookahead.
 
 ## Inputs
 
-- All numeric (float32/float64/int32/int64) columns in the input DataFrame that are not in {O, H, L, C, V} and do not start with any of the configured exclude_prefixes (default ['ae_']).
+- All numeric (float32/float64/int32/int64) columns in the input DataFrame that are not in {O, H, L, C, V}, not `_`-prefixed overlay columns (absolute price levels), not target/label columns (names target, label, y, y_true or prefixes target_, label_, y_) and do not start with any of the configured exclude_prefixes (default ['ae_']).
 
 ## Parameters
 
@@ -23,21 +23,20 @@ A PCA-based indicator that compresses all numeric feature columns (excluding OHL
 
 - ae_latent_{i} for i in 0..effective_components-1 (PCA components)
 - ae_reconstruction_error (per-row squared reconstruction error in standardized space)
-- ae_explained_variance (cumulative explained variance ratio, constant per row)
 
 ## Acceptance Criteria
 
-- AC-001: When at least one numeric non-OHLCV, non-excluded feature column exists and effective_components >= 1, the returned DataFrame contains ae_latent_0..ae_latent_{effective_components-1}, ae_reconstruction_error, and ae_explained_variance columns concatenated onto the input.
+- AC-001: When at least one numeric non-OHLCV, non-excluded feature column exists and effective_components >= 1, the returned DataFrame contains ae_latent_0..ae_latent_{effective_components-1}, and ae_reconstruction_error columns concatenated onto the input.
 - AC-002: effective_components is computed as min(n_components, num_feature_cols - 1, num_rows - 1); the number of ae_latent_i columns emitted equals this effective value.
 - AC-003: Non-finite values (Inf/-Inf) in the selected feature matrix are replaced with NaN, then NaN entries are imputed with the column's nanmedian (falling back to 0.0 when the median is not finite) before standardization.
 - AC-004: Input features are standardized with sklearn StandardScaler prior to PCA fitting.
 - AC-005: ae_reconstruction_error equals the row-wise sum of squared differences between the standardized input and its PCA inverse-transform reconstruction.
-- AC-006: ae_explained_variance is a constant column equal to the sum of the fitted PCA's explained_variance_ratio_.
+- AC-006: After fitting, the property explained_variance_total equals the sum of the fitted PCA's explained_variance_ratio_ (None before fit / without a PCA). It is not emitted as a column.
 - AC-007: All produced feature columns are passed through shift_features(..., df.index), so values are shifted by one bar to prevent lookahead.
-- AC-008: Columns named O, H, L, C, V and any column whose name starts with a prefix in exclude_prefixes are never used as PCA inputs.
+- AC-008: Columns named O, H, L, C, V, every `_`-prefixed column, target/label columns and any column whose name starts with a prefix in exclude_prefixes are never used as PCA inputs.
 - AC-009: Only columns with dtype float64, float32, int64, or int32 are eligible as PCA inputs.
 - AC-010: get_default_params returns {'n_components': 8, 'exclude_prefixes': ['ae_']}.
-- AC-011: get_feature_columns returns the 8 ae_latent_i names plus ae_reconstruction_error and ae_explained_variance, matching the default n_components=8 configuration.
+- AC-011: After fit, get_feature_columns returns exactly the produced columns (effective_components ae_latent_i names plus ae_reconstruction_error; an empty list when nothing is produced). Before fit it returns n_components (params, default 8) latent names plus ae_reconstruction_error as the declared upper bound.
 - AC-012: Imputation medians, StandardScaler, and PCA are fitted only by `fit()` on a training frame; `compute()` transforms with that state and never refits on evaluation rows.
 - AC-013: The plugin is stateful and non-cacheable; fold orchestration fits it independently for outer and inner training folds.
 
