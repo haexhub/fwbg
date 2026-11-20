@@ -12,6 +12,7 @@ Price Action ist die Basis jeder technischen Analyse:
 - Range Position zeigt wo Close relativ zum Range liegt
 - HH/LL zeigt Trend-Struktur
 """
+
 from typing import List
 import numpy as np
 import pandas as pd
@@ -42,7 +43,7 @@ class PriceActionIndicators(BaseIndicator):
         df: pd.DataFrame,
         hh_ll_period: int = 5,
         compute_volume: bool = True,
-        **params
+        **params,
     ) -> pd.DataFrame:
         """
         Berechnet Price Action Features.
@@ -78,15 +79,25 @@ class PriceActionIndicators(BaseIndicator):
         )
 
         # Higher Highs / Lower Lows Counter
-        features["pa_hh"] = (df["H"] > df["H"].shift(1)).astype(int).rolling(hh_ll_period).sum()
-        features["pa_ll"] = (df["L"] < df["L"].shift(1)).astype(int).rolling(hh_ll_period).sum()
+        features["pa_hh"] = (
+            (df["H"] > df["H"].shift(1)).astype(int).rolling(hh_ll_period).sum()
+        )
+        features["pa_ll"] = (
+            (df["L"] < df["L"].shift(1)).astype(int).rolling(hh_ll_period).sum()
+        )
 
         # Higher Lows / Lower Highs (Trend-Struktur)
-        features["pa_hl"] = (df["L"] > df["L"].shift(1)).astype(int).rolling(hh_ll_period).sum()
-        features["pa_lh"] = (df["H"] < df["H"].shift(1)).astype(int).rolling(hh_ll_period).sum()
+        features["pa_hl"] = (
+            (df["L"] > df["L"].shift(1)).astype(int).rolling(hh_ll_period).sum()
+        )
+        features["pa_lh"] = (
+            (df["H"] < df["H"].shift(1)).astype(int).rolling(hh_ll_period).sum()
+        )
 
         # Trend Structure Score: HH+HL - LL-LH
-        features["pa_trend_structure"] = (features["pa_hh"] + features["pa_hl"]) - (features["pa_ll"] + features["pa_lh"])
+        features["pa_trend_structure"] = (features["pa_hh"] + features["pa_hl"]) - (
+            features["pa_ll"] + features["pa_lh"]
+        )
 
         # Gap Analysis
         gap = safe_divide(df["O"] - df["C"].shift(1), df["C"].shift(1))
@@ -96,18 +107,17 @@ class PriceActionIndicators(BaseIndicator):
         # Gap Direction (1=Gap Up, -1=Gap Down, 0=No significant gap)
         gap_threshold = 0.001  # 0.1%
         features["pa_gap_dir"] = np.where(
-            gap > gap_threshold, 1,
-            np.where(gap < -gap_threshold, -1, 0)
+            gap > gap_threshold, 1, np.where(gap < -gap_threshold, -1, 0)
         )
 
         # Gap Fill: Wurde der Gap gefüllt?
         prev_close = df["C"].shift(1)
         features["pa_gap_filled"] = np.where(
-            features["pa_gap_dir"] == 1, (df["L"] <= prev_close).astype(int),
+            features["pa_gap_dir"] == 1,
+            (df["L"] <= prev_close).astype(int),
             np.where(
-                features["pa_gap_dir"] == -1, (df["H"] >= prev_close).astype(int),
-                0
-            )
+                features["pa_gap_dir"] == -1, (df["H"] >= prev_close).astype(int), 0
+            ),
         )
 
         # Consecutive Candles (Streak)
@@ -115,11 +125,15 @@ class PriceActionIndicators(BaseIndicator):
         bearish = (df["C"] < df["O"]).astype(int)
 
         # Bullish Streak
-        bullish_streak = bullish.groupby((bullish != bullish.shift()).cumsum()).cumcount() + 1
+        bullish_streak = (
+            bullish.groupby((bullish != bullish.shift()).cumsum()).cumcount() + 1
+        )
         features["pa_bullish_streak"] = bullish_streak * bullish
 
         # Bearish Streak
-        bearish_streak = bearish.groupby((bearish != bearish.shift()).cumsum()).cumcount() + 1
+        bearish_streak = (
+            bearish.groupby((bearish != bearish.shift()).cumsum()).cumcount() + 1
+        )
         features["pa_bearish_streak"] = bearish_streak * bearish
 
         # Range Expansion/Contraction
@@ -139,8 +153,10 @@ class PriceActionIndicators(BaseIndicator):
 
         # === Volume Features (optional) ===
         if compute_volume:
-            vol_col = "V" if "V" in df.columns else (
-                "Volume" if "Volume" in df.columns else None
+            vol_col = (
+                "V"
+                if "V" in df.columns
+                else ("Volume" if "Volume" in df.columns else None)
             )
 
             if vol_col:
@@ -172,18 +188,34 @@ class PriceActionIndicators(BaseIndicator):
     def get_feature_columns(self) -> List[str]:
         return [
             # Basic Candle Features
-            "pa_range_pos", "pa_body_ratio", "pa_body_dir",
-            "pa_upper_shadow", "pa_lower_shadow",
+            "pa_range_pos",
+            "pa_body_ratio",
+            "pa_body_dir",
+            "pa_upper_shadow",
+            "pa_lower_shadow",
             # Trend Structure
-            "pa_hh", "pa_ll", "pa_hl", "pa_lh", "pa_trend_structure",
+            "pa_hh",
+            "pa_ll",
+            "pa_hl",
+            "pa_lh",
+            "pa_trend_structure",
             # Gap Features
-            "pa_gap", "pa_gap_abs", "pa_gap_dir", "pa_gap_filled",
+            "pa_gap",
+            "pa_gap_abs",
+            "pa_gap_dir",
+            "pa_gap_filled",
             # Streak Features
-            "pa_bullish_streak", "pa_bearish_streak",
+            "pa_bullish_streak",
+            "pa_bearish_streak",
             # Range Features
-            "pa_range_expansion", "pa_inside_bar", "pa_outside_bar",
+            "pa_range_expansion",
+            "pa_inside_bar",
+            "pa_outside_bar",
             # Volume Features (optional)
-            "vol_obv_change", "vol_mfi", "vol_relative", "vol_price_trend",
+            "vol_obv_change",
+            "vol_mfi",
+            "vol_relative",
+            "vol_price_trend",
         ]
 
     def get_signal_columns(self) -> List[str]:
