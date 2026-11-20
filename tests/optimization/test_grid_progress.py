@@ -30,6 +30,17 @@ def _make_grid_ctx(exit_strategies, **overrides):
     return SimulationContext(**defaults)
 
 
+@pytest.fixture(autouse=True)
+def _no_target_precompute():
+    """These tests feed MagicMock inner folds, which the target precompute cannot
+    iterate. That used to raise inside every combo and the grid search swallowed it,
+    so the mocked combo evaluation was never reached; the failure is no longer hidden."""
+    with patch(
+        "fwbg.optimization.grid_search._compute_cached_targets", return_value=None
+    ):
+        yield
+
+
 class TestGridProgressCallback:
     """Tests für run_grid_search progress_callback Aufrufe."""
 
@@ -1095,3 +1106,53 @@ class TestProbabilityCalibration:
             val_df, mod, mod, features, features, 20, 20, ctx
         )
         assert ct3 == pytest.approx(0.50)
+
+
+def test_a_failing_grid_combo_raises_instead_of_vanishing_from_the_results():
+    """A combo that raised was logged and dropped: no candidate, no grid result, no
+    record. It now surfaces as a GridSearchError."""
+    from fwbg.optimization.grid_search import GridSearchError, run_grid_search
+
+    ctx = _make_grid_ctx(
+        [
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 10, "sl_mult": 20}, ct=[0.6]
+            ),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 20, "sl_mult": 20}, ct=[0.6]
+            ),
+        ]
+    )
+    inner_df = pd.DataFrame(
+        {"adx_14": np.random.default_rng(1).normal(size=300)},
+    )
+    outcomes = iter(
+        [
+            ({"params": (10, 20, 0.6), "inner_val_pnl": 1.0}, {"tp_mult": 10}),
+            ValueError("combo exploded"),
+        ]
+    )
+
+    def flaky(*args, **kwargs):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    with (
+        patch("fwbg.optimization.grid_search.select_features") as mock_select,
+        patch("fwbg.optimization.grid_search._process_single_grid_combo", flaky),
+        patch(
+            "fwbg.optimization.grid_search._compute_cached_targets", return_value=None
+        ),
+    ):
+        mock_select.return_value = (["adx_14"], ["adx_14"])
+        with pytest.raises(GridSearchError, match="combo 1 failed.*combo exploded"):
+            run_grid_search(
+                full_pool=["adx_14"],
+                inner_folds=[MagicMock(), MagicMock()],
+                ctx=ctx,
+                regime_config={},
+                sym="EURUSD",
+                inner_df=inner_df,
+            )

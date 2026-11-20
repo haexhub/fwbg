@@ -25,6 +25,15 @@ from .nested_cv import (
 )
 
 
+class GridSearchError(RuntimeError):
+    """A grid combination (or the grid search as a whole) failed.
+
+    Raised instead of skipping the combo: a skipped combo would be missing from the
+    candidates and the grid results with no record, which biases selection, PBO and
+    the trial count of the DSR.
+    """
+
+
 def select_features(
     inner_folds: list,
     features: list,
@@ -520,7 +529,11 @@ def _run_with_successive_halving(
                 f"{type(tgt_e).__name__}: {tgt_e}",
                 sym,
             )
-            result = None
+            # A combo without targets would silently drop out of the grid results.
+            raise GridSearchError(
+                f"target precompute failed for combo {combo_idx} (tp={tp}, sl={sl}): "
+                f"{type(tgt_e).__name__}: {tgt_e}"
+            ) from tgt_e
 
         target_cache[cache_key] = result
         combo_targets[combo_idx] = result
@@ -848,7 +861,12 @@ def run_grid_search(
                         candidates.append(candidate)
                     if grid_result:
                         grid_results.append(grid_result)
-                except (ImportError, ModuleNotFoundError, ColumnRoleError):
+                except (
+                    ImportError,
+                    ModuleNotFoundError,
+                    ColumnRoleError,
+                    GridSearchError,
+                ):
                     raise  # Let outer handler deal with it
                 except Exception as e:
                     import sys
@@ -861,10 +879,17 @@ def run_grid_search(
                         flush=True,
                     )
                     log(1, f"  ERROR in combo {i}: {type(e).__name__}: {e}", sym)
-                    progress_reported += 1
-                    if progress_callback:
-                        progress_callback(progress_reported, grid_total)
-    except (ImportError, ModuleNotFoundError, ColumnRoleError) as outer_e:
+                    # Skipping the combo would leave it out of the candidates and
+                    # grid results without a trace (survivorship in the PBO/DSR).
+                    raise GridSearchError(
+                        f"grid combo {i} failed: {type(e).__name__}: {e}"
+                    ) from e
+    except (
+        ImportError,
+        ModuleNotFoundError,
+        ColumnRoleError,
+        GridSearchError,
+    ) as outer_e:
         # Setup/environment and config errors must never be silently swallowed.
         # They indicate broken dependencies or stale Numba caches.
         import sys
@@ -889,6 +914,9 @@ def run_grid_search(
             flush=True,
         )
         log(1, f"  OUTER ERROR: {type(outer_e).__name__}: {outer_e}", sym)
+        raise GridSearchError(
+            f"grid search failed: {type(outer_e).__name__}: {outer_e}"
+        ) from outer_e
 
     log(2, f"  {len(candidates)} Kandidaten aus {len(combos)} Kombinationen", sym)
 
