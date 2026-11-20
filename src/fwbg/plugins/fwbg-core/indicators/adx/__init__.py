@@ -3,12 +3,42 @@ ADX (Average Directional Index) Indicator.
 
 Misst die Trendstärke auf einer Skala von 0-100, unabhängig von der Richtung.
 """
+
 from typing import List
 
+import numpy as np
 import pandas as pd
 import ta
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features
+
+
+def _wilder_adx(
+    high: pd.Series, low: pd.Series, close: pd.Series, period: int
+) -> pd.Series:
+    """Wilder ADX with a NaN warm-up.
+
+    The first value needs ``2 * period`` bars (smoothed +DI/-DI from bar
+    ``period``, then the mean of ``period`` DX values), so rows
+    ``0 .. 2 * period - 2`` are NaN. The ``ta`` library fills them with 0.0 and
+    raises on shorter input; a NaN anywhere in its input also turns every later
+    value into NaN. Bars with a NaN high, low or close are therefore left out of
+    the recursion (the missing bar is bridged, not interpolated) and stay NaN in
+    the result.
+    """
+    if period < 2:
+        raise ValueError(f"ADX period must be >= 2, got {period}")
+
+    out = np.full(len(close), np.nan)
+    valid = (high.notna() & low.notna() & close.notna()).to_numpy()
+    if valid.sum() < 2 * period:
+        return pd.Series(out, index=close.index)
+
+    h, lo, c = high[valid], low[valid], close[valid]
+    adx = ta.trend.adx(h, lo, c, window=period).to_numpy().copy()
+    adx[: 2 * period - 1] = np.nan
+    out[valid] = adx
+    return pd.Series(out, index=close.index)
 
 
 @register_indicator("adx")
@@ -21,7 +51,7 @@ class ADXIndicator(BaseIndicator):
     """
 
     name = "adx"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def compute(
         self,
@@ -34,9 +64,7 @@ class ADXIndicator(BaseIndicator):
 
         features = {}
         for period in periods:
-            features[f"adx_{period}"] = ta.trend.adx(
-                df["H"], df["L"], df["C"], window=period
-            )
+            features[f"adx_{period}"] = _wilder_adx(df["H"], df["L"], df["C"], period)
 
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)

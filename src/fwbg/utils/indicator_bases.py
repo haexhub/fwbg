@@ -4,6 +4,7 @@ Plugin __init__.py files live in non-importable directories (the
 `fwbg-core` directory has a hyphen). This module hosts shared scaffolding
 that multiple plugins can import via the standard import system.
 """
+
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -57,7 +58,8 @@ class BaseMovingAverageIndicator(BaseIndicator):
                 raise ValueError(
                     f"{self._human_label} period must be >= 2, got {period}"
                 )
-            parsed.append((period, source))
+            if (period, source) not in parsed:
+                parsed.append((period, source))
         return parsed
 
     def _resolve_lines(self, params=None) -> Tuple[list[Tuple[int, str]], bool]:
@@ -68,10 +70,13 @@ class BaseMovingAverageIndicator(BaseIndicator):
 
     @staticmethod
     def _sorted_keys(keys: list[str]) -> list[str]:
-        return sorted(keys, key=lambda k: (
-            int(k.split("_")[0]),
-            k.split("_")[1] if "_" in k else "",
-        ))
+        return sorted(
+            keys,
+            key=lambda k: (
+                int(k.split("_")[0]),
+                k.split("_")[1] if "_" in k else "",
+            ),
+        )
 
     # ---- Pipeline entry points -------------------------------------------
 
@@ -100,10 +105,14 @@ class BaseMovingAverageIndicator(BaseIndicator):
         if crossings:
             sorted_keys = self._sorted_keys(list(ma_series.keys()))
             for i, short_key in enumerate(sorted_keys):
-                for long_key in sorted_keys[i + 1:]:
+                for long_key in sorted_keys[i + 1 :]:
+                    short_ma, long_ma = ma_series[short_key], ma_series[long_key]
+                    # NaN until both averages are valid, not a fabricated 0.0.
                     features[f"{prefix}_{short_key}_above_{long_key}"] = (
-                        ma_series[short_key] > ma_series[long_key]
-                    ).astype(float)
+                        (short_ma > long_ma)
+                        .astype(float)
+                        .where(short_ma.notna() & long_ma.notna())
+                    )
 
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
@@ -122,7 +131,7 @@ class BaseMovingAverageIndicator(BaseIndicator):
         if crossings:
             sorted_keys = self._sorted_keys(keys)
             for i, short_key in enumerate(sorted_keys):
-                for long_key in sorted_keys[i + 1:]:
+                for long_key in sorted_keys[i + 1 :]:
                     cols.append(f"{prefix}_{short_key}_above_{long_key}")
 
         return cols

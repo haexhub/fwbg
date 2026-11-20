@@ -132,10 +132,10 @@ class MyMomentumIndicator(BaseIndicator):
 | Value | Computation | Caching | Examples |
 |-------|-------------|---------|----------|
 | `False` (default) | Once on raw OHLC | Cached across all folds | `momentum`, `volatility`, `price_action` |
-| `True` | Per fold on preprocessed data | Not cached | `trend` (ADX on differentiated data) |
+| `True` | Per fold on preprocessed data | Not cached | Indicators that are defined on a stationary series, not on price levels |
 
 The decision is up to the plugin developer. Rule of thumb:
-- **Trend-following indicators** (ADX, Moving Averages): Benefit from stationary data → `True`
+- **Price-level indicators** (ADX, Supertrend, Moving Averages, MACD, Aroon, CCI): The high/low/close relations and price levels are the input. Differenced prices can be negative and H, L, C no longer bracket each other, so they are meaningless there → `False`
 - **Ratio-based indicators** (RSI, Stochastic): Already normalized → `False`
 - **Volatility indicators** (ATR, Bollinger): Scale-independent → `False`
 

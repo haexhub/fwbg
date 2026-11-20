@@ -1,6 +1,6 @@
 # Plugin Spec — ema
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -36,12 +36,13 @@ EMA indicator that produces multiple EMA lines (each with its own period and OHL
 - AC-006: `get_default_params()` returns `lines` = the module-level DEFAULT_LINES (periods 8/21/50/100/200 on 'C') and `crossings` = True.
 - AC-007: `get_param_schema()` declares `lines` as list[object] with per-item schema (period int in [2, 1000]; source enum O/H/L/C defaulting to 'C') and `crossings` as bool.
 - AC-008: `get_column_group_labels()` maps the prefixes `ema_dist`, `ema_crossing`, and `_ema` to human labels 'EMA Distance', 'EMA Crossings', and 'EMA Lines' respectively.
-- AC-009: Registered under the name 'ema' via `@register_indicator('ema')`; class attribute `name == 'ema'`, `version == '1.0.0'`, `_human_label == 'EMA'`.
+- AC-009: Registered under the name 'ema' via `@register_indicator('ema')`; class attribute `name == 'ema'`, `version == '1.1.0'`, `_human_label == 'EMA'`.
 
 ## Edge Cases
 
 - A line entry omits the 'source' key — defaults to 'C' per the param schema, and the resulting columns use the no-suffix naming form.
 - Two identical `lines` entries (same period + source) — behaviour of duplicate line definitions is not explicitly guarded in this file.
+- Crossing features are NaN until both averages of the pair are valid (not 0.0). Lines with the same period and source are computed once.
 - `crossings=False` — no `..._above_...` features are emitted; only distance and overlay columns remain.
 - A single-line configuration — no EMA pairs exist, so no crossing features are produced even when `crossings=True`.
 - Cross-source pairs (e.g. EMA(5, H) vs EMA(200, C)) — crossings are still computed across differing sources.

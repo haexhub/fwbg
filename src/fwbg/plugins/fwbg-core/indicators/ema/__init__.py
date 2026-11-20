@@ -25,6 +25,7 @@ Spalten-Naming:
     - ema_5_h_above_200  → EMA(5, H) > EMA(200, C)
     - _ema_200           → Raw EMA-Linie (Overlay)
 """
+
 import pandas as pd
 import ta
 
@@ -52,7 +53,7 @@ class EMAIndicator(BaseMovingAverageIndicator):
     """
 
     name = "ema"
-    version = "1.0.0"
+    version = "1.1.0"
     DEFAULT_LINES = DEFAULT_LINES
     _human_label = "EMA"
 
@@ -75,7 +76,11 @@ class EMAIndicator(BaseMovingAverageIndicator):
                 "description": "List of EMA lines to compute. Each entry has 'period' (int, >= 2) and 'source' (one of 'O', 'H', 'L', 'C'). Source defaults to 'C' if omitted.",
                 "item_schema": {
                     "period": {"type": "int", "min": 2, "max": 1000},
-                    "source": {"type": "str", "enum": ["O", "H", "L", "C"], "default": "C"},
+                    "source": {
+                        "type": "str",
+                        "enum": ["O", "H", "L", "C"],
+                        "default": "C",
+                    },
                 },
             },
             "crossings": {
