@@ -4,6 +4,7 @@ CCI (Commodity Channel Index) Indicator.
 Misst die Abweichung des Typical Price von seinem SMA.
 Overbought: CCI > 100. Oversold: CCI < -100.
 """
+
 from typing import List
 
 import pandas as pd
