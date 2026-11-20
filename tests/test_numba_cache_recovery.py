@@ -308,8 +308,8 @@ class TestGridSearchErrorPropagation:
                 inner_df=inner_df,
             )
 
-    def test_other_exceptions_are_logged_not_raised(self, monkeypatch, capsys):
-        """Non-ImportError exceptions are caught but printed to stderr."""
+    def test_other_exceptions_raise_grid_search_error(self, monkeypatch):
+        """Non-ImportError exceptions abort the grid search with the cause attached."""
         from fwbg.optimization import grid_search as gs
 
         inner_folds, inner_df = self._make_minimal_folds()
@@ -320,16 +320,13 @@ class TestGridSearchErrorPropagation:
 
         monkeypatch.setattr(gs, "_compute_cached_targets", _broken_compute)
 
-        # Should NOT raise — but should print error to stderr
-        candidates, grid_results = gs.run_grid_search(
-            full_pool=["feat_a", "feat_b", "feat_c"],
-            inner_folds=inner_folds,
-            ctx=ctx,
-            regime_config={},
-            sym="TEST",
-            inner_df=inner_df,
-        )
-
-        captured = capsys.readouterr()
-        assert "[ERROR]" in captured.err, "RuntimeError should be printed to stderr"
-        assert len(candidates) == 0
+        with pytest.raises(gs.GridSearchError) as excinfo:
+            gs.run_grid_search(
+                full_pool=["feat_a", "feat_b", "feat_c"],
+                inner_folds=inner_folds,
+                ctx=ctx,
+                regime_config={},
+                sym="TEST",
+                inner_df=inner_df,
+            )
+        assert isinstance(excinfo.value.__cause__, RuntimeError)
