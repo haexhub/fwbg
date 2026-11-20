@@ -137,3 +137,39 @@ def test_cli_rejects_an_unknown_session(tmp_path, monkeypatch):
     )
     with pytest.raises(SystemExit, match="no 'cash' session"):
         cli_main.main()
+
+
+def _run_cli(monkeypatch, source, *extra):
+    monkeypatch.setattr(trading_hours, "load_asset_overrides", lambda: {})
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "fwbg",
+            "data",
+            "session-bars",
+            "--input",
+            str(source),
+            "--datasource",
+            "x",
+            *extra,
+        ],
+    )
+    cli_main.main()
+
+
+def test_cli_reports_invalid_ohlc_cleanly(tmp_path, monkeypatch):
+    source = tmp_path / "NAS100_MINUTE_15.csv"
+    source.write_text("T,O,H,L,C,V\n2026-03-02 14:30:00,-1,2,1,1,1\n")
+    with pytest.raises(SystemExit) as exc:
+        _run_cli(monkeypatch, source)
+    assert isinstance(exc.value.code, str)  # a message, not a traceback; exit status 1
+    assert "non-positive" in exc.value.code and "NAS100_MINUTE_15.csv" in exc.value.code
+
+
+def test_cli_reports_unparseable_timestamps_cleanly(tmp_path, monkeypatch):
+    source = tmp_path / "NAS100_MINUTE_15.csv"
+    source.write_text("T,O,H,L,C,V\nnot-a-date,1,2,1,1,1\n")
+    with pytest.raises(SystemExit) as exc:
+        _run_cli(monkeypatch, source)
+    assert isinstance(exc.value.code, str) and "not-a-date" in exc.value.code

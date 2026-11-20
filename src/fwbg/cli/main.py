@@ -813,7 +813,10 @@ def _session_bars_command(args) -> None:
         raise SystemExit(
             f"{symbol}: no '{args.session}' session in the trading hours (known: {known})"
         )
-    df = load_data_aligned(str(source))
+    try:
+        df = load_data_aligned(str(source))
+    except (ValueError, IndexError, OSError) as exc:
+        raise SystemExit(f"{source.name}: unreadable or invalid data: {exc}") from exc
     if df is None:
         raise SystemExit(f"{source}: could not be loaded")
     try:
@@ -826,14 +829,17 @@ def _session_bars_command(args) -> None:
     except (DataCheckError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
     out_dir = get_data_root() / args.datasource / "datasource"
-    csv = write_session_bars(
-        built,
-        out_dir=out_dir,
-        symbol=symbol,
-        session=args.session,
-        source=source,
-        hours=hours,
-    )
+    try:
+        csv = write_session_bars(
+            built,
+            out_dir=out_dir,
+            symbol=symbol,
+            session=args.session,
+            source=source,
+            hours=hours,
+        )
+    except OSError as exc:
+        raise SystemExit(f"{out_dir}: cannot write session bars: {exc}") from exc
     print(
         f"{csv}: {len(built.bars)} {args.session} bars from {built.sessions} sessions "
         f"({built.incomplete} incomplete dropped)"
