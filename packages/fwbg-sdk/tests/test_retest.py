@@ -1,7 +1,12 @@
 """Tests for shared retest logic (fwbg_sdk.retest)."""
+
 import numpy as np
 
-from fwbg_sdk.retest import apply_breakout_threshold, compute_break_state, compute_retest_signals
+from fwbg_sdk.retest import (
+    apply_breakout_threshold,
+    compute_break_state,
+    compute_retest_signals,
+)
 
 
 class TestApplyBreakoutThreshold:
@@ -23,7 +28,9 @@ class TestApplyBreakoutThreshold:
         rs = rh - rl  # 10
         # 3% of range = 0.3 -> need close > 100.3
         close = np.array([100.2])
-        above, below = apply_breakout_threshold(close, rh, rl, rs, breakout_threshold=0.05)
+        above, below = apply_breakout_threshold(
+            close, rh, rl, rs, breakout_threshold=0.05
+        )
         assert not above[0]
 
     def test_pct_threshold_allows_strong_breakout(self):
@@ -33,7 +40,9 @@ class TestApplyBreakoutThreshold:
         rs = rh - rl  # 10
         # 6% of 10 = 0.6 -> need close > 100.5
         close = np.array([100.7])
-        above, below = apply_breakout_threshold(close, rh, rl, rs, breakout_threshold=0.05)
+        above, below = apply_breakout_threshold(
+            close, rh, rl, rs, breakout_threshold=0.05
+        )
         assert above[0]
 
     def test_abs_threshold(self):
@@ -42,7 +51,9 @@ class TestApplyBreakoutThreshold:
         rl = np.array([90.0])
         rs = rh - rl
         close = np.array([105.0])
-        above, below = apply_breakout_threshold(close, rh, rl, rs, breakout_threshold_abs=10.0)
+        above, below = apply_breakout_threshold(
+            close, rh, rl, rs, breakout_threshold_abs=10.0
+        )
         assert not above[0]
 
     def test_abs_threshold_allows_breakout(self):
@@ -50,7 +61,9 @@ class TestApplyBreakoutThreshold:
         rh = np.array([100.0])
         rl = np.array([90.0])
         rs = rh - rl
-        above, below = apply_breakout_threshold(close, rh, rl, rs, breakout_threshold_abs=10.0)
+        above, below = apply_breakout_threshold(
+            close, rh, rl, rs, breakout_threshold_abs=10.0
+        )
         assert above[0]
 
     def test_max_of_pct_and_abs(self):
@@ -62,8 +75,9 @@ class TestApplyBreakoutThreshold:
         # abs: 2.0
         # max = 2.0 -> need close > 102
         close = np.array([101.5])
-        above, _ = apply_breakout_threshold(close, rh, rl, rs, breakout_threshold=0.05,
-                                            breakout_threshold_abs=2.0)
+        above, _ = apply_breakout_threshold(
+            close, rh, rl, rs, breakout_threshold=0.05, breakout_threshold_abs=2.0
+        )
         assert not above[0]
 
     def test_bear_breakout_with_threshold(self):
@@ -71,10 +85,14 @@ class TestApplyBreakoutThreshold:
         rl = np.array([90.0])
         rs = rh - rl
         close = np.array([89.0])  # 1 below range_low
-        _, below = apply_breakout_threshold(close, rh, rl, rs, breakout_threshold_abs=2.0)
+        _, below = apply_breakout_threshold(
+            close, rh, rl, rs, breakout_threshold_abs=2.0
+        )
         assert not below[0]  # need 2 points below
         close2 = np.array([87.5])
-        _, below2 = apply_breakout_threshold(close2, rh, rl, rs, breakout_threshold_abs=2.0)
+        _, below2 = apply_breakout_threshold(
+            close2, rh, rl, rs, breakout_threshold_abs=2.0
+        )
         assert below2[0]
 
 
@@ -86,7 +104,9 @@ class TestComputeBreakState:
         below = np.array([False, False, False, False])
         nan_guard = np.array([1.0, 1.0, 1.0, 1.0])
         group_ids = np.array([0, 0, 0, 0])
-        hb, lb, pb, pbe, bha, bla = compute_break_state(above, below, nan_guard, group_ids, 4)
+        hb, lb, pb, pbe, bha, bla = compute_break_state(
+            above, below, nan_guard, group_ids, 4
+        )
         assert hb[1] == 1.0  # first break
         assert hb[2] == 0.0  # already broke
         assert pb[2] == 1.0  # post_bull persists
@@ -116,8 +136,9 @@ class TestComputeBreakState:
         nan_guard = np.array([1.0, 1.0, 1.0])
         group_ids = np.array([0, 0, 0])
         session_mask = np.array([False, True, True])
-        hb, _, _, _, _, _ = compute_break_state(above, below, nan_guard, group_ids, 3,
-                                                 session_mask=session_mask)
+        hb, _, _, _, _, _ = compute_break_state(
+            above, below, nan_guard, group_ids, 3, session_mask=session_mask
+        )
         assert hb[0] == 0.0  # off-session
         assert hb[1] == 1.0  # in-session
 
@@ -129,8 +150,16 @@ class TestComputeRetestSignals:
     high >= entry_bear for bear) instead of the old departure/half_band zone.
     """
 
-    def _make_scenario(self, n, range_high, range_low, close_vals, group_ids=None,
-                       broke_high=None, broke_low=None):
+    def _make_scenario(
+        self,
+        n,
+        range_high,
+        range_low,
+        close_vals,
+        group_ids=None,
+        broke_high=None,
+        broke_low=None,
+    ):
         """Helper to build arrays for retest signal tests."""
         close = np.array(close_vals, dtype=float)
         rh = np.full(n, range_high, dtype=float)
@@ -155,7 +184,9 @@ class TestComputeRetestSignals:
         # Bull retest: low must reach entry_bull (100) to fire.
         n = 4
         close, rh, rl, gids, bh, bl = self._make_scenario(
-            n, 104.0, 96.0,
+            n,
+            104.0,
+            96.0,
             [100.0, 105.0, 100.0, 100.0],
         )
         bh[:] = [False, True, True, True]
@@ -165,10 +196,16 @@ class TestComputeRetestSignals:
         # bar1: C=105 > 100 (not near entry) -> no
         # bar2: C=100 <= 100 -> fires (first retest)
         result = compute_retest_signals(
-            close=close, high=None, low=None,
-            range_high=rh, range_low=rl,
-            group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
-            entry_bull=entry_bull, entry_bear=entry_bear,
+            close=close,
+            high=None,
+            low=None,
+            range_high=rh,
+            range_low=rl,
+            group_ids=gids,
+            broke_high_arr=bh,
+            broke_low_arr=bl,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
             n=n,
         )
         assert result["retest_bull"][1] == 0.0  # breakout bar, C=105 > entry_bull=100
@@ -178,7 +215,9 @@ class TestComputeRetestSignals:
         """If broke_high is never True, no bull retest fires."""
         n = 4
         close, rh, rl, gids, bh, bl = self._make_scenario(
-            n, 104.0, 96.0,
+            n,
+            104.0,
+            96.0,
             [100.0, 100.0, 100.0, 100.0],
         )
         # bh all False
@@ -186,10 +225,16 @@ class TestComputeRetestSignals:
         entry_bear = np.full(n, 100.0)
 
         result = compute_retest_signals(
-            close=close, high=None, low=None,
-            range_high=rh, range_low=rl,
-            group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
-            entry_bull=entry_bull, entry_bear=entry_bear,
+            close=close,
+            high=None,
+            low=None,
+            range_high=rh,
+            range_low=rl,
+            group_ids=gids,
+            broke_high_arr=bh,
+            broke_low_arr=bl,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
             n=n,
         )
         assert result["retest_bull"].sum() == 0.0
@@ -198,7 +243,9 @@ class TestComputeRetestSignals:
         """Only one bull retest per group, even if price re-enters zone."""
         n = 6
         close, rh, rl, gids, bh, bl = self._make_scenario(
-            n, 104.0, 96.0,
+            n,
+            104.0,
+            96.0,
             [100.0, 106.0, 100.0, 106.0, 100.0, 100.0],
         )
         bh[:] = [False, True, True, True, True, True]
@@ -206,10 +253,16 @@ class TestComputeRetestSignals:
         entry_bear = np.full(n, 100.0)
 
         result = compute_retest_signals(
-            close=close, high=None, low=None,
-            range_high=rh, range_low=rl,
-            group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
-            entry_bull=entry_bull, entry_bear=entry_bear,
+            close=close,
+            high=None,
+            low=None,
+            range_high=rh,
+            range_low=rl,
+            group_ids=gids,
+            broke_high_arr=bh,
+            broke_low_arr=bl,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
             n=n,
         )
         assert result["retest_bull"].sum() == 1.0
@@ -228,10 +281,16 @@ class TestComputeRetestSignals:
         entry_bear = np.full(n, 100.0)
 
         result = compute_retest_signals(
-            close=close, high=None, low=None,
-            range_high=rh, range_low=rl,
-            group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
-            entry_bull=entry_bull, entry_bear=entry_bear,
+            close=close,
+            high=None,
+            low=None,
+            range_high=rh,
+            range_low=rl,
+            group_ids=gids,
+            broke_high_arr=bh,
+            broke_low_arr=bl,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
             n=n,
         )
         assert result["retest_bull"][1] == 1.0  # group 0
@@ -257,10 +316,16 @@ class TestComputeRetestSignals:
         # Without retracement check:
         # bar2: L=99 <= 100 -> fires at bar2
         r1 = compute_retest_signals(
-            close=close, high=high_arr, low=low_arr,
-            range_high=rh, range_low=rl,
-            group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
-            entry_bull=entry_bull, entry_bear=entry_bear,
+            close=close,
+            high=high_arr,
+            low=low_arr,
+            range_high=rh,
+            range_low=rl,
+            group_ids=gids,
+            broke_high_arr=bh,
+            broke_low_arr=bl,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
             n=n,
         )
         assert r1["retest_bull"][2] == 1.0
@@ -269,11 +334,18 @@ class TestComputeRetestSignals:
         # bar2: L=99 <= 100 (near entry) but L=99 > 97.6 -> not retraced enough
         # bar4: L=96 <= 97.6 -> retraced! L=96 <= 100 -> near entry. Fires.
         r2 = compute_retest_signals(
-            close=close, high=high_arr, low=low_arr,
-            range_high=rh, range_low=rl,
-            group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
-            entry_bull=entry_bull, entry_bear=entry_bear,
-            n=n, min_retracement=0.8,
+            close=close,
+            high=high_arr,
+            low=low_arr,
+            range_high=rh,
+            range_low=rl,
+            group_ids=gids,
+            broke_high_arr=bh,
+            broke_low_arr=bl,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
+            n=n,
+            min_retracement=0.8,
         )
         assert r2["retest_bull"][2] == 0.0  # not retraced enough yet
         assert r2["retest_bull"][4] == 1.0  # retracement met, fires
@@ -292,11 +364,18 @@ class TestComputeRetestSignals:
         session_mask = np.array([True, False, False, True])
 
         result = compute_retest_signals(
-            close=close, high=None, low=None,
-            range_high=rh, range_low=rl,
-            group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
-            entry_bull=entry_bull, entry_bear=entry_bear,
-            n=n, session_mask=session_mask,
+            close=close,
+            high=None,
+            low=None,
+            range_high=rh,
+            range_low=rl,
+            group_ids=gids,
+            broke_high_arr=bh,
+            broke_low_arr=bl,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
+            n=n,
+            session_mask=session_mask,
         )
         # bar1/2 off-session -> no signal even though in zone
         assert result["retest_bull"][1] == 0.0
@@ -319,10 +398,16 @@ class TestComputeRetestSignals:
         entry_bear = np.full(n, 100.0)
 
         result = compute_retest_signals(
-            close=close, high=high_arr, low=None,
-            range_high=rh, range_low=rl,
-            group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
-            entry_bull=entry_bull, entry_bear=entry_bear,
+            close=close,
+            high=high_arr,
+            low=None,
+            range_high=rh,
+            range_low=rl,
+            group_ids=gids,
+            broke_high_arr=bh,
+            broke_low_arr=bl,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
             n=n,
         )
         # bar1: H=94.5 < 100 -> not near entry_bear
@@ -343,10 +428,16 @@ class TestComputeRetestSignals:
         entry_bear = np.full(n, 100.0)
 
         result = compute_retest_signals(
-            close=close, high=high_arr, low=None,
-            range_high=rh, range_low=rl,
-            group_ids=gids, broke_high_arr=bh, broke_low_arr=bl,
-            entry_bull=entry_bull, entry_bear=entry_bear,
+            close=close,
+            high=high_arr,
+            low=None,
+            range_high=rh,
+            range_low=rl,
+            group_ids=gids,
+            broke_high_arr=bh,
+            broke_low_arr=bl,
+            entry_bull=entry_bull,
+            entry_bear=entry_bear,
             n=n,
         )
         # bar1/2: C=105 > 104 (range_high) -> bear retest blocked

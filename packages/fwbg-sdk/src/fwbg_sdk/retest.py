@@ -9,6 +9,7 @@ Both strategies trade the same pattern:
 This module provides the shared computation so both indicators use
 identical signal logic, just with different reference ranges.
 """
+
 from typing import Dict, Optional
 
 import numpy as np
@@ -179,13 +180,23 @@ def compute_retest_signals(
             continue
 
         # Bull retest: broke high + retraced + in zone + price above range low
-        if broke_high_arr[i] and retracement_ok_bull and not retested_bull \
-                and near_entry_bull[i] and close[i] > range_low[i]:
+        if (
+            broke_high_arr[i]
+            and retracement_ok_bull
+            and not retested_bull
+            and near_entry_bull[i]
+            and close[i] > range_low[i]
+        ):
             retest_bull[i] = 1.0
             retested_bull = True
         # Bear retest: broke low + retraced + in zone + price below range high
-        if broke_low_arr[i] and retracement_ok_bear and not retested_bear \
-                and near_entry_bear[i] and close[i] < range_high[i]:
+        if (
+            broke_low_arr[i]
+            and retracement_ok_bear
+            and not retested_bear
+            and near_entry_bear[i]
+            and close[i] < range_high[i]
+        ):
             retest_bear[i] = 1.0
             retested_bear = True
 
