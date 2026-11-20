@@ -566,7 +566,11 @@ async def _discovery_stream(
     loss_mask = pnls < 0
 
     # Load OHLCV data
-    df = await asyncio.to_thread(load_data_aligned, str(csv_path))
+    try:
+        df = await asyncio.to_thread(load_data_aligned, str(csv_path))
+    except (ValueError, pd.errors.ParserError) as exc:
+        yield _sse_event("error", {"message": f"Invalid data in {csv_path}: {exc}"})
+        return
     if df is None or df.empty:
         yield _sse_event("error", {"message": f"Failed to load data from {csv_path}"})
         return

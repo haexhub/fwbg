@@ -108,3 +108,23 @@ def test_discovery_cache_filename_is_bounded_for_max_length_symbol(results_dir):
 
     assert len(path.name) <= 128
     assert path == discovery_mod._cache_path("run-1", symbol)
+
+
+def test_discovery_reports_invalid_data_instead_of_aborting_the_stream(results_dir):
+    source = core_ds._DATA_SOURCES["disc"]
+    source.get_file_path("EURUSD", "HOUR").write_text(
+        "Time,Open,High,Low,Close,Volume\n2024-01-01 10:00,100.0,101.0,0.0,100.5,1\n"
+    )
+
+    async def _scenario():
+        transport = httpx.ASGITransport(app=create_app())
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            return await client.get("/api/runs/run-1/discovery/EURUSD")
+
+    response = asyncio.run(_scenario())
+
+    assert response.status_code == 200
+    assert "event: error" in response.text
+    assert "non-positive" in response.text
