@@ -361,3 +361,33 @@ def test_combine_without_a_research_id_is_refused(gated, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         run_cli(monkeypatch, "--spec", str(gated.spec), "--note", "x")
     assert exc.value.code == 2 and gated.developed == []
+
+
+def test_a_weekend_exit_keeps_its_return():
+    """bdate_range dropped returns of exits on a Saturday or Sunday."""
+    days = pd.bdate_range("2024-01-01", periods=40)
+    rng = np.random.default_rng(5)
+    saturday = pd.Timestamp("2024-02-17")  # inside the range, after the warm-up
+    assert saturday.dayofweek == 5
+
+    def stream(scale):
+        series = pd.Series(rng.normal(0.0005, scale, len(days)), index=days)
+        series.loc[saturday] = 0.05
+        return series.sort_index()
+
+    params = {
+        "lookback_days": 5,
+        "min_days": 3,
+        "target_volatility": 0.10,
+        "max_scale": 5.0,
+    }
+    returns, notional = combine(
+        {"AAA": stream(0.004), "BBB": stream(0.01)}, params, {"AAA": None, "BBB": None}
+    )
+
+    assert saturday in returns.index
+    expected = (
+        notional.loc[saturday, "AAA"] * 0.05 + notional.loc[saturday, "BBB"] * 0.05
+    )
+    assert returns.loc[saturday] == pytest.approx(expected)
+    assert returns.loc[saturday] != 0.0

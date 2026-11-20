@@ -245,7 +245,13 @@ def combine(
     """Daily portfolio returns and the sleeves' effective notional (causal weights)."""
     first = min(s.index.min() for s in streams.values())
     last = max(s.index.max() for s in streams.values())
+    # Business days plus every date a sleeve actually exited on: a weekend exit (24/7
+    # symbols, Sunday sessions) must keep its return instead of being dropped by the
+    # reindex. Dates without any exit stay business days only (zero-return days count
+    # in the volatility windows; weekends without exits do not).
     days = pd.bdate_range(first, last)
+    for series in streams.values():
+        days = days.union(series.index)
     returns = pd.DataFrame(
         {k: s.reindex(days, fill_value=0.0) for k, s in streams.items()}
     )
