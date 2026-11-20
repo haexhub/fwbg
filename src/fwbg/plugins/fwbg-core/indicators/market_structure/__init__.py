@@ -21,6 +21,7 @@ Trend state machine: neutral (0) → bullish (+1) on bull BOS,
 Distance features capture how far price is from the most recent BOS level
 and from the current rolling swing extremes — useful for ML as proximity signals.
 """
+
 from typing import List
 
 import numpy as np
@@ -37,16 +38,16 @@ class MarketStructureIndicator(BaseIndicator):
     version = "1.0.0"
 
     _FEATURES = [
-        "ms_bos_bull",         # 1 if bullish BOS at this bar
-        "ms_bos_bear",         # 1 if bearish BOS at this bar
-        "ms_choch_bull",       # 1 if bullish CHOCH (first bull BOS after bearish trend)
-        "ms_choch_bear",       # 1 if bearish CHOCH (first bear BOS after bullish trend)
-        "ms_trend",            # current trend: +1 bull, -1 bear, 0 neutral
-        "ms_bull_bos_dist",    # ATR-normalised distance from close to last bull BOS level
-        "ms_bear_bos_dist",    # ATR-normalised distance from close to last bear BOS level
+        "ms_bos_bull",  # 1 if bullish BOS at this bar
+        "ms_bos_bear",  # 1 if bearish BOS at this bar
+        "ms_choch_bull",  # 1 if bullish CHOCH (first bull BOS after bearish trend)
+        "ms_choch_bear",  # 1 if bearish CHOCH (first bear BOS after bullish trend)
+        "ms_trend",  # current trend: +1 bull, -1 bear, 0 neutral
+        "ms_bull_bos_dist",  # ATR-normalised distance from close to last bull BOS level
+        "ms_bear_bos_dist",  # ATR-normalised distance from close to last bear BOS level
         "ms_swing_high_dist",  # ATR-normalised distance from close to rolling swing high
-        "ms_swing_low_dist",   # ATR-normalised distance from close to rolling swing low
-        "ms_choch_recency",    # recency of most recent CHOCH (1=just happened, 0=old)
+        "ms_swing_low_dist",  # ATR-normalised distance from close to rolling swing low
+        "ms_choch_recency",  # recency of most recent CHOCH (1=just happened, 0=old)
     ]
 
     def compute(
@@ -74,7 +75,9 @@ class MarketStructureIndicator(BaseIndicator):
         atr = pd.Series(tr).rolling(atr_period, min_periods=1).mean().values
 
         # Rolling swing high / low (no lookahead: values up to bar i)
-        swing_high = pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        swing_high = (
+            pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        )
         swing_low = pd.Series(lows).rolling(swing_lookback, min_periods=1).min().values
 
         # Output arrays
@@ -90,7 +93,7 @@ class MarketStructureIndicator(BaseIndicator):
         choch_recency = np.zeros(n)
 
         # State
-        current_trend = 0         # -1, 0, +1
+        current_trend = 0  # -1, 0, +1
         last_bull_bos_level = np.nan
         last_bear_bos_level = np.nan
         last_choch_bar = -1
