@@ -19,7 +19,9 @@ def test_ensure_unknown_task_returns_404(client):
 
 
 def test_ensure_invalid_timeframe_returns_422(client):
-    resp = client.post("/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "BAD_TF"})
+    resp = client.post(
+        "/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "BAD_TF"}
+    )
     assert resp.status_code == 422
     assert "timeframe" in resp.json()["detail"].lower()
 
@@ -28,7 +30,9 @@ def test_ensure_non_dukascopy_symbol_returns_404(client, monkeypatch):
     from fwbg.api import data as data_mod
 
     monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: None)
-    resp = client.post("/api/data/ensure", json={"symbol": "FAKEXYZ999", "timeframe": "HOUR_1"})
+    resp = client.post(
+        "/api/data/ensure", json={"symbol": "FAKEXYZ999", "timeframe": "HOUR_1"}
+    )
     assert resp.status_code == 404
     assert "Dukascopy" in resp.json()["detail"]
 
@@ -38,9 +42,13 @@ def test_ensure_returns_ready_when_file_exists(client, monkeypatch, tmp_path):
 
     fake_path = tmp_path / "EURUSD_HOUR_1.csv"
     fake_path.write_text("T,O,H,L,C,V\n")
-    monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: ("src1", fake_path))
+    monkeypatch.setattr(
+        data_mod, "_find_existing_file", lambda s, t, d=None: ("src1", fake_path)
+    )
 
-    resp = client.post("/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "HOUR_1"})
+    resp = client.post(
+        "/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "HOUR_1"}
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ready"
@@ -70,11 +78,15 @@ def test_ensure_no_csv_source_returns_503(client, monkeypatch):
 
     monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: None)
     monkeypatch.setattr(data_mod, "_first_csv_source", lambda: None)
-    resp = client.post("/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "HOUR_1"})
+    resp = client.post(
+        "/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "HOUR_1"}
+    )
     assert resp.status_code == 503
 
 
-def test_ensure_starts_download_returns_202_and_task_is_pollable(client, monkeypatch, tmp_path):
+def test_ensure_starts_download_returns_202_and_task_is_pollable(
+    client, monkeypatch, tmp_path
+):
     from fwbg.core.data_sources import CSVSourceConfig
     from fwbg.api import data as data_mod
     import fwbg.data.dukascopy as dk_mod
@@ -86,13 +98,23 @@ def test_ensure_starts_download_returns_202_and_task_is_pollable(client, monkeyp
         dk_mod,
         "download",
         lambda out, symbols, timeframe, start, end, **kw: [
-            {"symbol": symbols[0], "file": str(out / f"{symbols[0]}_{timeframe}.csv"), "rows": 42, "spread": 0.0}
+            {
+                "symbol": symbols[0],
+                "file": str(out / f"{symbols[0]}_{timeframe}.csv"),
+                "rows": 42,
+                "spread": 0.0,
+            }
         ],
     )
 
     resp = client.post(
         "/api/data/ensure",
-        json={"symbol": "EURUSD", "timeframe": "HOUR_1", "date_from": "2023-01-01", "date_to": "2023-03-01"},
+        json={
+            "symbol": "EURUSD",
+            "timeframe": "HOUR_1",
+            "date_from": "2023-01-01",
+            "date_to": "2023-03-01",
+        },
     )
     assert resp.status_code == 202
     body = resp.json()
@@ -114,12 +136,18 @@ def test_ensure_date_to_before_date_from_returns_422(client, monkeypatch, tmp_pa
 
     monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: None)
     monkeypatch.setattr(
-        data_mod, "_first_csv_source",
+        data_mod,
+        "_first_csv_source",
         lambda: CSVSourceConfig(name="src", path=tmp_path),
     )
     resp = client.post(
         "/api/data/ensure",
-        json={"symbol": "EURUSD", "timeframe": "HOUR_1", "date_from": "2023-06-01", "date_to": "2023-01-01"},
+        json={
+            "symbol": "EURUSD",
+            "timeframe": "HOUR_1",
+            "date_from": "2023-06-01",
+            "date_to": "2023-01-01",
+        },
     )
     assert resp.status_code == 422
     assert "date_to" in resp.json()["detail"].lower()
@@ -144,7 +172,9 @@ def test_ensure_implicit_request_accepts_partial_cache(client, monkeypatch, tmp_
         return ("src1", fake_path)
 
     monkeypatch.setattr(data_mod, "_find_existing_file", _fake_find)
-    resp = client.post("/api/data/ensure", json={"symbol": "GBPUSD", "timeframe": "MINUTE_15"})
+    resp = client.post(
+        "/api/data/ensure", json={"symbol": "GBPUSD", "timeframe": "MINUTE_15"}
+    )
     assert resp.status_code == 200
     assert resp.json()["status"] == "ready"
     assert seen["date_from"] is None  # coverage check skipped for implicit request
@@ -213,12 +243,15 @@ def test_ensure_download_defaults_to_full_history(client, monkeypatch, tmp_path)
 
     monkeypatch.setattr(data_mod, "_find_existing_file", lambda s, t, d=None: None)
     monkeypatch.setattr(
-        data_mod, "_first_csv_source",
+        data_mod,
+        "_first_csv_source",
         lambda: CSVSourceConfig(name="dukas_src", path=tmp_path),
     )
     monkeypatch.setattr(dk_mod, "download", fake_download)
 
-    resp = client.post("/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "DAY_1"})
+    resp = client.post(
+        "/api/data/ensure", json={"symbol": "EURUSD", "timeframe": "DAY_1"}
+    )
     assert resp.status_code == 202
     task_id = resp.json()["task_id"]
     # The daemon thread runs fake_download almost immediately; poll until done.
