@@ -9,6 +9,7 @@ Sichert ab:
 - Fehlende symbol_map-Einträge werden übersprungen (kein Absturz)
 - timezone-Feld konvertiert UTC-Timestamps in die Ziel-Zeitzone (DST-aware)
 """
+
 import csv
 import pytest
 from pathlib import Path
@@ -17,6 +18,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def raw_dir(tmp_path):
@@ -31,13 +33,11 @@ def raw_dir(tmp_path):
         "1388535300000,9552.5,9554.0,9552.0,9553.0\n"
     )
     (raw / "US30_DJI_m15.csv").write_text(
-        "timestamp,open,high,low,close\n"
-        "1388534400000,16500.0,16510.0,16495.0,16505.0\n"
+        "timestamp,open,high,low,close\n1388534400000,16500.0,16510.0,16495.0,16505.0\n"
     )
     # Datei ohne Symbol-Mapping (soll übersprungen werden)
     (raw / "XX99_UNKNOWN_m15.csv").write_text(
-        "timestamp,open,high,low,close\n"
-        "1388534400000,100.0,101.0,99.0,100.5\n"
+        "timestamp,open,high,low,close\n1388534400000,100.0,101.0,99.0,100.5\n"
     )
     return raw
 
@@ -51,6 +51,7 @@ def datasource_dir(tmp_path):
 def csv_source(raw_dir, datasource_dir):
     """CSVSourceConfig mit dukascopy-typischen Feldern."""
     from fwbg.core.data_sources import CSVSourceConfig
+
     return CSVSourceConfig(
         name="dukascopy_test",
         path=datasource_dir,
@@ -70,8 +71,8 @@ def csv_source(raw_dir, datasource_dir):
 # Tests: prepare() Grundverhalten
 # ---------------------------------------------------------------------------
 
-class TestCSVSourcePrepare:
 
+class TestCSVSourcePrepare:
     def test_prepare_creates_datasource_dir(self, csv_source, datasource_dir):
         """prepare() erstellt das Ausgabe-Verzeichnis falls nötig."""
         assert not datasource_dir.exists()
@@ -133,6 +134,7 @@ class TestCSVSourcePrepare:
     def test_prepare_without_raw_path_is_noop(self, datasource_dir):
         """CSVSourceConfig ohne raw_path → prepare() tut nichts (kein Absturz)."""
         from fwbg.core.data_sources import CSVSourceConfig
+
         src = CSVSourceConfig(name="no_raw", path=datasource_dir)
         # Kein Fehler, keine Ausgabe
         src.prepare()
@@ -143,8 +145,8 @@ class TestCSVSourcePrepare:
 # Tests: Serialisierung / Deserialisierung
 # ---------------------------------------------------------------------------
 
-class TestCSVSourceSerialization:
 
+class TestCSVSourceSerialization:
     def test_to_dict_includes_raw_fields(self, csv_source):
         """to_dict() muss raw_path, raw_pattern, timestamp_unit, symbol_map enthalten."""
         d = csv_source.to_dict()
@@ -156,6 +158,7 @@ class TestCSVSourceSerialization:
     def test_source_from_dict_roundtrip(self, csv_source, raw_dir, datasource_dir):
         """source_from_dict(to_dict()) muss identische Config reproduzieren."""
         from fwbg.core.data_sources import source_from_dict
+
         d = csv_source.to_dict()
         restored = source_from_dict(d)
         assert restored.name == csv_source.name
@@ -168,6 +171,7 @@ class TestCSVSourceSerialization:
 # Tests: Timezone-Konvertierung
 # ---------------------------------------------------------------------------
 
+
 class TestCSVSourceTimezone:
     """Sichert ab dass UTC-Timestamps in die konfigurierte Zeitzone konvertiert werden.
 
@@ -179,6 +183,7 @@ class TestCSVSourceTimezone:
 
     def _make_source(self, raw_dir, datasource_dir, timezone):
         from fwbg.core.data_sources import CSVSourceConfig
+
         return CSVSourceConfig(
             name="tz_test",
             path=datasource_dir,
@@ -193,6 +198,7 @@ class TestCSVSourceTimezone:
     def test_no_timezone_keeps_utc(self, raw_dir, datasource_dir):
         """Ohne timezone bleibt der Timestamp in UTC (bisheriges Verhalten)."""
         from fwbg.core.data_sources import CSVSourceConfig
+
         src = CSVSourceConfig(
             name="no_tz",
             path=datasource_dir,
@@ -237,6 +243,7 @@ class TestCSVSourceTimezone:
             f"timestamp,open,high,low,close\n{ts_ms},100,101,99,100\n"
         )
         from fwbg.core.data_sources import CSVSourceConfig
+
         src = CSVSourceConfig(
             name="dst_test",
             path=tmp_path / "out",
@@ -267,6 +274,7 @@ class TestCSVSourceTimezone:
     def test_source_from_dict_restores_timezone(self, raw_dir, datasource_dir):
         """source_from_dict() muss timezone korrekt deserialisieren."""
         from fwbg.core.data_sources import source_from_dict
+
         src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
         restored = source_from_dict(src.to_dict())
         assert restored.timezone == "Europe/Berlin"
@@ -286,13 +294,14 @@ class TestCSVSourceTimezone:
         # 2024-10-27 DST fall-back: 01:00 UTC = 03:00 CEST → 02:00 CET
         # Bars: 00:00..02:00 UTC every 15 min = 9 bars
         base_ms = 1729987200000  # 2024-10-27 00:00:00 UTC
-        step_ms = 900000         # 15 min
+        step_ms = 900000  # 15 min
         lines = ["timestamp,open,high,low,close"]
         for i in range(9):
             lines.append(f"{base_ms + i * step_ms},100,101,99,100")
         (raw / "DE40_DAX_m15.csv").write_text("\n".join(lines) + "\n")
 
         from fwbg.core.data_sources import CSVSourceConfig
+
         src = CSVSourceConfig(
             name="dst_dedup",
             path=tmp_path / "out",
@@ -311,6 +320,8 @@ class TestCSVSourceTimezone:
             f"Duplikate in Timestamps: {[t for t in timestamps if timestamps.count(t) > 1]}"
         )
         # 9 raw → 5 unique (4 pairs deduplicated + 1 last bar)
-        assert len(rows) == 5, f"Erwartet 5 Zeilen nach DST-Dedup, bekommen: {len(rows)}"
+        assert len(rows) == 5, (
+            f"Erwartet 5 Zeilen nach DST-Dedup, bekommen: {len(rows)}"
+        )
         assert rows[0]["T"] == "2024-10-27 02:00:00"
         assert rows[-1]["T"] == "2024-10-27 03:00:00"
