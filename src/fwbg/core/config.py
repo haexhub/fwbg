@@ -13,6 +13,7 @@ import math
 import logging
 import os
 
+from fwbg.core.columns import signal_columns_as_features
 from fwbg.core.presets import resolve_presets
 from fwbg.data.trading_hours import TradingHoursError, parse_trading_hours
 
@@ -524,6 +525,10 @@ class StrategyConfig:
         # Resolve sections: string loads preset file, dict/None passes through
         resolved = resolve_presets(data)
         pipeline = resolved.get("pipeline", {})
+        for indicator in (
+            pipeline.get("indicators", []) if isinstance(pipeline, dict) else []
+        ):
+            signal_columns_as_features(indicator)  # rejects a non-boolean flag
         model_data = resolved.get("model", {})
         validation_data = resolved.get("validation", {})
         filters_data = resolved.get("filters", {})
