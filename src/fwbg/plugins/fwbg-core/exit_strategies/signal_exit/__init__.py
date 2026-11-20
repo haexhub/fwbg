@@ -5,6 +5,7 @@ bar after entry where the indicator's exit column for their side is 1. The
 simulator reads the columns named by ``exit_signal_long_column`` and
 ``exit_signal_short_column`` from the exit params.
 """
+
 from typing import TYPE_CHECKING, Optional, Tuple
 
 import numpy as np
@@ -58,13 +59,21 @@ class SignalExitStrategy(BaseExitStrategy):
         cost = ctx.spread * 1.5
         n = len(df)
         results = []
-        for direction, param in ((1, "exit_signal_long_column"), (-1, "exit_signal_short_column")):
+        for direction, param in (
+            (1, "exit_signal_long_column"),
+            (-1, "exit_signal_short_column"),
+        ):
             flags = self._flags(df, exit_params.get(param))
             nxt = next_flag_index(flags)
             has_exit = (nxt < n) & valid_entry
             exit_close = closes[np.minimum(nxt, n - 1)]
             pnl = direction * (exit_close - entries) - cost
-            results.append((np.where(has_exit & (pnl > 0), 1.0, 0.0), np.where(has_exit, nxt - np.arange(n), 0)))
+            results.append(
+                (
+                    np.where(has_exit & (pnl > 0), 1.0, 0.0),
+                    np.where(has_exit, nxt - np.arange(n), 0),
+                )
+            )
         (tgt_l, dur_l), (tgt_s, dur_s) = results
         if return_durations:
             return tgt_l, tgt_s, dur_l, dur_s
@@ -78,7 +87,9 @@ class SignalExitStrategy(BaseExitStrategy):
             raise KeyError(f"signal_exit: exit column '{column}' is not in the frame")
         return np.nan_to_num(df[column].values.astype(np.float64), nan=0.0) >= 1.0
 
-    def resolve_distances(self, df: pd.DataFrame, tp: float, sl: float, ctx: "SimulationContext"):
+    def resolve_distances(
+        self, df: pd.DataFrame, tp: float, sl: float, ctx: "SimulationContext"
+    ):
         """TP and SL distances no price move reaches; the exit columns close trades."""
         far = np.abs(df["C"].values.astype(np.float64)) * UNREACHABLE_PRICE_MULTIPLE
         return far, far.copy()
@@ -112,7 +123,11 @@ class SignalExitStrategy(BaseExitStrategy):
             "entry_delay": {
                 "type": "int",
                 "default": 0,
-                "description": "0 = enter at the signal bar's close, 1 = at the next bar's open",
+                "description": (
+                    "0 = enter at the signal bar's close (the signal columns are "
+                    "unshifted decisions taken at that close, e.g. market-on-close "
+                    "rules), 1 = at the next bar's open"
+                ),
                 "min": 0,
                 "max": 1,
                 "step": 1,
