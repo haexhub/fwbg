@@ -8,6 +8,7 @@ wurden. Sonst werden risk_per_trade und Circuit-Breaker per Binary-/Grid-
 Search auf genau der Trade-Sequenz optimiert, die anschließend bewertet wird
 (Hindsight-Optimierung von Calmar/Equity/Max-DD).
 """
+
 from typing import Any, Dict, List
 
 import numpy as np
@@ -68,8 +69,7 @@ def sized_returns(trades, fk, circuit_breaker, prior_pnls):
     )
     losses = [abs(p) for p in prior_pnls if p < 0]
     scale = (
-        float(np.mean(losses)) if losses
-        else float(np.mean(np.abs(prior_pnls))) or 1.0
+        float(np.mean(losses)) if losses else float(np.mean(np.abs(prior_pnls))) or 1.0
     )
     taken = [i for i, keep in enumerate(mask) if keep]
     pnl = [trades[i]["pnl_raw"] for i in taken]
@@ -181,7 +181,9 @@ def compute_causal_reporting(
                 prior_trades, fold_result.get("rrr", rrr)
             )
             risk_result = risk_mgr.compute_risk_params(
-                prior_binary, prior_wr, prior_payoff,
+                prior_binary,
+                prior_wr,
+                prior_payoff,
                 rv_values=prior_rv if len(prior_rv) == len(prior_binary) else None,
                 **risk_params,
             )
