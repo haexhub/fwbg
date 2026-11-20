@@ -1,4 +1,5 @@
 """Base model plugin class with progress management and structured logging."""
+
 import time
 import logging
 from abc import ABC, abstractmethod
@@ -14,6 +15,7 @@ from fwbg_sdk.base import BasePlugin, PluginPhase
 @dataclass
 class TrainingContext:
     """Everything a model might need for training."""
+
     sample_weights: Optional[np.ndarray] = None
     categorical_features: Optional[List[str]] = None
     validation_data: Optional[Tuple[pd.DataFrame, np.ndarray]] = None
@@ -24,6 +26,7 @@ class TrainingContext:
 @dataclass
 class TrainingStageInfo:
     """Information about a single training stage."""
+
     stage_name: str
     description: str
     started_at: float = 0.0
@@ -57,9 +60,7 @@ class ModelProgressReporter:
         self._training_started_at: float = 0.0
         self._progress_callback: Optional[Callable[..., Any]] = None
 
-    def set_progress_callback(
-        self, callback: Optional[Callable[..., Any]]
-    ) -> None:
+    def set_progress_callback(self, callback: Optional[Callable[..., Any]]) -> None:
         """Set external callback for progress updates."""
         self._progress_callback = callback
 
@@ -101,9 +102,7 @@ class ModelProgressReporter:
 
     def complete_training(self) -> float:
         total = time.monotonic() - self._training_started_at
-        self._logger.info(
-            f"[{self._model_name}] Training completed in {total:.2f}s"
-        )
+        self._logger.info(f"[{self._model_name}] Training completed in {total:.2f}s")
         return total
 
     def get_elapsed_seconds(self) -> float:
@@ -113,7 +112,8 @@ class ModelProgressReporter:
 
     def get_completed_stages(self) -> List[TrainingStageInfo]:
         return [
-            self._stages[name] for name in self._stage_order
+            self._stages[name]
+            for name in self._stage_order
             if name in self._stages and self._stages[name].is_complete
         ]
 
@@ -153,14 +153,30 @@ class BaseModel(BasePlugin, ABC):
 
     def _check_trained(self) -> None:
         if not self._fitted:
-            raise RuntimeError(
-                f"{self.name} model is not trained. Call train() first."
-            )
+            raise RuntimeError(f"{self.name} model is not trained. Call train() first.")
 
     def predict_probability(self, features: pd.DataFrame) -> np.ndarray:
-        """Return class probabilities (n_samples, n_classes)."""
+        """Return class probabilities (n_samples, n_classes).
+
+        Calibrated probabilities once ``calibrate()`` has run, raw otherwise. The
+        break-even threshold sl/(tp+sl) that replaces the confidence-threshold grid
+        under ``probability_calibration`` is only meaningful on calibrated
+        probabilities, and every caller (validation, holdout, live) reads this method.
+        """
+        self._check_trained()
+        if self._calibrated_model is not None:
+            return self._calibrated_model.predict_proba(features)
+        return self._predict_probability_impl(features)
+
+    def predict_probability_raw(self, features: pd.DataFrame) -> np.ndarray:
+        """Uncalibrated class probabilities, whether or not ``calibrate()`` has run."""
         self._check_trained()
         return self._predict_probability_impl(features)
+
+    def reset(self) -> None:
+        """Reset to the unfitted state and drop any calibration of the old fit."""
+        super().reset()
+        self._calibrated_model = None
 
     @abstractmethod
     def _predict_probability_impl(self, features: pd.DataFrame) -> np.ndarray:
@@ -198,7 +214,9 @@ class BaseModel(BasePlugin, ABC):
         """Probability calibration. Default: sklearn CalibratedClassifierCV."""
         from sklearn.calibration import CalibratedClassifierCV
 
-        self.progress.begin_stage("calibration", f"Calibrating probabilities ({method})")
+        self.progress.begin_stage(
+            "calibration", f"Calibrating probabilities ({method})"
+        )
         calibrated = CalibratedClassifierCV(
             self.as_sklearn_estimator(), method=method, cv=3
         )
@@ -212,9 +230,7 @@ class BaseModel(BasePlugin, ABC):
         return self.trained_classes[np.argmax(probs, axis=1)]
 
     def predict_probability_calibrated(self, features: pd.DataFrame) -> np.ndarray:
-        """Predict with calibration if available, otherwise raw."""
-        if self._calibrated_model is not None:
-            return self._calibrated_model.predict_proba(features)
+        """Predict with calibration if available, otherwise raw (same as predict_probability)."""
         return self.predict_probability(features)
 
     def get_feature_importance(self) -> Optional[Dict[str, float]]:
