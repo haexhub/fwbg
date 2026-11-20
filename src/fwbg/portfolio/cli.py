@@ -32,7 +32,9 @@ def _metrics_table(metrics):
     return "\n".join(rows)
 
 
-def run_experiment(config_path: Path, output: Path, cost_multiplier: float = 1.0) -> dict:
+def run_experiment(
+    config_path: Path, output: Path, cost_multiplier: float = 1.0
+) -> dict:
     """Run a configured monthly backtest and write artifacts to a new directory.
 
     Scale transaction costs by a positive finite multiplier and return the
@@ -43,7 +45,9 @@ def run_experiment(config_path: Path, output: Path, cost_multiplier: float = 1.0
     if not math.isfinite(cost_multiplier) or cost_multiplier <= 0:
         raise ValueError("cost-multiplier must be positive and finite")
     config, settings, prices, provenance = load_inputs(config_path)
-    settings = replace(settings, one_way_cost_bps=settings.one_way_cost_bps * cost_multiplier)
+    settings = replace(
+        settings, one_way_cost_bps=settings.one_way_cost_bps * cost_multiplier
+    )
     result = run_portfolio(prices, settings)
     robustness, monthly, folds = assess_robustness(result, prices, settings)
     metrics = {"full": summarize(result.equity)}
@@ -52,7 +56,9 @@ def run_experiment(config_path: Path, output: Path, cost_multiplier: float = 1.0
         before = result.equity.loc[result.equity.index < split]
         after = result.equity.loc[result.equity.index >= split]
         if len(before) < 3 or len(after) < 2:
-            raise ValueError("split_date must leave at least two return observations on each side")
+            raise ValueError(
+                "split_date must leave at least two return observations on each side"
+            )
         metrics["before_split"] = summarize(before)
         # Preserve the existing portfolio and the first return after the split.
         metrics["after_split"] = summarize(pd.concat([before.iloc[-1:], after]))
@@ -82,7 +88,9 @@ def run_experiment(config_path: Path, output: Path, cost_multiplier: float = 1.0
         "trade_costs": result.trades.groupby("portfolio")["cost"].sum().to_dict(),
         "status": "historical_research_only",
     }
-    (output / "results.json").write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    (output / "results.json").write_text(
+        json.dumps(report, indent=2, allow_nan=False) + "\n"
+    )
     (output / "config.json").write_text(json.dumps(config, indent=2) + "\n")
     paragraphs = [
         f"# {config['name']}",
@@ -137,7 +145,9 @@ def main(argv: list[str] | None = None) -> None:
     """Parse portfolio subcommands and report supported errors with exit code 2."""
     parser = argparse.ArgumentParser(description="FWBG monthly portfolio research")
     commands = parser.add_subparsers(dest="command", required=True)
-    run = commands.add_parser("run", help="Run a frozen experiment from local CSV inputs")
+    run = commands.add_parser(
+        "run", help="Run a frozen experiment from local CSV inputs"
+    )
     run.add_argument("--config", type=Path, required=True)
     run.add_argument("--output", type=Path)
     run.add_argument("--cost-multiplier", type=float, default=1.0)
@@ -146,7 +156,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     search.add_argument("--protocol", type=Path, required=True)
     search.add_argument("--output", type=Path, required=True)
-    swing = commands.add_parser("swing-study", help="Run the frozen daily entry/exit study")
+    swing = commands.add_parser(
+        "swing-study", help="Run the frozen daily entry/exit study"
+    )
     swing.add_argument("--protocol", type=Path, required=True)
     swing.add_argument("--output", type=Path, required=True)
     download = commands.add_parser(
@@ -154,7 +166,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     download.add_argument("--output", type=Path, required=True)
     download.add_argument("--start", default="2004-01-01")
-    download.add_argument("--end", required=True, help="Exclusive end date; not later than today")
+    download.add_argument(
+        "--end", required=True, help="Exclusive end date; not later than today"
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "download-example":
@@ -174,7 +188,8 @@ def main(argv: list[str] | None = None) -> None:
             run_search(args.protocol, args.output)
         else:
             output = args.output or Path("test_results/portfolio") / (
-                datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
+                datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_")
+                + uuid.uuid4().hex[:8]
             )
             run_experiment(args.config, output, args.cost_multiplier)
     except (ValueError, OSError, ImportError, KeyError, TypeError) as error:
