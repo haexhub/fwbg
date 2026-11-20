@@ -9,9 +9,14 @@ when that day is a weekend, a national holiday (``holidays.country_holidays("JP"
 The columns mark bars by the Tokyo time of their close (start + ``bar_minutes``):
 
 - ``gotobi_day``: 1 when the bar closes on a gotobi date in Tokyo
-- ``gotobi_entry``: 1 on a gotobi date for the bar closing at ``entry_hour``:00 Tokyo
-- ``gotobi_exit``: 1 on a gotobi date for the bar closing at ``exit_hour``:00 Tokyo,
-  an exit column for ``signal_exit``
+- ``gotobi_entry``: 1 on a gotobi date for the bar closing at ``entry_hour``:``entry_minute``
+  Tokyo (default 10:00)
+- ``gotobi_exit``: 1 on a gotobi date for the bar closing at ``exit_hour``:``exit_minute``
+  Tokyo (default 15:00), an exit column for ``signal_exit``
+
+The minute parameters make the 9:55 fixing tradable: with 5-minute bars
+(``bar_minutes=5``) and ``entry_hour=9, entry_minute=55`` the bar starting at 9:50
+Tokyo is the entry bar.
 
 The settlement calendar is known in advance, so the columns are unshifted and meant
 for a decision at the bar's close (``entry_delay=0``); as for every indicator, the
@@ -61,7 +66,7 @@ class GotobiIndicator(BaseIndicator):
     """Japanese settlement (gotobi) days with entry/exit flags at fixed Tokyo hours."""
 
     name = "gotobi"
-    version = "1.0.0"
+    version = "1.1.0"
     group = "calendar"
     benefits_from_stationary = False
 
@@ -78,19 +83,20 @@ class GotobiIndicator(BaseIndicator):
             )
             dates = closes.tz_localize(None).normalize()
             gotobi = dates.isin(gotobi_dates(dates.min(), dates.max()))
-            on_hour = (
-                (closes.minute == 0)
-                & (closes.second == 0)
+            whole_minute = (
+                (closes.second == 0)
                 & (closes.microsecond == 0)
                 & (closes.nanosecond == 0)
             )
             out["gotobi_day"] = gotobi.astype(float)
-            out["gotobi_entry"] = (
-                gotobi & on_hour & (closes.hour == p["entry_hour"])
-            ).astype(float)
-            out["gotobi_exit"] = (
-                gotobi & on_hour & (closes.hour == p["exit_hour"])
-            ).astype(float)
+            at_entry = (closes.hour == p["entry_hour"]) & (
+                closes.minute == p["entry_minute"]
+            )
+            at_exit = (closes.hour == p["exit_hour"]) & (
+                closes.minute == p["exit_minute"]
+            )
+            out["gotobi_entry"] = (gotobi & whole_minute & at_entry).astype(float)
+            out["gotobi_exit"] = (gotobi & whole_minute & at_exit).astype(float)
             out.iloc[0] = np.nan  # indicator contract: the first row is NaN
         return pd.concat([df, out], axis=1)
 
@@ -102,7 +108,13 @@ class GotobiIndicator(BaseIndicator):
 
     @classmethod
     def get_default_params(cls) -> dict:
-        return {"entry_hour": 10, "exit_hour": 15, "bar_minutes": 60}
+        return {
+            "entry_hour": 10,
+            "entry_minute": 0,
+            "exit_hour": 15,
+            "exit_minute": 0,
+            "bar_minutes": 60,
+        }
 
     @classmethod
     def get_param_schema(cls) -> dict:
@@ -115,12 +127,26 @@ class GotobiIndicator(BaseIndicator):
                 "max": 23,
                 "description": "gotobi_entry marks the bar closing at this hour (Tokyo)",
             },
+            "entry_minute": {
+                "type": "int",
+                "default": 0,
+                "min": 0,
+                "max": 59,
+                "description": "gotobi_entry marks the bar closing at entry_hour:entry_minute (Tokyo); 55 with entry_hour 9 targets the 9:55 fixing",
+            },
             "exit_hour": {
                 "type": "int",
                 "default": 15,
                 "min": 0,
                 "max": 23,
                 "description": "gotobi_exit marks the bar closing at this hour (Tokyo)",
+            },
+            "exit_minute": {
+                "type": "int",
+                "default": 0,
+                "min": 0,
+                "max": 59,
+                "description": "gotobi_exit marks the bar closing at exit_hour:exit_minute (Tokyo)",
             },
             "bar_minutes": {
                 "type": "int",

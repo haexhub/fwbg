@@ -86,3 +86,29 @@ def test_first_row_nan_prefix_stable_and_tz_aware():
 def test_empty_frame():
     out = GotobiIndicator().compute(pd.DataFrame({"C": []}, index=pd.DatetimeIndex([])))
     assert list(out.columns) == ["C", *mod.GOTOBI_COLUMNS] and out.empty
+
+
+def test_entry_minute_targets_the_0955_fixing():
+    # 5-minute bars on Fri 2024-03-15 (a gotobi day); 09:55 Tokyo = 00:55 UTC, so the
+    # entry bar starts at 00:50 UTC. The old hour-only rule could not mark it.
+    df = pd.DataFrame(
+        {"C": 1.0},
+        index=pd.date_range("2024-03-14 23:00", "2024-03-15 08:00", freq="5min"),
+    )
+    out = GotobiIndicator().compute(
+        df,
+        entry_hour=9,
+        entry_minute=55,
+        exit_hour=15,
+        exit_minute=25,
+        bar_minutes=5,
+    )
+    assert list(out.index[out["gotobi_entry"] == 1].strftime("%d %H:%M")) == [
+        "15 00:50"
+    ]
+    assert list(out.index[out["gotobi_exit"] == 1].strftime("%d %H:%M")) == ["15 06:20"]
+    # the default minute 0 keeps the on-the-hour behavior
+    default = GotobiIndicator().compute(df, entry_hour=10, bar_minutes=5)
+    assert list(default.index[default["gotobi_entry"] == 1].strftime("%H:%M")) == [
+        "00:55"
+    ]
