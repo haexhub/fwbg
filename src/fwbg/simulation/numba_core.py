@@ -12,7 +12,7 @@ import numpy as np
 from numba import njit, prange
 
 # Bump this whenever a @njit function signature/return type or kernel behaviour changes.
-_CACHE_VERSION = "8"
+_CACHE_VERSION = "9"
 
 _THIS_DIR = pathlib.Path(__file__).resolve().parent
 _STAMP_FILE = _THIS_DIR / "__pycache__" / ".numba_cache_version"
@@ -496,6 +496,22 @@ def _simulate_trade_scale_in_numba(
     return 0.0, -1, 0.0, -1, avg_price, total_qty, n_fills
 
 
+@njit(cache=True)
+def _window_incomplete(entry_idx, n, max_bars, timeout_bars, exit_reason):
+    """True when the frame ends before a trade's TP/SL/timeout window does.
+
+    A TP or SL hit (reason 0/1) is a settled outcome whatever follows.  Without
+    one, the outcome is only known if the whole ``max_bars`` window (or the
+    timeout, if sooner) fits into the frame.
+    """
+    if exit_reason == 0 or exit_reason == 1:
+        return False
+    horizon = max_bars
+    if timeout_bars > 0 and timeout_bars < max_bars:
+        horizon = timeout_bars
+    return entry_idx + horizon > n
+
+
 @njit(cache=True, parallel=True)
 def compute_targets_numba(
     opens: np.ndarray,
@@ -508,6 +524,7 @@ def compute_targets_numba(
     slippage: float,
     max_bars: int,
     timeout_bars: int,
+    nan_incomplete: bool = False,
 ) -> tuple:
     """
     Berechnet Long/Short Targets und Durations für alle Bars.
@@ -518,6 +535,11 @@ def compute_targets_numba(
         opens, closes, highs, lows: OHLC-Arrays
         tp_distances: Per-bar TP-Distanzen (Array, len == n)
         sl_distances: Per-bar SL-Distanzen (Array, len == n)
+        nan_incomplete: Wenn True, bekommen Bars NaN statt 0.0 (Verlust), deren
+            Trade-Fenster (max_bars bzw. Timeout) ueber das Ende des Arrays
+            hinausreicht, ohne dass TP/SL vorher getroffen wurde; ebenso der
+            letzte Bar, der keinen Entry hat. Ausgang unbekannt, daher nicht
+            als Verlust labeln. Default False (altes Verhalten: 0.0).
 
     Returns:
         (targets_long, targets_short, durations_long, durations_short)
@@ -529,7 +551,7 @@ def compute_targets_numba(
     durations_short = np.zeros(n, dtype=np.int64)
 
     for i in prange(n - 1):
-        result_long, exit_long, _, _ = _simulate_trade_numba(
+        result_long, exit_long, _, reason_long = _simulate_trade_numba(
             opens,
             closes,
             highs,
@@ -545,9 +567,13 @@ def compute_targets_numba(
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
+        elif nan_incomplete and _window_incomplete(
+            i + 1, n, max_bars, timeout_bars, reason_long
+        ):
+            targets_long[i] = np.nan
         durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
-        result_short, exit_short, _, _ = _simulate_trade_numba(
+        result_short, exit_short, _, reason_short = _simulate_trade_numba(
             opens,
             closes,
             highs,
@@ -563,6 +589,14 @@ def compute_targets_numba(
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
+        elif nan_incomplete and _window_incomplete(
+            i + 1, n, max_bars, timeout_bars, reason_short
+        ):
+            targets_short[i] = np.nan
         durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
+
+    if nan_incomplete and n > 0:
+        targets_long[n - 1] = np.nan
+        targets_short[n - 1] = np.nan
 
     return targets_long, targets_short, durations_long, durations_short
