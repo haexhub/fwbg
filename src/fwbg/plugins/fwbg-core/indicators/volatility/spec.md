@@ -58,7 +58,7 @@ Consolidates classical range/band volatility measures (ATR, Bollinger, Keltner, 
 ## Edge Cases
 
 - df has no 'macro_vix' column → vol_rv_iv_spread / vol_rv_iv_ratio are silently omitted; get_feature_columns() still advertises them.
-- vol_est_windows does not contain 20 → vol_yz_atr_ratio is silently omitted; get_feature_columns() still advertises it.
+- vol_est_windows does not contain 20 → vol_yz_atr_ratio is omitted and not advertised by get_feature_columns(params).
 - Divisions inside estimators use EPSILON in the denominator, so zero highs/lows/opens/closes do not raise; safe_divide is used for the ATR-percent and ratio features.
 - Insufficient history for the rolling windows → early rows are NaN according to each estimator's min_periods (half the window for OHLC estimators, compression_lookback//2 for percentile ranks).
 - compression_lookback and rv_window are only accepted via **params — passing them under any other name has no effect and defaults (100, 20) are used silently.
