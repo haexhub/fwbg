@@ -63,7 +63,7 @@ we should pin a common tz convention.
 
 ### `cot_positioning` plugin's defensive `.shift(1)`
 
-`packages/fwbg-premium/.../cot_positioning/__init__.py:67-71` shifts every
+The `cot_positioning` plugin of the separately installed `fwbg-premium` package (`__init__.py`, lines 67-71) shifts every
 derived COT feature by one bar.  With the upstream release-date fix this
 shift is now redundant, but harmless (1-hour additional delay).  Removing
 it is a follow-up clean-up; leaving it in is the safer default while the

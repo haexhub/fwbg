@@ -42,6 +42,8 @@ class BaseFeatureSelector(BasePlugin, ABC):
 
 ## Available Plugins
 
+> **Note:** Plugins marked `(fwbg-premium)` ship in the optional `fwbg-premium` plugin package, which is installed separately and is not part of this repository. Without it, a configuration that requests one of them fails with an error naming the missing plugin.
+
 ### boruta (fwbg-premium)
 
 Shadow feature comparison using the Boruta algorithm: Creates a randomized "shadow" version for each feature and checks whether the original is significantly better than its shadow.

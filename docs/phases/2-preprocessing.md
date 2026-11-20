@@ -90,6 +90,8 @@ Stationary Indicators (benefits_from_stationary=True):
 
 ## Available Plugins
 
+> **Note:** Plugins marked `(fwbg-premium)` ship in the optional `fwbg-premium` plugin package, which is installed separately and is not part of this repository. Without it, a configuration that requests one of them fails with an error naming the missing plugin.
+
 ### fractional_diff (fwbg-premium)
 
 Fractional differentiation following López de Prado — makes time series stationary **without losing all memory** (unlike regular differencing).

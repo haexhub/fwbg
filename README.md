@@ -16,7 +16,7 @@ The system is built on a **modular plugin architecture**: every pipeline phase �
 
 - **Numba-Accelerated Simulation** — JIT-compiled trade simulation with parallel processing for fast grid-search runs.
 
-- **Core + Premium Packages** — Open-source core indicators (trend, momentum, volatility). Premium package with regime detection, macro data, COT positioning, ATR-based exits, feature selection.
+- **Core + Optional Premium Package** — Open-source core indicators (trend, momentum, volatility). Additional plugins (regime detection, macro data, COT positioning, ATR-based exits, feature selection) come in an optional `fwbg-premium` package that is installed separately; fwbg runs without it and picks it up automatically via the `fwbg.plugin_packages` entry point when present.
 
 - **Live-Trading Ready** — Broker adapter system for live execution (IG Markets etc.).
 
@@ -33,8 +33,9 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Optional: Premium Plugins
-pip install -e packages/fwbg-premium
+# Optional: the separately installed fwbg-premium plugin package is discovered
+# automatically via the `fwbg.plugin_packages` entry point once it is installed
+# into the same environment (pip install -e <path to the fwbg-premium checkout>)
 ```
 
 ### Optimizer
@@ -248,12 +249,12 @@ fwbg/
 │   └── adapters/                 # Broker & data source adapters
 │
 ├── packages/
-│   └── fwbg-premium/             # Premium plugins (separate pip package)
-│       ├── indicators/           # regime, structure, risk, distribution, dynamics, support_resistance, ...
-│       ├── preprocessing/        # fractional_diff
-│       ├── feature_selection/    # boruta, plateau, stability, correlation_filter
-│       ├── exit_strategies/      # atr_based
-│       └── data_loading/         # macro_data, cot_positioning
+│   ├── fwbg-sdk/                 # Plugin base classes, types, enums
+│   ├── fwbg-broker-ig/           # IG Markets broker adapter
+│   ├── fwbg-broker-template/     # Template for new broker adapters
+│   └── fwbg-mcp/                 # MCP server
+│
+│   (The optional fwbg-premium plugin package is installed separately.)
 │
 ├── strategies/                   # Strategy configurations (JSON)
 ├── data/                         # Historical data (CSV)
