@@ -6,10 +6,12 @@ GET  /api/data/ensure/{task_id} — poll an in-progress download.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -124,8 +126,13 @@ def ensure_data(req: EnsureRequest):
     #    start) re-fetches years of data on every run for marginal early
     #    coverage — and a single stalled Dukascopy connection then hangs the
     #    whole run. The cached range is enough to backtest on.
+    #    An explicit date_to additionally requires the file to reach that end, and
+    #    any explicit range requires the file to have no large hole inside it.
     hit = _find_existing_file(
-        symbol, req.timeframe, date_from_str if explicit_from else None
+        symbol,
+        req.timeframe,
+        date_from_str if explicit_from else None,
+        req.date_to,
     )
     if hit is not None:
         source_name, file_path = hit
@@ -148,6 +155,22 @@ def ensure_data(req: EnsureRequest):
     try:
         resolve_instrument(symbol)
     except DukascopyError:
+        # Nothing to download from: a file that does not fully cover the request
+        # is still the best data there is, so hand it out with a warning.
+        partial = _find_existing_file(symbol, req.timeframe)
+        if partial is not None:
+            source_name, file_path = partial
+            return {
+                "status": "ready",
+                "symbol": symbol,
+                "timeframe": req.timeframe,
+                "source": source_name,
+                "path": str(file_path),
+                "warning": (
+                    "existing file may not cover the requested range "
+                    "(start, end or gaps) and the symbol cannot be downloaded"
+                ),
+            }
         raise HTTPException(
             status_code=404,
             detail=(
@@ -174,6 +197,11 @@ def ensure_data(req: EnsureRequest):
         raise HTTPException(status_code=422, detail=f"invalid date: {exc}") from exc
     if end_dt <= start_dt:
         raise HTTPException(status_code=422, detail="date_to must be after date_from")
+
+    # The download replaces the file, so it must span what is already there too.
+    start_dt, end_dt = _widen_to_existing(
+        csv_source.get_file_path(symbol, req.timeframe), start_dt, end_dt
+    )
 
     # 6. Kick off background download.
     task_id = uuid.uuid4().hex[:12]
@@ -277,13 +305,88 @@ def _file_covers_from(path: Path, date_from: str) -> bool:
         return True
 
 
+_END_TOLERANCE_DAYS = 7  # weekends and exchange holidays at the end of a window
+_MAX_GAP_DAYS = (
+    14  # a hole this long inside a window is a failed download, not a holiday
+)
+
+
+def _csv_last_date(path: Path) -> str | None:
+    """Read the last data row's date (YYYY-MM-DD) from a fwbg CSV (T,O,H,L,C,V)."""
+    try:
+        with path.open("rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 4096))
+            lines = [ln for ln in f.read().decode().splitlines() if ln.strip()]
+        if len(lines) > 1 or (lines and lines[0][:1].isdigit()):
+            return lines[-1].split(",")[0][:10]
+    except (OSError, UnicodeDecodeError):
+        pass
+    return None
+
+
+def _file_covers_to(path: Path, date_to: str) -> bool:
+    """Return True if *path*'s last bar is within tolerance of *date_to*."""
+    from datetime import date as _date
+
+    last = _csv_last_date(path)
+    if last is None:
+        return True  # can't read → assume ok, don't re-download
+    try:
+        gap = (_date.fromisoformat(date_to) - _date.fromisoformat(last)).days
+        return gap <= _END_TOLERANCE_DAYS
+    except ValueError:
+        return True
+
+
+def _quality_max_gap_days(path: Path) -> float | None:
+    """Longest gap the downloader recorded for *path*, if its report is current."""
+    report_path = path.with_suffix(".quality.json")
+    try:
+        if report_path.stat().st_mtime < path.stat().st_mtime:
+            return None  # the file was replaced after the report was written
+        gap = json.loads(report_path.read_text()).get("max_gap_seconds")
+    except (OSError, ValueError):
+        return None
+    return float(gap) / 86400 if isinstance(gap, (int, float)) else None
+
+
+def _file_has_no_large_gap(
+    path: Path, date_from: str | None, date_to: str | None
+) -> bool:
+    """Return False if bars inside [date_from, date_to] have a hole over _MAX_GAP_DAYS."""
+    import pandas as pd
+
+    recorded = _quality_max_gap_days(path)
+    if recorded is not None and recorded <= _MAX_GAP_DAYS:
+        return True  # no hole anywhere in the file, so none in the window either
+    try:
+        stamps = pd.to_datetime(
+            pd.read_csv(path, usecols=[0]).iloc[:, 0], errors="coerce"
+        ).dropna()
+    except (OSError, ValueError, pd.errors.ParserError, pd.errors.EmptyDataError):
+        return True  # can't read → assume ok, don't re-download
+    if date_from is not None:
+        stamps = stamps[stamps >= pd.Timestamp(date_from)]
+    if date_to is not None:
+        stamps = stamps[stamps <= pd.Timestamp(date_to)]
+    if len(stamps) < 2:
+        return True
+    largest = stamps.sort_values().diff().max()
+    return largest <= pd.Timedelta(days=_MAX_GAP_DAYS)
+
+
 def _find_existing_file(
-    symbol: str, timeframe: str, date_from: str | None = None
+    symbol: str,
+    timeframe: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> tuple[str, Path] | None:
     """Return (source_name, path) if any CSV source has this file AND it covers
-    from *date_from* (within tolerance). If the existing file starts too late
-    (e.g. 2012 when full history goes back to 2003) it is skipped so the
-    caller triggers a fresh full-history download."""
+    the requested range (within tolerance). If the existing file starts too late
+    (e.g. 2012 when full history goes back to 2003), ends before *date_to* or has
+    a large hole inside the range it is skipped so the caller triggers a fresh
+    download. Without *date_from* and *date_to* any existing file is accepted."""
     for name, source in _DATA_SOURCES.items():
         if isinstance(source, CSVSourceConfig):
             path = source.get_file_path(symbol, timeframe)
@@ -295,8 +398,50 @@ def _find_existing_file(
                         date_from,
                     )
                     continue
+                if date_to is not None and not _file_covers_to(path, date_to):
+                    log.info(
+                        "ensure_data: %s ends too early for requested %s — re-downloading",
+                        path.name,
+                        date_to,
+                    )
+                    continue
+                if (date_from is not None or date_to is not None) and (
+                    not _file_has_no_large_gap(path, date_from, date_to)
+                ):
+                    log.info(
+                        "ensure_data: %s has a gap over %d days in the requested "
+                        "range — re-downloading",
+                        path.name,
+                        _MAX_GAP_DAYS,
+                    )
+                    continue
                 return name, path
     return None
+
+
+def _widen_to_existing(
+    path: Path, start: datetime, end: datetime
+) -> tuple[datetime, datetime]:
+    """Stretch [start, end] to also cover the bars of an existing file at *path*.
+
+    A re-download rewrites the whole file; without this a request for a recent
+    window would drop older bars that the file being replaced still holds.
+    """
+    first, last = _csv_first_date(path), _csv_last_date(path)
+    try:
+        if first is not None:
+            start = min(
+                start, datetime.fromisoformat(first).replace(tzinfo=timezone.utc)
+            )
+        if last is not None:
+            end = max(
+                end,
+                datetime.fromisoformat(last).replace(tzinfo=timezone.utc)
+                + timedelta(days=1),
+            )
+    except ValueError:
+        pass
+    return start, end
 
 
 def _first_csv_source() -> CSVSourceConfig | None:
