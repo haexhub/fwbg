@@ -46,6 +46,7 @@ class FixedExitStrategy(BaseExitStrategy):
         Returns:
             (targets_long, targets_short) oder
             (targets_long, targets_short, durations_long, durations_short)
+            Labels, deren Fenster ueber das Datenende hinausreicht, sind NaN.
         """
         if params is not None:
             tp = params.tp_value
@@ -135,8 +136,8 @@ class FixedExitStrategy(BaseExitStrategy):
             slippage,
             max_bars,
             timeout_val,
-            False,
-            entry_delay,
+            nan_incomplete=True,
+            entry_delay=entry_delay,
         )
         if return_durations:
             return result  # (tgt_l, tgt_s, dur_l, dur_s)

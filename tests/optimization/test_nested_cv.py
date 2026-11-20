@@ -212,7 +212,8 @@ class TestComputeTargets:
         assert len(targets_long) == len(df)
         assert len(targets_short) == len(df)
         assert targets_long.dtype in [np.float64, np.int64]
-        assert set(np.unique(targets_long)).issubset({0, 1, 0.0, 1.0})
+        known = targets_long[~np.isnan(targets_long)]  # open windows are NaN
+        assert set(np.unique(known)).issubset({0, 1, 0.0, 1.0})
 
     def test_direction_filtering(self):
         """Test: Long/Short werden korrekt gefiltert."""
@@ -551,7 +552,7 @@ class TestEdgeCases:
         targets_l, targets_s, _, _ = compute_targets(df, 20, 10, ctx)
 
         # Bei konstanten Preisen: Alle Targets sollten 0 sein
-        assert np.sum(targets_l) == 0 or np.sum(targets_l) > 0  # Keine Assertion
+        assert np.nansum(targets_l) == 0 or np.nansum(targets_l) > 0  # Keine Assertion
 
     def test_single_row_df(self):
         """Test: DataFrame mit nur einer Zeile."""

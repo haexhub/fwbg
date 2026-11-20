@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from fwbg_sdk.models import BaseModel, TrainingContext
+from fwbg_sdk.models import BaseModel, TrainingContext, UntrainableLabelsError
 
 
 class BaseStackedXGBoostModel(BaseModel, ABC):
@@ -39,6 +39,8 @@ class BaseStackedXGBoostModel(BaseModel, ABC):
     _variant_param_name: str = ""
     _variant_feature_name: str = ""
     _default_variants: List[float] = []
+    # Classifiers cannot be fitted on a constant label.
+    _needs_two_classes: bool = False
 
     @abstractmethod
     def _build_xgb(self, params: Dict[str, Any]):
@@ -55,7 +57,7 @@ class BaseStackedXGBoostModel(BaseModel, ABC):
         """Compute the targets vector for one variant."""
 
     def _post_process_stacked_targets(self, y_stacked: np.ndarray) -> np.ndarray:
-        """Optional hook — e.g. clamp negatives to 0 (MFE)."""
+        """Optional hook, run after rows with unknown (NaN) targets are dropped."""
         return y_stacked
 
     def _extra_default_params(self) -> Dict[str, Any]:
@@ -159,12 +161,27 @@ class BaseStackedXGBoostModel(BaseModel, ABC):
             stacked_targets.append(variant_targets)
 
         X_stacked = pd.concat(stacked_features, ignore_index=True)
-        y_stacked = self._post_process_stacked_targets(np.concatenate(stacked_targets))
+        y_stacked = np.concatenate(stacked_targets)
 
         sample_weight = None
         if training_context.sample_weights is not None:
             sample_weight = np.tile(
                 training_context.sample_weights, len(self._variants)
+            )
+
+        # A NaN target is an outcome that is not known yet (the label window runs
+        # past the end of the training frame): not a training row.
+        known = ~np.isnan(y_stacked.astype(np.float64))
+        if not known.all():
+            X_stacked = X_stacked[known].reset_index(drop=True)
+            y_stacked = y_stacked[known]
+            if sample_weight is not None:
+                sample_weight = sample_weight[known]
+        y_stacked = self._post_process_stacked_targets(y_stacked)
+        if self._needs_two_classes and len(np.unique(y_stacked)) < 2:
+            raise UntrainableLabelsError(
+                f"{self.name} needs both classes in the stacked labels, "
+                f"got {np.unique(y_stacked).tolist()}"
             )
 
         self.progress.complete_stage("stacking")
