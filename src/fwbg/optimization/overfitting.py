@@ -59,9 +59,9 @@ def sr_std(
 
     excess_kurtosis = kurtosis - 3.0
     sr2 = observed_sr**2
-    variance = (1.0 + 0.5 * sr2 - skewness * observed_sr + (excess_kurtosis / 4.0) * sr2) / (
-        n_trades - 1
-    )
+    variance = (
+        1.0 + 0.5 * sr2 - skewness * observed_sr + (excess_kurtosis / 4.0) * sr2
+    ) / (n_trades - 1)
     return float(np.sqrt(max(variance, 0.0)))
 
 
@@ -276,10 +276,16 @@ def compute_overfitting_metrics(
     returns_arr = np.array(trade_returns, dtype=float)
     if len(returns_arr) > 2:
         skewness = float(
-            np.mean(((returns_arr - returns_arr.mean()) / max(returns_arr.std(), 1e-10)) ** 3)
+            np.mean(
+                ((returns_arr - returns_arr.mean()) / max(returns_arr.std(), 1e-10))
+                ** 3
+            )
         )
         kurtosis = float(
-            np.mean(((returns_arr - returns_arr.mean()) / max(returns_arr.std(), 1e-10)) ** 4)
+            np.mean(
+                ((returns_arr - returns_arr.mean()) / max(returns_arr.std(), 1e-10))
+                ** 4
+            )
         )
     else:
         skewness = 0.0
@@ -298,6 +304,9 @@ def compute_overfitting_metrics(
         matrix, _ = build_performance_matrix(grid_results_by_fold)
         pbo_result = probability_of_backtest_overfitting(matrix)
     except Exception as exc:
-        pbo_result = {**probability_of_backtest_overfitting(np.empty((0, 0))), "error": str(exc)}
+        pbo_result = {
+            **probability_of_backtest_overfitting(np.empty((0, 0))),
+            "error": str(exc),
+        }
 
     return {"dsr": dsr_result, "pbo": pbo_result}
