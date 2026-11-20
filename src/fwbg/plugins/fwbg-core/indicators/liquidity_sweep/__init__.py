@@ -30,7 +30,7 @@ class LiquiditySweepIndicator(BaseIndicator):
     """Liquidity sweep (fake-out / stop-hunt) zone features."""
 
     name = "liquidity_sweep"
-    version = "1.0.0"
+    version = "1.1.0"
 
     _FEATURES = [
         "lsw_bull_active",  # 1 if ≥1 active bullish sweep zone exists
@@ -41,7 +41,7 @@ class LiquiditySweepIndicator(BaseIndicator):
         "lsw_bear_size",  # ATR-normalised size of nearest bear sweep zone
         "lsw_bull_in_zone",  # 1 if close is inside the nearest bull sweep zone
         "lsw_bear_in_zone",  # 1 if close is inside the nearest bear sweep zone
-        "lsw_bull_recency",  # recency of most recent bull sweep (1=just happened, 0=old)
+        "lsw_bull_recency",  # recency of most recent bull sweep, valid or invalidated (1=just happened, 0=zone_lookback bars old or never)
         "lsw_bear_recency",  # recency of most recent bear sweep
     ]
 
@@ -91,6 +91,12 @@ class LiquiditySweepIndicator(BaseIndicator):
         # {"type": "bull"|"bear", "zone_bottom": float, "zone_top": float, "bar": int}
         active_zones: list = []
 
+        # Bar of the most recent sweep per side. Recency is a property of the
+        # sweep event, so it keeps decaying after the zone is invalidated and
+        # only reaches 0 once zone_lookback bars have passed.
+        last_bull_sweep = -1
+        last_bear_sweep = -1
+
         for i in range(1, n):
             current_atr = atr[i] if atr[i] > EPSILON else 1.0
             c = closes[i]
@@ -124,6 +130,7 @@ class LiquiditySweepIndicator(BaseIndicator):
                         "bar": i,
                     }
                 )
+                last_bull_sweep = i
 
             # Bearish sweep: wick above swing high, close back below
             if highs[i] > prev_sh and closes[i] < prev_sh:
@@ -135,14 +142,13 @@ class LiquiditySweepIndicator(BaseIndicator):
                         "bar": i,
                     }
                 )
+                last_bear_sweep = i
 
             # 3. Compute per-bar features from active zones
             nearest_bull_dist = np.inf
             nearest_bull_sz = 0.0
             nearest_bear_dist = np.inf
             nearest_bear_sz = 0.0
-            last_bull_bar = -1
-            last_bear_bar = -1
 
             for zone in active_zones:
                 zone_sz = (zone["zone_top"] - zone["zone_bottom"]) / current_atr
@@ -153,18 +159,18 @@ class LiquiditySweepIndicator(BaseIndicator):
                     if d > 0 and d < nearest_bull_dist:
                         nearest_bull_dist = d
                         nearest_bull_sz = zone_sz
-                    if zone["zone_bottom"] <= c <= zone["zone_top"]:
+                    # The sweep bar closes at the zone edge by construction, so
+                    # only bars after the sweep can be "inside" the zone.
+                    if zone["bar"] < i and zone["zone_bottom"] <= c <= zone["zone_top"]:
                         bull_in_zone[i] = 1.0
-                    last_bull_bar = max(last_bull_bar, zone["bar"])
 
                 elif zone["type"] == "bear":
                     d = (mid - c) / current_atr
                     if d > 0 and d < nearest_bear_dist:
                         nearest_bear_dist = d
                         nearest_bear_sz = zone_sz
-                    if zone["zone_bottom"] <= c <= zone["zone_top"]:
+                    if zone["bar"] < i and zone["zone_bottom"] <= c <= zone["zone_top"]:
                         bear_in_zone[i] = 1.0
-                    last_bear_bar = max(last_bear_bar, zone["bar"])
 
             if nearest_bull_dist < np.inf:
                 bull_active[i] = 1.0
@@ -176,12 +182,12 @@ class LiquiditySweepIndicator(BaseIndicator):
                 bear_dist[i] = nearest_bear_dist
                 bear_size[i] = nearest_bear_sz
 
-            if last_bull_bar >= 0:
-                age = min(i - last_bull_bar, zone_lookback)
+            if last_bull_sweep >= 0:
+                age = min(i - last_bull_sweep, zone_lookback)
                 bull_recency[i] = 1.0 - age / zone_lookback
 
-            if last_bear_bar >= 0:
-                age = min(i - last_bear_bar, zone_lookback)
+            if last_bear_sweep >= 0:
+                age = min(i - last_bear_sweep, zone_lookback)
                 bear_recency[i] = 1.0 - age / zone_lookback
 
         features = {

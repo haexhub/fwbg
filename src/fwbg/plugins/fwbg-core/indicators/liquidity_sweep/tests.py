@@ -352,3 +352,66 @@ class TestPluginIntegration:
         result = indicator.compute(_make_sweep_df(n=200))
         for col in indicator.get_feature_columns():
             assert col in result.columns, f"Declared {col} missing from output"
+
+
+# ---------------------------------------------------------------------------
+# In-zone / recency semantics
+# ---------------------------------------------------------------------------
+
+
+class TestInZoneAndRecency:
+    def test_sweep_bar_itself_is_not_in_zone(self):
+        """The sweep bar closes on the zone edge, so it must not count as in-zone."""
+        sw = 5
+        df = _make_bull_sweep_df(swing_lookback=sw, n_post=4)
+        result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
+        # Closes after the sweep (106) are above the zone [98, 104].
+        assert result["lsw_bull_in_zone"].fillna(0).sum() == 0.0
+
+        df_bear = _make_bear_sweep_df(swing_lookback=sw, n_post=4)
+        result = _lsw.LiquiditySweepIndicator().compute(df_bear, swing_lookback=sw)
+        # Bear zone is [108, 112]; later closes (106) are below it.
+        assert result["lsw_bear_in_zone"].fillna(0).sum() == 0.0
+
+    def test_later_close_inside_zone_is_flagged(self):
+        sw = 5
+        df = _make_bull_sweep_df(swing_lookback=sw, n_post=4)
+        # bar 7 closes at 101, inside the zone [98, 104], without breaking 98
+        df.iloc[sw + 2, df.columns.get_loc("L")] = 99.0
+        df.iloc[sw + 2, df.columns.get_loc("C")] = 101.0
+        result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
+        flagged = result["lsw_bull_in_zone"].fillna(0)
+        assert flagged.iloc[sw + 3] == 1.0  # bar sw+2 shifted by one row
+        assert flagged.sum() == 1.0
+
+    def test_recency_survives_invalidation(self):
+        """Recency decays linearly from the sweep even after the zone is invalidated."""
+        sw = 5
+        zone_lb = 10
+        df = _make_bull_sweep_df(swing_lookback=sw, n_post=6)
+        # bar sw+2: displacement below the zone bottom (98), close below swing low
+        # -> zone invalidated, no new sweep
+        df.iloc[sw + 2, df.columns.get_loc("L")] = 97.0
+        df.iloc[sw + 2, df.columns.get_loc("C")] = 97.5
+        result = _lsw.LiquiditySweepIndicator().compute(
+            df, swing_lookback=sw, zone_lookback=zone_lb
+        )
+        # zone really is gone after the displacement bar
+        assert result["lsw_bull_active"].iloc[sw + 3] == 0.0
+        rec = result["lsw_bull_recency"]
+        for bar in range(sw, len(df) - 1):
+            expected = 1.0 - min(bar - sw, zone_lb) / zone_lb
+            assert rec.iloc[bar + 1] == pytest.approx(expected), f"bar {bar}"
+        # before the sweep nothing has happened
+        assert rec.iloc[1 : sw + 1].eq(0.0).all()
+
+    def test_recency_reaches_zero_after_zone_lookback(self):
+        sw = 5
+        zone_lb = 3
+        df = _make_bull_sweep_df(swing_lookback=sw, n_post=6)
+        result = _lsw.LiquiditySweepIndicator().compute(
+            df, swing_lookback=sw, zone_lookback=zone_lb
+        )
+        rec = result["lsw_bull_recency"]
+        assert rec.iloc[sw + 1] == pytest.approx(1.0)
+        assert rec.iloc[sw + 1 + zone_lb] == pytest.approx(0.0)
