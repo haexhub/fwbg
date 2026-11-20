@@ -64,6 +64,48 @@ Shifted: | NaN| 45 | 52 | 61 | 48 |  ← What the model sees
 
 At bar 3, the model sees RSI=61 (from bar 2), not RSI=48 (from bar 3 itself).
 
+### Signal columns and the ML feature pool
+
+`shift_features()` is the rule for model features. A few columns are deliberately
+unshifted because they are decisions for the bar's own close: row `i` of `ibs`,
+`zscore_20` or `opening_range` `breakout_up` uses bar `i`. Entry rules (`signal_rules`)
+and exit columns read them that way: the order fills at the next open (`entry_delay=1`)
+or at the signal bar's close (`entry_delay=0`).
+
+An indicator declares those columns in `get_signal_columns(params)`. The rule:
+
+| Column | Declared in | Feature pool |
+|---|---|---|
+| Shifted with `shift_features()` (even when discrete: `macd_above_zero`, `fvg_bull_active`, `st_direction`) | nothing | stays |
+| Unshifted, reads the bar's own prices (`ibs*`, `zscore_*`, `nb_*`, ORB `breakout_*` / `retest_*`) | `get_signal_columns` | excluded |
+| Unshifted but known before the bar opens: a function of the timestamp and a calendar fixed in advance (`calendar_events`, `time_season`, `turn_of_month`, `gotobi`, `scheduled_events`, `rebalancing_pressure` with lagged inputs) | `get_signal_columns` and `get_calendar_columns` | stays |
+| Unshifted structural levels that are NaN while they form and constant afterwards (ORB `or_high`, `or_low`, `sl_dist`) | nothing | stays |
+
+The model feature pool (`fwbg.pipeline.features.ml_feature_pool`, used by every fold
+preparation: nested CV, grid search, holdout, signal and causal variants) is every
+non-`_` column minus the unshifted signal columns of the strategy's indicators. The
+columns stay in the frames, so rules and exits still read them. A model type `signal`
+has no model features; its pool is the named signal columns.
+
+To feed a signal column to a model anyway, opt in per indicator:
+
+```json
+{"name": "ibs", "params": {}, "signal_columns_as_features": true}
+```
+
+The pool then gets `<col>_prev` (for example `ibs_prev`): the signal column shifted by
+one bar, which follows the 1-bar convention. The unshifted original never enters the
+pool. The flag must be `true` or `false`; the strategy fails to load otherwise.
+`model.required_features` may name `ibs_prev`, but a required feature that names an
+unshifted signal column of an ML model is an error.
+
+`entry_delay=0` with an entry rule on an unshifted signal column logs a warning: the
+decision needs the signal bar's close and the fill happens at that close, so it is only
+executable as a market-on-close style order. Calendar columns do not warn.
+
+`tests/test_signal_column_classification.py` probes every core indicator: a column that
+reads its own bar must be declared, and a declared non-calendar column must read its own bar.
+
 ### safe_divide(numerator, denominator)
 
 ```python
