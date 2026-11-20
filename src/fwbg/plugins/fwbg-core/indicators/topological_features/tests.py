@@ -1,4 +1,5 @@
 """Tests for Topological Data Analysis indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -54,8 +55,13 @@ def trending_df():
     dates = pd.date_range("2020-01-01", periods=n, freq="h")
     trend = np.linspace(100, 150, n) + np.random.randn(n) * 0.3
     return pd.DataFrame(
-        {"O": trend, "H": trend + 0.5, "L": trend - 0.5, "C": trend,
-         "V": np.ones(n) * 1000},
+        {
+            "O": trend,
+            "H": trend + 0.5,
+            "L": trend - 0.5,
+            "C": trend,
+            "V": np.ones(n) * 1000,
+        },
         index=dates,
     )
 
@@ -68,8 +74,13 @@ def choppy_df():
     dates = pd.date_range("2020-01-01", periods=n, freq="h")
     base = 100 + np.sin(np.linspace(0, 30 * np.pi, n)) * 3 + np.random.randn(n) * 0.5
     return pd.DataFrame(
-        {"O": base, "H": base + 0.5, "L": base - 0.5, "C": base,
-         "V": np.ones(n) * 1000},
+        {
+            "O": base,
+            "H": base + 0.5,
+            "L": base - 0.5,
+            "C": base,
+            "V": np.ones(n) * 1000,
+        },
         index=dates,
     )
 
@@ -248,8 +259,13 @@ class TestNoLookahead:
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         close = 100 + np.cumsum(np.random.randn(n) * 0.5)
         df = pd.DataFrame(
-            {"O": close, "H": close + 0.2, "L": close - 0.2, "C": close,
-             "V": np.ones(n) * 100},
+            {
+                "O": close,
+                "H": close + 0.2,
+                "L": close - 0.2,
+                "C": close,
+                "V": np.ones(n) * 100,
+            },
             index=dates,
         )
         result = indicator.compute(df, windows=[50])
@@ -365,8 +381,13 @@ class TestEdgeCases:
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         close = 100 + np.cumsum(np.random.randn(n) * 0.5)
         df = pd.DataFrame(
-            {"O": close, "H": close + 0.1, "L": close - 0.1, "C": close,
-             "V": np.ones(n) * 100},
+            {
+                "O": close,
+                "H": close + 0.1,
+                "L": close - 0.1,
+                "C": close,
+                "V": np.ones(n) * 100,
+            },
             index=dates,
         )
         result = indicator.compute(df)
@@ -380,8 +401,7 @@ class TestEdgeCases:
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         close = np.full(n, 100.0)
         df = pd.DataFrame(
-            {"O": close, "H": close, "L": close, "C": close,
-             "V": np.ones(n) * 100},
+            {"O": close, "H": close, "L": close, "C": close, "V": np.ones(n) * 100},
             index=dates,
         )
         result = indicator.compute(df, windows=[30])
@@ -400,8 +420,7 @@ class TestEdgeCases:
         close = 100 + np.cumsum(np.random.randn(n) * 0.5)
         close[40:45] = np.nan
         df = pd.DataFrame(
-            {"O": close, "H": close, "L": close, "C": close,
-             "V": np.ones(n) * 100},
+            {"O": close, "H": close, "L": close, "C": close, "V": np.ones(n) * 100},
             index=dates,
         )
         # Should not raise

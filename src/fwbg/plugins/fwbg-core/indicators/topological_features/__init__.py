@@ -10,6 +10,7 @@ Features encode:
 - H1 (loops/cycles): cyclical patterns and mean-reversion signals
 - Persistence statistics: strength and distribution of topological features
 """
+
 from typing import List
 
 import numpy as np
@@ -114,9 +115,16 @@ def _rolling_tda(
     log_returns = np.diff(np.log(close), prepend=np.log(close[0]))
 
     feature_names = [
-        "h0_count", "h1_count", "h0_max_pers", "h1_max_pers",
-        "h0_mean_pers", "h1_mean_pers", "persistence_entropy",
-        "wasserstein_amp", "h1_ratio", "max_loop_persistence",
+        "h0_count",
+        "h1_count",
+        "h0_max_pers",
+        "h1_max_pers",
+        "h0_mean_pers",
+        "h1_mean_pers",
+        "persistence_entropy",
+        "wasserstein_amp",
+        "h1_ratio",
+        "max_loop_persistence",
     ]
     arrays = {name: np.full(n, np.nan) for name in feature_names}
 
@@ -166,9 +174,16 @@ class TopologicalFeaturesIndicator(BaseIndicator):
         close = df["C"].values
         features: dict = {}
         feature_names = [
-            "h0_count", "h1_count", "h0_max_pers", "h1_max_pers",
-            "h0_mean_pers", "h1_mean_pers", "persistence_entropy",
-            "wasserstein_amp", "h1_ratio", "max_loop_persistence",
+            "h0_count",
+            "h1_count",
+            "h0_max_pers",
+            "h1_max_pers",
+            "h0_mean_pers",
+            "h1_mean_pers",
+            "persistence_entropy",
+            "wasserstein_amp",
+            "h1_ratio",
+            "max_loop_persistence",
         ]
 
         for w in windows:
@@ -186,9 +201,16 @@ class TopologicalFeaturesIndicator(BaseIndicator):
         params = self.get_default_params()
         cols = []
         names = [
-            "h0_count", "h1_count", "h0_max_pers", "h1_max_pers",
-            "h0_mean_pers", "h1_mean_pers", "persistence_entropy",
-            "wasserstein_amp", "h1_ratio", "max_loop_persistence",
+            "h0_count",
+            "h1_count",
+            "h0_max_pers",
+            "h1_max_pers",
+            "h0_mean_pers",
+            "h1_mean_pers",
+            "persistence_entropy",
+            "wasserstein_amp",
+            "h1_ratio",
+            "max_loop_persistence",
         ]
         for w in params["windows"]:
             for name in names:
