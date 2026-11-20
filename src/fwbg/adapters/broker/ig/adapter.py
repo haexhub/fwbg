@@ -4,6 +4,7 @@ IG Markets Broker Adapter.
 Implementiert das BrokerAdapter-Interface für IG Markets.
 Unterstützt REST API für historische Daten und Lightstreamer für Streaming.
 """
+
 from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
 from threading import Lock
@@ -14,6 +15,7 @@ import pandas as pd
 
 try:
     from trading_ig import IGService
+
     IG_AVAILABLE = True
 except ImportError:
     IG_AVAILABLE = False
@@ -21,20 +23,30 @@ except ImportError:
 try:
     from trading_ig.stream import IGStreamService
     from lightstreamer.client import Subscription
+
     STREAMING_AVAILABLE = True
 except ImportError:
     STREAMING_AVAILABLE = False
 
 try:
     import yfinance as yf
+
     YFINANCE_AVAILABLE = True
 except ImportError:
     YFINANCE_AVAILABLE = False
 
 from fwbg.adapters.broker import (
-    BrokerAdapter, OrderSide, OrderType, OrderStatus,
-    OrderResult, Position, AccountInfo, BarData, BrokerUnavailableError,
-    Symbol, Timeframe,
+    BrokerAdapter,
+    OrderSide,
+    OrderType,
+    OrderStatus,
+    OrderResult,
+    Position,
+    AccountInfo,
+    BarData,
+    BrokerUnavailableError,
+    Symbol,
+    Timeframe,
 )
 from fwbg.core.risk_state import ClosedTradeEvent
 from .mappings import (
@@ -108,7 +120,7 @@ class IGBrokerAdapter(BrokerAdapter):
         currency: str = "EUR",
         use_yfinance_fallback: bool = True,
         rate_limit_delay: float = 2.0,
-        **kwargs
+        **kwargs,
     ):
         """
         Args:
@@ -128,7 +140,9 @@ class IGBrokerAdapter(BrokerAdapter):
         # Credentials are kept wrapped to prevent accidental leakage via repr/str.
         # Username + api_key are needed for session refresh; the password is also
         # retained for reconnect after session expiry (IG sessions live ~6h).
-        self._credentials: Optional[_IGCredentials] = _IGCredentials(username, password, api_key)
+        self._credentials: Optional[_IGCredentials] = _IGCredentials(
+            username, password, api_key
+        )
         self.env = env.upper()
         self.currency = currency
         self.use_yfinance_fallback = use_yfinance_fallback
@@ -138,7 +152,9 @@ class IGBrokerAdapter(BrokerAdapter):
         self.max_reconnect_attempts = 3
         self.reconnect_delay_seconds = 5.0
         self._session_created_at: Optional[datetime] = None
-        self._session_max_age_hours = 5  # IG Sessions laufen nach 6h ab, refreshen nach 5h
+        self._session_max_age_hours = (
+            5  # IG Sessions laufen nach 6h ab, refreshen nach 5h
+        )
 
         self._ig: Optional[IGService] = None
         self._stream_service: Optional[Any] = None
@@ -168,7 +184,7 @@ class IGBrokerAdapter(BrokerAdapter):
                     self._credentials["username"],
                     self._credentials["password"],
                     self._credentials["api_key"],
-                    self.env
+                    self.env,
                 )
                 self._ig.create_session()
                 self._connected = True
@@ -186,9 +202,13 @@ class IGBrokerAdapter(BrokerAdapter):
             except Exception as e:
                 # Log the exception type but never the message body — IG client
                 # libraries occasionally embed credentials in error payloads.
-                self.log_error(f"Connection attempt {attempt} failed: {type(e).__name__}")
+                self.log_error(
+                    f"Connection attempt {attempt} failed: {type(e).__name__}"
+                )
                 if attempt < self.max_reconnect_attempts:
-                    time.sleep(self.reconnect_delay_seconds * attempt)  # Exponential backoff
+                    time.sleep(
+                        self.reconnect_delay_seconds * attempt
+                    )  # Exponential backoff
 
         return False
 
@@ -205,7 +225,9 @@ class IGBrokerAdapter(BrokerAdapter):
 
         # Prüfe Session-Alter
         if self._session_created_at:
-            age_hours = (datetime.now() - self._session_created_at).total_seconds() / 3600
+            age_hours = (
+                datetime.now() - self._session_created_at
+            ).total_seconds() / 3600
             if age_hours >= self._session_max_age_hours:
                 self.log_info("Session nearing expiry, refreshing...")
                 self.disconnect()
@@ -282,10 +304,7 @@ class IGBrokerAdapter(BrokerAdapter):
         return df
 
     def _fetch_ig_historical(
-        self,
-        symbol: Symbol,
-        timeframe: Timeframe,
-        limit: int
+        self, symbol: Symbol, timeframe: Timeframe, limit: int
     ) -> Optional[pd.DataFrame]:
         """Holt historische Daten von IG API."""
         # Session-Validierung vor API-Call
@@ -359,10 +378,7 @@ class IGBrokerAdapter(BrokerAdapter):
             return None
 
     def _fetch_yfinance_historical(
-        self,
-        symbol: Symbol,
-        timeframe: Timeframe,
-        limit: int
+        self, symbol: Symbol, timeframe: Timeframe, limit: int
     ) -> Optional[pd.DataFrame]:
         """Fallback: Holt historische Daten von yfinance."""
         if not YFINANCE_AVAILABLE:
@@ -395,7 +411,7 @@ class IGBrokerAdapter(BrokerAdapter):
                 period=f"{days_needed}d",
                 interval=yf_interval,
                 progress=False,
-                auto_adjust=True
+                auto_adjust=True,
             )
 
             if data is None or data.empty:
@@ -404,9 +420,9 @@ class IGBrokerAdapter(BrokerAdapter):
             if isinstance(data.columns, pd.MultiIndex):
                 data.columns = data.columns.get_level_values(0)
 
-            df = data.rename(columns={
-                "Open": "O", "High": "H", "Low": "L", "Close": "C"
-            })[["O", "H", "L", "C"]]
+            df = data.rename(
+                columns={"Open": "O", "High": "H", "Low": "L", "Close": "C"}
+            )[["O", "H", "L", "C"]]
 
             if df.index.tz is not None:
                 # Exchange-local for some tickers: convert before dropping the zone.
@@ -508,7 +524,7 @@ class IGBrokerAdapter(BrokerAdapter):
             return OrderResult(
                 success=False,
                 status=OrderStatus.REJECTED,
-                message="Not connected to IG"
+                message="Not connected to IG",
             )
 
         epic = SYMBOL_TO_EPIC.get(symbol)
@@ -516,7 +532,7 @@ class IGBrokerAdapter(BrokerAdapter):
             return OrderResult(
                 success=False,
                 status=OrderStatus.REJECTED,
-                message=f"No EPIC mapping for: {symbol}"
+                message=f"No EPIC mapping for: {symbol}",
             )
 
         # Validate order parameters before hitting the broker.
@@ -526,13 +542,17 @@ class IGBrokerAdapter(BrokerAdapter):
                 status=OrderStatus.REJECTED,
                 message=f"Size {size} outside allowed range [{self.MIN_ORDER_SIZE}, {self.MAX_ORDER_SIZE}]",
             )
-        if stop_distance is not None and not (self.MIN_STOP_POINTS <= stop_distance <= self.MAX_STOP_POINTS):
+        if stop_distance is not None and not (
+            self.MIN_STOP_POINTS <= stop_distance <= self.MAX_STOP_POINTS
+        ):
             return OrderResult(
                 success=False,
                 status=OrderStatus.REJECTED,
                 message=f"stop_distance {stop_distance} outside allowed range [{self.MIN_STOP_POINTS}, {self.MAX_STOP_POINTS}]",
             )
-        if limit_distance is not None and not (self.MIN_STOP_POINTS <= limit_distance <= self.MAX_STOP_POINTS):
+        if limit_distance is not None and not (
+            self.MIN_STOP_POINTS <= limit_distance <= self.MAX_STOP_POINTS
+        ):
             return OrderResult(
                 success=False,
                 status=OrderStatus.REJECTED,
@@ -547,7 +567,8 @@ class IGBrokerAdapter(BrokerAdapter):
             # (kein stiller 50er-Default mehr).
             sl_dist = int(round(stop_distance)) if stop_distance is not None else None
             tp_dist = (
-                int(round(limit_distance)) if limit_distance
+                int(round(limit_distance))
+                if limit_distance
                 else (sl_dist * 2 if sl_dist is not None else None)
             )
 
@@ -581,7 +602,11 @@ class IGBrokerAdapter(BrokerAdapter):
             if response and response.get("dealStatus") == "ACCEPTED":
                 return self._deal_result(response, size=size)
 
-            if response and response.get("dealStatus") is None and response.get("dealReference"):
+            if (
+                response
+                and response.get("dealStatus") is None
+                and response.get("dealReference")
+            ):
                 # Older test doubles and older trading-ig releases return only
                 # a deal reference here. Resolve it before claiming success.
                 deal_ref = response["dealReference"]
@@ -590,7 +615,9 @@ class IGBrokerAdapter(BrokerAdapter):
                 confirmation = self._ig.fetch_deal_by_deal_reference(deal_ref)
 
                 if confirmation:
-                    return self._deal_result(confirmation, size=size, fallback_id=deal_ref)
+                    return self._deal_result(
+                        confirmation, size=size, fallback_id=deal_ref
+                    )
 
             if response:
                 reason = response.get("reason", "Order was not confirmed")
@@ -625,10 +652,7 @@ class IGBrokerAdapter(BrokerAdapter):
     ) -> OrderResult:
         """Convert an explicit IG deal confirmation to an OrderResult."""
         deal_id = str(
-            response.get("dealId")
-            or response.get("dealReference")
-            or fallback_id
-            or ""
+            response.get("dealId") or response.get("dealReference") or fallback_id or ""
         )
         if response.get("dealStatus") == "ACCEPTED":
             fill_price = response.get("level") or response.get("openLevel") or 0.0
@@ -675,20 +699,24 @@ class IGBrokerAdapter(BrokerAdapter):
 
                 stop_level = row.get("stopLevel")
                 limit_level = row.get("limitLevel")
-                positions.append(Position(
-                    symbol=symbol,
-                    direction=direction,
-                    size=float(row.get("size", 0)),
-                    entry_price=float(row.get("openLevel", 0)),
-                    current_price=float(row.get("level", 0)),
-                    unrealized_pnl=float(row.get("profit", 0)),
-                    position_id=str(row.get("dealId", "")),
-                    stop_level=stop_level,
-                    limit_level=limit_level,
-                    stop_loss=float(stop_level) if stop_level is not None else None,
-                    take_profit=float(limit_level) if limit_level is not None else None,
-                    currency=row.get("currency", self.currency),
-                ))
+                positions.append(
+                    Position(
+                        symbol=symbol,
+                        direction=direction,
+                        size=float(row.get("size", 0)),
+                        entry_price=float(row.get("openLevel", 0)),
+                        current_price=float(row.get("level", 0)),
+                        unrealized_pnl=float(row.get("profit", 0)),
+                        position_id=str(row.get("dealId", "")),
+                        stop_level=stop_level,
+                        limit_level=limit_level,
+                        stop_loss=float(stop_level) if stop_level is not None else None,
+                        take_profit=float(limit_level)
+                        if limit_level is not None
+                        else None,
+                        currency=row.get("currency", self.currency),
+                    )
+                )
             return positions
 
         except Exception as e:
@@ -727,7 +755,9 @@ class IGBrokerAdapter(BrokerAdapter):
                 status=OrderStatus.REJECTED,
                 message=f"No EPIC mapping for position {position_id}",
             )
-        close_direction = OrderSide.SELL if position.direction == OrderSide.BUY else OrderSide.BUY
+        close_direction = (
+            OrderSide.SELL if position.direction == OrderSide.BUY else OrderSide.BUY
+        )
         try:
             self._rate_limit()
             response = self._ig.close_open_position(
@@ -745,10 +775,14 @@ class IGBrokerAdapter(BrokerAdapter):
                     success=False,
                     order_id=str(response.get("dealReference", "")) if response else "",
                     status=OrderStatus.REJECTED,
-                    message=(response or {}).get("reason", "Close order was not confirmed"),
+                    message=(response or {}).get(
+                        "reason", "Close order was not confirmed"
+                    ),
                     raw_response=response or {},
                 )
-            result = self._deal_result(response, size=position.size, fallback_id=position_id)
+            result = self._deal_result(
+                response, size=position.size, fallback_id=position_id
+            )
             result.message = "Position closed"
             return result
         except Exception as e:
@@ -783,7 +817,8 @@ class IGBrokerAdapter(BrokerAdapter):
             if accounts is not None and len(accounts) > 0:
                 return AccountInfo(
                     balance=float(accounts.loc[0, "balance"]),
-                    equity=float(accounts.loc[0, "balance"]) + float(accounts.loc[0, "profitLoss"]),
+                    equity=float(accounts.loc[0, "balance"])
+                    + float(accounts.loc[0, "profitLoss"]),
                     margin_used=float(accounts.loc[0, "deposit"]),
                     margin_available=float(accounts.loc[0, "available"]),
                     currency=self.currency,
@@ -826,11 +861,17 @@ class IGBrokerAdapter(BrokerAdapter):
                 # Deposits, withdrawals, and fees have no closed trade level.
                 if pnl_raw is None or close_raw is None:
                     continue
-                if transaction_type and transaction_type not in {
-                    "DEAL", "TRADE", "POSITION"
-                } and row.get("closeLevel") is None:
+                if (
+                    transaction_type
+                    and transaction_type not in {"DEAL", "TRADE", "POSITION"}
+                    and row.get("closeLevel") is None
+                ):
                     continue
-                event_id = row.get("reference") or row.get("dealId") or row.get("transactionId")
+                event_id = (
+                    row.get("reference")
+                    or row.get("dealId")
+                    or row.get("transactionId")
+                )
                 if not event_id:
                     return None
                 try:
@@ -879,8 +920,18 @@ class IGBrokerAdapter(BrokerAdapter):
             subscription = Subscription(
                 mode="MERGE",
                 items=[item],
-                fields=["UTM", "BID_OPEN", "BID_HIGH", "BID_LOW", "BID_CLOSE",
-                        "OFR_OPEN", "OFR_HIGH", "OFR_LOW", "OFR_CLOSE", "CONS_END"]
+                fields=[
+                    "UTM",
+                    "BID_OPEN",
+                    "BID_HIGH",
+                    "BID_LOW",
+                    "BID_CLOSE",
+                    "OFR_OPEN",
+                    "OFR_HIGH",
+                    "OFR_LOW",
+                    "OFR_CLOSE",
+                    "CONS_END",
+                ],
             )
 
             listener = IGCandleListener(self, symbol, callback)
@@ -907,7 +958,7 @@ class IGBrokerAdapter(BrokerAdapter):
         session_result = self._ig.create_session()
         acc_id = None
         if isinstance(session_result, dict):
-            acc_id = session_result.get('currentAccountId')
+            acc_id = session_result.get("currentAccountId")
 
         if not acc_id:
             raise ValueError("Could not get account ID from IG session")
