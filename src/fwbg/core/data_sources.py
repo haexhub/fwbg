@@ -11,6 +11,14 @@ Struktur:
         datasource/          ← aufbereitete CSV-Dateien
       alphavantage/
         config.json
+
+Timestamp convention: bar timestamps are **naive UTC** (bar start time) everywhere in
+fwbg. Datasource CSVs store them in the ``T`` column as ``YYYY-MM-DD HH:MM:SS`` in UTC,
+the loaders (``fwbg.data.loader.load_data_aligned``) read them as they are without any
+timezone conversion, and exchange-local logic (``fwbg.data.trading_hours``,
+``fwbg.data.session_bars``) localizes them from UTC. Local wall-clock times would repeat
+for an hour at the autumn DST change, so the ETL (:func:`utc_timestamps`) converts to UTC
+and never writes local time.
 """
 
 from abc import ABC, abstractmethod
@@ -26,6 +34,8 @@ import re
 
 import pandas as pd
 
+from fwbg.data.atomic import write_csv_atomic
+
 log = logging.getLogger(__name__)
 
 
@@ -39,6 +49,72 @@ class AssetInfo:
     date_to: Optional[date]
     source: str
     source_type: str
+
+
+def _localize_to_utc(parsed: pd.Series, zone: str, label: str) -> pd.Series:
+    """Interpret naive wall-clock times in ``zone`` and convert them to naive UTC.
+
+    The repeated hour at the autumn DST change is kept for both occurrences: the
+    first occurrence is read as daylight time, the second as standard time
+    (``ambiguous="infer"``; if that cannot be inferred, the first listed row of a
+    repeated wall-clock time is daylight time). Wall-clock times inside the spring
+    DST gap never existed; those rows are dropped with a warning.
+    """
+    try:
+        local = parsed.dt.tz_localize(zone, ambiguous="infer", nonexistent="NaT")
+    except ValueError:
+        is_daylight = ~parsed.duplicated(keep="first")
+        local = parsed.dt.tz_localize(
+            zone, ambiguous=is_daylight.to_numpy(), nonexistent="NaT"
+        )
+    missing = int(local.isna().sum() - parsed.isna().sum())
+    if missing:
+        log.warning(
+            f"{label}: {missing} Zeilen mit nicht existierender Ortszeit "
+            f"(DST-Lücke in {zone}) verworfen."
+        )
+    return local.dt.tz_convert("UTC").dt.tz_localize(None)
+
+
+def utc_timestamps(
+    df: pd.DataFrame,
+    column: str,
+    unit: str = "",
+    timezone: str = "",
+    label: str = "",
+) -> pd.DataFrame:
+    """Replace ``column`` by naive-UTC datetimes (the fwbg timestamp convention).
+
+    * ``unit`` ``"s"``/``"ms"``: Unix epoch, already UTC (``timezone`` is irrelevant).
+    * otherwise the values are date strings; ``timezone`` (IANA name) is the zone they
+      are written in and is converted to UTC, without losing either hour of the
+      autumn DST change. Strings that carry their own UTC offset are converted by it.
+      Without ``timezone`` they are taken as UTC.
+
+    Rows whose timestamp is invalid (a local time that never existed) or repeats an
+    earlier one are dropped with a warning. Returns a new frame.
+    """
+    out = df.copy()
+    if unit in ("s", "ms"):
+        out[column] = pd.to_datetime(out[column], unit=unit, utc=True).dt.tz_localize(
+            None
+        )
+    else:
+        parsed = pd.to_datetime(out[column])
+        if parsed.dt.tz is not None:
+            parsed = parsed.dt.tz_convert("UTC").dt.tz_localize(None)
+        elif timezone:
+            parsed = _localize_to_utc(parsed, timezone, label)
+        out[column] = parsed
+    before = len(out)
+    out = out[out[column].notna()]
+    out = out.drop_duplicates(subset=[column], keep="first")
+    dropped = before - len(out)
+    if dropped:
+        log.warning(
+            f"{label}: {dropped} Zeilen mit ungültigem oder doppeltem Timestamp verworfen."
+        )
+    return out
 
 
 # Default Basis-Pfad für Daten — resolved from workspace env vars at import time
@@ -235,6 +311,19 @@ class CSVSourceConfig(DataSourceConfig):
         if exclude_set:
             raw_files = [f for f in raw_files if f.name not in exclude_set]
 
+        # {timeframe} in file_pattern comes from the raw pattern's suffix
+        # ("{raw_symbol}_m15.csv" -> "m15", then timeframe_map as for lookups).
+        raw_timeframe = ""
+        if glob_override == "" and "{raw_symbol}" in self.raw_pattern:
+            suffix = self.raw_pattern.split("{raw_symbol}", 1)[1]
+            raw_timeframe = suffix.removesuffix(".csv").lstrip("_")
+        if "{timeframe}" in self.file_pattern and not raw_timeframe:
+            log.warning(
+                f"prepare(): file_pattern {self.file_pattern!r} braucht einen "
+                f"Timeframe, raw_pattern {self.raw_pattern!r} liefert keinen."
+            )
+            return []
+
         converted = []
 
         for raw_file in raw_files:
@@ -254,23 +343,15 @@ class CSVSourceConfig(DataSourceConfig):
                     )
                     continue
 
-                if self.timestamp_unit in ("s", "ms"):
-                    ts = pd.to_datetime(
-                        df[self.date_col], unit=self.timestamp_unit, utc=True
+                if self.timestamp_unit in ("s", "ms") or self.timezone:
+                    df = utc_timestamps(
+                        df,
+                        self.date_col,
+                        self.timestamp_unit,
+                        self.timezone,
+                        label=f"prepare(): {symbol}",
                     )
-                    if self.timezone:
-                        ts = ts.dt.tz_convert(self.timezone)
-                    df["T"] = ts.dt.strftime("%Y-%m-%d %H:%M:%S")
-                    if self.timezone:
-                        before = len(df)
-                        df = df.drop_duplicates(subset=["T"], keep="first")
-                        dropped = before - len(df)
-                        if dropped:
-                            log.warning(
-                                f"prepare(): {symbol}: {dropped} Bars durch DST-Rückfall "
-                                f"entfernt (doppelte naive Timestamps nach {self.timezone}-"
-                                f"Konvertierung)."
-                            )
+                    df["T"] = df[self.date_col].dt.strftime("%Y-%m-%d %H:%M:%S")
                 else:
                     df["T"] = df[self.date_col].astype(str)
 
@@ -293,9 +374,8 @@ class CSVSourceConfig(DataSourceConfig):
                     out["V"] = 0
 
                 # --- Write output ---
-                tf_part = self.file_pattern.replace("{symbol}_", "").replace(".csv", "")
-                dst = out_dir / f"{symbol}_{tf_part}.csv"
-                out.to_csv(dst, index=False)
+                dst = self.get_file_path(symbol, raw_timeframe or None)
+                write_csv_atomic(out, dst, index=False)
                 log.info(f"prepare(): {raw_file.name} → {dst.name} ({len(out)} Bars)")
                 converted.append(symbol)
 
