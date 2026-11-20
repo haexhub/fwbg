@@ -1,4 +1,5 @@
 """Tests for FixedExitStrategy plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -23,12 +24,14 @@ def trending_up_ohlc():
     base = 1.1000
     trend = np.linspace(0, 0.01, n)  # +100 Pips über 100 Bars
 
-    df = pd.DataFrame({
-        "O": base + trend - 0.0002,
-        "H": base + trend + 0.0005,
-        "L": base + trend - 0.0005,
-        "C": base + trend + 0.0002,
-    })
+    df = pd.DataFrame(
+        {
+            "O": base + trend - 0.0002,
+            "H": base + trend + 0.0005,
+            "L": base + trend - 0.0005,
+            "C": base + trend + 0.0002,
+        }
+    )
     return df
 
 
@@ -39,12 +42,14 @@ def trending_down_ohlc():
     base = 1.1000
     trend = np.linspace(0, -0.01, n)  # -100 Pips über 100 Bars
 
-    df = pd.DataFrame({
-        "O": base + trend + 0.0002,
-        "H": base + trend + 0.0005,
-        "L": base + trend - 0.0005,
-        "C": base + trend - 0.0002,
-    })
+    df = pd.DataFrame(
+        {
+            "O": base + trend + 0.0002,
+            "H": base + trend + 0.0005,
+            "L": base + trend - 0.0005,
+            "C": base + trend - 0.0002,
+        }
+    )
     return df
 
 
@@ -57,12 +62,14 @@ def volatile_ohlc():
     volatility = 0.002  # 20 Pips Schwankung
 
     closes = base + np.cumsum(np.random.normal(0, 0.0005, n))
-    df = pd.DataFrame({
-        "O": closes - np.random.uniform(0, volatility, n),
-        "H": closes + np.abs(np.random.normal(0, volatility, n)),
-        "L": closes - np.abs(np.random.normal(0, volatility, n)),
-        "C": closes,
-    })
+    df = pd.DataFrame(
+        {
+            "O": closes - np.random.uniform(0, volatility, n),
+            "H": closes + np.abs(np.random.normal(0, volatility, n)),
+            "L": closes - np.abs(np.random.normal(0, volatility, n)),
+            "C": closes,
+        }
+    )
     # Sicherstellen dass H > L
     df["H"] = np.maximum(df["H"], df[["O", "C"]].max(axis=1))
     df["L"] = np.minimum(df["L"], df[["O", "C"]].min(axis=1))
@@ -76,12 +83,14 @@ def flat_ohlc():
     np.random.seed(42)
     base = 1.1000
 
-    df = pd.DataFrame({
-        "O": base + np.random.uniform(-0.0001, 0.0001, n),
-        "H": base + np.random.uniform(0.0001, 0.0003, n),
-        "L": base + np.random.uniform(-0.0003, -0.0001, n),
-        "C": base + np.random.uniform(-0.0001, 0.0001, n),
-    })
+    df = pd.DataFrame(
+        {
+            "O": base + np.random.uniform(-0.0001, 0.0001, n),
+            "H": base + np.random.uniform(0.0001, 0.0003, n),
+            "L": base + np.random.uniform(-0.0003, -0.0001, n),
+            "C": base + np.random.uniform(-0.0001, 0.0001, n),
+        }
+    )
     return df
 
 
@@ -110,25 +119,30 @@ class TestFixedExitStrategyTargets:
         strategy = FixedExitStrategy()
 
         targets_long, targets_short = strategy.compute_targets(
-            trending_up_ohlc, forex_context,
-            tp=30, sl=20  # RRR 1.5
+            trending_up_ohlc,
+            forex_context,
+            tp=30,
+            sl=20,  # RRR 1.5
         )
 
         # In starkem Aufwärtstrend sollten viele Long Trades gewinnen
         long_win_rate = np.nanmean(targets_long)
-        assert long_win_rate > 0.3, f"Long Win-Rate zu niedrig in Uptrend: {long_win_rate:.2%}"
+        assert long_win_rate > 0.3, (
+            f"Long Win-Rate zu niedrig in Uptrend: {long_win_rate:.2%}"
+        )
 
     def test_short_wins_in_downtrend(self, trending_down_ohlc, forex_context):
         """Short Trades sollten in Abwärtstrend gewinnen."""
         strategy = FixedExitStrategy()
 
         targets_long, targets_short = strategy.compute_targets(
-            trending_down_ohlc, forex_context,
-            tp=30, sl=20
+            trending_down_ohlc, forex_context, tp=30, sl=20
         )
 
         short_win_rate = np.nanmean(targets_short)
-        assert short_win_rate > 0.3, f"Short Win-Rate zu niedrig in Downtrend: {short_win_rate:.2%}"
+        assert short_win_rate > 0.3, (
+            f"Short Win-Rate zu niedrig in Downtrend: {short_win_rate:.2%}"
+        )
 
     def test_larger_sl_reduces_losses(self, volatile_ohlc, forex_context):
         """Größerer SL sollte weniger Stopouts verursachen."""
@@ -136,15 +150,19 @@ class TestFixedExitStrategyTargets:
 
         # Enger SL
         _, _ = strategy.compute_targets(
-            volatile_ohlc, forex_context,
-            tp=50, sl=10  # Sehr enger SL
+            volatile_ohlc,
+            forex_context,
+            tp=50,
+            sl=10,  # Sehr enger SL
         )
         # Bei engem SL in volatilen Märkten werden mehr Trades gestoppt
 
         # Weiter SL
         targets_long_wide, _ = strategy.compute_targets(
-            volatile_ohlc, forex_context,
-            tp=50, sl=50  # Weiter SL
+            volatile_ohlc,
+            forex_context,
+            tp=50,
+            sl=50,  # Weiter SL
         )
 
         # Mit weiterem SL sollten mehr Trades überleben
@@ -157,16 +175,20 @@ class TestFixedExitStrategyTargets:
 
         # Ohne Timeout - in flachem Markt viele "Pending" Trades
         targets_no_timeout, _ = strategy.compute_targets(
-            flat_ohlc, forex_context,
-            tp=100, sl=100,  # Sehr weit - kaum erreichbar
-            timeout_bars=None
+            flat_ohlc,
+            forex_context,
+            tp=100,
+            sl=100,  # Sehr weit - kaum erreichbar
+            timeout_bars=None,
         )
 
         # Mit Timeout
         targets_with_timeout, _ = strategy.compute_targets(
-            flat_ohlc, forex_context,
-            tp=100, sl=100,
-            timeout_bars=5  # Nach 5 Bars schließen
+            flat_ohlc,
+            forex_context,
+            tp=100,
+            sl=100,
+            timeout_bars=5,  # Nach 5 Bars schließen
         )
 
         # Beide sollten gleiche Länge haben
