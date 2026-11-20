@@ -23,6 +23,10 @@ from .nested_cv import nested_cv_split, refit_stateful_features, evaluate_on_hol
 from .grid_search import run_grid_search, select_features
 
 
+class PreprocessingError(RuntimeError):
+    """A configured preprocessing step failed on a fold."""
+
+
 def _is_stateful_indicator(indicator) -> bool:
     """Return whether a configured indicator requires train-only fitting."""
     name = indicator.get("name", "") if isinstance(indicator, dict) else indicator
@@ -221,10 +225,13 @@ def _prepare_fold_common(
                 )
                 test_out = pp.execute(test_ctx, **pp_params).df
             except Exception as e:
-                # Skipped for both splits: a step applied to train only would
-                # leave the model trained on data unlike what it is tested on.
-                log(1, f"  Preprocessing {pp_name} failed, skipped: {e}", sym)
-                continue
+                # A configured step that cannot run changes the strategy: skipping it
+                # would silently train and test a different one. Surface the failure
+                # (the symbol is reported as an error with this message).
+                log(1, f"  Preprocessing {pp_name} failed: {e}", sym)
+                raise PreprocessingError(
+                    f"preprocessor {pp_name!r} failed on fold {fold.fold_id}: {e}"
+                ) from e
             pp_train_raw = train_out
             pp_test_raw = test_out
 

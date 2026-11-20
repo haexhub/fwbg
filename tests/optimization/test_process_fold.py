@@ -1064,9 +1064,9 @@ class TestSignalModelSkipsDropna:
         assert "feat2" not in full_pool
         assert len(test_df) == n_test
 
-    def test_preprocessing_failing_on_test_is_skipped_for_train_too(self):
-        """Train and test must go through the same preprocessing steps."""
-        from fwbg.optimization.process_fold import prepare_fold_data
+    def test_preprocessing_failing_on_test_raises_and_keeps_neither_split(self):
+        """A step failing on one split fails the fold; neither split is half-processed."""
+        from fwbg.optimization.process_fold import PreprocessingError, prepare_fold_data
 
         class FailsOnSecondExecute:
             calls = 0
@@ -1085,17 +1085,18 @@ class TestSignalModelSkipsDropna:
         ctx = _make_ctx(model_type="xgboost", min_trades=5)
 
         with patch("fwbg.core.get_preprocessor", return_value=FailsOnSecondExecute):
-            train_df, test_df, _ = prepare_fold_data(
-                fold,
-                fold_indicators=[],
-                precomputed_raw_df=None,
-                preprocessing_configs=[{"name": "scale"}],
-                ctx=ctx,
-                sym="TEST",
-            )
+            with pytest.raises(PreprocessingError, match="test split"):
+                prepare_fold_data(
+                    fold,
+                    fold_indicators=[],
+                    precomputed_raw_df=None,
+                    preprocessing_configs=[{"name": "scale"}],
+                    ctx=ctx,
+                    sym="TEST",
+                )
 
-        pd.testing.assert_series_equal(train_df["feat1"], fold.train_df["feat1"])
-        pd.testing.assert_series_equal(test_df["feat1"], fold.test_df["feat1"])
+        # the fold's own frames were not modified in place
+        assert (fold.train_df["feat1"] < 1000).all()
 
 
 def test_candidate_regime_replaces_another_combos_mask():
@@ -1111,3 +1112,27 @@ def test_candidate_regime_replaces_another_combos_mask():
     apply_candidate_regime(train_df, test_df, winner)
 
     assert (train_df["_regime"] != 0).all() and (test_df["_regime"] != 0).all()
+
+
+def test_a_failing_preprocessor_raises_instead_of_being_skipped(monkeypatch):
+    """The step was logged and skipped, so the run silently evaluated a different
+    strategy than configured."""
+    from types import SimpleNamespace
+
+    import fwbg.core as core
+    from fwbg.optimization.process_fold import PreprocessingError, _prepare_fold_common
+
+    class Broken:
+        def fit(self, ctx, **params):
+            raise ValueError("boom")
+
+    monkeypatch.setattr(core, "get_preprocessor", lambda name: Broken)
+    index = pd.date_range("2024-01-01", periods=20, freq="h")
+    frame = pd.DataFrame({c: np.linspace(1.0, 2.0, 20) for c in "OHLC"}, index=index)
+    fold = SimpleNamespace(fold_id=3, train_df=frame.iloc[:15], test_df=frame.iloc[15:])
+    ctx = SimpleNamespace(asset_class="forex")
+
+    with pytest.raises(PreprocessingError, match="'broken_step'.*fold 3.*boom"):
+        _prepare_fold_common(
+            fold, [], None, [{"name": "broken_step", "params": {}}], ctx, "TEST"
+        )
