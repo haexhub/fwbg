@@ -354,6 +354,7 @@ class TestSelectFeaturesFromFold:
         # Sollte mindestens einige Features auswählen (oder None)
         assert selected is None or len(selected) >= 0
 
+
 class TestTrainModel:
     """Tests für train_model."""
 
