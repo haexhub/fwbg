@@ -1,6 +1,7 @@
 """
 BaseIndicator - Abstrakte Basisklasse für Indicator-Plugins.
 """
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Union, TYPE_CHECKING
 import numpy as np
