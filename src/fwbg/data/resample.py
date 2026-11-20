@@ -44,7 +44,14 @@ def resample_ohlcv(df: pd.DataFrame, target_tf: str) -> pd.DataFrame:
     if "V" in df.columns:
         agg["V"] = "sum"
 
-    return df.resample(rule).agg(agg).dropna(subset=["O"])
+    # Every bar is labelled with its start time, like the native bars. pandas
+    # defaults the weekly rule ("W-SUN") to right-closed/right-labelled, which
+    # stamps a week with the Sunday that ends it; W1 bars start on Monday.
+    if Timeframe.from_str(target_tf) is Timeframe.W1:
+        resampler = df.resample("W-MON", closed="left", label="left")
+    else:
+        resampler = df.resample(rule)
+    return resampler.agg(agg).dropna(subset=["O"])
 
 
 def parse_symbol_timeframe(stem: str) -> tuple[str, str] | None:
