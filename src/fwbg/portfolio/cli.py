@@ -11,6 +11,7 @@ import pandas as pd
 
 from .data import load_inputs
 from .engine import run_portfolio, summarize
+from .research import add_research_arguments, clamp_prices, gate_portfolio_command
 from .robustness import assess_robustness, format_robustness
 
 
@@ -33,18 +34,24 @@ def _metrics_table(metrics):
 
 
 def run_experiment(
-    config_path: Path, output: Path, cost_multiplier: float = 1.0
+    config_path: Path,
+    output: Path,
+    cost_multiplier: float = 1.0,
+    end_date: str | None = None,
 ) -> dict:
     """Run a configured monthly backtest and write artifacts to a new directory.
 
     Scale transaction costs by a positive finite multiplier and return the
     report containing performance metrics, robustness checks and provenance.
+    ``end_date`` (YYYY-MM-DD, exclusive) drops later prices before anything is
+    computed; the research gate passes the card's holdout cutoff here.
     """
     import math
 
     if not math.isfinite(cost_multiplier) or cost_multiplier <= 0:
         raise ValueError("cost-multiplier must be positive and finite")
     config, settings, prices, provenance = load_inputs(config_path)
+    prices = clamp_prices(prices, end_date)
     settings = replace(
         settings, one_way_cost_bps=settings.one_way_cost_bps * cost_multiplier
     )
@@ -81,6 +88,7 @@ def run_experiment(
         "config": config,
         "effective_one_way_cost_bps": settings.one_way_cost_bps,
         "cost_multiplier": cost_multiplier,
+        "data_end_exclusive": end_date,
         "cash_return": 0.0,
         "robustness": robustness,
         "provenance": provenance,
@@ -151,16 +159,19 @@ def main(argv: list[str] | None = None) -> None:
     run.add_argument("--config", type=Path, required=True)
     run.add_argument("--output", type=Path)
     run.add_argument("--cost-multiplier", type=float, default=1.0)
+    add_research_arguments(run)
     search = commands.add_parser(
         "search", help="Compare a predeclared candidate set with selection checks"
     )
     search.add_argument("--protocol", type=Path, required=True)
     search.add_argument("--output", type=Path, required=True)
+    add_research_arguments(search)
     swing = commands.add_parser(
         "swing-study", help="Run the frozen daily entry/exit study"
     )
     swing.add_argument("--protocol", type=Path, required=True)
     swing.add_argument("--output", type=Path, required=True)
+    add_research_arguments(swing)
     download = commands.add_parser(
         "download-example", help="Download the five-asset Yahoo/ECB bundle"
     )
@@ -170,6 +181,10 @@ def main(argv: list[str] | None = None) -> None:
         "--end", required=True, help="Exclusive end date; not later than today"
     )
     args = parser.parse_args(argv)
+    # run, search and swing-study evaluate strategies on price data: gate and record them first.
+    end_date = (
+        None if args.command == "download-example" else gate_portfolio_command(args)
+    )
     try:
         if args.command == "download-example":
             from .download import prepare_example
@@ -185,13 +200,13 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "search":
             from .search import run_search
 
-            run_search(args.protocol, args.output)
+            run_search(args.protocol, args.output, end_date)
         else:
             output = args.output or Path("test_results/portfolio") / (
                 datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_")
                 + uuid.uuid4().hex[:8]
             )
-            run_experiment(args.config, output, args.cost_multiplier)
+            run_experiment(args.config, output, args.cost_multiplier, end_date)
     except (ValueError, OSError, ImportError, KeyError, TypeError) as error:
         parser.exit(2, f"Portfolio error: {error}\n")
 

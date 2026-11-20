@@ -45,11 +45,12 @@ def joint_p(robustness: dict, comparison: str) -> float:
     return float(max(values))
 
 
-def run_search(protocol_path: Path, output: Path) -> dict:
+def run_search(protocol_path: Path, output: Path, end_date: str | None = None) -> dict:
     """Evaluate declared monthly candidates at every cost stress and save results.
 
     Require matching benchmarks and histories, retain every trial, and return
     the summary with native PBO, Holm gates and chronological selection.
+    ``end_date`` (YYYY-MM-DD, exclusive) limits every candidate's price history.
     """
     protocol = json.loads(protocol_path.read_text())
     if protocol.get("schema_version") != 1:
@@ -109,7 +110,9 @@ def run_search(protocol_path: Path, output: Path) -> dict:
             print(f"Running {key}: costs x{multiplier}", flush=True)
             with (output / f"{key}_cost{multiplier}.log").open("w") as log:
                 with contextlib.redirect_stdout(log):
-                    report = run_experiment(candidate_path, run_dir, multiplier)
+                    report = run_experiment(
+                        candidate_path, run_dir, multiplier, end_date
+                    )
             reports[key, multiplier] = report
             monthly = pd.read_csv(
                 run_dir / "monthly_returns.csv", index_col=0, parse_dates=True
