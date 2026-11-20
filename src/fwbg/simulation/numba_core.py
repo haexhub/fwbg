@@ -6,6 +6,7 @@ Cache versioning: bump _CACHE_VERSION whenever the return signature of any
 plugins keep their compiled copy of a changed callee otherwise.  At import time we compare against a stamp file;
 on mismatch we wipe every .nbi/.nbc we can find and rewrite the stamp.
 """
+
 import pathlib
 import numpy as np
 from numba import njit, prange
@@ -44,6 +45,7 @@ def _clear_numba_cache():
                     pass
     if removed:
         import logging
+
         logging.getLogger(__name__).info(f"Cleared {removed} stale Numba cache files")
 
 
@@ -135,9 +137,20 @@ def _scale_in_triggered(direction, high, low, trigger, sl):
 
 
 @njit(cache=True)
-def _trail_after_bar(direction, high, low, best_price, sl, tp, trailing_active,
-                     use_breakeven, be_trigger_price, be_sl,
-                     trail_distance, trail_tp_dist):
+def _trail_after_bar(
+    direction,
+    high,
+    low,
+    best_price,
+    sl,
+    tp,
+    trailing_active,
+    use_breakeven,
+    be_trigger_price,
+    be_sl,
+    trail_distance,
+    trail_tp_dist,
+):
     """Advance breakeven/trailing levels after a bar has been checked.
 
     Returns (best_price, sl, tp, trailing_active).  Levels only ever tighten.
@@ -349,9 +362,18 @@ def _simulate_trade_trailing_numba(
             return _outcome(direction, closes[j], entry, 1.0), j, closes[j], 2
 
         best_price, sl, tp, trailing_active = _trail_after_bar(
-            direction, highs[j], lows[j], best_price, sl, tp, trailing_active,
-            breakeven_trigger > 0.0, be_trigger_price, be_sl,
-            trail_distance, trail_tp_dist,
+            direction,
+            highs[j],
+            lows[j],
+            best_price,
+            sl,
+            tp,
+            trailing_active,
+            breakeven_trigger > 0.0,
+            be_trigger_price,
+            be_sl,
+            trail_distance,
+            trail_tp_dist,
         )
 
     return 0.0, -1, 0.0, -1
@@ -457,10 +479,18 @@ def _simulate_trade_scale_in_numba(
             return result, j, closes[j], 2, avg_price, total_qty, n_fills
 
         best_price, sl, tp, trailing_active = _trail_after_bar(
-            direction, highs[j], lows[j], best_price, sl, tp, trailing_active,
+            direction,
+            highs[j],
+            lows[j],
+            best_price,
+            sl,
+            tp,
+            trailing_active,
             breakeven_trigger > 0.0,
-            avg_price + direction * tp_distance * breakeven_trigger, avg_price,
-            trail_distance, trail_tp_dist,
+            avg_price + direction * tp_distance * breakeven_trigger,
+            avg_price,
+            trail_distance,
+            trail_tp_dist,
         )
 
     return 0.0, -1, 0.0, -1, avg_price, total_qty, n_fills
@@ -500,16 +530,36 @@ def compute_targets_numba(
 
     for i in prange(n - 1):
         result_long, exit_long, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, 1,
-            tp_distances[i], sl_distances[i], spread, slippage, max_bars, timeout_bars
+            opens,
+            closes,
+            highs,
+            lows,
+            i,
+            1,
+            tp_distances[i],
+            sl_distances[i],
+            spread,
+            slippage,
+            max_bars,
+            timeout_bars,
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
         durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
         result_short, exit_short, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows, i, -1,
-            tp_distances[i], sl_distances[i], spread, slippage, max_bars, timeout_bars
+            opens,
+            closes,
+            highs,
+            lows,
+            i,
+            -1,
+            tp_distances[i],
+            sl_distances[i],
+            spread,
+            slippage,
+            max_bars,
+            timeout_bars,
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
