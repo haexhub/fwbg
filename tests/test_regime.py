@@ -100,13 +100,13 @@ class TestComputeRegimeBitmask:
         assert (result == 0).any()
         assert (result == 6).any()
 
-    def test_missing_column_keeps_all_allowed(self, df_with_indicators):
-        """Condition on missing column has no effect."""
+    def test_missing_column_raises(self, df_with_indicators):
+        """A condition on a missing column is an error, not a no-op."""
         params = RegimeFilterConfig(
             conditions=[RegimeCondition("nonexistent_col", ">=", 25.0)]
         )
-        result = compute_regime_bitmask(df_with_indicators, regime_params=params)
-        assert (result == 7).all()
+        with pytest.raises(ValueError, match="nonexistent_col"):
+            compute_regime_bitmask(df_with_indicators, regime_params=params)
 
     def test_combined_conditions_and_logic(self, df_with_indicators):
         """Multiple conditions are AND-combined (intersection of bitmasks)."""

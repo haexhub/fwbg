@@ -308,7 +308,7 @@ class TestComputeRegimeBitmask:
         result_single = compute_regime_bitmask(df_with_indicators, regime_params=single)
         assert (result > 0).sum() <= (result_single > 0).sum()
 
-    def test_missing_column_keeps_all_allowed(self, df_with_indicators):
+    def test_missing_column_raises(self, df_with_indicators):
         from fwbg.pipeline.features import compute_regime_bitmask
         from fwbg.core.config import RegimeFilterConfig, RegimeCondition
 
@@ -317,8 +317,18 @@ class TestComputeRegimeBitmask:
                 RegimeCondition(column="nonexistent_col", operator=">=", value=25.0)
             ]
         )
-        result = compute_regime_bitmask(df_with_indicators, regime_params=config)
-        assert (result == 7).all()
+        with pytest.raises(ValueError, match="nonexistent_col"):
+            compute_regime_bitmask(df_with_indicators, regime_params=config)
+
+    def test_unknown_operator_raises(self, df_with_indicators):
+        from fwbg.pipeline.features import compute_regime_bitmask
+        from fwbg.core.config import RegimeFilterConfig, RegimeCondition
+
+        config = RegimeFilterConfig(
+            conditions=[RegimeCondition(column="adx_14", operator="==", value=25.0)]
+        )
+        with pytest.raises(ValueError, match="operator"):
+            compute_regime_bitmask(df_with_indicators, regime_params=config)
 
     def test_bitmask_and_logic(self):
         """Two conditions: one allows Long+Short (6), other allows Long only (4).
