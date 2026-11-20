@@ -553,8 +553,14 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             result_df[col] = result_df[col].shift(1)
         else:
             result_df[col] = result_df[col].shift(-1)
-    for col in overlay_cols:
-        result_df[col] = result_df[col].shift(-1)
+    # Overlay columns: undo the shift too, so a single-timeframe line sits at the
+    # bar whose close produced it. With an indicator timeframe the rows are
+    # higher-timeframe candles that get held across all chart bars of the
+    # candle; undoing the shift there would draw a level computed from the
+    # candle's close during that same candle, so the model-facing shift stays.
+    if chart_df is None:
+        for col in overlay_cols:
+            result_df[col] = result_df[col].shift(-1)
 
     # --- MTF: forward-fill indicator columns to chart timeframe ---
     # Continuous columns (plot + overlay) are forward-filled so each lower-TF bar
