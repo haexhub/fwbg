@@ -15,12 +15,24 @@ import pandas as pd
 from fwbg_sdk import BaseIndicator, shift_features, register_indicator
 
 
+# Columns that are never covariates: chart overlays (``_`` prefix, absolute price
+# levels that trivially separate old from new bars) and target / label columns.
+_ALWAYS_EXCLUDED_PREFIXES = ("_", "target_", "label_", "y_")
+_LABEL_COLUMNS = {"target", "label", "y", "y_true"}
+
+
 def _select_feature_columns(df: pd.DataFrame, exclude_prefixes: List[str]) -> List[str]:
-    """Select numeric columns, excluding OHLCV and specified prefixes."""
+    """Select numeric covariates for the adversarial classifier.
+
+    Excludes OHLCV, ``_``-prefixed overlay columns, target / label columns and
+    anything starting with one of ``exclude_prefixes``.
+    """
     ohlcv = {"O", "H", "L", "C", "V"}
     cols = []
     for c in df.columns:
         if c in ohlcv:
+            continue
+        if c.startswith(_ALWAYS_EXCLUDED_PREFIXES) or c.lower() in _LABEL_COLUMNS:
             continue
         if any(c.startswith(p) for p in exclude_prefixes):
             continue
@@ -29,8 +41,23 @@ def _select_feature_columns(df: pd.DataFrame, exclude_prefixes: List[str]) -> Li
     return cols
 
 
-def _compute_adversarial_auc(old_data: np.ndarray, new_data: np.ndarray):
-    """Fit LogisticRegression to distinguish old from new data, return AUC and max importance."""
+def _compute_adversarial_auc(
+    old_data: np.ndarray, new_data: np.ndarray, n_folds: int = 4
+):
+    """Out-of-sample AUC of a classifier separating old from new observations.
+
+    The AUC is cross-validated with *contiguous* blocks: each fold holds out one
+    consecutive block of the old rows and one of the new rows (so autocorrelated
+    neighbours do not leak across the split), the scaler and the classifier are
+    fit on the remaining rows only, and the fold AUCs are averaged. Scoring on
+    the training data would reach AUC ~ 1 for pure noise whenever the number of
+    columns approaches the number of rows.
+
+    Returns:
+        ``(auc, max_importance)``: mean out-of-fold AUC and the mean over folds
+        of the largest absolute standardised coefficient. ``(0.5, 0.0)`` when
+        there are too few usable rows.
+    """
     from sklearn.linear_model import LogisticRegression
     from sklearn.metrics import roc_auc_score
     from sklearn.preprocessing import StandardScaler
@@ -43,29 +70,33 @@ def _compute_adversarial_auc(old_data: np.ndarray, new_data: np.ndarray):
     valid = ~np.isnan(X).any(axis=1)
     X, y = X[valid], y[valid]
 
-    if len(X) < 10 or len(np.unique(y)) < 2:
+    old_idx = np.flatnonzero(y == 0)
+    new_idx = np.flatnonzero(y == 1)
+    if len(X) < 10 or min(len(old_idx), len(new_idx)) < 2 * n_folds:
         return 0.5, 0.0
 
-    # Impute remaining NaN with median
-    medians = np.nanmedian(X, axis=0)
-    for j in range(X.shape[1]):
-        mask = np.isnan(X[:, j])
-        X[mask, j] = medians[j] if np.isfinite(medians[j]) else 0.0
-
-    scaler = StandardScaler()
-    X = scaler.fit_transform(X)
-
+    aucs = []
+    importances = []
     try:
-        model = LogisticRegression(max_iter=100, solver="liblinear", C=1.0)
-        model.fit(X, y)
-        proba = model.decision_function(X)
-        auc = roc_auc_score(y, proba)
-        max_importance = float(np.max(np.abs(model.coef_[0])))
-    except Exception:
-        auc = 0.5
-        max_importance = 0.0
+        for old_test, new_test in zip(
+            np.array_split(old_idx, n_folds), np.array_split(new_idx, n_folds)
+        ):
+            test = np.concatenate([old_test, new_test])
+            train = np.ones(len(X), dtype=bool)
+            train[test] = False
 
-    return auc, max_importance
+            scaler = StandardScaler()
+            X_train = scaler.fit_transform(X[train])
+            X_test = scaler.transform(X[test])
+
+            model = LogisticRegression(max_iter=100, solver="liblinear", C=1.0)
+            model.fit(X_train, y[train])
+            aucs.append(roc_auc_score(y[test], model.decision_function(X_test)))
+            importances.append(float(np.max(np.abs(model.coef_[0]))))
+    except ValueError:
+        return 0.5, 0.0
+
+    return float(np.mean(aucs)), float(np.mean(importances))
 
 
 def _compute_window_features(
@@ -125,7 +156,7 @@ class AdversarialValidationIndicator(BaseIndicator):
     """Adversarial Validation features for ML trading."""
 
     name = "adversarial_validation"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def compute(self, df: pd.DataFrame, **params) -> pd.DataFrame:
         defaults = self.get_default_params()
