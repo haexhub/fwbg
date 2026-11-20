@@ -6,11 +6,17 @@ month, after underperformance they buy (Harvey, Mazzoleni & Melone 2025, "The
 Unintended Consequences of Rebalancing").
 
 The month-to-date drift is read from daily stock and bond series that a
-``data_loading`` step added as columns (e.g. ``macro_spy``, ``macro_tlt``). Each
-such column already holds, on every bar, the last close before the bar's date, so
-on the month's first trading day it holds the previous month's last close (the
-base) and later the close of the trading day before the bar. Trading days come from
-an exchange calendar (``turn_of_month``'s ``trading_days``).
+``data_loading`` step added as columns (e.g. ``macro_spy``, ``macro_tlt``). The
+loader lags such a column by a calendar day, so with ``inputs_lagged=True`` (the
+default) each column already holds, on every bar, the last close before the bar's
+date: on the month's first trading day the previous month's last close (the base),
+later the close of the trading day before the bar. A column that holds the bar's
+own close must be passed with ``inputs_lagged=False``: the indicator then lags
+the inputs by one bar itself (daily bars only, one bar per date; several bars on a
+date raise ``ValueError``). Unlagged inputs read with ``inputs_lagged=True`` leak
+the bar's own close, and the indicator cannot detect that from the data, so the
+flag must match the data source. Trading days come from an exchange calendar
+(``turn_of_month``'s ``trading_days``).
 
 Columns (unshifted, for a decision at the bar's close; first row NaN):
 
@@ -49,7 +55,7 @@ class RebalancingPressureIndicator(BaseIndicator):
     """Month-to-date stock-minus-bond drift with month-end entry and exit flags."""
 
     name = "rebalancing_pressure"
-    version = "1.0.0"
+    version = "1.1.0"
     group = "calendar"
     benefits_from_stationary = False
 
@@ -80,8 +86,17 @@ class RebalancingPressureIndicator(BaseIndicator):
             is_first = dates == first_day.reindex(bar_months).to_numpy()
             month_key = pd.Series(bar_months, index=df.index)
 
+            inputs = df[list(dict.fromkeys(stocks + bonds))].astype(float)
+            if not p["inputs_lagged"]:
+                if dates.duplicated().any():
+                    raise ValueError(
+                        "rebalancing_pressure: inputs_lagged=False needs daily bars, "
+                        "one bar per date"
+                    )
+                inputs = inputs.shift(1)
+
             def mtd(cols: list[str]) -> pd.Series:
-                values = df[cols].astype(float)
+                values = inputs[cols]
                 base = values.where(pd.Series(is_first, index=df.index), np.nan)
                 base = base.groupby(month_key).transform("first")
                 has_base = (
@@ -120,6 +135,7 @@ class RebalancingPressureIndicator(BaseIndicator):
             "threshold": 0.02,
             "entry_days_left": 3,
             "calendar": "NYSE",
+            "inputs_lagged": True,
         }
 
     @classmethod
@@ -148,6 +164,11 @@ class RebalancingPressureIndicator(BaseIndicator):
                 "min": 1,
                 "max": 15,
                 "description": "Entry flags mark the bar with this many trading days left",
+            },
+            "inputs_lagged": {
+                "type": "bool",
+                "default": True,
+                "description": "True: the stock and bond columns already hold the previous trading day's close (the data_loading lag). False: they hold the bar's own close and the indicator lags them by one bar (daily bars only)",
             },
             "calendar": {
                 "type": "string",
