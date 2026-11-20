@@ -324,36 +324,6 @@ class TestSelectFeaturesFromFold:
 
         assert selected is None
 
-    def test_boruta_via_plugin(self):
-        """Test: Feature Selection via Plugin-Interface."""
-        df = create_test_df(1000)
-        # Targets die mit einem Feature korrelieren
-        targets = (df["trend_rsi_14"].values > 50).astype(int)
-        features = ["trend_rsi_14", "adx_14", "mom_stoch_14"]
-
-        plugins = [
-            {
-                "name": "boruta",
-                "params": {
-                    "n_iter": 3,
-                    "n_estimators": 20,
-                    "max_depth": 3,
-                    "min_z_score": 0.0,
-                },
-            }
-        ]
-
-        selected, metadata = select_features_from_fold(
-            df,
-            targets,
-            features,
-            min_trades=10,
-            feature_selection_plugins=plugins,
-        )
-
-        # Sollte mindestens einige Features auswählen (oder None)
-        assert selected is None or len(selected) >= 0
-
 
 class TestTrainModel:
     """Tests für train_model."""

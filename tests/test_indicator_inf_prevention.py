@@ -108,56 +108,6 @@ class TestIndicatorsNoInf:
             inf_count = np.isinf(result[col]).sum()
             assert inf_count == 0, f"{indicator}/{col} hat {inf_count} inf-Werte"
 
-    def test_dynamics_no_inf(self, realistic_ohlc):
-        """Dynamics-Indikatoren dürfen keine inf-Werte produzieren."""
-        from fwbg.pipeline import compute_indicator_pool
-
-        result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["dynamics"])
-
-        feature_cols = [
-            c
-            for c in result.columns
-            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
-        ]
-
-        for col in feature_cols:
-            inf_count = np.isinf(result[col]).sum()
-            assert inf_count == 0, f"dynamics/{col} hat {inf_count} inf-Werte"
-
-    def test_ichimoku_no_inf(self, realistic_ohlc):
-        """Ichimoku-Indikatoren dürfen keine inf-Werte produzieren."""
-        from fwbg.pipeline import compute_indicator_pool
-
-        result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["ichimoku"])
-
-        feature_cols = [
-            c
-            for c in result.columns
-            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
-        ]
-
-        for col in feature_cols:
-            inf_count = np.isinf(result[col]).sum()
-            assert inf_count == 0, f"ichimoku/{col} hat {inf_count} inf-Werte"
-
-    def test_multi_timeframe_no_inf(self, realistic_ohlc):
-        """Multi-Timeframe-Indikatoren dürfen keine inf-Werte produzieren."""
-        from fwbg.pipeline import compute_indicator_pool
-
-        result = compute_indicator_pool(
-            realistic_ohlc.copy(), indicators=["multi_timeframe"]
-        )
-
-        feature_cols = [
-            c
-            for c in result.columns
-            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
-        ]
-
-        for col in feature_cols:
-            inf_count = np.isinf(result[col]).sum()
-            assert inf_count == 0, f"multi_timeframe/{col} hat {inf_count} inf-Werte"
-
     def test_price_action_no_inf(self, realistic_ohlc):
         """Price-Action-Indikatoren dürfen keine inf-Werte produzieren."""
         from fwbg.pipeline import compute_indicator_pool
@@ -188,10 +138,10 @@ class TestIndicatorsNoInf:
             "supertrend",
             "momentum",
             "volatility",
-            "dynamics",
-            "ichimoku",
-            "multi_timeframe",
             "price_action",
+            "cci",
+            "zscore",
+            "efficiency_ratio",
         ]
 
         for indicator in all_indicators:

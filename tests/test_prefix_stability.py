@@ -25,8 +25,8 @@ from fwbg_sdk import DATA_LOADER_REGISTRY, INDICATOR_REGISTRY  # noqa: E402
 ROWS = 1600
 CUT = 1100
 # Meta-indicators read other indicators' (or macro) columns; they run inside a pool.
-POOL = ["volatility", "regime", "momentum"]
-META = ["market_regime", "adversarial_validation"]
+POOL = ["volatility", "momentum"]
+META = ["adversarial_validation"]
 MACRO = ["macro_vix", "macro_hyg", "macro_lqd", "macro_spx", "macro_tlt"]
 
 

@@ -286,11 +286,12 @@ class TestExitStrategies:
         """Test: get_exit_strategy gibt korrekte Klasse zurück."""
         from fwbg.core import get_exit_strategy
 
-        atr_strategy = get_exit_strategy("atr_based")
-        assert atr_strategy is not None
-
         fixed_strategy = get_exit_strategy("fixed")
         assert fixed_strategy is not None
+        assert fixed_strategy.name == "fixed"
+
+        structural_strategy = get_exit_strategy("structural_rr")
+        assert structural_strategy is not None
 
     def test_get_nonexistent_exit_strategy(self):
         """Test: get_exit_strategy mit unbekanntem Namen wirft ValueError."""

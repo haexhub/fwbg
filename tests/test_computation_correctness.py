@@ -10,7 +10,61 @@ WICHTIG: Jeder Test hat manuell berechnete/verifizierte Erwartungswerte.
 import numpy as np
 import pandas as pd
 import pytest
-from typing import List
+
+# =============================================================================
+# HELPER: minimal stateful preprocessor (no preprocessing plugin ships in core)
+# =============================================================================
+
+PREPROCESSOR_NAME = "test-pkg:demean_warmup"
+
+
+def _make_preprocessor_cls():
+    """Stateful preprocessor: drops warm-up rows and removes the fitted close mean."""
+    from fwbg_sdk import BasePlugin, PluginPhase
+
+    class DemeanWarmupPreprocessor(BasePlugin):
+        name = "demean_warmup"
+        version = "1.0.0"
+        phase = PluginPhase.PREPROCESSING
+        stateful = True
+
+        def __init__(self):
+            self.offset_ = None
+            self._fitted = False
+
+        def validate(self):
+            return True
+
+        def fit(self, ctx, warmup=10, **params):
+            self.offset_ = float(ctx.df["C"].mean())
+            self._fitted = True
+
+        def execute(self, ctx, warmup=10, **params):
+            if not self._fitted:
+                raise RuntimeError("fit() must be called before execute()")
+            df = ctx.df.iloc[warmup:].copy()
+            for col in ("O", "H", "L", "C"):
+                df[col] = df[col] - self.offset_
+            df.attrs["demean_offset"] = self.offset_
+            ctx.df = df
+            return ctx
+
+        @classmethod
+        def get_default_params(cls):
+            return {"warmup": 10}
+
+    return DemeanWarmupPreprocessor
+
+
+def _registry_with_preprocessor():
+    """Fresh registry with all discovered plugins plus the test preprocessor."""
+    from fwbg.pipeline.registry import PluginRegistry
+
+    registry = PluginRegistry()
+    registry.auto_discover()
+    registry.register(_make_preprocessor_cls(), "test-pkg")
+    return registry
+
 
 # =============================================================================
 # FIXTURES: Synthetische Testdaten mit bekannten Eigenschaften
@@ -147,77 +201,6 @@ def known_ema_df():
         {"O": close, "H": close + 1, "L": close - 1, "C": close, "V": [1000] * n},
         index=dates,
     )
-
-
-# =============================================================================
-# TEST: Fractional Differentiation
-# =============================================================================
-
-
-class TestFractionalDiffCorrectness:
-    """Tests für korrekte Fractional Differentiation Berechnung."""
-
-    def test_frac_diff_d0_preserves_values(self, constant_price_df):
-        """d=0 sollte Werte unverändert lassen."""
-        from fwbg.plugins import import_plugin_module
-        from fwbg_sdk import PipelineContext
-
-        mod = import_plugin_module("fwbg-premium", "preprocessing", "fractional_diff")
-        preprocessor = mod.FractionalDiffPreprocessor()
-
-        ctx = PipelineContext(
-            df=constant_price_df.copy(), symbol="TEST", asset_class="FOREX"
-        )
-        preprocessor.fit(ctx, auto_d=False, default_d=0.0)
-
-        # d=0 bedeutet keine Transformation
-        assert preprocessor.d_ == 0.0
-
-    def test_frac_diff_d1_approximates_diff(self, linear_uptrend_df):
-        """d=1 sollte ähnlich wie erste Differenz sein."""
-        from fwbg.plugins import import_plugin_module
-        from fwbg_sdk import PipelineContext
-
-        mod = import_plugin_module("fwbg-premium", "preprocessing", "fractional_diff")
-        preprocessor = mod.FractionalDiffPreprocessor()
-
-        ctx = PipelineContext(
-            df=linear_uptrend_df.copy(), symbol="TEST", asset_class="FOREX"
-        )
-        preprocessor.fit(ctx, auto_d=False, default_d=1.0)
-        result = preprocessor.execute(ctx)
-
-        # Bei d=1 und linearem Trend: Differenz sollte konstant ~1 sein
-        # (nicht exakt wegen Gewichtung, aber annähernd)
-        close_diff = result.df["C"].dropna()
-
-        # Die Differenzen sollten relativ konstant sein
-        std_diff = close_diff.std()
-        mean_diff = close_diff.mean()
-
-        # Coefficient of variation sollte klein sein (konstante Differenzen)
-        cv = std_diff / abs(mean_diff) if mean_diff != 0 else float("inf")
-        assert cv < 0.5, f"Differenzen nicht konstant genug: CV={cv}"
-
-    def test_frac_diff_reduces_rows(self, linear_uptrend_df):
-        """Frac diff sollte Warmup-Zeilen entfernen."""
-        from fwbg.plugins import import_plugin_module
-        from fwbg_sdk import PipelineContext
-
-        mod = import_plugin_module("fwbg-premium", "preprocessing", "fractional_diff")
-        preprocessor = mod.FractionalDiffPreprocessor()
-
-        original_len = len(linear_uptrend_df)
-        ctx = PipelineContext(
-            df=linear_uptrend_df.copy(), symbol="TEST", asset_class="FOREX"
-        )
-        preprocessor.fit(ctx, auto_d=False, default_d=0.4)
-        result = preprocessor.execute(ctx)
-
-        # Ergebnis sollte kürzer sein (Warmup entfernt)
-        assert len(result.df) < original_len
-        # Keine NaNs in OHLC
-        assert not result.df["C"].isna().any()
 
 
 # =============================================================================
@@ -531,7 +514,7 @@ class TestPipelineIntegration:
 
     def test_pipeline_with_preprocessing_reduces_rows(self):
         """Pipeline mit Preprocessing sollte Warmup-Zeilen entfernen."""
-        from fwbg.pipeline import get_registry, PipelineRunner, PipelineContext
+        from fwbg.pipeline import PipelineRunner, PipelineContext
         from fwbg.pipeline.config import PipelineConfig, PluginConfig
 
         # Größerer Datensatz damit nach Preprocessing genug übrig bleibt
@@ -549,16 +532,10 @@ class TestPipelineIntegration:
             index=dates,
         )
 
-        registry = get_registry()
-        registry.auto_discover()
+        registry = _registry_with_preprocessor()
 
         config = PipelineConfig(
-            preprocessing=[
-                PluginConfig(
-                    name="fwbg-premium:fractional_diff",
-                    params={"auto_d": False, "default_d": 0.4},
-                )
-            ],
+            preprocessing=[PluginConfig(name=PREPROCESSOR_NAME, params={"warmup": 40})],
             indicators=[
                 PluginConfig(name="fwbg-core:ema", params={}),
             ],
@@ -681,7 +658,7 @@ class TestFullPipelineCorrectness:
 
     def test_full_exploration_config_produces_features(self):
         """Exploration-Config sollte viele Features produzieren."""
-        from fwbg.pipeline import get_registry, PipelineRunner, PipelineContext
+        from fwbg.pipeline import PipelineRunner, PipelineContext
         from fwbg.pipeline.config import PipelineConfig, PluginConfig
 
         # Erstelle synthetische Testdaten (größer für Preprocessing + Indikatoren)
@@ -700,8 +677,7 @@ class TestFullPipelineCorrectness:
             index=dates,
         )
 
-        registry = get_registry()
-        registry.auto_discover()
+        registry = _registry_with_preprocessor()
 
         # Mapping: welche Plugins in welchem Package sind. 'trend' wurde in
         # einzelne Plugins aufgeteilt (ema, sma, adx, macd, supertrend, ...).
@@ -716,21 +692,16 @@ class TestFullPipelineCorrectness:
             "price_action",
             "time_season",
         ]
-        premium_indicators = ["regime", "distribution", "dynamics", "ichimoku"]
+        extra_core_indicators = ["cci", "zscore", "aroon", "efficiency_ratio"]
 
         indicators = []
         for name in core_indicators:
             indicators.append(PluginConfig(name=f"fwbg-core:{name}", params={}))
-        for name in premium_indicators:
-            indicators.append(PluginConfig(name=f"fwbg-premium:{name}", params={}))
+        for name in extra_core_indicators:
+            indicators.append(PluginConfig(name=f"fwbg-core:{name}", params={}))
 
         config = PipelineConfig(
-            preprocessing=[
-                PluginConfig(
-                    name="fwbg-premium:fractional_diff",
-                    params={"auto_d": False, "default_d": 0.4},
-                )
-            ],
+            preprocessing=[PluginConfig(name=PREPROCESSOR_NAME, params={"warmup": 40})],
             indicators=indicators,
         )
 
@@ -760,7 +731,7 @@ class TestFullPipelineCorrectness:
 
     def test_preprocessing_is_actually_applied(self):
         """Verifiziere dass Preprocessing die Daten tatsächlich transformiert."""
-        from fwbg.pipeline import get_registry, PipelineRunner, PipelineContext
+        from fwbg.pipeline import PipelineRunner, PipelineContext
         from fwbg.pipeline.config import PipelineConfig, PluginConfig
 
         # Synthetische Daten
@@ -778,16 +749,10 @@ class TestFullPipelineCorrectness:
             index=dates,
         )
 
-        registry = get_registry()
-        registry.auto_discover()
+        registry = _registry_with_preprocessor()
 
         config = PipelineConfig(
-            preprocessing=[
-                PluginConfig(
-                    name="fwbg-premium:fractional_diff",
-                    params={"auto_d": False, "default_d": 0.4},
-                )
-            ]
+            preprocessing=[PluginConfig(name=PREPROCESSOR_NAME, params={"warmup": 40})]
         )
 
         runner = PipelineRunner(registry, config)
@@ -802,13 +767,13 @@ class TestFullPipelineCorrectness:
         result_close = result.df["C"]
 
         # Die transformierten Werte sollten anders sein als die Originale
-        # (Bei frac_diff wird die Nicht-Stationarität entfernt)
+        # (der Preprocessor zieht den bei fit gelernten Mittelwert ab)
         assert not np.allclose(result_close.values[:10], original_close.values[:10]), (
             "Preprocessing sollte Werte transformieren"
         )
 
         # Der d-Wert sollte in den Attributen sein
-        assert result.df.attrs.get("frac_diff_d") == 0.4
+        assert result.df.attrs.get("demean_offset") == pytest.approx(df["C"].mean())
 
 
 # =============================================================================
@@ -893,7 +858,7 @@ class TestComputationsAreActuallyPerformed:
 
     def test_pipeline_runner_executes_all_phases(self):
         """Pipeline Runner muss alle konfigurierten Phasen durchlaufen."""
-        from fwbg.pipeline import get_registry, PipelineRunner, PipelineContext
+        from fwbg.pipeline import PipelineRunner, PipelineContext
         from fwbg.pipeline.config import PipelineConfig, PluginConfig
 
         n = 1000
@@ -911,16 +876,10 @@ class TestComputationsAreActuallyPerformed:
             index=dates,
         )
 
-        registry = get_registry()
-        registry.auto_discover()
+        registry = _registry_with_preprocessor()
 
         config = PipelineConfig(
-            preprocessing=[
-                PluginConfig(
-                    name="fwbg-premium:fractional_diff",
-                    params={"auto_d": False, "default_d": 0.4},
-                )
-            ],
+            preprocessing=[PluginConfig(name=PREPROCESSOR_NAME, params={"warmup": 40})],
             indicators=[
                 PluginConfig(name="fwbg-core:ema", params={}),
                 PluginConfig(name="fwbg-core:adx", params={"periods": [14]}),
@@ -1028,7 +987,6 @@ class TestComputationsAreActuallyPerformed:
 
     def test_stateful_preprocessor_remembers_fit_params(self):
         """Stateful Preprocessor muss fit-Parameter für execute merken."""
-        from fwbg.plugins import import_plugin_module
         from fwbg_sdk import PipelineContext
 
         n = 500
@@ -1045,18 +1003,28 @@ class TestComputationsAreActuallyPerformed:
             index=dates,
         )
 
-        mod = import_plugin_module("fwbg-premium", "preprocessing", "fractional_diff")
-        preprocessor = mod.FractionalDiffPreprocessor()
-
+        preprocessor = _make_preprocessor_cls()()
         ctx = PipelineContext(df=df.copy(), symbol="TEST", asset_class="FOREX")
 
-        # Fit mit d=0.3
-        preprocessor.fit(ctx, auto_d=False, default_d=0.3)
-        assert preprocessor.d_ == 0.3, "d_ sollte 0.3 sein"
+        # Execute vor fit muss scheitern
+        with pytest.raises(RuntimeError):
+            preprocessor.execute(ctx)
+
+        # Fit auf dem Trainingsfenster
+        preprocessor.fit(ctx)
+        expected_offset = df["C"].mean()
+        assert preprocessor.offset_ == pytest.approx(expected_offset)
         assert preprocessor._fitted is True, "Sollte als fitted markiert sein"
 
-        # Execute sollte das gemerkte d verwenden
-        result = preprocessor.execute(ctx)
-        assert result.df.attrs.get("frac_diff_d") == 0.3, (
-            "Execute sollte das bei fit gelernte d verwenden"
+        # Execute auf anderen Daten verwendet den gemerkten Offset, nicht neu berechnet
+        shifted = df.copy()
+        shifted[["O", "H", "L", "C"]] += 50.0
+        result = preprocessor.execute(
+            PipelineContext(df=shifted, symbol="TEST", asset_class="FOREX")
+        )
+        assert result.df.attrs.get("demean_offset") == pytest.approx(expected_offset), (
+            "Execute sollte den bei fit gelernten Offset verwenden"
+        )
+        assert result.df["C"].iloc[0] == pytest.approx(
+            shifted["C"].iloc[10] - expected_offset
         )

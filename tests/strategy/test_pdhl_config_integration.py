@@ -5,10 +5,8 @@ Guards against the recurring config/plugin bugs:
 2. timeout_bars must not leak (must be [None] for trailing stop)
 3. exit_modifier_params_grid must not contain disabled trailing
 4. SignalModel reads _composed_signal_{direction} columns (no hyperparameters)
-5. orb_based exit strategy dispatches trailing kernel when exit_modifier is set
-6. sl_dist_column flows from exit_params through to exit strategy
-7. Breakout detection uses native bars (not resampled) when resample_tf=None
-8. Retest signals fire outside session hours when session_mask is None
+5. Breakout detection uses native bars (not resampled) when resample_tf=None
+6. Retest signals fire outside session hours when session_mask is None
 
 Since the GridConfig removal, all grid params live in:
 - exit_params (tp_mult, sl_mult, timeout_bars, etc.)
@@ -71,13 +69,8 @@ def _minimal_ctx(**overrides) -> SimulationContext:
         min_trades=1,
         long_enabled=True,
         short_enabled=True,
-        exit_strategy="orb_based",
-        exit_params={
-            "atr_period": 14,
-            "min_tp_pips": 8,
-            "min_sl_pips": 12,
-            "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-        },
+        exit_strategy="fixed",
+        exit_params={},
         model_type="signal",
         model_hyperparameters={},
     )
@@ -507,131 +500,6 @@ class TestOvernightSignals:
 
 
 # ===========================================================================
-# Test Class 5: Exit Strategy Dispatch
-# ===========================================================================
-
-
-class TestOrbBasedTrailingDispatch:
-    """Verify orb_based exit strategy uses trailing kernel when configured."""
-
-    def _get_orb_strategy(self):
-        """Import and instantiate the OrbExitStrategy."""
-        try:
-            mod = import_plugin_module("fwbg-premium", "exit_strategies", "orb_based")
-            if mod is None:
-                pytest.skip("fwbg-premium exit_strategies not available")
-            return mod.OrbExitStrategy()
-        except Exception:
-            pytest.skip("OrbExitStrategy not available")
-
-    def test_trailing_dispatch_with_modifier(self):
-        """With exit_modifier='trailing_stop', compute_targets should use trailing kernel."""
-        strategy = self._get_orb_strategy()
-        df = _make_pdhl_bull_15min()
-
-        # Add minimal indicator columns
-        df["vol_atr"] = 5.0
-        df["hl_ses_rl50_pdl_sl_dist"] = 10.0
-
-        ctx = _minimal_ctx(
-            exit_modifier="trailing_stop",
-            exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
-        )
-
-        # Should not raise (uses trailing kernel)
-        targets_long, targets_short = strategy.compute_targets(
-            df, ctx, tp_mult=4.0, sl_mult=1.0
-        )
-        assert len(targets_long) == len(df)
-        assert len(targets_short) == len(df)
-
-    def test_no_trailing_without_modifier(self):
-        """Without exit_modifier, should use standard kernel (no trailing)."""
-        strategy = self._get_orb_strategy()
-        df = _make_pdhl_bull_15min()
-        df["vol_atr"] = 5.0
-        df["hl_ses_rl50_pdl_sl_dist"] = 10.0
-
-        ctx = _minimal_ctx(exit_modifier=None, exit_modifier_params={})
-        targets_long, targets_short = strategy.compute_targets(
-            df, ctx, tp_mult=4.0, sl_mult=1.0
-        )
-        assert len(targets_long) == len(df)
-
-    def test_modifier_params_affect_results(self):
-        """Different trail_atr_mult values should produce different target arrays."""
-        strategy = self._get_orb_strategy()
-        df = _make_pdhl_bull_15min()
-        df["vol_atr"] = 5.0
-        df["hl_ses_rl50_pdl_sl_dist"] = 10.0
-
-        ctx_tight = _minimal_ctx(
-            exit_modifier="trailing_stop",
-            exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-        )
-        ctx_wide = _minimal_ctx(
-            exit_modifier="trailing_stop",
-            exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 1.0},
-        )
-
-        targets_tight, _ = strategy.compute_targets(
-            df, ctx_tight, tp_mult=4.0, sl_mult=1.0
-        )
-        targets_wide, _ = strategy.compute_targets(
-            df, ctx_wide, tp_mult=4.0, sl_mult=1.0
-        )
-
-        # Both code paths should run without error
-        assert targets_tight is not None
-        assert targets_wide is not None
-
-
-class TestSlDistColumnFlow:
-    """sl_dist_column from exit_params flows to exit strategy."""
-
-    def _get_orb_strategy(self):
-        try:
-            mod = import_plugin_module("fwbg-premium", "exit_strategies", "orb_based")
-            if mod is None:
-                pytest.skip("fwbg-premium exit_strategies not available")
-            return mod.OrbExitStrategy()
-        except Exception:
-            pytest.skip("OrbExitStrategy not available")
-
-    def test_sl_dist_column_from_exit_params(self):
-        """Different sl_dist_column in exit_params produces different SL distances."""
-        strategy = self._get_orb_strategy()
-        df = _make_pdhl_bull_15min()
-        df["vol_atr"] = 5.0
-        df["hl_ses_rl50_pdl_sl_dist"] = 10.0
-        df["hl_ses_rl38_pdl_sl_dist"] = 15.0
-
-        ctx_rl50 = _minimal_ctx(
-            exit_params={
-                "atr_period": 14,
-                "min_tp_pips": 8,
-                "min_sl_pips": 12,
-                "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
-            },
-        )
-        ctx_rl38 = _minimal_ctx(
-            exit_params={
-                "atr_period": 14,
-                "min_tp_pips": 8,
-                "min_sl_pips": 12,
-                "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
-            },
-        )
-
-        tp50, sl50 = strategy.resolve_distances(df, 4.0, 1.0, ctx_rl50)
-        tp38, sl38 = strategy.resolve_distances(df, 4.0, 1.0, ctx_rl38)
-
-        assert not np.allclose(sl50, sl38), (
-            "SL distances should differ for different sl_dist_columns"
-        )
-
-
-# ===========================================================================
 # Test Class 6: Grid Combo Creation
 # ===========================================================================
 
@@ -691,15 +559,7 @@ class TestGridComboCreation:
 class TestFullPipelineIntegration:
     """End-to-end: indicator -> SignalModel -> trade simulation."""
 
-    def _run_pipeline(
-        self,
-        df,
-        composed_source_long,
-        composed_source_short,
-        sl_dist_col,
-        exit_modifier=None,
-        exit_modifier_params=None,
-    ):
+    def _run_pipeline(self, df, composed_source_long, composed_source_short):
         """Run full indicator -> signal model -> trade simulation pipeline.
 
         composed_source_long/short: indicator column names that become
@@ -741,16 +601,7 @@ class TestFullPipelineIntegration:
         long_win_idx = np.where(model_long.trained_classes == 1)[0][0]
         short_win_idx = np.where(model_short.trained_classes == 1)[0][0]
 
-        ctx = _minimal_ctx(
-            exit_modifier=exit_modifier,
-            exit_modifier_params=exit_modifier_params or {},
-            exit_params={
-                "atr_period": 14,
-                "min_tp_pips": 8,
-                "min_sl_pips": 12,
-                "sl_dist_column": sl_dist_col,
-            },
-        )
+        ctx = _minimal_ctx()
 
         return _simulate_trades_core(
             df=df_feat,
@@ -773,7 +624,6 @@ class TestFullPipelineIntegration:
             df,
             composed_source_long="hl_ses_rl50_pdl_retest_bull",
             composed_source_short="hl_ses_rl50_pdl_retest_bear",
-            sl_dist_col="hl_ses_rl50_pdl_sl_dist",
         )
 
         long_trades = [t for t in trades if t["direction"] == "LONG"]
@@ -789,7 +639,6 @@ class TestFullPipelineIntegration:
             df,
             composed_source_long="hl_all_rl50_pdl_retest_bull",
             composed_source_short="hl_all_rl50_pdl_retest_bear",
-            sl_dist_col="hl_all_rl50_pdl_sl_dist",
         )
 
         long_trades = [t for t in trades if t["direction"] == "LONG"]
@@ -808,35 +657,7 @@ class TestFullPipelineIntegration:
             df,
             composed_source_long="hl_all_rl50_pdl_retest_bull",
             composed_source_short="hl_all_rl50_pdl_retest_bear",
-            sl_dist_col="hl_all_rl50_pdl_sl_dist",
         )
 
         # With no hour filter, overnight signals should pass through
         assert trades is not None
-
-    def test_trailing_stop_produces_different_results_than_fixed(self):
-        """Trailing stop should produce different outcomes than fixed TP/SL."""
-        df = _make_pdhl_bull_15min()
-
-        trades_fixed = self._run_pipeline(
-            df,
-            composed_source_long="hl_ses_rl50_pdl_retest_bull",
-            composed_source_short="hl_ses_rl50_pdl_retest_bear",
-            sl_dist_col="hl_ses_rl50_pdl_sl_dist",
-            exit_modifier=None,
-        )
-
-        trades_trail = self._run_pipeline(
-            df,
-            composed_source_long="hl_ses_rl50_pdl_retest_bull",
-            composed_source_short="hl_ses_rl50_pdl_retest_bear",
-            sl_dist_col="hl_ses_rl50_pdl_sl_dist",
-            exit_modifier="trailing_stop",
-            exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 0.3},
-        )
-
-        # Both should produce trades (the signal is the same)
-        # The exit results may differ due to trailing
-        # This is a basic smoke test -- the important thing is both code paths run
-        assert trades_fixed is not None
-        assert trades_trail is not None

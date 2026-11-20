@@ -1,11 +1,8 @@
 """Columns an exit reads by name stay in the fold frame without becoming model features."""
 
-from dataclasses import replace
-
 import numpy as np
 import pandas as pd
 import pytest
-import ta
 
 from fwbg.core.config import StrategyConfig
 from fwbg.core.context import SimulationContext
@@ -14,11 +11,6 @@ from fwbg.optimization import process_fold
 from fwbg.optimization.process_fold import prepare_fold_data, process_single_fold
 from fwbg.optimization.robust_validation import WalkForwardFold
 from fwbg.optimization.signal_fold import prepare_signal_fold_data
-from fwbg.plugins import import_plugin_module
-
-pytest.importorskip(
-    "fwbg_premium", reason="orb_based exit strategy is a premium plugin"
-)
 
 ASSET = AssetConfig(
     symbol="EURUSD",
@@ -37,7 +29,7 @@ def _context(
             "model": {"type": "xgboost", "required_features": list(required)},
             "exit_strategies": [
                 {
-                    "name": "orb_based",
+                    "name": "fixed",
                     "params": {"tp_mult": 1.0, "sl_mult": 2.0, **exit_params},
                 }
             ],
@@ -107,12 +99,6 @@ def test_a_stop_column_pattern_survives_the_fold_clean_up():
     assert "hl_ses_rl50_pdl_sl_dist" not in columns
 
 
-def _orb_exit():
-    return import_plugin_module(
-        "fwbg-premium", "exit_strategies", "orb_based"
-    ).OrbExitStrategy()
-
-
 def _signal_context(exit_params: dict) -> SimulationContext:
     strategy = StrategyConfig.from_dict(
         {
@@ -120,7 +106,7 @@ def _signal_context(exit_params: dict) -> SimulationContext:
             "filters": {"allowed_hours": list(range(24))},
             "exit_strategies": [
                 {
-                    "name": "orb_based",
+                    "name": "fixed",
                     "params": {"tp_mult": 1.0, "sl_mult": 2.0, **exit_params},
                 }
             ],
@@ -159,22 +145,6 @@ def test_signal_folds_do_not_zero_fill_a_named_level_column():
     level = test_df["rb8_orb_s00_or_low"]
     assert level.isna().any()
     assert not (level == 0).any()
-
-
-def test_signal_fold_nan_stop_rows_fall_back_to_atr():
-    ctx = _signal_context({"sl_dist_column": "rb8_orb_s00_sl_dist", "min_sl_pips": 1})
-    fold = _sparse_fold("rb8_orb_s00_sl_dist", 0.004)
-    _, test_df = _signal_fold_frames(fold, ctx)
-    exit_ctx = replace(
-        ctx, exit_strategy="orb_based", exit_params=ctx.exit_strategies[0].params
-    )
-    _, sl_dists = _orb_exit().resolve_distances(test_df, 1.0, 2.0, exit_ctx)
-    nan_rows = fold.test_df["rb8_orb_s00_sl_dist"].isna().to_numpy()
-    atr = ta.volatility.average_true_range(
-        test_df["H"], test_df["L"], test_df["C"], window=14
-    )
-    expected = np.maximum(np.nan_to_num(atr.to_numpy()) * 2.0, ctx.spread)
-    np.testing.assert_allclose(sl_dists[nan_rows], expected[nan_rows])
 
 
 def test_a_fold_without_selected_features_is_skipped_not_trained_on_the_stop(

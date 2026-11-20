@@ -7,8 +7,7 @@ Covers:
 3. BaseDataLoader plugin base class
 4. DataLoader registry (register/get/list)
 5. Orchestrator run_data_loading()
-6. MacroDataLoader plugin computation
-7. StrategyConfig.get_data_loading()
+6. StrategyConfig.get_data_loading()
 """
 
 import numpy as np
@@ -293,6 +292,17 @@ class TestRunDataLoading:
         )
         result = run_data_loading(df, [])
         pd.testing.assert_frame_equal(result, df)
+
+    def test_unavailable_loader_plugin_fails_with_plugin_name(self):
+        """A configured loader that cannot be resolved raises instead of being skipped."""
+        from fwbg.data.loader import run_data_loading
+
+        df = pd.DataFrame(
+            {"O": [1.0, 2.0], "C": [1.1, 2.1]},
+            index=pd.date_range("2024-01-01", periods=2, freq="h"),
+        )
+        with pytest.raises(ValueError, match="absent-pkg:macro_loader"):
+            run_data_loading(df, [{"name": "absent-pkg:macro_loader", "params": {}}])
 
     def test_csv_source_loads_and_aligns(self, tmp_path):
         from fwbg.data.loader import run_data_loading
@@ -598,137 +608,6 @@ class TestRunDataLoading:
 # ============================================================================
 # Step 7: StrategyConfig.get_data_loading()
 # ============================================================================
-
-# ============================================================================
-# Step 6: MacroDataLoader Plugin
-# ============================================================================
-
-
-class TestMacroDataLoader:
-    """MacroDataLoader computes lookbacks, derived features, and rate diffs."""
-
-    @pytest.fixture
-    def macro_df(self):
-        """DataFrame with macro base columns (as loaded by orchestrator)."""
-        n = 100
-        index = pd.date_range("2024-01-01", periods=n, freq="h")
-        return pd.DataFrame(
-            {
-                "O": np.full(n, 1.0),
-                "H": np.full(n, 1.01),
-                "L": np.full(n, 0.99),
-                "C": np.full(n, 1.0),
-                "macro_vix": np.linspace(15, 25, n),
-                "macro_vvix": np.linspace(90, 110, n),
-                "macro_tnx": np.linspace(3.5, 4.5, n),
-                "macro_irx": np.full(n, 1.5),
-                "macro_fvx": np.full(n, 3.0),
-                "macro_spx": np.linspace(4900, 5100, n),
-                "macro_tlt": np.full(n, 100.0),
-                "macro_hyg": np.full(n, 80.0),
-                "macro_lqd": np.full(n, 110.0),
-                "macro_russell": np.full(n, 2000.0),
-                "macro_xlk": np.full(n, 200.0),
-                "macro_xlu": np.full(n, 70.0),
-            },
-            index=index,
-        )
-
-    def test_plugin_registered(self):
-        from fwbg.plugins import import_plugin_module
-
-        import_plugin_module("fwbg-premium", "data_loading", "macro_data")
-        from fwbg.core.registry import DATA_LOADER_REGISTRY
-
-        assert "macro_data" in DATA_LOADER_REGISTRY
-
-    def test_hourly_lookbacks(self, macro_df):
-        from fwbg.plugins import import_plugin_module
-
-        import_plugin_module("fwbg-premium", "data_loading", "macro_data")
-        from fwbg.core.registry import get_data_loader
-        from fwbg_sdk import PipelineContext
-
-        ctx = PipelineContext(df=macro_df.copy(), symbol="TEST", asset_class="FOREX")
-        loader = get_data_loader("macro_data")()
-        result = loader.execute(ctx, lookbacks_hours=[1, 4])
-
-        assert "macro_vix_chg_1h" in result.df.columns
-        assert "macro_vix_chg_4h" in result.df.columns
-
-    def test_daily_lookbacks(self, macro_df):
-        from fwbg.plugins import import_plugin_module
-
-        import_plugin_module("fwbg-premium", "data_loading", "macro_data")
-        from fwbg.core.registry import get_data_loader
-        from fwbg_sdk import PipelineContext
-
-        ctx = PipelineContext(df=macro_df.copy(), symbol="TEST", asset_class="FOREX")
-        loader = get_data_loader("macro_data")()
-        result = loader.execute(ctx, lookbacks_days=[2])
-
-        assert "macro_vix_chg_2d" in result.df.columns
-
-    def test_derived_features(self, macro_df):
-        from fwbg.plugins import import_plugin_module
-
-        import_plugin_module("fwbg-premium", "data_loading", "macro_data")
-        from fwbg.core.registry import get_data_loader
-        from fwbg_sdk import PipelineContext
-
-        ctx = PipelineContext(df=macro_df.copy(), symbol="TEST", asset_class="FOREX")
-        loader = get_data_loader("macro_data")()
-        result = loader.execute(ctx)
-
-        assert "macro_yield_curve_10y_3m" in result.df.columns
-        assert "macro_vix_vvix_ratio" in result.df.columns
-        # Verify computation
-        expected_yc = macro_df["macro_tnx"] - macro_df["macro_irx"]
-        np.testing.assert_allclose(
-            result.df["macro_yield_curve_10y_3m"].values,
-            expected_yc.values,
-        )
-
-    def test_empty_df_no_error(self):
-        from fwbg.plugins import import_plugin_module
-
-        import_plugin_module("fwbg-premium", "data_loading", "macro_data")
-        from fwbg.core.registry import get_data_loader
-        from fwbg_sdk import PipelineContext
-
-        df = pd.DataFrame({"O": [1.0], "C": [2.0]})
-        ctx = PipelineContext(df=df, symbol="TEST", asset_class="FOREX")
-        loader = get_data_loader("macro_data")()
-        result = loader.execute(ctx)
-        assert isinstance(result.df, pd.DataFrame)
-
-    def test_default_params(self):
-        from fwbg.plugins import import_plugin_module
-
-        import_plugin_module("fwbg-premium", "data_loading", "macro_data")
-        from fwbg.core.registry import get_data_loader
-
-        loader = get_data_loader("macro_data")()
-        defaults = loader.get_default_params()
-        assert "lookbacks_hours" in defaults
-        assert "lookbacks_days" in defaults
-        assert "derived_features" in defaults
-        assert "interest_rates" in defaults
-
-    def test_custom_lookbacks(self, macro_df):
-        from fwbg.plugins import import_plugin_module
-
-        import_plugin_module("fwbg-premium", "data_loading", "macro_data")
-        from fwbg.core.registry import get_data_loader
-        from fwbg_sdk import PipelineContext
-
-        ctx = PipelineContext(df=macro_df.copy(), symbol="TEST", asset_class="FOREX")
-        loader = get_data_loader("macro_data")()
-        result = loader.execute(ctx, lookbacks_hours=[2], lookbacks_days=[])
-
-        assert "macro_vix_chg_2h" in result.df.columns
-        # No daily lookbacks
-        assert "macro_vix_chg_2d" not in result.df.columns
 
 
 class TestStrategyConfigDataLoading:

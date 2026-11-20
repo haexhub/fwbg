@@ -69,7 +69,7 @@ class TestPipelineConfig:
                     {"name": "rsi", "params": {"window": 14}},
                 ],
                 "feature_selection": [
-                    {"name": "correlation_filter", "params": {"threshold": 0.9}}
+                    {"name": "variance_filter", "params": {"threshold": 0.9}}
                 ],
                 "labeling": [{"name": "binary_labeler", "params": {"horizon": 5}}],
                 "model": [
@@ -97,10 +97,7 @@ class TestPipelineConfig:
         assert config.indicators[1].name in ("rsi", "fwbg-core:rsi")
 
         assert len(config.feature_selection) == 1
-        assert config.feature_selection[0].name in (
-            "correlation_filter",
-            "fwbg-premium:correlation_filter",
-        )
+        assert config.feature_selection[0].name == "variance_filter"
 
         assert len(config.labeling) == 1
         assert config.labeling[0].name == "binary_labeler"

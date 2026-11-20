@@ -97,9 +97,6 @@ def _build_exit_strategies(
             for timeout_val in effective_timeout:
                 for mod_params in effective_modifiers:
                     params = {
-                        "atr_period": 14,
-                        "min_tp_pips": 0,
-                        "min_sl_pips": 0,
                         "tp_mult": tp_val,
                         "sl_mult": sl_val,
                     }
@@ -114,7 +111,7 @@ def _build_exit_strategies(
 
                     strategies.append(
                         ExitStrategyConfig(
-                            name="atr_based",
+                            name="fixed",
                             params=params,
                             ct=ct,
                             exit_modifier=exit_modifier,
@@ -158,11 +155,13 @@ def _make_ctx(
     return SimulationContext(
         symbol="TEST",
         asset_class="INDEX",
-        spread=1.0,
+        # The fixed exit places TP/SL at multiples of the spread: 15 index points
+        # keep the grid's multipliers at a realistic distance for ~15000-level bars.
+        spread=15.0,
         point=1.0,
         exit_strategies=exit_strategies,
-        exit_strategy="atr_based",
-        exit_params={"atr_period": 14, "min_tp_pips": 0, "min_sl_pips": 0},
+        exit_strategy="fixed",
+        exit_params={},
         model_type="xgboost",
         min_trades=1,
         # Permissive validation: synthetische Daten haben kein echtes Signal
@@ -464,7 +463,7 @@ class TestGridSearchCoverage:
         grid_results enthält nur überlebende Kombos — ohne Pruning alle.
         """
         tp = [2.0, 3.0]
-        sl = [1.5]
+        sl = [3.0]  # 1.5 spreads is tighter than the bar noise: no fold trades
 
         _, grid_results, n_combos = self._run_small_grid_search(
             tp=tp,
@@ -485,7 +484,7 @@ class TestGridSearchCoverage:
         eliminiert sie aber nicht komplett. keep_ratio=0.5, min_survivors=1.
         """
         tp = [2.0, 3.0, 4.0, 5.0]
-        sl = [1.5]
+        sl = [3.0]
 
         _, grid_results_no_pruning, n_combos = self._run_small_grid_search(
             tp=tp,

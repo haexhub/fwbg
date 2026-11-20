@@ -662,58 +662,6 @@ class TestDynamicsFeatures:
         )
 
 
-class TestCrossIndicatorFeatures:
-    """Tests für Cross-Indikator Features."""
-
-    def test_cross_rsi_high_rising_is_binary(self):
-        """Cross RSI high+rising Feature sollte binär (0 oder 1) sein."""
-        n = 200
-        np.random.seed(42)
-        close = 100 * np.exp(np.cumsum(np.random.randn(n) * 0.01))
-        df = create_ohlc(close)
-        result = compute_indicator_pool(df)
-
-        cross_feature = result["cross_rsi_high_rising"].dropna()
-        # Should only contain 0 or 1
-        unique_values = set(cross_feature.unique())
-        assert unique_values.issubset({0, 1}), f"Expected only 0/1, got {unique_values}"
-
-
-# === MULTI-TIMEFRAME FEATURES ===
-
-
-class TestMultiTimeframeFeatures:
-    """Tests für Multi-Timeframe Features."""
-
-    def test_h4_trend_positive_in_uptrend(self):
-        """H4 Trend sollte positiv im Aufwärtstrend sein."""
-        n = 200
-        close = np.linspace(100, 150, n)
-        df = create_ohlc(close)
-        result = compute_indicator_pool(df)
-
-        h4_trend = result["mtf_h4_trend"].dropna()
-        assert h4_trend.iloc[-50:].mean() > 0, "H4 trend should be positive in uptrend"
-
-    def test_trend_alignment_1_when_all_timeframes_agree(self):
-        """Trend Alignment sollte hoch sein wenn Timeframes übereinstimmen."""
-        n = 600  # Genug für D1 EMA
-        close = np.linspace(100, 200, n)
-        df = create_ohlc(close)
-        result = compute_indicator_pool(df)
-
-        # Feature wurde umbenannt zu mtf_trend_alignment_h1h4 und mtf_trend_alignment_h4d1
-        alignment_h1h4 = result["mtf_trend_alignment_h1h4"].dropna()
-        alignment_h4d1 = result["mtf_trend_alignment_h4d1"].dropna()
-        # Im klaren Aufwärtstrend sollten Timeframes übereinstimmen
-        assert alignment_h1h4.iloc[-50:].mean() > 0.5, (
-            "H1/H4 alignment should be high in clear trend"
-        )
-        assert alignment_h4d1.iloc[-50:].mean() > 0.5, (
-            "H4/D1 alignment should be high in clear trend"
-        )
-
-
 # === INTEGRATION TESTS ===
 
 

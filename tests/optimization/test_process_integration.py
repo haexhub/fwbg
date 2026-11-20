@@ -151,65 +151,6 @@ class TestSimulationContextAttributes:
 class TestExitStrategyDispatch:
     """Testet die Exit-Strategy Dispatch-Logik in nested_cv."""
 
-    def test_atr_based_strategy_dispatch(self):
-        """Test: ATR-basierte Strategie wird korrekt aufgerufen."""
-        from fwbg.core import get_exit_strategy
-        from fwbg.core.context import SimulationContext
-
-        # Strategie laden
-        exit_strategy_class = get_exit_strategy("atr_based")
-        exit_strategy = exit_strategy_class()
-
-        # Mock-Context
-        ctx = SimulationContext(
-            symbol="TEST",
-            asset_class="FOREX",
-            spread=0.0002,
-            point=0.0001,
-            exit_params={"atr_period": 14},
-        )
-
-        # Test-DataFrame
-        df = create_test_df(500)
-
-        # compute_targets sollte nicht crashen
-        targets_long, targets_short = exit_strategy.compute_targets(
-            df,
-            ctx,
-            tp_mult=2.0,
-            sl_mult=1.5,
-            atr_period=14,
-            min_tp_pips=10,
-            min_sl_pips=15,
-        )
-
-        assert len(targets_long) == len(df)
-        assert len(targets_short) == len(df)
-        assert set(np.unique(targets_long)).issubset({0.0, 1.0})
-
-    def test_compute_targets_cached_with_atr(self):
-        """Test: compute_targets_cached funktioniert mit ATR-Strategie."""
-        from fwbg.optimization.targets import compute_targets_cached
-        from fwbg.core.context import SimulationContext
-
-        ctx = SimulationContext(
-            symbol="TEST",
-            asset_class="FOREX",
-            spread=0.0002,
-            point=0.0001,
-            exit_params={"atr_period": 14, "min_tp_pips": 10, "min_sl_pips": 15},
-        )
-
-        df = create_test_df(500)
-
-        # Sollte nicht crashen (war der ursprüngliche Bug)
-        targets_l, targets_s = compute_targets_cached(
-            df, tp=2.0, sl=1.5, ctx=ctx, exit_strategy_mode="atr_based"
-        )
-
-        assert len(targets_l) == len(df)
-        assert len(targets_s) == len(df)
-
     def test_fixed_strategy_dispatch(self):
         """Test: Fixed-Strategie funktioniert weiterhin."""
         from fwbg.optimization.targets import compute_targets_cached

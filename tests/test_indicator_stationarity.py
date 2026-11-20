@@ -29,25 +29,17 @@ def test_stationary_indicators_correct():
     indicators = registry.list_plugins(phase=PluginPhase.INDICATORS)
 
     expected_true = {
-        "trend",
-        "structure",
+        "ema",
+        "sma",
+        "adx",
+        "macd",
+        "supertrend",
         "price_action",
-        "ichimoku",
-        "multi_timeframe",
+        "cci",
+        "aroon",
+        "efficiency_ratio",
     }
-    expected_false = {
-        "momentum",
-        "volatility",
-        "regime",
-        "risk",
-        "time_season",
-        "distribution",
-        "dynamics",
-        "cross_features",
-        "microstructure",
-        "macro_surprise",
-        "support_resistance",
-    }
+    expected_false = {"momentum", "volatility", "time_season", "zscore"}
 
     for fqn in indicators:
         plugin_cls = registry.get(fqn)
@@ -64,10 +56,10 @@ def test_split_indicators_by_stationarity():
     from fwbg.pipeline.features import split_indicators_by_stationarity
 
     indicators = [
-        {"name": "trend", "params": {"adx_periods": [14]}},
+        {"name": "ema", "params": {}},
         {"name": "momentum", "params": {"rsi_periods": [14]}},
-        {"name": "ichimoku", "params": {}},
-        {"name": "regime", "params": {}},
+        {"name": "cci", "params": {}},
+        {"name": "volatility", "params": {}},
     ]
 
     stationary, raw = split_indicators_by_stationarity(indicators)
@@ -75,10 +67,10 @@ def test_split_indicators_by_stationarity():
     stat_names = [i["name"] for i in stationary]
     raw_names = [i["name"] for i in raw]
 
-    assert "trend" in stat_names
-    assert "ichimoku" in stat_names
+    assert "ema" in stat_names
+    assert "cci" in stat_names
     assert "momentum" in raw_names
-    assert "regime" in raw_names
+    assert "volatility" in raw_names
 
 
 def test_split_no_preprocessing_all_raw():

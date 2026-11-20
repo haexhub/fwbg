@@ -93,7 +93,7 @@ def registry():
 
 class TestShortName:
     def test_fq_name(self):
-        assert _short_name("fwbg-premium:regime") == "regime"
+        assert _short_name("external-pkg:regime") == "regime"
 
     def test_already_short(self):
         assert _short_name("regime") == "regime"
