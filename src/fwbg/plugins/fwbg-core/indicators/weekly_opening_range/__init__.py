@@ -19,6 +19,7 @@ Unterschied zu Opening Range (ORB):
 
 Timeframe-Kompatibilität: Intraday (M1-H4). Auf DAY-Bars oder WEEK-Bars → NaN.
 """
+
 from typing import Dict, List, Union
 
 import numpy as np
@@ -80,14 +81,20 @@ def _weekly_orb_features(
     valid = bar_in_week >= range_bars
 
     features["wor_range"] = safe_divide(or_range, df["C"]).where(valid, np.nan)
-    features["wor_position"] = safe_divide(df["C"] - or_low, or_range).where(valid, np.nan)
+    features["wor_position"] = safe_divide(df["C"] - or_low, or_range).where(
+        valid, np.nan
+    )
     features["wor_breakout_up"] = (df["C"] > or_high).astype(int).where(valid, np.nan)
     features["wor_breakout_down"] = (df["C"] < or_low).astype(int).where(valid, np.nan)
     features["wor_range_vs_atr"] = safe_divide(or_range, atr).where(valid, np.nan)
 
     # Distance from WOR High/Low (signed, ATR-normalized)
-    features["wor_dist_to_high"] = safe_divide(or_high - df["C"], atr).where(valid, np.nan)
-    features["wor_dist_to_low"] = safe_divide(df["C"] - or_low, atr).where(valid, np.nan)
+    features["wor_dist_to_high"] = safe_divide(or_high - df["C"], atr).where(
+        valid, np.nan
+    )
+    features["wor_dist_to_low"] = safe_divide(df["C"] - or_low, atr).where(
+        valid, np.nan
+    )
 
     # SL distance for orb_based exit strategy.
     # Entry near WOR boundary (retest zone), SL at opposite boundary.
@@ -120,16 +127,20 @@ def _weekly_stat_features(
     # Aggregate one value per week (the first bar's range)
     # Using shift to get previous week's stats (no lookahead)
     _unique_weeks = week_id.drop_duplicates().sort_values()
-    week_range_map = (
-        or_range_first.where(bar_in_week == 0)
-        .groupby(week_id)
-        .first()
-    )
+    week_range_map = or_range_first.where(bar_in_week == 0).groupby(week_id).first()
     week_range_map.index = week_range_map.index.astype(np.int64)
 
     # Rolling stats over last stat_window weeks (shifted by 1 to exclude current week)
-    week_range_rolling_avg = week_range_map.rolling(stat_window, min_periods=max(1, stat_window // 2)).mean().shift(1)
-    week_range_rolling_std = week_range_map.rolling(stat_window, min_periods=max(1, stat_window // 2)).std().shift(1)
+    week_range_rolling_avg = (
+        week_range_map.rolling(stat_window, min_periods=max(1, stat_window // 2))
+        .mean()
+        .shift(1)
+    )
+    week_range_rolling_std = (
+        week_range_map.rolling(stat_window, min_periods=max(1, stat_window // 2))
+        .std()
+        .shift(1)
+    )
 
     avg_map = week_range_rolling_avg.to_dict()
     _std_map = week_range_rolling_std.to_dict()
@@ -145,23 +156,32 @@ def _weekly_stat_features(
     # Breakout rate: fraction of past weeks where price broke out of WOR
     or_high_week = df["H"].where(bar_in_week == 0).groupby(week_id).transform("max")
     or_low_week = df["L"].where(bar_in_week == 0).groupby(week_id).transform("min")
-    _broke_out = ((df["H"].max() > or_high_week) | (df["L"].min() < or_low_week)).astype(float)
+    _broke_out = (
+        (df["H"].max() > or_high_week) | (df["L"].min() < or_low_week)
+    ).astype(float)
 
     # Per-week breakout flag (any bar in week broke out of first-bar range)
     week_breakout = (
-        (df["C"].where(bar_in_week > 0) > or_high_week)
-        | (df["C"].where(bar_in_week > 0) < or_low_week)
-    ).groupby(week_id).transform("any").astype(float)
-
-    week_breakout_map = (
-        week_breakout.where(bar_in_week == 0)
+        (
+            (df["C"].where(bar_in_week > 0) > or_high_week)
+            | (df["C"].where(bar_in_week > 0) < or_low_week)
+        )
         .groupby(week_id)
-        .first()
+        .transform("any")
+        .astype(float)
     )
+
+    week_breakout_map = week_breakout.where(bar_in_week == 0).groupby(week_id).first()
     week_breakout_map.index = week_breakout_map.index.astype(np.int64)
-    breakout_rate = week_breakout_map.rolling(stat_window, min_periods=max(1, stat_window // 2)).mean().shift(1)
+    breakout_rate = (
+        week_breakout_map.rolling(stat_window, min_periods=max(1, stat_window // 2))
+        .mean()
+        .shift(1)
+    )
     breakout_rate_map = breakout_rate.to_dict()
-    features["wor_stat_breakout_rate"] = week_id.map(breakout_rate_map).where(valid, np.nan)
+    features["wor_stat_breakout_rate"] = week_id.map(breakout_rate_map).where(
+        valid, np.nan
+    )
 
     return features
 
@@ -250,17 +270,27 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
             return self._feature_columns
         rb_list = self._resolve_range_bars(params)
         base_feats = [
-            "range", "position", "breakout_up", "breakout_down",
-            "range_vs_atr", "dist_to_high", "dist_to_low", "sl_dist",
+            "range",
+            "position",
+            "breakout_up",
+            "breakout_down",
+            "range_vs_atr",
+            "dist_to_high",
+            "dist_to_low",
+            "sl_dist",
         ]
         cols = []
         for rb in rb_list:
             cols.extend(wor_col(rb, f) for f in base_feats)
         p = params if params else self.get_default_params()
         if p.get("enable_stats", True):
-            cols.extend([
-                "wor_stat_avg_range", "wor_stat_range_vs_avg", "wor_stat_breakout_rate",
-            ])
+            cols.extend(
+                [
+                    "wor_stat_avg_range",
+                    "wor_stat_range_vs_avg",
+                    "wor_stat_breakout_rate",
+                ]
+            )
         return cols
 
     def get_signal_columns(self, params=None) -> List[str]:
@@ -269,9 +299,12 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
         rb_list = self._resolve_range_bars(params)
         signals = []
         for rb in rb_list:
-            signals.extend([
-                wor_col(rb, "breakout_up"), wor_col(rb, "breakout_down"),
-            ])
+            signals.extend(
+                [
+                    wor_col(rb, "breakout_up"),
+                    wor_col(rb, "breakout_down"),
+                ]
+            )
         return signals
 
     @classmethod
