@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from fwbg.api.deps import get_plugin_registry
 from fwbg.pipeline.registry import get_core_plugins_dir
@@ -42,10 +42,26 @@ class ConditionSchema(BaseModel):
     value: Any
 
 
+# Mirrors RESERVED_COLUMNS of the computed_signal plugin.
+_RESERVED_OUTPUTS = frozenset(
+    {"O", "H", "L", "C", "V", "Open", "High", "Low", "Close", "Volume"}
+    | {"open", "high", "low", "close", "volume"}
+)
+
+
 class RuleSchema(BaseModel):
     output: str
     logic: str = "AND"
     conditions: List[ConditionSchema]
+
+    @field_validator("output")
+    @classmethod
+    def _output_is_safe_column_name(cls, value: str) -> str:
+        if not value.isidentifier():
+            raise ValueError(f"output {value!r} is not a valid identifier")
+        if value in _RESERVED_OUTPUTS:
+            raise ValueError(f"output {value!r} collides with an OHLCV column")
+        return value
 
 
 class SignalDefinition(BaseModel):
@@ -54,6 +70,14 @@ class SignalDefinition(BaseModel):
     version: str = "1.0.0"
     dependencies: List[str] = []
     rules: List[RuleSchema]
+
+    @field_validator("rules")
+    @classmethod
+    def _outputs_are_unique(cls, value: List[RuleSchema]) -> List[RuleSchema]:
+        outputs = [rule.output for rule in value]
+        if len(outputs) != len(set(outputs)):
+            raise ValueError("rule outputs must be unique")
+        return value
 
 
 @router.get("")
