@@ -35,6 +35,7 @@ _VALID_OPS = frozenset({"==", "!=", "<", "<=", ">", ">="})
 # Column resolution
 # ---------------------------------------------------------------------------
 
+
 def resolve_column(short_name: str, columns: Sequence[str]) -> str:
     """Resolve *short_name* to a full column name present in *columns*.
 
@@ -68,6 +69,7 @@ def resolve_column(short_name: str, columns: Sequence[str]) -> str:
 # Comparison helper
 # ---------------------------------------------------------------------------
 
+
 def _apply_op(left: pd.Series, op: str, right: pd.Series | float | int) -> pd.Series:
     """Apply a comparison *op* element-wise, filling NaN results with False."""
     if op not in _VALID_OPS:
@@ -98,6 +100,7 @@ def _apply_op(left: pd.Series, op: str, right: pd.Series | float | int) -> pd.Se
 # ---------------------------------------------------------------------------
 # Condition dispatchers
 # ---------------------------------------------------------------------------
+
 
 def _eval_signal_active(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
     col = resolve_column(cond["column"], df.columns)
@@ -150,7 +153,9 @@ def _eval_session_filter(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
 
     bar_minutes = int(cond["bar_minutes"])
     if bar_minutes >= 1440:
-        raise ValueError("filters.entry_hours needs intraday bars; daily bars carry no time of day")
+        raise ValueError(
+            "filters.entry_hours needs intraday bars; daily bars carry no time of day"
+        )
     mask = open_at_bar_close(cond["hours"], pd.DatetimeIndex(df.index), bar_minutes)
     return pd.Series(mask, index=df.index, dtype=bool)
 
@@ -169,7 +174,9 @@ def _eval_crossing(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
         # a crosses below b: currently a < b AND previously a >= b
         result = (a < b) & (a.shift(1) >= b.shift(1))
     else:
-        raise ValueError(f"Unknown crossing direction '{direction}'. Use 'above' or 'below'.")
+        raise ValueError(
+            f"Unknown crossing direction '{direction}'. Use 'above' or 'below'."
+        )
 
     return result.fillna(False).astype(bool)
 
@@ -188,6 +195,7 @@ _CONDITION_DISPATCH: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def evaluate_condition(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
     """Evaluate a single condition dict against *df*.
