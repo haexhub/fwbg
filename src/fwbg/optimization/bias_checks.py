@@ -4,10 +4,12 @@ Live Bias Detection während Optimization.
 Diese Funktionen laufen NACH jedem Asset und geben sofort Feedback
 wenn Sample Bias erkannt wird.
 """
+
 import sys
 import os
 import math
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'tests'))
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tests"))
 
 from typing import Dict, Any, List
 
@@ -40,7 +42,9 @@ def fold_bias_ratios(fold_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         inner_pnl = result.get("inner_val_pnl")
         test_pnl = result.get("test_pnl")
         try:
-            valid_pnl = math.isfinite(inner_pnl) and inner_pnl > 0 and math.isfinite(test_pnl)
+            valid_pnl = (
+                math.isfinite(inner_pnl) and inner_pnl > 0 and math.isfinite(test_pnl)
+            )
         except (TypeError, ValueError):
             valid_pnl = False
         if not valid_pnl:
@@ -83,7 +87,11 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
 
     # Nur OK assets checken
     if result.get("status") != "ok":
-        return {"symbol": symbol, "status": result.get("status"), "bias_check": "skipped"}
+        return {
+            "symbol": symbol,
+            "status": result.get("status"),
+            "bias_check": "skipped",
+        }
 
     # Walk-Forward Results extrahieren
     wf = result.get("walk_forward", {})
@@ -93,7 +101,7 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
         return {
             "symbol": symbol,
             "bias_check": "no_walk_forward",
-            "error": "Missing walk_forward section"
+            "error": "Missing walk_forward section",
         }
 
     # Daten extrahieren
@@ -122,26 +130,30 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
     elif mean_bias is not None and mean_bias > 1.3:
         warnings.append(f"Mean bias ratio {mean_bias:.2f}x > 1.3x (monitor)")
     if without_ratio:
-        warnings.append(f"{without_ratio}/{n_folds} folds without bias ratio (inner PnL <= 0)")
+        warnings.append(
+            f"{without_ratio}/{n_folds} folds without bias ratio (inner PnL <= 0)"
+        )
 
     # Check 3: Einzelne Folds mit extremem Bias
     extreme_folds = [r for r in bias_ratios if r > 2.0]
     if len(extreme_folds) > 0:
-        warnings.append(f"{len(extreme_folds)}/{n_folds} folds have >2.0x bias: {[f'{r:.2f}' for r in extreme_folds]}")
+        warnings.append(
+            f"{len(extreme_folds)}/{n_folds} folds have >2.0x bias: {[f'{r:.2f}' for r in extreme_folds]}"
+        )
 
     # Check 4: Win-Rate Konsistenz (None: no fold traded)
     if std_wr is not None and std_wr > 0.15:
-        warnings.append(f"High WR std-dev: {std_wr*100:.1f}% (regime-dependent)")
+        warnings.append(f"High WR std-dev: {std_wr * 100:.1f}% (regime-dependent)")
 
     # Check 5: Unrealistic Win-Rate (if SampleBiasDetector available)
     if SampleBiasDetector and mean_wr is not None:
         wr_check = SampleBiasDetector.check_unrealistic_winrate(
-            win_rate=mean_wr,
-            rrr=rrr,
-            tolerance=0.15
+            win_rate=mean_wr, rrr=rrr, tolerance=0.15
         )
         if wr_check["has_bias"]:
-            issues.append(f"Unrealistic WR: {mean_wr*100:.1f}% (breakeven={wr_check['breakeven_wr']*100:.1f}%, excess={wr_check['excess']*100:.1f}%)")
+            issues.append(
+                f"Unrealistic WR: {mean_wr * 100:.1f}% (breakeven={wr_check['breakeven_wr'] * 100:.1f}%, excess={wr_check['excess'] * 100:.1f}%)"
+            )
 
     # Check 6: Genug Trades
     if total_trades < 500:
@@ -170,9 +182,11 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
             for warn in warnings:
                 print(f"    - {warn}")
         else:
-            std_text = "n/a" if std_wr is None else f"{std_wr*100:.1f}%"
+            std_text = "n/a" if std_wr is None else f"{std_wr * 100:.1f}%"
             mean_text = "n/a" if mean_bias is None else f"{mean_bias:.2f}x"
-            print(f"{severity} {symbol}: No bias detected (mean={mean_text}, std_wr={std_text})")
+            print(
+                f"{severity} {symbol}: No bias detected (mean={mean_text}, std_wr={std_text})"
+            )
 
     return {
         "symbol": symbol,
@@ -189,7 +203,9 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
     }
 
 
-def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = True) -> Dict[str, Any]:
+def check_systematic_bias(
+    all_results: List[Dict[str, Any]], verbose: bool = True
+) -> Dict[str, Any]:
     """
     Prüft ob systematischer Bias über ALLE Assets vorliegt.
 
@@ -213,7 +229,9 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
     for result in ok_assets:
         wf = result.get("walk_forward", {})
         if not wf:
-            warned_assets.append({"symbol": result.get("symbol", "UNKNOWN"), "mean_bias": None})
+            warned_assets.append(
+                {"symbol": result.get("symbol", "UNKNOWN"), "mean_bias": None}
+            )
             continue
 
         mean_bias = wf.get("mean_bias_ratio")
@@ -221,21 +239,17 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
 
         if mean_bias is None:
             # No fold had a positive inner PnL: the bias is unchecked, not OK.
-            warned_assets.append({
-                "symbol": symbol,
-                "mean_bias": None
-            })
+            warned_assets.append({"symbol": symbol, "mean_bias": None})
         elif mean_bias > 1.5:
-            biased_assets.append({
-                "symbol": symbol,
-                "mean_bias": mean_bias,
-                "bias_ratios": wf.get("bias_ratios", [])
-            })
+            biased_assets.append(
+                {
+                    "symbol": symbol,
+                    "mean_bias": mean_bias,
+                    "bias_ratios": wf.get("bias_ratios", []),
+                }
+            )
         elif mean_bias > 1.3:
-            warned_assets.append({
-                "symbol": symbol,
-                "mean_bias": mean_bias
-            })
+            warned_assets.append({"symbol": symbol, "mean_bias": mean_bias})
         else:
             ok_count += 1
 
@@ -248,11 +262,11 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
     if bias_percentage > 0.2:
         status = "SYSTEMATIC_BIAS"
         severity = "🚨"
-        message = f"SYSTEMATIC BIAS! {len(biased_assets)}/{measurable} measurable assets ({bias_percentage*100:.0f}%) have mean_bias >1.5x"
+        message = f"SYSTEMATIC BIAS! {len(biased_assets)}/{measurable} measurable assets ({bias_percentage * 100:.0f}%) have mean_bias >1.5x"
     elif bias_percentage > 0.1:
         status = "WARNING"
         severity = "⚠️ "
-        message = f"Warning: {len(biased_assets)}/{measurable} measurable assets ({bias_percentage*100:.0f}%) have mean_bias >1.5x"
+        message = f"Warning: {len(biased_assets)}/{measurable} measurable assets ({bias_percentage * 100:.0f}%) have mean_bias >1.5x"
     elif unchecked:
         status = "WARNING"
         severity = "⚠️ "
@@ -264,9 +278,9 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
 
     # Logging
     if verbose:
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print("SYSTEMATIC BIAS CHECK")
-        print(f"{'='*80}")
+        print(f"{'=' * 80}")
         print(f"{severity} {message}")
         print(f"  OK: {ok_count}/{total}")
         print(f"  Warnings: {len(warned_assets)}/{total}")
@@ -275,15 +289,19 @@ def check_systematic_bias(all_results: List[Dict[str, Any]], verbose: bool = Tru
         if biased_assets:
             print("\nBiased Assets:")
             for a in biased_assets:
-                print(f"  - {a['symbol']}: {a['mean_bias']:.2f}x (ratios: {[f'{r:.2f}' for r in a['bias_ratios']]})")
+                print(
+                    f"  - {a['symbol']}: {a['mean_bias']:.2f}x (ratios: {[f'{r:.2f}' for r in a['bias_ratios']]})"
+                )
 
         if warned_assets and verbose:
             print("\nWarning Assets:")
             for a in warned_assets:
-                mean_text = "n/a" if a['mean_bias'] is None else f"{a['mean_bias']:.2f}x"
+                mean_text = (
+                    "n/a" if a["mean_bias"] is None else f"{a['mean_bias']:.2f}x"
+                )
                 print(f"  - {a['symbol']}: {mean_text}")
 
-        print(f"{'='*80}\n")
+        print(f"{'=' * 80}\n")
 
     return {
         "status": status.lower(),

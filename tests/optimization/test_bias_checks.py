@@ -46,7 +46,11 @@ def test_ratio_only_where_the_inner_pnl_is_positive():
 def test_a_near_zero_inner_pnl_does_not_dominate_the_mean():
     """The mean weights each fold's ratio by its inner PnL: sum(test) / sum(inner)."""
     bias = fold_bias_ratios([_fold(10.0, 10.0), _fold(10.0, 10.0), _fold(0.1, 5.0)])
-    assert bias["bias_ratios"] == [1.0, 1.0, 50.0]  # the fold itself still shows its ratio
+    assert bias["bias_ratios"] == [
+        1.0,
+        1.0,
+        50.0,
+    ]  # the fold itself still shows its ratio
     assert bias["mean_bias_ratio"] == pytest.approx(25.0 / 20.1)
     check = check_asset_bias(
         _result(bias["bias_ratios"], bias["mean_bias_ratio"], 0), verbose=False
@@ -60,7 +64,11 @@ def test_a_negative_test_pnl_keeps_its_ratio():
 
 def test_no_positive_inner_pnl_leaves_the_mean_undefined():
     bias = fold_bias_ratios([_fold(-1.0, 4.0), _fold(0.0, 0.0)])
-    assert bias == {"bias_ratios": [], "mean_bias_ratio": None, "folds_without_bias_ratio": 2}
+    assert bias == {
+        "bias_ratios": [],
+        "mean_bias_ratio": None,
+        "folds_without_bias_ratio": 2,
+    }
 
 
 def test_non_finite_pnl_is_excluded_from_bias_ratios():
@@ -117,7 +125,9 @@ def test_a_run_with_inner_pnl_at_or_below_zero_records_no_ratio(monkeypatch, tmp
     monkeypatch.setattr(symbol_harness, "fold_result", losing_inner)
     patch_development(monkeypatch, WINNING)
     sym_dir = run_inline(monkeypatch, tmp_path) / "grid_details" / "EURUSD"
-    walk_forward = json.loads((sym_dir / "fold_results.json").read_text())["walk_forward"]
+    walk_forward = json.loads((sym_dir / "fold_results.json").read_text())[
+        "walk_forward"
+    ]
     assert walk_forward["bias_ratios"] == []
     assert walk_forward["mean_bias_ratio"] is None
     assert walk_forward["folds_without_bias_ratio"] == walk_forward["n_folds"] > 0
