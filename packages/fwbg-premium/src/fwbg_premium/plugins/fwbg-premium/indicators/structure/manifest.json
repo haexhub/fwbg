@@ -1,7 +1,0 @@
-{
-  "name": "structure",
-  "version": "1.0.0",
-  "description": "Market structure: FFT, path efficiency, convexity, VWAP",
-  "phase": "indicators",
-  "benefits_from_stationary": true
-}
