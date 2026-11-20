@@ -33,8 +33,8 @@ class LiquiditySweepIndicator(BaseIndicator):
     version = "1.1.0"
 
     _FEATURES = [
-        "lsw_bull_active",  # 1 if ≥1 active bullish sweep zone exists
-        "lsw_bear_active",  # 1 if ≥1 active bearish sweep zone exists
+        "lsw_bull_active",  # 1 if an active bull zone with its midpoint below the close exists (0 inside/below the midpoint)
+        "lsw_bear_active",  # 1 if an active bear zone with its midpoint above the close exists (0 inside/above the midpoint)
         "lsw_bull_dist",  # ATR-normalised distance from close to nearest bull zone midpoint
         "lsw_bear_dist",  # ATR-normalised distance from close to nearest bear zone midpoint
         "lsw_bull_size",  # ATR-normalised size of nearest bull sweep zone
