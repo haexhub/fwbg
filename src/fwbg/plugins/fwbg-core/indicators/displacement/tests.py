@@ -1,4 +1,5 @@
 """Tests for displacement indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -14,12 +15,15 @@ def _make_ohlc(n=500, seed=42):
     rng = np.random.default_rng(seed)
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.002, n)))
     idx = pd.date_range("2024-01-01", periods=n, freq="h")
-    df = pd.DataFrame({
-        "O": close * (1 + rng.normal(0, 0.001, n)),
-        "H": close * (1 + np.abs(rng.normal(0, 0.005, n))),
-        "L": close * (1 - np.abs(rng.normal(0, 0.005, n))),
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * (1 + rng.normal(0, 0.001, n)),
+            "H": close * (1 + np.abs(rng.normal(0, 0.005, n))),
+            "L": close * (1 - np.abs(rng.normal(0, 0.005, n))),
+            "C": close,
+        },
+        index=idx,
+    )
     df["H"] = df[["O", "H", "C"]].max(axis=1)
     df["L"] = df[["O", "L", "C"]].min(axis=1)
     return df
@@ -32,12 +36,15 @@ def _make_impulse_df(n=200):
     for i in range(30, n - 2, 30):
         prices[i] += 5.0
         prices[i + 1] += 6.0
-    df = pd.DataFrame({
-        "O": prices + rng.normal(0, 0.1, n),
-        "H": prices + np.abs(rng.normal(0, 0.5, n)) + 0.5,
-        "L": prices - np.abs(rng.normal(0, 0.5, n)) - 0.5,
-        "C": prices,
-    }, index=pd.date_range("2024-01-01", periods=n, freq="h"))
+    df = pd.DataFrame(
+        {
+            "O": prices + rng.normal(0, 0.1, n),
+            "H": prices + np.abs(rng.normal(0, 0.5, n)) + 0.5,
+            "L": prices - np.abs(rng.normal(0, 0.5, n)) - 0.5,
+            "C": prices,
+        },
+        index=pd.date_range("2024-01-01", periods=n, freq="h"),
+    )
     df["H"] = np.maximum(df["H"], df[["O", "C"]].max(axis=1))
     df["L"] = np.minimum(df["L"], df[["O", "C"]].min(axis=1))
     return df
@@ -65,11 +72,16 @@ class TestDisplacementFeatures:
     def test_ratios_between_0_and_1(self):
         ind = _get_indicator()
         result = ind.compute(_make_ohlc(n=1000))
-        for col in ["disp_body_ratio", "disp_upper_wick_ratio",
-                     "disp_lower_wick_ratio", "disp_close_position"]:
+        for col in [
+            "disp_body_ratio",
+            "disp_upper_wick_ratio",
+            "disp_lower_wick_ratio",
+            "disp_close_position",
+        ]:
             vals = result[col].dropna()
-            assert (vals >= -0.01).all() and (vals <= 1.01).all(), \
+            assert (vals >= -0.01).all() and (vals <= 1.01).all(), (
                 f"{col} out of [0, 1] range"
+            )
 
     def test_fvg_binary(self):
         ind = _get_indicator()
@@ -143,6 +155,7 @@ class TestDisplacementParameters:
 class TestDisplacementDiscovery:
     def test_plugin_discoverable(self):
         from fwbg.core import discover_plugins, get_indicator
+
         discover_plugins()
         cls = get_indicator("displacement")
         assert cls is not None

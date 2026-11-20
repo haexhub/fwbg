@@ -8,6 +8,7 @@ Measures breakout quality and candle conviction:
 - Consecutive directional candles (momentum persistence)
 - Range expansion (unusual move detection)
 """
+
 from typing import Dict, List, Union
 
 import numpy as np
@@ -73,9 +74,9 @@ def _compute_displacement_features(
     features["disp_consecutive_dir"] = consecutive
 
     # Range expansion: current range / rolling average range
-    avg_range = pd.Series(candle_range).rolling(
-        range_avg_period, min_periods=1
-    ).mean().values
+    avg_range = (
+        pd.Series(candle_range).rolling(range_avg_period, min_periods=1).mean().values
+    )
     safe_avg_range = np.where(avg_range > EPSILON, avg_range, 1.0)
     features["disp_range_expansion"] = candle_range / safe_avg_range
 
