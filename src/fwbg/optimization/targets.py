@@ -25,6 +25,43 @@ def _resolve_distances(df: pd.DataFrame, tp: float, sl: float, ctx: SimulationCo
     return exit_strategy.resolve_distances(df, tp, sl, ctx)
 
 
+def resolve_trailing_params(
+    ctx: SimulationContext,
+    exit_params: Optional[dict] = None,
+    strategy: Optional[str] = None,
+) -> Tuple[float, float, int]:
+    """Breakeven/trailing settings shared by label building and evaluation.
+
+    Returns ``(breakeven_trigger, trail_atr_mult, trail_pips)``.  Strategies
+    that carry the settings themselves read them from ``exit_params``
+    (``atr_trailing``: ``breakeven_trigger``/``trail_atr_mult`` with defaults
+    0.5; ``orb_based``: ``breakeven_trigger``/``trail_pips``).  Values in
+    ``exit_modifier_params`` take precedence; every other strategy uses the
+    modifier params only.  The strategies' ``compute_targets`` and the trade
+    evaluator both call this, so the exits behind the training labels and the
+    simulated trades cannot drift apart.
+    """
+    if exit_params is None:
+        exit_params = ctx.exit_params or {}
+    modifier = getattr(ctx, "exit_modifier_params", None) or {}
+    if strategy is None:
+        strategy = getattr(ctx, "exit_strategy", None)
+
+    be, trail_mult, pips = 0.0, 0.0, 0
+    if strategy == "atr_trailing":
+        be = exit_params.get("breakeven_trigger", 0.5)
+        trail_mult = exit_params.get("trail_atr_mult", 0.5)
+    elif strategy == "orb_based":
+        be = exit_params.get("breakeven_trigger", 0.0)
+        pips = exit_params.get("trail_pips", 0)
+        if getattr(ctx, "exit_modifier", None):
+            # orb_based turns an attached modifier on with these defaults.
+            be = trail_mult = 0.5
+    be = modifier.get("breakeven_trigger", be)
+    trail_mult = modifier.get("trail_atr_mult", trail_mult)
+    return float(be), float(trail_mult), int(pips)
+
+
 def _compute_signal_events(
     probs: Optional[np.ndarray], win_idx: Optional[int], ct: float
 ) -> Optional[np.ndarray]:
@@ -227,15 +264,17 @@ def simulate_trades(
     # 1 = entry at next bar open (default, no look-ahead).
     entry_delay = exit_params.get("entry_delay", 1)
 
-    # Trailing stop from exit_modifier_params (separate composable plugin).
-    modifier_params = getattr(ctx, "exit_modifier_params", None) or {}
-    breakeven_trigger = modifier_params.get("breakeven_trigger", 0.0)
-    trail_atr_mult = modifier_params.get("trail_atr_mult", 0.0)
+    # Breakeven/trailing: same source as the training labels.
+    breakeven_trigger, trail_atr_mult, trail_pips = resolve_trailing_params(
+        ctx, exit_params
+    )
 
     # Resolve per-bar trail distances: range mode uses the OR range as trail
     # distance (structural), ATR mode uses ATR * trail_atr_mult.
     trail_dists = np.zeros(len(df), dtype=np.float64)
-    if trail_atr_mult > 0.0:
+    if trail_pips > 0:
+        trail_dists[:] = ctx.spread * trail_pips
+    elif trail_atr_mult > 0.0:
         tp_mode = exit_params.get("tp_mode", "atr")
         if tp_mode == "range":
             exit_strategy_cls = get_exit_strategy(ctx.exit_strategy)
