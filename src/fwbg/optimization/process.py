@@ -1130,25 +1130,29 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Per-trade return statistics of the reporting series (the verdict's DSR inputs).
         return_stats = return_statistics(reporting_returns)
 
-        from .overfitting import compute_overfitting_metrics
+        from .overfitting import compute_overfitting_metrics, count_trials
 
+        # N of the DSR: distinct configurations evaluated (combos across folds, times the
+        # indicator-grid variants the best variant was picked from), not grid rows.
+        n_trials = count_trials(accumulated_grid_results, n_variants)
         try:
             overfitting = compute_overfitting_metrics(
                 trade_returns=reporting_returns,
                 observed_sr=non_ann_sr,
-                n_strategies=len(accumulated_grid_results),
+                n_strategies=n_trials,
                 grid_results_by_fold=grid_results_by_fold,
                 n_trades=len(reporting_pnl),
             )
-        except Exception as e:
+        except (ValueError, TypeError, ArithmeticError) as e:
             log(1, f"  Overfitting metrics failed: {e}", sym)
             overfitting = {
                 "dsr": {
-                    "dsr": 0.0,
+                    "dsr": None,
                     "observed_sr": non_ann_sr,
-                    "expected_max_sr": 0.0,
-                    "n_strategies": len(accumulated_grid_results),
+                    "expected_max_sr": None,
+                    "n_strategies": n_trials,
                     "is_significant": False,
+                    "error": str(e),
                 },
                 "pbo": {
                     "pbo": None,
@@ -1156,16 +1160,14 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                     "is_overfit": None,
                     "degradation": None,
                     "logit_mean": None,
+                    "error": str(e),
                 },
             }
         pbo_val = overfitting["pbo"]["pbo"]
-        log(
-            1,
-            f"  DSR={overfitting['dsr']['dsr']:.3f} PBO={pbo_val:.2f}"
-            if pbo_val is not None
-            else f"  DSR={overfitting['dsr']['dsr']:.3f} PBO=n/a",
-            sym,
-        )
+        dsr_val = overfitting["dsr"]["dsr"]
+        dsr_txt = f"{dsr_val:.3f}" if dsr_val is not None else "n/a"
+        pbo_txt = f"{pbo_val:.2f}" if pbo_val is not None else "n/a"
+        log(1, f"  DSR={dsr_txt} PBO={pbo_txt} (N={n_trials})", sym)
 
         del grid_results_by_fold
 

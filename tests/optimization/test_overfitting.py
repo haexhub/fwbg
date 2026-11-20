@@ -8,6 +8,7 @@ from fwbg.optimization import overfitting
 from fwbg.optimization.overfitting import (
     build_performance_matrix,
     compute_overfitting_metrics,
+    count_trials,
     deflated_sharpe_ratio,
     expected_max_sr,
     probability_of_backtest_overfitting,
@@ -33,9 +34,19 @@ class TestExpectedMaxSR:
             assert b > a
 
     def test_known_value_n100(self):
-        """N=100 should yield ~2.5 (Bailey & López de Prado, 2014)."""
-        val = expected_max_sr(100)
-        assert 2.2 < val < 2.8
+        """Paper formula for N=100, V[SR]=1, evaluated independently with scipy."""
+        # (1-g)*Phi^-1(1-1/N) + g*Phi^-1(1-1/(N*e)), g = Euler-Mascheroni
+        assert expected_max_sr(100) == pytest.approx(2.5306028932, abs=1e-9)
+
+    def test_scales_with_the_std_of_the_trial_srs(self):
+        """E[max SR] is in the unit of the SR: it scales with sqrt(V[SR])."""
+        # N=500, V=0.04 (std 0.2): 0.2 * E[max] at unit variance
+        assert expected_max_sr(500, sr_variance=0.04) == pytest.approx(
+            0.6105055149, abs=1e-9
+        )
+        assert expected_max_sr(500, sr_variance=0.04) == pytest.approx(
+            0.2 * expected_max_sr(500, sr_variance=1.0)
+        )
 
     def test_n1_returns_zero(self):
         """With one strategy, expected max SR is 0 (no multiple testing)."""
@@ -78,9 +89,38 @@ class TestDeflatedSharpeRatio:
         assert result["n_strategies"] == 5
 
     def test_modest_sr_many_strategies(self):
-        """SR=1.5 with 500 strategies → DSR should be low (< 0.50)."""
-        result = deflated_sharpe_ratio(observed_sr=1.5, n_trades=300, n_strategies=500)
-        assert result["dsr"] < 0.50
+        """SR=0.5 against 500 trials whose SRs have std 0.2 → DSR is low."""
+        result = deflated_sharpe_ratio(
+            observed_sr=0.5, n_trades=300, n_strategies=500, sr_variance=0.04
+        )
+        # PSR against SR_0 = 0.6105055149: independent calculation
+        assert result["dsr"] == pytest.approx(0.0358091080, abs=1e-8)
+        assert result["expected_max_sr"] == pytest.approx(0.6105055149, abs=1e-9)
+        assert result["is_significant"] is False
+
+    def test_per_trade_sr_is_not_zero_or_one(self):
+        """A per-trade SR of 0.1 over 1000 trades and 100 trials is neither 0 nor 1.
+
+        The un-scaled E[max SR] (2.78 in SR units) pushed any realistic per-trade SR
+        to a DSR of 0.0.
+        """
+        result = deflated_sharpe_ratio(observed_sr=0.1, n_trades=1000, n_strategies=100)
+        # default V[SR] = 1/(T-1); SR_0 = 0.0800647323
+        assert result["expected_max_sr"] == pytest.approx(0.0800647323, abs=1e-9)
+        assert result["dsr"] == pytest.approx(0.7351695966, abs=1e-8)
+
+    def test_single_trial_is_the_psr(self):
+        """N=1: no deflation, DSR is the probabilistic Sharpe ratio against 0."""
+        result = deflated_sharpe_ratio(observed_sr=0.1, n_trades=1000, n_strategies=1)
+        assert result["expected_max_sr"] == 0.0
+        assert 0.99 < result["dsr"] < 1.0
+
+    def test_undefined_variance_gives_none_not_zero(self):
+        """Skew/kurtosis that leave no positive variance: DSR is None, not a fake 0.0."""
+        result = deflated_sharpe_ratio(
+            observed_sr=2.0, n_trades=100, n_strategies=2, skewness=5.0, kurtosis=1.0
+        )
+        assert result["dsr"] is None
         assert result["is_significant"] is False
 
     def test_zero_sr(self):
@@ -95,6 +135,7 @@ class TestDeflatedSharpeRatio:
             "dsr",
             "observed_sr",
             "expected_max_sr",
+            "sr_variance",
             "n_strategies",
             "is_significant",
         }
@@ -104,6 +145,26 @@ class TestDeflatedSharpeRatio:
         for sr, n in [(0.0, 100), (3.0, 5), (1.0, 1000)]:
             result = deflated_sharpe_ratio(observed_sr=sr, n_trades=200, n_strategies=n)
             assert 0.0 <= result["dsr"] <= 1.0
+
+
+class TestCountTrials:
+    def test_distinct_combos_not_fold_rows(self):
+        """The same combo re-evaluated in every fold is one trial."""
+        rows = [
+            {"tp_mult": tp, "sl_mult": 10, "timeout_bars": 0, "fold_id": fold}
+            for fold in range(5)
+            for tp in (5, 10, 15)
+        ]
+        assert len(rows) == 15
+        assert count_trials(rows) == 3
+
+    def test_variants_multiply_and_floor_is_one(self):
+        rows = [{"tp_mult": 5, "sl_mult": 10}, {"tp_mult": 10, "sl_mult": 10}]
+        assert count_trials(rows, n_variants=3) == 6
+        assert count_trials([]) == 1
+
+    def test_unkeyable_entry_counts_as_a_trial(self):
+        assert count_trials([{"tp_mult": 5, "sl_mult": 10}, {"foo": 1}]) == 2
 
 
 # === PBO Tests ===
@@ -345,6 +406,15 @@ class TestProbabilityOfBacktestOverfitting:
             "logit_mean",
         }
 
+    def test_single_combo_is_undefined_and_warns(self):
+        """One combo: nothing to select from. pbo is None (not 0.0) and warns."""
+        matrix = np.random.default_rng(1).normal(0, 1, (1, 8))
+        with pytest.warns(RuntimeWarning, match="only one combo"):
+            result = probability_of_backtest_overfitting(matrix)
+        assert result["pbo"] is None
+        assert result["is_overfit"] is None
+        assert "one combo" in result["reason"]
+
     def test_too_few_folds(self):
         """With < 4 folds, PBO cannot be computed."""
         rng = np.random.default_rng(42)
@@ -373,6 +443,26 @@ class TestComputeOverfittingMetrics:
         assert result["dsr"]["observed_sr"] == 0.2
         assert result["pbo"]["pbo"] is None
         assert result["pbo"]["error"] == "bad grid"
+
+    def test_reports_survivor_coverage(self):
+        """Combos missing in a fold drop out of the matrix; the result says how many."""
+        rows = {
+            fold: [
+                {"tp_mult": 5, "sl_mult": 10, "inner_val_pnl": 1.0 + fold},
+                {"tp_mult": 10, "sl_mult": 10, "inner_val_pnl": 2.0 - fold},
+            ]
+            for fold in range(4)
+        }
+        rows[3].append({"tp_mult": 15, "sl_mult": 10, "inner_val_pnl": 9.0})
+        result = compute_overfitting_metrics(
+            trade_returns=[0.1, -0.1] * 10,
+            observed_sr=0.0,
+            n_strategies=3,
+            grid_results_by_fold=rows,
+            n_trades=20,
+        )
+        assert result["pbo"]["n_combos_in_matrix"] == 2
+        assert result["pbo"]["n_combos_evaluated"] == 3
 
     def test_returns_both_dsr_and_pbo(self):
         """Entry point should return both DSR and PBO sub-dicts."""

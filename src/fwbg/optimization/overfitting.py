@@ -6,39 +6,34 @@ References:
        "The Probability of Backtest Overfitting"
 """
 
+import logging
+import warnings
 from itertools import combinations
-from math import comb, log
+from math import comb
 
 import numpy as np
-from scipy.stats import norm
+
+from fwbg.research import dsr as _dsr
+
+logger = logging.getLogger(__name__)
 
 
 # === Deflated Sharpe Ratio ===
 
 
-def expected_max_sr(n_strategies: int) -> float:
-    """Expected maximum Sharpe ratio under null hypothesis (all SR=0).
+def expected_max_sr(n_strategies: int, sr_variance: float = 1.0) -> float:
+    """Expected maximum Sharpe ratio of *n_strategies* independent zero-edge trials.
 
-    Uses the approximation from Bailey & López de Prado (2014):
-        E[max(SR)] ≈ √(2 * ln(N)) - (ln(π) + ln(ln(N))) / (2 * √(2 * ln(N)))
+    Bailey & Lopez de Prado (2014), the paper's SR_0:
+        E[max SR] = sqrt(V[SR]) * ((1 - g) * Phi^-1(1 - 1/N) + g * Phi^-1(1 - 1/(N*e)))
 
-    where N is the number of independent strategies tested.
+    where g is the Euler-Mascheroni constant and V[SR] the variance of the
+    Sharpe-ratio estimates ACROSS the trials. The result scales with the
+    standard deviation of the trials' SRs, so it is in the unit of the SR it is
+    compared with (per trade here). The default variance of 1.0 returns the
+    value in units of one trial standard deviation.
     """
-    if n_strategies <= 1:
-        return 0.0
-
-    ln_n = log(max(n_strategies, 2))
-    sqrt_term = np.sqrt(2.0 * ln_n)
-
-    if sqrt_term == 0:
-        return 0.0
-
-    euler_mascheroni = 0.5772156649
-    return float(
-        sqrt_term
-        - (log(np.pi) + log(ln_n)) / (2.0 * sqrt_term)
-        + euler_mascheroni / sqrt_term
-    )
+    return _dsr.expected_max_sharpe(n_strategies, sr_variance)
 
 
 def sr_std(
@@ -71,28 +66,38 @@ def deflated_sharpe_ratio(
     n_strategies: int,
     skewness: float = 0.0,
     kurtosis: float = 3.0,
+    sr_variance: float | None = None,
 ) -> dict:
-    """Compute the Deflated Sharpe Ratio.
+    """Compute the Deflated Sharpe Ratio (delegates to ``fwbg.research.dsr``).
 
-    DSR = Φ((SR_obs - E[max(SR)]) / σ(SR))
+    DSR = PSR(SR_obs; SR_0) with SR_0 = E[max SR] of *n_strategies* zero-edge
+    trials whose SR estimates have variance *sr_variance*.
 
-    Returns dict with: dsr, observed_sr, expected_max_sr, n_strategies, is_significant
+    *observed_sr* is the per-trade (non-annualised) Sharpe ratio, *kurtosis* the
+    plain fourth standardised moment (3 for normal returns). When *sr_variance*
+    (the variance of the trials' SRs) is not known it defaults to 1/(T-1), the
+    sampling variance of a per-trade SR estimate with no edge, i.e. the trials
+    are assumed to be independent zero-edge draws. The real dispersion across
+    trials is usually larger, so this default penalises the search no more
+    than the data justify; pass the measured variance when it is available.
+
+    Returns dict with: dsr (None when the SR's variance is undefined), observed_sr,
+    expected_max_sr, sr_variance, n_strategies, is_significant.
     """
-    e_max = expected_max_sr(n_strategies)
-    sigma = sr_std(observed_sr, n_trades, skewness, kurtosis)
-
-    if sigma <= 0 or not np.isfinite(sigma):
-        dsr_value = 0.0
-    else:
-        z = (observed_sr - e_max) / sigma
-        dsr_value = float(norm.cdf(z))
+    if sr_variance is None:
+        sr_variance = 1.0 / (n_trades - 1) if n_trades > 1 else 0.0
+    e_max = _dsr.expected_max_sharpe(n_strategies, sr_variance)
+    dsr_value = _dsr.probabilistic_sharpe_ratio(
+        observed_sr, e_max, n_trades, skewness, kurtosis
+    )
 
     return {
         "dsr": dsr_value,
         "observed_sr": observed_sr,
         "expected_max_sr": e_max,
+        "sr_variance": sr_variance,
         "n_strategies": n_strategies,
-        "is_significant": dsr_value > 0.95,
+        "is_significant": dsr_value is not None and dsr_value > 0.95,
     }
 
 
@@ -128,6 +133,28 @@ def _combo_key(grid_result: dict) -> tuple:
     """The full combo of a grid entry (KeyError without tp_mult and sl_mult)."""
     tp_sl = (grid_result["tp_mult"], grid_result["sl_mult"])
     return tp_sl + tuple(_frozen(grid_result.get(field)) for field in _COMBO_FIELDS)
+
+
+def count_trials(grid_results: list[dict], n_variants: int = 1) -> int:
+    """Number of distinct configurations that were evaluated (the DSR's N).
+
+    Counts distinct combos (TP, SL and every _COMBO_FIELDS value) across all
+    folds, not one per (fold, combo) grid row: the same combo re-evaluated in
+    every fold is one trial. *n_variants* multiplies the count: each indicator
+    grid variant evaluated its own combos and the best one was picked. An entry
+    that cannot be keyed counts as its own trial. Never below 1.
+    """
+    keys: set[tuple] = set()
+    unkeyed = 0
+    for grid_result in grid_results:
+        try:
+            key = _combo_key(grid_result)
+            hash(key)
+        except (KeyError, TypeError):
+            unkeyed += 1
+            continue
+        keys.add(key)
+    return max(1, (len(keys) + unkeyed) * max(1, n_variants))
 
 
 def build_performance_matrix(
@@ -194,18 +221,26 @@ def probability_of_backtest_overfitting(
     For each split, finds best IS combo and checks its OOS rank.
     PBO = fraction of splits where best IS combo underperforms OOS median.
 
-    Returns dict with: pbo, n_cscv_splits, is_overfit, degradation, logit_mean
+    Returns dict with: pbo, n_cscv_splits, is_overfit, degradation, logit_mean.
+    PBO is undefined (pbo None, with a "reason") without at least 2 combos: with a
+    single combo there is nothing to select from, so no selection can overfit
+    (0.0 would read as "not overfit"). It is also undefined below 4 folds.
     """
     n_combos, n_folds = performance_matrix.shape
 
+    undefined = {
+        "pbo": None,
+        "n_cscv_splits": 0,
+        "is_overfit": None,
+        "degradation": None,
+        "logit_mean": None,
+    }
+    if n_combos == 1:
+        message = "PBO undefined: only one combo in the performance matrix"
+        warnings.warn(message, RuntimeWarning, stacklevel=2)
+        return {**undefined, "reason": message}
     if n_combos == 0 or n_folds < 4:
-        return {
-            "pbo": None,
-            "n_cscv_splits": 0,
-            "is_overfit": None,
-            "degradation": None,
-            "logit_mean": None,
-        }
+        return undefined
 
     half = n_folds // 2
     n_splits = comb(n_folds, half)
@@ -260,13 +295,17 @@ def compute_overfitting_metrics(
     n_strategies: int,
     grid_results_by_fold: dict,
     n_trades: int,
+    sr_variance: float | None = None,
 ) -> dict:
     """Compute both DSR and PBO metrics.
 
     Args:
         trade_returns: List of per-trade returns (for skewness/kurtosis).
         observed_sr: Non-annualized Sharpe ratio of the strategy.
-        n_strategies: Total number of grid combinations tested.
+        n_strategies: Number of distinct configurations evaluated (see
+            ``count_trials``).
+        sr_variance: Variance of the trials' SRs, when known (see
+            ``deflated_sharpe_ratio`` for the default).
         grid_results_by_fold: {fold_id: [grid_result_dicts]} for PBO.
         n_trades: Number of trades.
 
@@ -297,12 +336,20 @@ def compute_overfitting_metrics(
         n_strategies=n_strategies,
         skewness=skewness,
         kurtosis=kurtosis,
+        sr_variance=sr_variance,
     )
 
     # PBO on its own: a failure here must not drop the DSR.
     try:
-        matrix, _ = build_performance_matrix(grid_results_by_fold)
+        matrix, combo_keys = build_performance_matrix(grid_results_by_fold)
         pbo_result = probability_of_backtest_overfitting(matrix)
+        # Survivor coverage: only combos with a finite inner score in EVERY fold enter
+        # the matrix (successive halving prunes weak combos in later folds).
+        all_results = [gr for rows in grid_results_by_fold.values() for gr in rows]
+        pbo_result["n_combos_in_matrix"] = len(combo_keys)
+        pbo_result["n_combos_evaluated"] = (
+            count_trials(all_results) if all_results else 0
+        )
     except Exception as exc:
         pbo_result = {
             **probability_of_backtest_overfitting(np.empty((0, 0))),
