@@ -35,7 +35,7 @@ class EnsureRequest(BaseModel):
     symbol: str
     timeframe: str = "HOUR_1"
     date_from: Optional[str] = None  # ISO date "YYYY-MM-DD"
-    date_to: Optional[str] = None    # ISO date "YYYY-MM-DD"
+    date_to: Optional[str] = None  # ISO date "YYYY-MM-DD"
 
 
 # historyStart granularity per timeframe family (see instrument_catalogue()).
@@ -70,8 +70,11 @@ def _default_history_start(symbol: str, timeframe: str) -> str:
                     return start
                 break
     except Exception:
-        log.warning("catalogue lookup failed for %s; using fallback start", symbol,
-                    exc_info=True)
+        log.warning(
+            "catalogue lookup failed for %s; using fallback start",
+            symbol,
+            exc_info=True,
+        )
     return _FALLBACK_HISTORY_START
 
 
@@ -97,7 +100,12 @@ def ensure_data(req: EnsureRequest):
     commodities, crypto, stocks, ETFs); anything else must be uploaded
     manually via the datasource upload endpoints.
     """
-    from fwbg.data.dukascopy import DukascopyError, TIMEFRAMES, download, resolve_instrument
+    from fwbg.data.dukascopy import (
+        DukascopyError,
+        TIMEFRAMES,
+        download,
+        resolve_instrument,
+    )
 
     symbol = _normalize_symbol(req.symbol)
     validate_id(req.timeframe, "timeframe")
@@ -190,7 +198,9 @@ def ensure_data(req: EnsureRequest):
             with _ensure_tasks_lock:
                 _ensure_tasks[task_id]["result"] = results[0] if results else None
                 _ensure_tasks[task_id]["status"] = "ready"
-            log.info("ensure_data: %s %s done (task=%s)", symbol, req.timeframe, task_id)
+            log.info(
+                "ensure_data: %s %s done (task=%s)", symbol, req.timeframe, task_id
+            )
         except Exception as exc:
             log.error("ensure_data: %s %s failed: %s", symbol, req.timeframe, exc)
             with _ensure_tasks_lock:
@@ -227,7 +237,9 @@ def ensure_status(task_id: str):
 
 def _normalize_symbol(raw: str) -> str:
     """Strip separators and uppercase — matches Dukascopy's internal normalization."""
-    return raw.replace("/", "").replace("_", "").replace("-", "").replace(".", "").upper()
+    return (
+        raw.replace("/", "").replace("_", "").replace("-", "").replace(".", "").upper()
+    )
 
 
 def _csv_first_date(path: Path) -> str | None:
@@ -279,7 +291,8 @@ def _find_existing_file(
                 if date_from is not None and not _file_covers_from(path, date_from):
                     log.info(
                         "ensure_data: %s starts too late for requested %s — re-downloading",
-                        path.name, date_from,
+                        path.name,
+                        date_from,
                     )
                     continue
                 return name, path
