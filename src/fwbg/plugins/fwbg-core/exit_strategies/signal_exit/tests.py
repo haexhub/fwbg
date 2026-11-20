@@ -20,6 +20,8 @@ def _ctx(spread=0.0):
 
 
 def _params(**extra):
+    # Close entries are explicit here; the default is covered by its own test.
+    extra.setdefault("entry_delay", 0)
     return GridParams(tp_value=1.0, sl_value=1.0, extra=extra)
 
 
@@ -112,3 +114,14 @@ def test_distances_are_never_reached():
     df = _df([100, 50], exit_long=[0, 0], exit_short=[0, 0])
     tp, sl = SignalExitStrategy().resolve_distances(df, 1.0, 1.0, _ctx())
     assert np.all(tp >= 10 * df["C"].values) and np.all(sl >= 10 * df["C"].values)
+
+
+def test_unset_entry_delay_enters_at_the_next_open_like_the_evaluator():
+    df = _df([100, 105, 103], exit_long=[0, 0, 1], exit_short=[0, 0, 0])
+    df["O"] = [99, 102, 103]
+    params = GridParams(
+        tp_value=1.0, sl_value=1.0, extra={"exit_signal_long_column": "xl"}
+    )
+    tgt_l, _ = SignalExitStrategy().compute_targets(df, _ctx(), params=params)
+    assert tgt_l.tolist() == [1.0, 0.0, 0.0]  # enter at 102, exit at 103
+    assert SignalExitStrategy.get_default_params()["entry_delay"] == 1

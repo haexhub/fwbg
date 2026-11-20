@@ -21,6 +21,7 @@ import pandas as pd
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
 from fwbg.simulation import compute_targets_numba
+from fwbg.simulation.trade import resolve_entry_delay
 
 if TYPE_CHECKING:
     from fwbg.core.context import SimulationContext
@@ -116,6 +117,8 @@ class StructuralRRExitStrategy(BaseExitStrategy):
             slippage,
             max_bars,
             timeout_val,
+            False,
+            resolve_entry_delay(ctx.exit_params),
         )
         if return_durations:
             return result  # (tgt_l, tgt_s, dur_l, dur_s)

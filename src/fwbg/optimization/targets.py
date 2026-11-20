@@ -15,7 +15,11 @@ from fwbg.core.columns import ColumnRoleError, resolve_role_column
 if TYPE_CHECKING:
     from fwbg_sdk.models import BaseModel
 from fwbg.pipeline.features import REGIME_LONG, REGIME_SHORT
-from fwbg.simulation.trade import simulate_pro_trade, compute_session_mask
+from fwbg.simulation.trade import (
+    simulate_pro_trade,
+    compute_session_mask,
+    resolve_entry_delay,
+)
 
 
 def _resolve_distances(df: pd.DataFrame, tp: float, sl: float, ctx: SimulationContext):
@@ -262,7 +266,7 @@ def simulate_trades(
 
     # Entry delay: 0 = entry at signal bar close (breakout stop-orders),
     # 1 = entry at next bar open (default, no look-ahead).
-    entry_delay = exit_params.get("entry_delay", 1)
+    entry_delay = resolve_entry_delay(exit_params)
 
     # Breakeven/trailing: same source as the training labels.
     breakeven_trigger, trail_atr_mult, trail_pips = resolve_trailing_params(

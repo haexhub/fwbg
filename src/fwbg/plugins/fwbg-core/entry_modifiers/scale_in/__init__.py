@@ -87,6 +87,7 @@ def _compute_targets_scale_in_numba(
     n_levels: int,
     scale_qty_mult: float,
     breakeven_trigger: float,
+    entry_delay: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -117,6 +118,7 @@ def _compute_targets_scale_in_numba(
             breakeven_trigger,
             trail_dist,
             trail_tp,
+            entry_delay,
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
@@ -140,6 +142,7 @@ def _compute_targets_scale_in_numba(
             breakeven_trigger,
             trail_dist,
             trail_tp,
+            entry_delay,
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
@@ -165,6 +168,7 @@ def _compute_targets_scale_in_with_durations_numba(
     n_levels: int,
     scale_qty_mult: float,
     breakeven_trigger: float,
+    entry_delay: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     n = len(closes)
     targets_long = np.zeros(n, dtype=np.float64)
@@ -197,6 +201,7 @@ def _compute_targets_scale_in_with_durations_numba(
             breakeven_trigger,
             trail_dist,
             trail_tp,
+            entry_delay,
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
@@ -221,6 +226,7 @@ def _compute_targets_scale_in_with_durations_numba(
             breakeven_trigger,
             trail_dist,
             trail_tp,
+            entry_delay,
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
@@ -262,6 +268,7 @@ class ScaleInModifier(BaseEntryModifier):
         # Trailing params (pass-through from exit modifier)
         breakeven_trigger: float = 0.0,
         trail_tp_dist_arr: np.ndarray = None,
+        entry_delay: int = 1,
         **kwargs,
     ):
         if levels is None:
@@ -290,6 +297,7 @@ class ScaleInModifier(BaseEntryModifier):
                 n_levels,
                 float(qty_multiplier),
                 float(breakeven_trigger),
+                int(entry_delay),
             )
 
         return _call_numba(
@@ -310,6 +318,7 @@ class ScaleInModifier(BaseEntryModifier):
             n_levels,
             float(qty_multiplier),
             float(breakeven_trigger),
+            int(entry_delay),
         )
 
     @classmethod
