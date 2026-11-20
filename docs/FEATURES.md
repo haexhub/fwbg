@@ -2,7 +2,8 @@
 
 Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur Verfügung stehen.
 
-**Gesamt: ~400+ Features** aus 28 Indicator Plugins (abhängig von Konfiguration und verfügbaren Makro-Daten)
+**Gesamt: ~400+ Features** aus 28 Indicator Plugins (abhängig von Konfiguration und verfügbaren Makro-Daten).
+Plugins mit dem Namespace `fwbg-premium:` stammen aus dem optionalen, separat installierten `fwbg-premium`-Package und sind nur mit diesem verfügbar.
 
 ---
 
@@ -1482,6 +1483,8 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
 | `adversarial_validation` | meta | 10 | Distribution Shift, Drift Score |
 
 #### Premium Plugins (`fwbg-premium`)
+
+> Optionale, separat installierte Plugin-Package; nicht Teil von fwbg. Diese Plugins stehen nur zur Verfügung, wenn das Package in derselben Umgebung installiert ist.
 
 | Plugin Name | Gruppe | Features | Beschreibung |
 |-------------|--------|----------|--------------|

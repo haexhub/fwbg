@@ -275,7 +275,7 @@ Installed Python packages with `fwbg.plugin_packages` entry point:
 fwbg-premium = "fwbg_premium:get_plugins_dir"
 ```
 
-The entry-point function returns the path to the plugin directory. Example: `fwbg-premium` (`packages/fwbg-premium/`).
+The entry-point function returns the path to the plugin directory. Example: the optional `fwbg-premium` plugin package, which is installed separately (not bundled in this repository); fwbg works without it and discovers its plugins automatically once it is installed. A configuration that requests a plugin from a package that is not installed fails with an error naming the plugin.
 
 ### 3. User Packages
 
@@ -349,7 +349,7 @@ Format: just `"plugin"` — e.g., `"trend"`, `"regime"`, `"fractional_diff"`
 
 Short names are automatically resolved via `PluginRegistry.resolve_name()`. The method searches **all registered packages** (not just fwbg-core!) for a plugin with that name.
 
-**Important:** Short names work for **all packages** — core, premium, and user packages alike. This is not a privilege of fwbg-core.
+**Important:** Short names work for **all packages** — core, entry-point (e.g. `fwbg-premium`), and user packages alike. This is not a privilege of fwbg-core.
 
 ### Ambiguity
 

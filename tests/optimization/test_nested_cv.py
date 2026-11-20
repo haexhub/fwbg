@@ -12,7 +12,7 @@ import pytest
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 from fwbg.optimization.nested_cv import (
     nested_cv_split,
@@ -326,6 +326,7 @@ class TestSelectFeaturesFromFold:
 
     def test_boruta_via_plugin(self):
         """Test: Feature Selection via Plugin-Interface."""
+        pytest.importorskip("fwbg_premium")
         df = create_test_df(1000)
         # Targets die mit einem Feature korrelieren
         targets = (df["trend_rsi_14"].values > 50).astype(int)

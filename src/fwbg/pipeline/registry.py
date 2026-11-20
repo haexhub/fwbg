@@ -1,4 +1,5 @@
 """Plugin registry with directory-based discovery and namespace support."""
+
 import importlib.util
 import inspect
 import json
@@ -97,12 +98,31 @@ class PluginRegistry:
             ValueError: If name is not fully qualified (missing namespace)
         """
         if ":" not in name:
+            hint = ""
+            if not any(fqn.split(":", 1)[1] == name for fqn in self._plugins):
+                hint = (
+                    f" No installed plugin package provides a plugin named "
+                    f"'{name}'; if it belongs to an optional plugin package, "
+                    f"that package is not installed."
+                )
             raise ValueError(
                 f"Plugin name '{name}' must be fully qualified with namespace "
                 f"(e.g., 'fwbg-core:{name}'). Available: {self.list_plugins()}"
+                f"{hint}"
             )
 
         if name not in self._plugins:
+            namespace = name.split(":", 1)[0]
+            known = set(self._package_manifests) | {
+                fqn.split(":", 1)[0] for fqn in self._plugins
+            }
+            if namespace not in known:
+                raise PluginNotFoundError(
+                    f"Plugin '{name}' not found in registry: plugin package "
+                    f"'{namespace}' is not installed. Install the package that "
+                    f"provides it (registered under the 'fwbg.plugin_packages' "
+                    f"entry point group). Installed packages: {sorted(known)}"
+                )
             raise PluginNotFoundError(f"Plugin '{name}' not found in registry")
         return self._plugins[name]
 
@@ -146,11 +166,7 @@ class PluginRegistry:
             plugins = [p for p in plugins if p.startswith(f"{namespace}:")]
 
         if phase is not None:
-            plugins = [
-                name
-                for name in plugins
-                if self._plugins[name].phase == phase
-            ]
+            plugins = [name for name in plugins if self._plugins[name].phase == phase]
 
         return plugins
 
@@ -256,7 +272,17 @@ class PluginRegistry:
         self._package_manifests[namespace] = package_manifest
 
         # Scan for plugin categories
-        for category in ["data_loading", "indicators", "preprocessing", "feature_selection", "exit_strategies", "exit_modifiers", "entry_modifiers", "risk_management", "models"]:
+        for category in [
+            "data_loading",
+            "indicators",
+            "preprocessing",
+            "feature_selection",
+            "exit_strategies",
+            "exit_modifiers",
+            "entry_modifiers",
+            "risk_management",
+            "models",
+        ]:
             category_dir = package_dir / category
             if category_dir.is_dir():
                 discovered.extend(
@@ -324,7 +350,9 @@ class PluginRegistry:
                         discovered.append(registered_fqn)
                         # Propagate manifest attributes to plugin class
                         if "benefits_from_stationary" in manifest:
-                            attr.benefits_from_stationary = manifest["benefits_from_stationary"]
+                            attr.benefits_from_stationary = manifest[
+                                "benefits_from_stationary"
+                            ]
 
             except Exception as e:
                 logger.warning(f"Failed to load plugin from {plugin_dir}: {e}")
@@ -430,9 +458,7 @@ class PluginRegistry:
                 }
                 discovered.append(registered_fqn)
             except Exception as e:
-                logger.warning(
-                    f"Failed to register signal definition {sig_name}: {e}"
-                )
+                logger.warning(f"Failed to register signal definition {sig_name}: {e}")
 
         return discovered
 
@@ -467,7 +493,7 @@ class PluginRegistry:
 
         Discovers plugins from:
         1. Built-in packages (fwbg-core) in plugins/
-        2. Installed packages via entry_points (fwbg-premium etc.)
+        2. Installed packages via entry_points (separately installed plugin packages)
         3. User packages (~/.fwbg/plugins/)
 
         Returns:
@@ -520,13 +546,17 @@ class PluginRegistry:
                     seen_dirs.add(resolved)
                     if plugins_dir.is_dir():
                         for package_dir in plugins_dir.iterdir():
-                            if package_dir.is_dir() and (package_dir / "manifest.json").exists():
+                            if (
+                                package_dir.is_dir()
+                                and (package_dir / "manifest.json").exists()
+                            ):
                                 discovered.extend(self.discover_package(package_dir))
                 except Exception as e:
                     logger.warning(f"Failed to load plugin package '{ep.name}': {e}")
         except Exception:
             pass
         return discovered
+
 
 def get_user_plugins_dir() -> Path:
     """

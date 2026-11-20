@@ -11,6 +11,7 @@ Prüft dass die ORB-Optimierung korrekt läuft:
 Diese Tests sind dafür da, "stille" Bugs zu fangen, bei denen die Optimierung
 zu schnell fertig wird weil Arbeit unerwartet übersprungen wird.
 """
+
 import math
 import numpy as np
 import pandas as pd
@@ -24,6 +25,7 @@ from fwbg.core.context import SimulationContext
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _make_m15_df(n: int = 6000, seed: int = 42) -> pd.DataFrame:
     """
@@ -85,7 +87,9 @@ def _build_exit_strategies(
     each with the given ct list.
     """
     effective_timeout = timeout_bars if timeout_bars is not None else [None]
-    effective_modifiers = modifier_params_grid if modifier_params_grid is not None else [None]
+    effective_modifiers = (
+        modifier_params_grid if modifier_params_grid is not None else [None]
+    )
 
     strategies = []
     for tp_val in tp:
@@ -93,9 +97,6 @@ def _build_exit_strategies(
             for timeout_val in effective_timeout:
                 for mod_params in effective_modifiers:
                     params = {
-                        "atr_period": 14,
-                        "min_tp_pips": 0,
-                        "min_sl_pips": 0,
                         "tp_mult": tp_val,
                         "sl_mult": sl_val,
                     }
@@ -108,13 +109,15 @@ def _build_exit_strategies(
                         exit_modifier = "trailing_stop"
                         exit_modifier_params = mod_params
 
-                    strategies.append(ExitStrategyConfig(
-                        name="atr_based",
-                        params=params,
-                        ct=ct,
-                        exit_modifier=exit_modifier,
-                        exit_modifier_params=exit_modifier_params,
-                    ))
+                    strategies.append(
+                        ExitStrategyConfig(
+                            name="fixed",
+                            params=params,
+                            ct=ct,
+                            exit_modifier=exit_modifier,
+                            exit_modifier_params=exit_modifier_params,
+                        )
+                    )
     return strategies
 
 
@@ -142,7 +145,9 @@ def _make_ctx(
     Coverage-Tests prüfen OB etwas evaluiert wird, nicht OB die Ergebnisse gut sind.
     """
     exit_strategies = _build_exit_strategies(
-        tp, sl, ct,
+        tp,
+        sl,
+        ct,
         timeout_bars=timeout_bars,
         modifier_params_grid=modifier_params_grid,
     )
@@ -150,11 +155,13 @@ def _make_ctx(
     return SimulationContext(
         symbol="TEST",
         asset_class="INDEX",
-        spread=1.0,
+        # The fixed exit places TP/SL at multiples of the spread: 15 index points
+        # keep the grid's multipliers at a realistic distance for ~15000-level bars.
+        spread=15.0,
         point=1.0,
         exit_strategies=exit_strategies,
-        exit_strategy="atr_based",
-        exit_params={"atr_period": 14, "min_tp_pips": 0, "min_sl_pips": 0},
+        exit_strategy="fixed",
+        exit_params={},
         model_type="xgboost",
         min_trades=1,
         # Permissive validation: synthetische Daten haben kein echtes Signal
@@ -196,6 +203,7 @@ def _make_inner_folds(feature_df: pd.DataFrame, n_folds: int = 3, fold_size: int
 # Tests: Grid-Kombinationen
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestGridCombinationsCount:
     """
     total_grid_combinations() = len(exit_strategies) × model_hp.
@@ -233,7 +241,10 @@ class TestGridCombinationsCount:
                 {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
             ],
         )
-        assert ctx_with_mod.total_grid_combinations() == 2 * ctx_no_mod.total_grid_combinations()
+        assert (
+            ctx_with_mod.total_grid_combinations()
+            == 2 * ctx_no_mod.total_grid_combinations()
+        )
 
     def test_three_modifiers_triples_combinations(self):
         """Drei modifier Varianten × Basis-Grid."""
@@ -272,11 +283,11 @@ class TestGridCombinationsCount:
         """
         # Preset-Werte aus orb_scalping_index_v1.json, mit DAX override für sl
         ctx = _make_ctx(
-            tp=[6.0, 7.0, 8.0, 10.0, 12.0],   # DAX override
-            sl=[2.0, 2.5, 3.0],                  # DAX override
-            ct=[0.65, 0.7, 0.75, 0.8],           # DAX override
-            timeout_bars=[8, 16, 32],            # aus Preset
-            modifier_params_grid=[               # aus Preset
+            tp=[6.0, 7.0, 8.0, 10.0, 12.0],  # DAX override
+            sl=[2.0, 2.5, 3.0],  # DAX override
+            ct=[0.65, 0.7, 0.75, 0.8],  # DAX override
+            timeout_bars=[8, 16, 32],  # aus Preset
+            modifier_params_grid=[  # aus Preset
                 {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
                 {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
             ],
@@ -289,6 +300,7 @@ class TestGridCombinationsCount:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tests: ORB Feature-Berechnung
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestORBFeatureComputation:
     """ORB Indicator berechnet alle erwarteten Feature-Spalten für Pipeline-Sessions."""
@@ -346,6 +358,7 @@ class TestORBFeatureComputation:
 # Tests: Grid-Search Coverage
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestGridSearchCoverage:
     """
     Prüft dass run_grid_search WIRKLICH alle Kombos evaluiert.
@@ -380,7 +393,9 @@ class TestGridSearchCoverage:
         # Nur ORB-Features als Feature-Pool
         all_cols = get_feature_columns(feature_df)
         orb_cols = [c for c in all_cols if "_orb_s" in c]
-        assert orb_cols, "Keine ORB-Features im Feature-Pool — ORB-Plugin nicht geladen?"
+        assert orb_cols, (
+            "Keine ORB-Features im Feature-Pool — ORB-Plugin nicht geladen?"
+        )
 
         # Feature-DF bereinigen: NaN-Warmup entfernen
         clean_df = feature_df.dropna(subset=orb_cols[:3])
@@ -448,7 +463,7 @@ class TestGridSearchCoverage:
         grid_results enthält nur überlebende Kombos — ohne Pruning alle.
         """
         tp = [2.0, 3.0]
-        sl = [1.5]
+        sl = [3.0]  # 1.5 spreads is tighter than the bar noise: no fold trades
 
         _, grid_results, n_combos = self._run_small_grid_search(
             tp=tp,
@@ -469,19 +484,21 @@ class TestGridSearchCoverage:
         eliminiert sie aber nicht komplett. keep_ratio=0.5, min_survivors=1.
         """
         tp = [2.0, 3.0, 4.0, 5.0]
-        sl = [1.5]
+        sl = [3.0]
 
         _, grid_results_no_pruning, n_combos = self._run_small_grid_search(
-            tp=tp, sl=sl,
+            tp=tp,
+            sl=sl,
             pruning=False,
             n_inner_folds=3,
         )
         _, grid_results_with_pruning, _ = self._run_small_grid_search(
-            tp=tp, sl=sl,
+            tp=tp,
+            sl=sl,
             pruning=True,
             keep_ratio=0.5,
             min_survivors=1,
-            min_folds_ratio=0.3,   # Start pruning after 30% of inner folds
+            min_folds_ratio=0.3,  # Start pruning after 30% of inner folds
             n_inner_folds=3,
         )
 
@@ -505,12 +522,14 @@ class TestGridSearchCoverage:
         sl = [1.5]
 
         _, grid_results_no_mod, n_combos_no_mod = self._run_small_grid_search(
-            tp=tp, sl=sl,
+            tp=tp,
+            sl=sl,
             modifier_grid=[None],
             pruning=False,
         )
         _, grid_results_with_mod, n_combos_with_mod = self._run_small_grid_search(
-            tp=tp, sl=sl,
+            tp=tp,
+            sl=sl,
             modifier_grid=[
                 {"breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
                 {"breakeven_trigger": 0.5, "trail_atr_mult": 0.5},
@@ -533,7 +552,8 @@ class TestGridSearchCoverage:
         sl_values = [1.5, 2.0]
 
         _, grid_results, _ = self._run_small_grid_search(
-            tp=tp_values, sl=sl_values,
+            tp=tp_values,
+            sl=sl_values,
             pruning=False,
         )
 
@@ -550,6 +570,7 @@ class TestGridSearchCoverage:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tests: ORB + Optimizer Kombination
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestORBOptimizationEndToEnd:
     """
@@ -573,7 +594,9 @@ class TestORBOptimizationEndToEnd:
         clean_df = feature_df.dropna(subset=orb_cols[:3])
 
         ctx = _make_ctx(
-            tp=[2.0, 3.0], sl=[1.5], ct=[0.3, 0.4, 0.5],
+            tp=[2.0, 3.0],
+            sl=[1.5],
+            ct=[0.3, 0.4, 0.5],
             pruning=False,
         )
         folds = _make_inner_folds(clean_df, n_folds=3, fold_size=1000)
@@ -583,6 +606,7 @@ class TestORBOptimizationEndToEnd:
 
         # Patch select_features to spy on what gets selected
         from fwbg.optimization import grid_search as gs_module
+
         original_select = gs_module.select_features
 
         def spy_select(inner_folds, features, ctx, sym):
@@ -622,7 +646,9 @@ class TestORBOptimizationEndToEnd:
         clean_df = feature_df.dropna(subset=orb_cols[:3])
 
         ctx = _make_ctx(
-            tp=[2.0, 3.0, 4.0], sl=[1.5, 2.0], ct=[0.3, 0.4, 0.5],
+            tp=[2.0, 3.0, 4.0],
+            sl=[1.5, 2.0],
+            ct=[0.3, 0.4, 0.5],
             pruning=False,
         )
         folds = _make_inner_folds(clean_df, n_folds=3, fold_size=1000)
@@ -647,18 +673,30 @@ class TestORBOptimizationEndToEnd:
         best = candidates[0]
 
         # Pflichtfelder im candidate-Dict von run_grid_search
-        for required_key in ["params", "inner_val_pnl", "fold_stability", "rrr", "feats"]:
+        for required_key in [
+            "params",
+            "inner_val_pnl",
+            "fold_stability",
+            "rrr",
+            "feats",
+        ]:
             assert required_key in best, (
                 f"Kandidat fehlt Pflichtfeld '{required_key}'. "
                 f"Vorhandene Felder: {list(best.keys())}"
             )
 
         # params = (tp, sl, ct) Tuple
-        assert isinstance(best["params"], tuple), f"params kein Tuple: {type(best['params'])}"
+        assert isinstance(best["params"], tuple), (
+            f"params kein Tuple: {type(best['params'])}"
+        )
         assert len(best["params"]) >= 2, f"params-Tuple zu kurz: {best['params']}"
         tp_val, sl_val = best["params"][0], best["params"][1]
         assert isinstance(tp_val, (int, float)), f"tp kein Numeric: {type(tp_val)}"
         assert isinstance(sl_val, (int, float)), f"sl kein Numeric: {type(sl_val)}"
-        assert np.isfinite(best["inner_val_pnl"]), f"inner_val_pnl nicht finite: {best['inner_val_pnl']}"
-        assert 0.0 <= best["fold_stability"] <= 1.0, f"fold_stability außerhalb [0,1]: {best['fold_stability']}"
+        assert np.isfinite(best["inner_val_pnl"]), (
+            f"inner_val_pnl nicht finite: {best['inner_val_pnl']}"
+        )
+        assert 0.0 <= best["fold_stability"] <= 1.0, (
+            f"fold_stability außerhalb [0,1]: {best['fold_stability']}"
+        )
         assert len(best["feats"]) > 0, "candidate hat leeres feats-Array"

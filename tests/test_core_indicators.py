@@ -10,7 +10,6 @@ Verifiziert mathematische Korrektheit der Indikatoren durch:
 import numpy as np
 import pandas as pd
 import pytest
-
 from fwbg.pipeline import (
     compute_indicator_pool,
     get_feature_columns,
@@ -274,7 +273,6 @@ class TestBollingerBands:
 
     def test_pband_1_at_upper_band(self):
         """%B sollte ~1 sein wenn Preis am oberen Band."""
-        n = 100
         # Starker Breakout nach oben
         close = np.concatenate([np.full(80, 100), np.linspace(100, 115, 20)])
         df = create_ohlc(close)
@@ -288,7 +286,6 @@ class TestBollingerBands:
 
     def test_pband_0_at_lower_band(self):
         """&B sollte ~0 sein wenn Preis am unteren Band."""
-        n = 100
         # Starker Einbruch
         close = np.concatenate([np.full(80, 100), np.linspace(100, 85, 20)])
         df = create_ohlc(close)
@@ -301,7 +298,6 @@ class TestBollingerBands:
 
     def test_bandwidth_increases_with_volatility(self):
         """Bandwidth sollte mit Volatilität steigen."""
-        n = 200
         # Erst niedrige Volatilität, dann hohe
         close_low_vol = 100 + np.random.randn(100) * 0.5
         close_high_vol = 100 + np.random.randn(100) * 3
@@ -638,7 +634,6 @@ class TestDynamicsFeatures:
 
     def test_rsi_change_positive_when_rsi_rising(self):
         """RSI Change sollte positiv sein wenn RSI steigt."""
-        n = 150
         # Long sideways period, then strong uptrend
         close = np.concatenate(
             [
@@ -658,50 +653,41 @@ class TestDynamicsFeatures:
         )
 
 
+# === OPTIONAL PREMIUM INDICATORS ===
+
+
 class TestCrossIndicatorFeatures:
-    """Tests für Cross-Indikator Features."""
+    """Tests for optional premium cross-indicator features."""
 
     def test_cross_rsi_high_rising_is_binary(self):
-        """Cross RSI high+rising Feature sollte binär (0 oder 1) sein."""
+        pytest.importorskip("fwbg_premium")
         n = 200
         np.random.seed(42)
         close = 100 * np.exp(np.cumsum(np.random.randn(n) * 0.01))
-        df = create_ohlc(close)
-        result = compute_indicator_pool(df)
+        result = compute_indicator_pool(create_ohlc(close))
 
         cross_feature = result["cross_rsi_high_rising"].dropna()
-        # Should only contain 0 or 1
-        unique_values = set(cross_feature.unique())
-        assert unique_values.issubset({0, 1}), f"Expected only 0/1, got {unique_values}"
-
-
-# === MULTI-TIMEFRAME FEATURES ===
+        assert set(cross_feature.unique()).issubset({0, 1})
 
 
 class TestMultiTimeframeFeatures:
-    """Tests für Multi-Timeframe Features."""
+    """Tests for optional premium multi-timeframe features."""
 
     def test_h4_trend_positive_in_uptrend(self):
-        """H4 Trend sollte positiv im Aufwärtstrend sein."""
-        n = 200
-        close = np.linspace(100, 150, n)
-        df = create_ohlc(close)
-        result = compute_indicator_pool(df)
+        pytest.importorskip("fwbg_premium")
+        close = np.linspace(100, 150, 200)
+        result = compute_indicator_pool(create_ohlc(close))
 
         h4_trend = result["mtf_h4_trend"].dropna()
         assert h4_trend.iloc[-50:].mean() > 0, "H4 trend should be positive in uptrend"
 
     def test_trend_alignment_1_when_all_timeframes_agree(self):
-        """Trend Alignment sollte hoch sein wenn Timeframes übereinstimmen."""
-        n = 600  # Genug für D1 EMA
-        close = np.linspace(100, 200, n)
-        df = create_ohlc(close)
-        result = compute_indicator_pool(df)
+        pytest.importorskip("fwbg_premium")
+        close = np.linspace(100, 200, 600)
+        result = compute_indicator_pool(create_ohlc(close))
 
-        # Feature wurde umbenannt zu mtf_trend_alignment_h1h4 und mtf_trend_alignment_h4d1
         alignment_h1h4 = result["mtf_trend_alignment_h1h4"].dropna()
         alignment_h4d1 = result["mtf_trend_alignment_h4d1"].dropna()
-        # Im klaren Aufwärtstrend sollten Timeframes übereinstimmen
         assert alignment_h1h4.iloc[-50:].mean() > 0.5, (
             "H1/H4 alignment should be high in clear trend"
         )
@@ -821,7 +807,6 @@ class TestVolCompression:
 
     def test_compression_flag_during_low_vol(self):
         """Compression flag should be 1 during sustained low volatility."""
-        n = 300
         # First 200 bars: high vol, then 100 bars: very low vol
         close_high = 100 + np.cumsum(np.random.randn(200) * 2)
         close_low = close_high[-1] + np.cumsum(np.random.randn(100) * 0.05)

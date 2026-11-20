@@ -845,7 +845,6 @@ version = "2.21.0"
 source = { editable = "." }
 dependencies = [
     { name = "dukascopy-python" },
-    { name = "fwbg-premium" },
     { name = "fwbg-sdk" },
     { name = "holidays" },
     { name = "matplotlib" },
@@ -913,7 +912,6 @@ requires-dist = [
     { name = "dukascopy-python", specifier = ">=4.0,<5" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
     { name = "fwbg", extras = ["analytics", "ig", "api"], marker = "extra == 'full'" },
-    { name = "fwbg-premium", editable = "packages/fwbg-premium" },
     { name = "fwbg-sdk", editable = "packages/fwbg-sdk" },
     { name = "holidays", specifier = ">=0.70" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
@@ -952,21 +950,6 @@ provides-extras = ["dev", "analytics", "ig", "api", "full"]
 dev = [
     { name = "httpx2" },
     { name = "ruff", specifier = ">=0.14.14,<0.18" },
-]
-
-[[package]]
-name = "fwbg-premium"
-version = "1.0.0"
-source = { editable = "packages/fwbg-premium" }
-dependencies = [
-    { name = "fwbg" },
-    { name = "fwbg-sdk" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fwbg", specifier = ">=2.2.1" },
-    { name = "fwbg-sdk", specifier = ">=1.0.0" },
 ]
 
 [[package]]

@@ -1,4 +1,5 @@
-"""Tests for entry_point-based plugin discovery (fwbg-premium separation)."""
+"""Tests for entry_point-based plugin discovery of separately installed plugin packages."""
+
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -23,20 +24,28 @@ def _create_plugin_package(base_dir: Path, pkg_name: str, plugin_name: str) -> P
     pkg_dir.mkdir(parents=True)
 
     # Package manifest
-    (pkg_dir / "manifest.json").write_text(json.dumps({
-        "name": pkg_name,
-        "version": "1.0.0",
-        "license": "Commercial",
-    }))
+    (pkg_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "name": pkg_name,
+                "version": "1.0.0",
+                "license": "Commercial",
+            }
+        )
+    )
 
     # Indicators category
     ind_dir = pkg_dir / "indicators" / plugin_name
     ind_dir.mkdir(parents=True)
 
-    (ind_dir / "manifest.json").write_text(json.dumps({
-        "name": plugin_name,
-        "version": "1.0.0",
-    }))
+    (ind_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "name": plugin_name,
+                "version": "1.0.0",
+            }
+        )
+    )
 
     (ind_dir / "__init__.py").write_text(f'''
 from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext
@@ -151,13 +160,13 @@ class TestAutoDiscoverWithEntryPoints:
 
 
 class TestGracefulDegradation:
-    """Tests that fwbg works without premium plugins installed."""
+    """Tests that fwbg works without any separately installed plugin package."""
 
     def test_core_only_discover(self):
-        """Without premium, only core plugins should be discovered."""
+        """Without entry-point packages, only core plugins should be discovered."""
         registry = PluginRegistry()
 
-        # Simulate: no entry_points, no fwbg-premium in built-in dir
+        # Simulate: no entry_points installed
         with patch("importlib.metadata.entry_points", return_value=[]):
             discovered = registry.auto_discover()
 
@@ -166,18 +175,88 @@ class TestGracefulDegradation:
         assert len(core_plugins) > 0
         assert "fwbg-core:ema" in core_plugins
 
-    def test_core_works_without_premium_import(self):
-        """Core registry functions should not crash if premium is absent."""
+    def test_core_works_without_optional_packages(self):
+        """Core registry functions should not crash if no extra package is installed."""
         from fwbg.core.registry import INDICATOR_REGISTRY, get_indicator
 
         # Clear registries to simulate fresh state
         INDICATOR_REGISTRY.clear()
 
         # Should trigger auto-discovery, find core at minimum
-        # Even without premium, get_indicator should work for core plugins
+        # Even without extra packages, get_indicator should work for core plugins
         try:
             cls = get_indicator("trend")
             assert cls is not None
         except ValueError:
             # If trend is a pipeline-only plugin, that's fine too
             pass
+
+
+class TestMissingPluginPackage:
+    """A config naming a plugin from a package that is not installed fails clearly."""
+
+    def test_missing_namespace_error_names_plugin_and_package(self):
+        from fwbg.pipeline.registry import PluginNotFoundError
+
+        registry = PluginRegistry()
+        with patch("importlib.metadata.entry_points", return_value=[]):
+            registry.auto_discover()
+
+        with pytest.raises(PluginNotFoundError) as exc_info:
+            registry.get("absent-pkg:some_plugin")
+
+        message = str(exc_info.value)
+        assert "absent-pkg:some_plugin" in message
+        assert "'absent-pkg' is not installed" in message
+        assert "fwbg-core" in message  # lists what is installed
+
+    def test_missing_plugin_in_installed_package_keeps_plain_error(self, tmp_path):
+        from fwbg.pipeline.registry import PluginNotFoundError
+
+        plugins_dir = tmp_path / "plugins"
+        plugins_dir.mkdir()
+        _create_plugin_package(plugins_dir, "ep-test-pkg", "ep_indicator")
+        mock_ep = MagicMock()
+        mock_ep.name = "ep-test-pkg"
+        mock_ep.load.return_value = lambda: plugins_dir
+
+        registry = PluginRegistry()
+        with patch("importlib.metadata.entry_points", return_value=[mock_ep]):
+            registry.auto_discover()
+
+        with pytest.raises(PluginNotFoundError) as exc_info:
+            registry.get("ep-test-pkg:other_plugin")
+
+        message = str(exc_info.value)
+        assert "ep-test-pkg:other_plugin" in message
+        assert "not installed" not in message
+
+    def test_unqualified_missing_name_hints_at_uninstalled_package(self):
+        registry = PluginRegistry()
+        with patch("importlib.metadata.entry_points", return_value=[]):
+            registry.auto_discover()
+
+        with pytest.raises(ValueError) as exc_info:
+            registry.get("some_absent_plugin")
+
+        message = str(exc_info.value)
+        assert "must be fully qualified" in message
+        assert "'some_absent_plugin'" in message
+        assert "optional plugin package" in message
+
+    def test_runner_fails_on_plugin_from_missing_package(self):
+        """Pipeline setup raises PluginNotFoundError naming the plugin."""
+        from fwbg.pipeline.registry import PluginNotFoundError
+        from fwbg.pipeline.runner import PipelineRunner
+        from fwbg.pipeline.config import PipelineConfig, PluginConfig
+
+        registry = PluginRegistry()
+        with patch("importlib.metadata.entry_points", return_value=[]):
+            registry.auto_discover()
+
+        config = PipelineConfig(
+            indicators=[PluginConfig(name="absent-pkg:some_indicator", params={})]
+        )
+        runner = PipelineRunner(registry, config)
+        with pytest.raises(PluginNotFoundError, match="absent-pkg:some_indicator"):
+            runner._initialize()
