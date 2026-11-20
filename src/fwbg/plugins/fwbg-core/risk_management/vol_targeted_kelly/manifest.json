@@ -1,0 +1,6 @@
+{
+  "name": "vol_targeted_kelly",
+  "version": "2.0.0",
+  "description": "Deprecated alias of kelly: sizes exactly like kelly, volatility targeting was never applied",
+  "phase": "risk_management"
+}
