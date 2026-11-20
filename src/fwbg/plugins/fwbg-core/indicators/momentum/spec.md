@@ -1,6 +1,6 @@
 # Plugin Spec — momentum
 
-**Kind**: indicator  •  **Version**: 2.0.0
+**Kind**: indicator  •  **Version**: 2.1.0
 
 ## Capability
 
@@ -40,20 +40,19 @@ Momentum indicator plugin that appends 13 momentum-oscillator feature columns to
 ## Acceptance Criteria
 
 - AC-001: compute() returns the input DataFrame with 13 additional feature columns appended: mom_rsi_{7,14,21}, mom_stoch_k_{14,21}, mom_stoch_d_{14,21}, mom_williams_{14,21}, mom_uo, mom_roc_{5,10,20}.
-- AC-002: RSI columns are computed via ta.momentum.rsi on df['C'] with window=period for each period in rsi_periods.
+- AC-002: RSI columns are Wilder's RSI on df['C'] for each period in rsi_periods: average gain/loss seeded with the simple mean of the first `period` changes, then smoothed with alpha = 1/period. Rows before bar `period` are NaN; an average gain and loss of 0 (flat series) gives 50, only gains 100, only losses 0.
 - AC-003: Stochastic %K and %D columns are computed via ta.momentum.StochasticOscillator on (H, L, C) with window=period for each period in stoch_periods.
 - AC-004: Williams %R columns are computed via ta.momentum.williams_r on (H, L, C) with lbp=period for each period in williams_periods.
 - AC-005: mom_uo is computed via ta.momentum.ultimate_oscillator on (H, L, C) using library defaults (single column, not parameterized).
 - AC-006: ROC columns are computed via ta.momentum.roc on df['C'] with window=period for each period in roc_periods.
 - AC-007: All computed feature columns are passed through shift_features(..., df.index) before being concatenated onto the returned DataFrame, so feature values at bar i reflect data available strictly before bar i (no lookahead).
-- AC-008: get_feature_columns() returns the fixed list of 13 default column names regardless of the params actually passed to compute().
+- AC-008: get_feature_columns(params) returns the column names compute() produces for the same params (13 names by default).
 - AC-009: get_default_params() returns {'rsi_periods': [7,14,21], 'stoch_periods': [14,21], 'williams_periods': [14,21], 'roc_periods': [5,10,20]}.
 - AC-010: When any of rsi_periods, stoch_periods, williams_periods, or roc_periods is passed as None, compute() substitutes the corresponding default list.
-- AC-011: The plugin registers under the name 'momentum' via @register_indicator and exposes name='momentum', version='2.0.0'.
+- AC-011: The plugin registers under the name 'momentum' via @register_indicator and exposes name='momentum', version='2.1.0'.
 
 ## Edge Cases
 
-- Any of the period-list parameters passed explicitly as None is replaced with its default list inside compute().
 - Non-default period lists change which feature columns are actually produced by compute(), but get_feature_columns() still returns the fixed 13-name default list — mismatch between produced columns and declared feature columns when non-default periods are used.
 - Early rows (index < max lookback period) of each oscillator column will contain NaN values produced by the underlying ta library.
 - The one-bar shift via shift_features means the first row of every feature column is NaN even after the ta library warmup, and the last raw computed value is dropped from the shifted output.
@@ -67,6 +66,5 @@ Momentum indicator plugin that appends 13 momentum-oscillator feature columns to
 - The ta library's ultimate_oscillator default short/medium/long windows (7/14/28) are the intended behaviour, since they are not exposed as parameters.
 
 ## Needs Clarification
-
 - [NEEDS CLARIFICATION: get_feature_columns() returns a hard-coded 13-name list matching only the default period configuration; whether this should dynamically reflect the actual params (or whether callers are expected to always use defaults for column-name purposes) is not stated in the source.]
 - [NEEDS CLARIFICATION: Ultimate Oscillator's short/medium/long windows are not exposed as params — whether they were intentionally fixed at ta-library defaults or simply not surfaced yet is not stated.]
