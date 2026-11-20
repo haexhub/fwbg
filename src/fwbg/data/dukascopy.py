@@ -21,6 +21,8 @@ from pathlib import Path
 import dukascopy_python as dk
 import dukascopy_python.instruments as dk_instruments
 
+from fwbg.data.atomic import write_csv_atomic, write_text_atomic
+
 log = logging.getLogger(__name__)
 
 
@@ -433,7 +435,7 @@ def download(
                 "V": volume,
             }
         )
-        out.to_csv(dest, index=False)
+        write_csv_atomic(out, dest, index=False)
 
         # Conservative spread: 90th percentile of the per-bar ask-bid close gap.
         gap = ask["close"].to_numpy() - bid["close"].to_numpy()
@@ -459,7 +461,9 @@ def download(
             quality_df, timeframe=timeframe, requested_start=start, requested_end=end
         )
         report["spread_p90"] = spread
-        dest.with_suffix(".quality.json").write_text(json.dumps(report, indent=2))
+        write_text_atomic(
+            dest.with_suffix(".quality.json"), json.dumps(report, indent=2)
+        )
         for warning in report["warnings"]:
             log.warning("dukascopy: %s: %s", clean, warning)
 
