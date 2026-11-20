@@ -1,6 +1,6 @@
 # Plugin Spec — previous_day_levels
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -59,15 +59,15 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 - AC-003: Raises ValueError when range_scope contains a value outside {'session','all'}.
 - AC-004: For each (candle_span, range_scope, break_mode) variant, emits the 13 base pdl_* feature columns prefixed with <span>_<scope>_<break_pfx>.
 - AC-005: For each retracement level in retracement_levels and each retest_mode, emits pdl_retest_bull, pdl_retest_bear (when enable_retest=True) and pdl_sl_dist columns prefixed with <span>_<scope>_<break_pfx><retest_pfx>rl{N}_.
-- AC-006: pdl_high_dist = (PDH - close) / ATR and pdl_low_dist = (close - PDL) / ATR, using a safe ATR floor of 1.0 where ATR <= EPSILON.
+- AC-006: pdl_high_dist = (PDH - close) / ATR and pdl_low_dist = (close - PDL) / ATR, using a safe ATR floor of 1.0 where ATR <= EPSILON. ATR is the rolling mean of true range over a full atr_period window; rows before that are NaN (no fabricated value).
 - AC-007: pdl_position = (close - PDL) / (PDH - PDL) with NaN where |PDH - PDL| <= EPSILON.
 - AC-008: pdl_above_high and pdl_below_low are 0/1 floats indicating close strictly above PDH or below PDL.
 - AC-009: pdl_midpoint_dist normalizes distance from close to (PDH+PDL)/2 by ATR.
 - AC-010: pdl_high_break / pdl_low_break mark the first bar of each day where the breakout condition holds (with optional session mask when break_mode='session_only').
 - AC-011: pdl_post_bull / pdl_post_bear stay set for all bars after the first break within the day.
 - AC-012: pdl_sl_dist = max((1 - rl) * pd_range, min_sl_atr_mult * ATR) when min_sl_atr_mult > 0, else (1 - rl) * pd_range.
-- AC-013: pdl_range_position_ma is a rolling mean of pdl_position over ma_period bars with min_periods=1.
-- AC-014: pdl_day_range_expanding is 1.0 when the current-day range (per candle_span/scope) exceeds the previous-day range.
+- AC-013: pdl_range_position_ma is a rolling mean of pdl_position over ma_period bars (min_periods=ma_period, NaN until full).
+- AC-014: pdl_day_range_expanding is 1.0 when the range of the current day *so far* (running max/min of the bars up to the current bar, per candle_span/scope) exceeds the previous-day range.
 - AC-015: All feature values are NaN on bars where the previous day's H/L is unavailable (e.g. first day, or after weekend when skip_weekends=True and prior data is missing).
 - AC-016: When skip_weekends=True, Saturday/Sunday PDH/PDL are forward-filled from the last trading day (so Monday references Friday).
 - AC-017: When resample_tf is set, breakout detection is anchored at the last bar of each resampled period (end-of-bar timestamp) to avoid intra-period lookahead.
@@ -82,7 +82,11 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 - First day(s) of data have no previous-day reference: all pdl_* features are NaN on those bars.
 - Session that wraps midnight (session_start_hour >= session_end_hour): day grouping uses a (24 - session_start_hour) offset so the trading day aligns to session start.
 - skip_weekends=True with Monday bars: PDH/PDL are taken from Friday via ffill of trading days only.
-- ATR <= EPSILON: safe_atr falls back to 1.0 to avoid division blow-up in distance features.
+- ATR <= EPSILON: safe_atr falls back to 1.0 to avoid division blow-up in distance features; during ATR warm-up safe_atr stays NaN.
+- A retest never fires on the breakout bar itself (and min_retracement tracking starts after it): the first eligible retest bar is the bar after the break.
+- session_start_hour / session_end_hour are fixed UTC hours with no time zone conversion; a 17:00 New York day boundary is 22:00 UTC in winter and 21:00 UTC in summer.
+- resample_tf with body range: in session scope only in-session bars enter a resample bin, and bins are aligned to the trading-day boundary (midnight, or session_start_hour for sessions crossing midnight).
+- enable_retest=False: get_feature_columns()/get_signal_columns() omit the retest columns, matching what compute() emits.
 - |PDH - PDL| <= EPSILON: pdl_position is NaN for those bars (safe_range = NaN).
 - range_scope contains an unknown value: raises ValueError listing invalid entries.
 - Multiple retracement_levels supplied: each generates its own rl{N}_-prefixed retest/SL columns.
