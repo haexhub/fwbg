@@ -9,6 +9,7 @@ Testet:
 - calculate_calmar_ratio: Calmar Ratio Berechnung
 - monte_carlo_permutation_test: Statistische Signifikanz
 """
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -33,7 +34,9 @@ from fwbg.simulation.trade import (
 )
 
 
-def create_price_arrays(n: int, trend: str = "flat", volatility: float = 0.01, seed: int = 42):
+def create_price_arrays(
+    n: int, trend: str = "flat", volatility: float = 0.01, seed: int = 42
+):
     """
     Erstellt synthetische Preis-Arrays für Tests.
 
@@ -78,11 +81,18 @@ class TestSimulateTradeNumba:
         lows = np.array([99.5, 100.5, 101.5, 102.5, 103.5])
 
         result, exit_idx, exit_price, exit_reason = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=0, direction=1,
-            tp_distance=2.0, sl_distance=1.0,
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=1,
+            tp_distance=2.0,
+            sl_distance=1.0,
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         assert result == 1.0, "Long sollte gewinnen"
@@ -97,11 +107,18 @@ class TestSimulateTradeNumba:
         lows = np.array([99.5, 98.5, 97.5, 96.5, 95.5])
 
         result, exit_idx, _, exit_reason = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=0, direction=1,
-            tp_distance=5.0, sl_distance=1.0,
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=1,
+            tp_distance=5.0,
+            sl_distance=1.0,
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         assert result == -1.0, "Long sollte verlieren"
@@ -116,11 +133,18 @@ class TestSimulateTradeNumba:
         lows = np.array([99.5, 98.5, 97.5, 96.5, 95.5])
 
         result, _, _, exit_reason = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=0, direction=-1,
-            tp_distance=2.0, sl_distance=1.0,
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=-1,
+            tp_distance=2.0,
+            sl_distance=1.0,
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         assert result == 1.0, "Short sollte gewinnen"
@@ -135,11 +159,18 @@ class TestSimulateTradeNumba:
         lows = np.array([99.5, 100.5, 101.5, 102.5, 103.5])
 
         result, _, _, exit_reason = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=0, direction=-1,
-            tp_distance=5.0, sl_distance=1.0,
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=-1,
+            tp_distance=5.0,
+            sl_distance=1.0,
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         assert result == -1.0, "Short sollte verlieren"
@@ -154,11 +185,18 @@ class TestSimulateTradeNumba:
         lows = np.ones(20) * 99.9
 
         result, exit_idx, _, exit_reason = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=0, direction=1,
-            tp_distance=5.0, sl_distance=5.0,  # Weit weg
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=10
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=1,
+            tp_distance=5.0,
+            sl_distance=5.0,  # Weit weg
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=10,
         )
 
         assert exit_reason == 2, "Exit-Reason sollte Timeout sein"
@@ -174,20 +212,34 @@ class TestSimulateTradeNumba:
 
         # Ohne Spread: TP bei 100.5 sollte erreicht werden
         result_no_spread, _, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=0, direction=1,
-            tp_distance=0.5, sl_distance=0.5,
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=1,
+            tp_distance=0.5,
+            sl_distance=0.5,
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         # Mit Spread: TP bei 100.5 + spread ist schwerer zu erreichen
         result_with_spread, _, _, _ = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=0, direction=1,
-            tp_distance=0.5, sl_distance=0.5,
-            spread=0.1, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=1,
+            tp_distance=0.5,
+            sl_distance=0.5,
+            spread=0.1,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         # Spread macht den Trade schwieriger - mindestens einer sollte verlieren
@@ -202,11 +254,18 @@ class TestSimulateTradeNumba:
 
         # Entry am letzten Bar - kein Platz für Exit
         result, exit_idx, _, exit_reason = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=1, direction=1,
-            tp_distance=0.5, sl_distance=0.5,
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=1,
+            direction=1,
+            tp_distance=0.5,
+            sl_distance=0.5,
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         assert result == 0.0, "Sollte kein Ergebnis sein"
@@ -218,14 +277,21 @@ class TestSimulateTradeNumba:
         opens = np.array([100.0, 100.0])
         closes = np.array([100.0, 100.0])
         highs = np.array([100.0, 105.0])  # Sehr hoch
-        lows = np.array([100.0, 95.0])   # Sehr tief
+        lows = np.array([100.0, 95.0])  # Sehr tief
 
         result, _, _, exit_reason = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=0, direction=1,
-            tp_distance=2.0, sl_distance=2.0,
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=1,
+            tp_distance=2.0,
+            sl_distance=2.0,
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         assert result == -1.0, "Bei TP+SL im selben Bar: konservativ Loss"
@@ -241,10 +307,16 @@ class TestComputeTargetsNumba:
 
         n = len(opens)
         targets_long, targets_short, _, _ = compute_targets_numba(
-            opens, closes, highs, lows,
-            tp_distances=np.full(n, 1.0), sl_distances=np.full(n, 0.5),
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            tp_distances=np.full(n, 1.0),
+            sl_distances=np.full(n, 0.5),
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         assert len(targets_long) == 1000
@@ -254,14 +326,22 @@ class TestComputeTargetsNumba:
 
     def test_uptrend_more_long_wins(self):
         """Test: Aufwärtstrend sollte mehr Long-Wins produzieren."""
-        opens, closes, highs, lows = create_price_arrays(500, trend="up", volatility=0.005)
+        opens, closes, highs, lows = create_price_arrays(
+            500, trend="up", volatility=0.005
+        )
 
         n = len(opens)
         targets_long, targets_short, _, _ = compute_targets_numba(
-            opens, closes, highs, lows,
-            tp_distances=np.full(n, 0.5), sl_distances=np.full(n, 0.5),
-            spread=0.0, slippage=0.0,
-            max_bars=50, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            tp_distances=np.full(n, 0.5),
+            sl_distances=np.full(n, 0.5),
+            spread=0.0,
+            slippage=0.0,
+            max_bars=50,
+            timeout_bars=0,
         )
 
         long_wins = np.sum(targets_long)
@@ -272,14 +352,22 @@ class TestComputeTargetsNumba:
 
     def test_downtrend_more_short_wins(self):
         """Test: Abwärtstrend sollte mehr Short-Wins produzieren."""
-        opens, closes, highs, lows = create_price_arrays(500, trend="down", volatility=0.005)
+        opens, closes, highs, lows = create_price_arrays(
+            500, trend="down", volatility=0.005
+        )
 
         n = len(opens)
         targets_long, targets_short, _, _ = compute_targets_numba(
-            opens, closes, highs, lows,
-            tp_distances=np.full(n, 0.5), sl_distances=np.full(n, 0.5),
-            spread=0.0, slippage=0.0,
-            max_bars=50, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            tp_distances=np.full(n, 0.5),
+            sl_distances=np.full(n, 0.5),
+            spread=0.0,
+            slippage=0.0,
+            max_bars=50,
+            timeout_bars=0,
         )
 
         long_wins = np.sum(targets_long)
@@ -294,10 +382,16 @@ class TestComputeTargetsNumba:
 
         n = len(opens)
         targets_long, targets_short, _, _ = compute_targets_numba(
-            opens, closes, highs, lows,
-            tp_distances=np.full(n, 1.0), sl_distances=np.full(n, 1.0),
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            tp_distances=np.full(n, 1.0),
+            sl_distances=np.full(n, 1.0),
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         # Letzter Bar kann kein Entry sein
@@ -343,10 +437,17 @@ class TestSimulateProTrade:
         timestamps = pd.date_range("2024-01-01", periods=5, freq="h")
 
         trade = simulate_pro_trade(
-            closes=closes, highs=highs, lows=lows,
-            idx=0, direction=1, tp_distance=2.0, sl_distance=1.0,
-            spread=0.0, timestamps=timestamps.values,
-            symbol="TEST", opens=closes
+            closes=closes,
+            highs=highs,
+            lows=lows,
+            idx=0,
+            direction=1,
+            tp_distance=2.0,
+            sl_distance=1.0,
+            spread=0.0,
+            timestamps=timestamps.values,
+            symbol="TEST",
+            opens=closes,
         )
 
         if trade:
@@ -363,9 +464,15 @@ class TestSimulateProTrade:
         lows = closes - 0.1
 
         trade = simulate_pro_trade(
-            closes=closes, highs=highs, lows=lows,
-            idx=0, direction=1, tp_distance=2.0, sl_distance=1.0,
-            spread=0.0, opens=closes
+            closes=closes,
+            highs=highs,
+            lows=lows,
+            idx=0,
+            direction=1,
+            tp_distance=2.0,
+            sl_distance=1.0,
+            spread=0.0,
+            opens=closes,
         )
 
         assert trade is None
@@ -402,9 +509,17 @@ class TestSimulateProTrade:
         # SL = entry - 10 (hit around bar 14-15 when price drops below ~90)
         # timeout_bars = 8 → should exit at bar 8 close (~104.3, profitable)
         trade = simulate_pro_trade(
-            closes=closes, highs=highs, lows=lows,
-            idx=0, direction=1, tp_distance=50.0, sl_distance=10.0,
-            spread=0.0, opens=opens, max_bars=100, timeout_bars=8,
+            closes=closes,
+            highs=highs,
+            lows=lows,
+            idx=0,
+            direction=1,
+            tp_distance=50.0,
+            sl_distance=10.0,
+            spread=0.0,
+            opens=opens,
+            max_bars=100,
+            timeout_bars=8,
         )
 
         assert trade is not None, "Trade should complete via timeout"
@@ -418,11 +533,18 @@ class TestSimulateProTrade:
 
         # Cross-check: _simulate_trade_numba must produce the same result
         result_numba, exit_idx_numba, _, exit_reason_numba = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=0, direction=1,
-            tp_distance=50.0, sl_distance=10.0,
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=8,
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=1,
+            tp_distance=50.0,
+            sl_distance=10.0,
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=8,
         )
         assert exit_reason_numba == 2, "Numba should timeout"
         assert exit_idx_numba == 8, "Numba should exit at bar 8"
@@ -450,9 +572,17 @@ class TestSimulateProTrade:
         # timeout_bars=5 → exit at bar 5 (entry at bar 1)
         # SL at entry - 8 = 92.0, would be hit around bar 8-9
         trade = simulate_pro_trade(
-            closes=closes, highs=highs, lows=lows,
-            idx=0, direction=1, tp_distance=50.0, sl_distance=8.0,
-            spread=0.0, opens=opens, max_bars=100, timeout_bars=5,
+            closes=closes,
+            highs=highs,
+            lows=lows,
+            idx=0,
+            direction=1,
+            tp_distance=50.0,
+            sl_distance=8.0,
+            spread=0.0,
+            opens=opens,
+            max_bars=100,
+            timeout_bars=5,
         )
 
         assert trade is not None
@@ -468,9 +598,17 @@ class TestSimulateProTrade:
         lows = np.full(n, 99.9)
 
         trade = simulate_pro_trade(
-            closes=closes, highs=highs, lows=lows,
-            idx=0, direction=1, tp_distance=50.0, sl_distance=50.0,
-            spread=0.0, opens=opens, max_bars=15, timeout_bars=None,
+            closes=closes,
+            highs=highs,
+            lows=lows,
+            idx=0,
+            direction=1,
+            tp_distance=50.0,
+            sl_distance=50.0,
+            spread=0.0,
+            opens=opens,
+            max_bars=15,
+            timeout_bars=None,
         )
 
         # No TP/SL hit, no timeout → closed when the configured horizon ends.
@@ -526,7 +664,9 @@ class TestCalculateSharpeRatio:
 
         # Bei extrem niedriger Volatilität ist Sharpe sehr hoch (oder inf)
         # Da Std nahe 0, wird Sharpe sehr groß
-        assert sharpe > 0 or np.isinf(sharpe), "Konstante positive Returns = sehr hohe Sharpe"
+        assert sharpe > 0 or np.isinf(sharpe), (
+            "Konstante positive Returns = sehr hohe Sharpe"
+        )
 
 
 class TestCalculateCalmarRatio:
@@ -549,7 +689,7 @@ class TestCalculateCalmarRatio:
         calmar = calculate_calmar_ratio(trades, risk_per_trade=0.02, rrr=2.0)
 
         # Bei keinem Drawdown: Sollte nicht crashen
-        assert calmar >= 0 or calmar == float('inf') or np.isinf(calmar)
+        assert calmar >= 0 or calmar == float("inf") or np.isinf(calmar)
 
     def test_empty_trades(self):
         """Test: Leere Trade-Liste."""
@@ -602,7 +742,9 @@ class TestEquitySmoothness:
         """Test: Zu wenige Trades für Berechnung."""
         trades = [1.0, -1.0]
 
-        result = calculate_equity_smoothness(trades, risk_per_trade=0.02, rrr=2.0, window_size=50)
+        result = calculate_equity_smoothness(
+            trades, risk_per_trade=0.02, rrr=2.0, window_size=50
+        )
 
         assert result["smoothness_score"] == 0.5  # Default
 
@@ -645,8 +787,11 @@ class TestFindOptimalCircuitBreaker:
         trades = [1.0] * 30 + [-1.0] * 10 + [1.0] * 30 + [-1.0] * 10
 
         result = find_optimal_circuit_breaker(
-            trades, risk_per_trade=0.02, rrr=2.0,
-            loss_range=(3, 10), pause_range=(5, 20)
+            trades,
+            risk_per_trade=0.02,
+            rrr=2.0,
+            loss_range=(3, 10),
+            pause_range=(5, 20),
         )
 
         assert "optimal_pause_after_losses" in result
@@ -670,10 +815,16 @@ class TestEdgeCases:
         try:
             n = len(opens)
             targets_long, targets_short, _, _ = compute_targets_numba(
-                opens, closes, highs, lows,
-                tp_distances=np.full(n, 1.0), sl_distances=np.full(n, 1.0),
-                spread=0.0, slippage=0.0,
-                max_bars=100, timeout_bars=0
+                opens,
+                closes,
+                highs,
+                lows,
+                tp_distances=np.full(n, 1.0),
+                sl_distances=np.full(n, 1.0),
+                spread=0.0,
+                slippage=0.0,
+                max_bars=100,
+                timeout_bars=0,
             )
             assert len(targets_long) == 3
         except Exception:
@@ -686,9 +837,15 @@ class TestEdgeCases:
         lows = closes
 
         trade = simulate_pro_trade(
-            closes=closes, highs=highs, lows=lows,
-            idx=0, direction=1, tp_distance=0.0, sl_distance=0.0,
-            spread=0.0, opens=closes
+            closes=closes,
+            highs=highs,
+            lows=lows,
+            idx=0,
+            direction=1,
+            tp_distance=0.0,
+            sl_distance=0.0,
+            spread=0.0,
+            opens=closes,
         )
 
         # Mit Distanz=0 werden TP/SL-Levels bei Entry sein
@@ -704,10 +861,16 @@ class TestEdgeCases:
 
         n = len(opens)
         targets_long, targets_short, _, _ = compute_targets_numba(
-            opens, closes, highs, lows,
-            tp_distances=np.full(n, 1.0), sl_distances=np.full(n, 1.0),
-            spread=0.0, slippage=0.0,
-            max_bars=100, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            tp_distances=np.full(n, 1.0),
+            sl_distances=np.full(n, 1.0),
+            spread=0.0,
+            slippage=0.0,
+            max_bars=100,
+            timeout_bars=0,
         )
 
         # Sollte funktionieren (z.B. für Interest Rate Futures)
@@ -719,10 +882,16 @@ class TestEdgeCases:
 
         n = len(opens)
         targets_long, _, _, _ = compute_targets_numba(
-            opens, closes, highs, lows,
-            tp_distances=np.full(n, 1000.0), sl_distances=np.full(n, 1000.0),  # Viel größer als Price-Bewegung
-            spread=0.0, slippage=0.0,
-            max_bars=10, timeout_bars=0
+            opens,
+            closes,
+            highs,
+            lows,
+            tp_distances=np.full(n, 1000.0),
+            sl_distances=np.full(n, 1000.0),  # Viel größer als Price-Bewegung
+            spread=0.0,
+            slippage=0.0,
+            max_bars=10,
+            timeout_bars=0,
         )
 
         # Keine Targets sollten erreicht werden
@@ -777,7 +946,7 @@ class TestComputeSessionMask:
         assert not mask[1]
         # 08:00-16:00 → in session
         for i in range(2, 11):  # hours 8-16
-            assert mask[i], f"Hour {6+i} should be in session"
+            assert mask[i], f"Hour {6 + i} should be in session"
         # 17:00 → out of session
         assert not mask[11]
 
@@ -810,9 +979,9 @@ class TestComputeSessionMask:
     def test_flat_bars_excluded(self):
         """Flat bars (O==H==L==C, e.g. weekends/holidays) excluded from mask."""
         timestamps = pd.date_range("2025-01-02 00:00", periods=8, freq="1h")
-        opens  = np.array([100, 100, 101, 102, 102, 102, 103, 104], dtype=np.float64)
-        highs  = np.array([101, 100, 102, 103, 102, 103, 104, 105], dtype=np.float64)
-        lows   = np.array([ 99, 100, 100, 101, 102, 101, 102, 103], dtype=np.float64)
+        opens = np.array([100, 100, 101, 102, 102, 102, 103, 104], dtype=np.float64)
+        highs = np.array([101, 100, 102, 103, 102, 103, 104, 105], dtype=np.float64)
+        lows = np.array([99, 100, 100, 101, 102, 101, 102, 103], dtype=np.float64)
         closes = np.array([100, 100, 101, 102, 102, 102, 103, 104], dtype=np.float64)
         # Bar 1 (01:00) and bar 4 (04:00) are flat (O==H==L==C)
 
@@ -821,7 +990,10 @@ class TestComputeSessionMask:
         assert mask_no_ohlc[4]
 
         mask_with_ohlc = compute_session_mask(
-            timestamps, 0, 8, ohlc=(opens, highs, lows, closes),
+            timestamps,
+            0,
+            8,
+            ohlc=(opens, highs, lows, closes),
         )
         assert not mask_with_ohlc[1], "Flat bar at 01:00 should be excluded"
         assert not mask_with_ohlc[4], "Flat bar at 04:00 should be excluded"
@@ -856,13 +1028,26 @@ class TestSessionAwareSimulation:
         # Entry at bar 1 (21:00, off-session). TP should NOT trigger at 21:00 or 22:00.
         # First in-session bar is 23:00 (index 3).
         result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
-            opens, closes, highs, lows, 0, 1,
-            0.01, 100.0, 0.0, 0.0, n, 0, in_session,
+            opens,
+            closes,
+            highs,
+            lows,
+            0,
+            1,
+            0.01,
+            100.0,
+            0.0,
+            0.0,
+            n,
+            0,
+            in_session,
         )
         assert result == 1.0
         # Exit must be on an in-session bar (hour 23-05)
         exit_hour = timestamps[exit_idx].hour
-        assert exit_hour >= 23 or exit_hour < 6, f"Exit at hour {exit_hour} is off-session"
+        assert exit_hour >= 23 or exit_hour < 6, (
+            f"Exit at hour {exit_hour} is off-session"
+        )
 
     def test_sl_only_during_session(self):
         """SL should only trigger on in-session bars."""
@@ -878,12 +1063,25 @@ class TestSessionAwareSimulation:
 
         # SL tight (0.01), entry at bar 1 (21:00 off-session)
         result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
-            opens, closes, highs, lows, 0, 1,
-            100.0, 0.01, 0.0, 0.0, n, 0, in_session,
+            opens,
+            closes,
+            highs,
+            lows,
+            0,
+            1,
+            100.0,
+            0.01,
+            0.0,
+            0.0,
+            n,
+            0,
+            in_session,
         )
         assert result == -1.0
         exit_hour = timestamps[exit_idx].hour
-        assert exit_hour >= 23 or exit_hour < 6, f"SL exit at hour {exit_hour} is off-session"
+        assert exit_hour >= 23 or exit_hour < 6, (
+            f"SL exit at hour {exit_hour} is off-session"
+        )
 
     def test_timeout_counts_session_bars_only(self):
         """Timeout should count only in-session bars, not total bars."""
@@ -895,8 +1093,19 @@ class TestSessionAwareSimulation:
         # Entry at bar 1 (21:00 off-session).
         # Session bars: 23:00(3), 00:00(4), 01:00(5) → 3rd session bar = 01:00
         result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
-            opens, closes, highs, lows, 0, 1,
-            100.0, 100.0, 0.0, 0.0, n, 3, in_session,
+            opens,
+            closes,
+            highs,
+            lows,
+            0,
+            1,
+            100.0,
+            100.0,
+            0.0,
+            0.0,
+            n,
+            3,
+            in_session,
         )
         assert exit_reason == 2  # timeout
         assert exit_idx == 5  # 01:00 UTC (3rd session bar after entry)
@@ -922,8 +1131,19 @@ class TestSessionAwareSimulation:
         # Entry at bar 1 (16:00, in session). TP=10.0 (won't hit until bar 18).
         # Off-session bars 17:00-07:00 should be skipped.
         result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
-            opens, closes, highs, lows, 0, 1,
-            10.0, 100.0, 0.0, 0.0, n, 0, in_session,
+            opens,
+            closes,
+            highs,
+            lows,
+            0,
+            1,
+            10.0,
+            100.0,
+            0.0,
+            0.0,
+            n,
+            0,
+            in_session,
         )
         assert result == 1.0
         assert exit_idx == 18  # 09:00 next day
@@ -941,12 +1161,33 @@ class TestSessionAwareSimulation:
 
         for direction in [1, -1]:
             r1, e1, p1, re1 = _simulate_trade_numba(
-                opens, closes, highs, lows, 5, direction,
-                2.0, 1.0, 0.01, 0.005, n, 10,
+                opens,
+                closes,
+                highs,
+                lows,
+                5,
+                direction,
+                2.0,
+                1.0,
+                0.01,
+                0.005,
+                n,
+                10,
             )
             r2, e2, p2, re2 = _simulate_trade_session_numba(
-                opens, closes, highs, lows, 5, direction,
-                2.0, 1.0, 0.01, 0.005, n, 10, all_true,
+                opens,
+                closes,
+                highs,
+                lows,
+                5,
+                direction,
+                2.0,
+                1.0,
+                0.01,
+                0.005,
+                n,
+                10,
+                all_true,
             )
             assert r1 == r2
             assert e1 == e2
@@ -966,14 +1207,26 @@ class TestSessionAwareSimulation:
         # timeout_bars=2 → 2 session bars. Entry at bar 1 (21:00 off-session).
         # Session bars: 23:00(3), 00:00(4) → timeout at 00:00
         trade = simulate_pro_trade(
-            closes, highs, lows, 0, 1, 100.0, 100.0, 0.0,
-            max_bars=n, timestamps=timestamps, opens=opens,
-            timeout_bars=2, in_session=in_session,
+            closes,
+            highs,
+            lows,
+            0,
+            1,
+            100.0,
+            100.0,
+            0.0,
+            max_bars=n,
+            timestamps=timestamps,
+            opens=opens,
+            timeout_bars=2,
+            in_session=in_session,
         )
         assert trade is not None
         assert trade["exit_reason"] == "timeout"
         exit_hour = timestamps[trade["exit_idx"]].hour
-        assert exit_hour >= 23 or exit_hour < 6, f"Exit at hour {exit_hour} is off-session"
+        assert exit_hour >= 23 or exit_hour < 6, (
+            f"Exit at hour {exit_hour} is off-session"
+        )
 
     def test_exit_session_wider_than_signal_session(self):
         """Exit session (23-20) is wider than signal session (23-6).
@@ -998,8 +1251,19 @@ class TestSessionAwareSimulation:
         # Entry at bar 1 (21:00, off-session for exits).
         # TP=10.0, won't hit until bar 19 (15:00, in exit session).
         result, exit_idx, _, exit_reason = _simulate_trade_session_numba(
-            opens, closes, highs, lows, 0, 1,
-            10.0, 100.0, 0.0, 0.0, n, 0, exit_mask,
+            opens,
+            closes,
+            highs,
+            lows,
+            0,
+            1,
+            10.0,
+            100.0,
+            0.0,
+            0.0,
+            n,
+            0,
+            exit_mask,
         )
         assert result == 1.0, "TP should hit during exit session"
         assert exit_idx == 19
@@ -1009,8 +1273,19 @@ class TestSessionAwareSimulation:
         # TP at 15:00 is off-session, trade should NOT close there.
         signal_mask = compute_session_mask(timestamps, 23, 6)
         result2, exit_idx2, _, _ = _simulate_trade_session_numba(
-            opens, closes, highs, lows, 0, 1,
-            10.0, 100.0, 0.0, 0.0, n, 0, signal_mask,
+            opens,
+            closes,
+            highs,
+            lows,
+            0,
+            1,
+            10.0,
+            100.0,
+            0.0,
+            0.0,
+            n,
+            0,
+            signal_mask,
         )
         # With narrow session, TP at 15:00 is skipped
         assert exit_idx2 != 19, "Narrow session should skip bar 19 (15:00 UTC)"
@@ -1020,14 +1295,16 @@ class TestAttachRegimeLabels:
     """Tests für attach_regime_labels (Plan 010 WP5)."""
 
     def _df_with_precomputed_columns(self, n=30):
-        return pd.DataFrame({
-            "O": np.linspace(1.0, 1.3, n),
-            "H": np.linspace(1.01, 1.31, n),
-            "L": np.linspace(0.99, 1.29, n),
-            "C": np.linspace(1.0, 1.3, n),
-            "_atr": np.linspace(0.001, 0.01, n),  # rising volatility
-            "adx_14": np.linspace(10.0, 50.0, n),  # rising trend strength
-        })
+        return pd.DataFrame(
+            {
+                "O": np.linspace(1.0, 1.3, n),
+                "H": np.linspace(1.01, 1.31, n),
+                "L": np.linspace(0.99, 1.29, n),
+                "C": np.linspace(1.0, 1.3, n),
+                "_atr": np.linspace(0.001, 0.01, n),  # rising volatility
+                "adx_14": np.linspace(10.0, 50.0, n),  # rising trend strength
+            }
+        )
 
     def test_buckets_vol_and_trend_using_existing_columns(self):
         n = 30
@@ -1060,12 +1337,14 @@ class TestAttachRegimeLabels:
         n = 60
         rng = np.random.default_rng(42)
         base = 1.0 + np.cumsum(rng.normal(0, 0.001, n))
-        df = pd.DataFrame({
-            "O": base,
-            "H": base + 0.002,
-            "L": base - 0.002,
-            "C": base,
-        })
+        df = pd.DataFrame(
+            {
+                "O": base,
+                "H": base + 0.002,
+                "L": base - 0.002,
+                "C": base,
+            }
+        )
         trades = [{"entry_idx": 30}]
         attach_regime_labels(trades, df)
         assert trades[0]["vol_regime"] in ("low", "medium", "high")
