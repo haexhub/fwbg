@@ -11,11 +11,18 @@ und abgeleitete Mean-Reversion-Features:
 Volume-Fallback: Wenn V-Spalte fehlt oder leer, wird equal-weight (typical price)
 verwendet.
 """
+
 from typing import List, Union
 import numpy as np
 import pandas as pd
 
-from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide, EPSILON
+from fwbg_sdk import (
+    BaseIndicator,
+    register_indicator,
+    shift_features,
+    safe_divide,
+    EPSILON,
+)
 
 
 @register_indicator("vwap")
@@ -74,11 +81,7 @@ class VwapIndicator(BaseIndicator):
         tp = (h + lo + c) / 3.0
 
         # Gewichte: Volume wenn verfügbar, sonst equal-weight
-        has_volume = (
-            "V" in df.columns
-            and df["V"].notna().any()
-            and (df["V"] > 0).any()
-        )
+        has_volume = "V" in df.columns and df["V"].notna().any() and (df["V"] > 0).any()
         if has_volume:
             w = df["V"].copy().fillna(0.0).clip(lower=0.0)
             w = w.where(w > 0, EPSILON)
@@ -89,7 +92,9 @@ class VwapIndicator(BaseIndicator):
         # und die vorherige Bar eine andere Stunde hatte
         hours = pd.Series(df.index.hour, index=df.index)
         prev_hour = hours.shift(1)
-        session_boundary = (hours == session_start_hour) & (prev_hour != session_start_hour)
+        session_boundary = (hours == session_start_hour) & (
+            prev_hour != session_start_hour
+        )
         session_boundary.iloc[0] = True
         session_id = session_boundary.cumsum()
 
@@ -109,7 +114,9 @@ class VwapIndicator(BaseIndicator):
             min_p = max(window // 2, 2)
             roll_mean = deviation.rolling(window, min_periods=min_p).mean()
             roll_std = deviation.rolling(window, min_periods=min_p).std()
-            features[f"vwap_zscore_{window}"] = safe_divide(deviation - roll_mean, roll_std)
+            features[f"vwap_zscore_{window}"] = safe_divide(
+                deviation - roll_mean, roll_std
+            )
 
         # Volume-gewichtete Standardabweichung für VWAP-Bands
         dev_sq_w = ((tp - vwap) ** 2) * w
@@ -169,7 +176,7 @@ class VwapIndicator(BaseIndicator):
                 "type": "int",
                 "default": 9,
                 "description": "Stunde des Tages (0-23) bei der VWAP zurückgesetzt wird. "
-                               "9 für US-Märkte (09:00 Uhr ET), 8 für EU-Märkte.",
+                "9 für US-Märkte (09:00 Uhr ET), 8 für EU-Märkte.",
                 "min": 0,
                 "max": 23,
                 "step": 1,
@@ -178,8 +185,8 @@ class VwapIndicator(BaseIndicator):
                 "type": "list[int]",
                 "default": [20, 50],
                 "description": "Rollende Fenstergröße für Z-Score der VWAP-Abweichung. "
-                               "Kleinere Fenster (20) reagieren schneller auf Extremwerte, "
-                               "größere (50) glätten mehr Noise heraus.",
+                "Kleinere Fenster (20) reagieren schneller auf Extremwerte, "
+                "größere (50) glätten mehr Noise heraus.",
                 "min": 5,
                 "max": 500,
             },
@@ -187,8 +194,8 @@ class VwapIndicator(BaseIndicator):
                 "type": "list[float]",
                 "default": [1.0, 2.0],
                 "description": "Multiplikatoren für VWAP-Bands in Einheiten der "
-                               "volume-gewichteten Standardabweichung. 1.0 = ±1σ, 2.0 = ±2σ. "
-                               "Preise außerhalb ±2σ sind Mean-Reversion-Signale.",
+                "volume-gewichteten Standardabweichung. 1.0 = ±1σ, 2.0 = ±2σ. "
+                "Preise außerhalb ±2σ sind Mean-Reversion-Signale.",
                 "min": 0.5,
                 "max": 5.0,
             },

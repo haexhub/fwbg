@@ -7,6 +7,7 @@ These tests verify:
 - ROC calculations
 - Feature column generation
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -17,12 +18,15 @@ def create_ohlc(close, high_factor=1.005, low_factor=0.995, n_bars=None):
     if n_bars is None:
         n_bars = len(close)
 
-    df = pd.DataFrame({
-        'O': close * 0.999,
-        'H': close * high_factor,
-        'L': close * low_factor,
-        'C': close,
-    }, index=pd.date_range('2024-01-01', periods=n_bars, freq='h'))
+    df = pd.DataFrame(
+        {
+            "O": close * 0.999,
+            "H": close * high_factor,
+            "L": close * low_factor,
+            "C": close,
+        },
+        index=pd.date_range("2024-01-01", periods=n_bars, freq="h"),
+    )
     return df
 
 
@@ -30,6 +34,7 @@ def create_ohlc(close, high_factor=1.005, low_factor=0.995, n_bars=None):
 def indicator():
     """Create MomentumIndicators instance."""
     from fwbg.plugins import import_plugin_module
+
     _momentum = import_plugin_module("fwbg-core", "indicators", "momentum")
     return _momentum.MomentumIndicators()
 
@@ -55,7 +60,9 @@ class TestRSI:
         result = indicator.compute(df)
 
         rsi = result["mom_rsi_14"].dropna()
-        assert rsi.iloc[-1] > 70, f"Expected RSI > 70 after gains, got {rsi.iloc[-1]:.1f}"
+        assert rsi.iloc[-1] > 70, (
+            f"Expected RSI > 70 after gains, got {rsi.iloc[-1]:.1f}"
+        )
 
     def test_rsi_low_after_losses(self, indicator):
         """RSI should be low after continuous losses."""
@@ -65,7 +72,9 @@ class TestRSI:
         result = indicator.compute(df)
 
         rsi = result["mom_rsi_14"].dropna()
-        assert rsi.iloc[-1] < 30, f"Expected RSI < 30 after losses, got {rsi.iloc[-1]:.1f}"
+        assert rsi.iloc[-1] < 30, (
+            f"Expected RSI < 30 after losses, got {rsi.iloc[-1]:.1f}"
+        )
 
     def test_rsi_around_50_in_sideways(self, indicator):
         """RSI should be around 50 in balanced market."""
@@ -77,7 +86,9 @@ class TestRSI:
         result = indicator.compute(df)
 
         rsi = result["mom_rsi_14"].dropna()
-        assert 40 < rsi.mean() < 60, f"Expected RSI ~50 in sideways, got {rsi.mean():.1f}"
+        assert 40 < rsi.mean() < 60, (
+            f"Expected RSI ~50 in sideways, got {rsi.mean():.1f}"
+        )
 
 
 class TestStochastic:
@@ -90,13 +101,21 @@ class TestStochastic:
         high = close * 1.001
         low = close * 0.999
 
-        df = pd.DataFrame({
-            'O': close, 'H': high, 'L': low, 'C': close,
-        }, index=pd.date_range('2024-01-01', periods=n, freq='h'))
+        df = pd.DataFrame(
+            {
+                "O": close,
+                "H": high,
+                "L": low,
+                "C": close,
+            },
+            index=pd.date_range("2024-01-01", periods=n, freq="h"),
+        )
         result = indicator.compute(df)
 
         stoch_k = result["mom_stoch_k_14"].dropna()
-        assert stoch_k.iloc[-1] > 80, f"Expected Stoch > 80 at high, got {stoch_k.iloc[-1]:.1f}"
+        assert stoch_k.iloc[-1] > 80, (
+            f"Expected Stoch > 80 at high, got {stoch_k.iloc[-1]:.1f}"
+        )
 
     def test_stochastic_low_at_period_low(self, indicator):
         """Stochastic should be low when close is at period low."""
@@ -105,13 +124,21 @@ class TestStochastic:
         high = close * 1.001
         low = close * 0.999
 
-        df = pd.DataFrame({
-            'O': close, 'H': high, 'L': low, 'C': close,
-        }, index=pd.date_range('2024-01-01', periods=n, freq='h'))
+        df = pd.DataFrame(
+            {
+                "O": close,
+                "H": high,
+                "L": low,
+                "C": close,
+            },
+            index=pd.date_range("2024-01-01", periods=n, freq="h"),
+        )
         result = indicator.compute(df)
 
         stoch_k = result["mom_stoch_k_14"].dropna()
-        assert stoch_k.iloc[-1] < 20, f"Expected Stoch < 20 at low, got {stoch_k.iloc[-1]:.1f}"
+        assert stoch_k.iloc[-1] < 20, (
+            f"Expected Stoch < 20 at low, got {stoch_k.iloc[-1]:.1f}"
+        )
 
 
 class TestROC:
@@ -129,9 +156,7 @@ class TestROC:
 
         # Compare (allowing for shift)
         np.testing.assert_array_almost_equal(
-            roc_10.iloc[-50:].values,
-            expected[-51:-1],
-            decimal=5
+            roc_10.iloc[-50:].values, expected[-51:-1], decimal=5
         )
 
 

@@ -3,6 +3,7 @@ Momentum Indicator Plugin.
 
 Enthält: RSI, Stochastic, Williams %R, Ultimate Oscillator, ROC.
 """
+
 from typing import List
 import pandas as pd
 import ta
@@ -33,7 +34,7 @@ class MomentumIndicators(BaseIndicator):
         stoch_periods: List[int] = None,
         williams_periods: List[int] = None,
         roc_periods: List[int] = None,
-        **params
+        **params,
     ) -> pd.DataFrame:
         """
         Berechnet alle Momentum-Indikatoren.
@@ -78,9 +79,7 @@ class MomentumIndicators(BaseIndicator):
             )
 
         # Ultimate Oscillator
-        features["mom_uo"] = ta.momentum.ultimate_oscillator(
-            df["H"], df["L"], df["C"]
-        )
+        features["mom_uo"] = ta.momentum.ultimate_oscillator(df["H"], df["L"], df["C"])
 
         # Rate of Change
         for period in roc_periods:
@@ -95,16 +94,23 @@ class MomentumIndicators(BaseIndicator):
         """Gibt Liste aller Momentum-Feature-Spalten zurück."""
         return [
             # RSI
-            "mom_rsi_7", "mom_rsi_14", "mom_rsi_21",
+            "mom_rsi_7",
+            "mom_rsi_14",
+            "mom_rsi_21",
             # Stochastic
-            "mom_stoch_k_14", "mom_stoch_d_14",
-            "mom_stoch_k_21", "mom_stoch_d_21",
+            "mom_stoch_k_14",
+            "mom_stoch_d_14",
+            "mom_stoch_k_21",
+            "mom_stoch_d_21",
             # Williams
-            "mom_williams_14", "mom_williams_21",
+            "mom_williams_14",
+            "mom_williams_21",
             # Ultimate Oscillator
             "mom_uo",
             # ROC
-            "mom_roc_5", "mom_roc_10", "mom_roc_20",
+            "mom_roc_5",
+            "mom_roc_10",
+            "mom_roc_20",
         ]
 
     @classmethod

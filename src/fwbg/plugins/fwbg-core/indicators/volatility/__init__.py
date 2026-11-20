@@ -4,17 +4,25 @@ Volatility Indicator Plugin.
 Enthält: ATR, Bollinger Bands, Keltner Channel, Donchian Channel,
 Garman-Klass, Parkinson, Yang-Zhang Volatility Estimators.
 """
+
 import math
 from typing import List
 import numpy as np
 import pandas as pd
 import ta
 
-from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide, EPSILON
+from fwbg_sdk import (
+    BaseIndicator,
+    register_indicator,
+    shift_features,
+    safe_divide,
+    EPSILON,
+)
 
 
-def _garman_klass(high: pd.Series, low: pd.Series, open_: pd.Series,
-                  close: pd.Series, window: int) -> pd.Series:
+def _garman_klass(
+    high: pd.Series, low: pd.Series, open_: pd.Series, close: pd.Series, window: int
+) -> pd.Series:
     """
     Garman-Klass Volatility Estimator.
 
@@ -23,8 +31,10 @@ def _garman_klass(high: pd.Series, low: pd.Series, open_: pd.Series,
     """
     log_hl = np.log(high / (low + EPSILON))
     log_co = np.log(close / (open_ + EPSILON))
-    gk = 0.5 * log_hl ** 2 - (2 * np.log(2) - 1) * log_co ** 2
-    return np.sqrt(gk.rolling(window, min_periods=max(1, window // 2)).mean().clip(lower=0))
+    gk = 0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2
+    return np.sqrt(
+        gk.rolling(window, min_periods=max(1, window // 2)).mean().clip(lower=0)
+    )
 
 
 def _parkinson(high: pd.Series, low: pd.Series, window: int) -> pd.Series:
@@ -35,12 +45,15 @@ def _parkinson(high: pd.Series, low: pd.Series, window: int) -> pd.Series:
     σ²_P = ln(H/L)² / (4 * ln(2))
     """
     log_hl_sq = np.log(high / (low + EPSILON)) ** 2
-    return np.sqrt(log_hl_sq.rolling(window, min_periods=max(1, window // 2)).mean()
-                   / (4 * np.log(2)))
+    return np.sqrt(
+        log_hl_sq.rolling(window, min_periods=max(1, window // 2)).mean()
+        / (4 * np.log(2))
+    )
 
 
-def _yang_zhang(high: pd.Series, low: pd.Series, open_: pd.Series,
-                close: pd.Series, window: int) -> pd.Series:
+def _yang_zhang(
+    high: pd.Series, low: pd.Series, open_: pd.Series, close: pd.Series, window: int
+) -> pd.Series:
     """
     Yang-Zhang Volatility Estimator.
 
@@ -94,7 +107,7 @@ class VolatilityIndicators(BaseIndicator):
         atr_periods: List[int] = None,
         bb_period: int = 20,
         vol_est_windows: List[int] = None,
-        **params
+        **params,
     ) -> pd.DataFrame:
         """
         Berechnet alle Volatilitäts-Indikatoren.
@@ -113,9 +126,7 @@ class VolatilityIndicators(BaseIndicator):
         features = {}
 
         # ATR (für interne Nutzung und als Feature)
-        atr_14 = ta.volatility.average_true_range(
-            df["H"], df["L"], df["C"], window=14
-        )
+        atr_14 = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
         features["_atr"] = atr_14
         features["vol_atr"] = atr_14
 
@@ -146,9 +157,7 @@ class VolatilityIndicators(BaseIndicator):
             features[f"vol_gk_{window}"] = _garman_klass(
                 df["H"], df["L"], df["O"], df["C"], window
             )
-            features[f"vol_parkinson_{window}"] = _parkinson(
-                df["H"], df["L"], window
-            )
+            features[f"vol_parkinson_{window}"] = _parkinson(df["H"], df["L"], window)
             features[f"vol_yz_{window}"] = _yang_zhang(
                 df["H"], df["L"], df["O"], df["C"], window
             )
@@ -165,23 +174,29 @@ class VolatilityIndicators(BaseIndicator):
         for period in atr_periods:
             key = f"vol_atr_pct_{period}"
             if key in features:
-                features[f"{key}_rank"] = features[key].rolling(
-                    compression_lookback, min_periods=compression_lookback // 2
-                ).rank(pct=True)
+                features[f"{key}_rank"] = (
+                    features[key]
+                    .rolling(
+                        compression_lookback, min_periods=compression_lookback // 2
+                    )
+                    .rank(pct=True)
+                )
 
         bb_wband_key = f"vol_bb_wband_{bb_period}"
         if bb_wband_key in features:
-            features[f"{bb_wband_key}_rank"] = features[bb_wband_key].rolling(
-                compression_lookback, min_periods=compression_lookback // 2
-            ).rank(pct=True)
+            features[f"{bb_wband_key}_rank"] = (
+                features[bb_wband_key]
+                .rolling(compression_lookback, min_periods=compression_lookback // 2)
+                .rank(pct=True)
+            )
 
         # Compression flag: ATR14 and BB Width both below 20th percentile
         atr_rank = features.get("vol_atr_pct_14_rank")
         bb_rank = features.get(f"{bb_wband_key}_rank")
         if atr_rank is not None and bb_rank is not None:
-            features["vol_compression"] = (
-                (atr_rank < 0.2) & (bb_rank < 0.2)
-            ).astype(float)
+            features["vol_compression"] = ((atr_rank < 0.2) & (bb_rank < 0.2)).astype(
+                float
+            )
 
         # === Realized Vol vs Implied Vol (VIX) ===
         rv_window = params.get("rv_window", 20)
@@ -194,7 +209,9 @@ class VolatilityIndicators(BaseIndicator):
             or not math.isfinite(bars_per_day)
             or bars_per_day <= 0
         ):
-            raise ValueError(f"volatility: bars_per_day must be a positive number, not {bars_per_day!r}")
+            raise ValueError(
+                f"volatility: bars_per_day must be a positive number, not {bars_per_day!r}"
+            )
         rv_bars = max(2, int(round(rv_window * bars_per_day)))
         log_returns = np.log(df["C"] / (df["C"].shift(1) + EPSILON))
         rv = log_returns.rolling(rv_bars, min_periods=max(2, rv_bars // 2)).std()
@@ -216,20 +233,30 @@ class VolatilityIndicators(BaseIndicator):
         return [
             # ATR
             "vol_atr",
-            "vol_atr_pct_7", "vol_atr_pct_14", "vol_atr_pct_21",
+            "vol_atr_pct_7",
+            "vol_atr_pct_14",
+            "vol_atr_pct_21",
             # Bollinger
-            "vol_bb_pband_20", "vol_bb_wband_20",
+            "vol_bb_pband_20",
+            "vol_bb_wband_20",
             # Keltner
-            "vol_kc_pband", "vol_kc_wband",
+            "vol_kc_pband",
+            "vol_kc_wband",
             # Donchian
-            "vol_dc_pband", "vol_dc_wband",
+            "vol_dc_pband",
+            "vol_dc_wband",
             # OHLC Volatility Estimators
-            "vol_gk_20", "vol_gk_50",
-            "vol_parkinson_20", "vol_parkinson_50",
-            "vol_yz_20", "vol_yz_50",
+            "vol_gk_20",
+            "vol_gk_50",
+            "vol_parkinson_20",
+            "vol_parkinson_50",
+            "vol_yz_20",
+            "vol_yz_50",
             "vol_yz_atr_ratio",
             # Compression (Percentile Rankings)
-            "vol_atr_pct_7_rank", "vol_atr_pct_14_rank", "vol_atr_pct_21_rank",
+            "vol_atr_pct_7_rank",
+            "vol_atr_pct_14_rank",
+            "vol_atr_pct_21_rank",
             "vol_bb_wband_20_rank",
             "vol_compression",
             # Realized vs Implied Vol

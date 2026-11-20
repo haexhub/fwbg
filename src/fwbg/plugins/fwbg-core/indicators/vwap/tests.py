@@ -10,24 +10,34 @@ Testet:
 - Lookahead-Bias-Prevention (shift_features)
 - Feature-Spalten vollständig
 """
+
 import numpy as np
 import pandas as pd
 import pytest
 
 
-def make_ohlc(close, freq="15min", session_start_hour=9, high_pct=0.005, low_pct=0.005,
-              volume=None):
+def make_ohlc(
+    close,
+    freq="15min",
+    session_start_hour=9,
+    high_pct=0.005,
+    low_pct=0.005,
+    volume=None,
+):
     """Erstellt OHLC-DataFrame mit konfigurierbarer Frequenz und optionalem Volume."""
     n = len(close)
     # Session beginnt um session_start_hour:00
     start = pd.Timestamp(f"2024-01-02 {session_start_hour:02d}:00:00")
     idx = pd.date_range(start, periods=n, freq=freq)
-    df = pd.DataFrame({
-        "O": close * (1 - high_pct / 2),
-        "H": close * (1 + high_pct),
-        "L": close * (1 - low_pct),
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * (1 - high_pct / 2),
+            "H": close * (1 + high_pct),
+            "L": close * (1 - low_pct),
+            "C": close,
+        },
+        index=idx,
+    )
     if volume is not None:
         df["V"] = volume
     return df
@@ -36,6 +46,7 @@ def make_ohlc(close, freq="15min", session_start_hour=9, high_pct=0.005, low_pct
 @pytest.fixture
 def indicator():
     from fwbg.plugins import import_plugin_module
+
     _vwap = import_plugin_module("fwbg-core", "indicators", "vwap")
     return _vwap.VwapIndicator()
 
@@ -66,18 +77,23 @@ def multi_session_df():
     bars_session1 = 96  # 24h at 15min = full day until next 09:00
     bars_session2 = 28  # 7h trading in session 2
     n = bars_session1 + bars_session2
-    close = np.concatenate([
-        np.linspace(100, 105, bars_session1),
-        np.linspace(108, 103, bars_session2),
-    ])
+    close = np.concatenate(
+        [
+            np.linspace(100, 105, bars_session1),
+            np.linspace(108, 103, bars_session2),
+        ]
+    )
     start = pd.Timestamp("2024-01-02 09:00:00")
     idx = pd.date_range(start, periods=n, freq="15min")
-    df = pd.DataFrame({
-        "O": close * 0.999,
-        "H": close * 1.005,
-        "L": close * 0.995,
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * 0.999,
+            "H": close * 1.005,
+            "L": close * 0.995,
+            "C": close,
+        },
+        index=idx,
+    )
     return df
 
 
@@ -88,7 +104,9 @@ class TestVwapBasic:
         """Bei konstantem Preis soll VWAP = Preis sein (nach shift: ab Bar 1)."""
         result = indicator.compute(flat_price_df)
         vwap = result["vwap"].dropna()
-        assert (vwap.round(6) == 100.0).all(), "VWAP bei konstantem Preis muss 100.0 sein"
+        assert (vwap.round(6) == 100.0).all(), (
+            "VWAP bei konstantem Preis muss 100.0 sein"
+        )
 
     def test_vwap_within_session_range(self, indicator, trending_df):
         """VWAP muss zwischen Session-cummin(L) und Session-cummax(H) liegen."""
@@ -112,7 +130,9 @@ class TestVwapBasic:
         # Bar 0 hat kein vwap (ist NaN durch shift)
         assert pd.isna(vwap.iloc[0]), "Erster Wert muss NaN sein (Lookahead-Prevention)"
         # Bar 1: VWAP von Bar 0 = typical price von Bar 0 = close[0] = 100.0
-        assert abs(vwap.iloc[1] - 100.0) < 1e-6, f"Erster VWAP muss 100.0 sein, war {vwap.iloc[1]}"
+        assert abs(vwap.iloc[1] - 100.0) < 1e-6, (
+            f"Erster VWAP muss 100.0 sein, war {vwap.iloc[1]}"
+        )
 
 
 class TestSessionReset:
@@ -142,9 +162,9 @@ class TestSessionReset:
         start = pd.Timestamp("2024-01-02 07:00:00")
         idx = pd.date_range(start, periods=20, freq="15min")
         close = np.full(20, 100.0)
-        df = pd.DataFrame({
-            "O": close, "H": close * 1.005, "L": close * 0.995, "C": close
-        }, index=idx)
+        df = pd.DataFrame(
+            {"O": close, "H": close * 1.005, "L": close * 0.995, "C": close}, index=idx
+        )
 
         result = indicator.compute(df, session_start_hour=9)
         vwap = result["vwap"]
@@ -258,8 +278,12 @@ class TestVwapBands:
         """±2σ-Band muss breiter als ±1σ-Band sein."""
         result = indicator.compute(trending_df)
         mask = result["vwap_upper_2"].notna() & result["vwap_upper_1"].notna()
-        assert (result.loc[mask, "vwap_upper_2"] >= result.loc[mask, "vwap_upper_1"]).all()
-        assert (result.loc[mask, "vwap_lower_2"] <= result.loc[mask, "vwap_lower_1"]).all()
+        assert (
+            result.loc[mask, "vwap_upper_2"] >= result.loc[mask, "vwap_upper_1"]
+        ).all()
+        assert (
+            result.loc[mask, "vwap_lower_2"] <= result.loc[mask, "vwap_lower_1"]
+        ).all()
 
     def test_band_pos_at_vwap_is_half(self, indicator, flat_price_df):
         """Bei Preis = VWAP muss band_pos = 0.5 sein."""

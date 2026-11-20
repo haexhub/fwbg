@@ -24,6 +24,7 @@ Feature columns useful for ML context:
   tpm_trend_ok_long     — 1 when close > EMA
   tpm_trend_ok_short    — 1 when close < EMA
 """
+
 from typing import List
 
 import numpy as np
@@ -78,7 +79,9 @@ class PullbackMomentumIndicator(BaseIndicator):
         atr = np.nan_to_num(atr, nan=0.0)
 
         # Rolling swing extremes — no lookahead (window covers only past bars)
-        swing_high = pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        swing_high = (
+            pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        )
         swing_low = pd.Series(lows).rolling(swing_lookback, min_periods=1).min().values
 
         # Output arrays
@@ -93,16 +96,16 @@ class PullbackMomentumIndicator(BaseIndicator):
         trend_ok_short = np.zeros(n)
 
         # ── Long state machine ────────────────────────────────────────────────
-        long_state = 0      # 0 = SCANNING, 1 = PULLBACK
-        imp_high_l = 0.0    # price of the broken swing high (impulse top)
-        imp_low_l = 0.0     # rolling swing low at BOS time (impulse base)
-        pb_low_l = np.inf   # running minimum low during pullback
+        long_state = 0  # 0 = SCANNING, 1 = PULLBACK
+        imp_high_l = 0.0  # price of the broken swing high (impulse top)
+        imp_low_l = 0.0  # rolling swing low at BOS time (impulse base)
+        pb_low_l = np.inf  # running minimum low during pullback
 
         # ── Short state machine ───────────────────────────────────────────────
-        short_state = 0     # 0 = SCANNING, 1 = PULLBACK
-        imp_high_s = 0.0    # rolling swing high at BOS time (impulse top)
-        imp_low_s = 0.0     # price of the broken swing low (impulse base)
-        pb_high_s = -np.inf # running maximum high during pullback
+        short_state = 0  # 0 = SCANNING, 1 = PULLBACK
+        imp_high_s = 0.0  # rolling swing high at BOS time (impulse top)
+        imp_low_s = 0.0  # price of the broken swing low (impulse base)
+        pb_high_s = -np.inf  # running maximum high during pullback
 
         for i in range(1, n):
             c = closes[i]
@@ -153,7 +156,12 @@ class PullbackMomentumIndicator(BaseIndicator):
                     lh_start = max(0, i - local_high_lookback)
                     local_lh = np.max(highs[lh_start:i]) if lh_start < i else imp_high_l
 
-                    if pb >= min_pullback_pct and ema_valid and c > ema_i and c > local_lh:
+                    if (
+                        pb >= min_pullback_pct
+                        and ema_valid
+                        and c > ema_i
+                        and c > local_lh
+                    ):
                         entry_long[i] = 1.0
                         sl_d = (c - pb_low_l) + atr_i * sl_buffer_mult
                         sl_dist_long[i] = sl_d if sl_d > EPSILON else atr_i * 0.5
@@ -196,7 +204,12 @@ class PullbackMomentumIndicator(BaseIndicator):
                     hl_start = max(0, i - local_high_lookback)
                     local_hl = np.min(lows[hl_start:i]) if hl_start < i else imp_low_s
 
-                    if pb >= min_pullback_pct and ema_valid and c < ema_i and c < local_hl:
+                    if (
+                        pb >= min_pullback_pct
+                        and ema_valid
+                        and c < ema_i
+                        and c < local_hl
+                    ):
                         entry_short[i] = 1.0
                         sl_d = (pb_high_s - c) + atr_i * sl_buffer_mult
                         sl_dist_short[i] = sl_d if sl_d > EPSILON else atr_i * 0.5
