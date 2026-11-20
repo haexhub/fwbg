@@ -18,38 +18,50 @@ range_scope controls which bars are included:
 - all: all 24h bars
 
 Timeframe: Intraday only (M1-H4). On daily bars returns df unchanged.
+
+Session and day boundary: ``session_start_hour`` / ``session_end_hour`` are
+fixed UTC hours, and for a session crossing midnight the trading day rolls over
+at ``session_start_hour`` UTC.  There is no time zone conversion, so a
+local-time boundary such as the 17:00 New York FX rollover sits at 22:00 UTC in
+winter but 21:00 UTC in summer; pick the start hour for the regime you trade (or
+split the data at the DST switch).
 """
+
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, EPSILON, rl_tag
-from fwbg_sdk.retest import apply_breakout_threshold, compute_break_state, compute_retest_signals
+from fwbg_sdk.retest import (
+    apply_breakout_threshold,
+    compute_break_state,
+    compute_retest_signals,
+)
 
 _CANDLE_SPAN_PREFIX = {
-    "hl": "hl_",       # high/low range
-    "body": "body_",   # body (O/C) range
+    "hl": "hl_",  # high/low range
+    "body": "body_",  # body (O/C) range
 }
 
 _RANGE_SCOPE_PREFIX = {
     "session": "ses_",  # session hours only
-    "all": "all_",      # all 24h bars
+    "all": "all_",  # all 24h bars
 }
 
 _BREAK_MODE_PREFIX = {
-    "all_hours": "",           # default — breaks detected 24/7
-    "session_only": "sesbrk_", # breaks only during session hours
+    "all_hours": "",  # default — breaks detected 24/7
+    "session_only": "sesbrk_",  # breaks only during session hours
 }
 
 _RETEST_MODE_PREFIX = {
-    "all_hours": "",            # default — retests fire 24/7
+    "all_hours": "",  # default — retests fire 24/7
     "session_only": "sesret_",  # retests only during session hours
 }
 
 
 def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
-    """Compute ATR from OHLC data."""
+    """Compute ATR from OHLC data (NaN until a full ``period`` window exists)."""
     highs = df["H"].values
     lows = df["L"].values
     close = df["C"].values
@@ -59,7 +71,21 @@ def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
         highs - lows,
         np.maximum(np.abs(highs - prev_close), np.abs(lows - prev_close)),
     )
-    return pd.Series(tr).rolling(period, min_periods=1).mean().values
+    return pd.Series(tr).rolling(period, min_periods=period).mean().values
+
+
+def _resample_offset(
+    resample_tf: str, session_start_hour: int, session_end_hour: int
+) -> pd.Timedelta:
+    """Offset that makes resample bins start on the trading-day boundary.
+
+    The day boundary is midnight for a same-day session and ``session_start_hour``
+    for a session crossing midnight; without alignment a 4h bin can straddle two
+    trading days.
+    """
+    if session_start_hour is None or session_start_hour < session_end_hour:
+        return pd.Timedelta(0)
+    return pd.Timedelta(hours=session_start_hour) % pd.Timedelta(resample_tf)
 
 
 def _compute_retest_features(
@@ -173,31 +199,32 @@ def _compute_range_variant(
     """
     features: Dict[str, Union[pd.Series, np.ndarray]] = {}
     n = len(df)
-    use_session_filter = (scope == "session")
+    use_session_filter = scope == "session"
 
     # --- Range computation ---
     use_resampled_range = resample_tf and candle_span == "body"
 
     if use_resampled_range:
-        # Resample O/C to target TF for body range computation
-        r_df = df[["O", "C"]].resample(resample_tf).agg(
-            {"O": "first", "C": "last"}
-        ).dropna()
+        # Resample O/C to target TF for body range computation.  In session
+        # scope only in-session bars enter a bin, so a bin that straddles the
+        # session edge (e.g. 4h bins vs. a 07:00 start) never pulls in
+        # off-session prices.
+        r_offset_bins = _resample_offset(
+            resample_tf, session_start_hour, session_end_hour
+        )
+        r_src = df[["O", "C"]]
+        if use_session_filter:
+            r_src = r_src.loc[np.asarray(session_mask, dtype=bool)]
+        r_df = (
+            r_src.resample(resample_tf, offset=r_offset_bins)
+            .agg({"O": "first", "C": "last"})
+            .dropna()
+        )
         body_high_r = r_df[["O", "C"]].max(axis=1)
         body_low_r = r_df[["O", "C"]].min(axis=1)
 
-        # Session mask on resampled index
-        if use_session_filter:
-            r_hours = r_df.index.hour
-            if session_start_hour < session_end_hour:
-                r_session = (r_hours >= session_start_hour) & (r_hours < session_end_hour)
-            else:
-                r_session = (r_hours >= session_start_hour) | (r_hours < session_end_hour)
-            range_highs_r = body_high_r.where(r_session)
-            range_lows_r = body_low_r.where(r_session)
-        else:
-            range_highs_r = body_high_r
-            range_lows_r = body_low_r
+        range_highs_r = body_high_r
+        range_lows_r = body_low_r
 
         # Day group on resampled index
         if session_start_hour is not None and session_start_hour >= session_end_hour:
@@ -206,20 +233,31 @@ def _compute_range_variant(
         else:
             r_day_group = r_df.index.normalize()
 
-        day_hl = pd.DataFrame({
-            "high": range_highs_r.groupby(r_day_group).max(),
-            "low": range_lows_r.groupby(r_day_group).min(),
-        })
+        day_hl = pd.DataFrame(
+            {
+                "high": range_highs_r.groupby(r_day_group).max(),
+                "low": range_lows_r.groupby(r_day_group).min(),
+            }
+        )
+        # Every trading day of the native data gets a row (NaN when it has no
+        # in-session bin), exactly like the native path, so the weekend
+        # forward-fill never depends on which days appear in the data later.
+        day_hl = day_hl.reindex(day_group.unique().sort_values())
     else:
         # Native-bar range
         range_highs, range_lows = _get_range_columns(
-            df, candle_span, session_mask, use_session_filter,
+            df,
+            candle_span,
+            session_mask,
+            use_session_filter,
         )
 
-        day_hl = pd.DataFrame({
-            "high": range_highs.groupby(day_group).max(),
-            "low": range_lows.groupby(day_group).min(),
-        })
+        day_hl = pd.DataFrame(
+            {
+                "high": range_highs.groupby(day_group).max(),
+                "low": range_lows.groupby(day_group).min(),
+            }
+        )
 
     # --- Weekend skip + shift (common path) ---
     if skip_weekends:
@@ -235,15 +273,25 @@ def _compute_range_variant(
     pd_range = pdh - pdl_low
 
     close = df["C"].values
-    safe_atr = np.where(atr > EPSILON, atr, 1.0)
+    # ATR warm-up stays NaN (no fabricated 1.0); only a flat-market ATR ~ 0 is floored
+    safe_atr = np.where(np.isnan(atr), np.nan, np.where(atr > EPSILON, atr, 1.0))
     safe_range = np.where(np.abs(pd_range) > EPSILON, pd_range, np.nan)
 
     # --- Current-day range (for pdl_day_range_expanding) ---
     cur_highs, cur_lows = _get_range_columns(
-        df, candle_span, session_mask, use_session_filter,
+        df,
+        candle_span,
+        session_mask,
+        use_session_filter,
     )
-    day_high = cur_highs.groupby(day_group).transform("max")
-    day_low = cur_lows.groupby(day_group).transform("min")
+    # Expanding (running) per-day extremes: row i only sees bars of its own day
+    # up to i.  A day without a range bar yet has no extremes (NaN -> not wider).
+    day_high = (
+        cur_highs.fillna(-np.inf).groupby(day_group).cummax().replace(-np.inf, np.nan)
+    )
+    day_low = (
+        cur_lows.fillna(np.inf).groupby(day_group).cummin().replace(np.inf, np.nan)
+    )
 
     # Distance features (ATR-normalized)
     features["pdl_high_dist"] = (pdh - close) / safe_atr
@@ -266,9 +314,17 @@ def _compute_range_variant(
     # --- Breakout detection ---
     if resample_tf:
         # Resample to get hourly Open/Close for breakout confirmation
-        r_df = df[["O", "C"]].resample(resample_tf).agg(
-            {"O": "first", "C": "last"}
-        ).dropna()
+        r_df = (
+            df[["O", "C"]]
+            .resample(
+                resample_tf,
+                offset=_resample_offset(
+                    resample_tf, session_start_hour, session_end_hour
+                ),
+            )
+            .agg({"O": "first", "C": "last"})
+            .dropna()
+        )
 
         # Day group on resampled index (for PDH/PDL mapping)
         if session_start_hour is not None and session_start_hour >= session_end_hour:
@@ -283,19 +339,46 @@ def _compute_range_variant(
 
         # Apply breakout threshold to resampled data
         offset = np.maximum(breakout_threshold * r_range, breakout_threshold_abs)
-        r_above = (r_df["O"].values > r_pdh + offset) | (r_df["C"].values > r_pdh + offset)
-        r_below = (r_df["O"].values < r_pdl - offset) | (r_df["C"].values < r_pdl - offset)
+        r_above = (r_df["O"].values > r_pdh + offset) | (
+            r_df["C"].values > r_pdh + offset
+        )
+        r_below = (r_df["O"].values < r_pdl - offset) | (
+            r_df["C"].values < r_pdl - offset
+        )
 
         # Map back to original bars at the LAST bar of each resampled period
         # to avoid lookahead (hourly Close isn't known until the hour ends).
         bar_duration = df.index[1] - df.index[0] if len(df) > 1 else pd.Timedelta(0)
         end_offset = pd.Timedelta(resample_tf) - bar_duration
-        above = pd.Series(
-            r_above, index=r_df.index + end_offset,
-        ).reindex(df.index, method="ffill").fillna(False).values.astype(bool)
-        below = pd.Series(
-            r_below, index=r_df.index + end_offset,
-        ).reindex(df.index, method="ffill").fillna(False).values.astype(bool)
+        above = (
+            pd.Series(
+                r_above,
+                index=r_df.index + end_offset,
+            )
+            .reindex(df.index, method="ffill")
+            .fillna(False)
+            .values.astype(bool)
+        )
+        below = (
+            pd.Series(
+                r_below,
+                index=r_df.index + end_offset,
+            )
+            .reindex(df.index, method="ffill")
+            .fillna(False)
+            .values.astype(bool)
+        )
+        # A resampled bin can end on the next trading day when its interval
+        # crosses the session boundary. Its confirmation belongs to the source
+        # day only and must not survive the native bar's day reset.
+        confirmation_day = (
+            pd.Series(r_day_group, index=r_df.index + end_offset)
+            .reindex(df.index, method="ffill")
+            .values
+        )
+        same_trading_day = confirmation_day == day_group.values
+        above &= same_trading_day
+        below &= same_trading_day
 
         # Ensure NaN PDH bars don't trigger breakout
         nan_mask = np.isnan(pdh)
@@ -303,14 +386,19 @@ def _compute_range_variant(
         below[nan_mask] = False
     else:
         above, below = apply_breakout_threshold(
-            close, pdh, pdl_low, pd_range,
-            breakout_threshold, breakout_threshold_abs,
+            close,
+            pdh,
+            pdl_low,
+            pd_range,
+            breakout_threshold,
+            breakout_threshold_abs,
         )
 
     # Break state
     break_mask = session_mask_arr if session_break else None
-    high_break, low_break, post_bull, post_bear, broke_high_arr, broke_low_arr = \
+    high_break, low_break, post_bull, post_bear, broke_high_arr, broke_low_arr = (
         compute_break_state(above, below, pdh, day_ids, n, break_mask)
+    )
 
     features["pdl_high_break"] = high_break
     features["pdl_low_break"] = low_break
@@ -318,7 +406,11 @@ def _compute_range_variant(
     features["pdl_post_bear"] = post_bear
 
     # Retest signals + SL distance per retracement level (always prefixed)
-    rl_list = [retracement_levels] if isinstance(retracement_levels, (int, float)) else list(retracement_levels)
+    rl_list = (
+        [retracement_levels]
+        if isinstance(retracement_levels, (int, float))
+        else list(retracement_levels)
+    )
 
     high_arr = df["H"].values
     low_arr = df["L"].values
@@ -329,9 +421,17 @@ def _compute_range_variant(
             retest_pfx = _RETEST_MODE_PREFIX[retest_mode]
             retest_mask = session_mask_arr if retest_mode == "session_only" else None
             retest_feats = _compute_retest_features(
-                pdh, pdl_low, pd_range, close, atr, day_ids,
-                rl, enable_retest,
-                broke_high_arr, broke_low_arr, n,
+                pdh,
+                pdl_low,
+                pd_range,
+                close,
+                atr,
+                day_ids,
+                rl,
+                enable_retest,
+                broke_high_arr,
+                broke_low_arr,
+                n,
                 min_sl_atr_mult=min_sl_atr_mult,
                 session_mask=retest_mask,
                 high=high_arr,
@@ -343,11 +443,11 @@ def _compute_range_variant(
 
     # Rolling MA of position
     pos_series = pd.Series(features["pdl_position"])
-    features["pdl_range_position_ma"] = pos_series.rolling(
-        ma_period, min_periods=1
-    ).mean().values
+    features["pdl_range_position_ma"] = (
+        pos_series.rolling(ma_period, min_periods=ma_period).mean().values
+    )
 
-    # Range expanding: current day range > previous day range
+    # Range expanding: range of the current day so far > previous day range
     current_day_range = (day_high - day_low).values
     features["pdl_day_range_expanding"] = (current_day_range > pd_range).astype(float)
 
@@ -419,10 +519,19 @@ def _compute_pdl_features(
             break_pfx = _BREAK_MODE_PREFIX[break_mode]
             combined_pfx = f"{span_pfx}{scope_pfx}{break_pfx}"
             mode_feats = _compute_range_variant(
-                df, atr, session_mask, session_mask_arr, day_group, day_ids,
-                candle_span, scope,
-                ma_period, enable_retest, retracement_levels,
-                skip_weekends, session_break=(break_mode == "session_only"),
+                df,
+                atr,
+                session_mask,
+                session_mask_arr,
+                day_group,
+                day_ids,
+                candle_span,
+                scope,
+                ma_period,
+                enable_retest,
+                retracement_levels,
+                skip_weekends,
+                session_break=(break_mode == "session_only"),
                 min_sl_atr_mult=min_sl_atr_mult,
                 retest_modes=retest_modes,
                 resample_tf=resample_tf,
@@ -443,29 +552,51 @@ class PreviousDayLevelsIndicator(BaseIndicator):
     """Previous Day High/Low features for intraday trading."""
 
     name = "previous_day_levels"
-    version = "1.0.0"
+    version = "1.1.0"
     benefits_from_stationary = False
     group = "session"
 
     PDL_SIGNAL_SUFFIXES = (
-        "_above_high", "_below_low", "_high_break", "_low_break",
-        "_post_bull", "_post_bear", "_retest_bull", "_retest_bear",
+        "_above_high",
+        "_below_low",
+        "_high_break",
+        "_low_break",
+        "_post_bull",
+        "_post_bear",
+        "_retest_bull",
+        "_retest_bear",
         "_day_range_expanding",
     )
 
     # Base features per (candle_span, range_scope, break/retest_mode) variant — no rl prefix
     _BASE_FEATURES = [
-        "pdl_high_dist", "pdl_low_dist", "pdl_position", "pdl_range_vs_atr",
-        "pdl_above_high", "pdl_below_low", "pdl_midpoint_dist",
-        "pdl_high_break", "pdl_low_break", "pdl_post_bull", "pdl_post_bear",
-        "pdl_range_position_ma", "pdl_day_range_expanding",
+        "pdl_high_dist",
+        "pdl_low_dist",
+        "pdl_position",
+        "pdl_range_vs_atr",
+        "pdl_above_high",
+        "pdl_below_low",
+        "pdl_midpoint_dist",
+        "pdl_high_break",
+        "pdl_low_break",
+        "pdl_post_bull",
+        "pdl_post_bear",
+        "pdl_range_position_ma",
+        "pdl_day_range_expanding",
     ]
     # rl-dependent features (appended per retracement level)
     _RL_FEATURES = ["pdl_retest_bull", "pdl_retest_bear", "pdl_sl_dist"]
+    # Retest columns only exist when enable_retest is on (sl_dist always does)
+    _RETEST_FEATURES = ("pdl_retest_bull", "pdl_retest_bear")
     # Signals (subset of base + rl features)
     _BASE_SIGNAL_SUFFIXES = (
-        "pdl_above_high", "pdl_below_low", "pdl_high_break", "pdl_low_break",
-        "pdl_post_bull", "pdl_post_bear", "pdl_day_range_expanding",
+        "pdl_above_high",
+        "pdl_below_low",
+        "pdl_high_break",
+        "pdl_low_break",
+        "pdl_post_bull",
+        "pdl_post_bear",
+        "pdl_day_range_expanding",
     )
     _RL_SIGNAL_SUFFIXES = ("pdl_retest_bull", "pdl_retest_bear")
 
@@ -501,10 +632,21 @@ class PreviousDayLevelsIndicator(BaseIndicator):
 
         atr = _compute_atr(df, atr_period)
         features = _compute_pdl_features(
-            df, atr, ma_period, enable_retest, retracement_levels,
-            session_start_hour, session_end_hour, candle_span, range_scope,
-            break_modes, retest_modes, skip_weekends, min_sl_atr_mult,
-            resample_tf=resample_tf, min_retracement=min_retracement,
+            df,
+            atr,
+            ma_period,
+            enable_retest,
+            retracement_levels,
+            session_start_hour,
+            session_end_hour,
+            candle_span,
+            range_scope,
+            break_modes,
+            retest_modes,
+            skip_weekends,
+            min_sl_atr_mult,
+            resample_tf=resample_tf,
+            min_retracement=min_retracement,
             breakout_threshold=breakout_threshold,
             breakout_threshold_abs=breakout_threshold_abs,
         )
@@ -528,9 +670,21 @@ class PreviousDayLevelsIndicator(BaseIndicator):
         rl_list = [rl_vals] if isinstance(rl_vals, (int, float)) else list(rl_vals)
 
         span_pfx = _CANDLE_SPAN_PREFIX[d["candle_span"]]
-        range_scope = d["range_scope"] if isinstance(d["range_scope"], (list, tuple)) else [d["range_scope"]]
-        break_modes = d["break_modes"] if isinstance(d["break_modes"], (list, tuple)) else [d["break_modes"]]
-        retest_modes = d["retest_modes"] if isinstance(d["retest_modes"], (list, tuple)) else [d["retest_modes"]]
+        range_scope = (
+            d["range_scope"]
+            if isinstance(d["range_scope"], (list, tuple))
+            else [d["range_scope"]]
+        )
+        break_modes = (
+            d["break_modes"]
+            if isinstance(d["break_modes"], (list, tuple))
+            else [d["break_modes"]]
+        )
+        retest_modes = (
+            d["retest_modes"]
+            if isinstance(d["retest_modes"], (list, tuple))
+            else [d["retest_modes"]]
+        )
 
         invalid_scopes = [s for s in range_scope if s not in _RANGE_SCOPE_PREFIX]
         if invalid_scopes:
@@ -559,9 +713,12 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                         retest_pfx = _RETEST_MODE_PREFIX[retest_mode]
                         full_pfx = f"{combined_pfx}{retest_pfx}{rl_pfx_str}"
                         for f in cls._RL_FEATURES:
+                            if f in cls._RETEST_FEATURES and not d["enable_retest"]:
+                                continue
                             features.append(f"{full_pfx}{f}")
-                        for f in cls._RL_SIGNAL_SUFFIXES:
-                            signals.append(f"{full_pfx}{f}")
+                        if d["enable_retest"]:
+                            for f in cls._RL_SIGNAL_SUFFIXES:
+                                signals.append(f"{full_pfx}{f}")
 
         return features, signals
 
@@ -636,7 +793,11 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "session_start_hour": {
                 "type": "int",
                 "default": 7,
-                "description": "UTC hour when trading session starts.",
+                "description": (
+                    "UTC hour when trading session starts. Fixed UTC hour, no DST "
+                    "handling: a 17:00 New York day boundary is 22:00 UTC in "
+                    "winter and 21:00 UTC in summer."
+                ),
                 "min": 0,
                 "max": 23,
                 "step": 1,

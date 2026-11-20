@@ -10,7 +10,12 @@ import pandas as pd
 import pytest
 
 from fwbg.optimization import sleeves
-from fwbg.optimization.sleeves import PortfolioSpecError, combine, load_spec, trade_returns
+from fwbg.optimization.sleeves import (
+    PortfolioSpecError,
+    combine,
+    load_spec,
+    trade_returns,
+)
 from fwbg.research.ledger import LEDGER_FILENAME, TrialKind, TrialStatus, read_trials
 from fwbg.research.runs import GATE_ENV
 from fwbg.results import storage
@@ -18,7 +23,12 @@ from fwbg.results import storage
 cli = importlib.import_module("fwbg.cli.main")
 LAST = pd.Timestamp("2026-06-30")
 CUTOFF = pd.Timestamp("2025-04-30")  # the S-0007 card of gate_register
-PARAMS = {"lookback_days": 60, "min_days": 40, "target_volatility": 0.10, "max_scale": 5.0}
+PARAMS = {
+    "lookback_days": 60,
+    "min_days": 40,
+    "target_volatility": 0.10,
+    "max_scale": 5.0,
+}
 
 
 def trades(symbol: str, start: pd.Timestamp, end: pd.Timestamp) -> list[dict]:
@@ -28,7 +38,11 @@ def trades(symbol: str, start: pd.Timestamp, end: pd.Timestamp) -> list[dict]:
     scale = 0.004 if symbol == "AAA" else 0.012
     returns = rng.normal(0.0008, scale, len(days))
     return [
-        {"exit_time": f"{d.date()}T16:00:00", "entry_price": 100.0, "pnl_raw": 100.0 * r}
+        {
+            "exit_time": f"{d.date()}T16:00:00",
+            "entry_price": 100.0,
+            "pnl_raw": 100.0 * r,
+        }
         for d, r in zip(days, returns)
         if start <= d < end
     ]
@@ -42,13 +56,19 @@ def test_trade_returns_are_net_per_unit_of_notional_by_exit_date():
             {"exit_time": "2024-01-03T00:00:00", "entry_price": 50.0, "pnl_raw": 1.0},
         ]
     )
-    assert series.to_dict() == {pd.Timestamp("2024-01-02"): 0.005, pd.Timestamp("2024-01-03"): 0.02}
+    assert series.to_dict() == {
+        pd.Timestamp("2024-01-02"): 0.005,
+        pd.Timestamp("2024-01-03"): 0.02,
+    }
     with pytest.raises(ValueError, match="dated"):
         trade_returns([{"exit_time": "2024-01-02", "pnl_raw": 1.0}])
 
 
 def streams(end=LAST):
-    return {s: trade_returns(trades(s, pd.Timestamp("2023-01-01"), end)) for s in ("AAA", "BBB")}
+    return {
+        s: trade_returns(trades(s, pd.Timestamp("2023-01-01"), end))
+        for s in ("AAA", "BBB")
+    }
 
 
 def test_weights_are_inverse_to_volatility_and_causal():
@@ -56,7 +76,9 @@ def test_weights_are_inverse_to_volatility_and_causal():
     ratio = (notional["AAA"] / notional["BBB"]).median()
     assert 2.5 < ratio < 3.5  # BBB is three times as volatile
     first = pd.bdate_range("2023-01-02", LAST)[PARAMS["min_days"]]
-    assert returns.index[0] > first  # weights need min_days before them, then a portfolio vol
+    assert (
+        returns.index[0] > first
+    )  # weights need min_days before them, then a portfolio vol
     # a change after a day does not move that day's weights or return
     later = streams()
     later["BBB"].loc["2025-01-02":] *= 5
@@ -64,7 +86,8 @@ def test_weights_are_inverse_to_volatility_and_causal():
     day = pd.Timestamp("2025-01-02")
     pd.testing.assert_frame_equal(changed.loc[:day], notional.loc[:day])
     pd.testing.assert_series_equal(
-        changed_returns.loc[: day - pd.Timedelta(days=1)], returns.loc[: day - pd.Timedelta(days=1)]
+        changed_returns.loc[: day - pd.Timedelta(days=1)],
+        returns.loc[: day - pd.Timedelta(days=1)],
     )
 
 
@@ -83,7 +106,12 @@ def sleeve_files(tmp_path):
     for sym in ("AAA", "BBB"):
         write(
             tmp_path / f"{sym.lower()}.json",
-            {"name": sym, "timeframe": "DAY_1", "assets": {"filter": [sym]}, "model": {}},
+            {
+                "name": sym,
+                "timeframe": "DAY_1",
+                "assets": {"filter": [sym]},
+                "model": {},
+            },
         )
     return tmp_path
 
@@ -107,9 +135,17 @@ def spec(directory, **extra):
         ({"sleeves": [{"strategy_file": "aaa.json"}]}, "two sleeves"),
         ({"leverage": 2}, "unknown portfolio keys"),
         ({"min_days": 300}, "min_days"),
-        ({"sleeves": [{"strategy_file": "aaa.json"}, {"strategy_file": "aaa.json"}]}, "duplicate"),
         (
-            {"sleeves": [{"strategy_file": "aaa.json"}, {"strategy_file": "nope.json"}]},
+            {"sleeves": [{"strategy_file": "aaa.json"}, {"strategy_file": "aaa.json"}]},
+            "duplicate",
+        ),
+        (
+            {
+                "sleeves": [
+                    {"strategy_file": "aaa.json"},
+                    {"strategy_file": "nope.json"},
+                ]
+            },
             "cannot load",
         ),
     ],
@@ -165,12 +201,17 @@ class Fakes:
         """Return synthetic holdout trades or the configured unevaluated result."""
         sym = development["symbol"]
         if sym in self.no_frozen:
-            return {"symbol": sym, "holdout": {"evaluated": False, "reason": "no frozen setting"}}
+            return {
+                "symbol": sym,
+                "holdout": {"evaluated": False, "reason": "no frozen setting"},
+            }
         self.looked.append((sym, strategy.holdout_cutoff))
         look = {"cutoff": strategy.holdout_cutoff, "evaluated": True}
         if sym in self.idle:
             return look, []
-        return look, trades(sym, pd.Timestamp(strategy.holdout_cutoff), LAST + pd.Timedelta(days=1))
+        return look, trades(
+            sym, pd.Timestamp(strategy.holdout_cutoff), LAST + pd.Timedelta(days=1)
+        )
 
 
 @pytest.fixture
@@ -195,7 +236,9 @@ def run_cli(monkeypatch, *args):
 
 
 def portfolio(results, run_id):
-    return json.loads((results / run_id / "grid_details" / "PORTFOLIO" / "config.json").read_text())
+    return json.loads(
+        (results / run_id / "grid_details" / "PORTFOLIO" / "config.json").read_text()
+    )
 
 
 def test_iteration_is_gated_clamped_to_the_cutoff_and_recorded(gated, monkeypatch):
@@ -219,12 +262,16 @@ def test_iteration_is_gated_clamped_to_the_cutoff_and_recorded(gated, monkeypatc
     result = portfolio(gated.results, "p1")
     assert result["mean_notional"]["calm"] > result["mean_notional"]["wild"]
     assert (
-        pd.read_csv(gated.results / "p1" / "grid_details" / "PORTFOLIO" / "daily.csv")["date"].max()
+        pd.read_csv(gated.results / "p1" / "grid_details" / "PORTFOLIO" / "daily.csv")[
+            "date"
+        ].max()
         < "2025-04-30"
     )
 
 
-def test_holdout_evaluates_every_sleeve_once_and_reports_after_the_cutoff(gated, monkeypatch):
+def test_holdout_evaluates_every_sleeve_once_and_reports_after_the_cutoff(
+    gated, monkeypatch
+):
     run_cli(
         monkeypatch,
         "--spec",
@@ -244,7 +291,9 @@ def test_holdout_evaluates_every_sleeve_once_and_reports_after_the_cutoff(gated,
     assert trial.kind is TrialKind.HOLDOUT and trial.status is TrialStatus.OK
     result = portfolio(gated.results, "h1")
     assert result["holdout"] == {"cutoff": "2025-04-30", "evaluated": True}
-    daily = pd.read_csv(gated.results / "h1" / "grid_details" / "PORTFOLIO" / "daily.csv")
+    daily = pd.read_csv(
+        gated.results / "h1" / "grid_details" / "PORTFOLIO" / "daily.csv"
+    )
     assert daily["date"].min() >= "2025-04-30"
     assert result["metrics"]["trades"] == 2 * len(pd.bdate_range(CUTOFF, LAST))
     assert result["metrics"]["test_period_years"] < 1.3
@@ -266,7 +315,9 @@ def test_holdout_with_a_sleeve_that_cannot_be_evaluated_is_an_error(gated, monke
     )
     result = portfolio(gated.results, "h2")
     assert result["status"] == "error" and "wild" in result["reason"]
-    assert result["holdout"]["evaluated"] is True  # AAA's data after the cutoff was seen
+    assert (
+        result["holdout"]["evaluated"] is True
+    )  # AAA's data after the cutoff was seen
     [trial] = read_trials(gated.register / LEDGER_FILENAME)
     assert trial.kind is TrialKind.HOLDOUT
 
@@ -277,7 +328,9 @@ def test_trade_returns_of_no_trades_is_an_empty_dated_series():
     assert empty.empty and isinstance(empty.index, pd.DatetimeIndex)
 
 
-@pytest.mark.parametrize("look, status", [(False, "data_invalid"), (True, "not_significant")])
+@pytest.mark.parametrize(
+    "look, status", [(False, "data_invalid"), (True, "not_significant")]
+)
 def test_a_sleeve_symbol_without_trades_adds_nothing(gated, monkeypatch, look, status):
     """A symbol that never traded (e.g. refused by its data check) is a flat leg, not a crash."""
     gated.extra, gated.idle = ["CCC"], {"CCC"}
@@ -298,7 +351,9 @@ def test_a_sleeve_symbol_without_trades_adds_nothing(gated, monkeypatch, look, s
     result = portfolio(gated.results, "i1")
     assert result["status"] in ("ok", "not_significant")
     assert result["metrics"]["trades"] > 0
-    counts = {s["symbol"]: s["development_trade_count"] for s in result["sleeves"]["calm"]}
+    counts = {
+        s["symbol"]: s["development_trade_count"] for s in result["sleeves"]["calm"]
+    }
     assert counts["CCC"] == 0 and counts["AAA"] > 0
 
 
@@ -306,3 +361,33 @@ def test_combine_without_a_research_id_is_refused(gated, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         run_cli(monkeypatch, "--spec", str(gated.spec), "--note", "x")
     assert exc.value.code == 2 and gated.developed == []
+
+
+def test_a_weekend_exit_keeps_its_return():
+    """bdate_range dropped returns of exits on a Saturday or Sunday."""
+    days = pd.bdate_range("2024-01-01", periods=40)
+    rng = np.random.default_rng(5)
+    saturday = pd.Timestamp("2024-02-17")  # inside the range, after the warm-up
+    assert saturday.dayofweek == 5
+
+    def stream(scale):
+        series = pd.Series(rng.normal(0.0005, scale, len(days)), index=days)
+        series.loc[saturday] = 0.05
+        return series.sort_index()
+
+    params = {
+        "lookback_days": 5,
+        "min_days": 3,
+        "target_volatility": 0.10,
+        "max_scale": 5.0,
+    }
+    returns, notional = combine(
+        {"AAA": stream(0.004), "BBB": stream(0.01)}, params, {"AAA": None, "BBB": None}
+    )
+
+    assert saturday in returns.index
+    expected = (
+        notional.loc[saturday, "AAA"] * 0.05 + notional.loc[saturday, "BBB"] * 0.05
+    )
+    assert returns.loc[saturday] == pytest.approx(expected)
+    assert returns.loc[saturday] != 0.0

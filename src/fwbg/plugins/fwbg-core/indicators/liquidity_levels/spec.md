@@ -1,6 +1,6 @@
 # Plugin Spec — liquidity_levels
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -39,21 +39,21 @@ Scans swing highs/lows within a rolling lookback window, groups them into cluste
 
 - AC-001: compute() returns the input DataFrame with the eight liq_* feature columns appended.
 - AC-002: Feature columns are shifted by one bar via shift_features so values at bar i depend only on data up to bar i-1 (no lookahead).
-- AC-003: Swing highs/lows are identified as bars whose H (respectively L) equals the max (min) over a symmetric window of size 2*swing_lookback+1 centered on the bar.
+- AC-003: A swing high (low) at bar s is a bar whose H (L) is the max (min) over the window [s-swing_lookback, s+swing_lookback]; ties are resolved to the first bar, so equal highs/lows within swing_lookback bars form one swing, not several. A swing is only known (and only used) from bar s+swing_lookback onwards.
 - AC-004: Equal-level clusters are formed from swing prices within tolerance = ATR * tolerance_atr_mult and require at least min_touches members.
-- AC-005: Only swing points strictly before the current bar and within the last lookback_window bars are considered when building levels for bar i.
+- AC-005: Only confirmed swing points (s + swing_lookback <= i) within the last lookback_window bars that have not been consumed are considered when building levels for bar i. A swing is consumed when a later bar closes through it, wicks beyond it by more than the tolerance, or when it belongs to a level that was swept.
 - AC-006: liq_eqh_dist is the ATR-normalized distance from close to the nearest equal-high cluster above the close; liq_eql_dist is the ATR-normalized distance from close to the nearest equal-low cluster below the close.
-- AC-007: liq_eqh_count / liq_eql_count report the touch count of that nearest cluster; liq_eqh_active / liq_eql_active are 1.0 when such a cluster exists and 0.0 otherwise.
+- AC-007: liq_eqh_count / liq_eql_count report the touch count of that nearest cluster; liq_eqh_active / liq_eql_active are 1.0 when such a cluster exists and 0.0 otherwise. A swept level sweeps once and is then gone.
 - AC-008: liq_sweep_up is 1.0 when H exceeds the nearest equal-high above but C closes back below it; liq_sweep_down is 1.0 when L pierces the nearest equal-low below but C closes back above it.
-- AC-009: ATR is computed as a rolling mean of true range with min_periods=1 and atr_period window, with a floor of 1.0 substituted when ATR falls below EPSILON to avoid division blow-ups.
+- AC-009: ATR is computed as a rolling mean of true range over a full atr_period window (rows before that are warm-up), with a floor of 1.0 substituted when ATR falls below EPSILON to avoid division blow-ups.
 - AC-010: get_feature_columns() returns exactly the eight liq_* columns; get_signal_columns() returns the four active/sweep flags.
 
 ## Edge Cases
 
-- Bars before index swing_lookback*2 receive default values (NaN for distances, 0.0 for counts/flags) because the swing search and level-building loop does not execute for them.
-- When no swing highs/lows exist in the lookback window (sh_mask/sl_mask all False), distance stays NaN and count/active stay 0.0 for that bar.
+- Warm-up rows (before max(2*swing_lookback, atr_period-1), plus the 1-bar shift) are NaN in all eight columns; afterwards counts and flags are 0.0 when no level exists.
+- When no active swing highs/lows exist, distance stays NaN and count/active are 0.0 for that bar.
 - When qualifying clusters exist but none lie above (resp. below) the current close, no eqh (resp. eql) feature is populated for that bar.
-- Empty input to _find_equal_levels returns an empty cluster list, so an empty DataFrame yields the eight columns filled with their default NaN/0.0 values.
+- Empty input to _find_equal_levels returns an empty cluster list, so an empty DataFrame yields the eight columns.
 - ATR values at or below EPSILON are replaced with 1.0 to prevent divide-by-zero in the tolerance and distance normalization.
 - Sweep flags require both the wick condition (H>level or L<level) and the close-back condition (C on the origin side); a full-body breakout past the level does not set the sweep flag.
 

@@ -8,6 +8,7 @@ wurden. Sonst werden risk_per_trade und Circuit-Breaker per Binary-/Grid-
 Search auf genau der Trade-Sequenz optimiert, die anschließend bewertet wird
 (Hindsight-Optimierung von Calmar/Equity/Max-DD).
 """
+
 from typing import Any, Dict, List
 
 import numpy as np
@@ -15,7 +16,6 @@ import numpy as np
 from fwbg.simulation.equity import simulate_equity_timeline
 from fwbg.simulation.trade import (
     kelly_inputs,
-    monte_carlo_equity_from_returns,
     monte_carlo_permutation_test,
 )
 
@@ -68,18 +68,77 @@ def sized_returns(trades, fk, circuit_breaker, prior_pnls):
     )
     losses = [abs(p) for p in prior_pnls if p < 0]
     scale = (
-        float(np.mean(losses)) if losses
-        else float(np.mean(np.abs(prior_pnls))) or 1.0
+        float(np.mean(losses)) if losses else float(np.mean(np.abs(prior_pnls))) or 1.0
     )
     taken = [i for i, keep in enumerate(mask) if keep]
     pnl = [trades[i]["pnl_raw"] for i in taken]
     return [fk * p / scale for p in pnl], pnl, taken
 
 
+def bootstrap_terminal_equity(
+    returns,
+    n_simulations: int = 500,
+    random_seed: int = 42,
+    block_size: int = 1,
+    start_equity: float = 100.0,
+) -> Dict[str, Any]:
+    """Distribution of terminal equity under bootstrap resampling of *returns*.
+
+    Each simulation draws len(returns) per-trade returns WITH replacement
+    (moving blocks of *block_size* trades when above 1, to keep short-range
+    dependence) and compounds them. Permuting a fixed set of returns cannot be used
+    here: compounding is commutative, so every permutation ends at the same equity
+    and the percentiles collapse to one number. A simulation is bankrupt once a
+    trade return is -100 % or worse (equity floored at 0).
+
+    Seeded: the same input gives the same result.
+    """
+    returns_arr = np.asarray(returns, dtype=float)
+    n = len(returns_arr)
+    observed_factors = 1.0 + returns_arr
+    observed = (
+        0.0
+        if (observed_factors <= 0).any()
+        else start_equity * float(np.prod(observed_factors))
+    )
+    if n < 10:
+        return {
+            "median_equity": start_equity,
+            "p5_equity": start_equity,
+            "p95_equity": start_equity,
+            "bankruptcy_rate": 0.0,
+            "observed_equity": observed,
+            "n_simulations": 0,
+        }
+
+    rng = np.random.default_rng(random_seed)
+    block = max(1, min(int(block_size), n))
+    n_blocks = -(-n // block)
+    starts = rng.integers(0, n - block + 1, size=(n_simulations, n_blocks))
+    index = (starts[:, :, None] + np.arange(block)[None, None, :]).reshape(
+        n_simulations, -1
+    )
+    factors = 1.0 + returns_arr[index[:, :n]]
+    bankrupt = (factors <= 0).any(axis=1)
+    final = np.where(bankrupt, 0.0, start_equity * np.prod(factors, axis=1))
+
+    return {
+        "median_equity": float(np.median(final)),
+        "mean_equity": float(np.mean(final)),
+        "p5_equity": float(np.percentile(final, 5)),
+        "p25_equity": float(np.percentile(final, 25)),
+        "p75_equity": float(np.percentile(final, 75)),
+        "p95_equity": float(np.percentile(final, 95)),
+        "bankruptcy_rate": float(bankrupt.mean()),
+        "observed_equity": observed,
+        "n_simulations": n_simulations,
+    }
+
+
 def monte_carlo_summary(pnl, returns) -> Dict[str, Any]:
-    """Permutation test on *pnl* and equity Monte Carlo on *returns*, as reported."""
+    """Sign-permutation test on *pnl* and a bootstrap of terminal equity on *returns*."""
     mc_perm = monte_carlo_permutation_test(pnl, n_permutations=1000)
-    mc_equity = monte_carlo_equity_from_returns(returns, n_simulations=500)
+    mc_equity = bootstrap_terminal_equity(returns, n_simulations=500)
     return {
         "p_value": mc_perm["p_value"],
         "is_significant": mc_perm["is_significant"],
@@ -181,7 +240,9 @@ def compute_causal_reporting(
                 prior_trades, fold_result.get("rrr", rrr)
             )
             risk_result = risk_mgr.compute_risk_params(
-                prior_binary, prior_wr, prior_payoff,
+                prior_binary,
+                prior_wr,
+                prior_payoff,
                 rv_values=prior_rv if len(prior_rv) == len(prior_binary) else None,
                 **risk_params,
             )
