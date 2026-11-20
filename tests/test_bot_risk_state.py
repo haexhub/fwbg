@@ -248,3 +248,35 @@ def test_initial_training_cache_excludes_forming_bar(monkeypatch):
     assert bot._train_model("EURUSD", bot.assets["EURUSD"]) is True
     assert bot.last_bar_time["EURUSD"] == hour - timedelta(hours=1)
     assert trained["index"].max() < hour
+
+
+def _three_losses(state):
+    for i in range(3):
+        state.process_close_event(_event(f"loss-{i}", -1))
+
+
+def test_loss_streak_pause_expires_after_its_duration():
+    state, now = _known_state(max_observation_age_seconds=86400)
+    _three_losses(state)
+
+    assert state.can_trade(now) is False  # arms the pause
+    assert state.pause_until == now + timedelta(minutes=state.pause_duration_minutes)
+    assert state.can_trade(now + timedelta(minutes=30)) is False
+
+    # Pause served; the same streak must not re-arm it.
+    after = now + timedelta(minutes=61)
+    assert state.can_trade(after) is True
+    assert state.can_trade(after + timedelta(minutes=5)) is True
+
+
+def test_new_loss_after_expired_pause_arms_a_new_pause():
+    state, now = _known_state(max_observation_age_seconds=86400)
+    _three_losses(state)
+    assert state.can_trade(now) is False
+
+    after = now + timedelta(minutes=61)
+    assert state.can_trade(after) is True
+    state.process_close_event(_event("loss-4", -1, hour=14))
+
+    assert state.can_trade(after) is False
+    assert state.pause_until == after + timedelta(minutes=state.pause_duration_minutes)
