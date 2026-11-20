@@ -20,8 +20,9 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 - `ma_period` (int, default=20): Rolling window for position moving average.
 - `enable_retest` (bool, default=True): Enable PDH/PDL retest signals at the configured retracement level(s).
 - `retracement_levels` (list[float], default=0.5): Retracement fraction(s) of the PDH-PDL range used as retest entry level; scalar or list. Always produces rl{N}_ prefixed columns.
-- `session_start_hour` (int, default=7): UTC hour when trading session starts.
-- `session_end_hour` (int, default=21): UTC hour when trading session ends (wraps around midnight when start >= end).
+- `session_start_hour` (int, default=7): Hour when the trading session starts, on the index clock (UTC) or, with `session_timezone`, on that zone's wall clock.
+- `session_end_hour` (int, default=21): Hour when the trading session ends, same clock as `session_start_hour` (wraps around midnight when start >= end).
+- `session_timezone` (string, default=None): IANA timezone (e.g. `America/New_York`) in which the session hours and the trading-day boundary are given. Day grouping and the session mask are then evaluated on that zone's wall clock and follow daylight saving time; a naive index is read as UTC. `None` keeps the index-clock behaviour. Cannot be combined with `resample_tf` (raises ValueError).
 - `candle_span` (choice, default='hl'): Vertical extent of candles used for range: 'hl' (full H/L including wicks) or 'body' (max/min of O/C).
 - `range_scope` (list[string], default=['session']): Which bars are included in range computation: 'session' (session hours only, ses_ prefix) or 'all' (24h, all_ prefix). List to precompute multiple.
 - `break_modes` (list[string], default=['all_hours']): Break-detection timing modes: 'all_hours' (24/7, no prefix) or 'session_only' (sesbrk_ prefix, only session bars trigger).
@@ -84,7 +85,7 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 - skip_weekends=True with Monday bars: PDH/PDL are taken from Friday via ffill of trading days only.
 - ATR <= EPSILON: safe_atr falls back to 1.0 to avoid division blow-up in distance features; during ATR warm-up safe_atr stays NaN.
 - A retest never fires on the breakout bar itself (and min_retracement tracking starts after it): the first eligible retest bar is the bar after the break.
-- session_start_hour / session_end_hour are fixed UTC hours with no time zone conversion; a 17:00 New York day boundary is 22:00 UTC in winter and 21:00 UTC in summer.
+- Without `session_timezone`, session_start_hour / session_end_hour are fixed index-clock (UTC) hours with no time zone conversion; a 17:00 New York day boundary is 22:00 UTC in winter and 21:00 UTC in summer. With `session_timezone="America/New_York"` and `session_start_hour=17` the day rolls over at 17:00 New York time all year (22:00 UTC in winter, 21:00 UTC in summer). An unknown timezone raises ValueError.
 - resample_tf with body range: in session scope only in-session bars enter a resample bin, and bins are aligned to the trading-day boundary (midnight, or session_start_hour for sessions crossing midnight).
 - enable_retest=False: get_feature_columns() omits the retest columns, matching what compute() emits.
 - |PDH - PDL| <= EPSILON: pdl_position is NaN for those bars (safe_range = NaN).
@@ -100,7 +101,7 @@ Intraday-only indicator that derives previous-day high/low reference levels and 
 ## Assumptions
 
 - df is an intraday OHLC frame with columns O, H, L, C and a DatetimeIndex (verified for datetime index; OHLC columns assumed present).
-- Session hours are interpreted in the timezone of df.index (typically UTC per param docs).
+- Without `session_timezone`, session hours are interpreted on the clock of df.index (typically UTC); with it, in that zone.
 - shift_features shifts by one bar to enforce the no-lookahead invariant required for indicators.
 - compute_break_state, compute_retest_signals, apply_breakout_threshold, EPSILON, and rl_tag are provided by fwbg_sdk / fwbg_sdk.retest and behave as their names suggest.
 
