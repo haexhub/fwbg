@@ -7,6 +7,7 @@ Enthält zwei registrierte Indikatoren:
 - "supertrend": Standard-Supertrend auf OHLC-Daten
 - "supertrend_mtf": Multi-Timeframe via rollende OHLC-Aggregation
 """
+
 from typing import List
 
 import numpy as np
@@ -44,9 +45,15 @@ def _supertrend(
     final_lower = lower_band.values.copy()
 
     for i in range(1, n):
-        if final_lower[i] < final_lower[i - 1] and close.iloc[i - 1] > final_lower[i - 1]:
+        if (
+            final_lower[i] < final_lower[i - 1]
+            and close.iloc[i - 1] > final_lower[i - 1]
+        ):
             final_lower[i] = final_lower[i - 1]
-        if final_upper[i] > final_upper[i - 1] and close.iloc[i - 1] < final_upper[i - 1]:
+        if (
+            final_upper[i] > final_upper[i - 1]
+            and close.iloc[i - 1] < final_upper[i - 1]
+        ):
             final_upper[i] = final_upper[i - 1]
 
         if direction[i - 1] == 1:
@@ -174,7 +181,9 @@ class SupertrendMTFIndicator(BaseIndicator):
 
         direction, st_line = _supertrend(d1_high, d1_low, d1_close, period, multiplier)
 
-        m15_atr = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=period)
+        m15_atr = ta.volatility.average_true_range(
+            df["H"], df["L"], df["C"], window=period
+        )
         st_dist_atr = safe_divide(d1_close - st_line, m15_atr)
 
         features = {

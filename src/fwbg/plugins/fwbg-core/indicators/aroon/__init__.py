@@ -4,6 +4,7 @@ Aroon Indicator.
 Misst die Zeit seit dem letzten N-Perioden Hoch/Tief.
 Range: 0-100. Hoher Aroon Up = kürzlich neues Hoch = Aufwärtstrend.
 """
+
 from typing import List
 
 import pandas as pd

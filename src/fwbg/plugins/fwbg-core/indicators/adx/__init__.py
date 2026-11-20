@@ -3,6 +3,7 @@ ADX (Average Directional Index) Indicator.
 
 Misst die Trendstärke auf einer Skala von 0-100, unabhängig von der Richtung.
 """
+
 from typing import List
 
 import pandas as pd

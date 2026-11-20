@@ -4,6 +4,7 @@ MACD (Moving Average Convergence Divergence) Indicator.
 MACD = 12-EMA - 26-EMA. Signal = 9-EMA of MACD. Histogram = MACD - Signal.
 Alle Werte werden durch Close normalisiert.
 """
+
 from typing import List
 
 import numpy as np
@@ -53,7 +54,9 @@ class MACDIndicator(BaseIndicator):
             "macd_line": safe_divide(macd_line, df["C"]),
             "macd_above_zero": np.sign(macd_line),
             "macd_dist_zero": safe_divide(macd_line.abs(), df["C"]),
-            "macd_hist_flip": (np.sign(macd_hist) != np.sign(macd_hist.shift(1))).astype(float),
+            "macd_hist_flip": (
+                np.sign(macd_hist) != np.sign(macd_hist.shift(1))
+            ).astype(float),
         }
 
         features_df = shift_features(features, df.index)
@@ -61,8 +64,12 @@ class MACDIndicator(BaseIndicator):
 
     def get_feature_columns(self, params=None) -> List[str]:
         return [
-            "macd_hist", "macd_signal", "macd_line",
-            "macd_above_zero", "macd_dist_zero", "macd_hist_flip",
+            "macd_hist",
+            "macd_signal",
+            "macd_line",
+            "macd_above_zero",
+            "macd_dist_zero",
+            "macd_hist_flip",
         ]
 
     def get_signal_columns(self, params=None) -> List[str]:

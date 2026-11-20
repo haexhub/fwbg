@@ -1,4 +1,5 @@
 """Tests for Supertrend Indicator plugin (standard + MTF)."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -6,17 +7,21 @@ import pytest
 
 def create_ohlc(close, high_factor=1.005, low_factor=0.995):
     n = len(close)
-    return pd.DataFrame({
-        'O': close * 0.999,
-        'H': close * high_factor,
-        'L': close * low_factor,
-        'C': close,
-    }, index=pd.date_range('2024-01-01', periods=n, freq='h'))
+    return pd.DataFrame(
+        {
+            "O": close * 0.999,
+            "H": close * high_factor,
+            "L": close * low_factor,
+            "C": close,
+        },
+        index=pd.date_range("2024-01-01", periods=n, freq="h"),
+    )
 
 
 @pytest.fixture
 def indicator():
     from fwbg.plugins import import_plugin_module
+
     mod = import_plugin_module("fwbg-core", "indicators", "supertrend")
     return mod.SupertrendIndicator()
 
@@ -24,6 +29,7 @@ def indicator():
 @pytest.fixture
 def mtf_indicator():
     from fwbg.plugins import import_plugin_module
+
     mod = import_plugin_module("fwbg-core", "indicators", "supertrend")
     return mod.SupertrendMTFIndicator()
 

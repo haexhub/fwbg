@@ -1,4 +1,5 @@
 """Tests for EMA Indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -6,17 +7,21 @@ import pytest
 
 def create_ohlc(close, high_factor=1.005, low_factor=0.995):
     n = len(close)
-    return pd.DataFrame({
-        'O': close * 0.999,
-        'H': close * high_factor,
-        'L': close * low_factor,
-        'C': close,
-    }, index=pd.date_range('2024-01-01', periods=n, freq='h'))
+    return pd.DataFrame(
+        {
+            "O": close * 0.999,
+            "H": close * high_factor,
+            "L": close * low_factor,
+            "C": close,
+        },
+        index=pd.date_range("2024-01-01", periods=n, freq="h"),
+    )
 
 
 @pytest.fixture
 def indicator():
     from fwbg.plugins import import_plugin_module
+
     mod = import_plugin_module("fwbg-core", "indicators", "ema")
     return mod.EMAIndicator()
 
@@ -44,10 +49,13 @@ class TestEMASources:
         n = 200
         close = 100 * np.cumprod(1 + np.full(n, 0.002))
         df = create_ohlc(close)
-        result = indicator.compute(df, lines=[
-            {"period": 20, "source": "H"},
-            {"period": 20, "source": "L"},
-        ])
+        result = indicator.compute(
+            df,
+            lines=[
+                {"period": 20, "source": "H"},
+                {"period": 20, "source": "L"},
+            ],
+        )
         assert "ema_dist_20_h" in result.columns
         assert "ema_dist_20_l" in result.columns
         assert "_ema_20_h" in result.columns
@@ -57,10 +65,13 @@ class TestEMASources:
         n = 200
         close = 100 + np.random.default_rng(42).normal(0, 0.5, n).cumsum()
         df = create_ohlc(close)
-        result = indicator.compute(df, lines=[
-            {"period": 20, "source": "H"},
-            {"period": 20, "source": "L"},
-        ])
+        result = indicator.compute(
+            df,
+            lines=[
+                {"period": 20, "source": "H"},
+                {"period": 20, "source": "L"},
+            ],
+        )
         h_ema = result["_ema_20_h"].dropna()
         l_ema = result["_ema_20_l"].dropna()
         assert (h_ema > l_ema).all(), "EMA(H) should always be above EMA(L)"
@@ -85,11 +96,14 @@ class TestEMACrossings:
         n = 200
         close = np.linspace(100, 200, n)
         df = create_ohlc(close)
-        result = indicator.compute(df, lines=[
-            {"period": 5, "source": "H"},
-            {"period": 5, "source": "L"},
-            {"period": 200, "source": "C"},
-        ])
+        result = indicator.compute(
+            df,
+            lines=[
+                {"period": 5, "source": "H"},
+                {"period": 5, "source": "L"},
+                {"period": 200, "source": "C"},
+            ],
+        )
         assert "ema_5_h_above_5_l" in result.columns
         assert "ema_5_h_above_200" in result.columns
         assert "ema_5_l_above_200" in result.columns
@@ -98,10 +112,14 @@ class TestEMACrossings:
         n = 200
         close = np.linspace(100, 200, n)
         df = create_ohlc(close)
-        result = indicator.compute(df, lines=[
-            {"period": 5, "source": "C"},
-            {"period": 200, "source": "C"},
-        ], crossings=False)
+        result = indicator.compute(
+            df,
+            lines=[
+                {"period": 5, "source": "C"},
+                {"period": 200, "source": "C"},
+            ],
+            crossings=False,
+        )
         crossing_cols = [c for c in result.columns if "_above_" in c]
         assert len(crossing_cols) == 0
 
@@ -127,7 +145,9 @@ class TestFeatureColumns:
             assert c in result.columns, f"Feature {c} not in computed result"
 
     def test_custom_params_columns(self, indicator):
-        params = {"lines": [{"period": 10, "source": "H"}, {"period": 50, "source": "C"}]}
+        params = {
+            "lines": [{"period": 10, "source": "H"}, {"period": 50, "source": "C"}]
+        }
         columns = indicator.get_feature_columns(params)
         assert "ema_dist_10_h" in columns
         assert "ema_dist_50" in columns

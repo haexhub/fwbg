@@ -4,6 +4,7 @@ Plugin __init__.py files live in non-importable directories (the
 `fwbg-core` directory has a hyphen). This module hosts shared scaffolding
 that multiple plugins can import via the standard import system.
 """
+
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -68,10 +69,13 @@ class BaseMovingAverageIndicator(BaseIndicator):
 
     @staticmethod
     def _sorted_keys(keys: list[str]) -> list[str]:
-        return sorted(keys, key=lambda k: (
-            int(k.split("_")[0]),
-            k.split("_")[1] if "_" in k else "",
-        ))
+        return sorted(
+            keys,
+            key=lambda k: (
+                int(k.split("_")[0]),
+                k.split("_")[1] if "_" in k else "",
+            ),
+        )
 
     # ---- Pipeline entry points -------------------------------------------
 
@@ -100,7 +104,7 @@ class BaseMovingAverageIndicator(BaseIndicator):
         if crossings:
             sorted_keys = self._sorted_keys(list(ma_series.keys()))
             for i, short_key in enumerate(sorted_keys):
-                for long_key in sorted_keys[i + 1:]:
+                for long_key in sorted_keys[i + 1 :]:
                     features[f"{prefix}_{short_key}_above_{long_key}"] = (
                         ma_series[short_key] > ma_series[long_key]
                     ).astype(float)
@@ -122,7 +126,7 @@ class BaseMovingAverageIndicator(BaseIndicator):
         if crossings:
             sorted_keys = self._sorted_keys(keys)
             for i, short_key in enumerate(sorted_keys):
-                for long_key in sorted_keys[i + 1:]:
+                for long_key in sorted_keys[i + 1 :]:
                     cols.append(f"{prefix}_{short_key}_above_{long_key}")
 
         return cols
