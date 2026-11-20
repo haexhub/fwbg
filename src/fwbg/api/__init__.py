@@ -107,7 +107,9 @@ def create_app() -> FastAPI:
     )
 
     api_key = os.environ.get("FWBG_API_KEY", "").strip()
-    allow_unauth = os.environ.get("FWBG_ALLOW_UNAUTHENTICATED_API", "").strip().lower() in (
+    allow_unauth = os.environ.get(
+        "FWBG_ALLOW_UNAUTHENTICATED_API", ""
+    ).strip().lower() in (
         "1",
         "true",
         "yes",
@@ -129,7 +131,9 @@ def create_app() -> FastAPI:
             "FWBG_ALLOW_UNAUTHENTICATED_API=1 for local-only development."
         )
 
-    app.include_router(exit_optimization_router, prefix="/api/exploration/exit-optimization")
+    app.include_router(
+        exit_optimization_router, prefix="/api/exploration/exit-optimization"
+    )
     app.include_router(plugins_router, prefix="/api")
     app.include_router(presets_router, prefix="/api")
     app.include_router(strategies_router, prefix="/api")
@@ -173,7 +177,9 @@ def _record_interrupted_runs() -> None:
         with register_lock(research_dir):
             record_stale(research_dir)
     except (OSError, ValueError, LedgerError, PendingError, ResearchRepoError) as exc:
-        log.warning("research register: interrupted runs not recorded at startup: %s", exc)
+        log.warning(
+            "research register: interrupted runs not recorded at startup: %s", exc
+        )
 
 
 def __getattr__(name: str):

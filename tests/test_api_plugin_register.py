@@ -1,4 +1,5 @@
 """Tests for POST /api/plugins (agent-authored plugin registration)."""
+
 import json
 
 import pytest
@@ -57,7 +58,9 @@ def clean_registry(tmp_path, monkeypatch):
     import fwbg.api.plugins as plugins_mod
 
     monkeypatch.setattr(reg_mod, "get_user_plugins_dir", lambda: tmp_path)
-    monkeypatch.setattr(plugins_mod, "get_user_plugins_dir", lambda: tmp_path, raising=False)
+    monkeypatch.setattr(
+        plugins_mod, "get_user_plugins_dir", lambda: tmp_path, raising=False
+    )
 
     reset_registry()
     get_plugin_registry.cache_clear()
@@ -148,7 +151,9 @@ class TestRegisterPlugin:
         category_root.mkdir(parents=True)
         outside = tmp_path / "outside"
         outside.mkdir()
-        (category_root / "test_reg_indicator").symlink_to(outside, target_is_directory=True)
+        (category_root / "test_reg_indicator").symlink_to(
+            outside, target_is_directory=True
+        )
 
         resp = _register(client, overwrite=True)
 
@@ -164,53 +169,66 @@ class TestRegisterPlugin:
 
         assert resp.status_code == 200
         assert marker.read_text() == "unchanged"
-        plugin_dir = (
-            tmp_path / "agent-authored" / "indicators" / "test_reg_indicator"
-        )
+        plugin_dir = tmp_path / "agent-authored" / "indicators" / "test_reg_indicator"
         assert (plugin_dir / "__init__.py").is_file()
 
     def test_invalid_code_returns_422(self, client):
-        resp = client.post("/api/plugins", json={
-            "slug": "bad_plugin",
-            "python_code": "this is not valid python!!!",
-            "kind": "indicator",
-        })
+        resp = client.post(
+            "/api/plugins",
+            json={
+                "slug": "bad_plugin",
+                "python_code": "this is not valid python!!!",
+                "kind": "indicator",
+            },
+        )
         assert resp.status_code == 422
 
     def test_wrong_slug_in_code_returns_422(self, client):
-        resp = client.post("/api/plugins", json={
-            "slug": "other_name",
-            "python_code": _VALID_PLUGIN_CODE,
-            "kind": "indicator",
-        })
+        resp = client.post(
+            "/api/plugins",
+            json={
+                "slug": "other_name",
+                "python_code": _VALID_PLUGIN_CODE,
+                "kind": "indicator",
+            },
+        )
         assert resp.status_code == 422
         assert "other_name" in resp.text
 
     def test_unknown_kind_returns_422(self, client):
-        resp = client.post("/api/plugins", json={
-            "slug": "test_reg_indicator",
-            "python_code": _VALID_PLUGIN_CODE,
-            "kind": "unknownkind",
-        })
+        resp = client.post(
+            "/api/plugins",
+            json={
+                "slug": "test_reg_indicator",
+                "python_code": _VALID_PLUGIN_CODE,
+                "kind": "unknownkind",
+            },
+        )
         assert resp.status_code == 422
 
     def test_failing_tests_returns_422(self, client):
-        resp = client.post("/api/plugins", json={
-            "slug": "test_reg_indicator",
-            "python_code": _VALID_PLUGIN_CODE,
-            "kind": "indicator",
-            "tests_code": _FAILING_TESTS_CODE,
-        })
+        resp = client.post(
+            "/api/plugins",
+            json={
+                "slug": "test_reg_indicator",
+                "python_code": _VALID_PLUGIN_CODE,
+                "kind": "indicator",
+                "tests_code": _FAILING_TESTS_CODE,
+            },
+        )
         assert resp.status_code == 422
         assert "failed" in resp.text.lower()
 
     def test_passing_tests_accepted(self, client):
-        resp = client.post("/api/plugins", json={
-            "slug": "test_reg_indicator",
-            "python_code": _VALID_PLUGIN_CODE,
-            "kind": "indicator",
-            "tests_code": _VALID_TESTS_CODE,
-        })
+        resp = client.post(
+            "/api/plugins",
+            json={
+                "slug": "test_reg_indicator",
+                "python_code": _VALID_PLUGIN_CODE,
+                "kind": "indicator",
+                "tests_code": _VALID_TESTS_CODE,
+            },
+        )
         assert resp.status_code == 200
 
     def test_spec_md_written_and_served(self, client):
@@ -235,14 +253,15 @@ class TestRegisterPlugin:
     def test_exit_strategy_kind_routes_to_correct_category(self, client):
         exit_code = _VALID_PLUGIN_CODE.replace(
             "test_reg_indicator", "test_reg_exit"
-        ).replace(
-            "PluginPhase.INDICATORS", "PluginPhase.EXIT_STRATEGIES"
+        ).replace("PluginPhase.INDICATORS", "PluginPhase.EXIT_STRATEGIES")
+        resp = client.post(
+            "/api/plugins",
+            json={
+                "slug": "test_reg_exit",
+                "python_code": exit_code,
+                "kind": "exit_strategy",
+            },
         )
-        resp = client.post("/api/plugins", json={
-            "slug": "test_reg_exit",
-            "python_code": exit_code,
-            "kind": "exit_strategy",
-        })
         assert resp.status_code == 200
         assert resp.json()["category"] == "exit_strategies"
 

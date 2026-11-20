@@ -1,4 +1,5 @@
 """Plugin endpoints."""
+
 import importlib.util
 import inspect
 import json
@@ -68,7 +69,9 @@ def _contained_plugin_dir(category_root: Path, slug: str) -> Path:
     target = root / slug
     resolved = target.resolve()
     if not resolved.is_relative_to(root):
-        raise HTTPException(422, "Plugin target must remain within its category directory")
+        raise HTTPException(
+            422, "Plugin target must remain within its category directory"
+        )
     return target
 
 
@@ -132,7 +135,9 @@ def _plugin_to_dict(fqn: str) -> dict:
         "fqn": fqn,
         "name": plugin_cls.name,
         "namespace": namespace,
-        "phase": plugin_cls.phase.value if isinstance(plugin_cls.phase, PluginPhase) else str(plugin_cls.phase),
+        "phase": plugin_cls.phase.value
+        if isinstance(plugin_cls.phase, PluginPhase)
+        else str(plugin_cls.phase),
         "version": plugin_cls.version,
         "description": manifest.get("description", ""),
         "group": getattr(plugin_cls, "group", "custom"),
@@ -194,7 +199,9 @@ def register_plugin(payload: RegisterPluginPayload) -> dict:
     target_dir = _contained_plugin_dir(category_root, payload.slug)
 
     if target_dir.exists() and not payload.overwrite:
-        raise HTTPException(409, f"Plugin '{fqn}' already registered. Set overwrite=true to replace.")
+        raise HTTPException(
+            409, f"Plugin '{fqn}' already registered. Set overwrite=true to replace."
+        )
 
     # Validate in a temp directory so nothing is written on failure.
     with tempfile.TemporaryDirectory(prefix="fwbg_register_") as tmp:
@@ -211,7 +218,16 @@ def register_plugin(payload: RegisterPluginPayload) -> dict:
             tests_py.write_text(payload.tests_code, encoding="utf-8")
             try:
                 result = subprocess.run(
-                    [sys.executable, "-m", "pytest", str(tests_py), "-v", "--tb=short", "--no-header", "-q"],
+                    [
+                        sys.executable,
+                        "-m",
+                        "pytest",
+                        str(tests_py),
+                        "-v",
+                        "--tb=short",
+                        "--no-header",
+                        "-q",
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=120,
@@ -248,7 +264,9 @@ def register_plugin(payload: RegisterPluginPayload) -> dict:
     bundle_manifest = target_dir.parent.parent / "manifest.json"
     if not bundle_manifest.exists():
         bundle_manifest.parent.mkdir(parents=True, exist_ok=True)
-        bundle_manifest.write_text(json.dumps(_BUNDLE_MANIFEST, indent=2), encoding="utf-8")
+        bundle_manifest.write_text(
+            json.dumps(_BUNDLE_MANIFEST, indent=2), encoding="utf-8"
+        )
 
     # Refresh the global registry so the new plugin is visible immediately.
     reset_registry()
@@ -333,7 +351,13 @@ def get_plugin_docs(fqn: str) -> dict:
 
     docs_dir = plugin_cls.get_docs_dir()
     if docs_dir is None:
-        return {"fqn": fqn, "has_docs": False, "readme": None, "files": [], "validation": {"valid": True, "violations": []}}
+        return {
+            "fqn": fqn,
+            "has_docs": False,
+            "readme": None,
+            "files": [],
+            "validation": {"valid": True, "violations": []},
+        }
 
     result = plugin_cls.validate_docs()
     validation = {
@@ -346,10 +370,22 @@ def get_plugin_docs(fqn: str) -> dict:
 
     # Block content if validation fails
     if not result.valid:
-        return {"fqn": fqn, "has_docs": True, "readme": None, "files": [], "validation": validation}
+        return {
+            "fqn": fqn,
+            "has_docs": True,
+            "readme": None,
+            "files": [],
+            "validation": validation,
+        }
 
     readme = plugin_cls.get_docs_readme()
-    return {"fqn": fqn, "has_docs": True, "readme": readme, "files": result.files, "validation": validation}
+    return {
+        "fqn": fqn,
+        "has_docs": True,
+        "readme": readme,
+        "files": result.files,
+        "validation": validation,
+    }
 
 
 @router.get("/{fqn:path}/docs/{doc_path:path}")
@@ -465,6 +501,7 @@ def run_plugin_tests(fqn: str) -> dict:
     if not test_file.exists():
         # Try entry-point discovered packages
         from importlib.metadata import entry_points
+
         try:
             eps = entry_points(group="fwbg.plugin_packages")
             for ep in eps:
@@ -499,7 +536,15 @@ def run_plugin_tests(fqn: str) -> dict:
     # Run pytest on the test file
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short", "--no-header"],
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                str(test_file),
+                "-v",
+                "--tb=short",
+                "--no-header",
+            ],
             capture_output=True,
             text=True,
             timeout=120,
@@ -510,7 +555,9 @@ def run_plugin_tests(fqn: str) -> dict:
             "has_tests": True,
             "status": "timeout",
             "returncode": -1,
-            "stdout": (exc.stdout or b"").decode() if isinstance(exc.stdout, bytes) else (exc.stdout or ""),
+            "stdout": (exc.stdout or b"").decode()
+            if isinstance(exc.stdout, bytes)
+            else (exc.stdout or ""),
             "stderr": f"Test run exceeded {exc.timeout:.0f}s timeout and was killed.",
         }
 
@@ -558,13 +605,15 @@ def list_exit_modifiers_endpoint() -> list[dict]:
         defaults = cls.get_default_params()
         param_schema = cls.get_param_schema()
 
-        result.append({
-            "name": name,
-            "description": manifest.get("description", ""),
-            "version": manifest.get("version", "0.1.0"),
-            "param_schema": param_schema,
-            "defaults": defaults,
-        })
+        result.append(
+            {
+                "name": name,
+                "description": manifest.get("description", ""),
+                "version": manifest.get("version", "0.1.0"),
+                "param_schema": param_schema,
+                "defaults": defaults,
+            }
+        )
 
     return result
 
@@ -589,12 +638,14 @@ def list_entry_modifiers_endpoint() -> list[dict]:
         defaults = cls.get_default_params()
         param_schema = cls.get_param_schema()
 
-        result.append({
-            "name": name,
-            "description": manifest.get("description", ""),
-            "version": manifest.get("version", "0.1.0"),
-            "param_schema": param_schema,
-            "defaults": defaults,
-        })
+        result.append(
+            {
+                "name": name,
+                "description": manifest.get("description", ""),
+                "version": manifest.get("version", "0.1.0"),
+                "param_schema": param_schema,
+                "defaults": defaults,
+            }
+        )
 
     return result
