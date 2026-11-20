@@ -1,6 +1,7 @@
 """
 Trade-Simulation und Metriken
 """
+
 import numpy as np
 import pandas as pd
 from fwbg.data import config as data_config
@@ -23,8 +24,7 @@ _scale_in_triggered = _nc._scale_in_triggered.py_func
 _trail_after_bar = _nc._trail_after_bar.py_func
 
 
-def compute_session_mask(timestamps, session_start_hour, session_end_hour,
-                         ohlc=None):
+def compute_session_mask(timestamps, session_start_hour, session_end_hour, ohlc=None):
     """Return boolean array: True for bars within trading session hours.
 
     Used to restrict trade exits to session hours only.
@@ -62,6 +62,7 @@ def compute_session_mask(timestamps, session_start_hour, session_end_hour,
 # Cache für Sub-Stunden-Daten (wird einmal pro Symbol geladen)
 # Thread-safe durch Lock geschützt
 import threading  # noqa: E402
+
 _cache_lock = threading.Lock()
 _m15_cache = {}  # 15-Min-Daten
 _m30_cache = {}  # 30-Min-Daten
@@ -147,12 +148,12 @@ def calculate_equity_smoothness(trades, risk_per_trade, rrr, window_size=50):
         mean_return = np.mean(returns)
         sortino = mean_return / downside_std if downside_std > 0 else 0
     else:
-        sortino = float('inf') if np.mean(returns) > 0 else 0
+        sortino = float("inf") if np.mean(returns) > 0 else 0
 
     # Rollende Varianz der Returns
     rolling_vars = []
     for i in range(len(returns) - window_size):
-        window = returns[i:i + window_size]
+        window = returns[i : i + window_size]
         rolling_vars.append(np.var(window))
 
     if rolling_vars:
@@ -165,7 +166,7 @@ def calculate_equity_smoothness(trades, risk_per_trade, rrr, window_size=50):
     # Normalisiere Volatilität auf 0-1 Skala (5% risk = ~5% max single move)
     vol_score = 1.0 / (1.0 + return_volatility * 10)
 
-    smoothness_score = (vol_score * 0.5 + consistency * 0.5)
+    smoothness_score = vol_score * 0.5 + consistency * 0.5
 
     return {
         "smoothness_score": float(smoothness_score),
@@ -226,14 +227,22 @@ def _load_ohlc_csv(path):
                 path,
                 names=["Time", "O", "H", "L", "C", "V"],
                 parse_dates=["Time"],
-                index_col="Time"
+                index_col="Time",
             )
             # Rename columns to match expected format
             df.columns = ["Open", "High", "Low", "Close", "Volume"]
 
         # Rename columns to single letters for consistency (H, L, etc.)
         if "High" in df.columns:
-            df = df.rename(columns={"Open": "O", "High": "H", "Low": "L", "Close": "C", "Volume": "V"})
+            df = df.rename(
+                columns={
+                    "Open": "O",
+                    "High": "H",
+                    "Low": "L",
+                    "Close": "C",
+                    "Volume": "V",
+                }
+            )
 
         return df
     except Exception:
@@ -288,7 +297,9 @@ def resolve_tp_sl_collision(symbol, hour_timestamp, direction, tp, sl):
     hour_end_exclusive = hour_timestamp + pd.Timedelta(hours=1)
 
     try:
-        sub_bars = sub_df.loc[(sub_df.index >= hour_start) & (sub_df.index < hour_end_exclusive)]
+        sub_bars = sub_df.loc[
+            (sub_df.index >= hour_start) & (sub_df.index < hour_end_exclusive)
+        ]
         if len(sub_bars) == 0:
             return None
     except Exception:
@@ -331,13 +342,31 @@ def _financing_cost(notional, rate, timestamps, entry_idx, exit_idx):
     return notional * rate * nights / 365.0
 
 
-def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_distance, spread,
-                       max_bars=None, timestamps=None, symbol=None,
-                       opens=None, timeout_bars=None, in_session=None,
-                       sl_level_abs=None, entry_delay=1,
-                       breakeven_trigger=0.0, trail_distance=0.0,
-                       scale_levels=None, scale_qty_mult=1.0, sl_level_mult=1.0,
-                       exit_signal=None, financing_rate=0.0):
+def simulate_pro_trade(
+    closes,
+    highs,
+    lows,
+    idx,
+    direction,
+    tp_distance,
+    sl_distance,
+    spread,
+    max_bars=None,
+    timestamps=None,
+    symbol=None,
+    opens=None,
+    timeout_bars=None,
+    in_session=None,
+    sl_level_abs=None,
+    entry_delay=1,
+    breakeven_trigger=0.0,
+    trail_distance=0.0,
+    scale_levels=None,
+    scale_qty_mult=1.0,
+    sl_level_mult=1.0,
+    exit_signal=None,
+    financing_rate=0.0,
+):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
 
@@ -421,7 +450,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         entry_price = closes[entry_idx]
 
     # Spread and slippage are in the entry; TP/SL are trigger levels.
-    entry, tp, sl = _entry_levels(direction, entry_price, spread, slippage, tp_distance, sl_distance)
+    entry, tp, sl = _entry_levels(
+        direction, entry_price, spread, slippage, tp_distance, sl_distance
+    )
     if sl_level_abs is not None:
         level_sl = entry - sl_level_mult * (entry - sl_level_abs)
         # Level auf der falschen Seite des Entry (z. B. Distanz-Spalte als
@@ -458,11 +489,15 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
         pnl_raw = _pnl(direction, exit_price, avg_price, total_qty)
         if use_scale_in:
             financing = sum(
-                _financing_cost(price * quantity, financing_rate, timestamps, fill_idx, exit_idx)
+                _financing_cost(
+                    price * quantity, financing_rate, timestamps, fill_idx, exit_idx
+                )
                 for price, quantity, fill_idx in positions
             )
         else:
-            financing = _financing_cost(avg_price * total_qty, financing_rate, timestamps, entry_idx, exit_idx)
+            financing = _financing_cost(
+                avg_price * total_qty, financing_rate, timestamps, entry_idx, exit_idx
+            )
         pnl_raw -= financing
 
         # Breakeven-stop exits where the trailing SL barely moved above entry
@@ -487,7 +522,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             "exit_idx": exit_idx,
             "bars_held": bars_held,
             "signal_time": str(timestamps[idx]) if timestamps is not None else None,
-            "entry_time": str(timestamps[entry_idx]) if timestamps is not None else None,
+            "entry_time": str(timestamps[entry_idx])
+            if timestamps is not None
+            else None,
             "exit_time": str(timestamps[exit_idx]) if timestamps is not None else None,
             "entry_price_raw": float(entry_price),
             "entry_price": float(entry),
@@ -498,7 +535,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             "slippage": float(slippage),
             "total_cost": float(spread + slippage),
             "tp_distance": float(tp_distance),
-            "sl_distance": float(abs(entry - sl)) if sl_level_abs is not None else float(sl_distance),
+            "sl_distance": float(abs(entry - sl))
+            if sl_level_abs is not None
+            else float(sl_distance),
             "pnl_raw": float(pnl_raw),
             "financing": float(financing),
             "mae": float(-_pnl(direction, adverse_price, entry, 1.0)),
@@ -513,7 +552,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
                 {
                     "price": float(p),
                     "qty": float(q),
-                    "fill_time": str(timestamps[bi]) if timestamps is not None else None,
+                    "fill_time": str(timestamps[bi])
+                    if timestamps is not None
+                    else None,
                 }
                 for p, q, bi in positions[1:]
             ]
@@ -582,7 +623,9 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
 
         if tp_hit and sl_hit and timestamps is not None and symbol is not None:
             # Sub-hourly data decides which level the price reached first
-            collision = resolve_tp_sl_collision(symbol, timestamps[j], direction, tp_bar, sl)
+            collision = resolve_tp_sl_collision(
+                symbol, timestamps[j], direction, tp_bar, sl
+            )
             if collision is not None:
                 sl_hit = collision < 0
                 tp_hit = not sl_hit
@@ -600,7 +643,11 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
             return make_result(1.0, j, tp)
 
         # Timeout check (counts only session bars when session-aware)
-        if timeout_bars is not None and timeout_bars > 0 and session_bars_elapsed >= timeout_bars:
+        if (
+            timeout_bars is not None
+            and timeout_bars > 0
+            and session_bars_elapsed >= timeout_bars
+        ):
             trade_result = close_at_bar(j, "timeout")
             trade_result["timeout_bars"] = timeout_bars
             return trade_result
@@ -610,10 +657,18 @@ def simulate_pro_trade(closes, highs, lows, idx, direction, tp_distance, sl_dist
 
         if use_trailing:
             best_price, sl, tp, trailing_active = _trail_after_bar(
-                direction, highs[j], lows[j], best_price, sl, tp, trailing_active,
+                direction,
+                highs[j],
+                lows[j],
+                best_price,
+                sl,
+                tp,
+                trailing_active,
                 breakeven_trigger > 0.0,
-                avg_price + direction * tp_distance * breakeven_trigger, avg_price,
-                trail_distance, 0.0,
+                avg_price + direction * tp_distance * breakeven_trigger,
+                avg_price,
+                trail_distance,
+                0.0,
             )
 
     # Close at the last observed bar when the dataset ended. If the configured
@@ -760,7 +815,11 @@ def attach_regime_labels(trades, df):
     if not trades:
         return
 
-    atr_col = "_atr" if "_atr" in df.columns else ("vol_atr" if "vol_atr" in df.columns else None)
+    atr_col = (
+        "_atr"
+        if "_atr" in df.columns
+        else ("vol_atr" if "vol_atr" in df.columns else None)
+    )
     if atr_col:
         atr = df[atr_col]
     else:
@@ -778,14 +837,18 @@ def attach_regime_labels(trades, df):
 
     atr_valid = atr.dropna()
     vol_low, vol_high = (
-        (atr_valid.quantile(1 / 3), atr_valid.quantile(2 / 3)) if len(atr_valid) else (None, None)
+        (atr_valid.quantile(1 / 3), atr_valid.quantile(2 / 3))
+        if len(atr_valid)
+        else (None, None)
     )
     atr_values = atr.values
     adx_values = adx.values
     n = len(df)
 
     def _vol_regime(v):
-        if v is None or vol_low is None or (isinstance(v, float) and v != v):  # NaN check
+        if (
+            v is None or vol_low is None or (isinstance(v, float) and v != v)
+        ):  # NaN check
             return None
         if v <= vol_low:
             return "low"
@@ -819,7 +882,9 @@ def calculate_max_drawdown(returns, risk_per_trade, rrr):
     return compute_drawdown_from_equity(equity)
 
 
-def calculate_annual_return(returns, risk_per_trade, rrr, total_bars, bars_per_year=8760):
+def calculate_annual_return(
+    returns, risk_per_trade, rrr, total_bars, bars_per_year=8760
+):
     """Berechnet annualisierte Rendite."""
     if not returns or total_bars == 0:
         return 0.0
@@ -827,9 +892,9 @@ def calculate_annual_return(returns, risk_per_trade, rrr, total_bars, bars_per_y
     equity = 100.0
     for r in returns:
         if r > 0:
-            equity *= (1 + risk_per_trade * rrr)
+            equity *= 1 + risk_per_trade * rrr
         else:
-            equity *= (1 - risk_per_trade)
+            equity *= 1 - risk_per_trade
 
     total_return = (equity - 100.0) / 100.0
     years = total_bars / bars_per_year
@@ -852,7 +917,9 @@ def pnl_to_returns(pnl_raw, fk):
     return _pnl_to_returns(pnl_raw, fk)
 
 
-def monte_carlo_permutation_test(trade_pnls, n_permutations=1000, random_seed=42, rrr=None):
+def monte_carlo_permutation_test(
+    trade_pnls, n_permutations=1000, random_seed=42, rrr=None
+):
     """
     Monte Carlo Signifikanz-Test für Trading-Strategien (PnL-basiert).
 
@@ -906,7 +973,9 @@ def monte_carlo_permutation_test(trade_pnls, n_permutations=1000, random_seed=42
         signs = rng.choice(np.array([-1.0, 1.0]), size=n_trades)
         random_totals[i] = np.sum(signs * abs_pnl)
 
-    p_value = float((np.sum(random_totals >= observed_total) + 1) / (n_permutations + 1))
+    p_value = float(
+        (np.sum(random_totals >= observed_total) + 1) / (n_permutations + 1)
+    )
     percentile = float(100 * np.sum(random_totals < observed_total) / n_permutations)
 
     return {
@@ -922,7 +991,9 @@ def monte_carlo_permutation_test(trade_pnls, n_permutations=1000, random_seed=42
     }
 
 
-def monte_carlo_equity_simulation(trades, risk_per_trade, rrr, n_simulations=1000, random_seed=42):
+def monte_carlo_equity_simulation(
+    trades, risk_per_trade, rrr, n_simulations=1000, random_seed=42
+):
     """
     Monte Carlo Simulation der Equity-Kurve mit zufälligen Trade-Reihenfolgen.
 
@@ -1136,7 +1207,9 @@ def adjust_risk_for_target_dd(trades, base_risk, rrr, target_max_dd=0.30):
     }
 
 
-def simulate_with_circuit_breaker(trades, risk_per_trade, rrr, pause_after_losses, pause_bars):
+def simulate_with_circuit_breaker(
+    trades, risk_per_trade, rrr, pause_after_losses, pause_bars
+):
     """
     Simuliert Trading mit Circuit Breaker - pausiert nach N Verlusten in Serie.
 
@@ -1227,7 +1300,11 @@ def simulate_with_circuit_breaker(trades, risk_per_trade, rrr, pause_after_losse
             max_dd = 1.0
             break
 
-    wr = sum(1 for t in filtered_trades if t > 0) / len(filtered_trades) if filtered_trades else 0.0
+    wr = (
+        sum(1 for t in filtered_trades if t > 0) / len(filtered_trades)
+        if filtered_trades
+        else 0.0
+    )
 
     return {
         "trades_taken": len(filtered_trades),
@@ -1240,9 +1317,9 @@ def simulate_with_circuit_breaker(trades, risk_per_trade, rrr, pause_after_losse
     }
 
 
-def find_optimal_circuit_breaker(trades, risk_per_trade, rrr,
-                                  loss_range=(3, 10),
-                                  pause_range=(5, 50)):
+def find_optimal_circuit_breaker(
+    trades, risk_per_trade, rrr, loss_range=(3, 10), pause_range=(5, 50)
+):
     """
     Findet die optimalen Circuit Breaker Parameter durch Grid-Search.
 
@@ -1284,7 +1361,9 @@ def find_optimal_circuit_breaker(trades, risk_per_trade, rrr,
             # Score: Maximiere Rendite bei minimiertem DD
             # Bestrafe zu viele übersprungene Trades
             skip_penalty = 1 - (result["trades_skipped"] / len(trades)) * 0.5
-            score = (result["final_equity"] / (1 + result["max_drawdown"])) * skip_penalty
+            score = (
+                result["final_equity"] / (1 + result["max_drawdown"])
+            ) * skip_penalty
 
             if score > best_score:
                 best_score = score
@@ -1301,6 +1380,8 @@ def find_optimal_circuit_breaker(trades, risk_per_trade, rrr,
         "trades_taken": best_result["trades_taken"],
         "trades_skipped": best_result["trades_skipped"],
         "pauses_triggered": best_result["pauses_triggered"],
-        "improvement": (best_result["final_equity"] - baseline_equity) / baseline_equity if baseline_equity > 0 else 0,
+        "improvement": (best_result["final_equity"] - baseline_equity) / baseline_equity
+        if baseline_equity > 0
+        else 0,
         "dd_reduction": baseline_dd - best_result["max_drawdown"],
     }
