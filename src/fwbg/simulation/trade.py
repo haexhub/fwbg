@@ -396,6 +396,7 @@ def simulate_pro_trade(
     sl_level_mult=1.0,
     exit_signal=None,
     financing_rate=0.0,
+    breakeven_offset=0.0,
 ):
     """
     Simuliert einen Trade und gibt detaillierte Informationen zurück.
@@ -419,6 +420,8 @@ def simulate_pro_trade(
     Trailing Stop:
     - breakeven_trigger: Anteil der TP-Distanz, ab dem SL auf Entry gezogen wird
       (0.5 = 50% des TP). 0.0 = kein Breakeven.
+    - breakeven_offset: Anteil der TP-Distanz, um den der SL beim Breakeven ueber
+      den Entry (in Handelsrichtung) gelegt wird (0.0 = genau Entry).
     - trail_distance: Absoluter Abstand für Trailing Stop. Nach Breakeven folgt
       der SL dem besten Preis mit diesem Abstand. 0.0 = kein Trailing.
 
@@ -455,6 +458,8 @@ def simulate_pro_trade(
         financing_rate: Overnight-Finanzierung als Anteil p. a. des Entry-Preises,
             je Kalendernacht zwischen Entry- und Exit-Datum (braucht ``timestamps``);
             mindert ``pnl_raw`` vor der Win/Loss-Entscheidung. 0.0 = keine.
+        breakeven_offset: Anteil TP-Distanz ueber dem Entry, auf den der SL beim
+            Breakeven springt (0.0=Entry)
 
     Returns:
         dict mit Trade-Details (bei Datenende zum letzten Close, sonst bei
@@ -701,7 +706,7 @@ def simulate_pro_trade(
                 trailing_active,
                 breakeven_trigger > 0.0,
                 avg_price + direction * tp_distance * breakeven_trigger,
-                avg_price,
+                avg_price + direction * tp_distance * breakeven_offset,
                 trail_distance,
                 0.0,
             )

@@ -66,6 +66,31 @@ def resolve_trailing_params(
     return float(be), float(trail_mult), int(pips)
 
 
+def resolve_breakeven_offset(
+    ctx: SimulationContext,
+    exit_params: Optional[dict] = None,
+    strategy: Optional[str] = None,
+) -> float:
+    """Fraction of the TP distance the breakeven stop sits beyond the entry.
+
+    ``orb_based`` reads ``breakeven_offset`` from ``exit_params`` (default 0.0,
+    exactly the entry); an attached exit modifier may override it in its params.
+    Other strategies have no offset.  Counterpart of ``resolve_trailing_params``
+    for the training labels and the trade evaluator.
+    """
+    if exit_params is None:
+        exit_params = ctx.exit_params or {}
+    if strategy is None:
+        strategy = getattr(ctx, "exit_strategy", None)
+    if strategy != "orb_based":
+        return 0.0
+    offset = exit_params.get("breakeven_offset", 0.0)
+    if getattr(ctx, "exit_modifier", None):
+        modifier = getattr(ctx, "exit_modifier_params", None) or {}
+        offset = modifier.get("breakeven_offset", offset)
+    return float(offset)
+
+
 def _compute_signal_events(
     probs: Optional[np.ndarray], win_idx: Optional[int], ct: float
 ) -> Optional[np.ndarray]:
@@ -293,8 +318,13 @@ def simulate_trades(
     # distance (structural), ATR mode uses ATR * trail_atr_mult.
     trail_dists = np.zeros(len(df), dtype=np.float64)
     if trail_pips > 0:
+    breakeven_offset = resolve_breakeven_offset(ctx, exit_params)
         trail_dists[:] = ctx.spread * trail_pips
-    elif trail_atr_mult > 0.0:
+    elif trail_atr_mult > 0.0 or (
+        breakeven_trigger > 0.0 and exit_params.get("tp_mode", "atr") == "range"
+    ):
+        # Range mode trails at the range once breakeven is reached, with or
+        # without ``trail_atr_mult`` (the labels do the same).
         tp_mode = exit_params.get("tp_mode", "atr")
         if tp_mode == "range":
             exit_strategy_cls = get_exit_strategy(ctx.exit_strategy)
@@ -460,6 +490,7 @@ def simulate_trades(
                 financing_rate=getattr(ctx, "financing_rate", 0.0),
             )
             if trade:
+                breakeven_offset=breakeven_offset,
                 t = {
                     "result": trade["result"],
                     "pnl_raw": trade["pnl_raw"],
