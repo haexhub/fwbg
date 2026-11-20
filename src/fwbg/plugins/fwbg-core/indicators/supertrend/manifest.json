@@ -3,5 +3,5 @@
   "version": "1.1.0",
   "description": "Supertrend (standard + completed higher-timeframe candles) - ATR-based trend-following indicator",
   "phase": "indicators",
-  "benefits_from_stationary": false
+  "benefits_from_stationary": true
 }

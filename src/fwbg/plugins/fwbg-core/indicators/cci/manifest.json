@@ -3,5 +3,5 @@
   "version": "1.1.0",
   "description": "CCI (Commodity Channel Index) - deviation of typical price from its SMA",
   "phase": "indicators",
-  "benefits_from_stationary": false
+  "benefits_from_stationary": true
 }
