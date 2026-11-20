@@ -23,6 +23,7 @@ Qty Multiplier:
     Positionsgröße pro Nachkauf relativ zur Initial-Position.
     1.0 = gleiche Größe, 0.5 = halbe Größe.
 """
+
 import pathlib
 from typing import Tuple
 
@@ -67,6 +68,7 @@ def _pack_levels(levels):
 # Numba JIT wrappers
 # ---------------------------------------------------------------------------
 
+
 @njit(cache=True, parallel=False)
 def _compute_targets_scale_in_numba(
     opens: np.ndarray,
@@ -97,21 +99,47 @@ def _compute_targets_scale_in_numba(
         trail_tp = trail_tp_dist_arr[i]
 
         result_long, _, _, _, _, _, _ = _simulate_trade_scale_in_numba(
-            opens, closes, highs, lows, i, 1,
-            tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_val,
-            scale_levels, n_levels, scale_qty_mult,
-            breakeven_trigger, trail_dist, trail_tp,
+            opens,
+            closes,
+            highs,
+            lows,
+            i,
+            1,
+            tp_distance,
+            sl_distance,
+            spread,
+            slippage,
+            max_bars,
+            timeout_val,
+            scale_levels,
+            n_levels,
+            scale_qty_mult,
+            breakeven_trigger,
+            trail_dist,
+            trail_tp,
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
 
         result_short, _, _, _, _, _, _ = _simulate_trade_scale_in_numba(
-            opens, closes, highs, lows, i, -1,
-            tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_val,
-            scale_levels, n_levels, scale_qty_mult,
-            breakeven_trigger, trail_dist, trail_tp,
+            opens,
+            closes,
+            highs,
+            lows,
+            i,
+            -1,
+            tp_distance,
+            sl_distance,
+            spread,
+            slippage,
+            max_bars,
+            timeout_val,
+            scale_levels,
+            n_levels,
+            scale_qty_mult,
+            breakeven_trigger,
+            trail_dist,
+            trail_tp,
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
@@ -151,22 +179,48 @@ def _compute_targets_scale_in_with_durations_numba(
         trail_tp = trail_tp_dist_arr[i]
 
         result_long, exit_long, _, _, _, _, _ = _simulate_trade_scale_in_numba(
-            opens, closes, highs, lows, i, 1,
-            tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_val,
-            scale_levels, n_levels, scale_qty_mult,
-            breakeven_trigger, trail_dist, trail_tp,
+            opens,
+            closes,
+            highs,
+            lows,
+            i,
+            1,
+            tp_distance,
+            sl_distance,
+            spread,
+            slippage,
+            max_bars,
+            timeout_val,
+            scale_levels,
+            n_levels,
+            scale_qty_mult,
+            breakeven_trigger,
+            trail_dist,
+            trail_tp,
         )
         if result_long == 1.0:
             targets_long[i] = 1.0
         durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
         result_short, exit_short, _, _, _, _, _ = _simulate_trade_scale_in_numba(
-            opens, closes, highs, lows, i, -1,
-            tp_distance, sl_distance, spread, slippage,
-            max_bars, timeout_val,
-            scale_levels, n_levels, scale_qty_mult,
-            breakeven_trigger, trail_dist, trail_tp,
+            opens,
+            closes,
+            highs,
+            lows,
+            i,
+            -1,
+            tp_distance,
+            sl_distance,
+            spread,
+            slippage,
+            max_bars,
+            timeout_val,
+            scale_levels,
+            n_levels,
+            scale_qty_mult,
+            breakeven_trigger,
+            trail_dist,
+            trail_tp,
         )
         if result_short == 1.0:
             targets_short[i] = 1.0
@@ -178,6 +232,7 @@ def _compute_targets_scale_in_with_durations_numba(
 # ---------------------------------------------------------------------------
 # Plugin
 # ---------------------------------------------------------------------------
+
 
 @register_entry_modifier("scale_in")
 class ScaleInModifier(BaseEntryModifier):
@@ -219,21 +274,41 @@ class ScaleInModifier(BaseEntryModifier):
         if return_durations:
             return _call_numba(
                 _compute_targets_scale_in_with_durations_numba,
-                opens, closes, highs, lows,
-                tp_dist_arr, sl_dist_arr, trail_dist_arr, trail_tp_dist_arr,
-                spread, slippage,
-                max_bars, timeout_val,
-                scale_arr, n_levels, float(qty_multiplier),
+                opens,
+                closes,
+                highs,
+                lows,
+                tp_dist_arr,
+                sl_dist_arr,
+                trail_dist_arr,
+                trail_tp_dist_arr,
+                spread,
+                slippage,
+                max_bars,
+                timeout_val,
+                scale_arr,
+                n_levels,
+                float(qty_multiplier),
                 float(breakeven_trigger),
             )
 
         return _call_numba(
             _compute_targets_scale_in_numba,
-            opens, closes, highs, lows,
-            tp_dist_arr, sl_dist_arr, trail_dist_arr, trail_tp_dist_arr,
-            spread, slippage,
-            max_bars, timeout_val,
-            scale_arr, n_levels, float(qty_multiplier),
+            opens,
+            closes,
+            highs,
+            lows,
+            tp_dist_arr,
+            sl_dist_arr,
+            trail_dist_arr,
+            trail_tp_dist_arr,
+            spread,
+            slippage,
+            max_bars,
+            timeout_val,
+            scale_arr,
+            n_levels,
+            float(qty_multiplier),
             float(breakeven_trigger),
         )
 
