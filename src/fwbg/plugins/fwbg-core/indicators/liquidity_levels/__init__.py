@@ -6,6 +6,7 @@ Detects liquidity pools from equal highs/lows and sweep events:
 - Equal lows: multiple swing lows at similar price -> stops cluster below
 - Sweeps: price briefly exceeds level then reverses (stop hunt)
 """
+
 from typing import Dict, List, Union
 
 import numpy as np
@@ -32,7 +33,10 @@ def _find_equal_levels(
     cluster_start = 0
 
     for i in range(1, len(sorted_prices) + 1):
-        if i == len(sorted_prices) or sorted_prices[i] - sorted_prices[cluster_start] > tolerance:
+        if (
+            i == len(sorted_prices)
+            or sorted_prices[i] - sorted_prices[cluster_start] > tolerance
+        ):
             count = i - cluster_start
             if count >= min_touches:
                 level = np.mean(sorted_prices[cluster_start:i])
@@ -70,10 +74,10 @@ def _compute_liquidity_features(
     swing_low_prices = []
 
     for i in range(swing_lookback, n - swing_lookback):
-        if h[i] == np.max(h[i - swing_lookback:i + swing_lookback + 1]):
+        if h[i] == np.max(h[i - swing_lookback : i + swing_lookback + 1]):
             swing_high_bars.append(i)
             swing_high_prices.append(h[i])
-        if low[i] == np.min(low[i - swing_lookback:i + swing_lookback + 1]):
+        if low[i] == np.min(low[i - swing_lookback : i + swing_lookback + 1]):
             swing_low_bars.append(i)
             swing_low_prices.append(low[i])
 
@@ -100,8 +104,10 @@ def _compute_liquidity_features(
 
         if sh_mask.any():
             eq_highs = _find_equal_levels(
-                swing_high_prices[sh_mask], swing_high_bars[sh_mask],
-                tolerance, min_touches,
+                swing_high_prices[sh_mask],
+                swing_high_bars[sh_mask],
+                tolerance,
+                min_touches,
             )
             above = [(lvl, cnt) for lvl, cnt, _ in eq_highs if lvl > c[i]]
             if above:
@@ -114,8 +120,10 @@ def _compute_liquidity_features(
 
         if sl_mask.any():
             eq_lows = _find_equal_levels(
-                swing_low_prices[sl_mask], swing_low_bars[sl_mask],
-                tolerance, min_touches,
+                swing_low_prices[sl_mask],
+                swing_low_bars[sl_mask],
+                tolerance,
+                min_touches,
             )
             below = [(lvl, cnt) for lvl, cnt, _ in eq_lows if lvl < c[i]]
             if below:
@@ -148,21 +156,33 @@ class LiquidityLevelsIndicator(BaseIndicator):
     group = "structure"
 
     _FEATURES = [
-        "liq_eqh_dist", "liq_eql_dist",
-        "liq_eqh_count", "liq_eql_count",
-        "liq_eqh_active", "liq_eql_active",
-        "liq_sweep_up", "liq_sweep_down",
+        "liq_eqh_dist",
+        "liq_eql_dist",
+        "liq_eqh_count",
+        "liq_eql_count",
+        "liq_eqh_active",
+        "liq_eql_active",
+        "liq_sweep_up",
+        "liq_sweep_down",
     ]
 
     def compute(
-        self, df: pd.DataFrame,
-        swing_lookback: int = 10, tolerance_atr_mult: float = 0.2,
-        atr_period: int = 14, min_touches: int = 2,
-        lookback_window: int = 200, **params,
+        self,
+        df: pd.DataFrame,
+        swing_lookback: int = 10,
+        tolerance_atr_mult: float = 0.2,
+        atr_period: int = 14,
+        min_touches: int = 2,
+        lookback_window: int = 200,
+        **params,
     ) -> pd.DataFrame:
         features = _compute_liquidity_features(
-            df, swing_lookback, tolerance_atr_mult, atr_period,
-            min_touches, lookback_window,
+            df,
+            swing_lookback,
+            tolerance_atr_mult,
+            atr_period,
+            min_touches,
+            lookback_window,
         )
         if not features:
             return df
@@ -178,37 +198,55 @@ class LiquidityLevelsIndicator(BaseIndicator):
     @classmethod
     def get_default_params(cls) -> dict:
         return {
-            "swing_lookback": 10, "tolerance_atr_mult": 0.2,
-            "atr_period": 14, "min_touches": 2, "lookback_window": 200,
+            "swing_lookback": 10,
+            "tolerance_atr_mult": 0.2,
+            "atr_period": 14,
+            "min_touches": 2,
+            "lookback_window": 200,
         }
 
     @classmethod
     def get_param_schema(cls) -> dict:
         return {
             "swing_lookback": {
-                "type": "int", "default": 10,
+                "type": "int",
+                "default": 10,
                 "description": "N-bar lookback for swing high/low detection.",
-                "min": 3, "max": 50, "step": 1,
+                "min": 3,
+                "max": 50,
+                "step": 1,
             },
             "tolerance_atr_mult": {
-                "type": "float", "default": 0.2,
+                "type": "float",
+                "default": 0.2,
                 "description": "How close swing highs/lows must be (in ATR units) to count as equal.",
-                "min": 0.05, "max": 1.0, "step": 0.05,
+                "min": 0.05,
+                "max": 1.0,
+                "step": 0.05,
             },
             "atr_period": {
-                "type": "int", "default": 14,
+                "type": "int",
+                "default": 14,
                 "description": "ATR period for normalizing distances and tolerance.",
-                "min": 2, "max": 100, "step": 1,
+                "min": 2,
+                "max": 100,
+                "step": 1,
             },
             "min_touches": {
-                "type": "int", "default": 2,
+                "type": "int",
+                "default": 2,
                 "description": "Minimum swing points at similar price to form a liquidity level.",
-                "min": 2, "max": 5, "step": 1,
+                "min": 2,
+                "max": 5,
+                "step": 1,
             },
             "lookback_window": {
-                "type": "int", "default": 200,
+                "type": "int",
+                "default": 200,
                 "description": "Bars to look back for swing points when building liquidity levels.",
-                "min": 50, "max": 1000, "step": 50,
+                "min": 50,
+                "max": 1000,
+                "step": 50,
             },
         }
 

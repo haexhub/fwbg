@@ -1,4 +1,5 @@
 """Tests for the balance_zones indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,6 +14,7 @@ if _bz is None:
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_df(highs, lows, closes, opens=None):
     """Build a minimal OHLC DataFrame from arrays."""
@@ -39,10 +41,10 @@ def _make_balanced_df(lookback=10, n_post=5):
     Bars after:         O=102, C=103 → price stays above (continuation).
     """
     _n = lookback + 1 + n_post
-    opens  = [99.0]  * lookback + [102.0] + [102.0] * n_post
+    opens = [99.0] * lookback + [102.0] + [102.0] * n_post
     closes = [101.0] * lookback + [105.0] + [103.0] * n_post
-    highs  = [c + 0.5 for c in closes]
-    lows   = [o - 0.5 for o in opens]
+    highs = [c + 0.5 for c in closes]
+    lows = [o - 0.5 for o in opens]
     return _make_df(highs, lows, closes, opens)
 
 
@@ -54,10 +56,10 @@ def _make_bear_breakout_df(lookback=10, n_post=5):
     Bars after:         stay below.
     """
     _n = lookback + 1 + n_post
-    opens  = [101.0] * lookback + [98.0]  + [98.0]  * n_post
-    closes = [99.0]  * lookback + [95.0]  + [97.0]  * n_post
-    highs  = [c + 0.5 for c in closes]
-    lows   = [o - 0.5 for o in opens]
+    opens = [101.0] * lookback + [98.0] + [98.0] * n_post
+    closes = [99.0] * lookback + [95.0] + [97.0] * n_post
+    highs = [c + 0.5 for c in closes]
+    lows = [o - 0.5 for o in opens]
     return _make_df(highs, lows, closes, opens)
 
 
@@ -72,10 +74,10 @@ def _make_fake_bear_df(lookback=10):
     """
     lb = lookback
     _n = lb + 2 + 3
-    opens  = [99.0]  * lb + [102.0, 100.0] + [100.0] * 3
+    opens = [99.0] * lb + [102.0, 100.0] + [100.0] * 3
     closes = [101.0] * lb + [104.0, 100.0] + [100.0] * 3
-    highs  = [101.5] * lb + [104.5, 100.5] + [100.5] * 3
-    lows   = [98.5]  * lb + [101.5,  99.5] + [ 99.5] * 3
+    highs = [101.5] * lb + [104.5, 100.5] + [100.5] * 3
+    lows = [98.5] * lb + [101.5, 99.5] + [99.5] * 3
     return _make_df(highs, lows, closes, opens)
 
 
@@ -90,10 +92,10 @@ def _make_fake_bull_df(lookback=10):
     """
     lb = lookback
     _n = lb + 2 + 3
-    opens  = [101.0] * lb + [ 98.0, 100.0] + [100.0] * 3
-    closes = [ 99.0] * lb + [ 96.0, 100.0] + [100.0] * 3
-    highs  = [ 99.5] * lb + [ 98.5, 100.5] + [100.5] * 3
-    lows   = [ 98.5] * lb + [ 95.5,  99.5] + [ 99.5] * 3
+    opens = [101.0] * lb + [98.0, 100.0] + [100.0] * 3
+    closes = [99.0] * lb + [96.0, 100.0] + [100.0] * 3
+    highs = [99.5] * lb + [98.5, 100.5] + [100.5] * 3
+    lows = [98.5] * lb + [95.5, 99.5] + [99.5] * 3
     return _make_df(highs, lows, closes, opens)
 
 
@@ -122,6 +124,7 @@ def _make_random_df(n=500, seed=42):
 # Breakout detection
 # ---------------------------------------------------------------------------
 
+
 class TestBreakout:
     """Tests for bullish and bearish breakout detection."""
 
@@ -133,8 +136,8 @@ class TestBreakout:
 
         # Breakout at bar lb; after shift appears at iloc[lb+1]
         assert result["bz_breakout_bull"].iloc[lb + 1] == 1.0, (
-            f"Expected bz_breakout_bull=1 at iloc[{lb+1}], "
-            f"got {result['bz_breakout_bull'].iloc[lb+1]}"
+            f"Expected bz_breakout_bull=1 at iloc[{lb + 1}], "
+            f"got {result['bz_breakout_bull'].iloc[lb + 1]}"
         )
 
     def test_no_breakout_bull_when_close_equals_zone_top(self):
@@ -157,8 +160,8 @@ class TestBreakout:
         result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
 
         assert result["bz_breakout_bear"].iloc[lb + 1] == 1.0, (
-            f"Expected bz_breakout_bear=1 at iloc[{lb+1}], "
-            f"got {result['bz_breakout_bear'].iloc[lb+1]}"
+            f"Expected bz_breakout_bear=1 at iloc[{lb + 1}], "
+            f"got {result['bz_breakout_bear'].iloc[lb + 1]}"
         )
 
     def test_no_breakout_bear_when_close_equals_zone_bottom(self):
@@ -194,6 +197,7 @@ class TestBreakout:
 # In-zone detection
 # ---------------------------------------------------------------------------
 
+
 class TestInZone:
     """Tests for bz_in_zone detection."""
 
@@ -217,7 +221,7 @@ class TestInZone:
 
         # Bar lb: close=105 > zone_top=101 → after shift iloc[lb+1]
         assert result["bz_in_zone"].iloc[lb + 1] == 0.0, (
-            f"Expected bz_in_zone=0 when close above zone, got {result['bz_in_zone'].iloc[lb+1]}"
+            f"Expected bz_in_zone=0 when close above zone, got {result['bz_in_zone'].iloc[lb + 1]}"
         )
 
     def test_in_zone_false_when_close_below_zone_bottom(self):
@@ -228,13 +232,14 @@ class TestInZone:
 
         # Bar lb: close=95 < zone_bottom=99 → after shift iloc[lb+1]
         assert result["bz_in_zone"].iloc[lb + 1] == 0.0, (
-            f"Expected bz_in_zone=0 when close below zone, got {result['bz_in_zone'].iloc[lb+1]}"
+            f"Expected bz_in_zone=0 when close below zone, got {result['bz_in_zone'].iloc[lb + 1]}"
         )
 
 
 # ---------------------------------------------------------------------------
 # In-balance detection
 # ---------------------------------------------------------------------------
+
 
 class TestInBalance:
     """Tests for bz_in_balance (tight zone relative to ATR)."""
@@ -260,10 +265,10 @@ class TestInBalance:
         lb = 10
         # Wide zone: bodies ranging from 90 to 110, ATR small
         _n = lb + 5
-        opens  = list(range(90, 90 + lb)) + [100.0] * 5
+        opens = list(range(90, 90 + lb)) + [100.0] * 5
         closes = list(range(91, 91 + lb)) + [100.0] * 5
-        highs  = [c + 0.2 for c in closes]
-        lows   = [o - 0.2 for o in opens]
+        highs = [c + 0.2 for c in closes]
+        lows = [o - 0.2 for o in opens]
         df = _make_df(highs, lows, closes, opens)
         # Zone width after lb bars ≈ 20 (body_top max=100+lb-1 - body_bottom min=90)
         # ATR ≈ 1.2 (tight candles), so width/ATR >> 2.0 → not in balance
@@ -272,14 +277,13 @@ class TestInBalance:
         )
         # The later bars (after zone has expanded) should not be in balance
         val = result["bz_in_balance"].iloc[lb]
-        assert val == 0.0, (
-            f"Expected bz_in_balance=0 for wide zone, got {val}"
-        )
+        assert val == 0.0, f"Expected bz_in_balance=0 for wide zone, got {val}"
 
 
 # ---------------------------------------------------------------------------
 # Fake breakout detection
 # ---------------------------------------------------------------------------
+
 
 class TestFakeBreakout:
     """Tests for bz_fake_bear and bz_fake_bull signals."""
@@ -342,6 +346,7 @@ class TestFakeBreakout:
 # Zone distance features
 # ---------------------------------------------------------------------------
 
+
 class TestDistances:
     """Tests for bz_zone_top_dist and bz_zone_bottom_dist."""
 
@@ -369,26 +374,30 @@ class TestDistances:
         # Let's check that the feature is non-negative (covered by property test)
         # Verify positivity with a bar clearly inside
         n_small = lb + 5
-        opens2  = [99.0] * n_small
+        opens2 = [99.0] * n_small
         closes2 = [100.0] * n_small  # always in middle of zone [99, 101]
-        highs2  = [101.5] * n_small
-        lows2   = [98.5]  * n_small
+        highs2 = [101.5] * n_small
+        lows2 = [98.5] * n_small
         df2 = _make_df(highs2, lows2, closes2, opens2)
         _result2 = _bz.BalanceZonesIndicator().compute(df2, lookback=lb)
 
         # zone_top = 101 (body_top = max(99, 100) = 100... wait body_top = max(O,C) = 100)
         # zone_top = 100, close = 100 → dist = 0. Let me use close < body_top...
-        opens3  = [99.0]  * n_small
-        closes3 = [99.5]  * n_small  # close=99.5, zone_top=rolling max body_top = max(99,99.5)=99.5
-        highs3  = [100.5] * n_small
-        lows3   = [98.5]  * n_small
+        opens3 = [99.0] * n_small
+        closes3 = [
+            99.5
+        ] * n_small  # close=99.5, zone_top=rolling max body_top = max(99,99.5)=99.5
+        highs3 = [100.5] * n_small
+        lows3 = [98.5] * n_small
         _df3 = _make_df(highs3, lows3, closes3, opens3)
         # After zone is established (zone_top=99.5), close=99.5 == zone_top → dist = 0
         # To test dist > 0, we need close < zone_top
-        opens4  = [99.0]  * lb + [98.0] * 5
-        closes4 = [101.0] * lb + [99.0] * 5  # after lb bars zone_top=101, close=99 < 101 → dist>0
-        highs4  = [101.5] * lb + [99.5] * 5
-        lows4   = [98.5]  * lb + [97.5] * 5
+        opens4 = [99.0] * lb + [98.0] * 5
+        closes4 = [101.0] * lb + [
+            99.0
+        ] * 5  # after lb bars zone_top=101, close=99 < 101 → dist>0
+        highs4 = [101.5] * lb + [99.5] * 5
+        lows4 = [98.5] * lb + [97.5] * 5
         df4 = _make_df(highs4, lows4, closes4, opens4)
         result4 = _bz.BalanceZonesIndicator().compute(df4, lookback=lb)
 
@@ -414,10 +423,10 @@ class TestDistances:
         """Close inside zone (above zone_bottom) → bz_zone_bottom_dist > 0."""
         lb = 10
         # Build a scenario where zone_bottom=99 and close > 99
-        opens_  = [99.0]  * lb + [100.0] * 5
+        opens_ = [99.0] * lb + [100.0] * 5
         closes_ = [101.0] * lb + [100.0] * 5  # zone_bottom=99, close=100>99
-        highs_  = [101.5] * lb + [100.5] * 5
-        lows_   = [ 98.5] * lb + [ 99.5] * 5
+        highs_ = [101.5] * lb + [100.5] * 5
+        lows_ = [98.5] * lb + [99.5] * 5
         df = _make_df(highs_, lows_, closes_, opens_)
         result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
 
@@ -431,6 +440,7 @@ class TestDistances:
 # ---------------------------------------------------------------------------
 # Balance bars
 # ---------------------------------------------------------------------------
+
 
 class TestBalanceBars:
     """Tests for bz_balance_bars accumulation and reset."""
@@ -464,14 +474,14 @@ class TestBalanceBars:
         # After breakout (iloc[lb+1]): close is outside zone → should be lower/reset
         val_after = result["bz_balance_bars"].iloc[lb + 1]
         assert val_after < val_before, (
-            f"bz_balance_bars should drop after breakout: "
-            f"{val_before} → {val_after}"
+            f"bz_balance_bars should drop after breakout: {val_before} → {val_after}"
         )
 
 
 # ---------------------------------------------------------------------------
 # Feature properties
 # ---------------------------------------------------------------------------
+
 
 class TestFeatureProperties:
     """Tests for feature shapes, types, and value ranges."""
@@ -490,9 +500,12 @@ class TestFeatureProperties:
         indicator = _bz.BalanceZonesIndicator()
         result = indicator.compute(_make_random_df())
         for col in [
-            "bz_in_balance", "bz_in_zone",
-            "bz_breakout_bull", "bz_breakout_bear",
-            "bz_fake_bear", "bz_fake_bull",
+            "bz_in_balance",
+            "bz_in_zone",
+            "bz_breakout_bull",
+            "bz_breakout_bear",
+            "bz_fake_bear",
+            "bz_fake_bull",
         ]:
             vals = result[col].dropna().unique()
             assert set(vals).issubset({0.0, 1.0}), f"{col} not binary: {vals}"
@@ -523,9 +536,7 @@ class TestFeatureProperties:
         indicator = _bz.BalanceZonesIndicator()
         result = indicator.compute(_make_random_df(n=100))
         for col in indicator.get_feature_columns():
-            assert pd.isna(result[col].iloc[0]), (
-                f"{col} not shifted (iloc[0] not NaN)"
-            )
+            assert pd.isna(result[col].iloc[0]), f"{col} not shifted (iloc[0] not NaN)"
 
     def test_no_inf_values(self):
         indicator = _bz.BalanceZonesIndicator()
@@ -557,9 +568,11 @@ class TestFeatureProperties:
 # Plugin integration
 # ---------------------------------------------------------------------------
 
+
 class TestPluginIntegration:
     def test_plugin_discoverable(self):
         from fwbg.core import discover_plugins, get_indicator
+
         discover_plugins()
         cls = get_indicator("balance_zones")
         assert cls is not None

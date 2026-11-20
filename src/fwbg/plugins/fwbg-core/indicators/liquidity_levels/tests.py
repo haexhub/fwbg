@@ -1,4 +1,5 @@
 """Tests for liquidity_levels indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -14,12 +15,15 @@ def _make_ohlc(n=500, seed=42):
     rng = np.random.default_rng(seed)
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.002, n)))
     idx = pd.date_range("2024-01-01", periods=n, freq="h")
-    df = pd.DataFrame({
-        "O": close * (1 + rng.normal(0, 0.001, n)),
-        "H": close * (1 + np.abs(rng.normal(0, 0.005, n))),
-        "L": close * (1 - np.abs(rng.normal(0, 0.005, n))),
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * (1 + rng.normal(0, 0.001, n)),
+            "H": close * (1 + np.abs(rng.normal(0, 0.005, n))),
+            "L": close * (1 - np.abs(rng.normal(0, 0.005, n))),
+            "C": close,
+        },
+        index=idx,
+    )
     df["H"] = df[["O", "H", "C"]].max(axis=1)
     df["L"] = df[["O", "L", "C"]].min(axis=1)
     return df
@@ -30,12 +34,15 @@ def _make_ranging_df(n=500):
     rng = np.random.default_rng(55)
     oscillation = 5 * np.sin(np.linspace(0, 20 * np.pi, n))
     prices = 105 + oscillation + rng.normal(0, 0.2, n)
-    df = pd.DataFrame({
-        "O": prices + rng.normal(0, 0.1, n),
-        "H": prices + np.abs(rng.normal(0, 0.3, n)) + 0.3,
-        "L": prices - np.abs(rng.normal(0, 0.3, n)) - 0.3,
-        "C": prices,
-    }, index=pd.date_range("2024-01-01", periods=n, freq="h"))
+    df = pd.DataFrame(
+        {
+            "O": prices + rng.normal(0, 0.1, n),
+            "H": prices + np.abs(rng.normal(0, 0.3, n)) + 0.3,
+            "L": prices - np.abs(rng.normal(0, 0.3, n)) - 0.3,
+            "C": prices,
+        },
+        index=pd.date_range("2024-01-01", periods=n, freq="h"),
+    )
     df["H"] = np.maximum(df["H"], df[["O", "C"]].max(axis=1))
     df["L"] = np.minimum(df["L"], df[["O", "C"]].min(axis=1))
     return df
@@ -63,8 +70,12 @@ class TestLiquidityFeatures:
     def test_binary_features(self):
         ind = _get_indicator()
         result = ind.compute(_make_ohlc())
-        for col in ["liq_eqh_active", "liq_eql_active",
-                     "liq_sweep_up", "liq_sweep_down"]:
+        for col in [
+            "liq_eqh_active",
+            "liq_eql_active",
+            "liq_sweep_up",
+            "liq_sweep_down",
+        ]:
             vals = result[col].dropna()
             assert set(vals.unique()).issubset({0.0, 1.0}), f"{col} not binary"
 
@@ -134,24 +145,30 @@ class TestLiquidityHelpers:
     def test_find_equal_levels_basic(self):
         prices = np.array([100.0, 100.1, 100.05, 105.0, 105.1])
         indices = np.array([0, 10, 20, 30, 40])
-        clusters = _liq._find_equal_levels(prices, indices, tolerance=0.2, min_touches=2)
+        clusters = _liq._find_equal_levels(
+            prices, indices, tolerance=0.2, min_touches=2
+        )
         assert len(clusters) >= 2
 
     def test_find_equal_levels_no_clusters(self):
         prices = np.array([100.0, 110.0, 120.0])
         indices = np.array([0, 10, 20])
-        clusters = _liq._find_equal_levels(prices, indices, tolerance=0.5, min_touches=2)
+        clusters = _liq._find_equal_levels(
+            prices, indices, tolerance=0.5, min_touches=2
+        )
         assert len(clusters) == 0
 
     def test_find_equal_levels_empty(self):
         clusters = _liq._find_equal_levels(
-            np.array([]), np.array([]), tolerance=0.5, min_touches=2)
+            np.array([]), np.array([]), tolerance=0.5, min_touches=2
+        )
         assert len(clusters) == 0
 
 
 class TestLiquidityDiscovery:
     def test_plugin_discoverable(self):
         from fwbg.core import discover_plugins, get_indicator
+
         discover_plugins()
         cls = get_indicator("liquidity_levels")
         assert cls is not None

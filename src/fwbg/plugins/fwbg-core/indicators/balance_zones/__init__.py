@@ -17,6 +17,7 @@ Implements the PBD (Price/Balance/Direction) methodology from Trades to Traders:
 
 Features are normalised by ATR to be scale-independent across instruments.
 """
+
 from typing import List
 
 import numpy as np
@@ -33,16 +34,16 @@ class BalanceZonesIndicator(BaseIndicator):
     version = "1.0.0"
 
     _FEATURES = [
-        "bz_in_balance",       # 1 if zone_width / ATR <= balance_atr_threshold
-        "bz_in_zone",          # 1 if close is inside the current balance zone
-        "bz_zone_width",       # ATR-normalised width of the balance zone
-        "bz_zone_top_dist",    # ATR-norm distance from close to zone top (0 if above)
-        "bz_zone_bottom_dist", # ATR-norm distance from close to zone bottom (0 if below)
-        "bz_breakout_bull",    # 1 if close breaks above zone top this bar
-        "bz_breakout_bear",    # 1 if close breaks below zone bottom this bar
-        "bz_fake_bear",        # 1 if prev close > old zone top AND now back below (bearish)
-        "bz_fake_bull",        # 1 if prev close < old zone bottom AND now back above (bullish)
-        "bz_balance_bars",     # normalised consecutive bars with close inside zone (0..1)
+        "bz_in_balance",  # 1 if zone_width / ATR <= balance_atr_threshold
+        "bz_in_zone",  # 1 if close is inside the current balance zone
+        "bz_zone_width",  # ATR-normalised width of the balance zone
+        "bz_zone_top_dist",  # ATR-norm distance from close to zone top (0 if above)
+        "bz_zone_bottom_dist",  # ATR-norm distance from close to zone bottom (0 if below)
+        "bz_breakout_bull",  # 1 if close breaks above zone top this bar
+        "bz_breakout_bear",  # 1 if close breaks below zone bottom this bar
+        "bz_fake_bear",  # 1 if prev close > old zone top AND now back below (bearish)
+        "bz_fake_bull",  # 1 if prev close < old zone bottom AND now back above (bullish)
+        "bz_balance_bars",  # normalised consecutive bars with close inside zone (0..1)
     ]
 
     def compute(
@@ -77,7 +78,9 @@ class BalanceZonesIndicator(BaseIndicator):
 
         # Rolling balance zone (no lookahead: zone[i] uses bars 0..i inclusive)
         zone_top = pd.Series(body_top).rolling(lookback, min_periods=1).max().values
-        zone_bottom = pd.Series(body_bottom).rolling(lookback, min_periods=1).min().values
+        zone_bottom = (
+            pd.Series(body_bottom).rolling(lookback, min_periods=1).min().values
+        )
 
         # Output arrays
         in_balance = np.zeros(n)
@@ -138,7 +141,9 @@ class BalanceZonesIndicator(BaseIndicator):
                 consecutive_in_zone += 1
             else:
                 consecutive_in_zone = 0
-            balance_bars[i] = min(consecutive_in_zone, balance_bars_max) / balance_bars_max
+            balance_bars[i] = (
+                min(consecutive_in_zone, balance_bars_max) / balance_bars_max
+            )
 
         features = {
             "bz_in_balance": in_balance,
@@ -161,8 +166,10 @@ class BalanceZonesIndicator(BaseIndicator):
 
     def get_signal_columns(self) -> List[str]:
         return [
-            "bz_breakout_bull", "bz_breakout_bear",
-            "bz_fake_bear", "bz_fake_bull",
+            "bz_breakout_bull",
+            "bz_breakout_bear",
+            "bz_fake_bear",
+            "bz_fake_bull",
         ]
 
     @classmethod
