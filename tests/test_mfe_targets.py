@@ -84,3 +84,47 @@ class TestComputeMfeTargets:
         df.drop(columns=["_atr"], inplace=True)
         with pytest.raises(ValueError, match="ATR column"):
             compute_mfe_targets(df, sl_atr=2.0, max_bars=20, spread=0.0)
+
+
+class TestMfeStopsAtTheStopBar:
+    """The stop bar's favourable extreme is excluded (SL first)."""
+
+    @staticmethod
+    def _df(rows):
+        a = np.array(rows, dtype=float)
+        return pd.DataFrame(
+            {"O": a[:, 0], "H": a[:, 1], "L": a[:, 2], "C": a[:, 3], "_atr": 1.0}
+        )
+
+    def test_long_mfe_excludes_the_high_of_the_stop_bar(self):
+        # entry 100, SL 1 ATR below.  Bar 1 reaches +0.5; bar 2 hits 99 and also
+        # spikes to 103 -- the spike may have come after the stop-out.
+        df = self._df(
+            [
+                (100, 100, 100, 100),
+                (100, 100.5, 99.5, 100),
+                (100, 103, 99, 100),
+                (100, 100, 100, 100),
+            ]
+        )
+        mfe_long, _ = compute_mfe_targets(df, sl_atr=1.0, max_bars=10)
+        assert mfe_long[0] == pytest.approx(0.5)
+
+    def test_short_mfe_excludes_the_low_of_the_stop_bar(self):
+        df = self._df(
+            [
+                (100, 100, 100, 100),
+                (100, 100.5, 99.5, 100),
+                (100, 101, 97, 100),
+                (100, 100, 100, 100),
+            ]
+        )
+        _, mfe_short = compute_mfe_targets(df, sl_atr=1.0, max_bars=10)
+        assert mfe_short[0] == pytest.approx(0.5)
+
+    def test_bar_without_stop_still_counts(self):
+        df = self._df(
+            [(100, 100, 100, 100), (100, 103, 99.5, 102), (100, 100, 100, 100)]
+        )
+        mfe_long, _ = compute_mfe_targets(df, sl_atr=1.0, max_bars=10)
+        assert mfe_long[0] == pytest.approx(3.0)

@@ -750,24 +750,27 @@ def compute_mfe_targets(
         long_entry = mid_entry + spread + slippage
         max_favorable = 0.0
         for j in range(i + 1, min(i + 1 + effective_timeout, n)):
-            favorable = highs[j] - long_entry
-            if favorable > max_favorable:
-                max_favorable = favorable
+            # Stop first: when a bar reaches the stop, its high may have come
+            # after the exit, so it does not count (same SL-first convention as
+            # the simulation kernels).
             adverse = long_entry - lows[j]
             if adverse >= sl_dist:
                 break
+            favorable = highs[j] - long_entry
+            if favorable > max_favorable:
+                max_favorable = favorable
         mfe_long[i] = max_favorable / atr_i
 
         # Short: sell the bid - slippage on entry.
         short_entry = mid_entry - spread - slippage
         max_favorable = 0.0
         for j in range(i + 1, min(i + 1 + effective_timeout, n)):
-            favorable = short_entry - lows[j]
-            if favorable > max_favorable:
-                max_favorable = favorable
             adverse = highs[j] - short_entry
             if adverse >= sl_dist:
                 break
+            favorable = short_entry - lows[j]
+            if favorable > max_favorable:
+                max_favorable = favorable
         mfe_short[i] = max_favorable / atr_i
 
     return mfe_long, mfe_short
