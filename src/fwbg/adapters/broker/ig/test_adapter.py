@@ -57,7 +57,7 @@ class TestIGBrokerAdapterInit:
         adapter = IGBrokerAdapter(username="u", password="p", api_key="k")
         assert adapter.env == "DEMO"
         assert adapter.currency == "EUR"
-        assert adapter.use_yfinance_fallback is True
+        assert adapter.use_yfinance_fallback is False
         assert adapter.rate_limit_delay == 2.0
 
     def test_adapter_type_is_ig(self):

@@ -118,7 +118,7 @@ class IGBrokerAdapter(BrokerAdapter):
         api_key: str,
         env: str = "DEMO",
         currency: str = "EUR",
-        use_yfinance_fallback: bool = True,
+        use_yfinance_fallback: bool = False,
         rate_limit_delay: float = 2.0,
         **kwargs,
     ):
@@ -129,7 +129,9 @@ class IGBrokerAdapter(BrokerAdapter):
             api_key: IG API Key
             env: "DEMO" oder "LIVE"
             currency: Kontowährung
-            use_yfinance_fallback: Bei IG-Fehlern auf yfinance zurückfallen
+            use_yfinance_fallback: Opt-in. Bei IG-Fehlern auf yfinance zurückfallen.
+                yfinance liefert andere Preise/Zeitstempel als IG; die Daten werden
+                nie stillschweigend gemischt (jeder Fallback wird als Warnung geloggt).
             rate_limit_delay: Pause zwischen API-Calls in Sekunden
         """
         if not IG_AVAILABLE:
@@ -291,6 +293,10 @@ class IGBrokerAdapter(BrokerAdapter):
         df = self._fetch_ig_historical(symbol, timeframe, limit)
 
         if (df is None or df.empty) and self.use_yfinance_fallback:
+            self.log_warning(
+                f"{symbol}: IG returned no bars, falling back to yfinance "
+                "(different prices/timestamps than IG)"
+            )
             df = self._fetch_yfinance_historical(symbol, timeframe, limit)
 
         if df is None:
