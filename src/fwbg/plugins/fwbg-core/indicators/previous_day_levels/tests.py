@@ -1147,9 +1147,7 @@ class TestPDLMidnightCrossing:
         highs[idx.get_loc("2024-01-02 10:00")] = 112.0
         closes[idx.get_loc("2024-01-02 18:00")] = 111.0
         highs[idx.get_loc("2024-01-02 18:00")] = 111.5
-        df = pd.DataFrame(
-            {"O": opens, "H": highs, "L": lows, "C": closes}, index=idx
-        )
+        df = pd.DataFrame({"O": opens, "H": highs, "L": lows, "C": closes}, index=idx)
 
         result = _get_indicator().compute(
             df,
