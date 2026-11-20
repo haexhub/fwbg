@@ -18,6 +18,13 @@ range_scope controls which bars are included:
 - all: all 24h bars
 
 Timeframe: Intraday only (M1-H4). On daily bars returns df unchanged.
+
+Session and day boundary: ``session_start_hour`` / ``session_end_hour`` are
+fixed UTC hours, and for a session crossing midnight the trading day rolls over
+at ``session_start_hour`` UTC.  There is no time zone conversion, so a
+local-time boundary such as the 17:00 New York FX rollover sits at 22:00 UTC in
+winter but 21:00 UTC in summer; pick the start hour for the regime you trade (or
+split the data at the DST switch).
 """
 
 from typing import Dict, List, Tuple, Union
@@ -54,7 +61,7 @@ _RETEST_MODE_PREFIX = {
 
 
 def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
-    """Compute ATR from OHLC data."""
+    """Compute ATR from OHLC data (NaN until a full ``period`` window exists)."""
     highs = df["H"].values
     lows = df["L"].values
     close = df["C"].values
@@ -64,7 +71,21 @@ def _compute_atr(df: pd.DataFrame, period: int) -> np.ndarray:
         highs - lows,
         np.maximum(np.abs(highs - prev_close), np.abs(lows - prev_close)),
     )
-    return pd.Series(tr).rolling(period, min_periods=1).mean().values
+    return pd.Series(tr).rolling(period, min_periods=period).mean().values
+
+
+def _resample_offset(
+    resample_tf: str, session_start_hour: int, session_end_hour: int
+) -> pd.Timedelta:
+    """Offset that makes resample bins start on the trading-day boundary.
+
+    The day boundary is midnight for a same-day session and ``session_start_hour``
+    for a session crossing midnight; without alignment a 4h bin can straddle two
+    trading days.
+    """
+    if session_start_hour is None or session_start_hour < session_end_hour:
+        return pd.Timedelta(0)
+    return pd.Timedelta(hours=session_start_hour) % pd.Timedelta(resample_tf)
 
 
 def _compute_retest_features(
@@ -184,32 +205,26 @@ def _compute_range_variant(
     use_resampled_range = resample_tf and candle_span == "body"
 
     if use_resampled_range:
-        # Resample O/C to target TF for body range computation
+        # Resample O/C to target TF for body range computation.  In session
+        # scope only in-session bars enter a bin, so a bin that straddles the
+        # session edge (e.g. 4h bins vs. a 07:00 start) never pulls in
+        # off-session prices.
+        r_offset_bins = _resample_offset(
+            resample_tf, session_start_hour, session_end_hour
+        )
+        r_src = df[["O", "C"]]
+        if use_session_filter:
+            r_src = r_src.loc[np.asarray(session_mask, dtype=bool)]
         r_df = (
-            df[["O", "C"]]
-            .resample(resample_tf)
+            r_src.resample(resample_tf, offset=r_offset_bins)
             .agg({"O": "first", "C": "last"})
             .dropna()
         )
         body_high_r = r_df[["O", "C"]].max(axis=1)
         body_low_r = r_df[["O", "C"]].min(axis=1)
 
-        # Session mask on resampled index
-        if use_session_filter:
-            r_hours = r_df.index.hour
-            if session_start_hour < session_end_hour:
-                r_session = (r_hours >= session_start_hour) & (
-                    r_hours < session_end_hour
-                )
-            else:
-                r_session = (r_hours >= session_start_hour) | (
-                    r_hours < session_end_hour
-                )
-            range_highs_r = body_high_r.where(r_session)
-            range_lows_r = body_low_r.where(r_session)
-        else:
-            range_highs_r = body_high_r
-            range_lows_r = body_low_r
+        range_highs_r = body_high_r
+        range_lows_r = body_low_r
 
         # Day group on resampled index
         if session_start_hour is not None and session_start_hour >= session_end_hour:
@@ -224,6 +239,10 @@ def _compute_range_variant(
                 "low": range_lows_r.groupby(r_day_group).min(),
             }
         )
+        # Every trading day of the native data gets a row (NaN when it has no
+        # in-session bin), exactly like the native path, so the weekend
+        # forward-fill never depends on which days appear in the data later.
+        day_hl = day_hl.reindex(day_group.unique().sort_values())
     else:
         # Native-bar range
         range_highs, range_lows = _get_range_columns(
@@ -254,7 +273,8 @@ def _compute_range_variant(
     pd_range = pdh - pdl_low
 
     close = df["C"].values
-    safe_atr = np.where(atr > EPSILON, atr, 1.0)
+    # ATR warm-up stays NaN (no fabricated 1.0); only a flat-market ATR ~ 0 is floored
+    safe_atr = np.where(np.isnan(atr), np.nan, np.where(atr > EPSILON, atr, 1.0))
     safe_range = np.where(np.abs(pd_range) > EPSILON, pd_range, np.nan)
 
     # --- Current-day range (for pdl_day_range_expanding) ---
@@ -264,8 +284,14 @@ def _compute_range_variant(
         session_mask,
         use_session_filter,
     )
-    day_high = cur_highs.groupby(day_group).transform("max")
-    day_low = cur_lows.groupby(day_group).transform("min")
+    # Expanding (running) per-day extremes: row i only sees bars of its own day
+    # up to i.  A day without a range bar yet has no extremes (NaN -> not wider).
+    day_high = (
+        cur_highs.fillna(-np.inf).groupby(day_group).cummax().replace(-np.inf, np.nan)
+    )
+    day_low = (
+        cur_lows.fillna(np.inf).groupby(day_group).cummin().replace(np.inf, np.nan)
+    )
 
     # Distance features (ATR-normalized)
     features["pdl_high_dist"] = (pdh - close) / safe_atr
@@ -290,7 +316,12 @@ def _compute_range_variant(
         # Resample to get hourly Open/Close for breakout confirmation
         r_df = (
             df[["O", "C"]]
-            .resample(resample_tf)
+            .resample(
+                resample_tf,
+                offset=_resample_offset(
+                    resample_tf, session_start_hour, session_end_hour
+                ),
+            )
             .agg({"O": "first", "C": "last"})
             .dropna()
         )
@@ -402,10 +433,10 @@ def _compute_range_variant(
     # Rolling MA of position
     pos_series = pd.Series(features["pdl_position"])
     features["pdl_range_position_ma"] = (
-        pos_series.rolling(ma_period, min_periods=1).mean().values
+        pos_series.rolling(ma_period, min_periods=ma_period).mean().values
     )
 
-    # Range expanding: current day range > previous day range
+    # Range expanding: range of the current day so far > previous day range
     current_day_range = (day_high - day_low).values
     features["pdl_day_range_expanding"] = (current_day_range > pd_range).astype(float)
 
@@ -510,7 +541,7 @@ class PreviousDayLevelsIndicator(BaseIndicator):
     """Previous Day High/Low features for intraday trading."""
 
     name = "previous_day_levels"
-    version = "1.0.0"
+    version = "1.1.0"
     benefits_from_stationary = False
     group = "session"
 
@@ -544,6 +575,8 @@ class PreviousDayLevelsIndicator(BaseIndicator):
     ]
     # rl-dependent features (appended per retracement level)
     _RL_FEATURES = ["pdl_retest_bull", "pdl_retest_bear", "pdl_sl_dist"]
+    # Retest columns only exist when enable_retest is on (sl_dist always does)
+    _RETEST_FEATURES = ("pdl_retest_bull", "pdl_retest_bear")
     # Signals (subset of base + rl features)
     _BASE_SIGNAL_SUFFIXES = (
         "pdl_above_high",
@@ -669,9 +702,12 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                         retest_pfx = _RETEST_MODE_PREFIX[retest_mode]
                         full_pfx = f"{combined_pfx}{retest_pfx}{rl_pfx_str}"
                         for f in cls._RL_FEATURES:
+                            if f in cls._RETEST_FEATURES and not d["enable_retest"]:
+                                continue
                             features.append(f"{full_pfx}{f}")
-                        for f in cls._RL_SIGNAL_SUFFIXES:
-                            signals.append(f"{full_pfx}{f}")
+                        if d["enable_retest"]:
+                            for f in cls._RL_SIGNAL_SUFFIXES:
+                                signals.append(f"{full_pfx}{f}")
 
         return features, signals
 
@@ -746,7 +782,11 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             "session_start_hour": {
                 "type": "int",
                 "default": 7,
-                "description": "UTC hour when trading session starts.",
+                "description": (
+                    "UTC hour when trading session starts. Fixed UTC hour, no DST "
+                    "handling: a 17:00 New York day boundary is 22:00 UTC in "
+                    "winter and 21:00 UTC in summer."
+                ),
                 "min": 0,
                 "max": 23,
                 "step": 1,
