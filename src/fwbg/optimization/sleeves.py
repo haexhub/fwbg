@@ -55,7 +55,12 @@ SPEC_KEYS = frozenset(
 )
 SLEEVE_KEYS = frozenset({"name", "strategy_file", "max_notional"})
 WINDOW_KEYS = ("start_date", "end_date", "holdout_cutoff")
-DEFAULTS = {"lookback_days": 252, "min_days": 126, "target_volatility": 0.10, "max_scale": 5.0}
+DEFAULTS = {
+    "lookback_days": 252,
+    "min_days": 126,
+    "target_volatility": 0.10,
+    "max_scale": 5.0,
+}
 SLICES = 8
 SIGNIFICANCE = 0.05
 
@@ -68,7 +73,9 @@ class PortfolioSpecError(ValueError):
     """The portfolio spec or one of its sleeves cannot be used."""
 
 
-def load_spec(path: str | Path, load_strategy: LoadStrategy, prepare: Prepare) -> dict[str, Any]:
+def load_spec(
+    path: str | Path, load_strategy: LoadStrategy, prepare: Prepare
+) -> dict[str, Any]:
     """Read a portfolio spec and resolve its sleeves into the metadata the gate fingerprints.
 
     The result holds the portfolio parameters, the window and ``sleeves``: name ->
@@ -78,7 +85,9 @@ def load_spec(path: str | Path, load_strategy: LoadStrategy, prepare: Prepare) -
     try:
         raw = json.loads(spec_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise PortfolioSpecError(f"cannot read portfolio spec {spec_path}: {exc}") from exc
+        raise PortfolioSpecError(
+            f"cannot read portfolio spec {spec_path}: {exc}"
+        ) from exc
     if not isinstance(raw, dict):
         raise PortfolioSpecError("a portfolio spec is a JSON object")
     unknown = set(raw) - SPEC_KEYS
@@ -98,7 +107,9 @@ def load_spec(path: str | Path, load_strategy: LoadStrategy, prepare: Prepare) -
         if raw.get(key) is not None:
             metadata[key] = raw[key]
     for entry in sleeves:
-        name, strategy, max_notional = _sleeve(entry, spec_path.parent, load_strategy, prepare)
+        name, strategy, max_notional = _sleeve(
+            entry, spec_path.parent, load_strategy, prepare
+        )
         if name in metadata["sleeves"]:
             raise PortfolioSpecError(f"duplicate sleeve name {name!r}")
         metadata["sleeves"][name] = {"strategy": strategy, "max_notional": max_notional}
@@ -119,7 +130,11 @@ def _check_parameters(params: Mapping[str, Any]) -> None:
 def _sleeve(
     entry: Any, base: Path, load_strategy: LoadStrategy, prepare: Prepare
 ) -> tuple[str, dict[str, Any], float | None]:
-    if not isinstance(entry, dict) or set(entry) - SLEEVE_KEYS or "strategy_file" not in entry:
+    if (
+        not isinstance(entry, dict)
+        or set(entry) - SLEEVE_KEYS
+        or "strategy_file" not in entry
+    ):
         raise PortfolioSpecError(
             f"a sleeve is {{name, strategy_file, max_notional?}}, got {entry!r}"
         )
@@ -138,7 +153,9 @@ def _sleeve(
     if max_notional is not None and (
         not isinstance(max_notional, (int, float)) or max_notional <= 0
     ):
-        raise PortfolioSpecError(f"sleeve {name}: max_notional must be a positive number")
+        raise PortfolioSpecError(
+            f"sleeve {name}: max_notional must be a positive number"
+        )
     loaded.pop("_strategy_dir", None)
     return name, prepare(loaded), None if max_notional is None else float(max_notional)
 
@@ -148,7 +165,9 @@ def sleeve_files(metadata: Mapping[str, Any]) -> dict[str, list[str]]:
     files: dict[str, list[str]] = {}
     for name, sleeve in metadata["sleeves"].items():
         strategy_metadata = sleeve["strategy"]
-        found = select_run_files(StrategyConfig.from_dict(strategy_metadata), strategy_metadata)
+        found = select_run_files(
+            StrategyConfig.from_dict(strategy_metadata), strategy_metadata
+        )
         if not found:
             raise PortfolioSpecError(f"sleeve {name}: no data files")
         files[name] = found
@@ -171,7 +190,10 @@ def _sleeve_strategy(metadata: Mapping[str, Any], name: str) -> dict[str, Any]:
 def trade_returns(trades: list[Mapping[str, Any]]) -> pd.Series:
     """Net return per unit of notional of each trade, indexed by its exit date."""
     rows = [
-        (pd.Timestamp(t["exit_time"]).normalize(), float(t["pnl_raw"]) / float(t["entry_price"]))
+        (
+            pd.Timestamp(t["exit_time"]).normalize(),
+            float(t["pnl_raw"]) / float(t["entry_price"]),
+        )
         for t in trades
         if t.get("exit_time") and t.get("entry_price")
     ]
@@ -190,7 +212,9 @@ def _run_symbol(csv_path: str, strategy: StrategyConfig) -> dict[str, Any]:
     """One sleeve symbol: development trades and, for a holdout look, the trades after it."""
     cutoff = strategy.holdout_cutoff
     develop = (
-        dataclasses.replace(strategy, end_date=cutoff, holdout_cutoff=None) if cutoff else strategy
+        dataclasses.replace(strategy, end_date=cutoff, holdout_cutoff=None)
+        if cutoff
+        else strategy
     )
     development = process_symbol(csv_path, develop)
     status = development.get("status")
@@ -200,7 +224,9 @@ def _run_symbol(csv_path: str, strategy: StrategyConfig) -> dict[str, Any]:
         "development_trades": list(development.get("trades_detailed") or []),
     }
     if status not in ("ok", "not_significant"):
-        out["reason"] = development.get("reason") or development.get("error") or str(status)
+        out["reason"] = (
+            development.get("reason") or development.get("error") or str(status)
+        )
     if not cutoff:
         return out
     look = frozen_trades_after_cutoff(csv_path, strategy, development)
@@ -220,7 +246,9 @@ def combine(
     first = min(s.index.min() for s in streams.values())
     last = max(s.index.max() for s in streams.values())
     days = pd.bdate_range(first, last)
-    returns = pd.DataFrame({k: s.reindex(days, fill_value=0.0) for k, s in streams.items()})
+    returns = pd.DataFrame(
+        {k: s.reindex(days, fill_value=0.0) for k, s in streams.items()}
+    )
     returns = returns.fillna(0.0)
     window, min_days = params["lookback_days"], params["min_days"]
     annual = np.sqrt(252)
@@ -255,14 +283,20 @@ def portfolio_metrics(returns: pd.Series, trades: int) -> dict[str, Any]:
         return {"trades": trades, "sharpe": None}
     equity = (1 + returns).cumprod()
     years = max((returns.index[-1] - returns.index[0]).days / 365.25, 1 / 365.25)
-    slices = [chunk.sum() > 0 for chunk in np.array_split(returns.to_numpy(), SLICES) if len(chunk)]
+    slices = [
+        chunk.sum() > 0
+        for chunk in np.array_split(returns.to_numpy(), SLICES)
+        if len(chunk)
+    ]
     return {
         "trades": trades,
         "sharpe": float(returns.mean() / returns.std() * np.sqrt(252)),
         "annual_return": round(float(equity.iloc[-1] ** (1 / years) - 1) * 100, 2),
         "max_drawdown": round(float((1 - equity / equity.cummax()).max()), 4),
         "win_rate": (
-            round(float((returns[returns != 0] > 0).mean()), 4) if (returns != 0).any() else None
+            round(float((returns[returns != 0] > 0).mean()), 4)
+            if (returns != 0).any()
+            else None
         ),
         "p_value": sign_permutation_p(returns.resample("ME").sum().to_numpy()),
         "fold_stability": float(np.mean(slices)),
@@ -295,7 +329,9 @@ def run_portfolio(
         sleeve_metadata = _sleeve_strategy(metadata, name)
         strategy = StrategyConfig.from_dict(sleeve_metadata)
         paths = select_run_files(strategy, sleeve_metadata) or []
-        print(f"Sleeve {name}: {', '.join(symbol_of(p) for p in paths)} ({data_config.TIMEFRAME})")
+        print(
+            f"Sleeve {name}: {', '.join(symbol_of(p) for p in paths)} ({data_config.TIMEFRAME})"
+        )
         sleeves[name] = {"symbols": [_run_symbol(p, strategy) for p in paths]}
     result = _assemble(metadata, sleeves, cutoff)
     _write(run_path, result)
@@ -332,37 +368,53 @@ def _assemble(
     }
     result: dict[str, Any] = {"symbol": PORTFOLIO_SYMBOL, "sleeves": summary}
     looked = any(
-        sym.get("holdout", {}).get("evaluated") for s in sleeves.values() for sym in s["symbols"]
+        sym.get("holdout", {}).get("evaluated")
+        for s in sleeves.values()
+        for sym in s["symbols"]
     )
     if cutoff:
         result["holdout"] = {"cutoff": cutoff, "evaluated": bool(looked)}
-    development = {name: _sleeve_stream(s, "development_trades") for name, s in sleeves.items()}
+    development = {
+        name: _sleeve_stream(s, "development_trades") for name, s in sleeves.items()
+    }
     missing = [name for name, stream in development.items() if stream is None]
     if cutoff:
-        after = {name: _sleeve_stream(s, "holdout_trades") for name, s in sleeves.items()}
+        after = {
+            name: _sleeve_stream(s, "holdout_trades") for name, s in sleeves.items()
+        }
         missing += [
-            name for name, stream in after.items() if stream is None and name not in missing
+            name
+            for name, stream in after.items()
+            if stream is None and name not in missing
         ]
     if missing:
         result.update(
-            status="error", reason=f"sleeves without trades: {', '.join(sorted(missing))}"
+            status="error",
+            reason=f"sleeves without trades: {', '.join(sorted(missing))}",
         )
         if cutoff:
             result["holdout"]["reason"] = result["reason"]
         return result
     caps = {name: s["max_notional"] for name, s in metadata["sleeves"].items()}
     params = metadata["portfolio"]
-    streams: dict[str, pd.Series] = {k: v for k, v in development.items() if v is not None}
+    streams: dict[str, pd.Series] = {
+        k: v for k, v in development.items() if v is not None
+    }
     if cutoff:
         cut = pd.Timestamp(cutoff)
         later: dict[str, pd.Series] = {k: v for k, v in after.items() if v is not None}
         streams = {
-            name: pd.concat([dev[dev.index < cut], later[name][later[name].index >= cut]])
+            name: pd.concat(
+                [dev[dev.index < cut], later[name][later[name].index >= cut]]
+            )
             for name, dev in streams.items()
         }
     returns, notional = combine(streams, params, caps)
     if cutoff:
-        returns, notional = returns[returns.index >= cut], notional[notional.index >= cut]
+        returns, notional = (
+            returns[returns.index >= cut],
+            notional[notional.index >= cut],
+        )
         counts = sum(
             sym.get("holdout_trades") and len(sym["holdout_trades"]) or 0
             for s in sleeves.values()
@@ -381,18 +433,26 @@ def _assemble(
         )
     metrics = portfolio_metrics(returns, counts)
     p_value = metrics.get("p_value")
-    status = "ok" if p_value is not None and p_value < SIGNIFICANCE else "not_significant"
+    status = (
+        "ok" if p_value is not None and p_value < SIGNIFICANCE else "not_significant"
+    )
     if metrics.get("sharpe") is None:
         status = "no_unified_trades"
     result.update(
         status=status,
         metrics=metrics,
         monte_carlo={"p_value": p_value, "is_significant": status == "ok"},
-        walk_forward={"total_trades": counts, "fold_stability": metrics.get("fold_stability")},
+        walk_forward={
+            "total_trades": counts,
+            "fold_stability": metrics.get("fold_stability"),
+        },
         mean_notional={k: round(float(v), 4) for k, v in notional.mean().items()},
         sleeve_sharpe={
             name: (float(s.mean() / s.std() * np.sqrt(252)) if s.std() > 0 else None)
-            for name, s in pd.DataFrame(streams).reindex(returns.index).fillna(0.0).items()
+            for name, s in pd.DataFrame(streams)
+            .reindex(returns.index)
+            .fillna(0.0)
+            .items()
         },
         sleeve_correlation=pd.DataFrame(streams)
         .reindex(returns.index)
@@ -400,7 +460,9 @@ def _assemble(
         .corr()
         .round(3)
         .to_dict(),
-        daily=pd.DataFrame({"portfolio": returns}).join(notional.add_prefix("notional_")),
+        daily=pd.DataFrame({"portfolio": returns}).join(
+            notional.add_prefix("notional_")
+        ),
     )
     return result
 
@@ -414,7 +476,9 @@ def _write(run_path: Path, result: Mapping[str, Any]) -> None:
     payload = {k: v for k, v in result.items() if k != "daily"}
     (details / "config.json").write_text(json.dumps(payload, indent=2, default=str))
     if "metrics" in result:
-        (details / "unified_metrics.json").write_text(json.dumps(result["metrics"], indent=2))
+        (details / "unified_metrics.json").write_text(
+            json.dumps(result["metrics"], indent=2)
+        )
     summary = {"portfolio": payload.get("status"), "metrics": payload.get("metrics")}
     (run_path / "results.json").write_text(json.dumps(summary, indent=2, default=str))
 
