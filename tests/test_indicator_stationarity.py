@@ -28,18 +28,21 @@ def test_stationary_indicators_correct():
     registry.auto_discover()
     indicators = registry.list_plugins(phase=PluginPhase.INDICATORS)
 
-    expected_true = {
-        "ema",
-        "sma",
+    expected_true = {"price_action", "efficiency_ratio"}
+    expected_false = {
         "adx",
-        "macd",
-        "supertrend",
-        "price_action",
-        "cci",
         "aroon",
-        "efficiency_ratio",
+        "cci",
+        "ema",
+        "macd",
+        "momentum",
+        "sma",
+        "supertrend",
+        "supertrend_mtf",
+        "time_season",
+        "volatility",
+        "zscore",
     }
-    expected_false = {"momentum", "volatility", "time_season", "zscore"}
 
     for fqn in indicators:
         plugin_cls = registry.get(fqn)
@@ -67,8 +70,8 @@ def test_split_indicators_by_stationarity():
     stat_names = [i["name"] for i in stationary]
     raw_names = [i["name"] for i in raw]
 
-    assert "ema" in stat_names
-    assert "cci" in stat_names
+    assert "ema" in raw_names
+    assert "cci" in raw_names
     assert "momentum" in raw_names
     assert "volatility" in raw_names
 

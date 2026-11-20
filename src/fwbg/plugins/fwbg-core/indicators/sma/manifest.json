@@ -3,5 +3,5 @@
   "version": "1.1.0",
   "description": "SMA (Simple Moving Average) with configurable OHLC sources, distance features, and cross-source crossings",
   "phase": "indicators",
-  "benefits_from_stationary": true
+  "benefits_from_stationary": false
 }
