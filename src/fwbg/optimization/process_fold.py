@@ -16,7 +16,10 @@ from fwbg.pipeline import (
     get_feature_columns,
     compute_regime_bitmask,
 )
-from fwbg.pipeline.features import split_indicators_by_stationarity
+from fwbg.pipeline.features import (
+    configured_signal_columns,
+    split_indicators_by_stationarity,
+)
 from fwbg.utils.progress import report_phase, report_meta, report_progress
 from fwbg.utils.logging import log
 from .nested_cv import nested_cv_split, refit_stateful_features, evaluate_on_holdout
@@ -294,6 +297,25 @@ def _prepare_fold_common(
     # Feature pool cleaning: identify columns to drop (inf, >10% NaN)
     full_pool = get_feature_columns(train_df)
 
+    # Unshifted signal columns (row i = the decision at bar i's close) are entry /
+    # exit inputs, not model features: they would run one bar ahead of the 1-bar
+    # convention. They stay in the frames (rules, exits) and are cleaned like any
+    # column, but are not offered to an ML model. Signal models have no model
+    # features: their pool is the named signal columns.
+    unshifted = (
+        set()
+        if ctx.model_type == "signal"
+        else set(configured_signal_columns(ctx.indicator_plugins))
+    )
+    forced = unshifted.intersection(ctx.required_features or [])
+    if forced:
+        raise ValueError(
+            f"model.required_features names unshifted signal column(s) {sorted(forced)}: "
+            "they describe the decision at the bar's close, so a model using them "
+            "sees the bar it trades on. Name the shifted copy instead "
+            "('<column>_prev' with signal_columns_as_features: true on the indicator)."
+        )
+
     protected_cols = set(ctx.required_features or []) | set(
         named_columns(train_df.columns, ctx.exit_columns or [])
     )
@@ -323,6 +345,8 @@ def _prepare_fold_common(
             full_pool.remove(col)
             drop_cols.append(col)
             excluded_nan += 1
+
+    full_pool = [c for c in full_pool if c not in unshifted]
 
     # Build time filter conditions from allowed_hours / allowed_days
     time_conditions = []

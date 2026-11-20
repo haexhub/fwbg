@@ -43,7 +43,8 @@ import ta
 from fwbg_sdk.models import BaseModel, TrainingContext
 from fwbg.adapters.broker import BrokerAdapter, OrderSide, OrderStatus, BarData
 from fwbg.core import get_model
-from fwbg.pipeline import compute_indicator_pool
+from fwbg.pipeline import compute_indicator_pool, get_registry
+from fwbg.pipeline.features import configured_signal_columns
 from fwbg.data.loader import run_data_loading
 from fwbg.data.assets import get_asset
 from fwbg.core.risk_state import RiskState
@@ -383,6 +384,15 @@ class TradingBot:
                 logger.warning(f"⚠️ {symbol}: Missing features: {missing[:5]}...")
                 return False
 
+            unshifted = self._unshifted_signal_features(cfg.features)
+            if unshifted:
+                logger.warning(
+                    f"⚠️ {symbol}: features {unshifted[:5]} are unshifted signal "
+                    "columns (row i uses bar i's own close); the optimizer keeps "
+                    "them out of the model pool, so this feature list predates "
+                    "that rule. Retrain it with the current optimizer."
+                )
+
             # Target erstellen
             # The last bar has no next close: it must stay unlabelled (NaN), not
             # become a "down" sample.
@@ -418,6 +428,21 @@ class TradingBot:
         except Exception as e:
             logger.error(f"❌ {symbol}: Training failed: {e}")
             return False
+
+    @staticmethod
+    def _unshifted_signal_features(features: List[str]) -> List[str]:
+        """The *features* that an indicator declares as unshifted signal columns."""
+        from fwbg_sdk import PluginPhase
+
+        registry = get_registry()
+        registry.auto_discover()
+        names = [
+            name
+            for name in registry.list_plugins(phase=PluginPhase.INDICATORS)
+            if not registry.get(name).stateful
+        ]
+        declared = set(configured_signal_columns(names))
+        return [f for f in features if f in declared]
 
     def _compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Berechnet alle Features für einen DataFrame."""
