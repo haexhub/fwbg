@@ -13,6 +13,7 @@ from fwbg.exploration.mfe_mae import compute_capture_rates, compute_mfe_mae
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write_test_csv(path, n=500):
     """Write a realistic OHLCV CSV for testing."""
     rng = np.random.default_rng(42)
@@ -22,13 +23,16 @@ def _write_test_csv(path, n=500):
     high = np.maximum(open_, close) + abs(rng.standard_normal(n)) * 0.2
     low = np.minimum(open_, close) - abs(rng.standard_normal(n)) * 0.2
     vol = rng.integers(100, 10000, size=n)
-    df = pd.DataFrame({"T": dates, "O": open_, "H": high, "L": low, "C": close, "V": vol})
+    df = pd.DataFrame(
+        {"T": dates, "O": open_, "H": high, "L": low, "C": close, "V": vol}
+    )
     df.to_csv(path, index=False)
 
 
 # ---------------------------------------------------------------------------
 # compute_mfe_mae
 # ---------------------------------------------------------------------------
+
 
 class TestComputeMfeMae:
     def test_basic_uptrend(self):
@@ -111,6 +115,7 @@ class TestComputeMfeMae:
 # ---------------------------------------------------------------------------
 # compute_capture_rates
 # ---------------------------------------------------------------------------
+
 
 class TestComputeCaptureRates:
     def test_basic_shape(self):
@@ -213,6 +218,7 @@ class TestComputeCaptureRates:
 # exit_analyzer integration
 # ---------------------------------------------------------------------------
 
+
 class TestAnalyzeAsset:
     def test_returns_valid_structure(self, tmp_path):
         from fwbg.exploration.exit_analyzer import analyze_asset
@@ -284,6 +290,7 @@ class TestAnalyzeAsset:
 # ---------------------------------------------------------------------------
 # CLI integration
 # ---------------------------------------------------------------------------
+
 
 class TestCLIIntegration:
     def test_analyze_single_asset(self, tmp_path):
