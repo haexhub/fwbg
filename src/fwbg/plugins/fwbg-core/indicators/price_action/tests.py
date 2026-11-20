@@ -257,3 +257,46 @@ class TestPluginAttributes:
         declared = set(ind.get_feature_columns())
         undeclared = new_cols - declared
         assert not undeclared, f"Undeclared columns added: {undeclared}"
+
+
+class TestObvChange:
+    """vol_obv_change = signed 5-bar volume / 5-bar volume (start independent)."""
+
+    @staticmethod
+    def _ohlcv(n=400, seed=7):
+        rng = np.random.default_rng(seed)
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, n)))
+        df = _make_ohlc(close)
+        df["V"] = rng.integers(100, 1000, n).astype(float)
+        return df
+
+    def test_matches_reference_signed_volume_ratio(self):
+        df = self._ohlcv()
+        out = _get_ind().compute(df)
+        c = df["C"].to_numpy()
+        v = df["V"].to_numpy()
+        # signed volume as used by OBV: -V on a down close, +V otherwise
+        signed = np.where(c < np.roll(c, 1), -v, v)
+        signed[0] = v[0]
+        ref = np.full(len(df), np.nan)
+        for i in range(5, len(df)):
+            ref[i] = signed[i - 4 : i + 1].sum() / v[i - 4 : i + 1].sum()
+        expected = pd.Series(ref, index=df.index).shift(1)
+        got = out["vol_obv_change"]
+        pd.testing.assert_series_equal(
+            got.iloc[6:], expected.iloc[6:], check_names=False, rtol=1e-9, atol=1e-12
+        )
+
+    def test_bounded_and_no_outliers(self):
+        out = _get_ind().compute(self._ohlcv())
+        vals = out["vol_obv_change"].dropna()
+        assert vals.abs().max() <= 1.0 + 1e-12
+
+    def test_independent_of_series_start(self):
+        df = self._ohlcv()
+        full = _get_ind().compute(df)["vol_obv_change"]
+        tail = _get_ind().compute(df.iloc[137:])["vol_obv_change"]
+        common = tail.index[10:]
+        pd.testing.assert_series_equal(
+            full.loc[common], tail.loc[common], check_names=False, rtol=1e-9, atol=1e-12
+        )

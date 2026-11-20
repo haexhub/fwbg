@@ -36,7 +36,7 @@ class PriceActionIndicators(BaseIndicator):
 
     # Required attributes
     name = "price_action"
-    version = "2.0.0"
+    version = "2.1.0"
 
     def compute(
         self,
@@ -162,10 +162,15 @@ class PriceActionIndicators(BaseIndicator):
             if vol_col:
                 volume = df[vol_col]
 
-                # On Balance Volume Change
+                # On Balance Volume Change over 5 bars, normalised by the
+                # volume traded in the same 5 bars. The raw OBV level is an
+                # arbitrary cumulative sum that depends on where the series
+                # starts, so dividing by it is not start-independent. The
+                # OBV difference is the signed volume of the last 5 bars, so
+                # the ratio lies in [-1, 1] (+1: every bar closed up).
                 obv = ta.volume.on_balance_volume(df["C"], volume)
                 features["vol_obv_change"] = safe_divide(
-                    obv - obv.shift(5), obv.shift(5)
+                    obv - obv.shift(5), volume.rolling(5).sum()
                 )
 
                 # Money Flow Index
