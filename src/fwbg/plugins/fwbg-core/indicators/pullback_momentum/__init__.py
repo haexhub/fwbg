@@ -24,6 +24,7 @@ Feature columns useful for ML context:
   tpm_trend_ok_long     — 1 when close > EMA
   tpm_trend_ok_short    — 1 when close < EMA
 """
+
 from typing import List
 
 import numpy as np
@@ -38,7 +39,7 @@ class PullbackMomentumIndicator(BaseIndicator):
     """Trend + Pullback + Momentum Break entry signals (Long and Short)."""
 
     name = "pullback_momentum"
-    version = "1.0.0"
+    version = "1.1.0"
 
     _FEATURES = [
         "tpm_entry_long",
@@ -71,14 +72,19 @@ class PullbackMomentumIndicator(BaseIndicator):
         # EMA for trend filter
         ema = ta.trend.ema_indicator(pd.Series(closes), window=ema_period).values
 
-        # ATR for SL buffer (handles edge case of atr=0 bars)
-        atr = ta.volatility.average_true_range(
-            pd.Series(highs), pd.Series(lows), pd.Series(closes), window=atr_period
-        ).values
-        atr = np.nan_to_num(atr, nan=0.0)
+        # ATR for the SL buffer: NaN until the first full window (ta seeds the
+        # warm-up with 0.0, which would read as a valid zero-volatility buffer)
+        atr = np.full(n, np.nan)
+        if n >= atr_period:
+            atr = ta.volatility.average_true_range(
+                pd.Series(highs), pd.Series(lows), pd.Series(closes), window=atr_period
+            ).values.astype(np.float64)
+            atr[: atr_period - 1] = np.nan
 
         # Rolling swing extremes — no lookahead (window covers only past bars)
-        swing_high = pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        swing_high = (
+            pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        )
         swing_low = pd.Series(lows).rolling(swing_lookback, min_periods=1).min().values
 
         # Output arrays
@@ -93,23 +99,24 @@ class PullbackMomentumIndicator(BaseIndicator):
         trend_ok_short = np.zeros(n)
 
         # ── Long state machine ────────────────────────────────────────────────
-        long_state = 0      # 0 = SCANNING, 1 = PULLBACK
-        imp_high_l = 0.0    # price of the broken swing high (impulse top)
-        imp_low_l = 0.0     # rolling swing low at BOS time (impulse base)
-        pb_low_l = np.inf   # running minimum low during pullback
+        long_state = 0  # 0 = SCANNING, 1 = PULLBACK
+        imp_high_l = 0.0  # price of the broken swing high (impulse top)
+        imp_low_l = 0.0  # rolling swing low at BOS time (impulse base)
+        pb_low_l = np.inf  # running minimum low during pullback
 
         # ── Short state machine ───────────────────────────────────────────────
-        short_state = 0     # 0 = SCANNING, 1 = PULLBACK
-        imp_high_s = 0.0    # rolling swing high at BOS time (impulse top)
-        imp_low_s = 0.0     # price of the broken swing low (impulse base)
-        pb_high_s = -np.inf # running maximum high during pullback
+        short_state = 0  # 0 = SCANNING, 1 = PULLBACK
+        imp_high_s = 0.0  # rolling swing high at BOS time (impulse top)
+        imp_low_s = 0.0  # price of the broken swing low (impulse base)
+        pb_high_s = -np.inf  # running maximum high during pullback
 
         for i in range(1, n):
             c = closes[i]
             h = highs[i]
             lo = lows[i]
             ema_i = ema[i]
-            atr_i = atr[i] if atr[i] > EPSILON else 1e-5
+            atr_ok = bool(np.isfinite(atr[i]))
+            atr_i = atr[i] if atr_ok and atr[i] > EPSILON else 1e-5
 
             # Previous rolling extremes (strictly no lookahead)
             prev_sh = swing_high[i - 1]
@@ -153,7 +160,13 @@ class PullbackMomentumIndicator(BaseIndicator):
                     lh_start = max(0, i - local_high_lookback)
                     local_lh = np.max(highs[lh_start:i]) if lh_start < i else imp_high_l
 
-                    if pb >= min_pullback_pct and ema_valid and c > ema_i and c > local_lh:
+                    if (
+                        pb >= min_pullback_pct
+                        and ema_valid
+                        and atr_ok
+                        and c > ema_i
+                        and c > local_lh
+                    ):
                         entry_long[i] = 1.0
                         sl_d = (c - pb_low_l) + atr_i * sl_buffer_mult
                         sl_dist_long[i] = sl_d if sl_d > EPSILON else atr_i * 0.5
@@ -196,7 +209,13 @@ class PullbackMomentumIndicator(BaseIndicator):
                     hl_start = max(0, i - local_high_lookback)
                     local_hl = np.min(lows[hl_start:i]) if hl_start < i else imp_low_s
 
-                    if pb >= min_pullback_pct and ema_valid and c < ema_i and c < local_hl:
+                    if (
+                        pb >= min_pullback_pct
+                        and ema_valid
+                        and atr_ok
+                        and c < ema_i
+                        and c < local_hl
+                    ):
                         entry_short[i] = 1.0
                         sl_d = (pb_high_s - c) + atr_i * sl_buffer_mult
                         sl_dist_short[i] = sl_d if sl_d > EPSILON else atr_i * 0.5
@@ -204,6 +223,23 @@ class PullbackMomentumIndicator(BaseIndicator):
                         in_pullback_short[i] = 0.0
                     else:
                         pullback_pct[i] = max(pullback_pct[i], min(pb, 2.0))
+
+        # Until the EMA exists no state is tracked, so a 0.0 flag there would be a
+        # fabricated "no setup / trend not ok": the warm-up stays NaN.
+        ema_valid_rows = np.flatnonzero(~np.isnan(ema))
+        warmup = max(int(ema_valid_rows[0]) if len(ema_valid_rows) else n, 1)
+        for arr in (
+            entry_long,
+            entry_short,
+            sl_dist_long,
+            sl_dist_short,
+            pullback_pct,
+            in_pullback_long,
+            in_pullback_short,
+            trend_ok_long,
+            trend_ok_short,
+        ):
+            arr[:warmup] = np.nan
 
         features = {
             "tpm_entry_long": entry_long,
@@ -220,8 +256,8 @@ class PullbackMomentumIndicator(BaseIndicator):
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
-    def get_feature_columns(self) -> List[str]:
-        return self._FEATURES
+    def get_feature_columns(self, params=None) -> List[str]:
+        return list(self._FEATURES)
 
     def get_signal_columns(self) -> List[str]:
         return ["tpm_entry_long", "tpm_entry_short"]

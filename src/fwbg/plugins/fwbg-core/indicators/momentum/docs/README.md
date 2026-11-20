@@ -43,5 +43,5 @@ For ML models, momentum features serve as mean-reversion signals and regime clas
 - All features are shifted by 1 bar to prevent lookahead bias.
 - RSI, Stochastic, and Williams %R are bounded oscillators (inherently stationary). ROC is unbounded but typically mean-reverting.
 - The Ultimate Oscillator uses fixed internal periods (7, 14, 28) and is not configurable through parameters.
-- The longest lookback required with default parameters is 21 bars (RSI-21, Stochastic-21, Williams-21), plus additional warm-up bars for the internal EMA smoothing.
+- The longest lookback required with default parameters is 21 bars (RSI-21 needs 22 bars for its first value, Stochastic-21, Williams-21).
 - Multi-period features (e.g., RSI at 7, 14, 21) enable ML models to detect cross-timeframe divergences, which are strong reversal signals.

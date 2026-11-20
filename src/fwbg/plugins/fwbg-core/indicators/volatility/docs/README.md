@@ -24,8 +24,8 @@ For ML models, volatility features serve multiple purposes. They are direct inpu
 | `vol_atr_pct_21` | ATR (21-period) as a percentage of close price. Smoother normalized volatility. |
 | `vol_bb_pband_20` | Bollinger Bands %B (20-period). Price position within the bands: 0 = at lower band, 0.5 = at middle, 1 = at upper band. Values outside 0-1 indicate price beyond the bands. |
 | `vol_bb_wband_20` | Bollinger Bands width (20-period). Distance between upper and lower bands normalized by middle band. Measures volatility expansion/contraction. |
-| `vol_kc_pband` | Keltner Channel %B. Price position within the ATR-based channel envelope. |
-| `vol_kc_wband` | Keltner Channel width. ATR-based channel width, complementary to Bollinger bandwidth for squeeze detection. |
+| `vol_kc_pband` | Keltner Channel %B. Price position within the channel envelope. Original 1960 construction (10-bar SMA of the typical price, range-based envelope), not the EMA(20) +/- 2 ATR(10) variant. |
+| `vol_kc_wband` | Keltner Channel width (original 1960 construction), complementary to Bollinger bandwidth for squeeze detection. |
 | `vol_dc_pband` | Donchian Channel %B. Price position within the N-period high-low channel. |
 | `vol_dc_wband` | Donchian Channel width. Width of the price range channel, capturing breakout potential. |
 | `vol_gk_20` | Garman-Klass volatility estimate (20-bar window). OHLC-efficient estimator, ~7.4x more efficient than close-only. |
@@ -40,7 +40,7 @@ For ML models, volatility features serve multiple purposes. They are direct inpu
 | `vol_atr_pct_21_rank` | Percentile rank of ATR% (21-period) within a rolling window. |
 | `vol_bb_wband_20_rank` | Percentile rank of Bollinger bandwidth within a rolling window. Low values indicate a volatility squeeze. |
 | `vol_compression` | Binary volatility compression flag. 1.0 when both ATR-14 rank and BB width rank are below the 20th percentile simultaneously, indicating extreme low volatility that often precedes a breakout. |
-| `vol_rv_20` | Annualized realized volatility (20-period, using 24h bars). Calculated from log returns, annualized as percentage (sqrt(252*24) * std). |
+| `vol_rv_20` | Annualized realized volatility over 20 days. Calculated from log returns over `20 * bars_per_day` bars, annualized as percentage (sqrt(252 * bars_per_day) * std). |
 | `vol_rv_iv_spread` | Realized volatility minus implied volatility (VIX). Positive = realized vol exceeds market expectations. Only computed when `macro_vix` column is present. |
 | `vol_rv_iv_ratio` | Ratio of realized to implied volatility. Values above 1.0 mean the market is underpricing volatility. Only computed when `macro_vix` column is present. |
 
@@ -58,7 +58,7 @@ For ML models, volatility features serve multiple purposes. They are direct inpu
 - All features are shifted by 1 bar to prevent lookahead bias.
 - The `vol_rv_iv_spread` and `vol_rv_iv_ratio` features are only computed when a `macro_vix` column is present in the input DataFrame. If VIX data is unavailable, these features will be absent.
 - The compression detection uses a rolling window of 100 bars (configurable via `compression_lookback` in `**params`) for percentile ranking.
-- Realized volatility calculation assumes 24-hour bars (crypto markets). The annualization factor is `sqrt(252 * 24) * 100`. Adjust if using different bar frequencies.
+- Realized volatility reads the bars per trading day from the index spacing (24 for hourly bars around the clock, 1 for daily bars). Pass `bars_per_day` explicitly for session bars whose count per day cannot be read reliably (e.g. 7 for hourly bars of a 7 hour session) or for 365-day markets.
 - The Yang-Zhang estimator is the most computationally expensive but also the most robust. It correctly handles overnight gaps, which is important for markets with distinct sessions.
 - The `vol_yz_atr_ratio` is only computed when 20 is included in `vol_est_windows`.
 - The `_atr` internal feature is computed but not exposed in `get_feature_columns()` for external use; `vol_atr` serves as the public reference ATR.
