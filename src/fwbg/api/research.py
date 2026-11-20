@@ -26,10 +26,12 @@ from fwbg.research.card import (
     validate_criteria,
 )
 from fwbg.research.commands import (
+    DEFAULT_HOLDOUT_MONTHS,
     CommandError,
     CommandInputError,
     UncommittedError,
     new_card,
+    months_before,
     reopen,
     write_verdict,
 )
@@ -147,8 +149,22 @@ def register_card(body: NewCard) -> dict[str, Any]:
 
     A card written but not committed is still registered: the response carries
     a ``warning`` instead of an error, so a caller does not register it twice.
+
+    The holdout cutoff may not be later than the default (today minus
+    ``DEFAULT_HOLDOUT_MONTHS``): a later cutoff hands the iterations more data
+    and leaves the holdout less, so a caller of this endpoint could shrink its
+    own holdout at will. The CLI's ``--cutoff`` stays for the register's owner.
     """
     research_dir = get_research_dir(create=False)
+    today = date.today()
+    latest = months_before(today, DEFAULT_HOLDOUT_MONTHS)
+    # A future cutoff is refused by the register itself, with its own message.
+    if body.cutoff is not None and latest < body.cutoff <= today:
+        raise HTTPException(
+            422,
+            f"holdout cutoff {body.cutoff} is later than {latest}: the holdout must cover "
+            f"at least the last {DEFAULT_HOLDOUT_MONTHS} months",
+        )
     # Checked here, so a defect in the caller's input is a 422, not the register's 409.
     try:
         slugify(body.title)
@@ -163,7 +179,7 @@ def register_card(body: NewCard) -> dict[str, Any]:
                 research_dir,
                 body.title,
                 body.tags,
-                date.today(),
+                today,
                 cutoff=body.cutoff,
                 criteria=body.criteria,
                 hypothesis=body.hypothesis,

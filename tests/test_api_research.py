@@ -111,6 +111,24 @@ def test_post_needs_a_hypothesis_and_mechanism(client, missing):
     assert response.status_code == 422
 
 
+def test_post_refuses_a_cutoff_that_shrinks_the_default_holdout(client, register):
+    latest = commands.months_before(date.today(), commands.DEFAULT_HOLDOUT_MONTHS)
+    for cutoff in (date.today(), date.fromordinal(latest.toordinal() + 1)):
+        response = client.post(
+            "/api/research", json={**NEW, "cutoff": cutoff.isoformat()}
+        )
+        assert response.status_code == 422, cutoff
+        assert "holdout must cover" in response.json()["detail"]
+    assert cards(client) == []
+
+
+def test_post_takes_the_default_cutoff_and_earlier_ones(client):
+    latest = commands.months_before(date.today(), commands.DEFAULT_HOLDOUT_MONTHS)
+    response = client.post("/api/research", json={**NEW, "cutoff": latest.isoformat()})
+    assert response.status_code == 201
+    assert response.json()["card"]["holdout_cutoff"] == latest.isoformat()
+
+
 @pytest.mark.parametrize(
     "change",
     [
