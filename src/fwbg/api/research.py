@@ -116,10 +116,16 @@ def show_card(card_id: CardId) -> dict[str, Any]:
     research_dir = get_research_dir(create=False)
     with _reading():
         card = _require(research_dir, card_id)
-        own = [t for t in read_trials(research_dir / LEDGER_FILENAME) if t.strategy == card.id]
+        own = [
+            t
+            for t in read_trials(research_dir / LEDGER_FILENAME)
+            if t.strategy == card.id
+        ]
         try:
             pending: list[str] | None = [
-                run.run_id for run in read_pending(research_dir) if run.trial.strategy == card.id
+                run.run_id
+                for run in read_pending(research_dir)
+                if run.trial.strategy == card.id
             ]
             pending_error = None
         except PendingError as exc:
@@ -168,7 +174,9 @@ def register_card(body: NewCard) -> dict[str, Any]:
         else:
             match = CARD_FILE_RE.fullmatch(path.name)
             if match is None:
-                raise HTTPException(500, f"registered card has an unexpected file name {path.name}")
+                raise HTTPException(
+                    500, f"registered card has an unexpected file name {path.name}"
+                )
             card_id = match.group(1)
     with _reading():
         card = _require(research_dir, card_id)
@@ -192,7 +200,9 @@ def change_status(card_id: CardId, body: StatusChange) -> dict[str, Any]:
     with _writing():
         try:
             if body.reopen_if is None:
-                reopen(research_dir, card_id, body.reason, date.today(), actor=body.actor)
+                reopen(
+                    research_dir, card_id, body.reason, date.today(), actor=body.actor
+                )
             else:
                 write_verdict(
                     research_dir,
