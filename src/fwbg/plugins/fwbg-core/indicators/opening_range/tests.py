@@ -2339,3 +2339,271 @@ class TestCrossHourRangeBars:
             "C=94.5 above threshold (or_low - 1 = 94), should not fire"
         )
         assert result[bd_col].iloc[8] == 1.0, "C=93.5 below threshold (94), should fire"
+
+
+# ── Session windows: end of session, time-window range, DST, weekends ───────
+
+
+def _flat_m15(*spans, price=100.0):
+    """Flat M15 OHLC (O=H=L=C=price) over the given (start, end) spans, end inclusive."""
+    idx = pd.DatetimeIndex([])
+    for start, end in spans:
+        idx = idx.append(pd.date_range(start, end, freq="15min"))
+    return pd.DataFrame({k: price for k in "OHLC"}, index=idx)
+
+
+def _set_bar(df, ts, high=None, low=None, close=None):
+    ts = pd.Timestamp(ts)
+    if high is not None:
+        df.loc[ts, "H"] = high
+    if low is not None:
+        df.loc[ts, "L"] = low
+    if close is not None:
+        df.loc[ts, "C"] = close
+        df.loc[ts, "O"] = close
+
+
+class TestSessionWindows:
+    """Sessions end at a configurable end; the range is a time window; DST is honoured."""
+
+    def test_session_columns_are_nan_after_session_end_hour(self):
+        df = _flat_m15(("2024-01-02 00:00", "2024-01-03 12:00"))
+        _set_bar(df, "2024-01-02 08:00", high=101.0, low=99.0)
+        result = _get_indicator().compute(
+            df, sessions=[8], range_bars=1, session_end_hour=12.0
+        )
+        col = "rb1_orb_s08_or_high"
+        assert pd.isna(result.loc["2024-01-02 08:00", col])  # inside the range window
+        assert result.loc["2024-01-02 08:15", col] == 101.0
+        assert result.loc["2024-01-02 11:45", col] == 101.0
+        # Session over: neither the range nor its signals live on.
+        assert result.loc["2024-01-02 12:00":"2024-01-03 08:00", col].isna().all()
+        assert (
+            result.loc["2024-01-02 12:00":"2024-01-03 08:00", "rb1_orb_s08_breakout_up"]
+            .isna()
+            .all()
+        )
+
+    def test_default_session_ends_at_midnight_not_next_session_open(self):
+        df = _flat_m15(("2024-01-02 00:00", "2024-01-03 12:00"))
+        _set_bar(df, "2024-01-02 08:00", high=101.0, low=99.0)
+        _set_bar(df, "2024-01-03 08:00", high=103.0, low=97.0)
+        result = _get_indicator().compute(df, sessions=[8], range_bars=1)
+        col = "rb1_orb_s08_or_high"
+        assert result.loc["2024-01-02 23:45", col] == 101.0
+        # Old behaviour carried the first range for 24 h, until the next open.
+        assert result.loc["2024-01-03 00:00":"2024-01-03 08:00", col].isna().all()
+        assert result.loc["2024-01-03 08:15", col] == 103.0
+
+    def test_range_is_a_time_window_with_a_missing_bar(self):
+        df = _flat_m15(("2024-01-02 00:00", "2024-01-02 12:00"))
+        _set_bar(df, "2024-01-02 08:00", high=101.0, low=99.0)
+        _set_bar(df, "2024-01-02 08:30", high=105.0, low=95.0)
+        df = df.drop(pd.Timestamp("2024-01-02 08:15"))
+        ind = _get_indicator()
+        result = ind.compute(df, sessions=[8], range_bars=2)
+        # Window [08:00, 08:30) holds only the 08:00 bar; the 08:30 bar is outside it.
+        assert result.loc["2024-01-02 08:30", "rb2_orb_s08_or_high"] == 101.0
+        assert result.loc["2024-01-02 08:30", "rb2_orb_s08_or_low"] == 99.0
+        assert result.loc["2024-01-02 09:00", "rb2_orb_s08_or_high"] == 101.0
+        assert pd.isna(result.loc["2024-01-02 08:00", "rb2_orb_s08_or_high"])
+        zone = ind._range_zones[0]
+        assert zone["high"] == 101.0 and zone["low"] == 99.0
+        assert zone["end_ts"] == int(
+            pd.Timestamp("2024-01-02 08:00").timestamp() * 1000
+        )
+
+    @staticmethod
+    def _dst_frame():
+        spans = [
+            ("2024-01-09 00:00", "2024-01-10 06:00"),  # EST
+            ("2024-03-10 00:00", "2024-03-11 06:00"),  # day the US switches to EDT
+            ("2024-07-09 00:00", "2024-07-10 06:00"),  # EDT
+        ]
+        df = _flat_m15(*spans)
+        # NYSE open 09:30 New York = 14:30 UTC (EST) / 13:30 UTC (EDT); the bar
+        # at the other UTC time is a decoy that must not enter the range.
+        _set_bar(df, "2024-01-09 14:30", high=110.0, low=90.0)
+        _set_bar(df, "2024-01-09 13:30", high=150.0, low=50.0)
+        _set_bar(df, "2024-03-10 13:30", high=112.0, low=88.0)
+        _set_bar(df, "2024-03-10 14:30", high=150.0, low=50.0)
+        _set_bar(df, "2024-07-09 13:30", high=120.0, low=80.0)
+        _set_bar(df, "2024-07-09 14:30", high=150.0, low=50.0)
+        return df
+
+    def test_session_open_follows_dst_in_session_timezone(self):
+        result = _get_indicator().compute(
+            self._dst_frame(),
+            sessions=[9],
+            session_minute=30,
+            session_timezone="America/New_York",
+            range_bars=1,
+        )
+        hi, lo = "rb1_orb_s09_or_high", "rb1_orb_s09_or_low"
+        # Winter: range bar 14:30 UTC, live from 14:45 UTC, over at local midnight 05:00 UTC.
+        assert result.loc["2024-01-09 14:15", hi] != result.loc["2024-01-09 14:15", hi]
+        assert pd.isna(result.loc["2024-01-09 14:30", hi])
+        assert result.loc["2024-01-09 14:45", hi] == 110.0
+        assert result.loc["2024-01-09 14:45", lo] == 90.0
+        assert result.loc["2024-01-10 04:45", hi] == 110.0
+        assert pd.isna(result.loc["2024-01-10 05:00", hi])
+        # Switch day (EDT from 07:00 UTC): the 09:30 open is already 13:30 UTC.
+        assert pd.isna(result.loc["2024-03-10 13:30", hi])
+        assert result.loc["2024-03-10 13:45", hi] == 112.0
+        assert result.loc["2024-03-10 13:45", lo] == 88.0
+        assert result.loc["2024-03-11 03:45", hi] == 112.0
+        assert pd.isna(result.loc["2024-03-11 04:00", hi])
+        # Summer: range bar 13:30 UTC, end 04:00 UTC.
+        assert result.loc["2024-07-09 13:45", hi] == 120.0
+        assert result.loc["2024-07-09 13:45", lo] == 80.0
+        assert result.loc["2024-07-10 03:45", hi] == 120.0
+        assert pd.isna(result.loc["2024-07-10 04:00", hi])
+
+    def test_without_timezone_hours_stay_on_the_index_clock(self):
+        # Backwards compatible: without a timezone 13:30 is 13:30 on the index
+        # clock in winter and summer alike (no DST shift).
+        result = _get_indicator().compute(
+            self._dst_frame(), sessions=[13], session_minute=30, range_bars=1
+        )
+        col = "rb1_orb_s13_or_high"
+        assert result.loc["2024-01-09 13:45", col] == 150.0  # winter decoy bar
+        assert result.loc["2024-07-09 13:45", col] == 120.0  # summer bar
+
+    def test_friday_range_does_not_carry_into_monday(self):
+        df = _flat_m15(
+            ("2024-01-05 00:00", "2024-01-05 23:45"),  # Friday
+            ("2024-01-08 00:00", "2024-01-08 12:00"),  # Monday, weekend has no bars
+        )
+        _set_bar(df, "2024-01-05 08:00", high=101.0, low=99.0)
+        _set_bar(df, "2024-01-05 23:00", close=102.0, high=102.0)  # Friday breakout
+        _set_bar(df, "2024-01-08 08:00", high=103.0, low=97.0)
+        result = _get_indicator().compute(df, sessions=[8], range_bars=1)
+        hi, up = "rb1_orb_s08_or_high", "rb1_orb_s08_breakout_up"
+        assert result.loc["2024-01-05 23:45", hi] == 101.0
+        assert result.loc["2024-01-05 23:45", up] == 1.0
+        # Nothing of Friday's session is live on Monday before Monday's own range.
+        monday_before = result.loc["2024-01-08 00:00":"2024-01-08 08:00"]
+        assert monday_before[hi].isna().all()
+        assert monday_before[up].isna().all()
+        assert monday_before["rb1_orb_s08_rl50_retest_bull"].isna().all()
+        assert result.loc["2024-01-08 08:15", hi] == 103.0
+        assert result.loc["2024-01-08 08:15", up] == 0.0
+
+    def test_invalid_session_parameters_raise(self):
+        df = _flat_m15(("2024-01-02 00:00", "2024-01-02 12:00"))
+        ind = _get_indicator()
+        with pytest.raises(ValueError, match="session_end_hour"):
+            ind.compute(df, sessions=[14], session_end_hour=12.0)
+        with pytest.raises(ValueError, match="session_timezone"):
+            ind.compute(df, sessions=[8], session_timezone="Mars/Olympus")
+        with pytest.raises(ValueError, match="session_minute"):
+            ind.compute(df, sessions=[8], session_minute=75)
+
+
+class TestSignedBreakoutDist:
+    def test_breakout_dist_is_signed_by_side(self):
+        df = _flat_m15(("2024-01-02 06:00", "2024-01-02 10:00"))
+        _set_bar(df, "2024-01-02 08:00", high=101.0, low=99.0)
+        _set_bar(df, "2024-01-02 08:15", close=103.0, high=103.0)  # +2 above the high
+        _set_bar(df, "2024-01-02 08:30", close=96.0, low=96.0)  # 3 below the low
+        result = _get_indicator().compute(df, sessions=[8], range_bars=1)
+        col = "rb1_orb_s08_breakout_dist"  # shifted by one bar
+        assert result.loc["2024-01-02 08:30", col] == pytest.approx(1.0)  # 2 / range 2
+        assert result.loc["2024-01-02 08:45", col] == pytest.approx(
+            -1.5
+        )  # -3 / range 2
+        assert result.loc["2024-01-02 09:00", col] == pytest.approx(0.0)  # 100 inside
+
+
+class TestCarryForwardUsesSignalBreakoutTest:
+    @staticmethod
+    def _frame(day1_close):
+        df = _flat_m15(
+            ("2024-01-02 06:00", "2024-01-02 12:00"),
+            ("2024-01-03 06:00", "2024-01-03 12:00"),
+        )
+        _set_bar(df, "2024-01-02 08:00", high=101.0, low=99.0)
+        _set_bar(df, "2024-01-02 09:00", close=day1_close)
+        _set_bar(df, "2024-01-03 08:00", close=90.0, high=91.0, low=89.0)
+        return df
+
+    def test_close_inside_threshold_is_no_breakout_so_range_carries(self):
+        # 101.5 is above the range high but not by the required 1.0: no signal
+        # fires, hence the range is carried (the old raw test said "broke out").
+        result = _get_indicator().compute(
+            self._frame(101.5),
+            sessions=[8],
+            range_bars=1,
+            carry_forward_days=1,
+            breakout_threshold_abs=1.0,
+        )
+        col = "rb1_cf1_orb_s08_or_high"
+        assert result.loc["2024-01-02 09:00", "rb1_cf1_orb_s08_breakout_up"] == 0.0
+        assert result.loc["2024-01-03 08:00", col] == 101.0
+        assert result.loc["2024-01-03 09:00", col] == 101.0
+
+    def test_close_beyond_threshold_is_breakout_so_range_is_not_carried(self):
+        result = _get_indicator().compute(
+            self._frame(102.5),
+            sessions=[8],
+            range_bars=1,
+            carry_forward_days=1,
+            breakout_threshold_abs=1.0,
+        )
+        assert result.loc["2024-01-02 09:00", "rb1_cf1_orb_s08_breakout_up"] == 1.0
+        assert result.loc["2024-01-03 09:00", "rb1_cf1_orb_s08_or_high"] == 91.0
+
+
+class TestFeatureColumnConsistency:
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"sessions": [8, 14]},
+            {
+                "sessions": [8],
+                "retracement_levels": [0.382, 0.5],
+                "carry_forward_days": [0, 1],
+                "pre_range_bars": 2,
+                "range_bars": [1, 2],
+            },
+            {"sessions": [9], "enable_retracement": False},
+        ],
+    )
+    def test_uncached_columns_match_computed_columns(self, params):
+        df = _flat_m15(("2024-01-02 00:00", "2024-01-04 23:45"))
+        computed = _get_indicator()
+        computed.compute(df, **params)
+        fresh = _get_indicator()
+        assert set(fresh.get_feature_columns(params)) == set(
+            computed.get_feature_columns()
+        )
+        assert set(fresh.get_signal_columns(params)) == set(
+            computed.get_signal_columns()
+        )
+        assert any(c.endswith("_or_high") for c in fresh.get_feature_columns(params))
+
+
+class TestRangeValuesMatchReference:
+    """Within a session on complete data the range equals a plain per-day reference."""
+
+    @pytest.mark.parametrize("range_bars", [1, 3])
+    def test_or_levels_match_reference_implementation(self, range_bars):
+        df = _make_ohlc_15min(n=96 * 14)
+        hour = 8
+        result = _get_indicator().compute(df, sessions=[hour], range_bars=range_bars)
+        pfx = f"rb{range_bars}_orb_s{hour:02d}"
+
+        checked = 0
+        for day, bars in df.groupby(df.index.normalize()):
+            open_ts = day + pd.Timedelta(hours=hour)
+            end_ts = open_ts + range_bars * pd.Timedelta("15min")
+            window = bars.loc[open_ts : end_ts - pd.Timedelta("1min")]
+            high, low = window["H"].max(), window["L"].min()
+            live = result.loc[bars.index[bars.index >= end_ts]]
+            live = live.loc[live.index.normalize() == day]
+            assert (live[f"{pfx}_or_high"] == high).all()
+            assert (live[f"{pfx}_or_low"] == low).all()
+            assert np.allclose(live[f"{pfx}_or_midpoint"], (high + low) / 2)
+            assert np.allclose(live[f"{pfx}_range"], high - low)
+            checked += len(live)
+        assert checked > 800

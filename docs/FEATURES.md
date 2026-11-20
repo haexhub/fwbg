@@ -1326,7 +1326,7 @@ Erkennt Distribution Shift zwischen älteren und neueren Marktdaten innerhalb ei
 
 Opening Range Breakout (ORB) Features erfassen die Intraday-Eröffnungsdynamik — sowohl als Rolling-ORB (stündliche Berechnung) als auch als Session-spezifische ORB für konfigurierbare Handelsstunden (Asia Open, London Open, NY Open). Zusätzlich werden Rolling-Statistiken (Breakout-Rate, Continuation-Rate) berechnet, die zeigen ob ORB-Breakouts aktuell *funktionieren*.
 
-**Trading-Relevanz:** Die Opening Range ist eines der ältesten und robustesten Intraday-Konzepte. Die erste Bar einer Session etabliert Support/Resistance — ein Breakout darüber signalisiert Richtung für den Rest der Session. Session-spezifische ORBs sind besonders wertvoll: der NY Open (14:00 UTC) bringt institutionelles Volumen, London Open (08:00 UTC) definiert die europäische Richtung. Die Range-Breite relativ zum ATR unterscheidet Tight Ranges (Breakout-Setup) von Wide Ranges (Mean-Reversion-Setup).
+**Trading-Relevanz:** Die Opening Range ist eines der ältesten und robustesten Intraday-Konzepte. Die erste Bar einer Session etabliert Support/Resistance — ein Breakout darüber signalisiert Richtung für den Rest der Session. Session-spezifische ORBs sind besonders wertvoll: der NY Open (09:30 New York = 14:30 UTC im Winter, 13:30 UTC im Sommer) bringt institutionelles Volumen, der London Open (08:00 London = 08:00 UTC im Winter, 07:00 UTC im Sommer) definiert die europäische Richtung. Die Session-Uhrzeiten verschieben sich mit der Sommerzeit; mit `session_timezone` (z.B. `America/New_York`, `session_minute=30`) wird der Open pro Tag in lokaler Zeit berechnet. Die Range-Breite relativ zum ATR unterscheidet Tight Ranges (Breakout-Setup) von Wide Ranges (Mean-Reversion-Setup).
 
 ### Rolling ORB
 
