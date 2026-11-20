@@ -1,6 +1,7 @@
 """
 Tests für den Data Loader - insbesondere CSV-Format-Erkennung.
 """
+
 import os
 import tempfile
 import pytest
@@ -50,7 +51,9 @@ class TestLoadMacroCsv:
     def test_time_column(self, tmp_path):
         """Testet Laden von CSVs mit 'Time' Spalte."""
         csv_path = tmp_path / "test_time.csv"
-        csv_path.write_text("Time,Close\n2024-01-01 10:00,100.0\n2024-01-01 11:00,101.5\n")
+        csv_path.write_text(
+            "Time,Close\n2024-01-01 10:00,100.0\n2024-01-01 11:00,101.5\n"
+        )
 
         df = load_macro_csv(str(csv_path))
 
@@ -122,9 +125,7 @@ class TestLoadDataAligned:
         """Testet Close-only Format (wie VIX)."""
         csv_path = tmp_path / "test_close.csv"
         csv_path.write_text(
-            "Time,Close\n"
-            "2024-01-01 10:00,100.0\n"
-            "2024-01-01 11:00,101.5\n"
+            "Time,Close\n2024-01-01 10:00,100.0\n2024-01-01 11:00,101.5\n"
         )
 
         df = load_data_aligned(str(csv_path))
@@ -204,10 +205,7 @@ class TestRealDataFormats:
         """Testet yfinance Makro-Daten Format."""
         csv_path = tmp_path / "yfinance_macro.csv"
         csv_path.write_text(
-            "Datetime,Close\n"
-            "2024-01-01,100.0\n"
-            "2024-01-02,101.5\n"
-            "2024-01-03,99.8\n"
+            "Datetime,Close\n2024-01-01,100.0\n2024-01-02,101.5\n2024-01-03,99.8\n"
         )
 
         df = load_macro_csv(str(csv_path))
