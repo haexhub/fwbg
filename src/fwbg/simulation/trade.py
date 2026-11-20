@@ -2,6 +2,8 @@
 Trade-Simulation und Metriken
 """
 
+import logging
+
 import numpy as np
 import pandas as pd
 from fwbg.data import config as data_config
@@ -12,6 +14,12 @@ from fwbg.utils.metrics import (
     simulate_equity_from_returns as _simulate_equity_from_returns,
     pnl_to_returns as _pnl_to_returns,
 )
+
+logger = logging.getLogger(__name__)
+
+# Smallest risk adjust_risk_for_target_dd will return; below it the drawdown
+# target is reported as missed instead of shrinking the risk towards zero.
+MIN_ADJUSTED_RISK = 0.001
 
 # Exit rules shared with the numba kernels. The pure-Python originals keep
 # this per-bar loop free of numba dispatch overhead.
@@ -1180,11 +1188,13 @@ def adjust_risk_for_target_dd(trades, base_risk, rrr, target_max_dd=0.30):
             "scale_factor": 1.0,
         }
 
-    # Binäre Suche nach dem optimalen Risk-Faktor
-    low_risk = 0.001
+    # Bisection for the largest risk whose max drawdown stays within the
+    # target. ``low_risk`` only ever holds a risk known to be within target
+    # (0.0 draws down nothing); ``high_risk`` one known to exceed it.
+    low_risk = 0.0
     high_risk = base_risk
 
-    for _ in range(20):  # Max 20 Iterationen
+    for _ in range(30):
         mid_risk = (low_risk + high_risk) / 2
         mid_dd = calculate_max_drawdown(trades, mid_risk, rrr)
 
@@ -1192,11 +1202,21 @@ def adjust_risk_for_target_dd(trades, base_risk, rrr, target_max_dd=0.30):
             high_risk = mid_risk
         else:
             low_risk = mid_risk
-
-        if abs(mid_dd - target_max_dd) < 0.01:  # 1% Toleranz
-            break
+            if target_max_dd - mid_dd < 0.002:  # close enough below the target
+                break
 
     adjusted_risk = low_risk
+    if adjusted_risk < MIN_ADJUSTED_RISK:
+        # Even the smallest allowed risk misses the target (or the base risk is
+        # tiny): return the explicit floor, flagged by adjusted_dd > target.
+        adjusted_risk = min(MIN_ADJUSTED_RISK, base_risk)
+        logger.warning(
+            "adjust_risk_for_target_dd: risk floor %.4f applied; max drawdown "
+            "%.1f%% at the floor vs target %.1f%%",
+            adjusted_risk,
+            calculate_max_drawdown(trades, adjusted_risk, rrr) * 100,
+            target_max_dd * 100,
+        )
     adjusted_dd = calculate_max_drawdown(trades, adjusted_risk, rrr)
 
     return {
