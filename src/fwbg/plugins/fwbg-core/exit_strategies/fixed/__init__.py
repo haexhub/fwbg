@@ -11,6 +11,7 @@ import ta
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
 from fwbg.simulation import compute_targets_numba
+from fwbg.simulation.trade import resolve_entry_delay
 
 if TYPE_CHECKING:
     from fwbg.core.context import SimulationContext
@@ -66,6 +67,7 @@ class FixedExitStrategy(BaseExitStrategy):
         slippage = ctx.spread * 0.5
         max_bars = ctx.max_trade_bars if ctx.max_trade_bars else len(df)
         timeout_val = timeout_bars if timeout_bars else 0
+        entry_delay = resolve_entry_delay(ctx.exit_params)
 
         # === ENTRY MODIFIER DISPATCH ===
         entry_modifier_name = getattr(ctx, "entry_modifier", None)
@@ -118,6 +120,7 @@ class FixedExitStrategy(BaseExitStrategy):
                 timeout_val=timeout_val,
                 return_durations=return_durations,
                 breakeven_trigger=em_breakeven,
+                entry_delay=entry_delay,
                 **entry_mod_params,
             )
 
@@ -132,6 +135,8 @@ class FixedExitStrategy(BaseExitStrategy):
             slippage,
             max_bars,
             timeout_val,
+            False,
+            entry_delay,
         )
         if return_durations:
             return result  # (tgt_l, tgt_s, dur_l, dur_s)

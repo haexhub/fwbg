@@ -9,6 +9,8 @@ from .numba_core import (  # noqa: F401
     compute_targets_numba,
 )
 from .trade import (
+    DEFAULT_ENTRY_DELAY,
+    resolve_entry_delay,
     simulate_pro_trade,
     analyze_sl_potential,
     analyze_tp_potential,
@@ -29,6 +31,8 @@ __all__ = [
     "_simulate_trade_trailing_numba",
     "_simulate_trade_scale_in_numba",
     "compute_targets_numba",
+    "DEFAULT_ENTRY_DELAY",
+    "resolve_entry_delay",
     "simulate_pro_trade",
     "analyze_sl_potential",
     "analyze_tp_potential",
