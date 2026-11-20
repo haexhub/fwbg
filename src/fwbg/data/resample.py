@@ -5,6 +5,7 @@ Alle Timeframe-Bezeichnungen laufen über die zentrale :class:`~fwbg_sdk.enums.T
 Langform (``HOUR_1``, ``DAY_1`` …); ältere Kurzformen (``HOUR``, ``DAY``) werden
 beim Parsen toleriert und auf die kanonische Form normalisiert.
 """
+
 import glob as _glob
 import os
 
@@ -61,9 +62,7 @@ def parse_symbol_timeframe(stem: str) -> tuple[str, str] | None:
     return None
 
 
-def find_fallback_files(
-    data_path: str, target_tf: str
-) -> tuple[list[str], str | None]:
+def find_fallback_files(data_path: str, target_tf: str) -> tuple[list[str], str | None]:
     """Find CSV files for a lower timeframe when target_tf files don't exist.
 
     Returns (files, source_tf) where source_tf is the canonical timeframe of the
