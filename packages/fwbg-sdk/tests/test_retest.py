@@ -442,3 +442,84 @@ class TestComputeRetestSignals:
         )
         # bar1/2: C=105 > 104 (range_high) -> bear retest blocked
         assert result["retest_bear"].sum() == 0.0
+
+
+class TestRetestNeverOnBreakBar:
+    """A retest may only fire on bars strictly after the breakout bar."""
+
+    @staticmethod
+    def _run(close, high, low, bh, bl, gids=None, min_retracement=0.0):
+        n = len(close)
+        rh = np.full(n, 104.0)
+        rl = np.full(n, 96.0)
+        return compute_retest_signals(
+            close=np.array(close, dtype=float),
+            high=np.array(high, dtype=float),
+            low=np.array(low, dtype=float),
+            range_high=rh,
+            range_low=rl,
+            group_ids=np.zeros(n, dtype=int) if gids is None else np.array(gids),
+            broke_high_arr=np.array(bh, dtype=bool),
+            broke_low_arr=np.array(bl, dtype=bool),
+            entry_bull=np.full(n, 100.0),
+            entry_bear=np.full(n, 100.0),
+            n=n,
+            min_retracement=min_retracement,
+        )
+
+    def test_bull_no_signal_on_break_bar_even_if_low_reaches_entry(self):
+        # Break bar 1: close above range high, but its low (99) already
+        # touches the entry level 100.  Old code fired on bar 1.
+        res = self._run(
+            close=[100.0, 105.0, 106.0, 106.0],
+            high=[101.0, 106.0, 107.0, 107.0],
+            low=[99.0, 99.0, 105.0, 105.0],
+            bh=[False, True, True, True],
+            bl=[False] * 4,
+        )
+        assert res["retest_bull"].tolist() == [0.0, 0.0, 0.0, 0.0]
+
+    def test_bull_fires_on_first_bar_after_break(self):
+        res = self._run(
+            close=[100.0, 105.0, 101.0, 101.0],
+            high=[101.0, 106.0, 105.0, 105.0],
+            low=[99.0, 99.0, 99.5, 99.5],
+            bh=[False, True, True, True],
+            bl=[False] * 4,
+        )
+        assert res["retest_bull"].tolist() == [0.0, 0.0, 1.0, 0.0]
+
+    def test_bear_no_signal_on_break_bar(self):
+        res = self._run(
+            close=[100.0, 94.0, 93.0, 93.0],
+            high=[100.5, 100.5, 94.0, 94.0],
+            low=[99.0, 93.5, 92.0, 92.0],
+            bh=[False] * 4,
+            bl=[False, True, True, True],
+        )
+        assert res["retest_bear"].tolist() == [0.0, 0.0, 0.0, 0.0]
+
+    def test_retracement_tracking_starts_after_break_bar(self):
+        # min_retracement=0.5 -> threshold 100.  Break bar 1 has low 99
+        # (would satisfy it), bar 2 only reaches 101: the retracement must
+        # not be credited from the break bar, so nothing fires on bar 2.
+        res = self._run(
+            close=[100.0, 105.0, 102.0, 102.0, 100.5],
+            high=[101.0, 106.0, 105.0, 105.0, 104.0],
+            low=[99.0, 99.0, 101.0, 101.0, 99.0],
+            bh=[False, True, True, True, True],
+            bl=[False] * 5,
+            min_retracement=0.5,
+        )
+        assert res["retest_bull"].tolist() == [0.0, 0.0, 0.0, 0.0, 1.0]
+
+    def test_new_group_first_bar_is_never_a_retest_bar(self):
+        res = self._run(
+            close=[105.0, 101.0, 105.0, 101.0],
+            high=[106.0, 105.0, 106.0, 105.0],
+            low=[99.0, 99.0, 99.0, 99.0],
+            bh=[True, True, True, True],
+            bl=[False] * 4,
+            gids=[0, 0, 1, 1],
+        )
+        assert res["retest_bull"].tolist() == [0.0, 1.0, 0.0, 1.0]
