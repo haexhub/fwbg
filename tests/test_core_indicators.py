@@ -561,7 +561,7 @@ class TestTimeFeatures:
     """Tests für Zeit-Features."""
 
     def test_hour_correctly_extracted(self):
-        """Stunde sollte korrekt extrahiert werden (shifted by 1)."""
+        """Stunde beschreibt den eigenen Zeitstempel der Bar (Kalender-Features sind nicht geshiftet)."""
         n = 48  # 2 Tage
         close = np.full(n, 100.0)
         # Start um 08:00
@@ -576,14 +576,12 @@ class TestTimeFeatures:
         )
         result = compute_indicator_pool(df)
 
-        # WICHTIG: Features sind um 1 geshiptet
-        # Feature bei Index 1 zeigt Wert von Bar 0 (8 Uhr)
-        assert result["time_hour"].iloc[1] == 8
-        # Feature bei Index 13 zeigt Wert von Bar 12 (20 Uhr)
-        assert result["time_hour"].iloc[13] == 20
+        # Index 1 ist die 09:00-Bar, Index 12 die 20:00-Bar
+        assert result["time_hour"].iloc[1] == 9
+        assert result["time_hour"].iloc[12] == 20
 
     def test_sin_cos_encoding_correct(self):
-        """Sin/Cos Encoding sollte korrekt sein (shifted by 1)."""
+        """Sin/Cos Encoding beschreibt den eigenen Zeitstempel der Bar."""
         # Need enough bars for compute_indicator_pool to work
         n = 100
         np.random.seed(42)
@@ -599,16 +597,14 @@ class TestTimeFeatures:
         )
         result = compute_indicator_pool(df)
 
-        # WICHTIG: Features sind um 1 geshiptet
-        # Feature bei Index 1 zeigt Wert von Bar 0 (00:00)
-        # Um 00:00 sollte sin = 0, cos = 1
-        assert abs(result["time_hour_sin"].iloc[1]) < 0.01
-        assert abs(result["time_hour_cos"].iloc[1] - 1) < 0.01
+        # Index 24 ist 00:00 am zweiten Tag: sin = 0, cos = 1
+        # (Index 0 ist NaN, siehe tests/test_lookahead_bias.py)
+        assert abs(result["time_hour_sin"].iloc[24]) < 0.01
+        assert abs(result["time_hour_cos"].iloc[24] - 1) < 0.01
 
-        # Feature bei Index 7 zeigt Wert von Bar 6 (06:00)
-        # Um 06:00 sollte sin = 1, cos = 0 (peak)
-        assert abs(result["time_hour_sin"].iloc[7] - 1) < 0.01
-        assert abs(result["time_hour_cos"].iloc[7]) < 0.01
+        # Index 6 ist 06:00: sin = 1, cos = 0 (peak)
+        assert abs(result["time_hour_sin"].iloc[6] - 1) < 0.01
+        assert abs(result["time_hour_cos"].iloc[6]) < 0.01
 
 
 class TestSeasonalityFeatures:
