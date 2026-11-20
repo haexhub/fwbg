@@ -211,9 +211,9 @@ class TestFeatureColumns:
 
     def test_correct_column_count(self, indicator, sample_df):
         result = indicator.compute(sample_df)
-        # 10 features * 2 windows = 20
+        # 8 features * 2 windows = 16
         tda_cols = [c for c in result.columns if c.startswith("tda_")]
-        assert len(tda_cols) == 20
+        assert len(tda_cols) == 16
 
     def test_preserves_original_columns(self, indicator, sample_df):
         result = indicator.compute(sample_df)
@@ -269,12 +269,14 @@ class TestNoLookahead:
             index=dates,
         )
         result = indicator.compute(df, windows=[50])
-        col = "tda_h0_count_50"
+        col = "tda_h0_max_pers_50"
         vals = result[col].values
         # First non-NaN value should appear at index >= 50 (window warmup + 1 shift)
         first_valid = pd.Series(vals).first_valid_index()
         assert first_valid is not None
-        assert first_valid >= 50  # window-1 + shift
+        # bar 0 has no return, so the first full window of returns ends at bar
+        # `window`; the one-bar shift moves it to row window + 1
+        assert first_valid == 51
 
 
 # ---------------------------------------------------------------------------
@@ -312,31 +314,25 @@ class TestTopologicalProperties:
             vals = result[f"tda_persistence_entropy_{w}"].dropna()
             assert (vals >= 0).all()
 
-    def test_wasserstein_non_negative(self, indicator, sample_df):
+    def test_l2_norm_non_negative(self, indicator, sample_df):
         result = indicator.compute(sample_df)
         for w in [50, 100]:
-            vals = result[f"tda_wasserstein_amp_{w}"].dropna()
+            vals = result[f"tda_persistence_l2_norm_{w}"].dropna()
             assert (vals >= 0).all()
-
-    def test_h0_count_at_least_one(self, indicator, sample_df):
-        """Every valid window should have at least 1 H0 feature (connected component)."""
-        result = indicator.compute(sample_df)
-        vals = result["tda_h0_count_50"].dropna()
-        assert (vals >= 1).all(), "H0 count should be >= 1 for any point cloud"
 
     def test_no_inf_in_ratio_features(self, indicator, sample_df):
         """safe_divide ensures no inf in ratio columns."""
         result = indicator.compute(sample_df)
         for w in [50, 100]:
-            for col in [f"tda_h1_ratio_{w}", f"tda_max_loop_persistence_{w}"]:
+            for col in [f"tda_max_loop_persistence_{w}"]:
                 vals = result[col].dropna()
                 assert not np.isinf(vals).any(), f"Inf found in {col}"
 
     def test_larger_window_smoother(self, indicator, sample_df):
         """Larger windows should produce less variable (smoother) features."""
         result = indicator.compute(sample_df, windows=[50, 100])
-        std_50 = result["tda_h0_count_50"].dropna().std()
-        std_100 = result["tda_h0_count_100"].dropna().std()
+        std_50 = result["tda_h0_mean_pers_50"].dropna().std()
+        std_100 = result["tda_h0_mean_pers_100"].dropna().std()
         # Not a strict requirement but generally true, use generous bound
         assert std_100 <= std_50 * 2.0
 
@@ -351,12 +347,12 @@ class TestParameterVariation:
 
     def test_custom_windows(self, indicator, sample_df):
         result = indicator.compute(sample_df, windows=[30])
-        assert "tda_h0_count_30" in result.columns
-        assert "tda_h0_count_50" not in result.columns
+        assert "tda_h0_max_pers_30" in result.columns
+        assert "tda_h0_max_pers_50" not in result.columns
 
     def test_custom_embedding_dim(self, indicator, sample_df):
         result = indicator.compute(sample_df, embedding_dim=5, windows=[50])
-        vals = result["tda_h0_count_50"].dropna()
+        vals = result["tda_h0_max_pers_50"].dropna()
         assert len(vals) > 0
 
     def test_higher_maxdim(self, indicator, sample_df):
@@ -449,4 +445,73 @@ class TestPluginIntegration:
 
     def test_metadata(self, indicator):
         assert indicator.name == "topological_features"
-        assert indicator.version == "1.0.0"
+        assert indicator.version == "1.1.0"
+
+
+# ---------------------------------------------------------------------------
+# Degenerate features removed, values pinned against a reference
+# ---------------------------------------------------------------------------
+
+
+class TestNoDegenerateFeatures:
+    def test_removed_columns_not_emitted(self, indicator, sample_df):
+        result = indicator.compute(sample_df, windows=[50])
+        for gone in ("tda_h0_count_50", "tda_h1_ratio_50", "tda_wasserstein_amp_50"):
+            assert gone not in result.columns
+        assert "tda_persistence_l2_norm_50" in result.columns
+        assert "tda_h0_count_50" not in indicator.get_feature_columns()
+
+    def test_no_constant_or_collinear_columns(self, indicator, sample_df):
+        result = indicator.compute(sample_df, windows=[50])
+        feats = result[[c for c in result.columns if c.startswith("tda_")]].dropna()
+        assert len(feats) > 100
+        assert (feats.std() > 0).all(), "constant feature column emitted"
+        corr = feats.corr().to_numpy().copy()
+        np.fill_diagonal(corr, 0.0)
+        assert np.abs(corr).max() < 0.999, "perfectly collinear feature pair emitted"
+
+    def test_h0_count_was_constant(self, sample_df):
+        """Documents why the column was dropped: n - 1 finite H0 bars, always."""
+        import ripser
+
+        close = sample_df["C"].to_numpy()
+        lr = np.diff(np.log(close))
+        counts = set()
+        for i in range(50, len(close), 10):
+            cloud = _takens_embedding(lr[i - 50 : i], 3, 1)
+            dgms = ripser.ripser(cloud, maxdim=1)["dgms"]
+            counts.add(len(_finite_persistence(dgms[0])))
+        assert counts == {50 - 2 - 1}
+
+    def test_l2_norm_matches_reference(self, indicator, sample_df):
+        import ripser
+
+        close = sample_df["C"].to_numpy()
+        lr = np.diff(np.log(close))
+        result = indicator.compute(sample_df, windows=[50])
+        for i in (50, 120, 250):
+            cloud = _takens_embedding(lr[i - 50 : i], 3, 1)  # returns of bars i-49..i
+            dgms = ripser.ripser(cloud, maxdim=1)["dgms"]
+            pers = np.concatenate(
+                [_finite_persistence(dgms[0]), _finite_persistence(dgms[1])]
+            )
+            expected = float(np.sqrt(np.sum(pers**2)))
+            assert result["tda_persistence_l2_norm_50"].iloc[i + 1] == pytest.approx(
+                expected
+            )
+
+    def test_get_feature_columns_with_windows_param(self, indicator):
+        cols = indicator.get_feature_columns({"windows": [30]})
+        assert cols == sorted(
+            f"tda_{n}_30"
+            for n in (
+                "h1_count",
+                "h0_max_pers",
+                "h1_max_pers",
+                "h0_mean_pers",
+                "h1_mean_pers",
+                "persistence_entropy",
+                "persistence_l2_norm",
+                "max_loop_persistence",
+            )
+        )

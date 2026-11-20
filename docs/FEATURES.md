@@ -1266,15 +1266,13 @@ Erkennt topologische Strukturen in der Preisdynamik mittels Persistent Homology.
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
-| `tda_h0_count_{w}` | Anzahl H0 Features (Connected Components) | Fragmentierung der Preisstruktur |
 | `tda_h1_count_{w}` | Anzahl H1 Features (Loops/Zyklen) | Zyklische Muster, Mean-Reversion |
 | `tda_h0_max_pers_{w}` | Max Persistence in H0 | Stärke der dominanten Struktur |
 | `tda_h1_max_pers_{w}` | Max Persistence in H1 | Stärke des dominanten Zyklus |
 | `tda_h0_mean_pers_{w}` | Mittlere Persistence H0 | Durchschnittliche Strukturstärke |
 | `tda_h1_mean_pers_{w}` | Mittlere Persistence H1 | Durchschnittliche Zyklusstärke |
 | `tda_persistence_entropy_{w}` | Shannon-Entropie des Persistence Diagrams | Komplexität der Topologie |
-| `tda_wasserstein_amp_{w}` | L2-Norm des Persistence Diagrams | Gesamtamplitude topologischer Features |
-| `tda_h1_ratio_{w}` | H1 / H0 Count (safe_divide) | Relative Zyklizität |
+| `tda_persistence_l2_norm_{w}` | L2-Norm der endlichen Persistences (H0+H1) | Gesamtamplitude topologischer Features |
 | `tda_max_loop_persistence_{w}` | Max H1 / Max H0 Persistence | Relative Loop-Stärke |
 
 **Intuition:** Trending-Märkte haben wenige H1-Features (Loops), Mean-Reverting-Märkte viele. Die Persistence Entropy ist niedrig bei einfacher Topologie (Trend) und hoch bei komplexer Struktur (Chop).
@@ -1285,7 +1283,7 @@ Erkennt topologische Strukturen in der Preisdynamik mittels Persistent Homology.
 - `time_delay` (default: 1) — Zeitverzögerung im Embedding
 - `maxdim` (default: 1) — Maximale Homologie-Dimension (0=H0, 1=H0+H1)
 
-**Plugin:** `fwbg-core:topological_features` | **Prefix:** `tda_` | **20 Features (10 pro Window × 2 Windows)**
+**Plugin:** `fwbg-core:topological_features` | **Prefix:** `tda_` | **16 Features (8 pro Window × 2 Windows)**
 
 ---
 
