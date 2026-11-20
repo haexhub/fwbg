@@ -7,6 +7,7 @@ Testet:
 - slice_targets_for_fold: Index-Mapping, Grenzfälle
 - run_inner_cv: Early Termination, Fold Stability, Feature Selection
 """
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -41,14 +42,17 @@ def create_test_df(n_rows: int, seed: int = 42) -> pd.DataFrame:
     low = close - np.abs(np.random.randn(n_rows) * 0.05)
     open_price = close + np.random.randn(n_rows) * 0.02
 
-    df = pd.DataFrame({
-        "O": open_price,
-        "H": high,
-        "L": low,
-        "C": close,
-        "_atr": np.abs(np.random.randn(n_rows) * 0.1) + 0.05,
-        "_regime": np.full(n_rows, 7, dtype=np.int8),
-    }, index=pd.DatetimeIndex(dates))
+    df = pd.DataFrame(
+        {
+            "O": open_price,
+            "H": high,
+            "L": low,
+            "C": close,
+            "_atr": np.abs(np.random.randn(n_rows) * 0.1) + 0.05,
+            "_regime": np.full(n_rows, 7, dtype=np.int8),
+        },
+        index=pd.DatetimeIndex(dates),
+    )
 
     # Einige Feature-Spalten hinzufügen
     df["trend_rsi_14"] = np.random.rand(n_rows) * 100
@@ -89,7 +93,7 @@ def create_mock_context(
         "n_estimators": 100,
         "max_depth": 5,
         "learning_rate": 0.1,
-        "random_state": 42
+        "random_state": 42,
     }
     ctx.preprocessing_plugins = []  # No preprocessing by default
     ctx.exit_strategy = "fixed"
@@ -150,8 +154,9 @@ class TestNestedCvSplit:
 
         # In jedem Fold: Train muss vor Val kommen
         for train_df, val_df in result["inner_folds"]:
-            assert train_df.index[-1] < val_df.index[0], \
+            assert train_df.index[-1] < val_df.index[0], (
                 "Train endet nicht vor Val Start!"
+            )
 
     def test_minimum_data(self):
         """Test: Verhalten bei sehr wenig Daten."""
@@ -262,7 +267,10 @@ class TestSliceTargetsForFold:
         fold_df = df.iloc[200:400].copy()
 
         t_l, t_s, has_l, has_s = slice_targets_for_fold(
-            fold_df, ctx, tp=20, sl=10,
+            fold_df,
+            ctx,
+            tp=20,
+            sl=10,
         )
         assert len(t_l) == 200
         assert len(t_s) == 200
@@ -302,9 +310,7 @@ class TestSelectFeaturesFromFold:
         targets = np.zeros(len(df))  # Keine positiven Targets
         features = ["trend_rsi_14", "adx_14"]
 
-        selected, _ = select_features_from_fold(
-            df, targets, features, min_trades=100
-        )
+        selected, _ = select_features_from_fold(df, targets, features, min_trades=100)
 
         assert selected is None
 
@@ -314,9 +320,7 @@ class TestSelectFeaturesFromFold:
         targets = np.random.randint(0, 2, len(df))
         features = ["nonexistent_feature_1", "nonexistent_feature_2"]
 
-        selected, _ = select_features_from_fold(
-            df, targets, features, min_trades=10
-        )
+        selected, _ = select_features_from_fold(df, targets, features, min_trades=10)
 
         assert selected is None
 
@@ -327,12 +331,23 @@ class TestSelectFeaturesFromFold:
         targets = (df["trend_rsi_14"].values > 50).astype(int)
         features = ["trend_rsi_14", "adx_14", "mom_stoch_14"]
 
-        plugins = [{"name": "boruta", "params": {
-            "n_iter": 3, "n_estimators": 20, "max_depth": 3, "min_z_score": 0.0
-        }}]
+        plugins = [
+            {
+                "name": "boruta",
+                "params": {
+                    "n_iter": 3,
+                    "n_estimators": 20,
+                    "max_depth": 3,
+                    "min_z_score": 0.0,
+                },
+            }
+        ]
 
         selected, metadata = select_features_from_fold(
-            df, targets, features, min_trades=10,
+            df,
+            targets,
+            features,
+            min_trades=10,
             feature_selection_plugins=plugins,
         )
 
@@ -417,8 +432,16 @@ class TestSimulateTradesSequential:
         probs_long[:, 1] = 0.8
 
         result = simulate_trades_sequential(
-            df, probs_long, None, 1, None, ct=0.5, tp=20, sl=10, ctx=ctx,
-            return_detailed=True
+            df,
+            probs_long,
+            None,
+            1,
+            None,
+            ct=0.5,
+            tp=20,
+            sl=10,
+            ctx=ctx,
+            return_detailed=True,
         )
 
         assert "trades_detailed" in result
@@ -436,8 +459,11 @@ class TestRunInnerCv:
         result = run_inner_cv(
             inner_folds=[],
             group_features=["trend_rsi_14"],
-            tp=20, sl=10, ctx=ctx,
-            global_grid_pos=0, total_grid_combos=1
+            tp=20,
+            sl=10,
+            ctx=ctx,
+            global_grid_pos=0,
+            total_grid_combos=1,
         )
 
         assert result["success"] is False
@@ -457,17 +483,18 @@ class TestRunInnerCv:
         ]
 
         # Mit Mock um schnell zu laufen
-        with patch('fwbg.optimization.nested_cv.compute_targets') as mock_compute:
+        with patch("fwbg.optimization.nested_cv.compute_targets") as mock_compute:
             # Simuliere schlechte Targets (keine Wins)
-            mock_compute.return_value = (
-                np.zeros(1000), np.zeros(1000), False, False
-            )
+            mock_compute.return_value = (np.zeros(1000), np.zeros(1000), False, False)
 
             result = run_inner_cv(
                 inner_folds=folds,
                 group_features=["trend_rsi_14"],
-                tp=20, sl=10, ctx=ctx,
-                global_grid_pos=0, total_grid_combos=1
+                tp=20,
+                sl=10,
+                ctx=ctx,
+                global_grid_pos=0,
+                total_grid_combos=1,
             )
 
             assert result["success"] is False
@@ -491,7 +518,7 @@ class TestEvaluateOnHoldout:
             holdout_df=df.iloc[500:],
             inner_df=df.iloc[:500],
             candidate=candidate,
-            ctx=ctx
+            ctx=ctx,
         )
 
         assert result["trades"] == []
@@ -568,8 +595,7 @@ class TestSeparateCTEvaluation:
         probs_short[:, 1] = 0.7
 
         result = _evaluate_separate_ct(
-            df, probs_long, probs_short, 1, 1,
-            tp=20, sl=10, ctx=ctx
+            df, probs_long, probs_short, 1, 1, tp=20, sl=10, ctx=ctx
         )
 
         best_ct, best_pnl, trades_info = result
@@ -595,8 +621,7 @@ class TestSeparateCTEvaluation:
         probs_short = np.ones((len(df), 2)) * 0.9
 
         result = _evaluate_separate_ct(
-            df, probs_long, probs_short, 1, 1,
-            tp=20, sl=10, ctx=ctx
+            df, probs_long, probs_short, 1, 1, tp=20, sl=10, ctx=ctx
         )
 
         best_ct, best_pnl, trades_info = result
@@ -620,8 +645,7 @@ class TestSeparateCTEvaluation:
         probs_short[:, 1] = 0.7
 
         result = _evaluate_separate_ct(
-            df, probs_long, probs_short, 1, 1,
-            tp=20, sl=10, ctx=ctx
+            df, probs_long, probs_short, 1, 1, tp=20, sl=10, ctx=ctx
         )
 
         best_ct, best_pnl, trades_info = result
@@ -653,8 +677,14 @@ class TestSeparateCTEvaluation:
         probs_short[:, 1] = 0.7
 
         result = _evaluate_separate_ct(
-            df, None, probs_short, None, 1,  # Keine Long-Probs
-            tp=20, sl=10, ctx=ctx
+            df,
+            None,
+            probs_short,
+            None,
+            1,  # Keine Long-Probs
+            tp=20,
+            sl=10,
+            ctx=ctx,
         )
 
         best_ct, best_pnl, trades_info = result
@@ -672,8 +702,12 @@ class TestSeparateCTEvaluation:
 def _fold_stub(pnl, n_trades=10, win=True):
     trades = [{"pnl_raw": pnl / n_trades, "result": 1.0 if win else -1.0}] * n_trades
     return {
-        "success": True, "pnl": pnl, "best_ct": 0.5, "trades_by_ct": {0.5: trades},
-        "selected_features_long": ["f"], "selected_features_short": [],
+        "success": True,
+        "pnl": pnl,
+        "best_ct": 0.5,
+        "trades_by_ct": {0.5: trades},
+        "selected_features_long": ["f"],
+        "selected_features_short": [],
     }
 
 
@@ -684,8 +718,9 @@ def test_aggregation_enforces_min_fold_stability_on_every_path():
 
     from fwbg.optimization.nested_cv import _aggregate_cv_folds
 
-    ctx = SimpleNamespace(min_fold_stability=0.5, first_fold_sanity_check=False,
-                          separate_long_short=False)
+    ctx = SimpleNamespace(
+        min_fold_stability=0.5, first_fold_sanity_check=False, separate_long_short=False
+    )
     folds = [_fold_stub(p) for p in (-1.0, -1.0, 2.0, 2.0, -1.0)]
 
     assert _aggregate_cv_folds(folds, 5, ctx, ["f"], [])["success"] is False
@@ -698,8 +733,9 @@ def test_aggregation_applies_the_first_fold_sanity_check():
 
     from fwbg.optimization.nested_cv import _aggregate_cv_folds
 
-    ctx = SimpleNamespace(min_fold_stability=0.0, first_fold_sanity_check=True,
-                          separate_long_short=False)
+    ctx = SimpleNamespace(
+        min_fold_stability=0.0, first_fold_sanity_check=True, separate_long_short=False
+    )
     catastrophic = _fold_stub(-50.0, n_trades=10, win=False)
     folds = [catastrophic, _fold_stub(5.0), _fold_stub(5.0)]
 
@@ -719,6 +755,10 @@ def test_missing_best_ct_trade_key_does_not_count_as_no_trades():
         first_fold_min_pnl=-10.0,
         first_fold_min_trades=5,
     )
-    fold_result = {"best_ct": (0.2, 0.8), "trades_by_ct": {0.2: [{"result": 1.0}]}, "pnl": 1.0}
+    fold_result = {
+        "best_ct": (0.2, 0.8),
+        "trades_by_ct": {0.2: [{"result": 1.0}]},
+        "pnl": 1.0,
+    }
 
     assert _first_fold_catastrophic(fold_result, ctx) is False
