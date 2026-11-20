@@ -109,8 +109,10 @@ def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
             f"'{ctx.exit_strategy}'; allowed: {choices}"
         )
     sl_col = resolve_role_column(
-        df.columns, exit_params.get("sl_level_column"),
-        lambda c: c.endswith(f"_{sl_level_suffix}"), "sl_level_column",
+        df.columns,
+        exit_params.get("sl_level_column"),
+        lambda c: c.endswith(f"_{sl_level_suffix}"),
+        "sl_level_column",
     )
     if sl_col is None:
         return None
@@ -143,7 +145,9 @@ def resolve_exit_signals(
             flags.append(None)
             continue
         if name not in df.columns:
-            raise ColumnRoleError(f"exit_params.{param} '{name}' is not a column in the frame.")
+            raise ColumnRoleError(
+                f"exit_params.{param} '{name}' is not a column in the frame."
+            )
         flags.append(np.nan_to_num(df[name].values.astype(np.float64), nan=0.0) >= 1.0)
     return flags[0], flags[1]
 
@@ -240,15 +244,23 @@ def simulate_trades(
                 range_v = es._get_range(df, exit_params)
                 trail_dists = np.where(range_v > 0.0, range_v, 0.0).astype(np.float64)
         else:
-            atr_col = "_atr" if "_atr" in df.columns else ("vol_atr" if "vol_atr" in df.columns else None)
+            atr_col = (
+                "_atr"
+                if "_atr" in df.columns
+                else ("vol_atr" if "vol_atr" in df.columns else None)
+            )
             if atr_col:
                 atr_v = np.nan_to_num(df[atr_col].values.astype(np.float64), nan=0.0)
             else:
                 import ta
+
                 atr_period = exit_params.get("atr_period", 14)
                 atr_v = np.nan_to_num(
                     ta.volatility.average_true_range(
-                        df["H"], df["L"], df["C"], window=atr_period,
+                        df["H"],
+                        df["L"],
+                        df["C"],
+                        window=atr_period,
                     ).values.astype(np.float64),
                     nan=0.0,
                 )
@@ -271,7 +283,9 @@ def simulate_trades(
         s_end = getattr(ctx, "session_end_hour", None)
     if isinstance(s_start, int) and isinstance(s_end, int):
         in_session = compute_session_mask(
-            df.index, s_start, s_end,
+            df.index,
+            s_start,
+            s_end,
             ohlc=(opn, hgh, low, cls),
         )
 
@@ -379,8 +393,12 @@ def simulate_trades(
                 financing_rate=getattr(ctx, "financing_rate", 0.0),
             )
             if trade:
-                t = {"result": trade["result"], "pnl_raw": trade["pnl_raw"],
-                     "mae": trade["mae"], "mfe": trade["mfe"]}
+                t = {
+                    "result": trade["result"],
+                    "pnl_raw": trade["pnl_raw"],
+                    "mae": trade["mae"],
+                    "mfe": trade["mfe"],
+                }
                 if has_rv:
                     rv_val = float(rv_values[i])
                     if not np.isnan(rv_val):
@@ -388,7 +406,9 @@ def simulate_trades(
                 trades.append(t)
                 # A rule exit fills at the bar's close, so with close entries the
                 # same bar may open the next trade (e.g. a flip to the other side).
-                same_bar = entry_delay == 0 and trade.get("exit_reason") == "exit_signal"
+                same_bar = (
+                    entry_delay == 0 and trade.get("exit_reason") == "exit_signal"
+                )
                 next_allowed_entry = trade["exit_idx"] + (0 if same_bar else 1)
 
                 # Record trade against its signal event
@@ -738,7 +758,11 @@ def slice_targets_for_fold(
     """
     exit_strategy_mode = getattr(ctx, "exit_strategy", "fixed")
     result = compute_targets_cached(
-        fold_df, tp, sl, ctx, timeout_bars,
+        fold_df,
+        tp,
+        sl,
+        ctx,
+        timeout_bars,
         exit_strategy_mode=exit_strategy_mode,
         return_durations=return_durations,
     )
@@ -848,7 +872,11 @@ def evaluate_on_validation(
 
     # Per-trade TP/SL overrides from model (xgboost_rrr, xgboost_mfe)
     per_trade_params = None
-    atr_col = "_atr" if "_atr" in val_df.columns else ("vol_atr" if "vol_atr" in val_df.columns else None)
+    atr_col = (
+        "_atr"
+        if "_atr" in val_df.columns
+        else ("vol_atr" if "vol_atr" in val_df.columns else None)
+    )
     atr_vals = val_df[atr_col].values if atr_col else None
     if mod_long is not None:
         ptp = mod_long.get_per_trade_params(val_df[features_long], atr=atr_vals)
