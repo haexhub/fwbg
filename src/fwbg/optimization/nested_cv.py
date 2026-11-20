@@ -7,6 +7,9 @@ Struktur:
             Grid-Search hier                    Finale Evaluation
             (Walk-Forward Folds)                (NIE während Optimierung gesehen!)
 """
+
+import inspect
+
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
@@ -15,7 +18,11 @@ from fwbg_sdk.models import BaseModel, TrainingContext
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_feature_selector, get_model
 
-from fwbg.simulation.trade import analyze_sl_potential, analyze_tp_potential, attach_regime_labels
+from fwbg.simulation.trade import (
+    analyze_sl_potential,
+    analyze_tp_potential,
+    attach_regime_labels,
+)
 from .targets import (
     _apply_meta_filter,
     _validate_targets,
@@ -42,13 +49,17 @@ def _compact_trades_by_ct(fold_result):
         if not trades or not isinstance(trades, list):
             return trades
         return [
-            {"pnl_raw": t["pnl_raw"], "result": t["result"]} for t in trades if isinstance(t, dict)
+            {"pnl_raw": t["pnl_raw"], "result": t["result"]}
+            for t in trades
+            if isinstance(t, dict)
         ]
 
     compacted = {}
     for key, value in trades_by_ct.items():
         if key in ("long", "short") and isinstance(value, dict):
-            compacted[key] = {ct_val: _strip(ct_trades) for ct_val, ct_trades in value.items()}
+            compacted[key] = {
+                ct_val: _strip(ct_trades) for ct_val, ct_trades in value.items()
+            }
         elif key == "combined" and isinstance(value, dict) and "trades" in value:
             compacted[key] = {
                 "ct_long": value.get("ct_long"),
@@ -110,6 +121,21 @@ def nested_cv_split(
     }
 
 
+def _trim_leading_nan(frame: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+    """Drop the leading rows in which any of *columns* is NaN; keep the index contiguous.
+
+    Only the warm-up block at the start goes: rows after the first complete row stay
+    even when a column is NaN there, so no bar is removed from the middle.
+    """
+    present = [c for c in columns if c in frame.columns]
+    if not present or frame.empty:
+        return frame
+    complete = frame[present].notna().all(axis=1).to_numpy()
+    if not complete.any():
+        return frame.iloc[0:0]
+    return frame.iloc[int(complete.argmax()) :]
+
+
 def refit_stateful_features(
     inner_folds: List[Tuple[pd.DataFrame, pd.DataFrame]],
 ) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
@@ -136,15 +162,28 @@ def refit_stateful_features(
             indicators=configs,
             fit_df=train_base,
         )
-        # The first row of each transform is shifted by design.  Drop rows
-        # consistently before targets and model arrays are built.
-        train_refit = train_refit.dropna()
-        val_refit = val_refit.dropna()
+        # The first row of each transform is shifted by design.  Trim that leading
+        # warm-up block (stateful output columns only) before targets and model
+        # arrays are built.  A frame-wide dropna() would also remove interior rows
+        # and leave holes in the bar sequence the trade simulation walks over.
+        train_refit = _trim_leading_nan(train_refit, output_columns)
+        val_refit = _trim_leading_nan(val_refit, output_columns)
         train_refit.attrs.update(train_df.attrs)
         val_refit.attrs.update(val_df.attrs)
         refit_folds.append((train_refit, val_refit))
 
     return refit_folds
+
+
+# Seed handed to feature selectors that take one (boruta shadow features and trees,
+# stability-selection bootstraps). Without it they draw from the global RNG and the
+# selected features differ between identical runs. A plugin's own "seed" param wins.
+FEATURE_SELECTION_SEED = 42
+
+
+def _accepts_seed(selector: Any) -> bool:
+    """Whether the selector's select_features names a ``seed`` parameter."""
+    return "seed" in inspect.signature(selector.select_features).parameters
 
 
 def select_features_from_fold(
@@ -153,6 +192,7 @@ def select_features_from_fold(
     group_features: List[str],
     min_trades: int,
     feature_selection_plugins: List[Dict] = None,
+    seed: int = FEATURE_SELECTION_SEED,
 ) -> Tuple[Optional[List[str]], Dict]:
     """
     Wählt Features über das Plugin-Interface aus.
@@ -167,6 +207,7 @@ def select_features_from_fold(
         min_trades: Minimum Trades
         feature_selection_plugins: Liste von Plugin-Configs
             [{"name": "boruta", "params": {"min_z_score": 0.5}}, ...]
+        seed: RNG-Seed für Selektoren mit ``seed``-Parameter (Plugin-Param hat Vorrang)
 
     Returns:
         (selected_features, metadata) oder (None, {})
@@ -192,13 +233,15 @@ def select_features_from_fold(
         selector = selector_cls()
 
         max_features = params.pop("max_features", None)
+        if _accepts_seed(selector):
+            params.setdefault("seed", seed)
         try:
             selected, meta = selector.select_features(
-                train_df[selected], targets,
-                max_features=max_features, **params
+                train_df[selected], targets, max_features=max_features, **params
             )
         except Exception as exc:
             import logging
+
             logging.getLogger(__name__).error(
                 f"Feature selector '{name}' raised an exception: {exc}", exc_info=True
             )
@@ -225,7 +268,12 @@ def train_model(
     Trainiert ein ML-Modell via Plugin-Registry.
 
     Args:
-        use_reduced_params: Wenn True, werden Hyperparameter reduziert (für Inner CV)
+        use_reduced_params: Wenn True, werden Hyperparameter reduziert (für Inner CV).
+            Bewusste Entscheidung (Laufzeit): die Inner-CV-Modelle sind kleiner als
+            die Modelle des äußeren Folds/Holdouts (xgboost: halbe n_estimators, siehe
+            ``get_reduced_hyperparameters`` des Modells). Auswahl von Kombination und
+            Schwelle erfolgt also mit einem anderen Modell als die spätere Bewertung;
+            Modelle ohne eigene Reduktion bleiben identisch.
         sample_weight: Optional - Uniqueness-basierte Sample Weights (AFML Ch. 4)
         direction: "long" or "short" — passed to TrainingContext for signal model
     """
@@ -284,14 +332,20 @@ def _generate_oof_predictions(
         if len(np.unique(targets[train_idx])) < 2:
             continue
 
-        params = model_class.get_reduced_hyperparameters(ctx.model_hyperparameters.copy())
+        params = model_class.get_reduced_hyperparameters(
+            ctx.model_hyperparameters.copy()
+        )
         model = model_class()
         training_context = TrainingContext()
-        model.train(df[features].iloc[train_idx], targets[train_idx], training_context, **params)
+        model.train(
+            df[features].iloc[train_idx], targets[train_idx], training_context, **params
+        )
 
         if 1 in model.trained_classes:
             win_idx = np.where(model.trained_classes == 1)[0][0]
-            oof_probs[val_idx] = model.predict_probability(df[features].iloc[val_idx])[:, win_idx]
+            oof_probs[val_idx] = model.predict_probability(df[features].iloc[val_idx])[
+                :, win_idx
+            ]
 
     return oof_probs
 
@@ -350,9 +404,7 @@ def _effective_label_horizon(
                 else:
                     trail_atr_mult = 0.0
                 use_trailing = (
-                    be_trigger > 0.0
-                    or trail_pips > 0
-                    or trail_atr_mult > 0.0
+                    be_trigger > 0.0 or trail_pips > 0 or trail_atr_mult > 0.0
                 )
             except TypeError:
                 return n_samples
@@ -519,6 +571,7 @@ def _evaluate_single_fold(
             targets_long, targets_short, dur_long, dur_short = entry
             if ctx.sample_weights:
                 from .purging import compute_sample_weights
+
                 weights = compute_sample_weights(dur_long, dur_short, len(train_df))
         else:
             targets_long, targets_short = entry
@@ -536,9 +589,11 @@ def _evaluate_single_fold(
     train_targets_short = targets_short
     if ctx.model_type == "xgboost_mfe":
         from fwbg.optimization.targets import compute_mfe_targets
+
         sl_variants = ctx.model_hyperparameters.get("sl_variants", [2.0])
         mfe_long, mfe_short = compute_mfe_targets(
-            train_df, sl_atr=sl_variants[0],
+            train_df,
+            sl_atr=sl_variants[0],
             max_bars=ctx.max_trade_bars or 50,
             spread=ctx.spread,
         )
@@ -550,37 +605,76 @@ def _evaluate_single_fold(
     if feat_long is None and feat_short is None:
         if has_long:
             feat_long, _ = select_features_from_fold(
-                train_df, targets_long, group_features, ctx.min_trades,
+                train_df,
+                targets_long,
+                group_features,
+                ctx.min_trades,
                 feature_selection_plugins=ctx.feature_selection_plugins,
             )
         if has_short:
             feat_short, _ = select_features_from_fold(
-                train_df, targets_short, group_features, ctx.min_trades,
+                train_df,
+                targets_short,
+                group_features,
+                ctx.min_trades,
                 feature_selection_plugins=ctx.feature_selection_plugins,
             )
 
     if not feat_long and not feat_short:
         return {"success": False}
 
-    mod_long = train_model(
-        train_df, train_targets_long, feat_long, ctx.min_trades, ctx,
-        use_reduced_params=True, sample_weight=weights, direction="long",
-    ) if has_long else None
-    mod_short = train_model(
-        train_df, train_targets_short, feat_short, ctx.min_trades, ctx,
-        use_reduced_params=True, sample_weight=weights, direction="short",
-    ) if has_short else None
+    mod_long = (
+        train_model(
+            train_df,
+            train_targets_long,
+            feat_long,
+            ctx.min_trades,
+            ctx,
+            use_reduced_params=True,
+            sample_weight=weights,
+            direction="long",
+        )
+        if has_long
+        else None
+    )
+    mod_short = (
+        train_model(
+            train_df,
+            train_targets_short,
+            feat_short,
+            ctx.min_trades,
+            ctx,
+            use_reduced_params=True,
+            sample_weight=weights,
+            direction="short",
+        )
+        if has_short
+        else None
+    )
 
     # Meta-Labeling: train meta-models to filter primary predictions
     meta_mod_long, meta_mod_short = _train_meta_models(
-        train_df, targets_long, targets_short, feat_long, feat_short,
-        mod_long, mod_short, ctx, timeout_bars,
+        train_df,
+        targets_long,
+        targets_short,
+        feat_long,
+        feat_short,
+        mod_long,
+        mod_short,
+        ctx,
+        timeout_bars,
     )
 
     best_fold_ct, best_fold_pnl, trades_by_ct = evaluate_on_validation(
-        val_df, mod_long, mod_short,
-        feat_long, feat_short,
-        tp, sl, ctx, timeout_bars,
+        val_df,
+        mod_long,
+        mod_short,
+        feat_long,
+        feat_short,
+        tp,
+        sl,
+        ctx,
+        timeout_bars,
         meta_mod_long=meta_mod_long,
         meta_mod_short=meta_mod_short,
     )
@@ -598,7 +692,9 @@ def _evaluate_single_fold(
     }
 
 
-def _first_fold_catastrophic(fold_result: Dict[str, Any], ctx: SimulationContext) -> bool:
+def _first_fold_catastrophic(
+    fold_result: Dict[str, Any], ctx: SimulationContext
+) -> bool:
     """Whether a successful first inner fold fails the sanity check.
 
     Catastrophic: low win rate and a large loss over enough trades, or no
@@ -630,6 +726,54 @@ def _first_fold_catastrophic(fold_result: Dict[str, Any], ctx: SimulationContext
     )
 
 
+def _cross_fitted_fold_pnls(
+    successful: List[Dict[str, Any]], ctx: SimulationContext
+) -> Optional[List[float]]:
+    """Per-fold PnL at a threshold chosen on the OTHER folds.
+
+    Every fold's own best threshold (the max over the grid evaluated on that same
+    validation window) is an optimistic score for the setting that is actually used:
+    one threshold voted over all folds. For fold k the threshold is therefore picked
+    by the summed PnL of the folds other than k, and fold k is scored at that
+    threshold, so no window is scored at a threshold chosen on its own data.
+
+    None when this cannot be done: fewer than two folds, a single threshold (no
+    selection happens, e.g. probability calibration) or separate long/short
+    thresholds, whose per-fold trades are only kept for the fold's own best pair.
+    """
+    if len(successful) < 2:
+        return None
+    tables: List[Dict[Any, Tuple[float, int]]] = []
+    for fold in successful:
+        trades_by_ct = fold.get("trades_by_ct") or {}
+        if not trades_by_ct or any(
+            not isinstance(trades, list) for trades in trades_by_ct.values()
+        ):
+            return None
+        tables.append(
+            {
+                ct: (sum(t["pnl_raw"] for t in trades), len(trades))
+                for ct, trades in trades_by_ct.items()
+            }
+        )
+    common = [ct for ct in tables[0] if all(ct in table for table in tables[1:])]
+    if len(common) < 2:
+        return None
+    min_trades = getattr(ctx, "min_eval_trades", 1)
+
+    scores = []
+    for k, held_out in enumerate(tables):
+        others = [table for j, table in enumerate(tables) if j != k]
+        eligible = [
+            ct for ct in common if sum(table[ct][1] for table in others) >= min_trades
+        ]
+        if not eligible:
+            return None
+        chosen = max(eligible, key=lambda ct: sum(table[ct][0] for table in others))
+        scores.append(float(held_out[chosen][0]))
+    return scores
+
+
 def _aggregate_cv_folds(
     fold_results: List[Dict[str, Any]],
     total_folds: int,
@@ -645,8 +789,16 @@ def _aggregate_cv_folds(
     the early-terminating and the successive-halving path select alike.
     """
     first = fold_results[0] if fold_results else None
-    if first is not None and first.get("success") and _first_fold_catastrophic(first, ctx):
-        return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
+    if (
+        first is not None
+        and first.get("success")
+        and _first_fold_catastrophic(first, ctx)
+    ):
+        return {
+            "success": False,
+            "first_fold_failed": True,
+            "reason": "catastrophic_first_fold",
+        }
 
     inner_val_pnls = []
     best_ct_votes = {}
@@ -695,6 +847,18 @@ def _aggregate_cv_folds(
     if not selected_features:
         return {"success": False}
 
+    # The score the setting is judged by: PnL at a threshold chosen without the scored
+    # fold (see _cross_fitted_fold_pnls); the per-fold max over thresholds is kept for
+    # reference. Where cross-fitting is impossible the per-fold max stays and says so.
+    successful_folds = [fr for fr in fold_results if fr.get("success")]
+    max_ct_pnls = inner_val_pnls
+    cross_fitted = _cross_fitted_fold_pnls(successful_folds, ctx)
+    if cross_fitted is not None:
+        inner_val_pnls = cross_fitted
+        score_method = "cross_fitted_ct"
+    else:
+        score_method = "per_fold_best_ct"
+
     profitable_folds = sum(1 for pnl in inner_val_pnls if pnl > 0)
     fold_stability = profitable_folds / total_folds if total_folds > 0 else 0
     if fold_stability < getattr(ctx, "min_fold_stability", 0.5):
@@ -707,15 +871,22 @@ def _aggregate_cv_folds(
     for ct_key, data in ct_pnl_summary.items():
         ct_diagnostics[ct_key] = {
             "mean_pnl": float(np.mean(data["pnls"])) if data["pnls"] else 0,
-            "mean_trades": float(np.mean(data["trade_counts"])) if data["trade_counts"] else 0,
+            "mean_trades": float(np.mean(data["trade_counts"]))
+            if data["trade_counts"]
+            else 0,
             "n_folds": len(data["pnls"]),
         }
 
     result = {
         "success": True,
         "avg_val_pnl": np.mean(inner_val_pnls),
+        "avg_val_pnl_max_ct": float(np.mean(max_ct_pnls)),
+        "inner_score_method": score_method,
         "best_ct": best_ct,
-        "ct_votes": {str(k) if isinstance(k, tuple) else str(k): v for k, v in best_ct_votes.items()},
+        "ct_votes": {
+            str(k) if isinstance(k, tuple) else str(k): v
+            for k, v in best_ct_votes.items()
+        },
         "ct_diagnostics": ct_diagnostics,
         "selected_features_long": selected_features_long,
         "selected_features_short": selected_features_short,
@@ -760,8 +931,8 @@ def run_inner_cv(
         Reine Abkürzung: _aggregate_cv_folds verwirft solche Kandidaten ohnehin.
     """
     total_folds = len(inner_folds)
-    min_fold_stability = getattr(ctx, 'min_fold_stability', 0.5)
-    early_termination_enabled = getattr(ctx, 'early_termination', True)
+    min_fold_stability = getattr(ctx, "min_fold_stability", 0.5)
+    early_termination_enabled = getattr(ctx, "early_termination", True)
     min_profitable = int(np.ceil(total_folds * min_fold_stability))
     profitable_count = 0
     failed_count = 0
@@ -774,11 +945,21 @@ def run_inner_cv(
             remaining_folds = total_folds - fold_idx
             max_possible_profitable = profitable_count + remaining_folds
             if max_possible_profitable < min_profitable:
-                return {"success": False, "early_terminated": True, "failed_folds": failed_count}
+                return {
+                    "success": False,
+                    "early_terminated": True,
+                    "failed_folds": failed_count,
+                }
 
         fold_result = _evaluate_single_fold(
-            fold_idx, train_df, val_df,
-            group_features, tp, sl, ctx, timeout_bars,
+            fold_idx,
+            train_df,
+            val_df,
+            group_features,
+            tp,
+            sl,
+            ctx,
+            timeout_bars,
             cached_targets=cached_targets,
             selected_features_long=selected_features_long,
             selected_features_short=selected_features_short,
@@ -798,7 +979,11 @@ def run_inner_cv(
 
             # First-Fold Sanity Check (shortcut; _aggregate_cv_folds applies it too)
             if fold_idx == 0 and _first_fold_catastrophic(fold_result, ctx):
-                return {"success": False, "first_fold_failed": True, "reason": "catastrophic_first_fold"}
+                return {
+                    "success": False,
+                    "first_fold_failed": True,
+                    "reason": "catastrophic_first_fold",
+                }
 
             # Compact trades_by_ct: replace full trade dicts with
             # lightweight summaries (pnl + count) for _aggregate_cv_folds.
@@ -807,8 +992,11 @@ def run_inner_cv(
             failed_count += 1
 
     return _aggregate_cv_folds(
-        fold_results, total_folds, ctx,
-        selected_features_long, selected_features_short,
+        fold_results,
+        total_folds,
+        ctx,
+        selected_features_long,
+        selected_features_short,
     )
 
 
@@ -816,7 +1004,7 @@ def evaluate_on_holdout(
     holdout_df: pd.DataFrame,
     inner_df: pd.DataFrame,
     candidate: Dict[str, Any],
-    ctx: SimulationContext
+    ctx: SimulationContext,
 ) -> Dict[str, Any]:
     """
     Finale Evaluation auf dem Holdout-Set.
@@ -840,6 +1028,7 @@ def evaluate_on_holdout(
         cand_exit_params = ctx.exit_params
     if cand_exit != ctx.exit_strategy or cand_exit_params != ctx.exit_params:
         import dataclasses
+
         ctx = dataclasses.replace(
             ctx,
             exit_strategy=cand_exit,
@@ -850,8 +1039,13 @@ def evaluate_on_holdout(
     weights = None
     if ctx.sample_weights:
         from .targets import compute_targets_cached
+
         result = compute_targets_cached(
-            inner_df, tp, sl, ctx, timeout_bars,
+            inner_df,
+            tp,
+            sl,
+            ctx,
+            timeout_bars,
             exit_strategy_mode=ctx.exit_strategy,
             return_durations=True,
         )
@@ -859,37 +1053,81 @@ def evaluate_on_holdout(
         has_long, has_short = _validate_targets(targets_long, targets_short, ctx)
 
         from .purging import compute_sample_weights
+
         weights = compute_sample_weights(dur_long, dur_short, len(inner_df))
     else:
-        targets_long, targets_short, has_long, has_short = compute_targets(inner_df, tp, sl, ctx, timeout_bars)
+        targets_long, targets_short, has_long, has_short = compute_targets(
+            inner_df, tp, sl, ctx, timeout_bars
+        )
 
     # For xgboost_mfe, use MFE regression targets for training
     train_targets_long = targets_long
     train_targets_short = targets_short
     if ctx.model_type == "xgboost_mfe":
         from fwbg.optimization.targets import compute_mfe_targets
+
         sl_variants = ctx.model_hyperparameters.get("sl_variants", [2.0])
         mfe_long, mfe_short = compute_mfe_targets(
-            inner_df, sl_atr=sl_variants[0],
+            inner_df,
+            sl_atr=sl_variants[0],
             max_bars=ctx.max_trade_bars or 50,
             spread=ctx.spread,
         )
         train_targets_long = mfe_long
         train_targets_short = mfe_short
 
-    mod_long = train_model(inner_df, train_targets_long, features_long, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="long") if has_long and features_long else None
-    mod_short = train_model(inner_df, train_targets_short, features_short, ctx.min_trades, ctx, use_reduced_params=False, sample_weight=weights, direction="short") if has_short and features_short else None
+    mod_long = (
+        train_model(
+            inner_df,
+            train_targets_long,
+            features_long,
+            ctx.min_trades,
+            ctx,
+            use_reduced_params=False,
+            sample_weight=weights,
+            direction="long",
+        )
+        if has_long and features_long
+        else None
+    )
+    mod_short = (
+        train_model(
+            inner_df,
+            train_targets_short,
+            features_short,
+            ctx.min_trades,
+            ctx,
+            use_reduced_params=False,
+            sample_weight=weights,
+            direction="short",
+        )
+        if has_short and features_short
+        else None
+    )
 
     if not mod_long and not mod_short:
-        return {"trades": [], "trades_detailed": [], "pnl": 0, "win_rate": 0, "n_trades": 0}
+        return {
+            "trades": [],
+            "trades_detailed": [],
+            "pnl": 0,
+            "win_rate": 0,
+            "n_trades": 0,
+        }
 
     probs_long, long_win_idx = _get_probs(mod_long, holdout_df, features_long)
     probs_short, short_win_idx = _get_probs(mod_short, holdout_df, features_short)
 
     # Meta-Labeling as in inner CV, where the CT was chosen on filtered probabilities
     meta_mod_long, meta_mod_short = _train_meta_models(
-        inner_df, targets_long, targets_short, features_long, features_short,
-        mod_long, mod_short, ctx, timeout_bars,
+        inner_df,
+        targets_long,
+        targets_short,
+        features_long,
+        features_short,
+        mod_long,
+        mod_short,
+        ctx,
+        timeout_bars,
     )
     if probs_long is not None:
         probs_long = _apply_meta_filter(
@@ -902,7 +1140,11 @@ def evaluate_on_holdout(
 
     # Per-trade TP/SL overrides from model
     per_trade_params = None
-    atr_col = "_atr" if "_atr" in holdout_df.columns else ("vol_atr" if "vol_atr" in holdout_df.columns else None)
+    atr_col = (
+        "_atr"
+        if "_atr" in holdout_df.columns
+        else ("vol_atr" if "vol_atr" in holdout_df.columns else None)
+    )
     atr_vals = holdout_df[atr_col].values if atr_col else None
     if mod_long is not None:
         ptp = mod_long.get_per_trade_params(holdout_df[features_long], atr=atr_vals)
@@ -916,14 +1158,33 @@ def evaluate_on_holdout(
     if isinstance(ct, tuple):
         ct_long, ct_short = ct
         result = simulate_trades_sequential_separate_ct(
-            holdout_df, probs_long, probs_short, long_win_idx, short_win_idx,
-            ct_long, ct_short, tp, sl, ctx, return_detailed=True,
-            timeout_bars=timeout_bars, per_trade_params=per_trade_params,
+            holdout_df,
+            probs_long,
+            probs_short,
+            long_win_idx,
+            short_win_idx,
+            ct_long,
+            ct_short,
+            tp,
+            sl,
+            ctx,
+            return_detailed=True,
+            timeout_bars=timeout_bars,
+            per_trade_params=per_trade_params,
         )
     else:
         result = simulate_trades_sequential(
-            holdout_df, probs_long, probs_short, long_win_idx, short_win_idx,
-            ct, tp, sl, ctx, return_detailed=True, timeout_bars=timeout_bars,
+            holdout_df,
+            probs_long,
+            probs_short,
+            long_win_idx,
+            short_win_idx,
+            ct,
+            tp,
+            sl,
+            ctx,
+            return_detailed=True,
+            timeout_bars=timeout_bars,
             per_trade_params=per_trade_params,
         )
 
@@ -947,7 +1208,9 @@ def evaluate_on_holdout(
         attach_regime_labels(trades_detailed, holdout_df)
 
     pnl = sum(t["pnl_raw"] for t in trades) if trades else 0
-    win_rate = sum(1 for t in trades if t["result"] == 1.0) / len(trades) if trades else 0
+    win_rate = (
+        sum(1 for t in trades if t["result"] == 1.0) / len(trades) if trades else 0
+    )
 
     output = {
         "trades": trades,
@@ -965,13 +1228,19 @@ def evaluate_on_holdout(
             "n_trades": len(long_trades),
             "wins": sum(1 for t in long_trades if t.get("result") == 1.0),
             "pnl": sum(t.get("pnl_raw", 0) for t in long_trades),
-            "win_rate": sum(1 for t in long_trades if t.get("result") == 1.0) / len(long_trades) if long_trades else 0,
+            "win_rate": sum(1 for t in long_trades if t.get("result") == 1.0)
+            / len(long_trades)
+            if long_trades
+            else 0,
         }
         output["short_stats"] = {
             "n_trades": len(short_trades),
             "wins": sum(1 for t in short_trades if t.get("result") == 1.0),
             "pnl": sum(t.get("pnl_raw", 0) for t in short_trades),
-            "win_rate": sum(1 for t in short_trades if t.get("result") == 1.0) / len(short_trades) if short_trades else 0,
+            "win_rate": sum(1 for t in short_trades if t.get("result") == 1.0)
+            / len(short_trades)
+            if short_trades
+            else 0,
         }
 
     return output

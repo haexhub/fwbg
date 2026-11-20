@@ -6,6 +6,7 @@ Enthält:
 - _process_tp_sl_combo_wrapper: Wrapper für parallele Verarbeitung
 - run_grid_search: Grid-Search über TP/SL/Timeout Kombinationen
 """
+
 import dataclasses
 import math
 from typing import Tuple, Optional, List
@@ -16,10 +17,21 @@ from fwbg.core.columns import ColumnRoleError
 from fwbg.research.fingerprint import canonical_json
 from fwbg.utils.logging import log
 from .nested_cv import (
-    run_inner_cv, select_features_from_fold,
-    _evaluate_single_fold, _aggregate_cv_folds,
+    run_inner_cv,
+    select_features_from_fold,
+    _evaluate_single_fold,
+    _aggregate_cv_folds,
     _compact_trades_by_ct,
 )
+
+
+class GridSearchError(RuntimeError):
+    """A grid combination (or the grid search as a whole) failed.
+
+    Raised instead of skipping the combo: a skipped combo would be missing from the
+    candidates and the grid results with no record, which biases selection, PBO and
+    the trial count of the DSR.
+    """
 
 
 def select_features(
@@ -80,11 +92,16 @@ def select_features(
     }
     if fs_exit_params:
         fs_ctx = dataclasses.replace(
-            ctx, exit_params=fs_exit_params,
+            ctx,
+            exit_params=fs_exit_params,
         )
 
     result = compute_targets_cached(
-        train_df, default_tp, default_sl, fs_ctx, timeout_bars=None,
+        train_df,
+        default_tp,
+        default_sl,
+        fs_ctx,
+        timeout_bars=None,
         exit_strategy_mode=fs_exit_mode,
     )
     targets_long, targets_short = result[0], result[1]
@@ -96,11 +113,18 @@ def select_features(
     if has_long:
         try:
             selected_long, _ = select_features_from_fold(
-                train_df, targets_long, features, ctx.min_trades,
+                train_df,
+                targets_long,
+                features,
+                ctx.min_trades,
                 feature_selection_plugins=ctx.feature_selection_plugins,
             )
             if selected_long:
-                log(2, f"  Feature Selection (Long): {len(selected_long)} Features ausgewählt", sym)
+                log(
+                    2,
+                    f"  Feature Selection (Long): {len(selected_long)} Features ausgewählt",
+                    sym,
+                )
         except Exception as exc:
             log(0, f"  Feature Selection (Long) failed: {exc}", sym)
             selected_long = None
@@ -108,11 +132,18 @@ def select_features(
     if has_short:
         try:
             selected_short, _ = select_features_from_fold(
-                train_df, targets_short, features, ctx.min_trades,
+                train_df,
+                targets_short,
+                features,
+                ctx.min_trades,
                 feature_selection_plugins=ctx.feature_selection_plugins,
             )
             if selected_short:
-                log(2, f"  Feature Selection (Short): {len(selected_short)} Features ausgewählt", sym)
+                log(
+                    2,
+                    f"  Feature Selection (Short): {len(selected_short)} Features ausgewählt",
+                    sym,
+                )
         except Exception as exc:
             log(0, f"  Feature Selection (Short) failed: {exc}", sym)
             selected_short = None
@@ -155,19 +186,30 @@ def _compute_cached_targets(tp, sl, timeout_bars, inner_folds, inner_df, ctx):
     for fold_idx, (train_df, _) in enumerate(inner_folds):
         if use_durations:
             tgt_l, tgt_s, dur_l, dur_s, _, _ = slice_targets_for_fold(
-                train_df, ctx, tp, sl, timeout_bars, return_durations=True,
+                train_df,
+                ctx,
+                tp,
+                sl,
+                timeout_bars,
+                return_durations=True,
             )
             cached_targets[fold_idx] = (tgt_l, tgt_s, dur_l, dur_s)
         else:
             tgt_l, tgt_s, _, _ = slice_targets_for_fold(
-                train_df, ctx, tp, sl, timeout_bars,
+                train_df,
+                ctx,
+                tp,
+                sl,
+                timeout_bars,
             )
             cached_targets[fold_idx] = (tgt_l, tgt_s)
 
     return cached_targets
 
 
-def _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_config, ctx):
+def _build_candidate_and_grid_result(
+    inner_result, tp, sl, timeout_bars, regime_config, ctx
+):
     """Build candidate and grid_result dicts from inner CV result."""
     if not inner_result["success"]:
         return None, None
@@ -247,14 +289,21 @@ def _process_single_grid_combo(
         Tuple von (candidate_or_none, grid_result_or_none)
     """
     inner_result = run_inner_cv(
-        inner_folds, features, tp, sl, ctx,
-        global_grid_pos, total_grid_combos,
+        inner_folds,
+        features,
+        tp,
+        sl,
+        ctx,
+        global_grid_pos,
+        total_grid_combos,
         timeout_bars=timeout_bars,
         cached_targets=cached_targets,
         selected_features_long=selected_features_long,
         selected_features_short=selected_features_short,
     )
-    return _build_candidate_and_grid_result(inner_result, tp, sl, timeout_bars, regime_config, ctx)
+    return _build_candidate_and_grid_result(
+        inner_result, tp, sl, timeout_bars, regime_config, ctx
+    )
 
 
 def _process_tp_sl_combo_wrapper(args):
@@ -264,17 +313,37 @@ def _process_tp_sl_combo_wrapper(args):
     Returns:
         Tuple von (candidate_or_none, grid_result_or_none, combo_idx)
     """
-    (tp, sl, timeout_bars, combo_idx, features, inner_folds, ctx, regime_config,
-     grid_offset, total_grid_combos, inner_df,
-     selected_features_long, selected_features_short) = args
+    (
+        tp,
+        sl,
+        timeout_bars,
+        combo_idx,
+        features,
+        inner_folds,
+        ctx,
+        regime_config,
+        grid_offset,
+        total_grid_combos,
+        inner_df,
+        selected_features_long,
+        selected_features_short,
+    ) = args
 
     global_grid_pos = grid_offset + combo_idx + 1
-    cached_targets = _compute_cached_targets(tp, sl, timeout_bars, inner_folds, inner_df, ctx)
+    cached_targets = _compute_cached_targets(
+        tp, sl, timeout_bars, inner_folds, inner_df, ctx
+    )
 
     candidate, grid_result = _process_single_grid_combo(
-        tp, sl, timeout_bars,
-        features, inner_folds, ctx, regime_config,
-        global_grid_pos, total_grid_combos,
+        tp,
+        sl,
+        timeout_bars,
+        features,
+        inner_folds,
+        ctx,
+        regime_config,
+        global_grid_pos,
+        total_grid_combos,
         cached_targets,
         selected_features_long=selected_features_long,
         selected_features_short=selected_features_short,
@@ -284,9 +353,15 @@ def _process_tp_sl_combo_wrapper(args):
 
 
 def _build_combo_tuples(
-    ctx, features, inner_folds, regime_config,
-    total_grid_combos, inner_df,
-    selected_features_long, selected_features_short, sym,
+    ctx,
+    features,
+    inner_folds,
+    regime_config,
+    total_grid_combos,
+    inner_df,
+    selected_features_long,
+    selected_features_short,
+    sym,
 ):
     """Build combo tuples for grid search.
 
@@ -310,9 +385,17 @@ def _build_combo_tuples(
         else:
             rrr = 0
         if exit_cfg.min_rrr > 0 and rrr < exit_cfg.min_rrr:
-            n_hp = len(ctx.grid_model_hyperparameters) if ctx.grid_model_hyperparameters else 1
+            n_hp = (
+                len(ctx.grid_model_hyperparameters)
+                if ctx.grid_model_hyperparameters
+                else 1
+            )
             skipped_count += n_hp
-            log(2, f"  Exit {exit_cfg.name} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {exit_cfg.min_rrr})", sym)
+            log(
+                2,
+                f"  Exit {exit_cfg.name} (TP={tp}, SL={sl}) - SKIP (RRR {rrr:.2f} < {exit_cfg.min_rrr})",
+                sym,
+            )
             continue
 
         for model_hp_variant in ctx.grid_model_hyperparameters:
@@ -333,14 +416,27 @@ def _build_combo_tuples(
             )
             if model_hp_variant is not None:
                 merged_hp = {**ctx.model_hyperparameters, **model_hp_variant}
-                combo_ctx = dataclasses.replace(combo_ctx, model_hyperparameters=merged_hp)
+                combo_ctx = dataclasses.replace(
+                    combo_ctx, model_hyperparameters=merged_hp
+                )
 
-            combos.append((
-                tp, sl, timeout_bars, combo_idx,
-                features, inner_folds, combo_ctx, regime_config,
-                0, total_grid_combos, inner_df,
-                selected_features_long, selected_features_short
-            ))
+            combos.append(
+                (
+                    tp,
+                    sl,
+                    timeout_bars,
+                    combo_idx,
+                    features,
+                    inner_folds,
+                    combo_ctx,
+                    regime_config,
+                    0,
+                    total_grid_combos,
+                    inner_df,
+                    selected_features_long,
+                    selected_features_short,
+                )
+            )
             combo_idx += 1
 
     return combos, skipped_count
@@ -354,18 +450,35 @@ def _target_cache_key(tp, sl, timeout_bars, ctx):
     nested/list params (e.g. scale-in levels) hashable and order-independent;
     other values (numpy scalars, ...) fall back to their repr.
     """
-    return canonical_json([
-        ctx.exit_strategy, tp, sl, timeout_bars, ctx.exit_params or {},
-        ctx.exit_modifier or "", ctx.exit_modifier_params or {},
-        ctx.entry_modifier or "", ctx.entry_modifier_params or {},
-    ], default=repr)
+    return canonical_json(
+        [
+            ctx.exit_strategy,
+            tp,
+            sl,
+            timeout_bars,
+            ctx.exit_params or {},
+            ctx.exit_modifier or "",
+            ctx.exit_modifier_params or {},
+            ctx.entry_modifier or "",
+            ctx.entry_modifier_params or {},
+        ],
+        default=repr,
+    )
 
 
 def _run_with_successive_halving(
-    combos, inner_folds, ctx,
-    features, regime_config, inner_df,
-    selected_features_long, selected_features_short,
-    sym, progress_callback, progress_reported, grid_total,
+    combos,
+    inner_folds,
+    ctx,
+    features,
+    regime_config,
+    inner_df,
+    selected_features_long,
+    selected_features_short,
+    sym,
+    progress_callback,
+    progress_reported,
+    grid_total,
 ):
     """Fold-by-fold grid search with successive halving between folds."""
     import time as _time
@@ -401,13 +514,26 @@ def _run_with_successive_halving(
         except Exception as tgt_e:
             import sys
             import traceback
+
             tb = traceback.format_exc()
-            print(f"\n[ERROR] {sym}: target precompute failed for combo={combo_idx} "
-                  f"tp={tp} sl={sl}: {type(tgt_e).__name__}: {tgt_e}\n"
-                  f"{tb}", file=sys.stderr, flush=True)
-            log(1, f"  ERROR target precompute combo={combo_idx} tp={tp} sl={sl}: "
-                   f"{type(tgt_e).__name__}: {tgt_e}", sym)
-            result = None
+            print(
+                f"\n[ERROR] {sym}: target precompute failed for combo={combo_idx} "
+                f"tp={tp} sl={sl}: {type(tgt_e).__name__}: {tgt_e}\n"
+                f"{tb}",
+                file=sys.stderr,
+                flush=True,
+            )
+            log(
+                1,
+                f"  ERROR target precompute combo={combo_idx} tp={tp} sl={sl}: "
+                f"{type(tgt_e).__name__}: {tgt_e}",
+                sym,
+            )
+            # A combo without targets would silently drop out of the grid results.
+            raise GridSearchError(
+                f"target precompute failed for combo {combo_idx} (tp={tp}, sl={sl}): "
+                f"{type(tgt_e).__name__}: {tgt_e}"
+            ) from tgt_e
 
         target_cache[cache_key] = result
         combo_targets[combo_idx] = result
@@ -418,9 +544,13 @@ def _run_with_successive_halving(
     combo_fold_results = {i: [] for i in range(n_combos)}
     active_indices = set(range(n_combos))
 
-    log(2, f"  Successive Halving: {n_combos} combos × {n_folds} folds "
-           f"(target precompute: {t_tgt_elapsed:.1f}s, "
-           f"{n_unique} unique / {n_combos} total)", sym)
+    log(
+        2,
+        f"  Successive Halving: {n_combos} combos × {n_folds} folds "
+        f"(target precompute: {t_tgt_elapsed:.1f}s, "
+        f"{n_unique} unique / {n_combos} total)",
+        sym,
+    )
 
     t_eval_total = 0.0
     total_evals = 0
@@ -436,8 +566,14 @@ def _run_with_successive_halving(
             tp, sl, timeout_bars, combo_ctx = combo[0], combo[1], combo[2], combo[6]
 
             fold_result = _evaluate_single_fold(
-                fold_idx, train_df, val_df,
-                features, tp, sl, combo_ctx, timeout_bars,
+                fold_idx,
+                train_df,
+                val_df,
+                features,
+                tp,
+                sl,
+                combo_ctx,
+                timeout_bars,
                 cached_targets=combo_targets[combo_idx],
                 selected_features_long=selected_features_long,
                 selected_features_short=selected_features_short,
@@ -450,15 +586,21 @@ def _run_with_successive_halving(
             # Report intermediate progress during fold evaluation
             if progress_callback and n_active > 0:
                 fold_share = remaining / remaining_folds
-                partial = int(progress_reported + (eval_count + 1) / n_active * fold_share)
+                partial = int(
+                    progress_reported + (eval_count + 1) / n_active * fold_share
+                )
                 progress_callback(min(partial, grid_total), grid_total)
 
         t_fold_elapsed = _time.monotonic() - t_fold_start
         t_eval_total += t_fold_elapsed
         total_evals += n_active
         avg_ms = (t_fold_elapsed / n_active * 1000) if n_active > 0 else 0
-        log(2, f"  Fold {fold_idx}/{n_folds}: {n_active} combos in {t_fold_elapsed:.2f}s "
-               f"({avg_ms:.0f}ms/combo)", sym)
+        log(
+            2,
+            f"  Fold {fold_idx}/{n_folds}: {n_active} combos in {t_fold_elapsed:.2f}s "
+            f"({avg_ms:.0f}ms/combo)",
+            sym,
+        )
 
         # Prune after each fold except the last, but not before the ratio of folds completed
         ratio = getattr(ctx, "early_pruning_min_folds_before_pruning_ratio", 0.3)
@@ -473,17 +615,25 @@ def _run_with_successive_halving(
             scores.sort(key=lambda x: x[1], reverse=True)
             n_keep = min(
                 len(scores),
-                max(ctx.early_pruning_min_survivors,
-                    int(len(scores) * ctx.early_pruning_keep_ratio)),
+                max(
+                    ctx.early_pruning_min_survivors,
+                    int(len(scores) * ctx.early_pruning_keep_ratio),
+                ),
             )
 
             new_active = {idx for idx, _ in scores[:n_keep]}
             pruned = active_indices - new_active
 
             if pruned:
-                threshold_pnl = scores[n_keep - 1][1] if n_keep <= len(scores) else float("-inf")
-                log(2, f"  Fold {fold_idx}: {len(new_active)} survivors, "
-                       f"{len(pruned)} pruned (threshold PnL={threshold_pnl:.1f})", sym)
+                threshold_pnl = (
+                    scores[n_keep - 1][1] if n_keep <= len(scores) else float("-inf")
+                )
+                log(
+                    2,
+                    f"  Fold {fold_idx}: {len(new_active)} survivors, "
+                    f"{len(pruned)} pruned (threshold PnL={threshold_pnl:.1f})",
+                    sym,
+                )
 
                 # Release fold results for pruned combos
                 for idx in pruned:
@@ -500,10 +650,14 @@ def _run_with_successive_halving(
     # Log timing summary
     t_total = t_tgt_elapsed + t_eval_total
     avg_ms_total = (t_eval_total / total_evals * 1000) if total_evals > 0 else 0
-    log(1, f"  Grid timing: {t_total:.1f}s total "
-           f"(targets={t_tgt_elapsed:.1f}s, eval={t_eval_total:.1f}s, "
-           f"{total_evals} evals @ {avg_ms_total:.0f}ms/eval, "
-           f"{len(active_indices)} survivors)", sym)
+    log(
+        1,
+        f"  Grid timing: {t_total:.1f}s total "
+        f"(targets={t_tgt_elapsed:.1f}s, eval={t_eval_total:.1f}s, "
+        f"{total_evals} evals @ {avg_ms_total:.0f}ms/eval, "
+        f"{len(active_indices)} survivors)",
+        sym,
+    )
 
     # Aggregate survivors and report progress
     candidates = []
@@ -517,12 +671,20 @@ def _run_with_successive_halving(
         tp, sl, timeout_bars, combo_ctx = combo[0], combo[1], combo[2], combo[6]
 
         result = _aggregate_cv_folds(
-            combo_fold_results[combo_idx], n_folds, combo_ctx,
-            selected_features_long, selected_features_short,
+            combo_fold_results[combo_idx],
+            n_folds,
+            combo_ctx,
+            selected_features_long,
+            selected_features_short,
         )
 
         candidate, grid_result = _build_candidate_and_grid_result(
-            result, tp, sl, timeout_bars, regime_config, combo_ctx,
+            result,
+            tp,
+            sl,
+            timeout_bars,
+            regime_config,
+            combo_ctx,
         )
         if candidate:
             candidates.append(candidate)
@@ -583,14 +745,22 @@ def run_grid_search(
                 if has_inf:
                     log(2, f"  Feature '{feat}' hat inf-Werte - übersprungen", sym)
                 elif nan_ratio > 0.5:
-                    log(2, f"  Feature '{feat}' hat {nan_ratio*100:.0f}% NaN - übersprungen", sym)
+                    log(
+                        2,
+                        f"  Feature '{feat}' hat {nan_ratio * 100:.0f}% NaN - übersprungen",
+                        sym,
+                    )
                 else:
                     clean_features.append(feat)
             else:
                 log(2, f"  Feature '{feat}' nicht in inner_df - übersprungen", sym)
 
         if len(clean_features) < len(features):
-            log(2, f"  {len(features) - len(clean_features)} Features mit inf/nan gefiltert", sym)
+            log(
+                2,
+                f"  {len(features) - len(clean_features)} Features mit inf/nan gefiltert",
+                sym,
+            )
         features = clean_features
 
     if len(features) < 1:
@@ -630,9 +800,15 @@ def run_grid_search(
 
     # Erstelle alle Kombinationen (exit_strategies × model_hp)
     combos, skipped_count = _build_combo_tuples(
-        ctx, features, inner_folds, regime_config,
-        total_grid_combos, inner_df,
-        selected_features_long, selected_features_short, sym,
+        ctx,
+        features,
+        inner_folds,
+        regime_config,
+        total_grid_combos,
+        inner_df,
+        selected_features_long,
+        selected_features_short,
+        sym,
     )
 
     candidates = []
@@ -659,10 +835,18 @@ def run_grid_search(
     try:
         if pruning_active:
             candidates, grid_results, progress_reported = _run_with_successive_halving(
-                combos, inner_folds, ctx,
-                features, regime_config, inner_df,
-                selected_features_long, selected_features_short,
-                sym, progress_callback, progress_reported, grid_total,
+                combos,
+                inner_folds,
+                ctx,
+                features,
+                regime_config,
+                inner_df,
+                selected_features_long,
+                selected_features_short,
+                sym,
+                progress_callback,
+                progress_reported,
+                grid_total,
             )
         else:
             for i, combo in enumerate(combos):
@@ -677,35 +861,62 @@ def run_grid_search(
                         candidates.append(candidate)
                     if grid_result:
                         grid_results.append(grid_result)
-                except (ImportError, ModuleNotFoundError, ColumnRoleError):
+                except (
+                    ImportError,
+                    ModuleNotFoundError,
+                    ColumnRoleError,
+                    GridSearchError,
+                ):
                     raise  # Let outer handler deal with it
                 except Exception as e:
                     import sys
                     import traceback
+
                     tb = traceback.format_exc()
-                    print(f"\n[ERROR] {sym}: combo {i} failed: {type(e).__name__}: {e}\n{tb}",
-                          file=sys.stderr, flush=True)
+                    print(
+                        f"\n[ERROR] {sym}: combo {i} failed: {type(e).__name__}: {e}\n{tb}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                     log(1, f"  ERROR in combo {i}: {type(e).__name__}: {e}", sym)
-                    progress_reported += 1
-                    if progress_callback:
-                        progress_callback(progress_reported, grid_total)
-    except (ImportError, ModuleNotFoundError, ColumnRoleError) as outer_e:
+                    # Skipping the combo would leave it out of the candidates and
+                    # grid results without a trace (survivorship in the PBO/DSR).
+                    raise GridSearchError(
+                        f"grid combo {i} failed: {type(e).__name__}: {e}"
+                    ) from e
+    except (
+        ImportError,
+        ModuleNotFoundError,
+        ColumnRoleError,
+        GridSearchError,
+    ) as outer_e:
         # Setup/environment and config errors must never be silently swallowed.
         # They indicate broken dependencies or stale Numba caches.
         import sys
         import traceback
+
         tb = traceback.format_exc()
-        print(f"\n[ERROR] {sym}: {type(outer_e).__name__}: {outer_e}\n{tb}",
-              file=sys.stderr, flush=True)
+        print(
+            f"\n[ERROR] {sym}: {type(outer_e).__name__}: {outer_e}\n{tb}",
+            file=sys.stderr,
+            flush=True,
+        )
         log(1, f"  FATAL: {type(outer_e).__name__}: {outer_e}\n{tb}", sym)
         raise
     except Exception as outer_e:
         import sys
         import traceback
+
         tb = traceback.format_exc()
-        print(f"\n[ERROR] {sym}: Grid-Search failed: {type(outer_e).__name__}: {outer_e}\n{tb}",
-              file=sys.stderr, flush=True)
+        print(
+            f"\n[ERROR] {sym}: Grid-Search failed: {type(outer_e).__name__}: {outer_e}\n{tb}",
+            file=sys.stderr,
+            flush=True,
+        )
         log(1, f"  OUTER ERROR: {type(outer_e).__name__}: {outer_e}", sym)
+        raise GridSearchError(
+            f"grid search failed: {type(outer_e).__name__}: {outer_e}"
+        ) from outer_e
 
     log(2, f"  {len(candidates)} Kandidaten aus {len(combos)} Kombinationen", sym)
 
