@@ -30,7 +30,7 @@ class SMAIndicator(BaseMovingAverageIndicator):
     """
 
     name = "sma"
-    version = "1.0.0"
+    version = "1.1.0"
     DEFAULT_LINES = DEFAULT_LINES
     _human_label = "SMA"
 

@@ -168,3 +168,43 @@ class TestPluginAttributes:
 
     def test_validate(self, indicator):
         assert indicator.validate() is True
+
+
+class TestEMAValues:
+    def _df(self):
+        rng = np.random.default_rng(17)
+        return create_ohlc(100 + np.cumsum(rng.normal(size=150)))
+
+    def test_matches_pandas_ewm_with_nan_warmup(self, indicator):
+        df = self._df()
+        result = indicator.compute(df, lines=[{"period": 10}, {"period": 30}])
+        for period in (10, 30):
+            ref = df["C"].ewm(span=period, adjust=False, min_periods=period).mean()
+            pd.testing.assert_series_equal(
+                result[f"_ema_{period}"], ref.shift(1), check_names=False, atol=1e-12
+            )
+        assert result["_ema_30"].iloc[:30].isna().all()
+        assert result["_ema_30"].iloc[30:].notna().all()
+
+    def test_crossing_is_nan_until_both_emas_exist(self, indicator):
+        df = self._df()
+        result = indicator.compute(df, lines=[{"period": 10}, {"period": 30}])
+        above = result["ema_10_above_30"]
+        assert above.iloc[:30].isna().all()
+        fast = df["C"].ewm(span=10, adjust=False, min_periods=10).mean()
+        slow = df["C"].ewm(span=30, adjust=False, min_periods=30).mean()
+        pd.testing.assert_series_equal(
+            above.iloc[30:],
+            (fast > slow).astype(float).shift(1).iloc[30:],
+            check_names=False,
+        )
+
+    def test_duplicate_lines_are_computed_once(self, indicator):
+        lines = [{"period": 8}, {"period": 8, "source": "C"}, {"period": 21}]
+        result = indicator.compute(self._df(), lines=lines)
+        assert not result.columns.duplicated().any()
+        assert indicator.get_feature_columns({"lines": lines}) == [
+            "ema_dist_8",
+            "ema_dist_21",
+            "ema_8_above_21",
+        ]
