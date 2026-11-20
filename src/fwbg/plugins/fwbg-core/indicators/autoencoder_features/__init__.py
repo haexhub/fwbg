@@ -10,6 +10,7 @@ Features produced:
 - ae_reconstruction_error: Per-row reconstruction error (anomaly signal)
 - ae_explained_variance: Cumulative explained variance ratio
 """
+
 from typing import List
 
 import numpy as np
@@ -91,9 +92,7 @@ class AutoencoderFeaturesIndicator(BaseIndicator):
             return
 
         X, self._medians = _prepare_matrix(ctx.df, self._feature_cols)
-        self._effective_components = min(
-            n_components, X.shape[1] - 1, X.shape[0] - 1
-        )
+        self._effective_components = min(n_components, X.shape[1] - 1, X.shape[0] - 1)
         if self._effective_components < 1:
             self._fitted = True
             self._fit_params = {

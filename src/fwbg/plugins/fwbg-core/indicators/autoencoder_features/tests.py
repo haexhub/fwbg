@@ -1,4 +1,5 @@
 """Tests for autoencoder_features (PCA-based latent extraction) indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -240,9 +241,7 @@ class TestEdgeCases:
         df["ae_existing_0"] = np.random.randn(len(df))
         df["target_col"] = np.random.randn(len(df))
 
-        result = indicator.compute(
-            df, exclude_prefixes=["ae_", "target_"]
-        )
+        result = indicator.compute(df, exclude_prefixes=["ae_", "target_"])
         # Should still produce ae_ features (from feat_ columns)
         assert "ae_latent_0" in result.columns
 
