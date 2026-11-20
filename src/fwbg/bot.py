@@ -41,7 +41,7 @@ import pandas as pd
 import ta
 
 from fwbg_sdk.models import BaseModel, TrainingContext
-from fwbg.adapters.broker import BrokerAdapter, OrderSide, BarData
+from fwbg.adapters.broker import BrokerAdapter, OrderSide, OrderStatus, BarData
 from fwbg.core import get_model
 from fwbg.pipeline import compute_indicator_pool
 from fwbg.data.loader import run_data_loading
@@ -678,6 +678,13 @@ class TradingBot:
                                     "slippage": slippage,
                                 }
                             )
+            elif result.status == OrderStatus.PENDING:
+                # The broker may or may not have accepted the order. Neither a
+                # fill nor a rejection: log loudly, do not retry this signal.
+                logger.critical(
+                    f"🚨 {symbol}: order status UNKNOWN - {result.message}. "
+                    "Verify open positions at the broker."
+                )
             else:
                 logger.warning(f"⚠️ {symbol}: Order rejected - {result.message}")
                 # Rejections are diagnostics, never realized losses.

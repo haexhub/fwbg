@@ -187,3 +187,128 @@ def test_reauthentication_is_attempted_only_once_per_call():
 
     service_class.assert_called_once()
     assert still_expired.fetch_open_positions.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Order placement: unknown outcome is not a rejection
+# ---------------------------------------------------------------------------
+
+_ORDER = dict(symbol=Symbol.EURUSD, direction=OrderSide.BUY, size=1.0, stop_distance=50)
+
+
+def _new_position(deal_id: str = "D-NEW", size: float = 1.0, direction: str = "BUY"):
+    return {**_EURUSD_POSITION, "dealId": deal_id, "size": size, "direction": direction}
+
+
+def test_timeout_after_send_recovers_the_accepted_order():
+    adapter = _adapter()
+    adapter._ig.fetch_open_positions.side_effect = [
+        _positions_frame([]),
+        _positions_frame([_new_position()]),
+    ]
+    adapter._ig.create_open_position.side_effect = TimeoutError("read timed out")
+
+    result = adapter.submit_order(**_ORDER)
+
+    assert result.success is True
+    assert result.status is OrderStatus.FILLED
+    assert result.order_id == "D-NEW"
+    assert result.fill_price == pytest.approx(1.1)
+    adapter._ig.create_open_position.assert_called_once()  # never re-sent
+
+
+def test_timeout_after_send_without_new_position_is_unknown_not_rejected():
+    adapter = _adapter()
+    adapter._ig.fetch_open_positions.return_value = _positions_frame([])
+    adapter._ig.create_open_position.side_effect = TimeoutError("read timed out")
+
+    result = adapter.submit_order(**_ORDER)
+
+    assert result.success is False
+    assert result.status is OrderStatus.PENDING
+    assert result.status is not OrderStatus.REJECTED
+    assert "unknown" in result.message
+    adapter._ig.create_open_position.assert_called_once()
+
+
+def test_unknown_outcome_when_positions_cannot_be_checked_either():
+    adapter = _adapter()
+    adapter._ig.fetch_open_positions.side_effect = [
+        _positions_frame([]),
+        TimeoutError("still down"),
+    ]
+    adapter._ig.create_open_position.side_effect = TimeoutError("read timed out")
+
+    result = adapter.submit_order(**_ORDER)
+
+    assert result.success is False
+    assert result.status is OrderStatus.PENDING
+
+
+def test_preexisting_identical_position_is_not_mistaken_for_the_new_order():
+    adapter = _adapter()
+    existing = _positions_frame([_new_position("D-OLD")])
+    adapter._ig.fetch_open_positions.return_value = existing
+    adapter._ig.create_open_position.side_effect = TimeoutError("read timed out")
+
+    result = adapter.submit_order(**_ORDER)
+
+    assert result.success is False
+    assert result.status is OrderStatus.PENDING
+
+
+def test_explicit_refusal_by_ig_is_a_definite_rejection():
+    adapter = _adapter()
+    adapter._ig.fetch_open_positions.return_value = _positions_frame([])
+    adapter._ig.create_open_position.side_effect = IGException(
+        '{"errorCode":"error.public-api.failure.invalid.size"}'
+    )
+
+    result = adapter.submit_order(**_ORDER)
+
+    assert result.success is False
+    assert result.status is OrderStatus.REJECTED
+
+
+def test_rejected_confirmation_stays_a_rejection():
+    adapter = _adapter()
+    adapter._ig.fetch_open_positions.return_value = _positions_frame([])
+    adapter._ig.create_open_position.return_value = {
+        "dealStatus": "REJECTED",
+        "reason": "INSUFFICIENT_FUNDS",
+        "dealReference": "R1",
+    }
+
+    result = adapter.submit_order(**_ORDER)
+
+    assert result.status is OrderStatus.REJECTED
+    assert result.message == "INSUFFICIENT_FUNDS"
+
+
+def test_order_is_not_sent_when_open_positions_are_unavailable():
+    adapter = _adapter()
+    adapter._ig.fetch_open_positions.side_effect = TimeoutError("down")
+
+    result = adapter.submit_order(**_ORDER)
+
+    assert result.success is False
+    assert result.status is OrderStatus.REJECTED
+    adapter._ig.create_open_position.assert_not_called()
+
+
+def test_order_after_token_expiry_is_sent_on_the_fresh_session():
+    adapter, expired = _expired_adapter()
+    fresh = create_autospec(IGService, instance=True)
+    fresh.fetch_open_positions.return_value = _positions_frame([])
+    fresh.create_open_position.return_value = {
+        "dealStatus": "ACCEPTED",
+        "dealId": "D9",
+        "level": 1.1,
+    }
+
+    with patch(IG_CLASS, return_value=fresh):
+        result = adapter.submit_order(**_ORDER)
+
+    assert result.success is True
+    fresh.create_open_position.assert_called_once()
+    expired.create_open_position.assert_not_called()

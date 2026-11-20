@@ -16,11 +16,18 @@ import pandas as pd
 
 try:
     from trading_ig import IGService
-    from trading_ig.rest import IGException, TokenInvalidException
+    from trading_ig.rest import (
+        ApiExceededException,
+        IGException,
+        TokenInvalidException,
+    )
 
     IG_AVAILABLE = True
 except ImportError:
     IG_AVAILABLE = False
+
+    class ApiExceededException(Exception):  # type: ignore[no-redef]
+        """Placeholder so the error classifiers below work without trading_ig."""
 
     class IGException(Exception):  # type: ignore[no-redef]
         """Placeholder so the error classifiers below work without trading_ig."""
@@ -80,6 +87,19 @@ def _is_auth_error(exc: BaseException) -> bool:
     return isinstance(exc, TokenInvalidException) or bool(
         _AUTH_ERROR_PATTERN.search(str(exc))
     )
+
+
+def _is_definite_rejection(exc: BaseException) -> bool:
+    """True when ``exc`` proves IG refused the order request itself.
+
+    IG answers a refused create request with an ``errorCode`` body, and an
+    exhausted allowance is refused before processing. Everything else (timeouts,
+    5xx, dropped connections, a failing confirmation lookup) leaves it open
+    whether the order was accepted.
+    """
+    if isinstance(exc, ApiExceededException):
+        return True
+    return isinstance(exc, IGException) and '"errorCode"' in str(exc)
 
 
 class _IGCredentials:
@@ -626,6 +646,17 @@ class IGBrokerAdapter(BrokerAdapter):
                 message=f"limit_distance {limit_distance} outside allowed range [{self.MIN_STOP_POINTS}, {self.MAX_STOP_POINTS}]",
             )
 
+        # Remember what is open before sending: if the request fails after IG may
+        # have accepted it, the new deal is recognised by its absence from here.
+        try:
+            known_deal_ids = {p.position_id for p in self.get_positions()}
+        except BrokerUnavailableError as exc:
+            return OrderResult(
+                success=False,
+                status=OrderStatus.REJECTED,
+                message=f"Order not sent: open positions unavailable ({exc})",
+            )
+
         self._rate_limit()
 
         try:
@@ -685,6 +716,15 @@ class IGBrokerAdapter(BrokerAdapter):
                     return self._deal_result(
                         confirmation, size=size, fallback_id=deal_ref
                     )
+                return self._resolve_unconfirmed_order(
+                    symbol=symbol,
+                    epic=epic,
+                    direction=direction,
+                    size=size,
+                    known_deal_ids=known_deal_ids,
+                    cause=f"no confirmation for deal reference {deal_ref}",
+                    order_id=str(deal_ref),
+                )
 
             if response:
                 reason = response.get("reason", "Order was not confirmed")
@@ -704,11 +744,82 @@ class IGBrokerAdapter(BrokerAdapter):
 
         except Exception as e:
             self.log_error(f"Order error: {e}")
+            return self._resolve_unconfirmed_order(
+                symbol=symbol,
+                epic=epic,
+                direction=direction,
+                size=size,
+                known_deal_ids=known_deal_ids,
+                cause=f"{type(e).__name__}: {e}",
+                definitely_refused=_is_definite_rejection(e),
+            )
+
+    def _resolve_unconfirmed_order(
+        self,
+        *,
+        symbol: Symbol,
+        epic: str,
+        direction: OrderSide,
+        size: float,
+        known_deal_ids: set,
+        cause: str,
+        definitely_refused: bool = False,
+        order_id: str = "",
+    ) -> OrderResult:
+        """Decide the outcome of an order whose send/confirm step failed.
+
+        The request may have reached IG even though the call raised (timeout
+        after send, failing confirmation lookup). Look for the new position
+        before deciding:
+
+        - a matching new position exists: FILLED (recovered);
+        - IG demonstrably refused the request: REJECTED;
+        - otherwise the outcome is unknown: success=False with status PENDING,
+          which callers must not treat as a rejection or as a fill.
+        """
+        try:
+            positions = self.get_positions()
+        except BrokerUnavailableError:
+            positions = None
+        for pos in positions or []:
+            if (
+                pos.position_id
+                and pos.position_id not in known_deal_ids
+                and SYMBOL_TO_EPIC.get(pos.symbol, pos.symbol) == epic
+                and pos.direction == direction
+                and abs(pos.size - size) < 1e-6
+            ):
+                self.log_warning(
+                    f"Order for {symbol} was accepted although the request "
+                    f"failed ({cause}); recovered deal {pos.position_id}"
+                )
+                return OrderResult(
+                    success=True,
+                    order_id=pos.position_id,
+                    status=OrderStatus.FILLED,
+                    fill_price=pos.entry_price,
+                    filled_quantity=pos.size,
+                    message="Order filled (recovered from open positions)",
+                )
+        if definitely_refused:
             return OrderResult(
                 success=False,
+                order_id=order_id,
                 status=OrderStatus.REJECTED,
-                message=str(e),
+                message=cause,
             )
+        checked = (
+            "no matching position found"
+            if positions is not None
+            else ("open positions could not be checked")
+        )
+        self.log_error(f"Order status UNKNOWN for {symbol}: {cause}; {checked}")
+        return OrderResult(
+            success=False,
+            order_id=order_id,
+            status=OrderStatus.PENDING,
+            message=f"Order status unknown ({cause}); {checked}. Not retried.",
+        )
 
     @staticmethod
     def _deal_result(
