@@ -1,4 +1,5 @@
 """Tests for Adversarial Validation indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -54,15 +55,22 @@ def regime_shift_df():
     np.random.seed(42)
     n = 300
     dates = pd.date_range("2020-01-01", periods=n, freq="h")
-    close = np.concatenate([
-        100 + np.cumsum(np.random.randn(150) * 0.2),
-        100 + np.cumsum(np.random.randn(150) * 2.0),
-    ])
+    close = np.concatenate(
+        [
+            100 + np.cumsum(np.random.randn(150) * 0.2),
+            100 + np.cumsum(np.random.randn(150) * 2.0),
+        ]
+    )
     return pd.DataFrame(
         {
-            "O": close, "H": close + 0.5, "L": close - 0.5, "C": close,
+            "O": close,
+            "H": close + 0.5,
+            "L": close - 0.5,
+            "C": close,
             "V": np.ones(n) * 1000,
-            "feat_1": np.concatenate([np.random.randn(150) * 0.5, np.random.randn(150) * 5.0]),
+            "feat_1": np.concatenate(
+                [np.random.randn(150) * 0.5, np.random.randn(150) * 5.0]
+            ),
             "feat_2": np.concatenate([np.random.randn(150), np.random.randn(150) + 10]),
             "feat_3": np.concatenate([np.random.randn(150), np.random.randn(150)]),
         },
@@ -79,7 +87,10 @@ def stable_df():
     close = 100 + np.cumsum(np.random.randn(n) * 0.5)
     return pd.DataFrame(
         {
-            "O": close, "H": close + 0.5, "L": close - 0.5, "C": close,
+            "O": close,
+            "H": close + 0.5,
+            "L": close - 0.5,
+            "C": close,
             "V": np.ones(n) * 1000,
             "feat_1": np.random.randn(n),
             "feat_2": np.random.randn(n),
@@ -98,29 +109,44 @@ class TestSelectFeatureColumns:
     """Validate feature column selection logic."""
 
     def test_excludes_ohlcv(self):
-        df = pd.DataFrame({
-            "O": [1], "H": [2], "L": [3], "C": [4], "V": [5],
-            "trend_ema": [6], "mom_rsi": [7],
-        })
+        df = pd.DataFrame(
+            {
+                "O": [1],
+                "H": [2],
+                "L": [3],
+                "C": [4],
+                "V": [5],
+                "trend_ema": [6],
+                "mom_rsi": [7],
+            }
+        )
         cols = _select_feature_columns(df, [])
         assert "O" not in cols
         assert "trend_ema" in cols
         assert "mom_rsi" in cols
 
     def test_excludes_specified_prefixes(self):
-        df = pd.DataFrame({
-            "O": [1], "C": [2],
-            "adv_auc_100": [0.5], "trend_ema": [3],
-        })
+        df = pd.DataFrame(
+            {
+                "O": [1],
+                "C": [2],
+                "adv_auc_100": [0.5],
+                "trend_ema": [3],
+            }
+        )
         cols = _select_feature_columns(df, ["adv_"])
         assert "adv_auc_100" not in cols
         assert "trend_ema" in cols
 
     def test_excludes_non_numeric(self):
-        df = pd.DataFrame({
-            "O": [1], "C": [2],
-            "label": ["buy"], "score": [0.5],
-        })
+        df = pd.DataFrame(
+            {
+                "O": [1],
+                "C": [2],
+                "label": ["buy"],
+                "score": [0.5],
+            }
+        )
         cols = _select_feature_columns(df, [])
         assert "label" not in cols
         assert "score" in cols
@@ -140,7 +166,9 @@ class TestComputeAdversarialAuc:
         old = data[:50]
         new = data[50:]
         auc, _ = _compute_adversarial_auc(old, new)
-        assert 0.3 <= auc <= 0.8, f"Identical distributions should yield AUC ~0.5, got {auc}"
+        assert 0.3 <= auc <= 0.8, (
+            f"Identical distributions should yield AUC ~0.5, got {auc}"
+        )
 
     def test_completely_different_distributions(self):
         """Clearly separable distributions → AUC near 1.0."""
@@ -195,8 +223,13 @@ class TestFeatureColumns:
 
     def test_all_expected_columns_present(self, indicator, sample_df):
         result = indicator.compute(sample_df, windows=[100], step=10)
-        for suffix in ["auc", "drift_score", "stability",
-                        "max_feature_importance", "drift_acceleration"]:
+        for suffix in [
+            "auc",
+            "drift_score",
+            "stability",
+            "max_feature_importance",
+            "drift_acceleration",
+        ]:
             col = f"adv_{suffix}_100"
             assert col in result.columns, f"Missing: {col}"
 
@@ -282,7 +315,9 @@ class TestDistributionShiftDetection:
         result = indicator.compute(stable_df, windows=[100], step=5)
         auc = result["adv_auc_100"].dropna()
         mean_auc = auc.mean()
-        assert mean_auc < 0.75, f"Stable regime AUC should be < 0.75, got {mean_auc:.3f}"
+        assert mean_auc < 0.75, (
+            f"Stable regime AUC should be < 0.75, got {mean_auc:.3f}"
+        )
 
     def test_drift_score_bounded_zero_one(self, indicator, sample_df):
         result = indicator.compute(sample_df, windows=[100], step=10)
@@ -335,9 +370,13 @@ class TestEdgeCases:
         n = 100
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         df = pd.DataFrame(
-            {"O": np.random.randn(n), "H": np.random.randn(n),
-             "L": np.random.randn(n), "C": np.random.randn(n),
-             "V": np.random.randn(n)},
+            {
+                "O": np.random.randn(n),
+                "H": np.random.randn(n),
+                "L": np.random.randn(n),
+                "C": np.random.randn(n),
+                "V": np.random.randn(n),
+            },
             index=dates,
         )
         result = indicator.compute(df)
@@ -348,10 +387,15 @@ class TestEdgeCases:
         n = 100
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         df = pd.DataFrame(
-            {"O": np.random.randn(n), "H": np.random.randn(n),
-             "L": np.random.randn(n), "C": np.random.randn(n),
-             "V": np.random.randn(n),
-             "f1": np.random.randn(n), "f2": np.random.randn(n)},
+            {
+                "O": np.random.randn(n),
+                "H": np.random.randn(n),
+                "L": np.random.randn(n),
+                "C": np.random.randn(n),
+                "V": np.random.randn(n),
+                "f1": np.random.randn(n),
+                "f2": np.random.randn(n),
+            },
             index=dates,
         )
         result = indicator.compute(df)
@@ -363,11 +407,17 @@ class TestEdgeCases:
         n = 30
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         df = pd.DataFrame(
-            {"O": np.random.randn(n), "H": np.random.randn(n),
-             "L": np.random.randn(n), "C": np.random.randn(n),
-             "V": np.random.randn(n),
-             "f1": np.random.randn(n), "f2": np.random.randn(n),
-             "f3": np.random.randn(n), "f4": np.random.randn(n)},
+            {
+                "O": np.random.randn(n),
+                "H": np.random.randn(n),
+                "L": np.random.randn(n),
+                "C": np.random.randn(n),
+                "V": np.random.randn(n),
+                "f1": np.random.randn(n),
+                "f2": np.random.randn(n),
+                "f3": np.random.randn(n),
+                "f4": np.random.randn(n),
+            },
             index=dates,
         )
         result = indicator.compute(df, windows=[20], step=5)
@@ -386,11 +436,16 @@ class TestEdgeCases:
         n = 200
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
         df = pd.DataFrame(
-            {"O": np.random.randn(n), "H": np.random.randn(n),
-             "L": np.random.randn(n), "C": np.random.randn(n),
-             "V": np.random.randn(n),
-             "f1": np.random.randn(n), "f2": np.random.randn(n),
-             "f3": np.random.randn(n)},
+            {
+                "O": np.random.randn(n),
+                "H": np.random.randn(n),
+                "L": np.random.randn(n),
+                "C": np.random.randn(n),
+                "V": np.random.randn(n),
+                "f1": np.random.randn(n),
+                "f2": np.random.randn(n),
+                "f3": np.random.randn(n),
+            },
             index=dates,
         )
         df.iloc[30:35, df.columns.get_loc("f1")] = np.nan
@@ -433,9 +488,13 @@ class TestParameterVariation:
         np.random.seed(42)
         n = 200
         dates = pd.date_range("2020-01-01", periods=n, freq="h")
-        data = {"O": np.random.randn(n), "H": np.random.randn(n),
-                "L": np.random.randn(n), "C": np.random.randn(n),
-                "V": np.random.randn(n)}
+        data = {
+            "O": np.random.randn(n),
+            "H": np.random.randn(n),
+            "L": np.random.randn(n),
+            "C": np.random.randn(n),
+            "V": np.random.randn(n),
+        }
         # Add 40 feature columns (> default max_features=30)
         for i in range(40):
             data[f"feat_{i}"] = np.random.randn(n)
@@ -455,6 +514,7 @@ class TestPluginIntegration:
 
     def test_plugin_discoverable(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:adversarial_validation")

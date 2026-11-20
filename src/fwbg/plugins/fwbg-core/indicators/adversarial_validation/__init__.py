@@ -6,6 +6,7 @@ a classifier to distinguish "old" from "new" observations within a sliding
 window.  High AUC signals a regime change; values near 0.5 indicate a
 stable distribution.
 """
+
 from typing import List
 
 import numpy as np
@@ -83,8 +84,8 @@ def _compute_window_features(
 
     for i in range(window, n_rows, step):
         half = window // 2
-        old_slice = data[i - window: i - half]
-        new_slice = data[i - half: i]
+        old_slice = data[i - window : i - half]
+        new_slice = data[i - half : i]
 
         # Feature subsampling for performance
         if n_cols > max_features:
@@ -154,13 +155,15 @@ class AdversarialValidationIndicator(BaseIndicator):
         params = self.get_default_params()
         cols = []
         for w in params["windows"]:
-            cols.extend([
-                f"adv_auc_{w}",
-                f"adv_drift_score_{w}",
-                f"adv_stability_{w}",
-                f"adv_max_feature_importance_{w}",
-                f"adv_drift_acceleration_{w}",
-            ])
+            cols.extend(
+                [
+                    f"adv_auc_{w}",
+                    f"adv_drift_score_{w}",
+                    f"adv_stability_{w}",
+                    f"adv_max_feature_importance_{w}",
+                    f"adv_drift_acceleration_{w}",
+                ]
+            )
         return cols
 
     @classmethod
