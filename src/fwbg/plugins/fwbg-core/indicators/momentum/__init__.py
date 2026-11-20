@@ -5,10 +5,40 @@ Enthält: RSI, Stochastic, Williams %R, Ultimate Oscillator, ROC.
 """
 
 from typing import List
+
+import numpy as np
 import pandas as pd
 import ta
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features
+
+
+def _wilder_rsi(close: pd.Series, period: int) -> pd.Series:
+    """
+    Wilder's RSI.
+
+    The average gain and loss are seeded with the simple mean of the first
+    ``period`` price changes and then smoothed with alpha = 1 / period, so the
+    first value is at index ``period`` (``period + 1`` bars) and everything
+    before it is NaN. ``ta`` instead starts the average at an artificial zero
+    change on bar 0 and emits values from ``period - 1`` on.
+
+    With no movement at all (average gain and loss both 0, a flat series) the
+    RSI is 50: neither side dominates. Only gains give 100, only losses 0.
+    """
+    delta = close.diff()
+    averages = []
+    for part in (delta.clip(lower=0.0), (-delta).clip(lower=0.0)):
+        seeded = part.copy()
+        seeded.iloc[: period + 1] = np.nan
+        if len(part) > period:
+            seeded.iloc[period] = part.iloc[1 : period + 1].mean()
+        averages.append(seeded.ewm(alpha=1.0 / period, adjust=False).mean())
+    avg_gain, avg_loss = averages
+    rs = avg_gain / avg_loss.where(avg_loss > 0)
+    rsi = 100.0 - 100.0 / (1.0 + rs)
+    rsi = rsi.where(avg_loss > 0, np.where(avg_gain > 0, 100.0, 50.0))
+    return rsi.where(avg_gain.notna() & avg_loss.notna())
 
 
 @register_indicator("momentum")
@@ -25,7 +55,7 @@ class MomentumIndicators(BaseIndicator):
     """
 
     name = "momentum"
-    version = "2.0.0"
+    version = "2.1.0"
 
     def compute(
         self,
@@ -62,7 +92,7 @@ class MomentumIndicators(BaseIndicator):
 
         # RSI
         for period in rsi_periods:
-            features[f"mom_rsi_{period}"] = ta.momentum.rsi(df["C"], window=period)
+            features[f"mom_rsi_{period}"] = _wilder_rsi(df["C"], period)
 
         # Stochastic
         for period in stoch_periods:
@@ -90,28 +120,20 @@ class MomentumIndicators(BaseIndicator):
 
         return pd.concat([df, features_df], axis=1)
 
-    def get_feature_columns(self) -> List[str]:
-        """Gibt Liste aller Momentum-Feature-Spalten zurück."""
-        return [
-            # RSI
-            "mom_rsi_7",
-            "mom_rsi_14",
-            "mom_rsi_21",
-            # Stochastic
-            "mom_stoch_k_14",
-            "mom_stoch_d_14",
-            "mom_stoch_k_21",
-            "mom_stoch_d_21",
-            # Williams
-            "mom_williams_14",
-            "mom_williams_21",
-            # Ultimate Oscillator
-            "mom_uo",
-            # ROC
-            "mom_roc_5",
-            "mom_roc_10",
-            "mom_roc_20",
-        ]
+    def get_feature_columns(self, params=None) -> List[str]:
+        """Feature columns compute() produces for ``params`` (defaults when None)."""
+        params = params or {}
+        rsi = params.get("rsi_periods") or [7, 14, 21]
+        stoch = params.get("stoch_periods") or [14, 21]
+        williams = params.get("williams_periods") or [14, 21]
+        roc = params.get("roc_periods") or [5, 10, 20]
+        cols = [f"mom_rsi_{p}" for p in rsi]
+        for p in stoch:
+            cols += [f"mom_stoch_k_{p}", f"mom_stoch_d_{p}"]
+        cols += [f"mom_williams_{p}" for p in williams]
+        cols.append("mom_uo")
+        cols += [f"mom_roc_{p}" for p in roc]
+        return cols
 
     @classmethod
     def get_default_params(cls) -> dict:
