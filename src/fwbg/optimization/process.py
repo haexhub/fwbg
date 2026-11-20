@@ -37,6 +37,7 @@ from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds, plan_walk_forward
 from .bias_checks import check_asset_bias, fold_bias_ratios
+from .annualization import bars_per_year as _bars_per_year
 from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
 from .causal_variants import (
     VariantRecord,
@@ -999,6 +1000,13 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 prepare_data_fn=prepare_fn,
             )
 
+        # Bars per calendar year come from the data (a 7-bar/day instrument has far
+        # fewer than bars_per_hour * 24 * 250), shared with the holdout. Taken before
+        # the frame is released.
+        bars_per_year = _bars_per_year(
+            df.index, fallback=data_config.tf_cfg["bars_per_hour"] * 24 * 250
+        )
+
         # Release heavy data no longer needed after unified simulation
         del fold_indicators, precomputed_raw_df, best_variant_data, df
         gc.collect()
@@ -1262,7 +1270,6 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         # Use all wf_folds (not just successful ones) because unified simulation
         # replays every fold with its causal candidate; untraded leading folds
         # still count in the test period.
-        bars_per_year = data_config.tf_cfg["bars_per_hour"] * 24 * 250
         total_test_bars = sum(f.test_end - f.test_start for f in wf_folds)
         test_period_years = total_test_bars / bars_per_year if bars_per_year > 0 else 1
         # Kausales Reporting bewertet nur Folds i>0 → Fold-0-Testbars ausnehmen

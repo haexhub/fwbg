@@ -33,6 +33,7 @@ from fwbg.simulation.trade import calculate_calmar_from_returns, calculate_sharp
 from fwbg.utils.logging import log
 from fwbg.utils.progress import report_done, report_phase
 
+from .annualization import bars_per_year
 from .causal_reporting import (
     equity_replay,
     monte_carlo_summary,
@@ -275,7 +276,10 @@ def _holdout_result(
         config["circuit_breaker"],
         development["tr_trace"],
     )
-    years = len(fold.test_df) / (data_config.tf_cfg["bars_per_hour"] * 24 * 250)
+    years = len(fold.test_df) / bars_per_year(
+        fold.train_df.index.append(fold.test_df.index),
+        fallback=data_config.tf_cfg["bars_per_hour"] * 24 * 250,
+    )
     holdout["sized_trades"] = len(pnl)
     if not trades:
         log(1, "HOLDOUT - no trades after the cutoff", sym)
