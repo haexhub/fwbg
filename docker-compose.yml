@@ -9,12 +9,14 @@ services:
       - fwbg-data:/app/data
       - fwbg-logs:/app/logs
       - fwbg-stats:/app/data/stats_export
-      # Workspace (~/fwbg): strategy configs + test results. Without this
-      # mount every image update wipes published strategies and backtests.
-      - fwbg-workspace:/root/fwbg
+      # Workspace (~/fwbg of the unprivileged `fwbg` user, UID 10001): strategy
+      # configs + test results. Without this mount every image update wipes
+      # published strategies and backtests. Volumes created by an older,
+      # root-running image must be chown'ed once (docs/deployment.md).
+      - fwbg-workspace:/home/fwbg/fwbg
       # Agent-authored plugins: persisted across redeploys, shared with api
       # so live trading can use plugins registered by the agents service.
-      - fwbg-agent-plugins:/root/.fwbg/plugins
+      - fwbg-agent-plugins:/home/fwbg/.fwbg/plugins
     environment:
       - TZ=Europe/Berlin
       - LOG_DIR=/app/logs
@@ -48,15 +50,16 @@ services:
       - fwbg-stats:/app/data/stats_export
       # Same workspace as ig-bot: published strategies must survive redeploys
       # and be visible to both the API and the bot.
-      - fwbg-workspace:/root/fwbg
+      - fwbg-workspace:/home/fwbg/fwbg
       # Agent-authored plugins: shared with ig-bot so registered plugins
       # persist across redeploys and are available to the bot as well.
-      - fwbg-agent-plugins:/root/.fwbg/plugins
+      - fwbg-agent-plugins:/home/fwbg/.fwbg/plugins
       # Research register: the host's private git repo, so CLI and API record
       # into one register. Must exist (python -m fwbg.cli research init); never created here.
+      # The container user (UID 10001) must be able to write it (docs/deployment.md).
       - type: bind
         source: ${FWBG_RESEARCH_HOST_DIR:-${HOME}/fwbg/research}
-        target: /root/fwbg/research
+        target: /home/fwbg/fwbg/research
         bind:
           create_host_path: false
     environment:
@@ -73,8 +76,9 @@ services:
       # with FWBG_ALLOW_UNAUTHENTICATED_API=1 on 127.0.0.1 (see README).
       - FWBG_API_KEY=${FWBG_API_KEY:?set FWBG_API_KEY in .env (openssl rand -hex 32)}
       # POST /api/plugins imports and runs uploaded Python in this process and
-      # stores it for the bot, so it is off unless the operator opts in. The
-      # agents service needs it on to register agent-authored plugins.
+      # stores it for the bot, so it is off (403) unless the operator opts in
+      # with FWBG_ALLOW_PLUGIN_UPLOAD=1 in .env. The agents service needs it on
+      # to register agent-authored plugins.
       - FWBG_ALLOW_PLUGIN_UPLOAD=${FWBG_ALLOW_PLUGIN_UPLOAD:-0}
       # Committer of register commits made by API-started runs (no signing key in the image).
       - GIT_AUTHOR_NAME=fwbg-api
@@ -134,7 +138,9 @@ services:
       - fwbg-data:/app/fwbg-data
       - agents-data:/app/data
       # Same workspace as the fwbg API: DSR snapshots read per-trade P&L
-      # from /root/fwbg/test_results before retention can prune those runs.
+      # from the workspace's test_results before retention can prune those runs.
+      # The agents image is separate and keeps its own /root/fwbg mount path;
+      # the api service sees the same volume at /home/fwbg/fwbg.
       - type: volume
         source: fwbg-workspace
         target: /root/fwbg
