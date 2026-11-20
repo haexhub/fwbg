@@ -880,3 +880,35 @@ def test_a_selector_without_a_seed_parameter_is_not_given_one(monkeypatch):
         df, np.array([0, 1] * 20), ["a", "b"], 4, [{"name": "x", "params": {}}]
     )
     assert selected == ["a", "b"]
+
+
+def test_inner_cv_models_use_reduced_hyperparameters_and_outer_ones_do_not(monkeypatch):
+    """Documented, deliberate: inner CV halves xgboost n_estimators for speed, so the
+    outer fold/holdout model differs from the one the setting was selected with."""
+    from types import SimpleNamespace
+
+    import fwbg.optimization.nested_cv as nested_cv
+
+    seen = []
+
+    class Recorder:
+        @classmethod
+        def get_reduced_hyperparameters(cls, params):
+            return {**params, "n_estimators": max(10, params["n_estimators"] // 2)}
+
+        def train(self, X, y, context, **params):
+            seen.append(params["n_estimators"])
+
+    monkeypatch.setattr(nested_cv, "get_model", lambda name: Recorder)
+    ctx = SimpleNamespace(
+        model_type="x",
+        model_hyperparameters={"n_estimators": 200},
+        probability_calibration=False,
+    )
+    df = pd.DataFrame({"a": np.arange(40.0)})
+    targets = np.array([0, 1] * 20)
+
+    nested_cv.train_model(df, targets, ["a"], 4, ctx, use_reduced_params=True)
+    nested_cv.train_model(df, targets, ["a"], 4, ctx, use_reduced_params=False)
+
+    assert seen == [100, 200]

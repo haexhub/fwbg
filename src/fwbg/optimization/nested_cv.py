@@ -268,7 +268,12 @@ def train_model(
     Trainiert ein ML-Modell via Plugin-Registry.
 
     Args:
-        use_reduced_params: Wenn True, werden Hyperparameter reduziert (für Inner CV)
+        use_reduced_params: Wenn True, werden Hyperparameter reduziert (für Inner CV).
+            Bewusste Entscheidung (Laufzeit): die Inner-CV-Modelle sind kleiner als
+            die Modelle des äußeren Folds/Holdouts (xgboost: halbe n_estimators, siehe
+            ``get_reduced_hyperparameters`` des Modells). Auswahl von Kombination und
+            Schwelle erfolgt also mit einem anderen Modell als die spätere Bewertung;
+            Modelle ohne eigene Reduktion bleiben identisch.
         sample_weight: Optional - Uniqueness-basierte Sample Weights (AFML Ch. 4)
         direction: "long" or "short" — passed to TrainingContext for signal model
     """
