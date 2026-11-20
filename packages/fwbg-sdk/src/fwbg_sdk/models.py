@@ -262,7 +262,9 @@ class BaseModel(BasePlugin, ABC):
 
         Returns:
             None (use global TP/SL) or ndarray of shape (n_samples, 2)
-            where column 0 = TP distance, column 1 = SL distance.
+            where column 0 = TP distance, column 1 = SL distance.  A row whose
+            distances cannot be computed (for example NaN ATR during warm-up)
+            holds NaN: the simulation opens no trade on that bar.
         """
         return None
 

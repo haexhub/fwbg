@@ -183,7 +183,10 @@ class XGBoostRRRModel(BaseStackedXGBoostModel):
         features: pd.DataFrame,
         atr: Optional[np.ndarray] = None,
     ) -> Optional[np.ndarray]:
-        """Return per-trade TP/SL based on selected RRR."""
+        """Return per-trade TP/SL based on selected RRR.
+
+        Rows whose ATR is NaN (warm-up) hold NaN distances: no trade there.
+        """
         if self._selected_rrr is None or atr is None:
             return None
 

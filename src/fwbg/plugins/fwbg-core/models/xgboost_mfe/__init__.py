@@ -113,7 +113,10 @@ class XGBoostMFEModel(BaseStackedXGBoostModel):
         features: pd.DataFrame,
         atr: Optional[np.ndarray] = None,
     ) -> Optional[np.ndarray]:
-        """Return per-trade TP/SL based on predicted MFE and selected SL."""
+        """Return per-trade TP/SL based on predicted MFE and selected SL.
+
+        Rows whose ATR is NaN (warm-up) hold NaN distances: no trade there.
+        """
         if self._predicted_mfe is None or self._selected_sl_atr is None or atr is None:
             return None
 
