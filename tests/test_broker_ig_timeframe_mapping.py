@@ -7,6 +7,7 @@ denselben Patch, ist aber weder in ``pyproject.toml``s ``testpaths`` noch in
 der Dev-/CI-Umgebung installiert (nur im Docker-Image, siehe Dockerfile) und
 hat keine eigenen Tests — außerhalb des Scopes dieser Änderung.
 """
+
 from unittest.mock import MagicMock
 
 import pytest
