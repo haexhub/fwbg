@@ -449,3 +449,37 @@ def test_ensure_hands_out_an_incomplete_file_for_a_symbol_that_cannot_be_downloa
     assert body["status"] == "ready"
     assert body["path"] == str(path)
     assert "may not cover" in body["warning"]
+
+
+def test_hole_threshold_is_fourteen_days(cached_source):
+    """The documented rule: a hole of up to 14 days passes, a longer one is a
+    failed download (docs/data-checks.md, "When a cached file is re-downloaded")."""
+    from fwbg.api.data import _find_existing_file
+
+    path = cached_source.get_file_path("EURUSD", "DAY_1")
+    # 2024-01-10 -> 2024-01-24 is exactly 14 days between bars
+    days = _daterange("2024-01-01", "2024-01-10") + _daterange(
+        "2024-01-24", "2024-02-10"
+    )
+    _write_bars(path, days)
+    assert (
+        _find_existing_file("EURUSD", "DAY_1", "2024-01-01", "2024-02-10") is not None
+    )
+
+    # one day more: 15 days between bars
+    days = _daterange("2024-01-01", "2024-01-10") + _daterange(
+        "2024-01-25", "2024-02-10"
+    )
+    _write_bars(path, days)
+    assert _find_existing_file("EURUSD", "DAY_1", "2024-01-01", "2024-02-10") is None
+
+
+def test_open_ended_request_does_not_apply_the_hole_rule(cached_source):
+    from fwbg.api.data import _find_existing_file
+
+    path = cached_source.get_file_path("EURUSD", "DAY_1")
+    days = _daterange("2024-01-01", "2024-01-10") + _daterange(
+        "2024-03-01", "2024-03-10"
+    )
+    _write_bars(path, days)
+    assert _find_existing_file("EURUSD", "DAY_1") is not None
