@@ -1,4 +1,5 @@
 """XGBoost model plugin for FWBG."""
+
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional
@@ -52,7 +53,11 @@ class XGBoostModel(BaseModel):
             self.progress.complete_stage("fitting")
         except Exception as error:
             error_message = str(error).lower()
-            if "cuda" in error_message or "gpu" in error_message or "device" in error_message:
+            if (
+                "cuda" in error_message
+                or "gpu" in error_message
+                or "device" in error_message
+            ):
                 self._handle_gpu_fallback(features, targets, params, fit_kwargs)
             else:
                 self.logger.error(f"Training failed: {error}")
@@ -80,7 +85,8 @@ class XGBoostModel(BaseModel):
         self.logger.warning("CUDA error — falling back to CPU")
         disable_gpu()
         cpu_params = {
-            k: v for k, v in original_params.items()
+            k: v
+            for k, v in original_params.items()
             if k not in ("device", "tree_method")
         }
         cpu_params["tree_method"] = "hist"
