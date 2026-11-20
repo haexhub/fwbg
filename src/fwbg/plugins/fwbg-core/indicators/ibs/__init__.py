@@ -12,6 +12,7 @@ that close, e.g. ``entry_delay=0``; the first bar has no previous bar and is NaN
 - ``ibs_above_prev_high``: 1 when the close is above the previous bar's high,
   a rebound exit for the ``signal_exit`` exit strategy
 """
+
 from typing import List
 
 import numpy as np
