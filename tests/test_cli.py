@@ -240,7 +240,8 @@ class TestComputeIndicatorPool:
         import numpy as np
         from fwbg.pipeline import compute_indicator_pool
 
-        # Erstelle Test-DataFrame mit DateTimeIndex (benötigt für time_season)
+        # Erstelle Test-DataFrame mit DateTimeIndex (Kalender-Indikatoren wie
+        # time_season brauchen ihn; ema/adx unten nutzen nur O/H/L/C)
         n = 500
         df = pd.DataFrame(
             {
