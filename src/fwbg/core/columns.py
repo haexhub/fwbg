@@ -46,7 +46,9 @@ def named_columns(columns: Iterable[str], names: Iterable[str]) -> list[str]:
 def _warn_missing_name(param: str, name: str) -> None:
     """Once per process and name: the exits resolve their columns per combo and fold."""
     log.warning(
-        "exit_params.%s '%s' is not in the frame; falling back to auto-detection.", param, name
+        "exit_params.%s '%s' is not in the frame; falling back to auto-detection.",
+        param,
+        name,
     )
 
 
