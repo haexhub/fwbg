@@ -132,7 +132,7 @@ class TestBreakout:
         """C > rolling_max(body_top, lookback)[i-1] → bz_breakout_bull=1."""
         lb = 10
         df = _make_balanced_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # Breakout at bar lb; after shift appears at iloc[lb+1]
         assert result["bz_breakout_bull"].iloc[lb + 1] == 1.0, (
@@ -148,7 +148,7 @@ class TestBreakout:
         df.iloc[lb, df.columns.get_loc("C")] = 101.0
         df.iloc[lb, df.columns.get_loc("H")] = 101.5
         df.iloc[lb, df.columns.get_loc("O")] = 100.0
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
         assert result["bz_breakout_bull"].iloc[lb + 1] == 0.0, (
             "C == zone_top should not trigger breakout_bull (strict >)"
         )
@@ -157,7 +157,7 @@ class TestBreakout:
         """C < rolling_min(body_bottom, lookback)[i-1] → bz_breakout_bear=1."""
         lb = 10
         df = _make_bear_breakout_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         assert result["bz_breakout_bear"].iloc[lb + 1] == 1.0, (
             f"Expected bz_breakout_bear=1 at iloc[{lb + 1}], "
@@ -172,7 +172,7 @@ class TestBreakout:
         df.iloc[lb, df.columns.get_loc("C")] = 99.0
         df.iloc[lb, df.columns.get_loc("L")] = 98.5
         df.iloc[lb, df.columns.get_loc("O")] = 100.0
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
         assert result["bz_breakout_bear"].iloc[lb + 1] == 0.0, (
             "C == zone_bottom should not trigger breakout_bear (strict <)"
         )
@@ -181,10 +181,10 @@ class TestBreakout:
         """While price stays inside the zone, neither breakout fires."""
         lb = 10
         df = _make_balanced_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=3, atr_period=2)
 
         # Bars 1..lb are in-zone (after shift: iloc[2..lb+1])
-        for i in range(2, lb + 1):
+        for i in range(5, lb + 1):
             assert result["bz_breakout_bull"].iloc[i] == 0.0, (
                 f"bz_breakout_bull should be 0 inside zone at iloc[{i}]"
             )
@@ -205,10 +205,10 @@ class TestInZone:
         """Close inside [zone_bottom, zone_top] → bz_in_zone=1."""
         lb = 10
         df = _make_balanced_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=3, atr_period=2)
 
         # Bars 1..lb-1: close=101 inside zone [99, 101] → after shift iloc[2..lb]
-        for i in range(2, lb + 1):
+        for i in range(5, lb + 1):
             assert result["bz_in_zone"].iloc[i] == 1.0, (
                 f"Expected bz_in_zone=1 at iloc[{i}], got {result['bz_in_zone'].iloc[i]}"
             )
@@ -217,7 +217,7 @@ class TestInZone:
         """Close above zone_top → bz_in_zone=0."""
         lb = 10
         df = _make_balanced_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # Bar lb: close=105 > zone_top=101 → after shift iloc[lb+1]
         assert result["bz_in_zone"].iloc[lb + 1] == 0.0, (
@@ -228,7 +228,7 @@ class TestInZone:
         """Close below zone_bottom → bz_in_zone=0."""
         lb = 10
         df = _make_bear_breakout_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # Bar lb: close=95 < zone_bottom=99 → after shift iloc[lb+1]
         assert result["bz_in_zone"].iloc[lb + 1] == 0.0, (
@@ -251,10 +251,10 @@ class TestInBalance:
         df = _make_balanced_df(lookback=lb)
         # With default balance_atr_threshold=2.0 and zone_width/ATR ≈ 1.0, should be in balance
         result = _bz.BalanceZonesIndicator().compute(
-            df, lookback=lb, balance_atr_threshold=2.0
+            df, lookback=3, atr_period=2, balance_atr_threshold=2.0
         )
         # Bars in the stable zone (iloc[2..lb]) should be in balance
-        for i in range(2, lb + 1):
+        for i in range(5, lb + 1):
             val = result["bz_in_balance"].iloc[i]
             assert val == 1.0, (
                 f"Expected bz_in_balance=1 for tight zone at iloc[{i}], got {val}"
@@ -273,10 +273,10 @@ class TestInBalance:
         # Zone width after lb bars ≈ 20 (body_top max=100+lb-1 - body_bottom min=90)
         # ATR ≈ 1.2 (tight candles), so width/ATR >> 2.0 → not in balance
         result = _bz.BalanceZonesIndicator().compute(
-            df, lookback=lb, balance_atr_threshold=2.0
+            df, lookback=lb, atr_period=2, balance_atr_threshold=2.0
         )
         # The later bars (after zone has expanded) should not be in balance
-        val = result["bz_in_balance"].iloc[lb]
+        val = result["bz_in_balance"].iloc[lb + 1]
         assert val == 0.0, f"Expected bz_in_balance=0 for wide zone, got {val}"
 
 
@@ -292,7 +292,7 @@ class TestFakeBreakout:
         """Fake bull breakout: close was above old zone_top, now back below it."""
         lb = 10
         df = _make_fake_bear_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # Breakout at bar lb (close=104 > zone_top=101)
         # Re-entry at bar lb+1 (close=100 < old_zone_top=101)
@@ -307,7 +307,7 @@ class TestFakeBreakout:
         """Fake bear breakout: close was below old zone_bottom, now back above it."""
         lb = 10
         df = _make_fake_bull_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # Breakout at bar lb (close=96 < zone_bottom=99)
         # Re-entry at bar lb+1 (close=100 > old_zone_bottom=99)
@@ -322,10 +322,10 @@ class TestFakeBreakout:
         """No fake bear signal while price just stays inside the zone."""
         lb = 10
         df = _make_balanced_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=3, atr_period=2)
 
         # During the stable phase (before breakout), no fake signals
-        for i in range(2, lb + 1):
+        for i in range(5, lb + 1):
             assert result["bz_fake_bear"].iloc[i] == 0.0, (
                 f"bz_fake_bear should be 0 without prior breakout at iloc[{i}]"
             )
@@ -334,9 +334,9 @@ class TestFakeBreakout:
         """No fake bull signal while price just stays inside the zone."""
         lb = 10
         df = _make_balanced_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=3, atr_period=2)
 
-        for i in range(2, lb + 1):
+        for i in range(5, lb + 1):
             assert result["bz_fake_bull"].iloc[i] == 0.0, (
                 f"bz_fake_bull should be 0 without prior breakout at iloc[{i}]"
             )
@@ -354,7 +354,7 @@ class TestDistances:
         """Close > zone_top → bz_zone_top_dist=0 (clamped, price is above)."""
         lb = 10
         df = _make_balanced_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # After breakout, close=105 > zone_top=101 → dist = 0
         assert result["bz_zone_top_dist"].iloc[lb + 1] == 0.0, (
@@ -366,7 +366,7 @@ class TestDistances:
         """Close < zone_top while in zone → bz_zone_top_dist > 0."""
         lb = 10
         df = _make_balanced_df(lookback=lb)
-        _result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        _result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # In-zone bars: close=101 == zone_top=101 → dist = 0; use earlier bars
         # close=101, zone_top after 5 bars = 101; but at bar 2 (close=101, zone so far)
@@ -379,7 +379,7 @@ class TestDistances:
         highs2 = [101.5] * n_small
         lows2 = [98.5] * n_small
         df2 = _make_df(highs2, lows2, closes2, opens2)
-        _result2 = _bz.BalanceZonesIndicator().compute(df2, lookback=lb)
+        _result2 = _bz.BalanceZonesIndicator().compute(df2, lookback=lb, atr_period=2)
 
         # zone_top = 101 (body_top = max(99, 100) = 100... wait body_top = max(O,C) = 100)
         # zone_top = 100, close = 100 → dist = 0. Let me use close < body_top...
@@ -399,7 +399,7 @@ class TestDistances:
         highs4 = [101.5] * lb + [99.5] * 5
         lows4 = [98.5] * lb + [97.5] * 5
         df4 = _make_df(highs4, lows4, closes4, opens4)
-        result4 = _bz.BalanceZonesIndicator().compute(df4, lookback=lb)
+        result4 = _bz.BalanceZonesIndicator().compute(df4, lookback=lb, atr_period=2)
 
         # At bar lb+1: zone_top[lb] = 101 (from the stable phase), close=99 → dist > 0
         val = result4["bz_zone_top_dist"].iloc[lb + 2]
@@ -411,7 +411,7 @@ class TestDistances:
         """Close < zone_bottom (after bear breakout) → bz_zone_bottom_dist=0."""
         lb = 10
         df = _make_bear_breakout_df(lookback=lb)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # After breakout, close=95 < zone_bottom=99 → dist = 0
         assert result["bz_zone_bottom_dist"].iloc[lb + 1] == 0.0, (
@@ -428,7 +428,7 @@ class TestDistances:
         highs_ = [101.5] * lb + [100.5] * 5
         lows_ = [98.5] * lb + [99.5] * 5
         df = _make_df(highs_, lows_, closes_, opens_)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # At bar lb+1: zone_bottom[lb]=99, close=100 → dist = (100-99)/ATR > 0
         val = result["bz_zone_bottom_dist"].iloc[lb + 2]
@@ -449,7 +449,7 @@ class TestBalanceBars:
         """bz_balance_bars should increase as price stays inside zone."""
         lb = 10
         df = _make_balanced_df(lookback=lb, n_post=0)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=2)
 
         # While in zone (bars 1..lb-1), balance_bars should grow monotonically
         # After shift: visible at iloc[2..lb]
@@ -467,7 +467,7 @@ class TestBalanceBars:
         """After a breakout, bz_balance_bars should drop (reset or decrease)."""
         lb = 10
         df = _make_balanced_df(lookback=lb, n_post=3)
-        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=3, atr_period=2)
 
         # Just before breakout (iloc[lb]): accumulated in-balance bars
         val_before = result["bz_balance_bars"].iloc[lb]
@@ -582,3 +582,41 @@ class TestPluginIntegration:
         result = indicator.compute(_make_random_df(n=200))
         for col in indicator.get_feature_columns():
             assert col in result.columns, f"Declared {col} missing from output"
+
+
+# ---------------------------------------------------------------------------
+# Warm-up and truncation invariance
+# ---------------------------------------------------------------------------
+
+
+class TestWarmupAndTruncation:
+    def test_warmup_rows_are_nan_not_zero(self):
+        """Rows before the zone window and the ATR are complete are NaN."""
+        lb, atr_p = 6, 9
+        df = _make_random_df(n=80)
+        result = _bz.BalanceZonesIndicator().compute(df, lookback=lb, atr_period=atr_p)
+        feats = _bz.BalanceZonesIndicator().get_feature_columns()
+        # ATR is the longer warm-up: its first value is raw row atr_p - 1,
+        # which the 1-bar shift moves to row atr_p.
+        first_valid = atr_p
+        for col in feats:
+            assert result[col].iloc[:first_valid].isna().all(), col
+        for col in feats:
+            if col in ("bz_fake_bear", "bz_fake_bull"):
+                continue
+            assert result[col].iloc[first_valid:].notna().all(), col
+
+    def test_truncation_invariance_every_cut(self):
+        """Row r < cut must be identical whether or not bars >= cut exist."""
+        df = _make_random_df(n=140)
+        ind = _bz.BalanceZonesIndicator()
+        kw = {"lookback": 8, "atr_period": 5}
+        full = ind.compute(df, **kw)
+        cols = ind.get_feature_columns()
+        for cut in range(60, 121):
+            part = ind.compute(df.iloc[:cut], **kw)
+            np.testing.assert_array_equal(
+                part[cols].to_numpy(),
+                full[cols].iloc[:cut].to_numpy(),
+                err_msg=f"cut={cut}",
+            )

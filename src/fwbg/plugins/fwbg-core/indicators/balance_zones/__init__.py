@@ -31,7 +31,7 @@ class BalanceZonesIndicator(BaseIndicator):
     """Balance zone features derived from candle body overlap (PBD methodology)."""
 
     name = "balance_zones"
-    version = "1.0.0"
+    version = "1.1.0"
 
     _FEATURES = [
         "bz_in_balance",  # 1 if zone_width / ATR <= balance_atr_threshold
@@ -70,38 +70,44 @@ class BalanceZonesIndicator(BaseIndicator):
             ),
         )
         tr[0] = highs[0] - lows[0]
-        atr = pd.Series(tr).rolling(atr_period, min_periods=1).mean().values
+        atr = pd.Series(tr).rolling(atr_period, min_periods=atr_period).mean().values
 
         # Candle body extremes
         body_top = np.maximum(opens, closes)
         body_bottom = np.minimum(opens, closes)
 
-        # Rolling balance zone (no lookahead: zone[i] uses bars 0..i inclusive)
-        zone_top = pd.Series(body_top).rolling(lookback, min_periods=1).max().values
+        # Rolling balance zone (no lookahead: zone[i] uses bars 0..i inclusive).
+        # A zone needs a full window; earlier rows stay NaN (warm-up).
+        zone_top = (
+            pd.Series(body_top).rolling(lookback, min_periods=lookback).max().values
+        )
         zone_bottom = (
-            pd.Series(body_bottom).rolling(lookback, min_periods=1).min().values
+            pd.Series(body_bottom).rolling(lookback, min_periods=lookback).min().values
         )
 
-        # Output arrays
-        in_balance = np.zeros(n)
-        in_zone = np.zeros(n)
+        # Output arrays: NaN until the zone and the ATR are fully warmed up
+        in_balance = np.full(n, np.nan)
+        in_zone = np.full(n, np.nan)
         zone_width = np.full(n, np.nan)
         zone_top_dist = np.full(n, np.nan)
         zone_bottom_dist = np.full(n, np.nan)
-        breakout_bull = np.zeros(n)
-        breakout_bear = np.zeros(n)
-        fake_bear = np.zeros(n)
-        fake_bull = np.zeros(n)
-        balance_bars = np.zeros(n)
+        breakout_bull = np.full(n, np.nan)
+        breakout_bear = np.full(n, np.nan)
+        fake_bear = np.full(n, np.nan)
+        fake_bull = np.full(n, np.nan)
+        balance_bars = np.full(n, np.nan)
 
         consecutive_in_zone = 0
 
         for i in range(1, n):
             c = closes[i]
-            atr_i = atr[i] if atr[i] > EPSILON else 1.0
-
             prev_zt = zone_top[i - 1]
             prev_zb = zone_bottom[i - 1]
+
+            # Warm-up: no complete zone / ATR yet -> leave the row NaN
+            if np.isnan(prev_zt) or np.isnan(prev_zb) or np.isnan(atr[i]):
+                continue
+            atr_i = atr[i] if atr[i] > EPSILON else 1.0
 
             # Zone width and balance state
             width = (prev_zt - prev_zb) / atr_i
@@ -120,11 +126,13 @@ class BalanceZonesIndicator(BaseIndicator):
             breakout_bull[i] = 1.0 if c > prev_zt else 0.0
             breakout_bear[i] = 1.0 if c < prev_zb else 0.0
 
-            # Fake breakout detection: needs two bars of history
-            if i >= 2:
-                old_zt = zone_top[i - 2]
-                old_zb = zone_bottom[i - 2]
+            # Fake breakout detection: needs a complete zone two bars back
+            old_zt = zone_top[i - 2] if i >= 2 else np.nan
+            old_zb = zone_bottom[i - 2] if i >= 2 else np.nan
+            if not (np.isnan(old_zt) or np.isnan(old_zb)):
                 prev_c = closes[i - 1]
+                fake_bear[i] = 0.0
+                fake_bull[i] = 0.0
 
                 # Fake bull breakout (bz_fake_bear): price was above old zone_top,
                 # now back at or below old zone_top → bearish rejection signal
