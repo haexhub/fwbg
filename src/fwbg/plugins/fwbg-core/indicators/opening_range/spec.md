@@ -82,6 +82,7 @@ For each configured session hour, defines an opening range as the time window `[
 - range_bars extending beyond DataFrame end — zone_end clamped via min(pos + range_bars - 1, len(df) - 1).
 - Scalar vs list parameters — range_bars/carry_forward_days/pre_range_bars/retracement_levels accept either; single scalar values do not add cf/prb prefix unless non-zero.
 - min_range_height / min_range_height_atr suppress signals but leave structural/statistic features intact.
+- ATR is the Wilder ATR (`fwbg.utils.indicator_math.wilder_atr`) and NaN until `atr_period` bars exist. With min_range_height_atr > 0 a bar whose ATR is still unknown cannot meet the floor, so its signal columns are NaN (earlier versions read the warm-up ATR as 0.0 and let the range pass).
 - Retracement levels list is normalized to a list even when a single float is passed; rl_tag() drives the prefix (e.g., 0.5 -> rl50).
 
 ## Assumptions

@@ -291,15 +291,12 @@ def simulate_trades(
             if atr_col:
                 atr_v = np.nan_to_num(df[atr_col].values.astype(np.float64), nan=0.0)
             else:
-                import ta
+                from fwbg.utils.indicator_math import wilder_atr
 
                 atr_period = exit_params.get("atr_period", 14)
                 atr_v = np.nan_to_num(
-                    ta.volatility.average_true_range(
-                        df["H"],
-                        df["L"],
-                        df["C"],
-                        window=atr_period,
+                    wilder_atr(
+                        df["H"], df["L"], df["C"], window=atr_period
                     ).values.astype(np.float64),
                     nan=0.0,
                 )

@@ -18,6 +18,7 @@ from fwbg_sdk import (
     safe_divide,
     EPSILON,
 )
+from fwbg.utils.indicator_math import wilder_atr
 
 
 def _garman_klass(
@@ -94,21 +95,6 @@ def _yang_zhang(
     return np.sqrt(yz.clip(lower=0))
 
 
-def _atr(high: pd.Series, low: pd.Series, close: pd.Series, window: int) -> pd.Series:
-    """
-    Wilder ATR with a NaN warm-up.
-
-    ``ta`` seeds the first ``window - 1`` rows with 0.0, which looks like a valid
-    "zero volatility" reading to every consumer (percent ranks, compression flag,
-    ATR based exits). The values from the first full window on are unchanged.
-    """
-    if len(close) < window:
-        return pd.Series(np.nan, index=close.index)
-    atr = ta.volatility.average_true_range(high, low, close, window=window)
-    atr.iloc[: window - 1] = np.nan
-    return atr
-
-
 def _infer_bars_per_day(index: pd.Index) -> float:
     """
     Bars per trading day, read from the bar spacing of the index.
@@ -171,13 +157,13 @@ class VolatilityIndicators(BaseIndicator):
         features = {}
 
         # ATR (für interne Nutzung und als Feature)
-        atr_14 = _atr(df["H"], df["L"], df["C"], window=14)
+        atr_14 = wilder_atr(df["H"], df["L"], df["C"], window=14)
         features["_atr"] = atr_14
         features["vol_atr"] = atr_14
 
         # ATR als Prozent vom Preis
         for period in atr_periods:
-            atr = _atr(df["H"], df["L"], df["C"], window=period)
+            atr = wilder_atr(df["H"], df["L"], df["C"], window=period)
             features[f"vol_atr_pct_{period}"] = safe_divide(atr, df["C"])
 
         # Bollinger Bands

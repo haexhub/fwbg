@@ -231,3 +231,12 @@ def test_monte_carlo_noise_cannot_beat_exact_sign_probability_floor():
         "block_sign_permutations": {"6": {"p_value": 0.0001, "observations": 10}},
     }
     assert worst_p([check]) == 1 / 1024
+
+
+def test_atr_and_rsi_are_nan_during_warm_up(flat_bars):
+    """ta's 0.0 ATR seed must not read as zero volatility; RSI(2) needs 2 changes."""
+    features = indicators(flat_bars)
+    assert features.atr.iloc[:13].isna().all()
+    assert features.atr.iloc[13:].notna().all()
+    assert features.rsi.iloc[:2].isna().all()
+    assert features.rsi.iloc[2:].notna().all()

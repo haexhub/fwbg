@@ -38,7 +38,6 @@ from typing import Dict, Any, List
 from dataclasses import dataclass, field
 
 import pandas as pd
-import ta
 
 from fwbg_sdk.models import BaseModel, TrainingContext
 from fwbg.adapters.broker import BrokerAdapter, OrderSide, OrderStatus, BarData
@@ -48,6 +47,7 @@ from fwbg.pipeline.features import configured_signal_columns
 from fwbg.data.loader import run_data_loading
 from fwbg.data.assets import get_asset
 from fwbg.core.risk_state import RiskState
+from fwbg.utils.indicator_math import wilder_atr
 
 logger = logging.getLogger(__name__)
 
@@ -713,9 +713,7 @@ class TradingBot:
                 logger.warning(f"⚠️ {symbol}: Not enough data for ATR")
                 return
 
-            atr = ta.volatility.average_true_range(
-                ohlc_df["H"], ohlc_df["L"], ohlc_df["C"]
-            ).iloc[-1]
+            atr = wilder_atr(ohlc_df["H"], ohlc_df["L"], ohlc_df["C"]).iloc[-1]
             if pd.isna(atr) or atr <= 0:
                 logger.warning(f"⚠️ {symbol}: ATR unavailable (NaN/0) — skipping signal")
                 return

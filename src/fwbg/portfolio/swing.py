@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from ta.momentum import RSIIndicator
-from ta.volatility import AverageTrueRange
+
+from fwbg.utils.indicator_math import wilder_atr, wilder_rsi
 
 from .engine import validate_daily_index
 
@@ -110,10 +110,8 @@ def indicators(bars: pd.DataFrame) -> pd.DataFrame:
         frame[f"ema{period}"] = close.ewm(
             span=period, adjust=False, min_periods=period
         ).mean()
-    frame["rsi"] = RSIIndicator(close, window=2).rsi()
-    frame["atr"] = AverageTrueRange(
-        bars.bid_high, bars.bid_low, close, window=14
-    ).average_true_range()
+    frame["rsi"] = wilder_rsi(close, window=2)
+    frame["atr"] = wilder_atr(bars.bid_high, bars.bid_low, close, window=14)
     frame["upper"] = bars.bid_high.shift(1).rolling(55).max()
     frame["lower"] = bars.bid_low.shift(1).rolling(20).min()
     frame["rsi_entry"] = (close > frame.sma200) & (frame.rsi < 10)
