@@ -1,4 +1,5 @@
 """Tests for previous_day_levels indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -15,12 +16,15 @@ def _make_ohlc_15min(n=2000, seed=42):
     rng = np.random.default_rng(seed)
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.001, n)))
     idx = pd.date_range("2024-01-01", periods=n, freq="15min")
-    df = pd.DataFrame({
-        "O": close * (1 + rng.normal(0, 0.001, n)),
-        "H": close * (1 + np.abs(rng.normal(0, 0.003, n))),
-        "L": close * (1 - np.abs(rng.normal(0, 0.003, n))),
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * (1 + rng.normal(0, 0.001, n)),
+            "H": close * (1 + np.abs(rng.normal(0, 0.003, n))),
+            "L": close * (1 - np.abs(rng.normal(0, 0.003, n))),
+            "C": close,
+        },
+        index=idx,
+    )
     df["H"] = df[["O", "H", "C"]].max(axis=1)
     df["L"] = df[["O", "L", "C"]].min(axis=1)
     return df
@@ -31,12 +35,15 @@ def _make_ohlc_hourly(n=2000, seed=42):
     rng = np.random.default_rng(seed)
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.002, n)))
     idx = pd.date_range("2024-01-01", periods=n, freq="h")
-    df = pd.DataFrame({
-        "O": close * (1 + rng.normal(0, 0.001, n)),
-        "H": close * (1 + np.abs(rng.normal(0, 0.005, n))),
-        "L": close * (1 - np.abs(rng.normal(0, 0.005, n))),
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * (1 + rng.normal(0, 0.001, n)),
+            "H": close * (1 + np.abs(rng.normal(0, 0.005, n))),
+            "L": close * (1 - np.abs(rng.normal(0, 0.005, n))),
+            "C": close,
+        },
+        index=idx,
+    )
     df["H"] = df[["O", "H", "C"]].max(axis=1)
     df["L"] = df[["O", "L", "C"]].min(axis=1)
     return df
@@ -47,12 +54,15 @@ def _make_ohlc_daily(n=500, seed=42):
     rng = np.random.default_rng(seed)
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, n)))
     idx = pd.date_range("2024-01-01", periods=n, freq="D")
-    df = pd.DataFrame({
-        "O": close * (1 + rng.normal(0, 0.005, n)),
-        "H": close * (1 + np.abs(rng.normal(0, 0.01, n))),
-        "L": close * (1 - np.abs(rng.normal(0, 0.01, n))),
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * (1 + rng.normal(0, 0.005, n)),
+            "H": close * (1 + np.abs(rng.normal(0, 0.01, n))),
+            "L": close * (1 - np.abs(rng.normal(0, 0.01, n))),
+            "C": close,
+        },
+        index=idx,
+    )
     df["H"] = df[["O", "H", "C"]].max(axis=1)
     df["L"] = df[["O", "L", "C"]].min(axis=1)
     return df
@@ -89,11 +99,17 @@ class TestPDLFeatures:
     def test_binary_features(self):
         ind = _get_indicator()
         result = ind.compute(_make_ohlc_15min(n=5000))
-        for col in ["hl_ses_pdl_above_high", "hl_ses_pdl_below_low",
-                     "hl_ses_pdl_high_break", "hl_ses_pdl_low_break",
-                     "hl_ses_pdl_post_bull", "hl_ses_pdl_post_bear",
-                     "hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear",
-                     "hl_ses_pdl_day_range_expanding"]:
+        for col in [
+            "hl_ses_pdl_above_high",
+            "hl_ses_pdl_below_low",
+            "hl_ses_pdl_high_break",
+            "hl_ses_pdl_low_break",
+            "hl_ses_pdl_post_bull",
+            "hl_ses_pdl_post_bear",
+            "hl_ses_rl50_pdl_retest_bull",
+            "hl_ses_rl50_pdl_retest_bear",
+            "hl_ses_pdl_day_range_expanding",
+        ]:
             vals = result[col].dropna()
             if len(vals) > 0:
                 assert set(vals.unique()).issubset({0.0, 1.0}), f"{col} not binary"
@@ -189,9 +205,9 @@ def _make_deterministic_retest_data():
         opn[i] = 100.0
         if h == 8:
             high[i] = 100.5
-            low[i] = 90.0    # session low -> PDL=90
+            low[i] = 90.0  # session low -> PDL=90
         elif h == 11:
-            high[i] = 110.0   # session high -> PDH=110
+            high[i] = 110.0  # session high -> PDH=110
             low[i] = 99.5
         else:
             high[i] = 100.5
@@ -306,9 +322,7 @@ class TestPDLRetestSignals:
             day_data = result.loc[day]
             for col in ["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"]:
                 vals = day_data[col].dropna()
-                assert vals.sum() <= 1.0, (
-                    f"{col} fired {vals.sum()} times on {day}"
-                )
+                assert vals.sum() <= 1.0, f"{col} fired {vals.sum()} times on {day}"
 
     def test_retest_does_not_fire_without_breakout(self):
         """If price never breaks PDH/PDL, no retest signals fire."""
@@ -323,9 +337,15 @@ class TestPDLRetestSignals:
             high[i] = 110.0
             low[i] = 90.0
 
-        df = pd.DataFrame({
-            "O": close.copy(), "H": high, "L": low, "C": close,
-        }, index=idx)
+        df = pd.DataFrame(
+            {
+                "O": close.copy(),
+                "H": high,
+                "L": low,
+                "C": close,
+            },
+            index=idx,
+        )
 
         ind = _get_indicator()
         result = ind.compute(df)
@@ -337,9 +357,7 @@ class TestPDLRetestSignals:
                 continue
             for col in ["hl_ses_rl50_pdl_retest_bull", "hl_ses_rl50_pdl_retest_bear"]:
                 vals = day_data[col].dropna()
-                assert vals.sum() == 0, (
-                    f"{col} fired without breakout on {day}"
-                )
+                assert vals.sum() == 0, f"{col} fired without breakout on {day}"
 
     def test_post_bull_state_after_breakout(self):
         """hl_ses_pdl_post_bull is 1 for all bars after the PDH breakout."""
@@ -357,7 +375,9 @@ class TestPDLRetestSignals:
             assert at_08.iloc[0] == 0.0, "Should not be post_bull before breakout"
         at_10 = post.loc[post.index.hour == 10]
         if len(at_10) > 0:
-            assert at_10.iloc[0] == 1.0, "Should be post_bull at 10:00 (after breakout at 09:00)"
+            assert at_10.iloc[0] == 1.0, (
+                "Should be post_bull at 10:00 (after breakout at 09:00)"
+            )
 
     def test_retest_disabled(self):
         """When enable_retest=False, retest columns are not present."""
@@ -438,8 +458,10 @@ class TestPDLSLDist:
         rl = 0.5
         expected = (1 - rl) * pd_range  # 10.0
         np.testing.assert_allclose(
-            sl_vals.iloc[0], expected, rtol=1e-10,
-            err_msg=f"hl_ses_rl50_pdl_sl_dist should be {expected}"
+            sl_vals.iloc[0],
+            expected,
+            rtol=1e-10,
+            err_msg=f"hl_ses_rl50_pdl_sl_dist should be {expected}",
         )
 
     def test_sl_dist_no_nan_after_warmup(self):
@@ -453,7 +475,9 @@ class TestPDLSLDist:
         """hl_ses_rl50_pdl_sl_dist must be shifted (no lookahead)."""
         ind = _get_indicator()
         result = ind.compute(_make_ohlc_15min())
-        assert pd.isna(result["hl_ses_rl50_pdl_sl_dist"].iloc[0]), "hl_ses_rl50_pdl_sl_dist not shifted"
+        assert pd.isna(result["hl_ses_rl50_pdl_sl_dist"].iloc[0]), (
+            "hl_ses_rl50_pdl_sl_dist not shifted"
+        )
 
     def test_sl_dist_atr_floor_kicks_in_for_small_range(self):
         """When previous day range is tiny, min_sl_atr_mult * ATR provides a floor."""
@@ -485,7 +509,9 @@ class TestPDLSLDist:
         result_with_floor = ind.compute(df.copy(), min_sl_atr_mult=1.5)
 
         day1_no = result_no_floor.loc["2024-01-02"]["hl_ses_rl50_pdl_sl_dist"].dropna()
-        day1_fl = result_with_floor.loc["2024-01-02"]["hl_ses_rl50_pdl_sl_dist"].dropna()
+        day1_fl = result_with_floor.loc["2024-01-02"][
+            "hl_ses_rl50_pdl_sl_dist"
+        ].dropna()
 
         if len(day1_no) > 0 and len(day1_fl) > 0:
             # Floor should give a larger SL than pure range-based
@@ -508,14 +534,18 @@ class TestPDLSLDist:
         result_with_floor = ind.compute(df.copy(), min_sl_atr_mult=1.5)
 
         day1_no = result_no_floor.loc["2024-01-02"]["hl_ses_rl50_pdl_sl_dist"].dropna()
-        day1_fl = result_with_floor.loc["2024-01-02"]["hl_ses_rl50_pdl_sl_dist"].dropna()
+        day1_fl = result_with_floor.loc["2024-01-02"][
+            "hl_ses_rl50_pdl_sl_dist"
+        ].dropna()
 
         if len(day1_no) > 0 and len(day1_fl) > 0:
             # Range of 20 → range-based SL = 10, which is likely larger than 1.5 * ATR
             # So both should be equal (floor doesn't kick in)
             np.testing.assert_allclose(
-                day1_no.iloc[0], day1_fl.iloc[0], rtol=1e-10,
-                err_msg="ATR floor should not affect SL when range is already large"
+                day1_no.iloc[0],
+                day1_fl.iloc[0],
+                rtol=1e-10,
+                err_msg="ATR floor should not affect SL when range is already large",
             )
 
 
@@ -570,9 +600,15 @@ class TestPDLRetracementLevels:
         result = ind.compute(df, retracement_levels=[0.3, 0.5, 0.7])
 
         # These should exist exactly once (no prefix)
-        for col in ["hl_ses_pdl_high_dist", "hl_ses_pdl_low_dist", "hl_ses_pdl_position",
-                     "hl_ses_pdl_high_break", "hl_ses_pdl_low_break",
-                     "hl_ses_pdl_post_bull", "hl_ses_pdl_post_bear"]:
+        for col in [
+            "hl_ses_pdl_high_dist",
+            "hl_ses_pdl_low_dist",
+            "hl_ses_pdl_position",
+            "hl_ses_pdl_high_break",
+            "hl_ses_pdl_low_break",
+            "hl_ses_pdl_post_bull",
+            "hl_ses_pdl_post_bear",
+        ]:
             assert col in result.columns
             # Should NOT have rl-prefixed duplicates
             assert f"hl_ses_rl30_{col}" not in result.columns
@@ -621,9 +657,9 @@ def _make_off_session_breakout_data():
         opn[i] = 100.0
         if h == 9:
             high[i] = 100.5
-            low[i] = 90.0    # session low -> PDL=90
+            low[i] = 90.0  # session low -> PDL=90
         elif h == 14:
-            high[i] = 110.0   # session high -> PDH=110
+            high[i] = 110.0  # session high -> PDH=110
             low[i] = 99.5
         else:
             high[i] = 100.5
@@ -842,7 +878,7 @@ class TestPDLRangeParams:
             if 7 <= h < 21:
                 opn[i] = 99.0
                 close[i] = 101.0  # body: 99-101 (range=2)
-                high[i] = 110.0   # wick: 90-110 (range=20)
+                high[i] = 110.0  # wick: 90-110 (range=20)
                 low[i] = 90.0
 
         df = pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
@@ -867,14 +903,17 @@ class TestPDLRangeParams:
 
         result_default = ind.compute(df.copy())
         result_explicit = ind.compute(
-            df.copy(), candle_span="hl", range_scope=["session"],
+            df.copy(),
+            candle_span="hl",
+            range_scope=["session"],
         )
 
         for col in ind.get_feature_columns():
             assert col in result_default.columns
             assert col in result_explicit.columns
             pd.testing.assert_series_equal(
-                result_default[col], result_explicit[col],
+                result_default[col],
+                result_explicit[col],
                 check_names=False,
             )
 
@@ -993,15 +1032,15 @@ class TestPDLMidnightCrossing:
         ind = _get_indicator()
         df = _make_midnight_crossing_data()
         result = ind.compute(
-            df, session_start_hour=23, session_end_hour=6,
+            df,
+            session_start_hour=23,
+            session_end_hour=6,
         )
 
         # Day 2 bars (23:00 Jan 2 - 05:00 Jan 3) should see PDH=110
         # The shifted feature at 00:00 Jan 3 reflects PDH computed at 23:00 Jan 2
         day2_session = result.loc["2024-01-03 00:00":"2024-01-03 05:00"]
-        pdh_vals = (
-            day2_session["hl_ses_pdl_above_high"].dropna()
-        )
+        pdh_vals = day2_session["hl_ses_pdl_above_high"].dropna()
         # At 01:00 Jan 3, C=112 > PDH=110 → pdl_above_high=1
         # (shifted from 00:00, so appears at 01:00)
         # If PDH were incorrectly 120, then 112 < 120 → pdl_above_high=0
@@ -1016,7 +1055,9 @@ class TestPDLMidnightCrossing:
         ind = _get_indicator()
         df = _make_midnight_crossing_data()
         result = ind.compute(
-            df, session_start_hour=23, session_end_hour=6,
+            df,
+            session_start_hour=23,
+            session_end_hour=6,
         )
 
         # Check high_break fires on Day 2
@@ -1032,7 +1073,9 @@ class TestPDLMidnightCrossing:
         ind = _get_indicator()
         df = _make_midnight_crossing_data()
         result = ind.compute(
-            df, session_start_hour=23, session_end_hour=6,
+            df,
+            session_start_hour=23,
+            session_end_hour=6,
             retest_modes=["all_hours"],
         )
 
@@ -1050,7 +1093,9 @@ class TestPDLMidnightCrossing:
         ind = _get_indicator()
         df = _make_midnight_crossing_data()
         result = ind.compute(
-            df, session_start_hour=23, session_end_hour=6,
+            df,
+            session_start_hour=23,
+            session_end_hour=6,
             retest_modes=["session_only"],
         )
 
@@ -1067,7 +1112,9 @@ class TestPDLMidnightCrossing:
         ind = _get_indicator()
         df = _make_midnight_crossing_data()
         result = ind.compute(
-            df, session_start_hour=23, session_end_hour=6,
+            df,
+            session_start_hour=23,
+            session_end_hour=6,
         )
 
         # The 22:00 Jan 2 bar and 23:00 Jan 2 bar should have different day_ids.
@@ -1086,6 +1133,34 @@ class TestPDLMidnightCrossing:
             "Break state should reset at 23:00 (session start), allowing breakout on Day 2"
         )
 
+    def test_resampled_confirmation_does_not_cross_trading_day(self):
+        idx = pd.date_range("2024-01-01", periods=120, freq="h")
+        opens = np.full(len(idx), 100.0)
+        highs = np.full(len(idx), 101.0)
+        lows = np.full(len(idx), 99.0)
+        closes = np.full(len(idx), 100.0)
+
+        # Establish PDH=110 for the trading day containing Jan 2 at 18:00.
+        highs[idx.get_loc("2024-01-01 23:00")] = 110.0
+        # The next trading day has PDH=112, while the 18:00 resampled bar
+        # closes above the previous PDH but below this day's new PDH.
+        highs[idx.get_loc("2024-01-02 10:00")] = 112.0
+        closes[idx.get_loc("2024-01-02 18:00")] = 111.0
+        highs[idx.get_loc("2024-01-02 18:00")] = 111.5
+        df = pd.DataFrame({"O": opens, "H": highs, "L": lows, "C": closes}, index=idx)
+
+        result = _get_indicator().compute(
+            df,
+            session_start_hour=22,
+            session_end_hour=6,
+            range_scope=["all"],
+            resample_tf="4h",
+        )
+
+        # The confirmation is mapped through 21:00, but Jan 2 22:00 starts a
+        # new trading day. After the one-bar feature shift it appears at 23:00.
+        assert result.loc["2024-01-02 23:00", "hl_all_pdl_high_break"] == 0.0
+
     def test_non_crossing_session_unchanged(self):
         """Non-midnight-crossing session (e.g. DAX 8-17) produces identical
         results with the new code path."""
@@ -1096,7 +1171,11 @@ class TestPDLMidnightCrossing:
         result = ind.compute(df)
 
         # Verify standard features are present and have values
-        for col in ["hl_ses_pdl_high_dist", "hl_ses_pdl_position", "hl_ses_rl50_pdl_retest_bull"]:
+        for col in [
+            "hl_ses_pdl_high_dist",
+            "hl_ses_pdl_position",
+            "hl_ses_rl50_pdl_retest_bull",
+        ]:
             assert col in result.columns
             vals = result[col].dropna()
             assert len(vals) > 0
@@ -1107,7 +1186,8 @@ class TestPDLMidnightCrossing:
         ind = _get_indicator()
         df = _make_ohlc_15min(n=3000)
         result = ind.compute(
-            df, retest_modes=["all_hours", "session_only"],
+            df,
+            retest_modes=["all_hours", "session_only"],
         )
 
         # all_hours (no prefix)
@@ -1132,9 +1212,9 @@ class TestPDLMidnightCrossing:
 
         # 2 break × 2 retest × 1 rl = 4 retest column sets
         expected_prefixes = [
-            "",          # all_hours break + all_hours retest
-            "sesret_",   # all_hours break + session_only retest
-            "sesbrk_",   # session_only break + all_hours retest
+            "",  # all_hours break + all_hours retest
+            "sesret_",  # all_hours break + session_only retest
+            "sesbrk_",  # session_only break + all_hours retest
             "sesbrk_sesret_",  # session_only break + session_only retest
         ]
         for pfx in expected_prefixes:
@@ -1471,13 +1551,17 @@ class TestResampledRange:
 
         # body + session with resample
         result_r = ind.compute(
-            df.copy(), candle_span="body",
-            resample_tf="1h", min_retracement=0.0,
+            df.copy(),
+            candle_span="body",
+            resample_tf="1h",
+            min_retracement=0.0,
         )
         # body + session without resample
         result_n = ind.compute(
-            df.copy(), candle_span="body",
-            resample_tf=None, min_retracement=0.0,
+            df.copy(),
+            candle_span="body",
+            resample_tf=None,
+            min_retracement=0.0,
         )
 
         # Day 1 range_vs_atr should differ because the 09:15 spike (C=112)
@@ -1494,12 +1578,16 @@ class TestResampledRange:
         df = _make_ohlc_15min(n=2000)
 
         result_r = ind.compute(
-            df.copy(), candle_span="hl",
-            resample_tf="1h", min_retracement=0.0,
+            df.copy(),
+            candle_span="hl",
+            resample_tf="1h",
+            min_retracement=0.0,
         )
         result_n = ind.compute(
-            df.copy(), candle_span="hl",
-            resample_tf=None, min_retracement=0.0,
+            df.copy(),
+            candle_span="hl",
+            resample_tf=None,
+            min_retracement=0.0,
         )
 
         # Range should be identical
@@ -1525,6 +1613,185 @@ class TestPDLDiscovery:
 
     def test_plugin_discoverable(self):
         from fwbg.core import discover_plugins, get_indicator
+
         discover_plugins()
         cls = get_indicator("previous_day_levels")
         assert cls is not None
+
+
+# ---------------------------------------------------------------------------
+# Causality (dense truncation), day-range expansion, warm-up, columns
+# ---------------------------------------------------------------------------
+
+_TRUNC_CONFIGS = [
+    pytest.param({}, id="default"),
+    pytest.param({"candle_span": "body", "range_scope": ["session", "all"]}, id="body"),
+    pytest.param(
+        {
+            "break_modes": ["all_hours", "session_only"],
+            "retest_modes": ["all_hours", "session_only"],
+            "retracement_levels": [0.382, 0.5],
+            "min_retracement": 0.0,
+        },
+        id="modes",
+    ),
+    pytest.param(
+        {"candle_span": "body", "resample_tf": "4h", "range_scope": ["session", "all"]},
+        id="body-4h",
+    ),
+    pytest.param({"resample_tf": "1h", "breakout_threshold": 0.05}, id="hl-1h"),
+    pytest.param(
+        {"session_start_hour": 22, "session_end_hour": 6, "resample_tf": "4h"},
+        id="overnight-4h",
+    ),
+    pytest.param({"skip_weekends": False, "min_sl_atr_mult": 1.0}, id="weekends"),
+]
+
+
+class TestPDLCausality:
+    @pytest.mark.parametrize("params", _TRUNC_CONFIGS)
+    def test_truncation_invariance_every_cut(self, params):
+        """Row r < cut must not depend on bars >= cut, for every cut in a window."""
+        df = _make_ohlc_hourly(n=260, seed=11)
+        ind = _get_indicator()
+        kw = {"atr_period": 6, "ma_period": 5, **params}
+        full = ind.compute(df, **kw)
+        cols = ind.get_feature_columns(None)
+        cols = [c for c in full.columns if c not in df.columns]
+        assert cols
+        for cut in range(150, 211):
+            part = ind.compute(df.iloc[:cut], **kw)
+            assert list(part.columns) == list(full.columns), f"cut={cut}"
+            np.testing.assert_array_equal(
+                part[cols].to_numpy(),
+                full[cols].iloc[:cut].to_numpy(),
+                err_msg=f"cut={cut}",
+            )
+
+    def test_truncation_invariance_15min_with_hourly_confirmation(self):
+        df = _make_ohlc_15min(n=700, seed=5)
+        ind = _get_indicator()
+        kw = {"atr_period": 8, "ma_period": 5, "resample_tf": "1h"}
+        full = ind.compute(df, **kw)
+        cols = [c for c in full.columns if c not in df.columns]
+        for cut in range(560, 621):
+            part = ind.compute(df.iloc[:cut], **kw)
+            np.testing.assert_array_equal(
+                part[cols].to_numpy(),
+                full[cols].iloc[:cut].to_numpy(),
+                err_msg=f"cut={cut}",
+            )
+
+
+class TestDayRangeExpanding:
+    def test_matches_running_reference(self):
+        df = _make_ohlc_hourly(n=24 * 6, seed=2)
+        res = _get_indicator().compute(
+            df, session_start_hour=0, session_end_hour=24, range_scope=["all"]
+        )
+        col = "hl_all_pdl_day_range_expanding"
+        day = df.index.normalize()
+        day_hl = (
+            pd.DataFrame({"h": df["H"], "l": df["L"]})
+            .groupby(day)
+            .agg({"h": "max", "l": "min"})
+        )
+        prev_range = (day_hl["h"] - day_hl["l"]).shift(1)
+        run_h = df["H"].groupby(day).cummax()
+        run_l = df["L"].groupby(day).cummin()
+        expected = ((run_h - run_l) > prev_range.reindex(day).to_numpy()).astype(float)
+        expected[prev_range.reindex(day).isna().to_numpy()] = np.nan
+        # raw row i -> output row i+1 (1-bar shift)
+        got = res[col].to_numpy()[1:]
+        want = expected.to_numpy()[:-1]
+        np.testing.assert_array_equal(got, want)
+        # the whole point: it must flip within a day, not be constant per day
+        valid = ~np.isnan(got)
+        per_day = pd.Series(got[valid]).groupby(day[1:][valid]).nunique()
+        assert (per_day > 1).any()
+
+    def test_does_not_use_later_bars_of_the_same_day(self):
+        # Day 2 opens narrow, then a huge bar arrives at 20:00.  Before it the
+        # range is not wider than day 1's, and must stay so in earlier rows.
+        idx = pd.date_range("2024-01-01", periods=48, freq="h")
+        h = np.full(48, 101.0)
+        low = np.full(48, 99.0)
+        h[44] = 150.0  # day 2, 20:00
+        df = pd.DataFrame({"O": 100.0, "H": h, "L": low, "C": 100.0}, index=idx)
+        res = _get_indicator().compute(
+            df, session_start_hour=0, session_end_hour=24, range_scope=["all"]
+        )
+        col = res["hl_all_pdl_day_range_expanding"]
+        assert col.iloc[25:45].eq(0.0).all()
+        assert col.iloc[45] == 1.0
+
+
+class TestPDLWarmupAndColumns:
+    def test_atr_warmup_rows_are_nan(self):
+        df = _make_ohlc_hourly(n=24 * 6)
+        res = _get_indicator().compute(df, atr_period=30)
+        col = "hl_ses_pdl_range_vs_atr"
+        # prev-day levels exist from day 2 (row 24); ATR needs 30 bars -> row 30
+        assert res[col].iloc[24:30].isna().all()
+        assert res[col].iloc[31:].notna().all()
+
+    def test_feature_columns_match_output_when_retest_disabled(self):
+        df = _make_ohlc_hourly(n=24 * 5)
+        ind = _get_indicator()
+        res = ind.compute(df, enable_retest=False, retracement_levels=[0.382, 0.5])
+        out = [c for c in res.columns if c not in df.columns]
+        assert sorted(
+            ind.get_feature_columns(
+                {"enable_retest": False, "retracement_levels": [0.382, 0.5]}
+            )
+        ) == sorted(out)
+        assert not any("retest" in c for c in out)
+        sig = ind.get_signal_columns({"enable_retest": False})
+        assert not any("retest" in c for c in sig)
+
+    def test_feature_columns_match_output_when_retest_enabled(self):
+        df = _make_ohlc_hourly(n=24 * 5)
+        ind = _get_indicator()
+        res = ind.compute(df)
+        out = [c for c in res.columns if c not in df.columns]
+        assert sorted(ind.get_feature_columns({"enable_retest": True})) == sorted(out)
+
+
+class TestResampleSessionAlignment:
+    def test_body_4h_range_excludes_off_session_hours(self):
+        # Session 07-21 UTC.  The 4h bin 20:00-24:00 mixes the last session
+        # hour with off-session hours; its close (taken at 23:00, off session)
+        # must not enter the previous-day body range.
+        idx = pd.date_range("2024-01-02", periods=48, freq="h")  # Tue, Wed
+        o = np.full(48, 100.0)
+        c = np.full(48, 101.0)
+        c[23] = 140.0  # day 1, 23:00 - off session
+        df = pd.DataFrame(
+            {"O": o, "H": np.maximum(o, c), "L": np.minimum(o, c), "C": c}, index=idx
+        )
+        res = _get_indicator().compute(
+            df,
+            candle_span="body",
+            resample_tf="4h",
+            range_scope=["session"],
+            atr_period=2,
+        )
+        # Day 2: in-session body range is [100, 101]; close 101 sits at the top.
+        pos = res["body_ses_pdl_position"].iloc[24 + 8 : 24 + 12]
+        np.testing.assert_allclose(pos.to_numpy(), 1.0)
+
+
+class TestRetestNeverOnBreakBar:
+    def test_break_bar_with_deep_low_is_not_a_retest(self):
+        # Day 1 breaks PDH=110 at 09:00 with a bar whose low (99) already
+        # reaches the midpoint entry (100).  That bar must not be the retest;
+        # the first later bar touching the entry is.
+        df = _make_deterministic_retest_data()
+        i_break = df.index.get_loc(pd.Timestamp("2024-01-02 09:00"))
+        df.iloc[i_break, df.columns.get_loc("L")] = 99.0
+        res = _get_indicator().compute(df, min_retracement=0.0)
+        col = res.loc["2024-01-02", "hl_ses_rl50_pdl_retest_bull"]
+        # raw 09:00 would show at 10:00 after the shift
+        assert col.loc["2024-01-02 10:00"] == 0.0
+        assert col.dropna().sum() == 1.0
+        assert col[col == 1.0].index[0].hour == 13  # raw 12:00, shifted
