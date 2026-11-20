@@ -28,7 +28,9 @@ def results_dir(tmp_path, monkeypatch):
         for i in range(24)
     ]
     fold_results = {"walk_forward": {"fold_details": [{"test_trades_detail": trades}]}}
-    (run_dir / "grid_details" / "EURUSD" / "fold_results.json").write_text(json.dumps(fold_results))
+    (run_dir / "grid_details" / "EURUSD" / "fold_results.json").write_text(
+        json.dumps(fold_results)
+    )
 
     source = CSVSourceConfig(name="disc", path=tmp_path / "data")
     source.path.mkdir()
@@ -58,7 +60,9 @@ def test_data_loading_does_not_block_the_event_loop(results_dir, monkeypatch):
             loop_responded.set()
 
         transport = httpx.ASGITransport(app=create_app())
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
             _, response = await asyncio.gather(
                 _respond_once_loading(),
                 client.get("/api/runs/run-1/discovery/EURUSD"),
@@ -83,7 +87,9 @@ def test_discovery_completes_and_caches_its_result(results_dir, monkeypatch):
 
     async def _scenario():
         transport = httpx.ASGITransport(app=create_app())
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
             return await client.get("/api/runs/run-1/discovery/EURUSD")
 
     response = asyncio.run(_scenario())
