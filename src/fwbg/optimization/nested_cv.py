@@ -704,6 +704,54 @@ def _first_fold_catastrophic(
     )
 
 
+def _cross_fitted_fold_pnls(
+    successful: List[Dict[str, Any]], ctx: SimulationContext
+) -> Optional[List[float]]:
+    """Per-fold PnL at a threshold chosen on the OTHER folds.
+
+    Every fold's own best threshold (the max over the grid evaluated on that same
+    validation window) is an optimistic score for the setting that is actually used:
+    one threshold voted over all folds. For fold k the threshold is therefore picked
+    by the summed PnL of the folds other than k, and fold k is scored at that
+    threshold, so no window is scored at a threshold chosen on its own data.
+
+    None when this cannot be done: fewer than two folds, a single threshold (no
+    selection happens, e.g. probability calibration) or separate long/short
+    thresholds, whose per-fold trades are only kept for the fold's own best pair.
+    """
+    if len(successful) < 2:
+        return None
+    tables: List[Dict[Any, Tuple[float, int]]] = []
+    for fold in successful:
+        trades_by_ct = fold.get("trades_by_ct") or {}
+        if not trades_by_ct or any(
+            not isinstance(trades, list) for trades in trades_by_ct.values()
+        ):
+            return None
+        tables.append(
+            {
+                ct: (sum(t["pnl_raw"] for t in trades), len(trades))
+                for ct, trades in trades_by_ct.items()
+            }
+        )
+    common = [ct for ct in tables[0] if all(ct in table for table in tables[1:])]
+    if len(common) < 2:
+        return None
+    min_trades = getattr(ctx, "min_eval_trades", 1)
+
+    scores = []
+    for k, held_out in enumerate(tables):
+        others = [table for j, table in enumerate(tables) if j != k]
+        eligible = [
+            ct for ct in common if sum(table[ct][1] for table in others) >= min_trades
+        ]
+        if not eligible:
+            return None
+        chosen = max(eligible, key=lambda ct: sum(table[ct][0] for table in others))
+        scores.append(float(held_out[chosen][0]))
+    return scores
+
+
 def _aggregate_cv_folds(
     fold_results: List[Dict[str, Any]],
     total_folds: int,
@@ -777,6 +825,18 @@ def _aggregate_cv_folds(
     if not selected_features:
         return {"success": False}
 
+    # The score the setting is judged by: PnL at a threshold chosen without the scored
+    # fold (see _cross_fitted_fold_pnls); the per-fold max over thresholds is kept for
+    # reference. Where cross-fitting is impossible the per-fold max stays and says so.
+    successful_folds = [fr for fr in fold_results if fr.get("success")]
+    max_ct_pnls = inner_val_pnls
+    cross_fitted = _cross_fitted_fold_pnls(successful_folds, ctx)
+    if cross_fitted is not None:
+        inner_val_pnls = cross_fitted
+        score_method = "cross_fitted_ct"
+    else:
+        score_method = "per_fold_best_ct"
+
     profitable_folds = sum(1 for pnl in inner_val_pnls if pnl > 0)
     fold_stability = profitable_folds / total_folds if total_folds > 0 else 0
     if fold_stability < getattr(ctx, "min_fold_stability", 0.5):
@@ -798,6 +858,8 @@ def _aggregate_cv_folds(
     result = {
         "success": True,
         "avg_val_pnl": np.mean(inner_val_pnls),
+        "avg_val_pnl_max_ct": float(np.mean(max_ct_pnls)),
+        "inner_score_method": score_method,
         "best_ct": best_ct,
         "ct_votes": {
             str(k) if isinstance(k, tuple) else str(k): v

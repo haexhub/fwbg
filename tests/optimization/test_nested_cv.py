@@ -762,3 +762,79 @@ def test_missing_best_ct_trade_key_does_not_count_as_no_trades():
     }
 
     assert _first_fold_catastrophic(fold_result, ctx) is False
+
+
+def _two_ct_fold(pnl_a, pnl_b, n_trades=10):
+    def trades(pnl):
+        return [
+            {"pnl_raw": pnl / n_trades, "result": 1.0 if pnl > 0 else -1.0}
+        ] * n_trades
+
+    best_ct, best_pnl = (0.5, pnl_a) if pnl_a >= pnl_b else (0.6, pnl_b)
+    return {
+        "success": True,
+        "pnl": best_pnl,
+        "best_ct": best_ct,
+        "trades_by_ct": {0.5: trades(pnl_a), 0.6: trades(pnl_b)},
+        "selected_features_long": ["f"],
+        "selected_features_short": [],
+    }
+
+
+def test_inner_score_does_not_pick_the_best_threshold_on_the_scored_fold():
+    """Noise: threshold a wins folds 0 and 2, b wins folds 1 and 3. The per-fold max
+    reads +5 per fold; a threshold chosen without the scored fold loses 5 on each."""
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(
+        min_fold_stability=0.0,
+        first_fold_sanity_check=False,
+        separate_long_short=False,
+        min_eval_trades=1,
+    )
+    folds = [_two_ct_fold(5.0, -5.0), _two_ct_fold(-5.0, 5.0)] * 2
+
+    result = _aggregate_cv_folds(folds, 4, ctx, ["f"], [])
+
+    assert result["avg_val_pnl_max_ct"] == pytest.approx(5.0)
+    assert result["inner_score_method"] == "cross_fitted_ct"
+    assert result["fold_pnls"] == [-5.0, -5.0, -5.0, -5.0]
+    assert result["avg_val_pnl"] == pytest.approx(-5.0)
+
+
+def test_inner_score_keeps_a_real_edge():
+    """A threshold that is best in every fold is also chosen on the other folds."""
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(
+        min_fold_stability=0.0,
+        first_fold_sanity_check=False,
+        separate_long_short=False,
+        min_eval_trades=1,
+    )
+    folds = [_two_ct_fold(4.0, -1.0) for _ in range(4)]
+
+    result = _aggregate_cv_folds(folds, 4, ctx, ["f"], [])
+
+    assert result["avg_val_pnl"] == pytest.approx(4.0)
+
+
+def test_inner_score_falls_back_and_says_so_without_a_threshold_choice():
+    from types import SimpleNamespace
+
+    from fwbg.optimization.nested_cv import _aggregate_cv_folds
+
+    ctx = SimpleNamespace(
+        min_fold_stability=0.0,
+        first_fold_sanity_check=False,
+        separate_long_short=False,
+        min_eval_trades=1,
+    )
+    result = _aggregate_cv_folds([_fold_stub(2.0), _fold_stub(3.0)], 2, ctx, ["f"], [])
+
+    assert result["inner_score_method"] == "per_fold_best_ct"
+    assert result["avg_val_pnl"] == pytest.approx(2.5)
