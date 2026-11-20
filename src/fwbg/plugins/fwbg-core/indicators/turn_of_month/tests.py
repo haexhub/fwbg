@@ -98,3 +98,26 @@ def test_unknown_calendar_and_empty_frame():
         compute(["2024-01-02"], calendar="MOON")
     empty = TurnOfMonthIndicator().compute(daily([]))
     assert list(empty.columns) == ["C", *mod.TOM_COLUMNS] and empty.empty
+
+
+def test_intraday_bars_repeat_the_flags_of_their_date():
+    # every hourly bar of Mon 2024-03-25 .. Thu 2024-03-28 carries its date's values
+    index = pd.date_range("2024-03-25 00:00", "2024-03-28 23:00", freq="h")
+    out = (
+        TurnOfMonthIndicator()
+        .compute(pd.DataFrame({"C": 1.0}, index=index), entry_days_left=0)
+        .iloc[1:]
+    )
+    last_day = out.loc["2024-03-28"]
+    assert (last_day["tom_days_left"] == 0.0).all()
+    assert (last_day["tom_entry_long"] == 1.0).all()  # 24 flagged bars, not one
+    assert (out.loc["2024-03-27", "tom_entry_long"] == 0.0).all()
+
+
+def test_month_position_pins_a_month_ending_on_a_sunday():
+    # 2023-04-30 is a Sunday: Fri Apr 28 is the last trading day (days_left 0);
+    # April 2023 has 19 trading days (Good Friday closed), May 2023 has 22
+    dates = pd.DatetimeIndex(["2023-04-27", "2023-04-28", "2023-04-30", "2023-05-01"])
+    day, left = mod.month_position("NYSE", dates)
+    assert day.tolist() == [18.0, 19.0, 19.0, 1.0]
+    assert left.tolist() == [1.0, 0.0, 0.0, 21.0]
