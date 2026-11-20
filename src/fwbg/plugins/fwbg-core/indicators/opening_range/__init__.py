@@ -820,6 +820,15 @@ class OpeningRangeIndicator(BaseIndicator):
                             cols.append(orb_col(rb, cf, prb, h, f"{rl_pfx}sl_dist"))
         return cols
 
+    def get_unshifted_columns(self, params=None) -> List[str]:
+        """Signal columns plus the structural levels, which are not shifted either."""
+        structural = [
+            c
+            for c in self.get_feature_columns(params)
+            if c.endswith(ORB_STRUCTURAL_SUFFIXES)
+        ]
+        return list(dict.fromkeys(super().get_unshifted_columns(params) + structural))
+
     def get_signal_columns(self, params=None) -> List[str]:
         if self._signal_columns and not params:
             return self._signal_columns
