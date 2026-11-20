@@ -102,9 +102,66 @@ def _file_info(path: Path) -> dict:
     return {"name": path.name, "size": stat.st_size, "modified": stat.st_mtime}
 
 
+# Placeholder shown instead of stored secrets. A client that sends it back
+# unchanged (GET, edit, PUT) keeps the stored value.
+SECRET_MASK = "********"
+
+_SECRET_HEADER_HINTS = ("auth", "key", "token", "secret", "cookie", "password")
+_CREDENTIALS_IN_URL_RE = re.compile(r"(://[^:/@\s]*:)[^@/\s]*(@)")
+
+
+def _is_secret_header(header: str) -> bool:
+    lowered = header.lower()
+    return any(hint in lowered for hint in _SECRET_HEADER_HINTS)
+
+
+def _mask_secrets(d: dict) -> dict:
+    """Return a copy of a serialized source config with secrets replaced by SECRET_MASK."""
+    masked = dict(d)
+    if masked.get("api_key"):
+        masked["api_key"] = SECRET_MASK
+    if masked.get("connection_string"):
+        masked["connection_string"] = _CREDENTIALS_IN_URL_RE.sub(
+            rf"\g<1>{SECRET_MASK}\g<2>", masked["connection_string"]
+        )
+    if isinstance(masked.get("headers"), dict):
+        masked["headers"] = {
+            k: (SECRET_MASK if v and _is_secret_header(k) else v)
+            for k, v in masked["headers"].items()
+        }
+    return masked
+
+
+def _restore_masked_secrets(body: dict, current: dict) -> None:
+    """Replace mask placeholders in an update body by the stored values (in place)."""
+    if body.get("api_key") == SECRET_MASK:
+        body["api_key"] = current.get("api_key", "")
+    conn = body.get("connection_string")
+    if isinstance(conn, str) and SECRET_MASK in conn:
+        stored = current.get("connection_string", "")
+        if _mask_secrets({"connection_string": stored})["connection_string"] == conn:
+            body["connection_string"] = stored
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="connection_string contains the secret mask placeholder",
+            )
+    headers = body.get("headers")
+    if isinstance(headers, dict):
+        stored_headers = current.get("headers") or {}
+        for key, value in list(headers.items()):
+            if value == SECRET_MASK:
+                if key not in stored_headers:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"header {key!r} contains the secret mask placeholder",
+                    )
+                headers[key] = stored_headers[key]
+
+
 def _source_to_response(name: str) -> dict:
     source = _DATA_SOURCES[name]
-    d = source.to_dict()
+    d = _mask_secrets(source.to_dict())
 
     if isinstance(source, CSVSourceConfig):
         ds_path = source.path
@@ -235,6 +292,7 @@ def update_source(name: str, body: dict):
     body.pop("name", None)
     body.pop("type", None)
     _check_source_paths(body, current)
+    _restore_masked_secrets(body, current)
     current.update(body)
     current["name"] = name
 

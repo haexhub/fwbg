@@ -57,6 +57,8 @@ def clean_registry(tmp_path, monkeypatch):
     import fwbg.pipeline.registry as reg_mod
     import fwbg.api.plugins as plugins_mod
 
+    # Registration is off by default; these tests exercise the enabled path.
+    monkeypatch.setenv("FWBG_ALLOW_PLUGIN_UPLOAD", "1")
     monkeypatch.setattr(reg_mod, "get_user_plugins_dir", lambda: tmp_path)
     monkeypatch.setattr(
         plugins_mod, "get_user_plugins_dir", lambda: tmp_path, raising=False

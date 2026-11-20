@@ -5,6 +5,7 @@ import inspect
 import json
 import logging
 import mimetypes
+import os
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,22 @@ exit_modifiers_router = APIRouter(prefix="/exit-modifiers", tags=["exit-modifier
 entry_modifiers_router = APIRouter(prefix="/entry-modifiers", tags=["entry-modifiers"])
 
 _AGENT_AUTHORED_NAMESPACE = "agent-authored"
+
+# Registering a plugin imports and executes uploaded Python inside the API
+# process and persists it for the bot, so it needs an explicit server-side
+# opt-in on top of API-key auth. Read per request, never cached.
+ALLOW_PLUGIN_UPLOAD_ENV = "FWBG_ALLOW_PLUGIN_UPLOAD"
+
+
+def plugin_upload_enabled() -> bool:
+    """Return True when the operator has enabled remote plugin registration."""
+    return os.environ.get(ALLOW_PLUGIN_UPLOAD_ENV, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 logger = logging.getLogger(__name__)
 
 # Singular PluginKind (fwbg-agents) → plural category dir (fwbg registry)
@@ -184,8 +201,16 @@ def register_plugin(payload: RegisterPluginPayload) -> dict:
     validates it (module import + tests), and refreshes the registry so the plugin
     appears immediately in ``GET /api/plugins``.
     Returns ``{"fqn": "agent-authored:<slug>", ...}`` or a 4xx error on failure.
+    Disabled (403) unless ``FWBG_ALLOW_PLUGIN_UPLOAD`` is enabled on the server.
     """
     from fwbg.pipeline.registry import get_user_plugins_dir, reset_registry
+
+    if not plugin_upload_enabled():
+        raise HTTPException(
+            403,
+            f"Plugin registration is disabled on this server. Set {ALLOW_PLUGIN_UPLOAD_ENV}=1 to enable it "
+            "(uploaded code is executed in the API process).",
+        )
 
     category = _KIND_TO_CATEGORY.get(payload.kind)
     if category is None:

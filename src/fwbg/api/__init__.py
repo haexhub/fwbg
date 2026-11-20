@@ -17,8 +17,11 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-# Paths that bypass API-key checks even when auth is enabled.
-_AUTH_BYPASS_PATHS = ("/docs", "/redoc", "/openapi.json", "/health")
+# Exact paths that bypass API-key checks even when auth is enabled. Everything
+# else (including unknown paths and anything outside /api) requires the key.
+_AUTH_BYPASS_PATHS = frozenset(
+    {"/docs", "/redoc", "/openapi.json", "/health", "/docs/oauth2-redirect"}
+)
 
 
 def create_app() -> FastAPI:
@@ -52,9 +55,11 @@ def create_app() -> FastAPI:
     class APIKeyMiddleware(BaseHTTPMiddleware):
         """Simple X-API-Key check, enabled via FWBG_API_KEY env var.
 
-        When FWBG_API_KEY is unset the middleware is a no-op so existing
-        single-user setups keep working. When set, every request to /api/* must
-        carry a matching X-API-Key header.
+        The middleware is only installed when a key is configured. Every request
+        except the exact paths in ``_AUTH_BYPASS_PATHS`` must carry a matching
+        X-API-Key header. CORS preflight requests never carry credentials; they
+        are answered by the outer CORSMiddleware (see ``create_app``) and carry
+        no data.
         """
 
         def __init__(self, app, api_key: str):
@@ -64,8 +69,7 @@ def create_app() -> FastAPI:
 
         async def dispatch(self, request: Request, call_next):
             """Reject protected API requests whose key fails a constant-time comparison."""
-            path = request.url.path
-            if not path.startswith("/api") or path.startswith(_AUTH_BYPASS_PATHS):
+            if request.url.path in _AUTH_BYPASS_PATHS:
                 return await call_next(request)
             provided = request.headers.get("x-api-key", "")
             if not hmac.compare_digest(provided, self._api_key):
@@ -88,22 +92,6 @@ def create_app() -> FastAPI:
         title="FWBG API",
         description="REST API for the FWBG trading strategy framework",
         version="1.0.0",
-    )
-
-    # CORS: wildcard origins are incompatible with credentials. Configure
-    # FWBG_CORS_ORIGINS as a comma-separated list of trusted origins for
-    # browser deployments. Default keeps the dashboard origins.
-    cors_env = os.environ.get(
-        "FWBG_CORS_ORIGINS",
-        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173",
-    )
-    cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
     )
 
     api_key = os.environ.get("FWBG_API_KEY", "").strip()
@@ -130,6 +118,26 @@ def create_app() -> FastAPI:
             "refuses to start unauthenticated. Set FWBG_API_KEY, or set "
             "FWBG_ALLOW_UNAUTHENTICATED_API=1 for local-only development."
         )
+
+    # CORS: wildcard origins are incompatible with credentials. Configure
+    # FWBG_CORS_ORIGINS as a comma-separated list of trusted origins for
+    # browser deployments. Default keeps the dashboard origins.
+    cors_env = os.environ.get(
+        "FWBG_CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173",
+    )
+    cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    # Starlette wraps middleware in reverse order of registration: the one added
+    # last is outermost. CORS is added after the key check on purpose, so that
+    # browser preflights (which carry no X-API-Key) are answered by CORS instead
+    # of being rejected, and 401 responses still carry CORS headers.
 
     app.include_router(
         exit_optimization_router, prefix="/api/exploration/exit-optimization"
