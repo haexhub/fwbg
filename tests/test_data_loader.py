@@ -218,3 +218,46 @@ class TestRealDataFormats:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestLoadDataAlignedErrors:
+    """Only a missing/empty file means "no data"; other problems must surface."""
+
+    def test_missing_file_is_no_data(self, tmp_path):
+        assert load_data_aligned(str(tmp_path / "nope_HOUR_1.csv")) is None
+
+    def test_empty_file_is_no_data(self, tmp_path):
+        path = tmp_path / "EMPTY_HOUR_1.csv"
+        path.write_text("")
+        assert load_data_aligned(str(path)) is None
+
+    def test_header_only_file_is_no_data(self, tmp_path):
+        path = tmp_path / "HDR_HOUR_1.csv"
+        path.write_text("Time,Open,High,Low,Close,Volume\n")
+        assert load_data_aligned(str(path)) is None
+
+    def test_non_positive_prices_raise(self, tmp_path):
+        path = tmp_path / "BAD_HOUR_1.csv"
+        path.write_text(
+            "Time,Open,High,Low,Close,Volume\n"
+            "2024-01-01 10:00,100.0,101.0,0.0,100.5,1000\n"
+        )
+        with pytest.raises(ValueError, match="non-positive"):
+            load_data_aligned(str(path))
+
+    def test_non_numeric_prices_raise(self, tmp_path):
+        path = tmp_path / "TXT_HOUR_1.csv"
+        path.write_text(
+            "Time,Open,High,Low,Close,Volume\n"
+            "2024-01-01 10:00,abc,101.0,99.0,100.5,1000\n"
+        )
+        with pytest.raises(ValueError, match="not numeric"):
+            load_data_aligned(str(path))
+
+    def test_unparseable_timestamps_raise(self, tmp_path):
+        path = tmp_path / "TS_HOUR_1.csv"
+        path.write_text(
+            "Time,Open,High,Low,Close,Volume\nnot-a-date,100.0,101.0,99.0,100.5,1000\n"
+        )
+        with pytest.raises(ValueError):
+            load_data_aligned(str(path))

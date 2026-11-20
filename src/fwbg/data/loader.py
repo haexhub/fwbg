@@ -2,12 +2,15 @@
 Daten laden und Makro-Indikatoren integrieren
 """
 
+import logging
 import os
 import pandas as pd
 import numpy as np
 
 from .config import TARGET_TZ
 from .macro_contract import RELEASE_COL, merge_respect_release
+
+log = logging.getLogger(__name__)
 
 
 def _has_header(path):
@@ -106,12 +109,19 @@ def apply_date_window(
     return df.loc[df.index < end]
 
 
-def load_data_aligned(path, is_sentiment=False):
-    """Lädt OHLC-Daten aus CSV mit Zeitzone-Alignment."""
+def load_data_aligned(path: str, is_sentiment: bool = False) -> pd.DataFrame | None:
+    """Lädt OHLC-Daten aus CSV mit Zeitzone-Alignment.
+
+    Returns None only for a missing or empty file; unreadable or invalid data
+    (parse errors, non-numeric or non-positive OHLC) raises.
+    """
     try:
         # Prüfe ob Header vorhanden
         has_header = _has_header(path)
         df_raw = pd.read_csv(path, header=0 if has_header else None)
+        if df_raw.empty:
+            log.warning("load_data_aligned: %s has no data rows", path)
+            return None
 
         # Bestimme Start-Offset der Datenspalten.
         # Mit Header: start=0 (erste Spalte ist Timestamp).
@@ -162,8 +172,10 @@ def load_data_aligned(path, is_sentiment=False):
         _validate_ohlc(df, path)
 
         return df
-    except Exception as e:
-        print(f"Fehler beim Laden von {path}: {e}")
+    except (FileNotFoundError, pd.errors.EmptyDataError) as exc:
+        # Absent or empty file: "no data" for this symbol. Anything else (parse
+        # errors, invalid OHLC) propagates so it is not mistaken for missing data.
+        log.warning("load_data_aligned: no data in %s: %s", path, exc)
         return None
 
 
