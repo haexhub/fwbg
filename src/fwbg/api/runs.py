@@ -1,4 +1,5 @@
 """Run management endpoints."""
+
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 # multiple FastAPI worker threads can hit the run endpoints concurrently.
 _active_jobs: dict[str, dict] = {}
 _active_jobs_lock = threading.Lock()
+
 
 # Limit concurrent CLI subprocesses to prevent resource exhaustion via spam.
 def _max_concurrent_runs_from_env() -> int:
@@ -112,6 +114,7 @@ def _job_error_output(job: dict, limit: int = 500) -> str:
 
 class RunStartRequest(BaseModel):
     """Request body for starting a run."""
+
     strategy_name: str
     assets: Optional[list[str]] = None
     asset_classes: Optional[list[str]] = None
@@ -128,6 +131,7 @@ class RunStartRequest(BaseModel):
 
 class PreviewRequest(BaseModel):
     """Request body for signal preview (no optimization)."""
+
     strategy_name: str
     symbol: str
     datasource: Optional[str] = None
@@ -168,6 +172,7 @@ def start_run(body: RunStartRequest) -> dict:
 
     try:
         from fwbg.api.workspace import get_workspace
+
         env = os.environ.copy()
         env.setdefault("FWBG_WORKSPACE", str(get_workspace()))
         if gate_enabled():
@@ -175,7 +180,9 @@ def start_run(body: RunStartRequest) -> dict:
                 _preflight(cmd, env)
             except HTTPException:
                 # The preflight refused or failed: free the slot, keep no run dir.
-                _run_service.release(_active_jobs, _active_jobs_lock, results_dir, job_id)
+                _run_service.release(
+                    _active_jobs, _active_jobs_lock, results_dir, job_id
+                )
                 raise
             with _active_jobs_lock:
                 status = _active_jobs.get(job_id, {}).get("status")
@@ -241,7 +248,9 @@ def preview_signals(body: PreviewRequest) -> dict:
     # Resolve datasource → CSV path
     ds_name = body.datasource or strategy.datasource
     if not ds_name:
-        raise HTTPException(400, "No datasource configured (set in strategy or request)")
+        raise HTTPException(
+            400, "No datasource configured (set in strategy or request)"
+        )
 
     try:
         ds = get_data_source(ds_name)
@@ -249,15 +258,21 @@ def preview_signals(body: PreviewRequest) -> dict:
         raise HTTPException(404, f"Datasource not found: {ds_name}")
 
     if not isinstance(ds, CSVSourceConfig) or not ds.exists():
-        raise HTTPException(400, f"Datasource '{ds_name}' is not a CSV source or path missing")
+        raise HTTPException(
+            400, f"Datasource '{ds_name}' is not a CSV source or path missing"
+        )
 
     symbol = _validate_id(body.symbol, "symbol")
     csv_path = ds.get_file_path(symbol, _validate_id(timeframe, "timeframe"))
     if not csv_path.exists():
-        available = [f.stem.rsplit(f"_{timeframe}", 1)[0]
-                     for f in ds.list_files(f"*_{timeframe}.csv")]
-        raise HTTPException(404, f"No data for {symbol}/{timeframe}. "
-                          f"Available symbols: {sorted(available)}")
+        available = [
+            f.stem.rsplit(f"_{timeframe}", 1)[0]
+            for f in ds.list_files(f"*_{timeframe}.csv")
+        ]
+        raise HTTPException(
+            404,
+            f"No data for {symbol}/{timeframe}. Available symbols: {sorted(available)}",
+        )
 
     # Load data
     df = load_data_aligned(str(csv_path))
@@ -288,8 +303,9 @@ def preview_signals(body: PreviewRequest) -> dict:
 
     existing_signals = long_signals | short_signals
     if not existing_signals:
-        raise HTTPException(400, f"No signal columns found. "
-                          f"Configured: {all_configured or 'none'}")
+        raise HTTPException(
+            400, f"No signal columns found. Configured: {all_configured or 'none'}"
+        )
 
     # Build trades list (frontend-compatible format)
     trades = _extract_entry_signals(df_ind, long_signals, short_signals)
@@ -311,7 +327,13 @@ def preview_signals(body: PreviewRequest) -> dict:
 
     if tp_val is not None and sl_val is not None:
         sim_trades = _simulate_preview_trades(
-            df_ind, long_signals, short_signals, tp_val, sl_val, asset, strategy,
+            df_ind,
+            long_signals,
+            short_signals,
+            tp_val,
+            sl_val,
+            asset,
+            strategy,
         )
         if sim_trades:
             result["trades"] = convert_numpy(sim_trades)
@@ -340,7 +362,8 @@ def _collect_signal_columns(
 
 
 def _discover_signal_columns(
-    indicators: list, df_ind,
+    indicators: list,
+    df_ind,
 ) -> tuple[set[str], set[str]]:
     """Auto-discover signal columns from DataFrame by suffix heuristic.
 
@@ -366,7 +389,9 @@ def _discover_signal_columns(
 
 
 def _extract_entry_signals(
-    df_ind, long_signals: set[str], short_signals: set[str],
+    df_ind,
+    long_signals: set[str],
+    short_signals: set[str],
 ) -> list[dict]:
     """Extract entry signal bars as frontend-compatible trade entries."""
     trades = []
@@ -383,20 +408,27 @@ def _extract_entry_signals(
             else:
                 continue  # No next bar for entry
 
-            trades.append({
-                "entry_time": entry_time,
-                "entry_price": price,
-                "direction": direction,
-                "signal": col,
-            })
+            trades.append(
+                {
+                    "entry_time": entry_time,
+                    "entry_price": price,
+                    "direction": direction,
+                    "signal": col,
+                }
+            )
 
     trades.sort(key=lambda t: t["entry_time"])
     return trades
 
 
 def _simulate_preview_trades(
-    df_ind, long_signals: set[str], short_signals: set[str],
-    tp: float, sl: float, asset, strategy,
+    df_ind,
+    long_signals: set[str],
+    short_signals: set[str],
+    tp: float,
+    sl: float,
+    asset,
+    strategy,
 ) -> list[dict]:
     """Simulate trades with fixed TP/SL for preview."""
     from fwbg.core.context import SimulationContext
@@ -440,20 +472,23 @@ def _simulate_preview_trades(
     # Convert to frontend-compatible format
     trades = []
     for t in sim_result.get("trades_detailed", []):
-        trades.append({
-            "entry_time": str(t.get("entry_time", "")),
-            "exit_time": str(t.get("exit_time", "")),
-            "entry_price": t.get("entry_price"),
-            "exit_price": t.get("exit_price"),
-            "direction": "LONG" if t.get("direction") == 1 else "SHORT",
-            "result": t.get("result"),
-            "pnl_raw": t.get("pnl_raw"),
-        })
+        trades.append(
+            {
+                "entry_time": str(t.get("entry_time", "")),
+                "exit_time": str(t.get("exit_time", "")),
+                "entry_price": t.get("entry_price"),
+                "exit_price": t.get("exit_price"),
+                "direction": "LONG" if t.get("direction") == 1 else "SHORT",
+                "result": t.get("result"),
+                "pnl_raw": t.get("pnl_raw"),
+            }
+        )
     return trades
 
 
 class CompareRequest(BaseModel):
     """Request body for comparing multiple runs."""
+
     run_ids: list[str]
 
 
@@ -556,13 +591,21 @@ def compare_runs(body: CompareRequest) -> dict:
         if metrics_list:
             run_data["aggregate"] = {
                 "total_pnl": sum(m.get("pnl", 0) for m in metrics_list),
-                "avg_win_rate": sum(m.get("win_rate", 0) for m in metrics_list) / len(metrics_list),
-                "avg_sharpe": sum((m.get("sharpe") or 0) for m in metrics_list) / len(metrics_list),
-                "avg_calmar": sum(m.get("calmar", 0) for m in metrics_list) / len(metrics_list),
-                "avg_profit_factor": sum(m.get("profit_factor", 0) for m in metrics_list) / len(metrics_list),
+                "avg_win_rate": sum(m.get("win_rate", 0) for m in metrics_list)
+                / len(metrics_list),
+                "avg_sharpe": sum((m.get("sharpe") or 0) for m in metrics_list)
+                / len(metrics_list),
+                "avg_calmar": sum(m.get("calmar", 0) for m in metrics_list)
+                / len(metrics_list),
+                "avg_profit_factor": sum(
+                    m.get("profit_factor", 0) for m in metrics_list
+                )
+                / len(metrics_list),
                 "total_trades": sum(m.get("trades", 0) for m in metrics_list),
                 "asset_count": len(assets),
-                "profitable_count": sum(1 for a in assets.values() if a.get("status") == "ok"),
+                "profitable_count": sum(
+                    1 for a in assets.values() if a.get("status") == "ok"
+                ),
             }
 
         runs.append(run_data)
@@ -587,17 +630,22 @@ def list_runs(
 
     for job_id, job in sorted(
         jobs_snapshot.items(),
-        key=lambda item: (item[1].get("status") not in {"starting", "running"}, item[0]),
+        key=lambda item: (
+            item[1].get("status") not in {"starting", "running"},
+            item[0],
+        ),
     ):
-        runs.append({
-            "run_id": job_id,
-            "status": job["status"],
-            "strategy_name": job.get("strategy_name"),
-            "started_at": job.get("started_at"),
-            "is_active": job["status"] in {"starting", "running"},
-            "error_message": job.get("error_message"),
-            "duration_seconds": _job_duration_seconds(job),
-        })
+        runs.append(
+            {
+                "run_id": job_id,
+                "status": job["status"],
+                "strategy_name": job.get("strategy_name"),
+                "started_at": job.get("started_at"),
+                "is_active": job["status"] in {"starting", "running"},
+                "error_message": job.get("error_message"),
+                "duration_seconds": _job_duration_seconds(job),
+            }
+        )
 
     # A result directory alone carries no lifecycle meaning.  Only the
     # service state file is authoritative; legacy directories are surfaced as
@@ -609,17 +657,21 @@ def list_runs(
                 continue
             state = _run_service.disk_state(results_dir, directory.name)
             if state is None:
-                disk_runs.append({"run_id": directory.name, "status": "unknown", "is_active": False})
+                disk_runs.append(
+                    {"run_id": directory.name, "status": "unknown", "is_active": False}
+                )
                 continue
-            disk_runs.append({
-                "run_id": directory.name,
-                "status": state.get("status", "unknown"),
-                "strategy_name": state.get("strategy_name"),
-                "started_at": state.get("started_at"),
-                "is_active": state.get("status") in {"starting", "running"},
-                "error_message": state.get("error_message"),
-                "duration_seconds": _job_duration_seconds(state),
-            })
+            disk_runs.append(
+                {
+                    "run_id": directory.name,
+                    "status": state.get("status", "unknown"),
+                    "strategy_name": state.get("strategy_name"),
+                    "started_at": state.get("started_at"),
+                    "is_active": state.get("status") in {"starting", "running"},
+                    "error_message": state.get("error_message"),
+                    "duration_seconds": _job_duration_seconds(state),
+                }
+            )
     runs.extend(sorted(disk_runs, key=lambda item: item["run_id"], reverse=True))
     total = len(runs)
 
@@ -628,17 +680,22 @@ def list_runs(
     if offset < active_count:
         active = [run for run in runs if run.get("is_active")]
         inactive = [run for run in runs if not run.get("is_active")]
-        page = active[offset:offset + limit]
+        page = active[offset : offset + limit]
         page.extend(inactive[: max(0, limit - len(page))])
         runs = page
     else:
         inactive = [run for run in runs if not run.get("is_active")]
-        runs = inactive[offset - active_count:offset - active_count + limit]
+        runs = inactive[offset - active_count : offset - active_count + limit]
 
     # Only read JSON files for the paginated completed runs.
     for run_info in list(runs):
         run_id = run_info["run_id"]
-        if run_info.get("status") not in {"completed", "failed", "cancelled", "unknown"}:
+        if run_info.get("status") not in {
+            "completed",
+            "failed",
+            "cancelled",
+            "unknown",
+        }:
             continue
         run_dir = results_dir / run_id
 
@@ -646,11 +703,13 @@ def list_runs(
         if config_file.exists():
             try:
                 config = json.loads(config_file.read_text())
-                run_info.update({
-                    "timestamp": config.get("timestamp"),
-                    "description": config.get("description"),
-                    "timeframe": config.get("timeframe"),
-                })
+                run_info.update(
+                    {
+                        "timestamp": config.get("timestamp"),
+                        "description": config.get("description"),
+                        "timeframe": config.get("timeframe"),
+                    }
+                )
             except (json.JSONDecodeError, IOError):
                 pass
 
@@ -780,15 +839,29 @@ def get_run(run_id: str) -> dict:
         for sd in sorted(d for d in grid_dir.iterdir() if d.is_dir()):
             symbol = sd.name
             try:
-                cfg_data = json.loads((sd / "config.json").read_text()) if (sd / "config.json").exists() else {}
-                fold_data = json.loads((sd / "fold_results.json").read_text()) if (sd / "fold_results.json").exists() else {}
-                um_data = json.loads((sd / "unified_metrics.json").read_text()) if (sd / "unified_metrics.json").exists() else {}
+                cfg_data = (
+                    json.loads((sd / "config.json").read_text())
+                    if (sd / "config.json").exists()
+                    else {}
+                )
+                fold_data = (
+                    json.loads((sd / "fold_results.json").read_text())
+                    if (sd / "fold_results.json").exists()
+                    else {}
+                )
+                um_data = (
+                    json.loads((sd / "unified_metrics.json").read_text())
+                    if (sd / "unified_metrics.json").exists()
+                    else {}
+                )
                 assets[symbol] = {
                     "symbol": symbol,
                     "status": cfg_data.get("status", "unknown"),
                     "total_combinations": cfg_data.get("total_combinations", 0),
                     "unified_metrics": um_data,
-                    "walk_forward": _summarize_walk_forward(fold_data.get("walk_forward", {})),
+                    "walk_forward": _summarize_walk_forward(
+                        fold_data.get("walk_forward", {})
+                    ),
                 }
             except (json.JSONDecodeError, IOError):
                 pass
@@ -833,7 +906,12 @@ def get_grid_detail(run_id: str, symbol: str) -> dict:
         raise HTTPException(404, f"Grid detail not found: {run_id}/{symbol}")
 
     merged = {}
-    for fname in ("config.json", "fold_results.json", "grid_results.json", "unified_metrics.json"):
+    for fname in (
+        "config.json",
+        "fold_results.json",
+        "grid_results.json",
+        "unified_metrics.json",
+    ):
         fpath = sym_dir / fname
         if fpath.exists():
             try:
@@ -1032,4 +1110,8 @@ def cancel_run(run_id: str) -> dict:
         raise HTTPException(404, f"No active job: {run_id}")
     if result.get("status") == "cancelled":
         return {"job_id": run_id, "status": "cancelled"}
-    return {"job_id": run_id, "status": result["status"], "message": "Job already finished"}
+    return {
+        "job_id": run_id,
+        "status": result["status"],
+        "message": "Job already finished",
+    }

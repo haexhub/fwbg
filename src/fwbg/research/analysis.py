@@ -67,7 +67,10 @@ def record_analysis(
     if "end_date" not in config:
         config["end_date"] = _holdout_cutoff(research_id)
     trial = register_trial(research_id, config, symbols, {}, note or "", reason=reason)
-    return trial, {"start_date": config.get("start_date"), "end_date": config["end_date"]}
+    return trial, {
+        "start_date": config.get("start_date"),
+        "end_date": config["end_date"],
+    }
 
 
 def _holdout_cutoff(research_id: str) -> str:
@@ -80,5 +83,7 @@ def _holdout_cutoff(research_id: str) -> str:
         denial = Denial(DenialCode.REGISTER_UNREADABLE, f"research register: {exc}")
         raise GateDenied([denial]) from exc
     if card is None:
-        raise GateDenied([Denial(DenialCode.CARD_NOT_FOUND, f"no research card {research_id}")])
+        raise GateDenied(
+            [Denial(DenialCode.CARD_NOT_FOUND, f"no research card {research_id}")]
+        )
     return card.holdout_cutoff.isoformat()
