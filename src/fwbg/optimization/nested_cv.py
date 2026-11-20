@@ -9,12 +9,13 @@ Struktur:
 """
 
 import inspect
+import logging
 
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
 
-from fwbg_sdk.models import BaseModel, TrainingContext
+from fwbg_sdk.models import BaseModel, TrainingContext, UntrainableLabelsError
 from fwbg.core.context import SimulationContext
 from fwbg.core import get_feature_selector, get_model
 
@@ -27,6 +28,8 @@ from .targets import (
     _apply_meta_filter,
     _validate_targets,
     compute_targets,
+    count_positive_labels,
+    labelled_rows,
     _get_probs,
     evaluate_on_validation,
     simulate_trades_sequential,
@@ -212,7 +215,7 @@ def select_features_from_fold(
     Returns:
         (selected_features, metadata) oder (None, {})
     """
-    if np.count_nonzero(targets) < min_trades // 2:
+    if count_positive_labels(targets) < min_trades // 2:
         return None, {}
 
     available_features = [f for f in group_features if f in train_df.columns]
@@ -221,6 +224,13 @@ def select_features_from_fold(
 
     if not feature_selection_plugins:
         return available_features, {}
+
+    # Rows without a known label (open windows at the data end) do not take
+    # part in the selection.
+    known = labelled_rows(targets)
+    if not known.all():
+        train_df = train_df[known]
+        targets = np.asarray(targets)[known]
 
     selected = available_features
     metadata = {}
@@ -276,8 +286,14 @@ def train_model(
             Modelle ohne eigene Reduktion bleiben identisch.
         sample_weight: Optional - Uniqueness-basierte Sample Weights (AFML Ch. 4)
         direction: "long" or "short" — passed to TrainingContext for signal model
+
+    Returns:
+        The fitted model, or None when no model can be trained: no features,
+        too few positive labels, or labels the model cannot fit (a single
+        class).  Rows whose label is NaN (open windows at the data end) are
+        left out of fitting and calibration.
     """
-    if features is None or np.count_nonzero(targets) < min_trades // 2:
+    if features is None or count_positive_labels(targets) < min_trades // 2:
         return None
 
     model_class = get_model(ctx.model_type)
@@ -290,15 +306,41 @@ def train_model(
     fold_info = None
     if ctx.model_type in ("xgboost_rrr", "xgboost_mfe"):
         fold_info = {"train_df": train_df}
+
+    # Rows without a known label (windows open at the data end) are neither
+    # fitted nor calibrated on.  The stacked models rebuild their labels from
+    # the frame in ``fold_info`` and drop their own unknown rows, so they keep
+    # the full frame to stay aligned with it.
+    known = labelled_rows(targets)
+    known_targets = np.asarray(targets)[known]
+    known_weight = None if sample_weight is None else np.asarray(sample_weight)[known]
+    fit_features = train_df[features]
+    fit_targets, fit_weight = targets, sample_weight
+    if fold_info is None and not known.all():
+        fit_features, fit_targets, fit_weight = (
+            fit_features[known],
+            known_targets,
+            known_weight,
+        )
     training_context = TrainingContext(
-        sample_weights=sample_weight,
+        sample_weights=fit_weight,
         direction=direction,
         fold_information=fold_info,
     )
-    model.train(train_df[features], targets, training_context, **params)
+    try:
+        model.train(fit_features, fit_targets, training_context, **params)
+    except UntrainableLabelsError as exc:
+        # E.g. a single label class: a data outcome of this fold, not a bug.
+        # No model means no trades for the fold.
+        logging.getLogger(__name__).warning(
+            "No model for this fold (%s): %s", ctx.model_type, exc
+        )
+        return None
 
     if ctx.probability_calibration:
-        model.calibrate(train_df[features], targets, method=ctx.calibration_method)
+        model.calibrate(
+            train_df[features][known], known_targets, method=ctx.calibration_method
+        )
 
     return model
 
@@ -329,6 +371,7 @@ def _generate_oof_predictions(
     for train_idx, val_idx in _forward_oof_splits(
         len(df), n_splits, horizon, ctx.embargo_bars
     ):
+        train_idx = train_idx[labelled_rows(targets[train_idx])]
         if len(np.unique(targets[train_idx])) < 2:
             continue
 
@@ -486,16 +529,15 @@ def _train_meta_model(
     Meta-features = original features + primary model's OOF probability.
     Returns None when insufficient positive targets for training.
     """
-    if np.count_nonzero(targets) < ctx.min_trades // 2:
-        return None
-    if len(np.unique(targets)) < 2:
+    if count_positive_labels(targets) < ctx.min_trades // 2:
         return None
 
-    available = np.isfinite(oof_probs)
+    # Only rows with a known label and an out-of-fold probability can train it.
+    available = np.isfinite(oof_probs) & labelled_rows(targets)
     if not np.any(available):
         return None
     available_targets = targets[available]
-    if np.count_nonzero(available_targets) < ctx.min_trades // 2:
+    if count_positive_labels(available_targets) < ctx.min_trades // 2:
         return None
     if len(np.unique(available_targets)) < 2:
         return None

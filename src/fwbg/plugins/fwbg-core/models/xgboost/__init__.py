@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional
 
-from fwbg_sdk.models import BaseModel, TrainingContext
+from fwbg_sdk.models import BaseModel, TrainingContext, UntrainableLabelsError
 from fwbg_sdk.registry import register_model
 
 
@@ -29,6 +29,12 @@ class XGBoostModel(BaseModel):
     ) -> None:
         from xgboost import XGBClassifier
         from fwbg.utils.xgb_config import get_xgboost_params, get_xgboost_n_jobs
+
+        if len(np.unique(targets)) < 2:
+            # The logistic loss has no base score for a constant label.
+            raise UntrainableLabelsError(
+                f"xgboost needs both classes in the labels, got {np.unique(targets).tolist()}"
+            )
 
         self.progress.begin_training()
 

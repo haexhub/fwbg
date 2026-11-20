@@ -241,6 +241,7 @@ class TestComputeTargetsCachedDurations:
         ctx = Mock()
         ctx.spread = 0.0003
         ctx.max_trade_bars = None
+        ctx.exit_params = {}
 
         n = 200
         rng = np.random.default_rng(42)

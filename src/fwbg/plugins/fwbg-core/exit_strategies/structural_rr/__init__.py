@@ -117,8 +117,8 @@ class StructuralRRExitStrategy(BaseExitStrategy):
             slippage,
             max_bars,
             timeout_val,
-            False,
-            resolve_entry_delay(ctx.exit_params),
+            nan_incomplete=True,
+            entry_delay=resolve_entry_delay(ctx.exit_params),
         )
         if return_durations:
             return result  # (tgt_l, tgt_s, dur_l, dur_s)

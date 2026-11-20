@@ -115,7 +115,7 @@ class TestFixedExitStrategyTargets:
         )
 
         # In starkem Aufwärtstrend sollten viele Long Trades gewinnen
-        long_win_rate = np.mean(targets_long)
+        long_win_rate = np.nanmean(targets_long)
         assert long_win_rate > 0.3, f"Long Win-Rate zu niedrig in Uptrend: {long_win_rate:.2%}"
 
     def test_short_wins_in_downtrend(self, trending_down_ohlc, forex_context):
@@ -127,7 +127,7 @@ class TestFixedExitStrategyTargets:
             tp=30, sl=20
         )
 
-        short_win_rate = np.mean(targets_short)
+        short_win_rate = np.nanmean(targets_short)
         assert short_win_rate > 0.3, f"Short Win-Rate zu niedrig in Downtrend: {short_win_rate:.2%}"
 
     def test_larger_sl_reduces_losses(self, volatile_ohlc, forex_context):

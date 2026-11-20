@@ -109,8 +109,8 @@ def _validate_targets(
         (has_long, has_short) - Boolean Tuple
     """
     min_per_direction = ctx.min_trades // 2
-    n_long = np.count_nonzero(targets_long)
-    n_short = np.count_nonzero(targets_short)
+    n_long = count_positive_labels(targets_long)
+    n_short = count_positive_labels(targets_short)
     has_long = ctx.long_enabled and n_long >= min_per_direction
     has_short = ctx.short_enabled and n_short >= min_per_direction
     return has_long, has_short
@@ -118,6 +118,22 @@ def _validate_targets(
 
 def resolve_sl_levels(df: pd.DataFrame, ctx, exit_params: dict):
     """Löst den ``sl_level``-Suffix aus exit_params in absolute SL-Preise auf.
+
+def labelled_rows(targets: np.ndarray) -> np.ndarray:
+    """Mask of the rows whose label is known (not NaN).
+
+    A label window that runs past the end of the data has no outcome yet; the
+    label kernels mark it NaN (``nan_incomplete``).  Such rows are not training
+    examples: fitting and scoring drop them instead of reading them as losses.
+    """
+    return ~np.isnan(np.asarray(targets, dtype=np.float64))
+
+
+def count_positive_labels(targets: np.ndarray) -> int:
+    """Number of non-zero labels among the known ones (NaN is not a win)."""
+    targets = np.asarray(targets)
+    return int(np.count_nonzero(targets[labelled_rows(targets)]))
+
 
     Validiert den Suffix gegen die ``choices`` aus dem Plugin-Schema: ein
     ungültiger Wert (z. B. "range") würde sonst per ``endswith``-Auto-Detect

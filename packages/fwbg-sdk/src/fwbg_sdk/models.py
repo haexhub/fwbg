@@ -12,6 +12,15 @@ import pandas as pd
 from fwbg_sdk.base import BasePlugin, PluginPhase
 
 
+class UntrainableLabelsError(ValueError):
+    """The training labels cannot support a fit (for example a single class).
+
+    A model raises it from ``train`` before fitting.  Such a fold is a data
+    outcome, not a bug: the caller trains no model for it and the fold yields
+    no trades.
+    """
+
+
 @dataclass
 class TrainingContext:
     """Everything a model might need for training."""
