@@ -1,8 +1,10 @@
-"""Training labels and evaluation simulate the same breakeven/trailing exit.
+"""The trade evaluator simulates the breakeven/trailing exit of the strategy.
 
 ``atr_trailing`` carries ``breakeven_trigger``/``trail_atr_mult`` in
-``exit_params`` and builds its labels from them; the trade evaluator used to
-read only ``exit_modifier_params`` and so simulated a plain SL/TP exit.
+``exit_params``; the trade evaluator used to read only
+``exit_modifier_params`` and so simulated a plain SL/TP exit. Training labels
+resolve the same parameters through ``resolve_trailing_params``; the label
+side is tested with the plugin.
 """
 
 import numpy as np
@@ -13,8 +15,10 @@ from fwbg.core.context import SimulationContext
 from fwbg.optimization.targets import resolve_trailing_params, simulate_trades
 from fwbg.plugins import import_plugin_module
 
-_mod = import_plugin_module("fwbg-premium", "exit_strategies", "atr_trailing")
-pytestmark = pytest.mark.skipif(_mod is None, reason="fwbg-premium not available")
+needs_atr_trailing = pytest.mark.skipif(
+    import_plugin_module("fwbg-premium", "exit_strategies", "atr_trailing") is None,
+    reason="the evaluator looks up atr_trailing, which ships with fwbg-premium",
+)
 
 # Entry 100 (ATR 1, SL 98, TP out of reach).  Bar 1 runs to 104, so a stop
 # trailing 1.0 behind the high sits at 103 from bar 2 on; bar 2 touches it.
@@ -52,22 +56,6 @@ def _ctx(exit_params, exit_modifier_params=None, strategy="atr_trailing"):
     )
 
 
-def _label(ctx):
-    tl, _ = _mod.AtrTrailingExitStrategy().compute_targets(
-        _df(), ctx, tp_mult=50.0, sl_mult=2.0, min_tp_pips=0, min_sl_pips=0,
-        params=_params(ctx),
-    )  # fmt: skip
-    return tl[0]
-
-
-def _params(ctx):
-    from fwbg.core import GridParams
-
-    return GridParams(
-        tp_value=50.0, sl_value=2.0, timeout_bars=None, extra=dict(ctx.exit_params)
-    )
-
-
 def _evaluated(ctx):
     probs = np.zeros((len(ROWS), 2))
     probs[0, 1] = 1.0
@@ -78,25 +66,26 @@ def _evaluated(ctx):
 BASE = {"min_tp_pips": 0, "min_sl_pips": 0}
 
 
-def test_exit_params_trailing_reaches_label_and_evaluator():
+@needs_atr_trailing
+def test_exit_params_trailing_reaches_the_evaluator():
     ctx = _ctx({**BASE, "breakeven_trigger": 0.0, "trail_atr_mult": 1.0})
-    assert _label(ctx) == 1.0
-    assert _evaluated(ctx)["result"] == 1.0
-    assert _evaluated(ctx)["pnl_raw"] == pytest.approx(3.0)
+    trade = _evaluated(ctx)
+    assert trade["result"] == 1.0
+    assert trade["pnl_raw"] == pytest.approx(3.0)
 
 
-def test_evaluator_without_trailing_would_differ():
+@needs_atr_trailing
+def test_evaluator_without_trailing_keeps_the_trade_open():
     ctx = _ctx({**BASE, "breakeven_trigger": 0.0, "trail_atr_mult": 0.0})
-    assert _label(ctx) == 0.0
     assert _evaluated(ctx)["result"] == -1.0
 
 
-def test_modifier_params_override_the_strategy_params_in_both():
+@needs_atr_trailing
+def test_modifier_params_override_the_strategy_params():
     ctx = _ctx(
         {**BASE, "breakeven_trigger": 0.0, "trail_atr_mult": 0.0},
         {"breakeven_trigger": 0.0, "trail_atr_mult": 1.0},
     )
-    assert _label(ctx) == 1.0
     assert _evaluated(ctx)["result"] == 1.0
 
 
