@@ -269,6 +269,7 @@ class TestSharedHelpers:
         out = bootstrap_terminal_equity([0.1] * 5)
         assert out["n_simulations"] == 0
         assert out["median_equity"] == 100.0
+        assert out["observed_equity"] == pytest.approx(100 * 1.1**5)
 
     def test_equity_replay_thins_long_curves_and_keeps_the_last_point(self):
         times = [str(t) for t in pd.date_range("2024-01-01", periods=50, freq="h")]

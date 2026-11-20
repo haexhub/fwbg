@@ -95,13 +95,19 @@ def bootstrap_terminal_equity(
     """
     returns_arr = np.asarray(returns, dtype=float)
     n = len(returns_arr)
+    observed_factors = 1.0 + returns_arr
+    observed = (
+        0.0
+        if (observed_factors <= 0).any()
+        else start_equity * float(np.prod(observed_factors))
+    )
     if n < 10:
         return {
             "median_equity": start_equity,
             "p5_equity": start_equity,
             "p95_equity": start_equity,
             "bankruptcy_rate": 0.0,
-            "observed_equity": start_equity,
+            "observed_equity": observed,
             "n_simulations": 0,
         }
 
@@ -116,12 +122,6 @@ def bootstrap_terminal_equity(
     bankrupt = (factors <= 0).any(axis=1)
     final = np.where(bankrupt, 0.0, start_equity * np.prod(factors, axis=1))
 
-    observed_factors = 1.0 + returns_arr
-    observed = (
-        0.0
-        if (observed_factors <= 0).any()
-        else start_equity * float(np.prod(observed_factors))
-    )
     return {
         "median_equity": float(np.median(final)),
         "mean_equity": float(np.mean(final)),
