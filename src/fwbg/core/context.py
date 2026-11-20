@@ -4,6 +4,7 @@ SimulationContext - Kontext-Objekt für Trade-Simulationen.
 Wird durch den gesamten Simulationsprozess gereicht und enthält alle
 Parameter die für eine einzelne Asset-Optimierung benötigt werden.
 """
+
 from dataclasses import dataclass, field
 from typing import List, Optional, TYPE_CHECKING
 
@@ -15,7 +16,6 @@ if TYPE_CHECKING:
     from .config import StrategyConfig, RegimeFilterGridConfig, ExitStrategyConfig
 
 
-
 @dataclass
 class TradeParams:
     """
@@ -23,6 +23,7 @@ class TradeParams:
 
     Wird durch Grid-Search iteriert und an Simulationsfunktionen übergeben.
     """
+
     tp: float  # Take-Profit (ATR-Multiplikator)
     sl: float  # Stop-Loss (ATR-Multiplikator)
     ct: float = 0.5  # Confidence Threshold
@@ -42,6 +43,7 @@ class SimulationContext:
     Dieses Objekt wird einmal pro Asset erstellt und durch alle
     Funktionen der Optimierungs-Pipeline gereicht.
     """
+
     # Asset-spezifisch
     symbol: str
     asset_class: str
@@ -142,7 +144,9 @@ class SimulationContext:
 
     # Grid über Model-Hyperparameters: Liste von HP-Dicts zum Durchsuchen
     # [None] = nur ctx-Default verwenden; [dict1, dict2] = Grid über Model-HPs
-    grid_model_hyperparameters: List[Optional[dict]] = field(default_factory=lambda: [None])
+    grid_model_hyperparameters: List[Optional[dict]] = field(
+        default_factory=lambda: [None]
+    )
 
     # Regime-Filter Grid (from optimization config)
     regime_filter_grid: "RegimeFilterGridConfig" = None
@@ -152,9 +156,7 @@ class SimulationContext:
 
     @classmethod
     def create(
-        cls,
-        asset: "AssetConfig",
-        strategy: "StrategyConfig"
+        cls, asset: "AssetConfig", strategy: "StrategyConfig"
     ) -> "SimulationContext":
         """
         Erstellt SimulationContext aus Asset- und Strategy-Config.
@@ -220,7 +222,7 @@ class SimulationContext:
             allowed_days=strategy.filters.allowed_days,
             entry_hours=resolve_entry_hours(strategy.filters.entry_hours, asset.symbol),
             # Signal rules for composed entry signals
-            signal_rules=getattr(strategy, 'signal_rules', None),
+            signal_rules=getattr(strategy, "signal_rules", None),
             # Regime-Filter Grid (from optimization)
             regime_filter_grid=regime,
             # Pipeline: Preprocessing
@@ -240,7 +242,11 @@ class SimulationContext:
 
     def total_grid_combinations(self) -> int:
         """Berechnet Gesamtzahl der Grid-Kombinationen."""
-        n_model_hp = len(self.grid_model_hyperparameters) if self.grid_model_hyperparameters else 1
+        n_model_hp = (
+            len(self.grid_model_hyperparameters)
+            if self.grid_model_hyperparameters
+            else 1
+        )
         n_exit = len(self.exit_strategies) if self.exit_strategies else 1
         return n_exit * n_model_hp
 
