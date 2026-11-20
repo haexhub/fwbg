@@ -11,12 +11,15 @@ if _ts is None:
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+
 def _make_df_at_hour(hour, n=10):
     """Create n bars all timestamped at the given UTC hour."""
     start = pd.Timestamp("2022-01-03") + pd.Timedelta(hours=hour)
     idx = pd.date_range(start, periods=n, freq="h")
     close = np.full(n, 100.0)
-    return pd.DataFrame({"O": close, "H": close + 0.1, "L": close - 0.1, "C": close}, index=idx)
+    return pd.DataFrame(
+        {"O": close, "H": close + 0.1, "L": close - 0.1, "C": close}, index=idx
+    )
 
 
 def _get_ind(**params):
@@ -34,6 +37,7 @@ def _get_ind(**params):
 
 # ── cyclical encoding ─────────────────────────────────────────────────────────
 
+
 class TestCyclicalEncoding:
     def test_hour_sin_cos_at_midnight(self):
         """Hour=0: sin(2pi*0/24)=0, cos(2pi*0/24)=1."""
@@ -41,9 +45,13 @@ class TestCyclicalEncoding:
         result = _get_ind().compute(df)
         valid = result.dropna()
         if "time_hour_sin" in valid.columns:
-            assert abs(valid["time_hour_sin"].iloc[0]) < 0.01,                 f"sin at hour 0 should be 0, got {valid['time_hour_sin'].iloc[0]:.4f}"
+            assert abs(valid["time_hour_sin"].iloc[0]) < 0.01, (
+                f"sin at hour 0 should be 0, got {valid['time_hour_sin'].iloc[0]:.4f}"
+            )
         if "time_hour_cos" in valid.columns:
-            assert abs(valid["time_hour_cos"].iloc[0] - 1.0) < 0.01,                 f"cos at hour 0 should be 1, got {valid['time_hour_cos'].iloc[0]:.4f}"
+            assert abs(valid["time_hour_cos"].iloc[0] - 1.0) < 0.01, (
+                f"cos at hour 0 should be 1, got {valid['time_hour_cos'].iloc[0]:.4f}"
+            )
 
     def test_hour_sin_cos_at_hour_6(self):
         """Hour=6: sin(2pi*6/24)=1, cos(2pi*6/24)=0."""
@@ -51,9 +59,13 @@ class TestCyclicalEncoding:
         result = _get_ind().compute(df)
         valid = result.dropna()
         if "time_hour_sin" in valid.columns:
-            assert abs(valid["time_hour_sin"].iloc[0] - 1.0) < 0.01,                 f"sin at hour 6 should be 1, got {valid['time_hour_sin'].iloc[0]:.4f}"
+            assert abs(valid["time_hour_sin"].iloc[0] - 1.0) < 0.01, (
+                f"sin at hour 6 should be 1, got {valid['time_hour_sin'].iloc[0]:.4f}"
+            )
         if "time_hour_cos" in valid.columns:
-            assert abs(valid["time_hour_cos"].iloc[0]) < 0.01,                 f"cos at hour 6 should be 0, got {valid['time_hour_cos'].iloc[0]:.4f}"
+            assert abs(valid["time_hour_cos"].iloc[0]) < 0.01, (
+                f"cos at hour 6 should be 0, got {valid['time_hour_cos'].iloc[0]:.4f}"
+            )
 
     def test_hour_sin_cos_at_noon(self):
         """Hour=12: sin(2pi*12/24)=0, cos(2pi*12/24)=-1."""
@@ -61,9 +73,13 @@ class TestCyclicalEncoding:
         result = _get_ind().compute(df)
         valid = result.dropna()
         if "time_hour_sin" in valid.columns:
-            assert abs(valid["time_hour_sin"].iloc[0]) < 0.01,                 f"sin at hour 12 should be 0, got {valid['time_hour_sin'].iloc[0]:.4f}"
+            assert abs(valid["time_hour_sin"].iloc[0]) < 0.01, (
+                f"sin at hour 12 should be 0, got {valid['time_hour_sin'].iloc[0]:.4f}"
+            )
         if "time_hour_cos" in valid.columns:
-            assert abs(valid["time_hour_cos"].iloc[0] + 1.0) < 0.01,                 f"cos at hour 12 should be -1, got {valid['time_hour_cos'].iloc[0]:.4f}"
+            assert abs(valid["time_hour_cos"].iloc[0] + 1.0) < 0.01, (
+                f"cos at hour 12 should be -1, got {valid['time_hour_cos'].iloc[0]:.4f}"
+            )
 
     def test_hours_23_and_0_are_close_in_circular_space(self):
         """Hours 23 and 0 should be close neighbors on the circular encoding."""
@@ -75,11 +91,16 @@ class TestCyclicalEncoding:
         if "time_hour_sin" in r23.columns:
             sin_diff = abs(r23["time_hour_sin"].iloc[0] - r0["time_hour_sin"].iloc[0])
             cos_diff = abs(r23["time_hour_cos"].iloc[0] - r0["time_hour_cos"].iloc[0])
-            assert sin_diff < 0.3, f"Hour 23 and 0 sin should be close, diff={sin_diff:.3f}"
-            assert cos_diff < 0.3, f"Hour 23 and 0 cos should be close, diff={cos_diff:.3f}"
+            assert sin_diff < 0.3, (
+                f"Hour 23 and 0 sin should be close, diff={sin_diff:.3f}"
+            )
+            assert cos_diff < 0.3, (
+                f"Hour 23 and 0 cos should be close, diff={cos_diff:.3f}"
+            )
 
 
 # ── session detection ─────────────────────────────────────────────────────────
+
 
 class TestSessionDetection:
     def test_london_session_at_10_utc(self):
@@ -87,45 +108,58 @@ class TestSessionDetection:
         df = _make_df_at_hour(10)
         result = _get_ind().compute(df)
         if "time_session_london" in result.columns:
-            assert result["time_session_london"].dropna().iloc[0] == 1,                 "10 UTC should be London session"
+            assert result["time_session_london"].dropna().iloc[0] == 1, (
+                "10 UTC should be London session"
+            )
 
     def test_not_london_at_3_utc(self):
         """3:00 UTC is NOT London session."""
         df = _make_df_at_hour(3)
         result = _get_ind().compute(df)
         if "time_session_london" in result.columns:
-            assert result["time_session_london"].dropna().iloc[0] == 0,                 "3 UTC should not be London"
+            assert result["time_session_london"].dropna().iloc[0] == 0, (
+                "3 UTC should not be London"
+            )
 
     def test_ny_session_at_15_utc(self):
         """15:00 UTC is NY session (13-21 UTC)."""
         df = _make_df_at_hour(15)
         result = _get_ind().compute(df)
         if "time_session_ny" in result.columns:
-            assert result["time_session_ny"].dropna().iloc[0] == 1,                 "15 UTC should be NY session"
+            assert result["time_session_ny"].dropna().iloc[0] == 1, (
+                "15 UTC should be NY session"
+            )
 
     def test_overlap_at_14_utc(self):
         """14:00 UTC overlaps London (8-16) and NY (13-21)."""
         df = _make_df_at_hour(14)
         result = _get_ind().compute(df)
         if "time_session_overlap" in result.columns:
-            assert result["time_session_overlap"].dropna().iloc[0] == 1,                 "14 UTC should be overlap session"
+            assert result["time_session_overlap"].dropna().iloc[0] == 1, (
+                "14 UTC should be overlap session"
+            )
 
     def test_asia_session_at_2_utc(self):
         """2:00 UTC is Asia session (0-8 UTC)."""
         df = _make_df_at_hour(2)
         result = _get_ind().compute(df)
         if "time_session_asia" in result.columns:
-            assert result["time_session_asia"].dropna().iloc[0] == 1,                 "2 UTC should be Asia session"
+            assert result["time_session_asia"].dropna().iloc[0] == 1, (
+                "2 UTC should be Asia session"
+            )
 
     def test_not_ny_at_6_utc(self):
         """6:00 UTC is not NY session."""
         df = _make_df_at_hour(6)
         result = _get_ind().compute(df)
         if "time_session_ny" in result.columns:
-            assert result["time_session_ny"].dropna().iloc[0] == 0,                 "6 UTC should not be NY session"
+            assert result["time_session_ny"].dropna().iloc[0] == 0, (
+                "6 UTC should not be NY session"
+            )
 
 
 # ── calendar features ─────────────────────────────────────────────────────────
+
 
 class TestCalendarFeatures:
     def test_year_progress_low_in_january(self):
@@ -144,7 +178,9 @@ class TestCalendarFeatures:
         result = _get_ind().compute(df)
         if "time_year_progress" in result.columns:
             val = result["time_year_progress"].dropna().iloc[0]
-            assert val > 0.95, f"Year progress on Dec 31 should be > 0.95, got {val:.4f}"
+            assert val > 0.95, (
+                f"Year progress on Dec 31 should be > 0.95, got {val:.4f}"
+            )
 
     def test_year_progress_increases_over_time(self):
         """Year progress in December > January."""
@@ -158,22 +194,29 @@ class TestCalendarFeatures:
         if "time_year_progress" in r_jan.columns:
             v_jan = r_jan["time_year_progress"].dropna().iloc[0]
             v_dec = r_dec["time_year_progress"].dropna().iloc[0]
-            assert v_dec > v_jan, f"Year progress: Dec ({v_dec:.3f}) should > Jan ({v_jan:.3f})"
+            assert v_dec > v_jan, (
+                f"Year progress: Dec ({v_dec:.3f}) should > Jan ({v_jan:.3f})"
+            )
 
 
 # ── plugin attributes ─────────────────────────────────────────────────────────
+
 
 class TestPluginAttributes:
     def test_feature_columns_include_sin_cos(self):
         ind = _get_ind()
         cols = ind.get_feature_columns()
-        assert "time_hour_sin" in cols or any("sin" in c for c in cols),             "Sin encoding should be declared"
+        assert "time_hour_sin" in cols or any("sin" in c for c in cols), (
+            "Sin encoding should be declared"
+        )
 
     def test_session_columns_declared(self):
         ind = _get_ind()
         cols = ind.get_feature_columns()
         session_cols = [c for c in cols if "session" in c]
-        assert len(session_cols) >= 3,             f"Expected >= 3 session columns, got {session_cols}"
+        assert len(session_cols) >= 3, (
+            f"Expected >= 3 session columns, got {session_cols}"
+        )
 
     def test_no_inf_values(self):
         n = 500

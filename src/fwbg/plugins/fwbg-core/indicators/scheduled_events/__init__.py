@@ -43,7 +43,9 @@ log = logging.getLogger(__name__)
 EVENT_COLUMNS = ["evt_days_ahead", "evt_window", "evt_window_start", "evt_window_end"]
 
 
-def _trading_days(calendar: str, first: pd.Timestamp, last: pd.Timestamp) -> pd.DatetimeIndex:
+def _trading_days(
+    calendar: str, first: pd.Timestamp, last: pd.Timestamp
+) -> pd.DatetimeIndex:
     from fwbg.plugins import import_plugin_module
 
     tom = import_plugin_module("fwbg-core", "indicators", "turn_of_month")
@@ -53,7 +55,9 @@ def _trading_days(calendar: str, first: pd.Timestamp, last: pd.Timestamp) -> pd.
 def _calendars() -> list:
     from fwbg.plugins import import_plugin_module
 
-    return list(import_plugin_module("fwbg-core", "indicators", "turn_of_month").CALENDARS)
+    return list(
+        import_plugin_module("fwbg-core", "indicators", "turn_of_month").CALENDARS
+    )
 
 
 @lru_cache(maxsize=16)
@@ -98,7 +102,9 @@ class ScheduledEventsIndicator(BaseIndicator):
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("scheduled_events needs a DatetimeIndex")
         if p["window_end"] > p["window_start"]:
-            raise ValueError("scheduled_events: window_end must not exceed window_start")
+            raise ValueError(
+                "scheduled_events: window_end must not exceed window_start"
+            )
         out = pd.DataFrame(index=df.index, columns=EVENT_COLUMNS, dtype=float)
         events = self._events(p)
         if len(df) and events is not None:
@@ -111,7 +117,9 @@ class ScheduledEventsIndicator(BaseIndicator):
             prior_month_end = dates.min().replace(day=1) - pd.Timedelta(days=1)
             days = _trading_days(p["calendar"], prior_month_end, last)
             # an event or a bar on a closed day counts from the next trading day
-            event_pos = np.unique(days.searchsorted(events[events >= days[0]], side="left"))
+            event_pos = np.unique(
+                days.searchsorted(events[events >= days[0]], side="left")
+            )
             event_pos = event_pos[event_pos < len(days)]
             bar_pos = days.searchsorted(dates, side="left")
             nxt = event_pos.searchsorted(bar_pos, side="left")
@@ -138,7 +146,10 @@ class ScheduledEventsIndicator(BaseIndicator):
             return None
         try:
             return event_dates(
-                p["events_file"], p["date_column"], p["filter_column"], tuple(p["filter_values"])
+                p["events_file"],
+                p["date_column"],
+                p["filter_column"],
+                tuple(p["filter_values"]),
             )
         except (OSError, ValueError) as exc:
             log.warning("scheduled_events: %s; all values NaN", exc)

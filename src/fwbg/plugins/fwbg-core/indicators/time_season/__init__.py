@@ -7,6 +7,7 @@ Enthält:
 - Cyclische Encoding (Sin/Cos Transformation)
 - Konfigurierbare Trading Sessions
 """
+
 from typing import List
 import numpy as np
 import pandas as pd
@@ -56,7 +57,7 @@ class TimeSeasonIndicators(BaseIndicator):
         include_calendar: bool = True,
         include_year_progress: bool = True,
         trading_days: list[int] | None = None,
-        **params
+        **params,
     ) -> pd.DataFrame:
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("DataFrame muss einen DateTimeIndex haben")
@@ -112,13 +113,21 @@ class TimeSeasonIndicators(BaseIndicator):
             if include_encoded:
                 features["season_month_sin"] = np.sin(2 * np.pi * df.index.month / 12)
                 features["season_month_cos"] = np.cos(2 * np.pi * df.index.month / 12)
-                features["season_quarter_sin"] = np.sin(2 * np.pi * df.index.quarter / 4)
-                features["season_quarter_cos"] = np.cos(2 * np.pi * df.index.quarter / 4)
+                features["season_quarter_sin"] = np.sin(
+                    2 * np.pi * df.index.quarter / 4
+                )
+                features["season_quarter_cos"] = np.cos(
+                    2 * np.pi * df.index.quarter / 4
+                )
                 week = df.index.isocalendar().week.astype(int).values
                 features["season_week_sin"] = np.sin(2 * np.pi * week / 52)
                 features["season_week_cos"] = np.cos(2 * np.pi * week / 52)
-                features["season_dayofmonth_sin"] = np.sin(2 * np.pi * df.index.day / 31)
-                features["season_dayofmonth_cos"] = np.cos(2 * np.pi * df.index.day / 31)
+                features["season_dayofmonth_sin"] = np.sin(
+                    2 * np.pi * df.index.day / 31
+                )
+                features["season_dayofmonth_cos"] = np.cos(
+                    2 * np.pi * df.index.day / 31
+                )
 
         # === Special Calendar Features ===
         if include_calendar:
@@ -157,16 +166,32 @@ class TimeSeasonIndicators(BaseIndicator):
 
         if p["include_seasonality"]:
             if p["include_raw"]:
-                cols += ["season_month", "season_quarter", "season_week", "season_dayofmonth"]
+                cols += [
+                    "season_month",
+                    "season_quarter",
+                    "season_week",
+                    "season_dayofmonth",
+                ]
             if p["include_encoded"]:
-                cols += ["season_month_sin", "season_month_cos",
-                         "season_quarter_sin", "season_quarter_cos",
-                         "season_week_sin", "season_week_cos",
-                         "season_dayofmonth_sin", "season_dayofmonth_cos"]
+                cols += [
+                    "season_month_sin",
+                    "season_month_cos",
+                    "season_quarter_sin",
+                    "season_quarter_cos",
+                    "season_week_sin",
+                    "season_week_cos",
+                    "season_dayofmonth_sin",
+                    "season_dayofmonth_cos",
+                ]
 
         if p["include_calendar"]:
-            cols += ["time_month_start", "time_month_end", "time_quarter_end",
-                     "time_week_start", "time_week_end"]
+            cols += [
+                "time_month_start",
+                "time_month_end",
+                "time_quarter_end",
+                "time_week_start",
+                "time_week_end",
+            ]
 
         if p["include_year_progress"]:
             cols += ["time_year_progress"]
@@ -185,8 +210,13 @@ class TimeSeasonIndicators(BaseIndicator):
             cols.append("time_trading_day")
 
         if p["include_calendar"]:
-            cols += ["time_month_start", "time_month_end", "time_quarter_end",
-                     "time_week_start", "time_week_end"]
+            cols += [
+                "time_month_start",
+                "time_month_end",
+                "time_quarter_end",
+                "time_week_start",
+                "time_week_end",
+            ]
 
         return cols
 

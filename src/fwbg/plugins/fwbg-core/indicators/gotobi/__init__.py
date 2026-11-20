@@ -33,13 +33,17 @@ SETTLEMENT_DAYS = (5, 10, 15, 20, 25)
 
 def _closed(day: pd.Timestamp, jp: holidays.HolidayBase) -> bool:
     """Return whether *day* is not an open Japanese settlement day."""
-    bank_closure = (day.month == 12 and day.day == 31) or (day.month == 1 and day.day <= 3)
+    bank_closure = (day.month == 12 and day.day == 31) or (
+        day.month == 1 and day.day <= 3
+    )
     return day.day_of_week >= 5 or day in jp or bank_closure
 
 
 def gotobi_dates(first: pd.Timestamp, last: pd.Timestamp) -> pd.DatetimeIndex:
     """Gotobi dates (naive, Tokyo calendar) of every month from *first* to *last*."""
-    months = pd.date_range(first.normalize().replace(day=1), last.normalize(), freq="MS")
+    months = pd.date_range(
+        first.normalize().replace(day=1), last.normalize(), freq="MS"
+    )
     jp = holidays.country_holidays("JP", years=range(first.year - 1, last.year + 2))
     out = set()
     for start in months:
@@ -69,7 +73,9 @@ class GotobiIndicator(BaseIndicator):
         out = pd.DataFrame(index=df.index, columns=GOTOBI_COLUMNS, dtype=float)
         if len(df):
             utc = df.index.tz_localize("UTC") if df.index.tz is None else df.index
-            closes = (utc + pd.Timedelta(minutes=int(p["bar_minutes"]))).tz_convert(TOKYO)
+            closes = (utc + pd.Timedelta(minutes=int(p["bar_minutes"]))).tz_convert(
+                TOKYO
+            )
             dates = closes.tz_localize(None).normalize()
             gotobi = dates.isin(gotobi_dates(dates.min(), dates.max()))
             on_hour = (
@@ -79,10 +85,12 @@ class GotobiIndicator(BaseIndicator):
                 & (closes.nanosecond == 0)
             )
             out["gotobi_day"] = gotobi.astype(float)
-            out["gotobi_entry"] = (gotobi & on_hour & (closes.hour == p["entry_hour"])).astype(
-                float
-            )
-            out["gotobi_exit"] = (gotobi & on_hour & (closes.hour == p["exit_hour"])).astype(float)
+            out["gotobi_entry"] = (
+                gotobi & on_hour & (closes.hour == p["entry_hour"])
+            ).astype(float)
+            out["gotobi_exit"] = (
+                gotobi & on_hour & (closes.hour == p["exit_hour"])
+            ).astype(float)
             out.iloc[0] = np.nan  # indicator contract: the first row is NaN
         return pd.concat([df, out], axis=1)
 

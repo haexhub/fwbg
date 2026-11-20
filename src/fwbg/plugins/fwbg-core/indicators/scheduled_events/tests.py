@@ -38,7 +38,11 @@ def compute(dates, **params) -> pd.DataFrame:
     """Values for *dates*, after a warm-up bar the day before (the first row is NaN)."""
     index = pd.DatetimeIndex(pd.to_datetime(list(dates)))
     warm_up = index[:1] - pd.Timedelta(days=1)
-    return ScheduledEventsIndicator().compute(daily(warm_up.append(index)), **params).iloc[1:]
+    return (
+        ScheduledEventsIndicator()
+        .compute(daily(warm_up.append(index)), **params)
+        .iloc[1:]
+    )
 
 
 def test_first_row_is_nan(events):
@@ -85,13 +89,22 @@ def test_window_merges_clustered_events_and_marks_its_edges(events):
         "2024-01-22",
         "2024-01-23",
     ]
-    assert out.index[out["evt_window_start"] == 1].tolist() == ["2024-01-02", "2024-01-17"]
-    assert out.index[out["evt_window_end"] == 1].tolist() == ["2024-01-10", "2024-01-24"]
+    assert out.index[out["evt_window_start"] == 1].tolist() == [
+        "2024-01-02",
+        "2024-01-17",
+    ]
+    assert out.index[out["evt_window_end"] == 1].tolist() == [
+        "2024-01-10",
+        "2024-01-24",
+    ]
 
 
 def test_filter_selects_events(events):
     out = compute(
-        ["2024-01-09", "2024-01-12"], events_file=events, filter_column="kind", filter_values=["B"]
+        ["2024-01-09", "2024-01-12"],
+        events_file=events,
+        filter_column="kind",
+        filter_values=["B"],
     )
     # only Jan 11 and Feb 20 count
     assert out["evt_days_ahead"].tolist() == [2.0, 25.0]
@@ -108,7 +121,9 @@ def test_month_end_event_on_closed_day_maps_to_next_month_trading_day(tmp_path):
 
     out = compute(["2024-03-28"], events_file=str(path))
 
-    assert out["evt_days_ahead"].iloc[0] == 1.0  # Mar 29 is an NYSE holiday; next day is Apr 1
+    assert (
+        out["evt_days_ahead"].iloc[0] == 1.0
+    )  # Mar 29 is an NYSE holiday; next day is Apr 1
 
 
 def test_no_later_event_is_nan(events):
@@ -118,10 +133,19 @@ def test_no_later_event_is_nan(events):
 
 @pytest.mark.parametrize(
     "params",
-    [{}, {"events_file": "/nonexistent/events.csv"}, {"date_column": "when"}, {"date_column": ""}],
+    [
+        {},
+        {"events_file": "/nonexistent/events.csv"},
+        {"date_column": "when"},
+        {"date_column": ""},
+    ],
 )
 def test_missing_file_or_column_warns_and_gives_nan(events, caplog, params):
-    params = {"events_file": events, **params} if "events_file" not in params and params else params
+    params = (
+        {"events_file": events, **params}
+        if "events_file" not in params and params
+        else params
+    )
     with caplog.at_level(logging.WARNING):
         out = compute(["2024-01-09"], **params)
     assert out[mod.EVENT_COLUMNS].isna().all().all()

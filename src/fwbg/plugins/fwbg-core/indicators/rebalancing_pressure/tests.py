@@ -55,15 +55,26 @@ def test_weekend_bars_do_not_repeat_month_end_signals():
         index=pd.DatetimeIndex(["2024-03-30", "2024-03-31"]),
     )
     out = run(pd.concat([df, weekend]).sort_index())
-    assert list(out.index[out["rebal_exit"] == 1].strftime("%Y-%m-%d")) == ["2024-03-28"]
+    assert list(out.index[out["rebal_exit"] == 1].strftime("%Y-%m-%d")) == [
+        "2024-03-28"
+    ]
 
 
 def test_long_entry_below_threshold_and_none_inside_it():
     n = len(MARCH)
-    falling = run(frame(np.full(n, 100.0), np.r_[50.0, np.full(n - 1, 52.0)]))  # bonds +4 %
-    assert list(falling.index[falling["rebal_entry_long"] == 1].strftime("%m-%d")) == ["03-25"]
-    small = run(frame(np.r_[100.0, np.full(n - 1, 101.0)], np.full(n, 50.0)))  # +1 % < 2 %
-    assert small[["rebal_entry_long", "rebal_entry_short"]].loc["2024-03-01":].sum().sum() == 0
+    falling = run(
+        frame(np.full(n, 100.0), np.r_[50.0, np.full(n - 1, 52.0)])
+    )  # bonds +4 %
+    assert list(falling.index[falling["rebal_entry_long"] == 1].strftime("%m-%d")) == [
+        "03-25"
+    ]
+    small = run(
+        frame(np.r_[100.0, np.full(n - 1, 101.0)], np.full(n, 50.0))
+    )  # +1 % < 2 %
+    assert (
+        small[["rebal_entry_long", "rebal_entry_short"]].loc["2024-03-01":].sum().sum()
+        == 0
+    )
 
 
 def test_month_without_its_first_trading_day_has_no_drift():

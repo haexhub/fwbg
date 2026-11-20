@@ -1,4 +1,5 @@
 """Tests for calendar anomaly indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -7,7 +8,9 @@ from fwbg.plugins import import_plugin_module
 
 _cal = import_plugin_module("fwbg-core", "indicators", "calendar_events")
 if _cal is None:
-    pytest.skip("fwbg-core calendar_events plugin not available", allow_module_level=True)
+    pytest.skip(
+        "fwbg-core calendar_events plugin not available", allow_module_level=True
+    )
 
 
 @pytest.fixture
@@ -256,6 +259,7 @@ class TestCalendarPluginIntegration:
 
     def test_plugin_importable(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:calendar_events")
@@ -263,6 +267,7 @@ class TestCalendarPluginIntegration:
 
     def test_benefits_from_stationary_false(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:calendar_events")

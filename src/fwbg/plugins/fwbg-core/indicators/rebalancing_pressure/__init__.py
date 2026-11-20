@@ -35,7 +35,9 @@ REBAL_COLUMNS = ["rebal_drift", "rebal_entry_long", "rebal_entry_short", "rebal_
 log = logging.getLogger(__name__)
 
 
-def _trading_days(calendar: str, first: pd.Timestamp, last: pd.Timestamp) -> pd.DatetimeIndex:
+def _trading_days(
+    calendar: str, first: pd.Timestamp, last: pd.Timestamp
+) -> pd.DatetimeIndex:
     from fwbg.plugins import import_plugin_module
 
     tom = import_plugin_module("fwbg-core", "indicators", "turn_of_month")
@@ -59,7 +61,10 @@ class RebalancingPressureIndicator(BaseIndicator):
         stocks, bonds = list(p["stock_columns"]), list(p["bond_columns"])
         missing = [c for c in stocks + bonds if c not in df.columns]
         if missing:
-            log.warning("rebalancing_pressure: missing input columns %s; all values NaN", missing)
+            log.warning(
+                "rebalancing_pressure: missing input columns %s; all values NaN",
+                missing,
+            )
         elif len(df):
             dates = (
                 df.index.tz_localize(None) if df.index.tz is not None else df.index
@@ -79,15 +84,23 @@ class RebalancingPressureIndicator(BaseIndicator):
                 values = df[cols].astype(float)
                 base = values.where(pd.Series(is_first, index=df.index), np.nan)
                 base = base.groupby(month_key).transform("first")
-                has_base = pd.Series(is_first, index=df.index).groupby(month_key).transform("any")
+                has_base = (
+                    pd.Series(is_first, index=df.index)
+                    .groupby(month_key)
+                    .transform("any")
+                )
                 ret = (values / base - 1).where(has_base)
                 return ret.mean(axis=1)
 
             drift = mtd(stocks) - mtd(bonds)
             entry_bar = is_trading_day & (days_left == p["entry_days_left"])
             out["rebal_drift"] = drift
-            out["rebal_entry_long"] = (entry_bar & (drift < -p["threshold"])).astype(float)
-            out["rebal_entry_short"] = (entry_bar & (drift > p["threshold"])).astype(float)
+            out["rebal_entry_long"] = (entry_bar & (drift < -p["threshold"])).astype(
+                float
+            )
+            out["rebal_entry_short"] = (entry_bar & (drift > p["threshold"])).astype(
+                float
+            )
             out["rebal_exit"] = (is_trading_day & (days_left == 0)).astype(float)
         if len(out):
             out.iloc[0] = np.nan  # indicator contract: the first row is NaN

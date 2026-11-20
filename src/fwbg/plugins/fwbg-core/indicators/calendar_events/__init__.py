@@ -5,6 +5,7 @@ Provides deterministic features derived from the datetime index that capture
 well-documented calendar anomalies: turn-of-month effect, quarter-end rebalancing,
 options expiry, FOMC cycle, NFP week, January effect, and more.
 """
+
 from typing import List
 
 import numpy as np
@@ -121,9 +122,7 @@ class CalendarEventsIndicator(BaseIndicator):
             ).astype(np.float64)
 
             # Week of month (1-5), normalized to 0..1
-            features["cal_week_of_month"] = (
-                ((day - 1) // 7) / 4.0
-            ).astype(np.float64)
+            features["cal_week_of_month"] = (((day - 1) // 7) / 4.0).astype(np.float64)
 
         features_df = shift_features(features, idx)
         return pd.concat([df, features_df], axis=1)
