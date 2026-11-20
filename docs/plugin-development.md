@@ -134,7 +134,7 @@ class BaseIndicator(BasePlugin, ABC):
 ```
 
 **Required:**
-- `shift_features()` at the end of `compute()` — 1-bar shift to prevent lookahead bias
+- `shift_features()` at the end of `compute()` — 1-bar shift to prevent lookahead bias (exception: columns that depend only on the bar's own timestamp and a calendar fixed in advance, such as `calendar_events`, are unshifted and leave only the first row `NaN`; see `docs/phases/3-indicators.md`)
 - `safe_divide()` for all divisions — NaN instead of inf on division by ~0
 
 **Key attributes:**

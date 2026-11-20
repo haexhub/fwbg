@@ -92,5 +92,5 @@ A name refers to one of the asset's sessions (e.g. `cash` for US index CFDs); a
 symbol without that session stops with an error. A bar may enter when its close
 lies in (open, close] of a window, so the bar ending at the session close can still
 enter at the closing price. Entry hours need intraday bars. Exits are not
-restricted. Unlike `allowed_hours` (UTC hours of the bar start), the filter works in
-local time and on the decision time.
+restricted. Unlike `allowed_hours`/`allowed_days` (UTC hour and weekday of the bar the order fills on, i.e. the
+bar after the signal bar), the filter works in local time and on the decision time.

@@ -10,7 +10,6 @@ Verifiziert mathematische Korrektheit der Indikatoren durch:
 import numpy as np
 import pandas as pd
 import pytest
-
 from fwbg.pipeline import (
     compute_indicator_pool,
     get_feature_columns,
@@ -274,7 +273,6 @@ class TestBollingerBands:
 
     def test_pband_1_at_upper_band(self):
         """%B sollte ~1 sein wenn Preis am oberen Band."""
-        n = 100
         # Starker Breakout nach oben
         close = np.concatenate([np.full(80, 100), np.linspace(100, 115, 20)])
         df = create_ohlc(close)
@@ -288,7 +286,6 @@ class TestBollingerBands:
 
     def test_pband_0_at_lower_band(self):
         """&B sollte ~0 sein wenn Preis am unteren Band."""
-        n = 100
         # Starker Einbruch
         close = np.concatenate([np.full(80, 100), np.linspace(100, 85, 20)])
         df = create_ohlc(close)
@@ -301,7 +298,6 @@ class TestBollingerBands:
 
     def test_bandwidth_increases_with_volatility(self):
         """Bandwidth sollte mit Volatilität steigen."""
-        n = 200
         # Erst niedrige Volatilität, dann hohe
         close_low_vol = 100 + np.random.randn(100) * 0.5
         close_high_vol = 100 + np.random.randn(100) * 3
@@ -561,7 +557,7 @@ class TestTimeFeatures:
     """Tests für Zeit-Features."""
 
     def test_hour_correctly_extracted(self):
-        """Stunde sollte korrekt extrahiert werden (shifted by 1)."""
+        """Stunde beschreibt den eigenen Zeitstempel der Bar (Kalender-Features sind nicht geshiftet)."""
         n = 48  # 2 Tage
         close = np.full(n, 100.0)
         # Start um 08:00
@@ -576,14 +572,12 @@ class TestTimeFeatures:
         )
         result = compute_indicator_pool(df)
 
-        # WICHTIG: Features sind um 1 geshiptet
-        # Feature bei Index 1 zeigt Wert von Bar 0 (8 Uhr)
-        assert result["time_hour"].iloc[1] == 8
-        # Feature bei Index 13 zeigt Wert von Bar 12 (20 Uhr)
-        assert result["time_hour"].iloc[13] == 20
+        # Index 1 ist die 09:00-Bar, Index 12 die 20:00-Bar
+        assert result["time_hour"].iloc[1] == 9
+        assert result["time_hour"].iloc[12] == 20
 
     def test_sin_cos_encoding_correct(self):
-        """Sin/Cos Encoding sollte korrekt sein (shifted by 1)."""
+        """Sin/Cos Encoding beschreibt den eigenen Zeitstempel der Bar."""
         # Need enough bars for compute_indicator_pool to work
         n = 100
         np.random.seed(42)
@@ -599,16 +593,14 @@ class TestTimeFeatures:
         )
         result = compute_indicator_pool(df)
 
-        # WICHTIG: Features sind um 1 geshiptet
-        # Feature bei Index 1 zeigt Wert von Bar 0 (00:00)
-        # Um 00:00 sollte sin = 0, cos = 1
-        assert abs(result["time_hour_sin"].iloc[1]) < 0.01
-        assert abs(result["time_hour_cos"].iloc[1] - 1) < 0.01
+        # Index 24 ist 00:00 am zweiten Tag: sin = 0, cos = 1
+        # (Index 0 ist NaN, siehe tests/test_lookahead_bias.py)
+        assert abs(result["time_hour_sin"].iloc[24]) < 0.01
+        assert abs(result["time_hour_cos"].iloc[24] - 1) < 0.01
 
-        # Feature bei Index 7 zeigt Wert von Bar 6 (06:00)
-        # Um 06:00 sollte sin = 1, cos = 0 (peak)
-        assert abs(result["time_hour_sin"].iloc[7] - 1) < 0.01
-        assert abs(result["time_hour_cos"].iloc[7]) < 0.01
+        # Index 6 ist 06:00: sin = 1, cos = 0 (peak)
+        assert abs(result["time_hour_sin"].iloc[6] - 1) < 0.01
+        assert abs(result["time_hour_cos"].iloc[6]) < 0.01
 
 
 class TestSeasonalityFeatures:
@@ -642,7 +634,6 @@ class TestDynamicsFeatures:
 
     def test_rsi_change_positive_when_rsi_rising(self):
         """RSI Change sollte positiv sein wenn RSI steigt."""
-        n = 150
         # Long sideways period, then strong uptrend
         close = np.concatenate(
             [
@@ -659,6 +650,49 @@ class TestDynamicsFeatures:
         rsi_end = rsi.iloc[-5:].mean()
         assert rsi_end > rsi_start, (
             f"RSI should increase in uptrend: {rsi_start:.1f} -> {rsi_end:.1f}"
+        )
+
+
+# === OPTIONAL PREMIUM INDICATORS ===
+
+
+class TestCrossIndicatorFeatures:
+    """Tests for optional premium cross-indicator features."""
+
+    def test_cross_rsi_high_rising_is_binary(self):
+        pytest.importorskip("fwbg_premium")
+        n = 200
+        np.random.seed(42)
+        close = 100 * np.exp(np.cumsum(np.random.randn(n) * 0.01))
+        result = compute_indicator_pool(create_ohlc(close))
+
+        cross_feature = result["cross_rsi_high_rising"].dropna()
+        assert set(cross_feature.unique()).issubset({0, 1})
+
+
+class TestMultiTimeframeFeatures:
+    """Tests for optional premium multi-timeframe features."""
+
+    def test_h4_trend_positive_in_uptrend(self):
+        pytest.importorskip("fwbg_premium")
+        close = np.linspace(100, 150, 200)
+        result = compute_indicator_pool(create_ohlc(close))
+
+        h4_trend = result["mtf_h4_trend"].dropna()
+        assert h4_trend.iloc[-50:].mean() > 0, "H4 trend should be positive in uptrend"
+
+    def test_trend_alignment_1_when_all_timeframes_agree(self):
+        pytest.importorskip("fwbg_premium")
+        close = np.linspace(100, 200, 600)
+        result = compute_indicator_pool(create_ohlc(close))
+
+        alignment_h1h4 = result["mtf_trend_alignment_h1h4"].dropna()
+        alignment_h4d1 = result["mtf_trend_alignment_h4d1"].dropna()
+        assert alignment_h1h4.iloc[-50:].mean() > 0.5, (
+            "H1/H4 alignment should be high in clear trend"
+        )
+        assert alignment_h4d1.iloc[-50:].mean() > 0.5, (
+            "H4/D1 alignment should be high in clear trend"
         )
 
 
@@ -773,7 +807,6 @@ class TestVolCompression:
 
     def test_compression_flag_during_low_vol(self):
         """Compression flag should be 1 during sustained low volatility."""
-        n = 300
         # First 200 bars: high vol, then 100 bars: very low vol
         close_high = 100 + np.cumsum(np.random.randn(200) * 2)
         close_low = close_high[-1] + np.cumsum(np.random.randn(100) * 0.05)

@@ -1,4 +1,5 @@
 """Tests for the liquidity_sweep indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -13,6 +14,7 @@ if _lsw is None:
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_bull_sweep_df(swing_lookback=5, n_post=4):
     """DataFrame with a clear bullish sweep.
@@ -81,8 +83,8 @@ def _make_sweep_df(n=500):
     # test_not_all_nan passes (active zones within zone_lookback=50 of bar 100+)
     for sweep_bar in range(60, n - 5, 60):
         idx = df.index[sweep_bar]
-        actual_swing_low = df["L"][max(0, sweep_bar - 20): sweep_bar].min()
-        df.loc[idx, "L"] = actual_swing_low - 0.5   # wick below swing low
+        actual_swing_low = df["L"][max(0, sweep_bar - 20) : sweep_bar].min()
+        df.loc[idx, "L"] = actual_swing_low - 0.5  # wick below swing low
         if df.loc[idx, "C"] <= actual_swing_low:
             df.loc[idx, "C"] = actual_swing_low + 0.5
         df.loc[idx, "H"] = max(df.loc[idx, "H"], df.loc[idx, "C"] + 0.1)
@@ -93,6 +95,7 @@ def _make_sweep_df(n=500):
 # ---------------------------------------------------------------------------
 # Bullish sweep detection
 # ---------------------------------------------------------------------------
+
 
 class TestBullishSweepDetection:
     """Tests for bullish sweep (fake-out below swing low then close back above)."""
@@ -105,8 +108,8 @@ class TestBullishSweepDetection:
 
         # Sweep at bar sw; after shift it appears at iloc[sw+1]
         assert result["lsw_bull_active"].iloc[sw + 1] == 1.0, (
-            f"Expected lsw_bull_active=1 at iloc[{sw+1}], "
-            f"got {result['lsw_bull_active'].iloc[sw+1]}"
+            f"Expected lsw_bull_active=1 at iloc[{sw + 1}], "
+            f"got {result['lsw_bull_active'].iloc[sw + 1]}"
         )
 
     def test_no_bull_sweep_when_close_stays_below(self):
@@ -114,7 +117,7 @@ class TestBullishSweepDetection:
         sw = 5
         df = _make_bull_sweep_df(swing_lookback=sw)
         # Change sweep bar: close stays below swing_low (100)
-        df.iloc[sw, df.columns.get_loc("C")] = 99.0   # close below 100 → no sweep
+        df.iloc[sw, df.columns.get_loc("C")] = 99.0  # close below 100 → no sweep
         result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
         assert result["lsw_bull_active"].fillna(0).sum() == 0.0
 
@@ -123,7 +126,7 @@ class TestBullishSweepDetection:
         sw = 5
         df = _make_bull_sweep_df(swing_lookback=sw)
         # Change sweep bar: low stays at swing_low (no wick below)
-        df.iloc[sw, df.columns.get_loc("L")] = 100.5   # above swing_low=100
+        df.iloc[sw, df.columns.get_loc("L")] = 100.5  # above swing_low=100
         result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
         assert result["lsw_bull_active"].fillna(0).sum() == 0.0
 
@@ -131,6 +134,7 @@ class TestBullishSweepDetection:
 # ---------------------------------------------------------------------------
 # Bearish sweep detection
 # ---------------------------------------------------------------------------
+
 
 class TestBearishSweepDetection:
     """Tests for bearish sweep (fake-out above swing high then close back below)."""
@@ -142,15 +146,15 @@ class TestBearishSweepDetection:
         result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
 
         assert result["lsw_bear_active"].iloc[sw + 1] == 1.0, (
-            f"Expected lsw_bear_active=1 at iloc[{sw+1}], "
-            f"got {result['lsw_bear_active'].iloc[sw+1]}"
+            f"Expected lsw_bear_active=1 at iloc[{sw + 1}], "
+            f"got {result['lsw_bear_active'].iloc[sw + 1]}"
         )
 
     def test_no_bear_sweep_when_close_stays_above(self):
         """If C[i] >= swing_high (displacement), no bear sweep is recorded."""
         sw = 5
         df = _make_bear_sweep_df(swing_lookback=sw)
-        df.iloc[sw, df.columns.get_loc("C")] = 111.0   # close above 110 → no sweep
+        df.iloc[sw, df.columns.get_loc("C")] = 111.0  # close above 110 → no sweep
         result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
         assert result["lsw_bear_active"].fillna(0).sum() == 0.0
 
@@ -158,7 +162,7 @@ class TestBearishSweepDetection:
         """If H[i] <= swing_high, no sweep happened."""
         sw = 5
         df = _make_bear_sweep_df(swing_lookback=sw)
-        df.iloc[sw, df.columns.get_loc("H")] = 109.5   # below swing_high=110
+        df.iloc[sw, df.columns.get_loc("H")] = 109.5  # below swing_high=110
         result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
         assert result["lsw_bear_active"].fillna(0).sum() == 0.0
 
@@ -166,6 +170,7 @@ class TestBearishSweepDetection:
 # ---------------------------------------------------------------------------
 # Zone persistence and invalidation
 # ---------------------------------------------------------------------------
+
 
 class TestSweepZones:
     """Tests for sweep zone lifecycle."""
@@ -179,7 +184,7 @@ class TestSweepZones:
         # Bars sw, sw+1, sw+2, sw+3 should all be active (after shift: sw+1 ... sw+4)
         for offset in range(1, 4):
             assert result["lsw_bull_active"].iloc[sw + offset] == 1.0, (
-                f"Expected lsw_bull_active=1 at iloc[{sw+offset}]"
+                f"Expected lsw_bull_active=1 at iloc[{sw + offset}]"
             )
 
     def test_bull_zone_invalidated_on_re_sweep(self):
@@ -193,8 +198,10 @@ class TestSweepZones:
         # At bar sw+1: price displaces below zone_bottom (98) and closes below swing_low (100)
         # → invalidates zone and does NOT create a new bull sweep (C < prev_sl)
         re_sweep_i = sw + 1
-        df.iloc[re_sweep_i, df.columns.get_loc("L")] = 97.0   # below zone_bottom=98
-        df.iloc[re_sweep_i, df.columns.get_loc("C")] = 97.5   # close BELOW swing_low=100 → no new sweep
+        df.iloc[re_sweep_i, df.columns.get_loc("L")] = 97.0  # below zone_bottom=98
+        df.iloc[re_sweep_i, df.columns.get_loc("C")] = (
+            97.5  # close BELOW swing_low=100 → no new sweep
+        )
         result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
 
         # After shift: result.iloc[re_sweep_i+1] reflects bar re_sweep_i
@@ -210,7 +217,7 @@ class TestSweepZones:
 
         for offset in range(1, 4):
             assert result["lsw_bear_active"].iloc[sw + offset] == 1.0, (
-                f"Expected lsw_bear_active=1 at iloc[{sw+offset}]"
+                f"Expected lsw_bear_active=1 at iloc[{sw + offset}]"
             )
 
     def test_bear_zone_invalidated_on_re_sweep(self):
@@ -222,8 +229,10 @@ class TestSweepZones:
         sw = 5
         df = _make_bear_sweep_df(swing_lookback=sw, n_post=4)
         re_sweep_i = sw + 1
-        df.iloc[re_sweep_i, df.columns.get_loc("H")] = 113.0   # above zone_top=112
-        df.iloc[re_sweep_i, df.columns.get_loc("C")] = 112.5   # close ABOVE swing_high=110 → no new sweep
+        df.iloc[re_sweep_i, df.columns.get_loc("H")] = 113.0  # above zone_top=112
+        df.iloc[re_sweep_i, df.columns.get_loc("C")] = (
+            112.5  # close ABOVE swing_high=110 → no new sweep
+        )
         result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
         assert result["lsw_bear_active"].iloc[re_sweep_i + 1] == 0.0
 
@@ -255,6 +264,7 @@ class TestSweepZones:
 # Feature properties
 # ---------------------------------------------------------------------------
 
+
 class TestSweepFeatureProperties:
     """Tests for feature shapes, types and values."""
 
@@ -271,8 +281,12 @@ class TestSweepFeatureProperties:
     def test_binary_features(self):
         indicator = _lsw.LiquiditySweepIndicator()
         result = indicator.compute(_make_sweep_df())
-        for col in ["lsw_bull_active", "lsw_bear_active",
-                    "lsw_bull_in_zone", "lsw_bear_in_zone"]:
+        for col in [
+            "lsw_bull_active",
+            "lsw_bear_active",
+            "lsw_bull_in_zone",
+            "lsw_bear_in_zone",
+        ]:
             vals = result[col].dropna().unique()
             assert set(vals).issubset({0.0, 1.0}), f"{col} not binary: {vals}"
 
@@ -324,9 +338,11 @@ class TestSweepFeatureProperties:
 # Plugin integration
 # ---------------------------------------------------------------------------
 
+
 class TestPluginIntegration:
     def test_plugin_discoverable(self):
         from fwbg.core import discover_plugins, get_indicator
+
         discover_plugins()
         cls = get_indicator("liquidity_sweep")
         assert cls is not None
@@ -336,3 +352,66 @@ class TestPluginIntegration:
         result = indicator.compute(_make_sweep_df(n=200))
         for col in indicator.get_feature_columns():
             assert col in result.columns, f"Declared {col} missing from output"
+
+
+# ---------------------------------------------------------------------------
+# In-zone / recency semantics
+# ---------------------------------------------------------------------------
+
+
+class TestInZoneAndRecency:
+    def test_sweep_bar_itself_is_not_in_zone(self):
+        """The sweep bar closes on the zone edge, so it must not count as in-zone."""
+        sw = 5
+        df = _make_bull_sweep_df(swing_lookback=sw, n_post=4)
+        result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
+        # Closes after the sweep (106) are above the zone [98, 104].
+        assert result["lsw_bull_in_zone"].fillna(0).sum() == 0.0
+
+        df_bear = _make_bear_sweep_df(swing_lookback=sw, n_post=4)
+        result = _lsw.LiquiditySweepIndicator().compute(df_bear, swing_lookback=sw)
+        # Bear zone is [108, 112]; later closes (106) are below it.
+        assert result["lsw_bear_in_zone"].fillna(0).sum() == 0.0
+
+    def test_later_close_inside_zone_is_flagged(self):
+        sw = 5
+        df = _make_bull_sweep_df(swing_lookback=sw, n_post=4)
+        # bar 7 closes at 101, inside the zone [98, 104], without breaking 98
+        df.iloc[sw + 2, df.columns.get_loc("L")] = 99.0
+        df.iloc[sw + 2, df.columns.get_loc("C")] = 101.0
+        result = _lsw.LiquiditySweepIndicator().compute(df, swing_lookback=sw)
+        flagged = result["lsw_bull_in_zone"].fillna(0)
+        assert flagged.iloc[sw + 3] == 1.0  # bar sw+2 shifted by one row
+        assert flagged.sum() == 1.0
+
+    def test_recency_survives_invalidation(self):
+        """Recency decays linearly from the sweep even after the zone is invalidated."""
+        sw = 5
+        zone_lb = 10
+        df = _make_bull_sweep_df(swing_lookback=sw, n_post=6)
+        # bar sw+2: displacement below the zone bottom (98), close below swing low
+        # -> zone invalidated, no new sweep
+        df.iloc[sw + 2, df.columns.get_loc("L")] = 97.0
+        df.iloc[sw + 2, df.columns.get_loc("C")] = 97.5
+        result = _lsw.LiquiditySweepIndicator().compute(
+            df, swing_lookback=sw, zone_lookback=zone_lb
+        )
+        # zone really is gone after the displacement bar
+        assert result["lsw_bull_active"].iloc[sw + 3] == 0.0
+        rec = result["lsw_bull_recency"]
+        for bar in range(sw, len(df) - 1):
+            expected = 1.0 - min(bar - sw, zone_lb) / zone_lb
+            assert rec.iloc[bar + 1] == pytest.approx(expected), f"bar {bar}"
+        # before the sweep nothing has happened
+        assert rec.iloc[1 : sw + 1].eq(0.0).all()
+
+    def test_recency_reaches_zero_after_zone_lookback(self):
+        sw = 5
+        zone_lb = 3
+        df = _make_bull_sweep_df(swing_lookback=sw, n_post=6)
+        result = _lsw.LiquiditySweepIndicator().compute(
+            df, swing_lookback=sw, zone_lookback=zone_lb
+        )
+        rec = result["lsw_bull_recency"]
+        assert rec.iloc[sw + 1] == pytest.approx(1.0)
+        assert rec.iloc[sw + 1 + zone_lb] == pytest.approx(0.0)

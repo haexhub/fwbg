@@ -87,7 +87,16 @@ registration), so it **fails closed**: startup aborts unless either
 `FWBG_API_KEY` is set (X-API-Key enforced on every `/api` request) or
 `FWBG_ALLOW_UNAUTHENTICATED_API=1` is explicitly set for local-only use. Always
 set `FWBG_API_KEY` when binding to `0.0.0.0`. Clients (fwbg-agents) send the
-same key via the `X-API-Key` header.
+same key via the `X-API-Key` header. Every route except `/docs`, `/redoc` and
+`/openapi.json` requires the key; CORS preflights are answered before the key
+check. `docker-compose.yml` has no unauthenticated mode and refuses to start
+without `FWBG_API_KEY` (see `.env.example`).
+
+`POST /api/plugins` imports and executes uploaded Python in the API process and
+stores it where the bot loads it, so it is disabled (403) unless the server sets
+`FWBG_ALLOW_PLUGIN_UPLOAD=1`. Secrets in datasource configs (`api_key`,
+credentials in `connection_string`, sensitive headers) are returned masked as
+`********`; sending the mask back in a `PUT` keeps the stored value.
 
 Interactive docs available at `http://localhost:8420/docs` after startup.
 
@@ -98,7 +107,8 @@ Interactive docs available at `http://localhost:8420/docs` after startup.
 | `FWBG_STRATEGIES_DIR` | `strategies/configs` | Strategy JSON directory |
 | `FWBG_TEST_RESULTS_DIR` | `test_results` | Results directory |
 | `FWBG_API_KEY` | _(unset)_ | Required unless dev bypass is set; enforced as `X-API-Key` on `/api`. |
-| `FWBG_ALLOW_UNAUTHENTICATED_API` | _(unset)_ | Set to `1` for local-only dev to run without a key. |
+| `FWBG_ALLOW_UNAUTHENTICATED_API` | _(unset)_ | Set to `1` for local-only dev to run without a key. Not used by `docker-compose.yml`. |
+| `FWBG_ALLOW_PLUGIN_UPLOAD` | _(unset)_ | Set to `1` to enable `POST /api/plugins` (executes uploaded code). Off by default. |
 | `FWBG_MAX_CONCURRENT_RUNS` | `1` | Concurrent backtest subprocesses. Raise only with enough RAM/CPU and callers that tolerate parallel runs; fwbg-agents expects `429` when the slot is busy and waits. |
 
 **Endpoints:**

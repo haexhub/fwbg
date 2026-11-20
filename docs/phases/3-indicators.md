@@ -52,6 +52,8 @@ features_df = shift_features(features, df.index)
 
 With the 1-bar shift, the model only sees features from bar `i-1` (the last completed bar).
 
+**Exception, deterministic calendar columns:** a column that depends only on the bar's own timestamp and a calendar fixed in advance (`calendar_events`, `time_season`, `turn_of_month`, `gotobi`, `scheduled_events`) is not shifted. The date of bar `i` is known before the bar opens, so its value is no lookahead, and a shift would make Monday's row describe Friday. Such an indicator must not read any price column, leaves the first row `NaN` (the tests in `tests/test_lookahead_bias.py` still require it) and says in its docstring that it is unshifted.
+
 **Example:**
 
 ```
@@ -130,10 +132,10 @@ class MyMomentumIndicator(BaseIndicator):
 | Value | Computation | Caching | Examples |
 |-------|-------------|---------|----------|
 | `False` (default) | Once on raw OHLC | Cached across all folds | `momentum`, `volatility`, `price_action` |
-| `True` | Per fold on preprocessed data | Not cached | `trend` (ADX on differentiated data) |
+| `True` | Per fold on preprocessed data | Not cached | Indicators that are defined on a stationary series, not on price levels |
 
 The decision is up to the plugin developer. Rule of thumb:
-- **Trend-following indicators** (ADX, Moving Averages): Benefit from stationary data → `True`
+- **Price-level indicators** (ADX, Supertrend, Moving Averages, MACD, Aroon, CCI): The high/low/close relations and price levels are the input. Differenced prices can be negative and H, L, C no longer bracket each other, so they are meaningless there → `False`
 - **Ratio-based indicators** (RSI, Stochastic): Already normalized → `False`
 - **Volatility indicators** (ATR, Bollinger): Scale-independent → `False`
 
@@ -151,7 +153,7 @@ The decision is up to the plugin developer. Rule of thumb:
 | `price_action` | Range Position, Higher Highs/Lower Lows, Body Ratio, Gaps | `pa_` |
 | `fair_value_gap` | Fair Value Gaps (Bull/Bear), Distance, Size, Count | `fvg_` |
 | `cusum_events` | CUSUM Structural Break Detection (de Prado AFML Ch. 2) | `cusum_` |
-| `calendar_events` | Calendar Anomalies (Turn-of-Month, OpEx, FOMC, NFP) | `cal_` |
+| `calendar_events` | Calendar Anomalies (Turn-of-Month, OpEx, NFP) | `cal_` |
 | `fractal_dimension` | Higuchi Fractal Dimension (Complexity, Regime) | `fd_` |
 | `wavelets` | Wavelet Decomposition (Time-Frequency Energy, Ratios) | `wt_` |
 | `autoencoder_features` | PCA Latent Features, Reconstruction Error (Anomaly) | `ae_` |

@@ -9,7 +9,9 @@ Sichert ab:
 - Fehlende symbol_map-Einträge werden übersprungen (kein Absturz)
 - timezone-Feld konvertiert UTC-Timestamps in die Ziel-Zeitzone (DST-aware)
 """
+
 import csv
+import pandas as pd
 import pytest
 from pathlib import Path
 
@@ -17,6 +19,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def raw_dir(tmp_path):
@@ -31,13 +34,11 @@ def raw_dir(tmp_path):
         "1388535300000,9552.5,9554.0,9552.0,9553.0\n"
     )
     (raw / "US30_DJI_m15.csv").write_text(
-        "timestamp,open,high,low,close\n"
-        "1388534400000,16500.0,16510.0,16495.0,16505.0\n"
+        "timestamp,open,high,low,close\n1388534400000,16500.0,16510.0,16495.0,16505.0\n"
     )
     # Datei ohne Symbol-Mapping (soll übersprungen werden)
     (raw / "XX99_UNKNOWN_m15.csv").write_text(
-        "timestamp,open,high,low,close\n"
-        "1388534400000,100.0,101.0,99.0,100.5\n"
+        "timestamp,open,high,low,close\n1388534400000,100.0,101.0,99.0,100.5\n"
     )
     return raw
 
@@ -51,6 +52,7 @@ def datasource_dir(tmp_path):
 def csv_source(raw_dir, datasource_dir):
     """CSVSourceConfig mit dukascopy-typischen Feldern."""
     from fwbg.core.data_sources import CSVSourceConfig
+
     return CSVSourceConfig(
         name="dukascopy_test",
         path=datasource_dir,
@@ -70,8 +72,8 @@ def csv_source(raw_dir, datasource_dir):
 # Tests: prepare() Grundverhalten
 # ---------------------------------------------------------------------------
 
-class TestCSVSourcePrepare:
 
+class TestCSVSourcePrepare:
     def test_prepare_creates_datasource_dir(self, csv_source, datasource_dir):
         """prepare() erstellt das Ausgabe-Verzeichnis falls nötig."""
         assert not datasource_dir.exists()
@@ -133,6 +135,7 @@ class TestCSVSourcePrepare:
     def test_prepare_without_raw_path_is_noop(self, datasource_dir):
         """CSVSourceConfig ohne raw_path → prepare() tut nichts (kein Absturz)."""
         from fwbg.core.data_sources import CSVSourceConfig
+
         src = CSVSourceConfig(name="no_raw", path=datasource_dir)
         # Kein Fehler, keine Ausgabe
         src.prepare()
@@ -143,8 +146,8 @@ class TestCSVSourcePrepare:
 # Tests: Serialisierung / Deserialisierung
 # ---------------------------------------------------------------------------
 
-class TestCSVSourceSerialization:
 
+class TestCSVSourceSerialization:
     def test_to_dict_includes_raw_fields(self, csv_source):
         """to_dict() muss raw_path, raw_pattern, timestamp_unit, symbol_map enthalten."""
         d = csv_source.to_dict()
@@ -156,6 +159,7 @@ class TestCSVSourceSerialization:
     def test_source_from_dict_roundtrip(self, csv_source, raw_dir, datasource_dir):
         """source_from_dict(to_dict()) muss identische Config reproduzieren."""
         from fwbg.core.data_sources import source_from_dict
+
         d = csv_source.to_dict()
         restored = source_from_dict(d)
         assert restored.name == csv_source.name
@@ -165,34 +169,63 @@ class TestCSVSourceSerialization:
 
 
 # ---------------------------------------------------------------------------
-# Tests: Timezone-Konvertierung
+# Tests: Timestamp-Konvention (naive UTC) und timezone
 # ---------------------------------------------------------------------------
 
-class TestCSVSourceTimezone:
-    """Sichert ab dass UTC-Timestamps in die konfigurierte Zeitzone konvertiert werden.
 
-    Referenz-Timestamp: 1388534400000 ms
-      = 2014-01-01 00:00:00 UTC
-      = 2014-01-01 01:00:00 Europe/Berlin (CET = UTC+1 im Winter)
-      = 2014-01-01 09:00:00 Asia/Tokyo    (JST = UTC+9)
+def _write_raw(raw_dir: Path, header: str, rows: list[str]) -> None:
+    (raw_dir / "DE40_DAX_m15.csv").write_text("\n".join([header, *rows]) + "\n")
+
+
+def _source(tmp_path: Path, **kwargs):
+    from fwbg.core.data_sources import CSVSourceConfig
+
+    raw = tmp_path / "raw"
+    raw.mkdir(exist_ok=True)
+    defaults = dict(
+        name="tz_test",
+        path=tmp_path / "out",
+        file_pattern="{symbol}_MINUTE_15.csv",
+        raw_path=raw,
+        raw_pattern="{raw_symbol}_m15.csv",
+        symbol_map={"DE40_DAX": "DAX"},
+    )
+    defaults.update(kwargs)
+    return CSVSourceConfig(**defaults)
+
+
+def _timestamps(src, name="DAX_MINUTE_15.csv") -> list[str]:
+    return [r["T"] for r in csv.DictReader((src.path / name).open())]
+
+
+class TestCSVSourceTimezone:
+    """Datasource CSVs hold naive UTC. ``timezone`` names the zone of string timestamps.
+
+    Referenz-Timestamp: 1388534400000 ms = 2014-01-01 00:00:00 UTC.
     """
 
-    def _make_source(self, raw_dir, datasource_dir, timezone):
+    def test_epoch_timestamps_stay_utc_even_with_timezone(
+        self, raw_dir, datasource_dir
+    ):
+        """Unix epochs are absolute: a configured timezone must not shift them."""
         from fwbg.core.data_sources import CSVSourceConfig
-        return CSVSourceConfig(
-            name="tz_test",
+
+        src = CSVSourceConfig(
+            name="tz",
             path=datasource_dir,
             file_pattern="{symbol}_MINUTE_15.csv",
             raw_path=raw_dir,
             raw_pattern="{raw_symbol}_m15.csv",
             timestamp_unit="ms",
             symbol_map={"DE40_DAX": "DAX"},
-            timezone=timezone,
+            timezone="Europe/Berlin",
         )
+        src.prepare()
+        assert _timestamps(src) == ["2014-01-01 00:00:00", "2014-01-01 00:15:00"]
 
     def test_no_timezone_keeps_utc(self, raw_dir, datasource_dir):
-        """Ohne timezone bleibt der Timestamp in UTC (bisheriges Verhalten)."""
         from fwbg.core.data_sources import CSVSourceConfig
+
         src = CSVSourceConfig(
             name="no_tz",
             path=datasource_dir,
@@ -203,114 +236,187 @@ class TestCSVSourceTimezone:
             symbol_map={"DE40_DAX": "DAX"},
         )
         src.prepare()
-        rows = list(csv.DictReader((datasource_dir / "DAX_MINUTE_15.csv").open()))
-        # 1388534400000 ms = 2014-01-01 00:00:00 UTC
-        assert rows[0]["T"] == "2014-01-01 00:00:00"
+        assert _timestamps(src)[0] == "2014-01-01 00:00:00"
 
-    def test_europe_berlin_winter_offset(self, raw_dir, datasource_dir):
-        """timezone='Europe/Berlin' verschiebt UTC+1h im Winter (CET)."""
-        src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
-        src.prepare()
-        rows = list(csv.DictReader((datasource_dir / "DAX_MINUTE_15.csv").open()))
-        # 2014-01-01 00:00:00 UTC → 2014-01-01 01:00:00 CET
-        assert rows[0]["T"] == "2014-01-01 01:00:00", (
-            f"Erwartet 01:00:00 CET, bekommen: {rows[0]['T']}"
-        )
-
-    def test_europe_berlin_second_bar(self, raw_dir, datasource_dir):
-        """Auch der zweite Bar wird korrekt verschoben (+15 min)."""
-        src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
-        src.prepare()
-        rows = list(csv.DictReader((datasource_dir / "DAX_MINUTE_15.csv").open()))
-        # 1388535300000 ms = 2014-01-01 00:15:00 UTC → 01:15:00 CET
-        assert rows[1]["T"] == "2014-01-01 01:15:00", (
-            f"Erwartet 01:15:00 CET, bekommen: {rows[1]['T']}"
-        )
-
-    def test_europe_berlin_dst_summer(self, tmp_path):
-        """timezone='Europe/Berlin' verschiebt UTC+2h im Sommer (CEST)."""
-        raw = tmp_path / "raw"
-        raw.mkdir()
-        # 2024-07-01 06:00:00 UTC = 2024-07-01 08:00:00 CEST (UTC+2)
-        ts_ms = 1719813600000  # 2024-07-01 06:00:00 UTC
-        (raw / "DE40_DAX_m15.csv").write_text(
-            f"timestamp,open,high,low,close\n{ts_ms},100,101,99,100\n"
-        )
-        from fwbg.core.data_sources import CSVSourceConfig
-        src = CSVSourceConfig(
-            name="dst_test",
-            path=tmp_path / "out",
-            file_pattern="{symbol}_MINUTE_15.csv",
-            raw_path=raw,
-            raw_pattern="{raw_symbol}_m15.csv",
-            timestamp_unit="ms",
-            symbol_map={"DE40_DAX": "DAX"},
-            timezone="Europe/Berlin",
+    def test_local_strings_are_converted_to_utc_in_winter(self, tmp_path):
+        src = _source(tmp_path, timezone="Europe/Berlin")
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            ["2014-01-01 01:00:00,1,2,0.5,1", "2014-01-01 01:15:00,1,2,0.5,1"],
         )
         src.prepare()
-        rows = list(csv.DictReader((tmp_path / "out" / "DAX_MINUTE_15.csv").open()))
-        assert rows[0]["T"] == "2024-07-01 08:00:00", (
-            f"Erwartet 08:00:00 CEST, bekommen: {rows[0]['T']}"
+        assert _timestamps(src) == ["2014-01-01 00:00:00", "2014-01-01 00:15:00"]
+
+    def test_local_strings_are_converted_to_utc_in_summer(self, tmp_path):
+        src = _source(tmp_path, timezone="Europe/Berlin")
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            ["2024-07-01 08:00:00,1,2,0.5,1"],
         )
+        src.prepare()
+        assert _timestamps(src) == ["2024-07-01 06:00:00"]
+
+    def test_strings_without_timezone_are_taken_as_utc(self, tmp_path):
+        src = _source(tmp_path)
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            ["2024-07-01 08:00:00,1,2,0.5,1"],
+        )
+        src.prepare()
+        assert _timestamps(src) == ["2024-07-01 08:00:00"]
+
+    def test_dst_fallback_keeps_both_occurrences_of_the_repeated_hour(self, tmp_path):
+        """2024-10-27 in Berlin: 02:00-02:45 happens twice (CEST, then CET).
+
+        Both passes must survive as distinct UTC bars (00:00-00:45 and 01:00-01:45).
+        """
+        src = _source(tmp_path, timezone="Europe/Berlin")
+        wall = ["01:45"] + [f"02:{m:02d}" for m in (0, 15, 30, 45)] * 2 + ["03:00"]
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            [f"2024-10-27 {t}:00,1,2,0.5,1" for t in wall],
+        )
+        src.prepare()
+        assert _timestamps(src) == [
+            "2024-10-26 23:45:00",
+            *[f"2024-10-27 00:{m:02d}:00" for m in (0, 15, 30, 45)],
+            *[f"2024-10-27 01:{m:02d}:00" for m in (0, 15, 30, 45)],
+            "2024-10-27 02:00:00",
+        ]
+
+    def test_dst_fallback_with_a_single_ambiguous_bar_does_not_fail(self, tmp_path):
+        """Hourly data with only one 02:00 cannot be inferred; the first reading wins."""
+        src = _source(tmp_path, timezone="Europe/Berlin")
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            [
+                "2024-10-27 01:00:00,1,2,0.5,1",
+                "2024-10-27 02:00:00,1,2,0.5,1",
+                "2024-10-27 03:00:00,1,2,0.5,1",
+            ],
+        )
+        src.prepare()
+        assert _timestamps(src) == [
+            "2024-10-26 23:00:00",
+            "2024-10-27 00:00:00",
+            "2024-10-27 02:00:00",
+        ]
+
+    def test_dst_spring_gap_rows_are_dropped_explicitly(self, tmp_path, caplog):
+        """2024-03-31 in Berlin: 02:00-02:59 local never existed."""
+        src = _source(tmp_path, timezone="Europe/Berlin")
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            [
+                "2024-03-31 01:45:00,1,2,0.5,1",
+                "2024-03-31 02:15:00,1,2,0.5,1",
+                "2024-03-31 03:00:00,1,2,0.5,1",
+            ],
+        )
+        with caplog.at_level("WARNING"):
+            src.prepare()
+        assert _timestamps(src) == ["2024-03-31 00:45:00", "2024-03-31 01:00:00"]
+        assert "nicht existierender Ortszeit" in caplog.text
 
     def test_timezone_in_to_dict(self, raw_dir, datasource_dir):
         """to_dict() muss timezone enthalten wenn gesetzt."""
-        src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
-        d = src.to_dict()
-        assert d.get("timezone") == "Europe/Berlin"
+        src = _source(datasource_dir.parent, timezone="Europe/Berlin")
+        assert src.to_dict().get("timezone") == "Europe/Berlin"
 
     def test_no_timezone_not_in_to_dict(self, csv_source):
         """to_dict() darf 'timezone' nicht enthalten wenn nicht gesetzt."""
-        d = csv_source.to_dict()
-        assert "timezone" not in d
+        assert "timezone" not in csv_source.to_dict()
 
-    def test_source_from_dict_restores_timezone(self, raw_dir, datasource_dir):
+    def test_source_from_dict_restores_timezone(self, tmp_path):
         """source_from_dict() muss timezone korrekt deserialisieren."""
         from fwbg.core.data_sources import source_from_dict
-        src = self._make_source(raw_dir, datasource_dir, "Europe/Berlin")
+
+        src = _source(tmp_path, timezone="Europe/Berlin")
         restored = source_from_dict(src.to_dict())
         assert restored.timezone == "Europe/Berlin"
 
-    def test_dst_fallback_removes_duplicate_timestamps(self, tmp_path):
-        """Duplikate naive Timestamps beim DST-Rückfall (Oktober) werden entfernt.
 
-        Beim Rückfall in Europa/Berlin (letzter Sonntag Oktober) drehen die Uhren
-        von 03:00 CEST (= 01:00 UTC) zurück auf 02:00 CET. Dadurch entstehen
-        in den naiven Strings doppelte Einträge für 02:00-02:45 local.
+class TestPreparedFileName:
+    """The output name comes from file_pattern with the symbol and timeframe filled in."""
 
-        Input: 9 Bars  00:00–02:00 UTC (15-Min-Raster)
-        Erwartung: 5 Zeilen (02:00, 02:15, 02:30, 02:45, 03:00 lokal, je erste UTC behalten)
-        """
-        raw = tmp_path / "raw"
-        raw.mkdir()
-        # 2024-10-27 DST fall-back: 01:00 UTC = 03:00 CEST → 02:00 CET
-        # Bars: 00:00..02:00 UTC every 15 min = 9 bars
-        base_ms = 1729987200000  # 2024-10-27 00:00:00 UTC
-        step_ms = 900000         # 15 min
-        lines = ["timestamp,open,high,low,close"]
-        for i in range(9):
-            lines.append(f"{base_ms + i * step_ms},100,101,99,100")
-        (raw / "DE40_DAX_m15.csv").write_text("\n".join(lines) + "\n")
+    def test_timeframe_placeholder_is_filled_from_the_raw_pattern(self, tmp_path):
+        src = _source(tmp_path, file_pattern="{symbol}_{timeframe}.csv")
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            ["2024-07-01 08:00:00,1,2,0.5,1"],
+        )
+        assert src.prepare() == ["DAX"]
+        assert sorted(p.name for p in src.path.iterdir()) == ["DAX_m15.csv"]
 
-        from fwbg.core.data_sources import CSVSourceConfig
-        src = CSVSourceConfig(
-            name="dst_dedup",
-            path=tmp_path / "out",
-            file_pattern="{symbol}_MINUTE_15.csv",
-            raw_path=raw,
-            raw_pattern="{raw_symbol}_m15.csv",
-            timestamp_unit="ms",
-            symbol_map={"DE40_DAX": "DAX"},
-            timezone="Europe/Berlin",
+    def test_timeframe_map_is_applied_like_for_lookups(self, tmp_path):
+        src = _source(
+            tmp_path,
+            file_pattern="{symbol}_{timeframe}.csv",
+            timeframe_map={"m15": "MINUTE_15"},
+        )
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            ["2024-07-01 08:00:00,1,2,0.5,1"],
         )
         src.prepare()
-        rows = list(csv.DictReader((tmp_path / "out" / "DAX_MINUTE_15.csv").open()))
-        timestamps = [r["T"] for r in rows]
-        # Deduplicated: no duplicate naive timestamps
-        assert len(timestamps) == len(set(timestamps)), (
-            f"Duplikate in Timestamps: {[t for t in timestamps if timestamps.count(t) > 1]}"
+        assert sorted(p.name for p in src.path.iterdir()) == ["DAX_MINUTE_15.csv"]
+        assert src.get_file_path("DAX", "m15").exists()
+
+    def test_no_literal_placeholder_in_any_output_name(self, tmp_path):
+        src = _source(tmp_path, file_pattern="{symbol}_{timeframe}.csv")
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            ["2024-07-01 08:00:00,1,2,0.5,1"],
         )
-        # 9 raw → 5 unique (4 pairs deduplicated + 1 last bar)
-        assert len(rows) == 5, f"Erwartet 5 Zeilen nach DST-Dedup, bekommen: {len(rows)}"
-        assert rows[0]["T"] == "2024-10-27 02:00:00"
-        assert rows[-1]["T"] == "2024-10-27 03:00:00"
+        src.prepare()
+        assert not [p for p in src.path.iterdir() if "{" in p.name]
+
+    def test_pattern_needing_a_timeframe_without_one_is_refused(self, tmp_path):
+        src = _source(
+            tmp_path,
+            file_pattern="{symbol}_{timeframe}.csv",
+            raw_pattern="{raw_symbol}.csv",
+        )
+        (tmp_path / "raw" / "DE40_DAX.csv").write_text(
+            "timestamp,open,high,low,close\n2024-07-01 08:00:00,1,2,0.5,1\n"
+        )
+        assert src.prepare() == []
+        assert not src.path.exists() or not list(src.path.iterdir())
+
+    def test_pattern_without_timeframe_placeholder_is_unchanged(self, tmp_path):
+        src = _source(tmp_path)
+        _write_raw(
+            tmp_path / "raw",
+            "timestamp,open,high,low,close",
+            ["2024-07-01 08:00:00,1,2,0.5,1"],
+        )
+        src.prepare()
+        assert sorted(p.name for p in src.path.iterdir()) == ["DAX_MINUTE_15.csv"]
+
+
+def test_prepared_dst_fallback_file_loads_with_a_unique_increasing_index(tmp_path):
+    from fwbg.data.loader import load_data_aligned
+
+    src = _source(tmp_path, timezone="Europe/Berlin")
+    wall = [f"{h:02d}:00" for h in (1, 2, 2, 3)]
+    _write_raw(
+        tmp_path / "raw",
+        "timestamp,open,high,low,close",
+        [f"2024-10-27 {t}:00,1,2,0.5,1" for t in wall],
+    )
+    src.prepare()
+
+    df = load_data_aligned(str(src.get_file_path("DAX")))
+
+    assert df.index.is_unique and df.index.is_monotonic_increasing
+    assert list(df.index.hour) == [23, 0, 1, 2]
+    assert (df.index.to_series().diff().dropna() == pd.Timedelta(hours=1)).all()

@@ -104,6 +104,10 @@ def compute_regime_bitmask(df: pd.DataFrame, regime_params=None) -> np.ndarray:
 
     Returns:
         int8 numpy array with bitmask values (0-7)
+
+    Raises:
+        ValueError: A condition names a column that is not in ``df`` or uses an
+            unsupported operator.
     """
     if regime_params is None or not regime_params.conditions:
         return np.full(len(df), 7, dtype=np.int8)
@@ -112,7 +116,11 @@ def compute_regime_bitmask(df: pd.DataFrame, regime_params=None) -> np.ndarray:
 
     for cond in regime_params.conditions:
         if cond.column not in df.columns:
-            continue
+            raise ValueError(
+                f"Regime filter column '{cond.column}' is not in the frame; "
+                "add the indicator that produces it to the pipeline "
+                "(a skipped condition would silently leave the filter open)."
+            )
 
         col = df[cond.column].values
         ops = {
@@ -123,7 +131,10 @@ def compute_regime_bitmask(df: pd.DataFrame, regime_params=None) -> np.ndarray:
         }
         op_fn = ops.get(cond.operator)
         if op_fn is None:
-            continue
+            raise ValueError(
+                f"Regime filter on '{cond.column}' has unsupported operator "
+                f"'{cond.operator}'; use one of {sorted(ops)}."
+            )
 
         mask = op_fn(col, cond.value)
         # Where condition is True → directions, False → else_directions

@@ -21,8 +21,9 @@ class BaseRiskManager(BasePlugin, ABC):
     phase = PluginPhase.RISK_MANAGEMENT
 
     @abstractmethod
-    def compute_risk_params(self, trades: List[float], win_rate: float,
-                           rrr: float, **params) -> Dict[str, Any]:
+    def compute_risk_params(
+        self, trades: List[float], win_rate: float, rrr: float, **params
+    ) -> Dict[str, Any]:
         """
         Computes risk parameters.
 
@@ -49,20 +50,18 @@ class BaseRiskManager(BasePlugin, ABC):
 
 ```python
 {
-    "risk_per_trade": 0.02,        # 2% of capital per trade
-    "trade_returns": [...],         # All trade returns with adjusted sizing
-
+    "risk_per_trade": 0.02,  # 2% of capital per trade
+    "trade_returns": [...],  # All trade returns with adjusted sizing
     "circuit_breaker": {
-        "pause_after_losses": 3,    # Pause after 3 consecutive losses
-        "pause_bars": 10,           # Pause for 10 bars
-        "enabled": True
+        "pause_after_losses": 3,  # Pause after 3 consecutive losses
+        "pause_bars": 10,  # Pause for 10 bars
+        "enabled": True,
     },
-
     "risk_adjustment": {
-        "original_risk": 0.03,      # Raw Kelly result
-        "scale_factor": 0.5,        # Scaled down (half-Kelly)
-        "target_dd": 0.15           # Target drawdown of 15%
-    }
+        "original_risk": 0.03,  # Raw Kelly result
+        "scale_factor": 0.5,  # Scaled down (half-Kelly)
+        "target_dd": 0.15,  # Target drawdown of 15%
+    },
 }
 ```
 
@@ -82,13 +81,7 @@ In practice, "half-Kelly" (50% of the theoretical optimum) is typically used, as
 
 ### vol_targeted_kelly (fwbg-core)
 
-Kelly Criterion with **volatility targeting** — dynamically scales position size by the ratio of target volatility to realized volatility:
-
-```
-Adjusted_Size = Kelly_Size × (target_vol / realized_vol)
-```
-
-In high-volatility environments, position size is reduced; in low-volatility environments, it is increased.
+Deprecated alias of `kelly`. It used to compute a per-trade `target_vol / realized_vol` scale, but that scale never fed into position sizing, drawdown or any reported metric, so the volatility scaling was removed. The name stays registered for existing configs; `target_vol`, `min_scale` and `max_scale` are ignored with a `DeprecationWarning`. Use `kelly`.
 
 ---
 

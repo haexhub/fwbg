@@ -11,6 +11,7 @@ if _wor is None:
 def _find_indicator_class(module):
     """Find the concrete indicator class in the module (skip abstract base classes)."""
     import inspect as _inspect
+
     for name in dir(module):
         obj = getattr(module, name)
         if (
@@ -30,7 +31,10 @@ def _make_m15_df(n_weeks=8, known_wor_high=101.0, known_wor_low=99.0, seed=42):
     start = pd.Timestamp("2022-01-03 00:00")  # Monday
     idx = pd.date_range(start, periods=n, freq="15min")
     close = 100 + np.cumsum(np.random.randn(n) * 0.05)
-    df = pd.DataFrame({"O": close * 0.9995, "H": close * 1.002, "L": close * 0.998, "C": close}, index=idx)
+    df = pd.DataFrame(
+        {"O": close * 0.9995, "H": close * 1.002, "L": close * 0.998, "C": close},
+        index=idx,
+    )
     df.iloc[0, df.columns.get_loc("H")] = known_wor_high
     df.iloc[0, df.columns.get_loc("L")] = known_wor_low
     df.iloc[1, df.columns.get_loc("H")] = known_wor_high
@@ -106,7 +110,9 @@ class TestWORPositionAndBreakout:
         first_week_end = pd.Timestamp("2022-01-07 23:59")
         first_week = result[result.index <= first_week_end]
         inside = first_week[
-            (first_week["C"] >= 98.0) & (first_week["C"] <= 102.0) & first_week[col].notna()
+            (first_week["C"] >= 98.0)
+            & (first_week["C"] <= 102.0)
+            & first_week[col].notna()
         ]
         if len(inside) > 0:
             assert (inside[col].between(0, 1)).all(), (
@@ -167,12 +173,18 @@ class TestWORPositionAndBreakout:
         first_week_end = pd.Timestamp("2022-01-07 23:59")
         first_week = result[result.index <= first_week_end]
         inside = first_week[
-            (first_week["C"] > 99.0) & (first_week["C"] < 101.0)
-            & first_week[col_up].notna() & first_week[col_dn].notna()
+            (first_week["C"] > 99.0)
+            & (first_week["C"] < 101.0)
+            & first_week[col_up].notna()
+            & first_week[col_dn].notna()
         ]
         if len(inside) > 0:
-            assert (inside[col_up] == 0).all(), f"Close inside range should have {col_up}=0"
-            assert (inside[col_dn] == 0).all(), f"Close inside range should have {col_dn}=0"
+            assert (inside[col_up] == 0).all(), (
+                f"Close inside range should have {col_up}=0"
+            )
+            assert (inside[col_dn] == 0).all(), (
+                f"Close inside range should have {col_dn}=0"
+            )
 
     def test_dist_to_high_positive_when_below_wor(self):
         """dist_to_high should be positive when close is below WOR high."""
@@ -251,7 +263,9 @@ class TestWORStatistics:
         if "wor_stat_avg_range" not in result.columns:
             pytest.skip("wor_stat_avg_range not in result")
         valid = result["wor_stat_avg_range"].dropna()
-        assert len(valid) > 0, "wor_stat_avg_range should have values after multiple weeks"
+        assert len(valid) > 0, (
+            "wor_stat_avg_range should have values after multiple weeks"
+        )
         assert (valid > 0).all(), "Average WOR range must be positive"
 
     def test_breakout_rate_between_0_and_1(self):
@@ -273,7 +287,9 @@ class TestWORStatistics:
         ind = _get_ind()
         result = ind.compute(df, enable_stats=False)
         stat_cols = [c for c in result.columns if c.startswith("wor_stat_")]
-        assert len(stat_cols) == 0, f"wor_stat_* columns present despite enable_stats=False: {stat_cols}"
+        assert len(stat_cols) == 0, (
+            f"wor_stat_* columns present despite enable_stats=False: {stat_cols}"
+        )
 
     def test_daily_data_not_processed(self):
         """Daily timeframe data should be returned unchanged (no wor_* columns added)."""
@@ -361,3 +377,59 @@ class TestPluginAttributes:
             pytest.skip(f"{col} not in result")
         valid = result[col].dropna()
         assert (valid >= 0).all(), f"{col} should be non-negative"
+
+
+# ── Trading-week start, time-window range, stats honour range_bars ──────────
+
+
+def _week_frame(*spans):
+    idx = pd.DatetimeIndex([])
+    for start, end in spans:
+        idx = idx.append(pd.date_range(start, end, freq="15min"))
+    return pd.DataFrame({k: 100.0 for k in "OHLC"}, index=idx)
+
+
+class TestWORTradingWeek:
+    def test_fx_sunday_evening_bars_open_the_next_trading_week(self):
+        df = _week_frame(
+            ("2024-01-07 22:00", "2024-01-12 21:45"),  # Sun evening .. Fri close
+            ("2024-01-14 22:00", "2024-01-19 21:45"),
+        )
+        for ts in ("2024-01-07 22:00", "2024-01-07 22:15"):
+            df.loc[pd.Timestamp(ts), ["H", "L"]] = [101.0, 99.0]
+        # Decoy: the first Monday bars must not define the range.
+        df.loc[pd.Timestamp("2024-01-08 00:00"), ["H", "L"]] = [130.0, 70.0]
+        result = _get_ind().compute(df, range_bars=2, enable_stats=False)
+        sl = result["wor_rb2_sl_dist"]
+        assert sl.loc["2024-01-10 12:00"] == pytest.approx(2.0)
+        assert pd.isna(
+            sl.loc["2024-01-07 22:30"]
+        )  # shifted: row 22:30 sees the 22:15 bar
+        assert sl.loc["2024-01-07 22:45"] == pytest.approx(2.0)
+
+    def test_range_is_a_time_window_with_a_missing_bar(self):
+        df = _week_frame(("2024-01-01 00:00", "2024-01-05 23:45"))
+        df.loc[pd.Timestamp("2024-01-01 00:00"), ["H", "L"]] = [101.0, 99.0]
+        df.loc[pd.Timestamp("2024-01-01 00:30"), ["H", "L"]] = [140.0, 60.0]
+        df = df.drop(pd.Timestamp("2024-01-01 00:15"))
+        result = _get_ind().compute(df, range_bars=2, enable_stats=False)
+        # Window [00:00, 00:30) has only the first bar; the 00:30 spike is outside.
+        assert result["wor_rb2_sl_dist"].loc["2024-01-03 12:00"] == pytest.approx(2.0)
+
+    def test_stats_use_the_configured_range_bars(self):
+        weeks = [
+            (f"2024-01-{d:02d} 00:00", f"2024-01-{d + 4:02d} 23:45")
+            for d in (1, 8, 15, 22)
+        ]
+        df = _week_frame(*weeks)
+        for start, _ in weeks:
+            t0 = pd.Timestamp(start)
+            df.loc[t0, ["H", "L"]] = [101.0, 99.0]
+            df.loc[t0 + pd.Timedelta(minutes=15), ["H", "L"]] = [103.0, 97.0]
+        result = _get_ind().compute(df, range_bars=2, stat_window=4)
+        # Range over both range bars = 6 (relative to close 100), not the first bar's 2.
+        avg = result["wor_stat_avg_range"].loc["2024-01-24 12:00"]
+        assert avg == pytest.approx(0.06)
+        assert result["wor_stat_range_vs_avg"].loc["2024-01-24 12:00"] == pytest.approx(
+            1.0
+        )

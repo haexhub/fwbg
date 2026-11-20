@@ -1,6 +1,6 @@
 # Plugin Spec — adversarial_validation
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -8,11 +8,11 @@ Detects distribution shift by training a LogisticRegression to separate the olde
 
 ## Summary
 
-Adversarial-validation regime-change indicator: for each configured window, fits a scaled LogisticRegression to distinguish the older half of the window from the newer half, then emits per-window adv_auc, adv_drift_score (2*(auc-0.5) clipped to [0,1]), adv_stability (1-drift), adv_max_feature_importance (max |coef|), and adv_drift_acceleration (diff of drift). Forward-fills between step indices, preserves NaN during warmup, and shifts all features by one bar to avoid lookahead.
+Adversarial-validation regime-change indicator: for each configured window, scores a scaled LogisticRegression that distinguishes the older half of the window from the newer half with a contiguous-block cross-validated (out-of-sample) AUC, then emits per-window adv_auc, adv_drift_score (2*(auc-0.5) clipped to [0,1]), adv_stability (1-drift), adv_max_feature_importance (mean over folds of max |coef|), and adv_drift_acceleration (diff of drift). Forward-fills between step indices, preserves NaN during warmup, and shifts all features by one bar to avoid lookahead.
 
 ## Inputs
 
-- OHLCV DataFrame with additional numeric feature columns (non-OHLCV, not starting with any string in exclude_prefixes) that provide the covariates fed to the adversarial classifier
+- OHLCV DataFrame with additional numeric feature columns (non-OHLCV, not `_`-prefixed overlay columns, not target/label columns, not starting with any string in exclude_prefixes) that provide the covariates fed to the adversarial classifier
 
 ## Parameters
 
@@ -23,21 +23,21 @@ Adversarial-validation regime-change indicator: for each configured window, fits
 
 ## Outputs
 
-- adv_auc_{w}: raw ROC AUC of the old-vs-new classifier at each computed step, forward-filled between steps
+- adv_auc_{w}: out-of-sample ROC AUC (mean over 4 contiguous-block folds) of the old-vs-new classifier at each computed step, forward-filled between steps
 - adv_drift_score_{w}: clip(2*(auc-0.5), 0, 1) — normalized distribution-shift score in [0,1]
 - adv_stability_{w}: 1 - adv_drift_score_{w}
-- adv_max_feature_importance_{w}: max absolute LogisticRegression coefficient at each step
+- adv_max_feature_importance_{w}: max absolute LogisticRegression coefficient (averaged over the CV folds) at each step
 - adv_drift_acceleration_{w}: first difference of adv_drift_score_{w}
 
 ## Acceptance Criteria
 
-- AC-001: Feature-column selection keeps only numeric dtype columns and excludes the OHLCV set {O,H,L,C,V} as well as any column whose name starts with a string in exclude_prefixes.
+- AC-001: Feature-column selection keeps only numeric dtype columns and excludes the OHLCV set {O,H,L,C,V}, every `_`-prefixed column (chart overlays / absolute price levels), target and label columns (names target, label, y, y_true or prefixes target_, label_, y_) as well as any column whose name starts with a string in exclude_prefixes.
 - AC-002: If fewer than 3 usable feature columns are found, the input DataFrame is returned unchanged with no adv_* columns added.
 - AC-003: For each window w in windows, five columns are produced: adv_auc_{w}, adv_drift_score_{w}, adv_stability_{w}, adv_max_feature_importance_{w}, adv_drift_acceleration_{w}.
 - AC-004: Within each window, the classifier is trained on rows [i-w : i-w/2] labeled 0 and [i-w/2 : i] labeled 1, evaluated at row indices i in range(window, n_rows, step).
-- AC-005: Rows with non-finite values (Inf/-Inf treated as NaN) are dropped before training; remaining NaNs are imputed with column medians (0.0 if the median itself is non-finite).
-- AC-006: Features are standardized via StandardScaler before fitting LogisticRegression(max_iter=100, solver='liblinear', C=1.0); AUC is computed from decision_function scores and max_importance from max(|coef_[0]|).
-- AC-007: When there are fewer than 10 valid rows, only one class remains after cleaning, or the classifier fit raises, the step returns auc=0.5 and importance=0.0.
+- AC-005: Rows with non-finite values (Inf/-Inf treated as NaN) are dropped before training.
+- AC-006: The AUC is cross-validated: the old and the new rows are each split into 4 contiguous blocks, fold k holds out block k of both classes, a StandardScaler and LogisticRegression(max_iter=100, solver='liblinear', C=1.0) are fit on the remaining rows only, the held-out rows are scored with decision_function, and the fold AUCs are averaged. max_importance is the mean over folds of max(|coef_[0]|). For stationary noise the AUC is therefore ~0.5 even with as many columns as rows; in-sample scoring saturated at ~1.0.
+- AC-007: When there are fewer than 10 valid rows, fewer than 8 valid rows in either class, or the classifier fit raises ValueError, the step returns auc=0.5 and importance=0.0.
 - AC-008: When the number of numeric feature columns exceeds max_features, a NumPy RandomState(42) reproducibly subsamples max_features columns for that window's computations.
 - AC-009: adv_drift_score_{w} equals clip(2*(auc-0.5), 0, 1); adv_stability_{w} equals 1 - adv_drift_score_{w}; adv_drift_acceleration_{w} equals the first difference of adv_drift_score_{w}.
 - AC-010: AUC and importance values are forward-filled between step points; rows before the first computed step (warmup) are set to NaN across all five columns for that window.
@@ -50,11 +50,10 @@ Adversarial-validation regime-change indicator: for each configured window, fits
 - n_rows <= min(windows) — no step index i satisfies i in range(window, n_rows, step), so every output column for that window is entirely NaN.
 - All-NaN or all-Inf feature slice within a window — after Inf→NaN conversion and NaN-row removal, fewer than 10 valid rows remain and the step yields auc=0.5, importance=0.0.
 - Constant/degenerate slice where only one class label survives cleaning — step yields auc=0.5, importance=0.0.
-- Column with an all-NaN median — imputation falls back to 0.0 for that column instead of propagating NaN.
 - n_cols > max_features — a seed-42 random subset of columns is used per window, giving reproducible but window-agnostic subsampling.
 - step > 1 — intermediate rows carry forward-filled values from the last computed step, so consecutive outputs are piecewise-constant except at step boundaries.
 - Warmup region before the first computed step index — all five output columns for that window remain NaN and are not forward-filled backward.
-- LogisticRegression fit raises (e.g., pathological scaled data) — the try/except returns auc=0.5, importance=0.0 for that step instead of propagating the exception.
+- LogisticRegression fit raises ValueError (e.g., pathological scaled data) — the handler returns auc=0.5, importance=0.0 for that step instead of propagating the exception.
 
 ## Assumptions
 

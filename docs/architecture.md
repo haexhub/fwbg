@@ -124,7 +124,7 @@ Determines whether an indicator is computed on preprocessed (stationary) or raw 
 
 - **`False` (default):** Indicator is computed **once on original data** (before preprocessing). Results are reused across all folds. Example: `volatility`, `momentum`, `price_action`.
 
-- **`True`:** Indicator is computed **per fold on preprocessed data**. Preprocessing (e.g., fractional differentiation) produces different transformed data per fold because `fit()` only learns on training data per fold. Example: `trend` — ADX on differentiated data yields different values than on raw data.
+- **`True`:** Indicator is computed **per fold on preprocessed data**. Preprocessing (e.g., fractional differentiation) produces different transformed data per fold because `fit()` only learns on training data per fold. Only for indicators that are defined on a stationary series; price-level indicators (ADX, Supertrend, moving averages, MACD) must stay `False`.
 
 ### Combination Table
 

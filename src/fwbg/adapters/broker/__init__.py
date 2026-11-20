@@ -26,6 +26,7 @@ Beispiel - Eigenen Broker-Adapter schreiben:
             # Order ausführen — die Basisklasse erzwingt vorher den Stop-Loss-Gate
             pass
 """
+
 from abc import abstractmethod
 from typing import Optional, Dict, Any, List, Callable
 from datetime import datetime
@@ -39,12 +40,14 @@ from fwbg_sdk import Timeframe, Symbol
 
 class OrderSide(str, Enum):
     """Kauf/Verkauf."""
+
     BUY = "BUY"
     SELL = "SELL"
 
 
 class OrderType(str, Enum):
     """Order-Typen."""
+
     MARKET = "MARKET"
     LIMIT = "LIMIT"
     STOP = "STOP"
@@ -52,6 +55,7 @@ class OrderType(str, Enum):
 
 class OrderStatus(str, Enum):
     """Order-Status."""
+
     PENDING = "PENDING"
     FILLED = "FILLED"
     REJECTED = "REJECTED"
@@ -65,6 +69,7 @@ class BrokerUnavailableError(RuntimeError):
 @dataclass
 class OrderResult:
     """Ergebnis einer Order-Ausführung."""
+
     success: bool
     order_id: str = ""
     status: OrderStatus = OrderStatus.PENDING
@@ -77,6 +82,7 @@ class OrderResult:
 @dataclass
 class Position:
     """Offene Position."""
+
     symbol: str
     direction: OrderSide
     size: float
@@ -97,6 +103,7 @@ class Position:
 @dataclass
 class AccountInfo:
     """Kontoinformationen."""
+
     balance: float
     equity: float
     margin_used: float = 0.0
@@ -107,6 +114,7 @@ class AccountInfo:
 @dataclass
 class BarData:
     """OHLC Bar-Daten."""
+
     symbol: Symbol
     timeframe: Timeframe
     timestamp: datetime
@@ -322,6 +330,21 @@ class BrokerAdapter(BaseAdapter):
     # Optionale Methoden - können überschrieben werden
     # =========================================================================
 
+    def get_value_per_point(
+        self, symbol: Symbol, point_value: float
+    ) -> Optional[float]:
+        """
+        Account-currency P&L of a one-point move per 1.0 of order size.
+
+        Position sizing needs this: ``size = risk / (stop_points * value)``.
+        ``point_value`` is the price increment of one point (e.g. 0.0001).
+
+        Returns:
+            The value, or None when the broker cannot establish it. Callers
+            must then refuse to trade instead of guessing a contract value.
+        """
+        return None
+
     def get_current_price(self, symbol: Symbol) -> Optional[Dict[str, float]]:
         """
         Ruft aktuellen Preis ab.
@@ -392,7 +415,9 @@ class BrokerAdapter(BaseAdapter):
             )
         for pos in positions:
             if pos.position_id == position_id:
-                close_direction = OrderSide.SELL if pos.direction == OrderSide.BUY else OrderSide.BUY
+                close_direction = (
+                    OrderSide.SELL if pos.direction == OrderSide.BUY else OrderSide.BUY
+                )
                 # Exit: Gegenorder ohne Stop — bewusst am Stop-Loss-Gate vorbei
                 # (submit_order würde eine Order ohne Stop ablehnen).
                 return self._submit_order_impl(
@@ -404,7 +429,7 @@ class BrokerAdapter(BaseAdapter):
         return OrderResult(
             success=False,
             status=OrderStatus.REJECTED,
-            message=f"Position {position_id} not found"
+            message=f"Position {position_id} not found",
         )
 
     def close_all_positions(self) -> List[OrderResult]:

@@ -16,6 +16,7 @@ Stop: beyond the wick extreme.
 Features track active sweep zones, distance to zone, recency, and whether
 price is currently inside the zone.
 """
+
 from typing import List
 
 import numpy as np
@@ -29,19 +30,19 @@ class LiquiditySweepIndicator(BaseIndicator):
     """Liquidity sweep (fake-out / stop-hunt) zone features."""
 
     name = "liquidity_sweep"
-    version = "1.0.0"
+    version = "1.1.0"
 
     _FEATURES = [
-        "lsw_bull_active",    # 1 if ≥1 active bullish sweep zone exists
-        "lsw_bear_active",    # 1 if ≥1 active bearish sweep zone exists
-        "lsw_bull_dist",      # ATR-normalised distance from close to nearest bull zone midpoint
-        "lsw_bear_dist",      # ATR-normalised distance from close to nearest bear zone midpoint
-        "lsw_bull_size",      # ATR-normalised size of nearest bull sweep zone
-        "lsw_bear_size",      # ATR-normalised size of nearest bear sweep zone
-        "lsw_bull_in_zone",   # 1 if close is inside the nearest bull sweep zone
-        "lsw_bear_in_zone",   # 1 if close is inside the nearest bear sweep zone
-        "lsw_bull_recency",   # recency of most recent bull sweep (1=just happened, 0=old)
-        "lsw_bear_recency",   # recency of most recent bear sweep
+        "lsw_bull_active",  # 1 if an active bull zone with its midpoint below the close exists (0 inside/below the midpoint)
+        "lsw_bear_active",  # 1 if an active bear zone with its midpoint above the close exists (0 inside/above the midpoint)
+        "lsw_bull_dist",  # ATR-normalised distance from close to nearest bull zone midpoint
+        "lsw_bear_dist",  # ATR-normalised distance from close to nearest bear zone midpoint
+        "lsw_bull_size",  # ATR-normalised size of nearest bull sweep zone
+        "lsw_bear_size",  # ATR-normalised size of nearest bear sweep zone
+        "lsw_bull_in_zone",  # 1 if close is inside the nearest bull sweep zone
+        "lsw_bear_in_zone",  # 1 if close is inside the nearest bear sweep zone
+        "lsw_bull_recency",  # recency of most recent bull sweep, valid or invalidated (1=just happened, 0=zone_lookback bars old or never)
+        "lsw_bear_recency",  # recency of most recent bear sweep
     ]
 
     def compute(
@@ -69,7 +70,9 @@ class LiquiditySweepIndicator(BaseIndicator):
         atr = pd.Series(tr).rolling(atr_period, min_periods=1).mean().values
 
         # Rolling swing high / low (no lookahead: use values available up to bar i)
-        swing_high = pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        swing_high = (
+            pd.Series(highs).rolling(swing_lookback, min_periods=1).max().values
+        )
         swing_low = pd.Series(lows).rolling(swing_lookback, min_periods=1).min().values
 
         # Output arrays
@@ -87,6 +90,12 @@ class LiquiditySweepIndicator(BaseIndicator):
         # Active sweep zones:
         # {"type": "bull"|"bear", "zone_bottom": float, "zone_top": float, "bar": int}
         active_zones: list = []
+
+        # Bar of the most recent sweep per side. Recency is a property of the
+        # sweep event, so it keeps decaying after the zone is invalidated and
+        # only reaches 0 once zone_lookback bars have passed.
+        last_bull_sweep = -1
+        last_bear_sweep = -1
 
         for i in range(1, n):
             current_atr = atr[i] if atr[i] > EPSILON else 1.0
@@ -113,29 +122,33 @@ class LiquiditySweepIndicator(BaseIndicator):
 
             # Bullish sweep: wick below swing low, close back above
             if lows[i] < prev_sl and closes[i] > prev_sl:
-                active_zones.append({
-                    "type": "bull",
-                    "zone_bottom": float(lows[i]),    # wick extreme (stop level)
-                    "zone_top": float(closes[i]),      # close (entry trigger level)
-                    "bar": i,
-                })
+                active_zones.append(
+                    {
+                        "type": "bull",
+                        "zone_bottom": float(lows[i]),  # wick extreme (stop level)
+                        "zone_top": float(closes[i]),  # close (entry trigger level)
+                        "bar": i,
+                    }
+                )
+                last_bull_sweep = i
 
             # Bearish sweep: wick above swing high, close back below
             if highs[i] > prev_sh and closes[i] < prev_sh:
-                active_zones.append({
-                    "type": "bear",
-                    "zone_bottom": float(closes[i]),   # close (entry trigger level)
-                    "zone_top": float(highs[i]),        # wick extreme (stop level)
-                    "bar": i,
-                })
+                active_zones.append(
+                    {
+                        "type": "bear",
+                        "zone_bottom": float(closes[i]),  # close (entry trigger level)
+                        "zone_top": float(highs[i]),  # wick extreme (stop level)
+                        "bar": i,
+                    }
+                )
+                last_bear_sweep = i
 
             # 3. Compute per-bar features from active zones
             nearest_bull_dist = np.inf
             nearest_bull_sz = 0.0
             nearest_bear_dist = np.inf
             nearest_bear_sz = 0.0
-            last_bull_bar = -1
-            last_bear_bar = -1
 
             for zone in active_zones:
                 zone_sz = (zone["zone_top"] - zone["zone_bottom"]) / current_atr
@@ -146,18 +159,18 @@ class LiquiditySweepIndicator(BaseIndicator):
                     if d > 0 and d < nearest_bull_dist:
                         nearest_bull_dist = d
                         nearest_bull_sz = zone_sz
-                    if zone["zone_bottom"] <= c <= zone["zone_top"]:
+                    # The sweep bar closes at the zone edge by construction, so
+                    # only bars after the sweep can be "inside" the zone.
+                    if zone["bar"] < i and zone["zone_bottom"] <= c <= zone["zone_top"]:
                         bull_in_zone[i] = 1.0
-                    last_bull_bar = max(last_bull_bar, zone["bar"])
 
                 elif zone["type"] == "bear":
                     d = (mid - c) / current_atr
                     if d > 0 and d < nearest_bear_dist:
                         nearest_bear_dist = d
                         nearest_bear_sz = zone_sz
-                    if zone["zone_bottom"] <= c <= zone["zone_top"]:
+                    if zone["bar"] < i and zone["zone_bottom"] <= c <= zone["zone_top"]:
                         bear_in_zone[i] = 1.0
-                    last_bear_bar = max(last_bear_bar, zone["bar"])
 
             if nearest_bull_dist < np.inf:
                 bull_active[i] = 1.0
@@ -169,12 +182,12 @@ class LiquiditySweepIndicator(BaseIndicator):
                 bear_dist[i] = nearest_bear_dist
                 bear_size[i] = nearest_bear_sz
 
-            if last_bull_bar >= 0:
-                age = min(i - last_bull_bar, zone_lookback)
+            if last_bull_sweep >= 0:
+                age = min(i - last_bull_sweep, zone_lookback)
                 bull_recency[i] = 1.0 - age / zone_lookback
 
-            if last_bear_bar >= 0:
-                age = min(i - last_bear_bar, zone_lookback)
+            if last_bear_sweep >= 0:
+                age = min(i - last_bear_sweep, zone_lookback)
                 bear_recency[i] = 1.0 - age / zone_lookback
 
         features = {
@@ -198,8 +211,10 @@ class LiquiditySweepIndicator(BaseIndicator):
 
     def get_signal_columns(self) -> List[str]:
         return [
-            "lsw_bull_active", "lsw_bear_active",
-            "lsw_bull_in_zone", "lsw_bear_in_zone",
+            "lsw_bull_active",
+            "lsw_bear_active",
+            "lsw_bull_in_zone",
+            "lsw_bear_in_zone",
         ]
 
     @classmethod

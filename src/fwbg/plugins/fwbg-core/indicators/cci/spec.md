@@ -1,6 +1,6 @@
 # Plugin Spec — cci
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 

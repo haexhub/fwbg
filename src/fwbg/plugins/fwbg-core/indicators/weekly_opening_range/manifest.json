@@ -1,7 +1,7 @@
 {
   "name": "weekly_opening_range",
-  "version": "1.0.0",
-  "description": "Weekly Opening Range Breakout features: first N bars of Monday define the weekly range",
+  "version": "1.1.0",
+  "description": "Weekly Opening Range Breakout features: first N bars of the trading week (Sunday open for FX) define the weekly range",
   "phase": "indicators",
   "benefits_from_stationary": false
 }

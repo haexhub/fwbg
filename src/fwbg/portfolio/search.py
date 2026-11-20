@@ -16,7 +16,9 @@ from .data import file_fingerprint, load_inputs
 
 def holm_adjust(p_values: dict[str, float]) -> dict[str, float]:
     """Familywise p-value correction valid without independence of hypotheses."""
-    if not p_values or not all(np.isfinite(p) and 0 <= p <= 1 for p in p_values.values()):
+    if not p_values or not all(
+        np.isfinite(p) and 0 <= p <= 1 for p in p_values.values()
+    ):
         raise ValueError("Holm requires finite p-values in [0, 1]")
     ranked = sorted(p_values, key=lambda key: (p_values[key], key))
     adjusted = {}
@@ -43,11 +45,12 @@ def joint_p(robustness: dict, comparison: str) -> float:
     return float(max(values))
 
 
-def run_search(protocol_path: Path, output: Path) -> dict:
+def run_search(protocol_path: Path, output: Path, end_date: str | None = None) -> dict:
     """Evaluate declared monthly candidates at every cost stress and save results.
 
     Require matching benchmarks and histories, retain every trial, and return
     the summary with native PBO, Holm gates and chronological selection.
+    ``end_date`` (YYYY-MM-DD, exclusive) limits every candidate's price history.
     """
     protocol = json.loads(protocol_path.read_text())
     if protocol.get("schema_version") != 1:
@@ -57,7 +60,9 @@ def run_search(protocol_path: Path, output: Path) -> dict:
     if len(ids) < 2 or len(ids) != len(set(ids)):
         raise ValueError("search requires distinct candidate identifiers")
     if any(not key or not all(c.isalnum() or c == "_" for c in key) for key in ids):
-        raise ValueError("candidate identifiers must contain only letters, digits and underscores")
+        raise ValueError(
+            "candidate identifiers must contain only letters, digits and underscores"
+        )
     if protocol["permutations"] != 10000 or protocol["seed"] != 42:
         raise ValueError(
             "this protocol uses the fixed-rule engine's 10000 permutations and seed 42"
@@ -105,13 +110,21 @@ def run_search(protocol_path: Path, output: Path) -> dict:
             print(f"Running {key}: costs x{multiplier}", flush=True)
             with (output / f"{key}_cost{multiplier}.log").open("w") as log:
                 with contextlib.redirect_stdout(log):
-                    report = run_experiment(candidate_path, run_dir, multiplier)
+                    report = run_experiment(
+                        candidate_path, run_dir, multiplier, end_date
+                    )
             reports[key, multiplier] = report
-            monthly = pd.read_csv(run_dir / "monthly_returns.csv", index_col=0, parse_dates=True)
+            monthly = pd.read_csv(
+                run_dir / "monthly_returns.csv", index_col=0, parse_dates=True
+            )
             if benchmark_returns is None:
                 benchmark_returns = monthly[["static", "equity_buy_hold", "cash"]]
-            elif not benchmark_returns.equals(monthly[["static", "equity_buy_hold", "cash"]]):
-                raise ValueError("candidate benchmarks differ; evaluation dates must match")
+            elif not benchmark_returns.equals(
+                monthly[["static", "equity_buy_hold", "cash"]]
+            ):
+                raise ValueError(
+                    "candidate benchmarks differ; evaluation dates must match"
+                )
             series[key] = monthly.trend
             folds = pd.read_csv(run_dir / "robustness_folds.csv")
             own_folds = folds.loc[folds.portfolio == "trend"]
@@ -122,8 +135,12 @@ def run_search(protocol_path: Path, output: Path) -> dict:
                     "cost_multiplier": multiplier,
                     "one_way_cost_bps": report["effective_one_way_cost_bps"],
                     **report["metrics"]["full"]["trend"],
-                    "before_split_cagr": report["metrics"]["before_split"]["trend"]["cagr"],
-                    "after_split_cagr": report["metrics"]["after_split"]["trend"]["cagr"],
+                    "before_split_cagr": report["metrics"]["before_split"]["trend"][
+                        "cagr"
+                    ],
+                    "after_split_cagr": report["metrics"]["after_split"]["trend"][
+                        "cagr"
+                    ],
                     "positive_folds": int((own_folds.total_return > 0).sum()),
                     "folds": len(own_folds),
                     "average_risky_weight": float(
@@ -134,8 +151,12 @@ def run_search(protocol_path: Path, output: Path) -> dict:
                 }
             )
         # All runs must have the same complete monthly observations and benchmarks.
-        if not all(value.index.equals(series[ids[0]].index) for value in series.values()):
-            raise ValueError("candidate histories differ; use a common evaluation start")
+        if not all(
+            value.index.equals(series[ids[0]].index) for value in series.values()
+        ):
+            raise ValueError(
+                "candidate histories differ; use a common evaluation start"
+            )
         frame = pd.DataFrame(series)
         frame.to_csv(output / f"candidate_monthly_returns_cost{multiplier}.csv")
         monthly_by_cost[multiplier] = frame
@@ -144,11 +165,17 @@ def run_search(protocol_path: Path, output: Path) -> dict:
     for multiplier, frame in monthly_by_cost.items():
         reference = reports[ids[0], multiplier]["robustness"]["walk_forward"]
         if reference["status"] != "evaluated":
-            raise ValueError("insufficient data for the predeclared eight-window search")
+            raise ValueError(
+                "insufficient data for the predeclared eight-window search"
+            )
         size = reference["test_months_each"]
         test_frame = frame.iloc[-8 * size :]
         matrix = np.stack(
-            [test_frame.iloc[n * size : (n + 1) * size].mean().to_numpy() for n in range(8)], axis=1
+            [
+                test_frame.iloc[n * size : (n + 1) * size].mean().to_numpy()
+                for n in range(8)
+            ],
+            axis=1,
         )
         pd.DataFrame(matrix, index=ids, columns=range(1, 9)).to_csv(
             output / f"pbo_matrix_cost{multiplier}.csv"
@@ -161,17 +188,22 @@ def run_search(protocol_path: Path, output: Path) -> dict:
         }
     # Stresses are not additional winning candidates: all scenarios must pass.
     raw = {
-        f"{key}:{label}": max(joint_p(reports[key, m]["robustness"], field) for m in multipliers)
+        f"{key}:{label}": max(
+            joint_p(reports[key, m]["robustness"], field) for m in multipliers
+        )
         for key in ids
         for label, field in (("profit", "trend"), ("active", "trend_minus_static"))
     }
     adjusted = holm_adjust(raw)
     rows = pd.DataFrame(comparison_rows)
-    pbo_pass = all(value["pbo"] is not None and not value["is_overfit"] for value in pbo.values())
+    pbo_pass = all(
+        value["pbo"] is not None and not value["is_overfit"] for value in pbo.values()
+    )
     gates = {}
     for key in ids:
         robustness_pass = all(
-            reports[key, m]["robustness"]["profitability_checks_passed"] for m in multipliers
+            reports[key, m]["robustness"]["profitability_checks_passed"]
+            for m in multipliers
         )
         active_pass = all(
             reports[key, m]["robustness"]["benchmark_outperformance_checks_passed"]
@@ -188,7 +220,9 @@ def run_search(protocol_path: Path, output: Path) -> dict:
             ),
         }
     rows = rows.merge(
-        pd.DataFrame.from_dict(gates, orient="index"), left_on="candidate", right_index=True
+        pd.DataFrame.from_dict(gates, orient="index"),
+        left_on="candidate",
+        right_index=True,
     )
     rows.to_csv(output / "comparison.csv", index=False)
     split = pd.Timestamp(config["split_date"])
@@ -199,7 +233,8 @@ def run_search(protocol_path: Path, output: Path) -> dict:
         "selected_candidate": winner,
         "training_mean_monthly_returns": training.mean().to_dict(),
         "test_metrics_by_cost": {
-            str(m): reports[winner, m]["metrics"]["after_split"]["trend"] for m in multipliers
+            str(m): reports[winner, m]["metrics"]["after_split"]["trend"]
+            for m in multipliers
         },
     }
     summary = {
@@ -258,7 +293,9 @@ def run_search(protocol_path: Path, output: Path) -> dict:
         f"- {key}: {'bestanden' if gates[key]['benchmark_filter_passed'] else 'nicht bestanden'}, Holm p={gates[key]['holm_active_p']:.4f}."
         for key in ids
     )
-    lines.extend(["", "Einschränkungen:", ""] + [f"- {item}" for item in summary["limitations"]])
+    lines.extend(
+        ["", "Einschränkungen:", ""] + [f"- {item}" for item in summary["limitations"]]
+    )
     lines.extend(
         ["", "Ideenquellen (angepasste Regeln, keine exakten Replikationen):", ""]
         + [f"- {url}" for url in protocol["sources"]]
@@ -271,7 +308,9 @@ def run_search(protocol_path: Path, output: Path) -> dict:
 
     fig, ax = plt.subplots(figsize=(12, 6))
     # Include the initial value so the first month's return remains visible.
-    equity = pd.read_csv(output / f"{ids[0]}_cost1" / "equity.csv", index_col=0, parse_dates=True)
+    equity = pd.read_csv(
+        output / f"{ids[0]}_cost1" / "equity.csv", index_col=0, parse_dates=True
+    )
     paths = equity[["static", "equity_buy_hold"]].copy()
     for key in ids:
         paths[key] = pd.read_csv(
@@ -279,11 +318,15 @@ def run_search(protocol_path: Path, output: Path) -> dict:
         ).trend
     paths.div(paths.iloc[0]).plot(ax=ax, logy=True)
     ax.set_ylabel("Vermögen / Startkapital (logarithmisch)")
-    ax.set_title(f"FWBG: alle {len(ids)} Regeln, {config['base_currency']}, Cash 0 %, Basiskosten")
+    ax.set_title(
+        f"FWBG: alle {len(ids)} Regeln, {config['base_currency']}, Cash 0 %, Basiskosten"
+    )
     fig.tight_layout()
     fig.savefig(output / "comparison.png", dpi=150)
     plt.close(fig)
-    manifest.update(status="complete", finished_at=datetime.now(timezone.utc).isoformat())
+    manifest.update(
+        status="complete", finished_at=datetime.now(timezone.utc).isoformat()
+    )
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Artifacts: {output.resolve()}")
     return summary

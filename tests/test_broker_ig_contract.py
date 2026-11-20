@@ -61,7 +61,9 @@ def test_create_open_position_receives_trading_ig_0024_contract():
     }
 
 
-def test_unconfirmed_create_response_is_rejected():
+def test_unconfirmed_create_response_is_unknown_not_rejected():
+    # A deal reference without confirmation means IG may have accepted the
+    # order: the outcome is unknown, never a (possibly false) rejection.
     adapter = _adapter()
     adapter._ig.create_open_position.return_value = {"dealReference": "D1"}
     adapter._ig.fetch_deal_by_deal_reference.return_value = None
@@ -71,8 +73,8 @@ def test_unconfirmed_create_response_is_rejected():
     )
 
     assert result.success is False
-    assert result.status is OrderStatus.REJECTED
-    assert result.status is not OrderStatus.PENDING
+    assert result.status is OrderStatus.PENDING
+    assert "unknown" in result.message
 
 
 def test_close_uses_deal_id_and_sdk_close_endpoint():

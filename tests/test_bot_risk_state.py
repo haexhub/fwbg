@@ -90,12 +90,15 @@ def test_unknown_and_stale_state_block_trading():
     assert state.can_trade(now) is False
     assert state.observe(1000.0, None, observed_at=now, now=now) is False
     assert state.can_trade(now) is False
-    assert state.observe(
-        1000.0,
-        [],
-        observed_at=now - timedelta(seconds=31),
-        now=now,
-    ) is False
+    assert (
+        state.observe(
+            1000.0,
+            [],
+            observed_at=now - timedelta(seconds=31),
+            now=now,
+        )
+        is False
+    )
 
 
 def test_restart_replay_preserves_idempotent_state():
@@ -175,9 +178,13 @@ def test_minimum_lot_is_not_allowed_to_exceed_risk_budget():
 
 
 @pytest.mark.parametrize("close_ok, signal_kept", [(True, False), (False, True)])
-def test_kill_signal_is_kept_until_positions_are_closed(tmp_path, close_ok, signal_kept):
+def test_kill_signal_is_kept_until_positions_are_closed(
+    tmp_path, close_ok, signal_kept
+):
     adapter = MagicMock()
-    adapter.close_all_positions.return_value = [MagicMock(success=close_ok, message="x")]
+    adapter.close_all_positions.return_value = [
+        MagicMock(success=close_ok, message="x")
+    ]
     bot = _make_bot(adapter)
     bot.stats_dir = str(tmp_path)
     (tmp_path / "kill_signal").touch()
@@ -241,3 +248,35 @@ def test_initial_training_cache_excludes_forming_bar(monkeypatch):
     assert bot._train_model("EURUSD", bot.assets["EURUSD"]) is True
     assert bot.last_bar_time["EURUSD"] == hour - timedelta(hours=1)
     assert trained["index"].max() < hour
+
+
+def _three_losses(state):
+    for i in range(3):
+        state.process_close_event(_event(f"loss-{i}", -1))
+
+
+def test_loss_streak_pause_expires_after_its_duration():
+    state, now = _known_state(max_observation_age_seconds=86400)
+    _three_losses(state)
+
+    assert state.can_trade(now) is False  # arms the pause
+    assert state.pause_until == now + timedelta(minutes=state.pause_duration_minutes)
+    assert state.can_trade(now + timedelta(minutes=30)) is False
+
+    # Pause served; the same streak must not re-arm it.
+    after = now + timedelta(minutes=61)
+    assert state.can_trade(after) is True
+    assert state.can_trade(after + timedelta(minutes=5)) is True
+
+
+def test_new_loss_after_expired_pause_arms_a_new_pause():
+    state, now = _known_state(max_observation_age_seconds=86400)
+    _three_losses(state)
+    assert state.can_trade(now) is False
+
+    after = now + timedelta(minutes=61)
+    assert state.can_trade(after) is True
+    state.process_close_event(_event("loss-4", -1, hour=14))
+
+    assert state.can_trade(after) is False
+    assert state.pause_until == after + timedelta(minutes=state.pause_duration_minutes)

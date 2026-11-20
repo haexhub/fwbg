@@ -19,7 +19,8 @@ Columns:
   after it, 0 on an event day; NaN when the file holds no later event
 - ``evt_window``: 1 when an event lies between ``window_end`` and ``window_start``
   trading days ahead (inclusive), else 0; overlapping windows of clustered events
-  merge into one
+  merge into one; NaN, like the two columns below, after the file's last event
+  (``evt_days_ahead`` is NaN there), because later events are unknown, not absent
 - ``evt_window_start``: 1 on the bar where ``evt_window`` turns on (an entry column)
 - ``evt_window_end``: 1 on the bar where ``evt_window`` turns off (an exit column
   for ``signal_exit``)
@@ -29,6 +30,7 @@ Holding from ``evt_window_start`` to ``evt_window_end`` with ``window_start=6`` 
 """
 
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import List
@@ -43,7 +45,9 @@ log = logging.getLogger(__name__)
 EVENT_COLUMNS = ["evt_days_ahead", "evt_window", "evt_window_start", "evt_window_end"]
 
 
-def _trading_days(calendar: str, first: pd.Timestamp, last: pd.Timestamp) -> pd.DatetimeIndex:
+def _trading_days(
+    calendar: str, first: pd.Timestamp, last: pd.Timestamp
+) -> pd.DatetimeIndex:
     from fwbg.plugins import import_plugin_module
 
     tom = import_plugin_module("fwbg-core", "indicators", "turn_of_month")
@@ -53,7 +57,9 @@ def _trading_days(calendar: str, first: pd.Timestamp, last: pd.Timestamp) -> pd.
 def _calendars() -> list:
     from fwbg.plugins import import_plugin_module
 
-    return list(import_plugin_module("fwbg-core", "indicators", "turn_of_month").CALENDARS)
+    return list(
+        import_plugin_module("fwbg-core", "indicators", "turn_of_month").CALENDARS
+    )
 
 
 @lru_cache(maxsize=16)
@@ -63,12 +69,45 @@ def _read_events(path: str, mtime: float) -> pd.DataFrame:
     return pd.read_csv(path, dtype=str)
 
 
+class EventDateError(ValueError):
+    """A non-blank cell of the date column is not a date."""
+
+
+def _parse_dates(values: pd.Series, source: str) -> pd.DatetimeIndex:
+    """Naive normalized dates of *values*; each cell is parsed on its own, so rows
+    may mix formats (``2024-01-10``, ``2024-01-11 14:00``, ``Jan 12, 2024``). A
+    timezone offset is dropped, keeping the date as written. Blank cells are
+    skipped, any other unparsable cell raises ``EventDateError``. Ambiguous
+    numeric dates such as ``01/02/2024`` are read month first; prefer ISO dates."""
+    cells = values.dropna().astype(str).str.strip()
+    cells = cells[cells != ""]
+    parsed: dict[str, pd.Timestamp] = {}
+    bad: list[str] = []
+    for cell in cells.unique():
+        try:
+            # a cell without a four-digit year would silently get the current one
+            stamp = pd.Timestamp(cell) if re.search(r"\d{4}", cell) else pd.NaT
+        except (ValueError, OverflowError):
+            stamp = pd.NaT
+        if pd.isna(stamp):
+            bad.append(cell)
+            continue
+        parsed[cell] = (stamp.tz_localize(None) if stamp.tzinfo else stamp).normalize()
+    if bad:
+        shown = ", ".join(repr(b) for b in bad[:5])
+        raise EventDateError(
+            f"scheduled_events: {len(bad)} unparsable date value(s) in {source}: {shown}"
+        )
+    return pd.DatetimeIndex(sorted(set(parsed.values())), dtype="datetime64[ns]")
+
+
 def event_dates(
     path: str, date_column: str, filter_column: str = "", filter_values: tuple = ()
 ) -> pd.DatetimeIndex:
     """Sorted unique event dates of *path*, optionally only rows whose
     *filter_column* is one of *filter_values*. Raises ``ValueError`` on a missing
-    column and ``OSError`` on an unreadable file."""
+    column, ``EventDateError`` (a ``ValueError``) on an unparsable date and
+    ``OSError`` on an unreadable file."""
     file = Path(path).expanduser()
     events = _read_events(str(file), file.stat().st_mtime)
     if not date_column or date_column not in events.columns:
@@ -77,10 +116,7 @@ def event_dates(
         raise ValueError(f"scheduled_events: column {filter_column!r} not in {file}")
     if filter_column:
         events = events[events[filter_column].isin(list(filter_values))]
-    dates = pd.to_datetime(events[date_column], errors="coerce").dropna()
-    if getattr(dates.dt, "tz", None) is not None:
-        dates = dates.dt.tz_localize(None)
-    return pd.DatetimeIndex(dates.dt.normalize().unique()).sort_values()
+    return _parse_dates(events[date_column], f"{file} column {date_column!r}")
 
 
 @register_indicator("scheduled_events")
@@ -88,7 +124,7 @@ class ScheduledEventsIndicator(BaseIndicator):
     """Trading days to the next scheduled event and a window flag before events."""
 
     name = "scheduled_events"
-    version = "1.0.0"
+    version = "1.1.0"
     group = "calendar"
     benefits_from_stationary = False
 
@@ -98,7 +134,9 @@ class ScheduledEventsIndicator(BaseIndicator):
         if not isinstance(df.index, pd.DatetimeIndex):
             raise ValueError("scheduled_events needs a DatetimeIndex")
         if p["window_end"] > p["window_start"]:
-            raise ValueError("scheduled_events: window_end must not exceed window_start")
+            raise ValueError(
+                "scheduled_events: window_end must not exceed window_start"
+            )
         out = pd.DataFrame(index=df.index, columns=EVENT_COLUMNS, dtype=float)
         events = self._events(p)
         if len(df) and events is not None:
@@ -111,7 +149,9 @@ class ScheduledEventsIndicator(BaseIndicator):
             prior_month_end = dates.min().replace(day=1) - pd.Timedelta(days=1)
             days = _trading_days(p["calendar"], prior_month_end, last)
             # an event or a bar on a closed day counts from the next trading day
-            event_pos = np.unique(days.searchsorted(events[events >= days[0]], side="left"))
+            event_pos = np.unique(
+                days.searchsorted(events[events >= days[0]], side="left")
+            )
             event_pos = event_pos[event_pos < len(days)]
             bar_pos = days.searchsorted(dates, side="left")
             nxt = event_pos.searchsorted(bar_pos, side="left")
@@ -123,10 +163,12 @@ class ScheduledEventsIndicator(BaseIndicator):
             ok = first < len(event_pos)
             in_window[ok] = event_pos[first[ok]] <= bar_pos[ok] + p["window_start"]
             before = np.concatenate([[False], in_window[:-1]])
+            # After the file's last event the future is unknown: not "no window"
+            known = has_next
             out["evt_days_ahead"] = ahead
-            out["evt_window"] = in_window.astype(float)
-            out["evt_window_start"] = (in_window & ~before).astype(float)
-            out["evt_window_end"] = (~in_window & before).astype(float)
+            out["evt_window"] = np.where(known, in_window, np.nan)
+            out["evt_window_start"] = np.where(known, in_window & ~before, np.nan)
+            out["evt_window_end"] = np.where(known, ~in_window & before, np.nan)
         if len(out):
             out.iloc[0] = np.nan  # indicator contract: the first row is NaN
         return pd.concat([df, out], axis=1)
@@ -138,8 +180,13 @@ class ScheduledEventsIndicator(BaseIndicator):
             return None
         try:
             return event_dates(
-                p["events_file"], p["date_column"], p["filter_column"], tuple(p["filter_values"])
+                p["events_file"],
+                p["date_column"],
+                p["filter_column"],
+                tuple(p["filter_values"]),
             )
+        except EventDateError:
+            raise
         except (OSError, ValueError) as exc:
             log.warning("scheduled_events: %s; all values NaN", exc)
             return None
@@ -212,4 +259,4 @@ class ScheduledEventsIndicator(BaseIndicator):
         }
 
 
-__all__ = ["ScheduledEventsIndicator", "EVENT_COLUMNS", "event_dates"]
+__all__ = ["ScheduledEventsIndicator", "EVENT_COLUMNS", "EventDateError", "event_dates"]

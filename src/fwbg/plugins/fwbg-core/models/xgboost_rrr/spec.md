@@ -4,11 +4,11 @@
 
 ## Capability
 
-Trains one XGBoost classifier over multiple reward-risk-ratio variants with RRR as an input feature, then per sample picks the RRR with the highest predicted win probability.
+Trains one XGBoost classifier over multiple reward-risk-ratio variants with RRR as an input feature, then per sample picks the RRR with the highest expected value per unit risk (p * rrr - (1 - p)).
 
 ## Summary
 
-Single XGBoost classifier trained across multiple RRR (reward-risk ratio) variants by adding RRR as an input feature. Each variant contributes its own OHLC-derived binary Win/Loss labels (TP = rrr * base_sl_atr * ATR, SL = base_sl_atr * ATR, entry at next-bar open, horizon 50 bars). At inference, all variants are scored and the RRR with the highest predicted win probability is selected per sample, with the chosen RRR exposed for downstream per-trade TP/SL sizing.
+Single XGBoost classifier trained across multiple RRR (reward-risk ratio) variants by adding RRR as an input feature. Each variant contributes its own OHLC-derived binary Win/Loss labels (TP = rrr * base_sl_atr * ATR, SL = base_sl_atr * ATR, entry at next-bar open, horizon 50 bars; a bar touching both levels counts as a stop). At inference, all variants are scored and the RRR with the highest expected value p * rrr - (1 - p) is selected per sample, with the chosen RRR exposed for downstream per-trade TP/SL sizing.
 
 ## Inputs
 
@@ -27,7 +27,7 @@ Single XGBoost classifier trained across multiple RRR (reward-risk ratio) varian
 
 ## Outputs
 
-- Predicted class probabilities of shape (n, 2) — for each sample, the probability row from the RRR variant with the highest win-class probability.
+- Predicted class probabilities of shape (n, 2) — for each sample, the probability row from the RRR variant with the highest expected value.
 - selected_rrr — per-sample float array of the RRR variant chosen at inference (exposed via the `selected_rrr` property).
 - Per-trade TP/SL distances of shape (n, 2) from get_per_trade_params: column 0 = selected_rrr * base_sl_atr * ATR (TP), column 1 = base_sl_atr * ATR (SL).
 
@@ -38,7 +38,7 @@ Single XGBoost classifier trained across multiple RRR (reward-risk ratio) varian
 - AC-003: For long direction, target is 1 if high reaches entry+TP before low reaches entry-SL; for short direction, target is 1 if low reaches entry-TP before high reaches entry+SL.
 - AC-004: Reads the ATR series from the '_atr' column, falling back to 'vol_atr' if '_atr' is absent; raises ValueError if neither exists.
 - AC-005: Skips samples where ATR is NaN or non-positive (target stays 0) and skips the final bar (no next-bar entry available).
-- AC-006: At inference, scores every RRR variant by appending it as the 'rrr' feature, then per-sample selects the variant with the highest win-class probability and returns its full probability row.
+- AC-006: At inference, scores every RRR variant by appending it as the 'rrr' feature, then per-sample selects the variant with the highest expected value p * rrr - (1 - p) and returns its full probability row.
 - AC-007: Exposes the per-sample selected RRR via the `selected_rrr` property after each predict_probability call.
 - AC-008: get_per_trade_params returns an (n, 2) array of [TP_distance, SL_distance] = [selected_rrr * base_sl_atr * atr, base_sl_atr * atr] when both selected_rrr and atr are available, else None.
 - AC-009: Pops 'base_sl_atr' out of hyperparameters (default 2.0) before passing the remaining params to XGBClassifier, and consumes 'rrr_variants' via the base class variant hook.
