@@ -118,8 +118,22 @@ def _eval_col_compare(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
     return _apply_op(df[col_a], cond["op"], df[col_b])
 
 
+def _entry_bar_index(df: pd.DataFrame) -> pd.DatetimeIndex:
+    """Timestamp of the bar an entry decided on each row fills on.
+
+    A signal on bar ``i`` is filled at the open of bar ``i+1`` (the close of bar
+    ``i`` with ``entry_delay=0``), so time filters look at the following bar's
+    timestamp.  The last bar cannot enter and gets ``NaT``.
+    """
+    index = pd.DatetimeIndex(df.index)
+    return index[1:].append(pd.DatetimeIndex([pd.NaT]))
+
+
 def _eval_hour_filter(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
-    """True when the bar's hour is in the allowed set.
+    """True when the entry bar's hour is in the allowed set.
+
+    The entry bar is the bar after the signal bar, where the order fills; the
+    last row never enters.
 
     Config examples:
         {"type": "hour_filter", "hours": [14, 15, 16, 17]}
@@ -127,20 +141,27 @@ def _eval_hour_filter(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
     """
     hours = set(cond["hours"])
     exclude = cond.get("exclude", False)
-    mask = df.index.hour.isin(hours)
-    return (~mask if exclude else mask).astype(bool)
+    entry_bar = _entry_bar_index(df)
+    mask = entry_bar.hour.isin(hours)
+    result = ~mask if exclude else mask
+    return pd.Series(result & entry_bar.notna(), index=df.index, dtype=bool)
 
 
 def _eval_day_filter(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
-    """True when the bar's day of week is in the allowed set.
+    """True when the entry bar's day of week is in the allowed set.
+
+    The entry bar is the bar after the signal bar, where the order fills; the
+    last row never enters.
 
     Config: {"type": "day_filter", "days": [0, 1, 2, 3, 4]}
     (0=Monday, 6=Sunday)
     """
     days = set(cond["days"])
     exclude = cond.get("exclude", False)
-    mask = df.index.dayofweek.isin(days)
-    return (~mask if exclude else mask).astype(bool)
+    entry_bar = _entry_bar_index(df)
+    mask = entry_bar.dayofweek.isin(days)
+    result = ~mask if exclude else mask
+    return pd.Series(result & entry_bar.notna(), index=df.index, dtype=bool)
 
 
 def _eval_session_filter(cond: dict[str, Any], df: pd.DataFrame) -> pd.Series:
