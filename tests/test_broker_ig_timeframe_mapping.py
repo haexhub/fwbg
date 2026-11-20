@@ -42,7 +42,7 @@ class TestAdapterFailsLoudOnUnmappedTimeframe:
 
     def _adapter(self, monkeypatch):
         adapter = ig_adapter_module.IGBrokerAdapter(
-            username="u", password="p", api_key="k"
+            username="u", password="p", api_key="k", use_yfinance_fallback=True
         )
         monkeypatch.setattr(adapter, "_ensure_session_valid", lambda: True)
         adapter._ig = MagicMock()
