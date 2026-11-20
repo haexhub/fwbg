@@ -192,12 +192,13 @@ class TestTrendState:
     """Tests for ms_trend state machine."""
 
     def test_trend_starts_neutral(self):
-        """Before any BOS, ms_trend should be 0."""
+        """Before any BOS (and after warm-up), ms_trend should be 0."""
         sw = 5
-        df = _make_bull_bos_df(swing_lookback=sw)
+        # 10 flat bars, BOS on bar 10; the channel is valid from bar sw on
+        df = _make_bull_bos_df(swing_lookback=10)
         result = _ms.MarketStructureIndicator().compute(df, swing_lookback=sw)
-        # All bars before the BOS (after shift: iloc[1..sw]) should be neutral
-        pre_bos = result["ms_trend"].iloc[1 : sw + 1]
+        # bars sw..9 are valid and neutral (after shift: iloc[sw+1..10])
+        pre_bos = result["ms_trend"].iloc[sw + 1 : 11]
         assert (pre_bos == 0.0).all(), (
             f"Expected ms_trend=0 before BOS, got {pre_bos.values}"
         )
@@ -412,3 +413,45 @@ class TestPluginIntegration:
         result = indicator.compute(_make_random_df(n=200))
         for col in indicator.get_feature_columns():
             assert col in result.columns, f"Declared {col} missing from output"
+
+
+class TestWarmupAndDonchianSemantics:
+    """BOS needs a full channel window; warm-up rows are NaN."""
+
+    @staticmethod
+    def _rising(n=40):
+        # strictly rising series: every bar breaks the channel of the past
+        x = np.arange(n, dtype=float) + 100.0
+        return _make_df(x + 0.5, x - 0.5, x)
+
+    def test_no_bos_during_warmup(self):
+        sw = 10
+        df = self._rising()
+        result = _ms.MarketStructureIndicator().compute(df, swing_lookback=sw)
+        # bar i is evaluated against bars i-sw..i-1, so bars < sw have no channel;
+        # after the 1-bar shift rows 0..sw are NaN, not a fabricated 0/1.
+        for col in ("ms_bos_bull", "ms_bos_bear", "ms_trend", "ms_choch_recency"):
+            assert result[col].iloc[: sw + 1].isna().all(), col
+        # first valid bar sw is a BOS on a rising series (row sw+1 after shift)
+        assert result["ms_bos_bull"].iloc[sw + 1] == 1.0
+        assert result["ms_trend"].iloc[sw + 1] == 1.0
+
+    def test_bos_matches_donchian_reference(self):
+        rng = np.random.default_rng(3)
+        n, sw = 300, 12
+        c = 100 + np.cumsum(rng.normal(0, 1, n))
+        h = c + rng.uniform(0.1, 1, n)
+        low = c - rng.uniform(0.1, 1, n)
+        df = _make_df(h, low, c)
+        result = _ms.MarketStructureIndicator().compute(df, swing_lookback=sw)
+        ref_bull = np.full(n, np.nan)
+        ref_bear = np.full(n, np.nan)
+        for i in range(sw, n):
+            ref_bull[i] = float(c[i] > h[i - sw : i].max())
+            ref_bear[i] = float(c[i] < low[i - sw : i].min())
+        np.testing.assert_array_equal(
+            result["ms_bos_bull"].to_numpy()[1:], np.r_[np.nan, ref_bull[:-1]][1:]
+        )
+        np.testing.assert_array_equal(
+            result["ms_bos_bear"].to_numpy()[1:], np.r_[np.nan, ref_bear[:-1]][1:]
+        )
