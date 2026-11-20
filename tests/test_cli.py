@@ -7,6 +7,7 @@ Testet:
 - Account/Timeframe-Overrides
 - Runs Listing
 """
+
 import pytest
 import json
 import tempfile
@@ -16,6 +17,7 @@ from unittest.mock import patch, MagicMock
 
 # Set PYTHONPATH before imports
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
@@ -26,10 +28,12 @@ class TestCLIArgumentParsing:
         """Test: --help zeigt Hilfe."""
         import subprocess
         import sys
+
         result = subprocess.run(
             [sys.executable, "-m", "fwbg.cli", "--help"],
-            capture_output=True, text=True,
-            env={**os.environ, "PYTHONPATH": "src"}
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": "src"},
         )
         assert result.returncode == 0
         assert "FWBG Strategy Backtester" in result.stdout
@@ -38,10 +42,12 @@ class TestCLIArgumentParsing:
         """Test: --list zeigt vorhandene Runs oder 'keine gefunden' Meldung."""
         import subprocess
         import sys
+
         result = subprocess.run(
             [sys.executable, "-m", "fwbg.cli", "--list"],
-            capture_output=True, text=True,
-            env={**os.environ, "PYTHONPATH": "src"}
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": "src"},
         )
         assert result.returncode == 0
         # Entweder gibt es Runs oder die "keine gefunden" Meldung
@@ -52,10 +58,19 @@ class TestCLIArgumentParsing:
         """Test: --cost-multiplier <= 0 wird mit klarem Fehler abgelehnt (Plan 014)."""
         import subprocess
         import sys
+
         result = subprocess.run(
-            [sys.executable, "-m", "fwbg.cli", "--cost-multiplier", bad_value, "--no-save"],
-            capture_output=True, text=True,
-            env={**os.environ, "PYTHONPATH": "src"}
+            [
+                sys.executable,
+                "-m",
+                "fwbg.cli",
+                "--cost-multiplier",
+                bad_value,
+                "--no-save",
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": "src"},
         )
         assert result.returncode != 0
         assert "cost-multiplier" in result.stderr.lower()
@@ -77,8 +92,16 @@ class TestStrategyLoading:
                 ]
             },
             "exit_strategies": [
-                {"name": "fixed", "params": {"tp_mult": 1.5, "sl_mult": 1.0}, "ct": [0.55]},
-                {"name": "fixed", "params": {"tp_mult": 2.0, "sl_mult": 1.0}, "ct": [0.55]},
+                {
+                    "name": "fixed",
+                    "params": {"tp_mult": 1.5, "sl_mult": 1.0},
+                    "ct": [0.55],
+                },
+                {
+                    "name": "fixed",
+                    "params": {"tp_mult": 2.0, "sl_mult": 1.0},
+                    "ct": [0.55],
+                },
             ],
         }
 
@@ -101,10 +124,8 @@ class TestStrategyLoading:
             "version": "1.0",
             "account": "custom_account",
             "timeframe": "MINUTE_15",
-            "pipeline": {
-                "indicators": [{"name": "trend", "params": {}}]
-            },
-            "grid": {"tp": [2.0], "sl": [1.0], "ct": [0.5]}
+            "pipeline": {"indicators": [{"name": "trend", "params": {}}]},
+            "grid": {"tp": [2.0], "sl": [1.0], "ct": [0.5]},
         }
 
         config = StrategyConfig.from_dict(strategy_data)
@@ -119,12 +140,10 @@ class TestStrategyLoading:
             "name": "TestPreprocessing",
             "version": "1.0",
             "pipeline": {
-                "preprocessing": [
-                    {"name": "fractional_diff", "params": {"d": 0.4}}
-                ],
-                "indicators": [{"name": "trend", "params": {}}]
+                "preprocessing": [{"name": "fractional_diff", "params": {"d": 0.4}}],
+                "indicators": [{"name": "trend", "params": {}}],
             },
-            "grid": {"tp": [2.0], "sl": [1.0], "ct": [0.5]}
+            "grid": {"tp": [2.0], "sl": [1.0], "ct": [0.5]},
         }
 
         config = StrategyConfig.from_dict(strategy_data)
@@ -182,16 +201,18 @@ class TestPreprocessingPluginFormat:
         """Test: preprocessing sollte Liste von Plugin-Configs sein."""
         from fwbg.core.config import StrategyConfig
 
-        config = StrategyConfig.from_dict({
-            "name": "Test",
-            "version": "1.0",
-            "pipeline": {
-                "preprocessing": [
-                    {"name": "fractional_diff", "params": {"d": 0.5}},
-                    {"name": "normalize", "params": {}}
-                ]
+        config = StrategyConfig.from_dict(
+            {
+                "name": "Test",
+                "version": "1.0",
+                "pipeline": {
+                    "preprocessing": [
+                        {"name": "fractional_diff", "params": {"d": 0.5}},
+                        {"name": "normalize", "params": {}},
+                    ]
+                },
             }
-        })
+        )
 
         preprocessing = config.get_preprocessing()
         assert isinstance(preprocessing, list)
@@ -221,12 +242,15 @@ class TestComputeIndicatorPool:
 
         # Erstelle Test-DataFrame mit DateTimeIndex (benötigt für time_season)
         n = 500
-        df = pd.DataFrame({
-            "O": np.random.randn(n).cumsum() + 100,
-            "H": np.random.randn(n).cumsum() + 101,
-            "L": np.random.randn(n).cumsum() + 99,
-            "C": np.random.randn(n).cumsum() + 100,
-        }, index=pd.date_range("2024-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": np.random.randn(n).cumsum() + 100,
+                "H": np.random.randn(n).cumsum() + 101,
+                "L": np.random.randn(n).cumsum() + 99,
+                "C": np.random.randn(n).cumsum() + 100,
+            },
+            index=pd.date_range("2024-01-01", periods=n, freq="h"),
+        )
         df["H"] = df[["O", "H", "C"]].max(axis=1) + 0.1
         df["L"] = df[["O", "L", "C"]].min(axis=1) - 0.1
 
@@ -236,7 +260,9 @@ class TestComputeIndicatorPool:
         # compute_indicator_pool gibt den DataFrame MIT Indikatoren zurück
         indicator_cols = [c for c in result.columns if c not in ["O", "H", "L", "C"]]
         assert len(indicator_cols) > 0, "Keine Indikator-Spalten hinzugefügt"
-        assert any("adx_" in c for c in result.columns) or any("ema" in c.lower() for c in result.columns)
+        assert any("adx_" in c for c in result.columns) or any(
+            "ema" in c.lower() for c in result.columns
+        )
 
     def test_compute_no_symbol_arg(self):
         """Test: compute_indicator_pool akzeptiert kein symbol Argument."""
@@ -248,8 +274,9 @@ class TestComputeIndicatorPool:
         sig = inspect.signature(compute_indicator_pool)
         param_names = list(sig.parameters.keys())
 
-        assert "symbol" not in param_names, \
+        assert "symbol" not in param_names, (
             "compute_indicator_pool sollte kein 'symbol' Argument haben"
+        )
 
 
 class TestExitStrategies:
@@ -336,8 +363,11 @@ class TestDataConfig:
     def test_config_values_exist(self):
         """Test: Alle wichtigen Config-Werte existieren."""
         from fwbg.data.config import (
-            TIMEFRAME, OOS_SIZE,
-            WALK_FORWARD_FOLDS, CORR_THRESHOLD, MIN_TRADES
+            TIMEFRAME,
+            OOS_SIZE,
+            WALK_FORWARD_FOLDS,
+            CORR_THRESHOLD,
+            MIN_TRADES,
         )
 
         # DATA_PATH is None by default (set via strategy.datasource or --data-path)
@@ -366,14 +396,20 @@ class TestDataConfig:
 class TestListRuns:
     """Tests für das Run-Listing (--list)."""
 
-    def test_unreadable_run_is_skipped_with_a_warning(self, tmp_path, monkeypatch, capsys):
+    def test_unreadable_run_is_skipped_with_a_warning(
+        self, tmp_path, monkeypatch, capsys
+    ):
         from fwbg.results import storage
 
         monkeypatch.setattr(storage, "RESULTS_BASE_PATH", str(tmp_path))
         good = tmp_path / "run-good"
         good.mkdir()
-        (good / "config.json").write_text(json.dumps({"description": "ok"}), encoding="utf-8")
-        (good / "strategy.json").write_text(json.dumps({"tags": ["a"]}), encoding="utf-8")
+        (good / "config.json").write_text(
+            json.dumps({"description": "ok"}), encoding="utf-8"
+        )
+        (good / "strategy.json").write_text(
+            json.dumps({"tags": ["a"]}), encoding="utf-8"
+        )
         broken = tmp_path / "run-broken"
         broken.mkdir()
         (broken / "assets.json").write_text('{"EURUSD": ', encoding="utf-8")

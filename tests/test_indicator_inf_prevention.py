@@ -4,6 +4,7 @@ TDD Tests für inf/nan-Prävention in Indikatoren.
 Diese Tests stellen sicher, dass Indikatoren niemals inf-Werte produzieren,
 die XGBoost zum Absturz bringen würden.
 """
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -22,13 +23,16 @@ class TestIndicatorsNoInf:
         returns = np.random.randn(n) * 0.01
         prices = 100 * np.exp(np.cumsum(returns))
 
-        df = pd.DataFrame({
-            "O": prices * (1 + np.random.randn(n) * 0.001),
-            "H": prices * (1 + np.abs(np.random.randn(n)) * 0.005),
-            "L": prices * (1 - np.abs(np.random.randn(n)) * 0.005),
-            "C": prices,
-            "V": np.abs(np.random.randn(n)) * 10000 + 1000,
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": prices * (1 + np.random.randn(n) * 0.001),
+                "H": prices * (1 + np.abs(np.random.randn(n)) * 0.005),
+                "L": prices * (1 - np.abs(np.random.randn(n)) * 0.005),
+                "C": prices,
+                "V": np.abs(np.random.randn(n)) * 10000 + 1000,
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
 
         df["H"] = df[["O", "H", "C"]].max(axis=1)
         df["L"] = df[["O", "L", "C"]].min(axis=1)
@@ -44,13 +48,16 @@ class TestIndicatorsNoInf:
         returns = np.random.randn(n) * 0.01
         prices = 100 * np.exp(np.cumsum(returns))
 
-        df = pd.DataFrame({
-            "O": prices,
-            "H": prices + 0.1,
-            "L": prices - 0.1,
-            "C": prices,
-            "V": np.abs(np.random.randn(n)) * 1000,
-        }, index=pd.date_range("2020-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": prices,
+                "H": prices + 0.1,
+                "L": prices - 0.1,
+                "C": prices,
+                "V": np.abs(np.random.randn(n)) * 1000,
+            },
+            index=pd.date_range("2020-01-01", periods=n, freq="h"),
+        )
 
         # Edge Case 1: Konstante Preise (std=0 -> Division durch 0)
         df.loc[df.index[1000:1050], "C"] = 100.0
@@ -70,10 +77,15 @@ class TestIndicatorsNoInf:
         """Volatility-Indikatoren dürfen keine inf-Werte produzieren."""
         from fwbg.pipeline import compute_indicator_pool
 
-        result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["volatility"])
+        result = compute_indicator_pool(
+            realistic_ohlc.copy(), indicators=["volatility"]
+        )
 
-        feature_cols = [c for c in result.columns
-                        if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")]
+        feature_cols = [
+            c
+            for c in result.columns
+            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
+        ]
 
         for col in feature_cols:
             inf_count = np.isinf(result[col]).sum()
@@ -86,8 +98,11 @@ class TestIndicatorsNoInf:
 
         result = compute_indicator_pool(realistic_ohlc.copy(), indicators=[indicator])
 
-        feature_cols = [c for c in result.columns
-                        if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")]
+        feature_cols = [
+            c
+            for c in result.columns
+            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
+        ]
 
         for col in feature_cols:
             inf_count = np.isinf(result[col]).sum()
@@ -99,8 +114,11 @@ class TestIndicatorsNoInf:
 
         result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["dynamics"])
 
-        feature_cols = [c for c in result.columns
-                        if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")]
+        feature_cols = [
+            c
+            for c in result.columns
+            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
+        ]
 
         for col in feature_cols:
             inf_count = np.isinf(result[col]).sum()
@@ -112,8 +130,11 @@ class TestIndicatorsNoInf:
 
         result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["ichimoku"])
 
-        feature_cols = [c for c in result.columns
-                        if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")]
+        feature_cols = [
+            c
+            for c in result.columns
+            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
+        ]
 
         for col in feature_cols:
             inf_count = np.isinf(result[col]).sum()
@@ -123,10 +144,15 @@ class TestIndicatorsNoInf:
         """Multi-Timeframe-Indikatoren dürfen keine inf-Werte produzieren."""
         from fwbg.pipeline import compute_indicator_pool
 
-        result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["multi_timeframe"])
+        result = compute_indicator_pool(
+            realistic_ohlc.copy(), indicators=["multi_timeframe"]
+        )
 
-        feature_cols = [c for c in result.columns
-                        if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")]
+        feature_cols = [
+            c
+            for c in result.columns
+            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
+        ]
 
         for col in feature_cols:
             inf_count = np.isinf(result[col]).sum()
@@ -136,10 +162,15 @@ class TestIndicatorsNoInf:
         """Price-Action-Indikatoren dürfen keine inf-Werte produzieren."""
         from fwbg.pipeline import compute_indicator_pool
 
-        result = compute_indicator_pool(realistic_ohlc.copy(), indicators=["price_action"])
+        result = compute_indicator_pool(
+            realistic_ohlc.copy(), indicators=["price_action"]
+        )
 
-        feature_cols = [c for c in result.columns
-                        if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")]
+        feature_cols = [
+            c
+            for c in result.columns
+            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
+        ]
 
         for col in feature_cols:
             inf_count = np.isinf(result[col]).sum()
@@ -150,20 +181,35 @@ class TestIndicatorsNoInf:
         from fwbg.pipeline import compute_indicator_pool
 
         all_indicators = [
-            "ema", "sma", "adx", "macd", "supertrend",
-            "momentum", "volatility", "dynamics",
-            "ichimoku", "multi_timeframe", "price_action",
+            "ema",
+            "sma",
+            "adx",
+            "macd",
+            "supertrend",
+            "momentum",
+            "volatility",
+            "dynamics",
+            "ichimoku",
+            "multi_timeframe",
+            "price_action",
         ]
 
         for indicator in all_indicators:
-            result = compute_indicator_pool(edge_case_ohlc.copy(), indicators=[indicator])
+            result = compute_indicator_pool(
+                edge_case_ohlc.copy(), indicators=[indicator]
+            )
 
-            feature_cols = [c for c in result.columns
-                            if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")]
+            feature_cols = [
+                c
+                for c in result.columns
+                if c not in ["O", "H", "L", "C", "V"] and not c.startswith("_")
+            ]
 
             for col in feature_cols:
                 inf_count = np.isinf(result[col]).sum()
-                assert inf_count == 0, f"{indicator}/{col} hat {inf_count} inf-Werte bei Edge Cases"
+                assert inf_count == 0, (
+                    f"{indicator}/{col} hat {inf_count} inf-Werte bei Edge Cases"
+                )
 
 
 class TestFeatureGroupFiltering:
@@ -175,13 +221,15 @@ class TestFeatureGroupFiltering:
         n = 500
 
         # DataFrame mit einigen inf-Features
-        df = pd.DataFrame({
-            "clean_feat1": np.random.randn(n),
-            "clean_feat2": np.random.randn(n),
-            "inf_feat1": np.random.randn(n),
-            "inf_feat2": np.random.randn(n),
-            "nan_heavy_feat": np.random.randn(n),
-        })
+        df = pd.DataFrame(
+            {
+                "clean_feat1": np.random.randn(n),
+                "clean_feat2": np.random.randn(n),
+                "inf_feat1": np.random.randn(n),
+                "inf_feat2": np.random.randn(n),
+                "nan_heavy_feat": np.random.randn(n),
+            }
+        )
 
         # inf einfügen
         df.loc[100, "inf_feat1"] = np.inf
@@ -190,7 +238,13 @@ class TestFeatureGroupFiltering:
         # 60% NaN
         df.loc[:300, "nan_heavy_feat"] = np.nan
 
-        group_features = ["clean_feat1", "clean_feat2", "inf_feat1", "inf_feat2", "nan_heavy_feat"]
+        group_features = [
+            "clean_feat1",
+            "clean_feat2",
+            "inf_feat1",
+            "inf_feat2",
+            "nan_heavy_feat",
+        ]
 
         # Filterlogik (wie in grid_search.py)
         clean_features = []
@@ -245,7 +299,6 @@ class TestXGBoostWithFilteredFeatures:
 
         with pytest.raises(Exception):
             model.fit(X, y)
-
 
     # Integration-Test für Grid-Search entfernt - zu viele Dependencies
     # Die wichtigen Tests (inf-Prävention) sind in TestIndicatorsNoInf

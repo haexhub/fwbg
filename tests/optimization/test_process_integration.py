@@ -6,6 +6,7 @@ Testet die komplette Optimierungs-Pipeline inkl.:
 - SimulationContext Attribute
 - Exit-Strategy Dispatch
 """
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -27,14 +28,17 @@ def create_test_df(n_rows: int = 1000, seed: int = 42) -> pd.DataFrame:
     low = close - np.abs(np.random.randn(n_rows) * 0.05)
     open_price = close + np.random.randn(n_rows) * 0.02
 
-    df = pd.DataFrame({
-        "O": open_price,
-        "H": high,
-        "L": low,
-        "C": close,
-        "_atr": np.abs(np.random.randn(n_rows) * 0.1) + 0.05,
-        "_regime": np.full(n_rows, 7, dtype=np.int8),
-    }, index=pd.DatetimeIndex(dates))
+    df = pd.DataFrame(
+        {
+            "O": open_price,
+            "H": high,
+            "L": low,
+            "C": close,
+            "_atr": np.abs(np.random.randn(n_rows) * 0.1) + 0.05,
+            "_regime": np.full(n_rows, 7, dtype=np.int8),
+        },
+        index=pd.DatetimeIndex(dates),
+    )
 
     # Feature-Spalten hinzufügen (für verschiedene Gruppen)
     df["trend_rsi_14"] = np.random.rand(n_rows) * 100
@@ -56,7 +60,10 @@ class TestImportPaths:
 
     def test_process_fold_imports(self):
         """Test: process_fold module can be imported."""
-        from fwbg.optimization.process_fold import precompute_indicators, process_single_fold
+        from fwbg.optimization.process_fold import (
+            precompute_indicators,
+            process_single_fold,
+        )
 
     def test_grid_search_imports(self):
         """Test: run_grid_search kann importiert werden."""
@@ -114,7 +121,12 @@ class TestSimulationContextAttributes:
             exit_strategies=[
                 ExitStrategyConfig(
                     name="atr_based",
-                    params={"atr_period": 21, "min_tp_pips": 15, "tp_mult": 2.0, "sl_mult": 1.5},
+                    params={
+                        "atr_period": 21,
+                        "min_tp_pips": 15,
+                        "tp_mult": 2.0,
+                        "sl_mult": 1.5,
+                    },
                     ct=[0.5],
                 ),
             ],
@@ -162,7 +174,8 @@ class TestExitStrategyDispatch:
 
         # compute_targets sollte nicht crashen
         targets_long, targets_short = exit_strategy.compute_targets(
-            df, ctx,
+            df,
+            ctx,
             tp_mult=2.0,
             sl_mult=1.5,
             atr_period=14,
@@ -191,8 +204,7 @@ class TestExitStrategyDispatch:
 
         # Sollte nicht crashen (war der ursprüngliche Bug)
         targets_l, targets_s = compute_targets_cached(
-            df, tp=2.0, sl=1.5, ctx=ctx,
-            exit_strategy_mode="atr_based"
+            df, tp=2.0, sl=1.5, ctx=ctx, exit_strategy_mode="atr_based"
         )
 
         assert len(targets_l) == len(df)
@@ -213,8 +225,7 @@ class TestExitStrategyDispatch:
         df = create_test_df(500)
 
         targets_l, targets_s = compute_targets_cached(
-            df, tp=20, sl=10, ctx=ctx,
-            exit_strategy_mode="fixed"
+            df, tp=20, sl=10, ctx=ctx, exit_strategy_mode="fixed"
         )
 
         assert len(targets_l) == len(df)
@@ -311,7 +322,9 @@ class TestRunGridSearch:
         ctx = Mock()
         ctx.symbol = "TEST"
         ctx.exit_strategies = [
-            ExitStrategyConfig(name="fixed", params={"tp_mult": 1.0, "sl_mult": 1.0}, ct=[0.5]),
+            ExitStrategyConfig(
+                name="fixed", params={"tp_mult": 1.0, "sl_mult": 1.0}, ct=[0.5]
+            ),
         ]
         ctx.grid_model_hyperparameters = [None]
         ctx.grid_combinations_per_run = Mock(return_value=1)
@@ -325,9 +338,7 @@ class TestRunGridSearch:
         full_pool = ["trend_rsi_14"]
 
         # Dummy inner_df
-        inner_df = pd.DataFrame({
-            "trend_rsi_14": np.random.randn(100)
-        })
+        inner_df = pd.DataFrame({"trend_rsi_14": np.random.randn(100)})
 
         candidates, grid_results = run_grid_search(
             full_pool=full_pool,
@@ -356,16 +367,19 @@ class TestPrecomputedMergeNoDuplicates:
         """Precomputed features must exclude columns already in base df."""
         n = 500
         dates = pd.date_range("2023-01-01", periods=n, freq="h")
-        df = pd.DataFrame({
-            "O": 100 + np.cumsum(np.random.randn(n) * 0.1),
-            "H": 101 + np.cumsum(np.random.randn(n) * 0.1),
-            "L": 99 + np.cumsum(np.random.randn(n) * 0.1),
-            "C": 100 + np.cumsum(np.random.randn(n) * 0.1),
-            "V": np.random.randint(100, 10000, n).astype(float),
-            # Simulate macro columns added by data_loading
-            "macro_vix": np.random.rand(n) * 30,
-            "macro_tnx": np.random.rand(n) * 5,
-        }, index=dates)
+        df = pd.DataFrame(
+            {
+                "O": 100 + np.cumsum(np.random.randn(n) * 0.1),
+                "H": 101 + np.cumsum(np.random.randn(n) * 0.1),
+                "L": 99 + np.cumsum(np.random.randn(n) * 0.1),
+                "C": 100 + np.cumsum(np.random.randn(n) * 0.1),
+                "V": np.random.randint(100, 10000, n).astype(float),
+                # Simulate macro columns added by data_loading
+                "macro_vix": np.random.rand(n) * 30,
+                "macro_tnx": np.random.rand(n) * 5,
+            },
+            index=dates,
+        )
 
         from fwbg.pipeline import compute_indicator_pool
 
@@ -376,8 +390,11 @@ class TestPrecomputedMergeNoDuplicates:
 
         # Filter: only NEW features, not columns already in df
         base_cols = set(df.columns) | {"O", "H", "L", "C", "V"}
-        raw_feature_cols = [c for c in precomputed.columns
-                           if c not in base_cols and not c.startswith("_")]
+        raw_feature_cols = [
+            c
+            for c in precomputed.columns
+            if c not in base_cols and not c.startswith("_")
+        ]
         precomputed_raw_df = precomputed[raw_feature_cols]
 
         # macro columns must NOT be in precomputed_raw_df
@@ -386,7 +403,9 @@ class TestPrecomputedMergeNoDuplicates:
 
         # Merge like process.py does
         train_df = df.iloc[:400].copy()
-        merged = pd.concat([train_df, precomputed_raw_df.reindex(train_df.index)], axis=1)
+        merged = pd.concat(
+            [train_df, precomputed_raw_df.reindex(train_df.index)], axis=1
+        )
 
         # No duplicate columns
         dupes = merged.columns[merged.columns.duplicated()].tolist()
@@ -398,8 +417,9 @@ class TestPrecomputedMergeNoDuplicates:
                 continue
             has_inf = np.isinf(merged[col]).any()
             # Must be a scalar bool, not a Series
-            assert isinstance(has_inf, (bool, np.bool_)), \
+            assert isinstance(has_inf, (bool, np.bool_)), (
                 f"has_inf for '{col}' is {type(has_inf)}, not bool — duplicate column?"
+            )
 
 
 class TestStrategyFilePluginResolution:
@@ -437,11 +457,12 @@ class TestStrategyFilePluginResolution:
             for kind, name in self._collect_plugin_names(strategy):
                 fq_name = normalize_plugin_name(name)
                 if ":" not in fq_name:
-                    errors.append(f"{path}: {kind} '{name}' did not resolve (got '{fq_name}')")
+                    errors.append(
+                        f"{path}: {kind} '{name}' did not resolve (got '{fq_name}')"
+                    )
 
-        assert not errors, (
-            "Unresolvable plugin names in strategy files:\n"
-            + "\n".join(errors)
+        assert not errors, "Unresolvable plugin names in strategy files:\n" + "\n".join(
+            errors
         )
 
 
@@ -458,17 +479,20 @@ class TestAllNanColumnProtection:
         from fwbg.pipeline.features import get_feature_columns
 
         n = 500
-        df = pd.DataFrame({
-            "O": np.random.randn(n) + 100,
-            "H": np.random.randn(n) + 101,
-            "L": np.random.randn(n) + 99,
-            "C": np.random.randn(n) + 100,
-            "trend_rsi_14": np.random.rand(n) * 100,
-            "adx_14": np.random.rand(n) * 50,
-            "vol_atr_14": np.abs(np.random.randn(n)) + 0.02,
-            # This column is ALL NaN (simulates indicator with warmup > data size)
-            "mtf_y1_ema200d_dist": np.full(n, np.nan),
-        }, index=pd.date_range("2024-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": np.random.randn(n) + 100,
+                "H": np.random.randn(n) + 101,
+                "L": np.random.randn(n) + 99,
+                "C": np.random.randn(n) + 100,
+                "trend_rsi_14": np.random.rand(n) * 100,
+                "adx_14": np.random.rand(n) * 50,
+                "vol_atr_14": np.abs(np.random.randn(n)) + 0.02,
+                # This column is ALL NaN (simulates indicator with warmup > data size)
+                "mtf_y1_ema200d_dist": np.full(n, np.nan),
+            },
+            index=pd.date_range("2024-01-01", periods=n, freq="h"),
+        )
 
         # Reproduce the fixed logic from process_fold.py
         full_pool = get_feature_columns(df)
@@ -510,16 +534,22 @@ class TestAllNanColumnProtection:
         idx = pd.date_range("2024-01-01", periods=n, freq="h")
 
         # Train has valid data for the column
-        train_df = pd.DataFrame({
-            **base,
-            "slow_indicator": np.random.rand(n),
-        }, index=idx)
+        train_df = pd.DataFrame(
+            {
+                **base,
+                "slow_indicator": np.random.rand(n),
+            },
+            index=idx,
+        )
 
         # Test has all NaN (warmup > test size)
-        test_df = pd.DataFrame({
-            **base,
-            "slow_indicator": np.full(n, np.nan),
-        }, index=idx)
+        test_df = pd.DataFrame(
+            {
+                **base,
+                "slow_indicator": np.full(n, np.nan),
+            },
+            index=idx,
+        )
 
         # Reproduce fixed process_fold logic
         full_pool = get_feature_columns(train_df)

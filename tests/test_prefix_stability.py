@@ -59,7 +59,9 @@ def _assert_prefix_stable(full: pd.DataFrame, prefix: pd.DataFrame, columns) -> 
         b = pd.to_numeric(prefix[col], errors="coerce").to_numpy(float)
         same = np.isclose(a, b, rtol=1e-9, atol=1e-12, equal_nan=True)
         if not same.all():
-            differing.append(f"{col} ({int((~same).sum())} rows, first {int(np.argmax(~same))})")
+            differing.append(
+                f"{col} ({int((~same).sum())} rows, first {int(np.argmax(~same))})"
+            )
     assert not differing, f"not prefix-stable: {differing}"
 
 
@@ -71,7 +73,9 @@ def ohlcv() -> pd.DataFrame:
 @pytest.mark.parametrize("name", sorted(INDICATOR_REGISTRY))
 def test_indicator_is_prefix_stable(name, ohlcv):
     if get_registry().get(normalize_plugin_name(name)).stateful:
-        pytest.skip("stateful: fit on each fold's training frame, never on the full window")
+        pytest.skip(
+            "stateful: fit on each fold's training frame, never on the full window"
+        )
     cls = INDICATOR_REGISTRY[name]
     full = cls().compute(ohlcv.copy())
     columns = [c for c in full.columns if c not in ohlcv.columns]
@@ -133,7 +137,13 @@ def test_data_loading_is_prefix_stable(plugin, csv_source):
         frame[col] = rng.random(len(frame))
 
     def load(df):
-        configs = [{"source": csv_source, "name": plugin, "params": {"indicators": dict(ITEMS)}}]
+        configs = [
+            {
+                "source": csv_source,
+                "name": plugin,
+                "params": {"indicators": dict(ITEMS)},
+            }
+        ]
         return run_data_loading(df.copy(), configs)
 
     full = load(frame)

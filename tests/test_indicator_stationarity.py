@@ -1,4 +1,5 @@
 """Tests for benefits_from_stationary indicator attribute."""
+
 import pytest
 from fwbg.pipeline import get_registry
 from fwbg_sdk import PluginPhase
@@ -13,10 +14,12 @@ def test_all_indicators_have_benefits_from_stationary():
 
     for fqn in indicators:
         plugin_cls = registry.get(fqn)
-        assert hasattr(plugin_cls, "benefits_from_stationary"), \
+        assert hasattr(plugin_cls, "benefits_from_stationary"), (
             f"{fqn} missing benefits_from_stationary"
-        assert isinstance(plugin_cls.benefits_from_stationary, bool), \
+        )
+        assert isinstance(plugin_cls.benefits_from_stationary, bool), (
             f"{fqn}.benefits_from_stationary must be bool"
+        )
 
 
 def test_stationary_indicators_correct():
@@ -25,10 +28,26 @@ def test_stationary_indicators_correct():
     registry.auto_discover()
     indicators = registry.list_plugins(phase=PluginPhase.INDICATORS)
 
-    expected_true = {"trend", "structure", "price_action", "ichimoku", "multi_timeframe"}
-    expected_false = {"momentum", "volatility", "regime", "risk", "time_season",
-                      "distribution", "dynamics", "cross_features", "microstructure", "macro_surprise",
-                      "support_resistance"}
+    expected_true = {
+        "trend",
+        "structure",
+        "price_action",
+        "ichimoku",
+        "multi_timeframe",
+    }
+    expected_false = {
+        "momentum",
+        "volatility",
+        "regime",
+        "risk",
+        "time_season",
+        "distribution",
+        "dynamics",
+        "cross_features",
+        "microstructure",
+        "macro_surprise",
+        "support_resistance",
+    }
 
     for fqn in indicators:
         plugin_cls = registry.get(fqn)
@@ -36,7 +55,9 @@ def test_stationary_indicators_correct():
         if short_name in expected_true:
             assert plugin_cls.benefits_from_stationary is True, f"{fqn} should be True"
         elif short_name in expected_false:
-            assert plugin_cls.benefits_from_stationary is False, f"{fqn} should be False"
+            assert plugin_cls.benefits_from_stationary is False, (
+                f"{fqn} should be False"
+            )
 
 
 def test_split_indicators_by_stationarity():
@@ -67,6 +88,8 @@ def test_split_no_preprocessing_all_raw():
         {"name": "trend", "params": {}},
         {"name": "momentum", "params": {}},
     ]
-    stationary, raw = split_indicators_by_stationarity(indicators, has_preprocessing=False)
+    stationary, raw = split_indicators_by_stationarity(
+        indicators, has_preprocessing=False
+    )
     assert len(stationary) == 0
     assert len(raw) == 2
