@@ -194,16 +194,15 @@ def _compute_atr(high, low, close, period):
             abs(low[i] - close[i - 1]),
         )
 
-    atr = np.empty(n)
-    atr[:period] = np.nan
+    # Warm-up bars (the first period - 1) stay NaN: back-filling them with the first
+    # valid ATR would hand them a value computed from the bars that follow.
+    atr = np.full(n, np.nan)
+    if n < period:
+        return atr
     atr[period - 1] = np.mean(tr[:period])
     alpha = 2.0 / (period + 1)
     for i in range(period, n):
         atr[i] = alpha * tr[i] + (1 - alpha) * atr[i - 1]
-
-    # Fill leading NaN with first valid ATR
-    first_valid = atr[period - 1]
-    atr[: period - 1] = first_valid
 
     return atr
 

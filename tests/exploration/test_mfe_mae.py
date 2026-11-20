@@ -308,3 +308,53 @@ class TestCLIIntegration:
         assert data["symbol"] == "TEST"
         assert len(data["capture_matrix"]) > 0
         assert len(data["suggested_grid"]["tp"]) >= 2
+
+
+# ---------------------------------------------------------------------------
+# exit_analyzer ATR warm-up
+# ---------------------------------------------------------------------------
+
+
+def _ohlc(n=60, seed=11):
+    rng = np.random.default_rng(seed)
+    close = 100.0 + np.cumsum(rng.standard_normal(n) * 0.4)
+    high = close + abs(rng.standard_normal(n)) * 0.3
+    low = close - abs(rng.standard_normal(n)) * 0.3
+    return high, low, close
+
+
+class TestAnalyzerAtr:
+    def test_warm_up_bars_are_nan_not_backfilled(self):
+        from fwbg.exploration.exit_analyzer import _compute_atr
+
+        high, low, close = _ohlc()
+        atr = _compute_atr(high, low, close, 14)
+
+        assert np.isnan(atr[:13]).all()
+        tr = np.maximum.reduce(
+            [
+                high[1:] - low[1:],
+                abs(high[1:] - close[:-1]),
+                abs(low[1:] - close[:-1]),
+            ]
+        )
+        tr = np.concatenate([[high[0] - low[0]], tr])
+        assert atr[13] == pytest.approx(tr[:14].mean())
+        assert np.isfinite(atr[13:]).all()
+
+    def test_each_value_depends_only_on_bars_up_to_it(self):
+        """Truncation invariance at every cut: atr[:k] is the same from a series that
+        stops at k. The back-filled warm-up depended on bars up to period - 1."""
+        from fwbg.exploration.exit_analyzer import _compute_atr
+
+        high, low, close = _ohlc()
+        full = _compute_atr(high, low, close, 14)
+        for k in range(1, len(high) + 1):
+            part = _compute_atr(high[:k], low[:k], close[:k], 14)
+            np.testing.assert_allclose(part, full[:k], equal_nan=True)
+
+    def test_series_shorter_than_the_period_has_no_atr(self):
+        from fwbg.exploration.exit_analyzer import _compute_atr
+
+        high, low, close = _ohlc(n=10)
+        assert np.isnan(_compute_atr(high, low, close, 14)).all()
