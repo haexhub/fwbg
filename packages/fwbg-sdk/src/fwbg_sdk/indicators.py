@@ -2,6 +2,7 @@
 BaseIndicator - Abstrakte Basisklasse für Indicator-Plugins.
 """
 
+import inspect
 from abc import ABC, abstractmethod
 from typing import List, Dict, Union, TYPE_CHECKING
 import numpy as np
@@ -246,6 +247,31 @@ class BaseIndicator(BasePlugin, ABC):
             Liste der Kalender-Spaltennamen, oder leere Liste
         """
         return []
+
+    def get_unshifted_columns(self, params=None) -> List[str]:
+        """Columns that carry the value of their own bar (not ``shift_features``).
+
+        Row ``i`` of such a column holds what is known at the close of bar ``i``
+        (decision columns) or before the open of bar ``i`` (calendar columns); every
+        other column is shifted by one bar. The chart API uses this list to place
+        values on the bar whose close produced them.
+
+        Default: ``get_signal_columns(params)`` plus ``get_calendar_columns(params)``,
+        the single definition of "unshifted". Override only to add unshifted columns
+        that are neither (e.g. structural levels), and extend ``super()``.
+
+        Args:
+            params: Optional indicator parameters (see ``get_feature_columns``).
+
+        Returns:
+            Names of the unshifted columns without duplicates.
+        """
+        found: Dict[str, None] = {}
+        for method in (self.get_signal_columns, self.get_calendar_columns):
+            takes_params = len(inspect.signature(method).parameters) > 0
+            for col in method(params) if takes_params else method():
+                found.setdefault(col, None)
+        return list(found)
 
     def get_plot_columns(self) -> List[str]:
         """

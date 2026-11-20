@@ -114,3 +114,116 @@ def test_mtf_overlay_shows_the_previous_finished_candle(ohlc, tmp_path, client):
     for day in moved:
         rows = drawn[drawn.index.normalize() == daily.index[day]]
         np.testing.assert_allclose(rows.to_numpy(), d_line.iloc[day - 1])
+
+
+def _chart_columns(client, fqn, params):
+    resp = client.post(
+        "/api/chart/indicator",
+        json={
+            "fqn": fqn,
+            "source": "test_src",
+            "symbol": "EURUSD",
+            "timeframe": "HOUR_1",
+            "params": params,
+            "limit": 1000,
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def test_shifted_columns_sit_on_the_decision_bar(ohlc, client):
+    """st_direction / st_flip are shifted by the indicator like any feature; the
+    chart moves them back one bar, so they sit on the bar whose close decided
+    them (not one or two bars later)."""
+    from fwbg.plugins import import_plugin_module
+
+    mod = import_plugin_module("fwbg-core", "indicators", "supertrend")
+    direction, _ = mod._supertrend(ohlc["H"], ohlc["L"], ohlc["C"], 14, 3.0)
+    flips = mod._direction_flips(direction)
+    assert flips.sum() >= 2, "toy series needs at least two direction changes"
+
+    body = _chart_columns(
+        client, "fwbg-core:supertrend", {"period": 14, "multiplier": 3.0}
+    )
+    # shifted by the indicator, so not a signal column: drawn as plot columns
+    assert {"st_direction", "st_flip"} <= set(body["plot_columns"])
+    assert not {"st_direction", "st_flip"} & set(body["signal_columns"])
+    drawn_dir = pd.Series(body["data"]["st_direction"], dtype=float)
+    drawn_flip = pd.Series(body["data"]["st_flip"], dtype=float)
+
+    np.testing.assert_allclose(
+        drawn_dir.to_numpy()[:-1], direction.to_numpy()[:-1], equal_nan=True
+    )
+    np.testing.assert_allclose(
+        drawn_flip.to_numpy()[:-1], flips.to_numpy()[:-1], equal_nan=True
+    )
+    flip_bars = list(np.flatnonzero(flips.to_numpy() == 1.0))
+    assert list(np.flatnonzero(drawn_flip.to_numpy() == 1.0)) == flip_bars
+
+
+def test_unshifted_signal_columns_are_not_moved(ohlc, client):
+    """ibs columns already carry their own bar's value: the chart leaves them."""
+    body = _chart_columns(client, "fwbg-core:ibs", {})
+    assert "ibs_down" in body["signal_columns"]
+    drawn = pd.Series(body["data"]["ibs_down"], dtype=float)
+    expected = (ohlc["C"] < ohlc["C"].shift(1)).astype(float)
+    expected.iloc[0] = np.nan  # indicator contract: first row is NaN
+    np.testing.assert_allclose(drawn.to_numpy(), expected.to_numpy(), equal_nan=True)
+
+
+def test_undo_feature_shift_skips_unshifted_columns():
+    from fwbg.api.chart import _undo_feature_shift
+
+    df = pd.DataFrame({"a": [np.nan, 1.0, 2.0, 3.0], "b": [1.0, 2.0, 3.0, 4.0]})
+    _undo_feature_shift(df, ["a", "b"], {"b"})
+    assert df["a"].tolist()[:3] == [1.0, 2.0, 3.0] and np.isnan(df["a"].iloc[3])
+    assert df["b"].tolist() == [1.0, 2.0, 3.0, 4.0]
+
+
+def test_opening_range_declares_signal_and_structural_columns_unshifted():
+    from fwbg.plugins import import_plugin_module
+
+    mod = import_plugin_module("fwbg-core", "indicators", "opening_range")
+    ind = mod.OpeningRangeIndicator()
+    params = {"sessions": [8], "range_bars": 1}
+    unshifted = set(ind.get_unshifted_columns(params))
+    features = set(ind.get_feature_columns(params))
+    assert unshifted and unshifted <= features
+    assert set(ind.get_signal_columns(params)) <= unshifted
+    assert any(c.endswith("_sl_dist") for c in unshifted)
+
+
+def test_unshifted_columns_have_one_definition():
+    """The default is signal columns plus calendar columns; only opening_range
+    adds structural levels on top."""
+    from fwbg.pipeline import get_registry
+
+    from fwbg_sdk import INDICATOR_REGISTRY
+
+    get_registry().auto_discover()
+    extra = {}
+    for name in sorted(INDICATOR_REGISTRY):
+        plugin = INDICATOR_REGISTRY[name]()
+        defined = set()
+        for method in ("get_signal_columns", "get_calendar_columns"):
+            fn = getattr(plugin, method)
+            try:
+                defined |= set(fn(None))
+            except TypeError:
+                defined |= set(fn())
+        try:
+            unshifted = set(plugin.get_unshifted_columns(None))
+        except Exception:  # indicators whose columns need configured params
+            continue
+        assert defined <= unshifted, name
+        if unshifted != defined:
+            extra[name] = unshifted - defined
+    assert set(extra) <= {"opening_range"}, extra
+
+
+def test_ibs_default_unshifted_columns_come_from_the_signal_columns():
+    from fwbg.plugins import import_plugin_module
+
+    ind = import_plugin_module("fwbg-core", "indicators", "ibs").IbsIndicator()
+    assert set(ind.get_unshifted_columns()) == set(ind.get_signal_columns())

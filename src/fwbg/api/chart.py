@@ -38,6 +38,14 @@ def _call_plugin_method(method, params):
     return method()
 
 
+def _undo_feature_shift(df, columns: list[str], unshifted: set[str]) -> None:
+    """Move indicator columns back one bar, in place, so each value sits on the
+    bar whose close produced it. Columns in ``unshifted`` already do."""
+    for col in columns:
+        if col not in unshifted:
+            df[col] = df[col].shift(-1)
+
+
 # ---------------------------------------------------------------------------
 # Timeframe hierarchy & resampling
 # ---------------------------------------------------------------------------
@@ -534,33 +542,34 @@ def compute_indicator(body: IndicatorRequest) -> dict:
             if c in result_df.columns
         ]
 
-    # --- Classify columns via plugin methods (needed before undo-shift) ---
+    # --- Classify columns via plugin methods ---
     plugin_signal_cols = (
         set(_call_plugin_method(plugin.get_signal_columns, params))
         if hasattr(plugin, "get_signal_columns")
         else set()
     )
+    unshifted_cols = (
+        set(_call_plugin_method(plugin.get_unshifted_columns, params))
+        if hasattr(plugin, "get_unshifted_columns")
+        else set()
+    )
 
     # --- Adjust shift for chart display ---
-    # Non-signal columns: undo shift_features (+1) so values appear at the
-    # bar where they were computed.
-    # Signal columns: shift +1 so signal markers align with trade entries
-    # (signal fires at bar N close, entry at bar N+1 open → show at N+1).
-    # Signal columns are NOT shifted by the indicator (no lookahead shift
-    # needed since simulate_pro_trade already enters at idx+1).
-    for col in available_cols:
-        if col in plugin_signal_cols:
-            result_df[col] = result_df[col].shift(1)
-        else:
-            result_df[col] = result_df[col].shift(-1)
+    # A chart is a view, not a model input: every value is drawn on the bar
+    # whose close produced it. Columns shifted by the indicator
+    # (``shift_features``, the default) are moved back one bar; this holds for
+    # signal columns too, so a flip decided at the close of bar N is marked on
+    # bar N, not on N+1 (the bar it is visible to a model) or N+2. Columns the
+    # indicator already emits unshifted (``get_unshifted_columns``) are left
+    # alone.
+    _undo_feature_shift(result_df, available_cols, unshifted_cols)
     # Overlay columns: undo the shift too, so a single-timeframe line sits at the
     # bar whose close produced it. With an indicator timeframe the rows are
     # higher-timeframe candles that get held across all chart bars of the
     # candle; undoing the shift there would draw a level computed from the
     # candle's close during that same candle, so the model-facing shift stays.
     if chart_df is None:
-        for col in overlay_cols:
-            result_df[col] = result_df[col].shift(-1)
+        _undo_feature_shift(result_df, overlay_cols, unshifted_cols)
 
     # --- MTF: forward-fill indicator columns to chart timeframe ---
     # Continuous columns (plot + overlay) are forward-filled so each lower-TF bar
