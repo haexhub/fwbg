@@ -383,8 +383,13 @@ def simulate_pro_trade(
 
     - Signal bei Bar idx, Entry bei Bar idx+entry_delay
     - entry_delay=1 (default): Entry bei Open des nächsten Bars (kein Look-Ahead)
-    - entry_delay=0: Entry beim Close des Signal-Bars (für Breakout-Strategien
-      mit Stop-Orders am Breakout-Level)
+    - entry_delay=0: Entry beim Close des Signal-Bars (``closes[idx]``); Exits
+      starten erst mit dem Folgebar. Bewusster Modus fuer Entscheidungen zum
+      Close (MOC, Kalenderregeln, Breakout-Stop-Orders): die Signal-Spalten
+      sind dann UNgeshiftet und duerfen Bar ``idx`` selbst nutzen. Mit
+      geshifteten ML-Features (Zeile i nutzt nur Bars <= i-1) wuerde der Fill
+      zum Close von Bar i einen Preis nehmen, den die Features nicht kennen;
+      dort gilt der Default entry_delay=1.
     - Trade läuft bis TP oder SL erreicht wird
     - Bei gleichzeitigem TP/SL im selben Bar: Schaut in 15-Min-Daten (falls verfügbar)
     - Bei Timeout: Schließt zum Close-Preis und wertet als Win/Loss
