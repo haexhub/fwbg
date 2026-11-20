@@ -53,8 +53,8 @@ Momentum indicator plugin that appends 13 momentum-oscillator feature columns to
 
 ## Edge Cases
 
-- Non-default period lists change which feature columns are actually produced by compute(), but get_feature_columns() still returns the fixed 13-name default list — mismatch between produced columns and declared feature columns when non-default periods are used.
-- Early rows (index < max lookback period) of each oscillator column will contain NaN values produced by the underlying ta library.
+- Any of the period-list parameters passed explicitly as None is replaced with its default list inside compute().
+- Early rows (index < max lookback period) of each oscillator column are NaN; RSI needs period + 1 bars for its first value.
 - The one-bar shift via shift_features means the first row of every feature column is NaN even after the ta library warmup, and the last raw computed value is dropped from the shifted output.
 - The Ultimate Oscillator is emitted as a single mom_uo column and is not parameterized by any of the exposed period lists.
 - compute() requires df to contain columns 'O', 'H', 'L', 'C' — missing H/L/C (used by Stochastic, Williams %R, Ultimate Oscillator) or missing C (used by RSI, ROC) will raise from the ta library.
@@ -66,5 +66,5 @@ Momentum indicator plugin that appends 13 momentum-oscillator feature columns to
 - The ta library's ultimate_oscillator default short/medium/long windows (7/14/28) are the intended behaviour, since they are not exposed as parameters.
 
 ## Needs Clarification
-- [NEEDS CLARIFICATION: get_feature_columns() returns a hard-coded 13-name list matching only the default period configuration; whether this should dynamically reflect the actual params (or whether callers are expected to always use defaults for column-name purposes) is not stated in the source.]
+
 - [NEEDS CLARIFICATION: Ultimate Oscillator's short/medium/long windows are not exposed as params — whether they were intentionally fixed at ta-library defaults or simply not surfaced yet is not stated.]
