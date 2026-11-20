@@ -371,3 +371,140 @@ class TestPluginAttributes:
 
     def test_benefits_from_stationary_false(self, indicator):
         assert indicator.benefits_from_stationary is False
+
+
+# -- regression tests: band std, session resets, param-aware columns ----------
+
+
+def _flat_bars(close, index, volume=None):
+    """Bars with H = L = C = O, so the typical price equals the close."""
+    close = np.asarray(close, dtype=float)
+    df = pd.DataFrame({"O": close, "H": close, "L": close, "C": close}, index=index)
+    if volume is not None:
+        df["V"] = np.asarray(volume, dtype=float)
+    return df
+
+
+def _reference_bands(tp, volume):
+    """Volume-weighted mean and std of all typical prices up to each bar."""
+    vwap, std = [], []
+    for k in range(1, len(tp) + 1):
+        t, w = np.asarray(tp[:k], float), np.asarray(volume[:k], float)
+        mean = (w * t).sum() / w.sum()
+        vwap.append(mean)
+        std.append(np.sqrt((w * (t - mean) ** 2).sum() / w.sum()))
+    return np.array(vwap), np.array(std)
+
+
+class TestBandStd:
+    def test_band_width_is_the_volume_weighted_std_of_the_session(self, indicator):
+        tp = [100.0, 110.0, 90.0, 104.0, 97.0, 108.0]
+        vol = [1.0, 10.0, 1.0, 5.0, 2.0, 7.0]
+        index = pd.date_range("2024-01-02 09:00", periods=len(tp), freq="15min")
+        out = indicator.compute(_flat_bars(tp, index, vol), band_multipliers=[1.0, 2.0])
+        ref_vwap, ref_std = _reference_bands(tp, vol)
+        # features are shifted by one bar: row k+1 holds the value of bar k
+        np.testing.assert_allclose(
+            out["vwap"].iloc[1:].values, ref_vwap[:-1], rtol=1e-9
+        )
+        np.testing.assert_allclose(
+            (out["vwap_upper_1"] - out["vwap"]).iloc[1:].values,
+            ref_std[:-1],
+            rtol=1e-6,
+            atol=1e-9,
+        )
+        np.testing.assert_allclose(
+            (out["vwap"] - out["vwap_lower_2"]).iloc[1:].values,
+            2 * ref_std[:-1],
+            rtol=1e-6,
+            atol=1e-9,
+        )
+
+    def test_band_std_without_volume_is_the_plain_std(self, indicator):
+        tp = [100.0, 101.0, 103.0, 99.0, 102.0]
+        index = pd.date_range("2024-01-02 09:00", periods=len(tp), freq="15min")
+        out = indicator.compute(_flat_bars(tp, index))
+        _, ref_std = _reference_bands(tp, np.ones(len(tp)))
+        np.testing.assert_allclose(
+            (out["vwap_upper_1"] - out["vwap"]).iloc[1:].values,
+            ref_std[:-1],
+            rtol=1e-6,
+            atol=1e-9,
+        )
+
+    def test_band_std_is_stable_at_high_price_levels(self, indicator):
+        tp = np.array([60000.0, 60010.0, 59990.0, 60005.0, 59995.0])
+        index = pd.date_range("2024-01-02 09:00", periods=len(tp), freq="15min")
+        out = indicator.compute(_flat_bars(tp, index))
+        _, ref_std = _reference_bands(tp, np.ones(len(tp)))
+        np.testing.assert_allclose(
+            (out["vwap_upper_1"] - out["vwap"]).iloc[1:].values,
+            ref_std[:-1],
+            rtol=1e-6,
+            atol=1e-6,
+        )
+
+
+class TestSessionResetTimezone:
+    def _ny_sessions(self, days, price_of_day):
+        """Three 15-minute bars from 09:30 New York on each day, naive UTC index."""
+        frames = []
+        for day, price in zip(days, price_of_day):
+            local = pd.date_range(
+                f"{day} 09:30", periods=3, freq="15min", tz="America/New_York"
+            )
+            frames.append(
+                _flat_bars([price] * 3, local.tz_convert("UTC").tz_localize(None))
+            )
+        return pd.concat(frames)
+
+    def test_resets_each_new_york_morning_across_the_dst_change(self, indicator):
+        # 2024-03-08 is EST (14:30 UTC open), 2024-03-11 is EDT (13:30 UTC open)
+        df = self._ny_sessions(["2024-03-08", "2024-03-11"], [100.0, 200.0])
+        out = indicator.compute(df, session_start_hour=9, session_tz="America/New_York")
+        # row 4 holds the VWAP after the first bar of day 2: 200, not the 150 of a
+        # running VWAP that never reset
+        assert out["vwap"].iloc[4] == pytest.approx(200.0)
+        assert out["vwap"].iloc[3] == pytest.approx(100.0)
+
+    def test_reset_when_no_bar_exists_in_the_start_hour(self, indicator):
+        days = ["2024-01-02", "2024-01-03"]
+        index = pd.DatetimeIndex(
+            [pd.Timestamp(f"{d} {h:02d}:00") for d in days for h in (10, 11, 12)]
+        )
+        df = _flat_bars([100.0] * 3 + [200.0] * 3, index)
+        out = indicator.compute(df, session_start_hour=9)
+        assert out["vwap"].iloc[4] == pytest.approx(200.0)
+
+    def test_tz_aware_index_is_converted(self, indicator):
+        local = pd.date_range(
+            "2024-03-08 09:30", periods=3, freq="15min", tz="America/New_York"
+        )
+        local2 = pd.date_range(
+            "2024-03-11 09:30", periods=3, freq="15min", tz="America/New_York"
+        )
+        df = _flat_bars([100.0] * 3 + [200.0] * 3, local.append(local2))
+        out = indicator.compute(df, session_start_hour=9, session_tz="America/New_York")
+        assert out["vwap"].iloc[4] == pytest.approx(200.0)
+
+    def test_daily_bars_reset_on_every_bar(self, indicator):
+        close = np.array([100.0, 110.0, 90.0, 120.0])
+        df = _flat_bars(close, pd.bdate_range("2024-01-02", periods=4))
+        out = indicator.compute(df)
+        # one-bar sessions: VWAP is the bar's own typical price (shifted by one bar)
+        np.testing.assert_allclose(out["vwap"].iloc[1:].values, close[:-1])
+        assert out["vwap_deviation"].iloc[1:].abs().max() < 1e-12
+
+
+class TestFeatureColumnsFollowParams:
+    def test_custom_params_columns_match_compute(self, indicator, trending_df):
+        params = {"zscore_windows": [10, 30], "band_multipliers": [1.5, 3]}
+        out = indicator.compute(trending_df, **params)
+        cols = indicator.get_feature_columns(params)
+        assert set(cols) == {c for c in out.columns if c.startswith("vwap")}
+        assert "vwap_upper_1_5" in cols and "vwap_lower_3" in cols
+        assert "vwap_zscore_20" not in cols
+
+    def test_defaults_unchanged(self, indicator):
+        assert indicator.get_feature_columns() == indicator.get_feature_columns({})
+        assert "vwap_zscore_50" in indicator.get_feature_columns()
