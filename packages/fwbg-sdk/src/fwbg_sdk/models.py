@@ -156,9 +156,27 @@ class BaseModel(BasePlugin, ABC):
             raise RuntimeError(f"{self.name} model is not trained. Call train() first.")
 
     def predict_probability(self, features: pd.DataFrame) -> np.ndarray:
-        """Return class probabilities (n_samples, n_classes)."""
+        """Return class probabilities (n_samples, n_classes).
+
+        Calibrated probabilities once ``calibrate()`` has run, raw otherwise. The
+        break-even threshold sl/(tp+sl) that replaces the confidence-threshold grid
+        under ``probability_calibration`` is only meaningful on calibrated
+        probabilities, and every caller (validation, holdout, live) reads this method.
+        """
+        self._check_trained()
+        if self._calibrated_model is not None:
+            return self._calibrated_model.predict_proba(features)
+        return self._predict_probability_impl(features)
+
+    def predict_probability_raw(self, features: pd.DataFrame) -> np.ndarray:
+        """Uncalibrated class probabilities, whether or not ``calibrate()`` has run."""
         self._check_trained()
         return self._predict_probability_impl(features)
+
+    def reset(self) -> None:
+        """Reset to the unfitted state and drop any calibration of the old fit."""
+        super().reset()
+        self._calibrated_model = None
 
     @abstractmethod
     def _predict_probability_impl(self, features: pd.DataFrame) -> np.ndarray:
@@ -212,9 +230,7 @@ class BaseModel(BasePlugin, ABC):
         return self.trained_classes[np.argmax(probs, axis=1)]
 
     def predict_probability_calibrated(self, features: pd.DataFrame) -> np.ndarray:
-        """Predict with calibration if available, otherwise raw."""
-        if self._calibrated_model is not None:
-            return self._calibrated_model.predict_proba(features)
+        """Predict with calibration if available, otherwise raw (same as predict_probability)."""
         return self.predict_probability(features)
 
     def get_feature_importance(self) -> Optional[Dict[str, float]]:
