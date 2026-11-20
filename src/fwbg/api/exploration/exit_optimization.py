@@ -51,23 +51,37 @@ def run_exit_optimization(req: ExitOptimizationRequest):
     except ValueError as e:
         raise HTTPException(400, str(e))
     if not path.exists():
-        raise HTTPException(404, f"Data file not found: {req.symbol}_{req.timeframe} in {req.source}")
+        raise HTTPException(
+            404, f"Data file not found: {req.symbol}_{req.timeframe} in {req.source}"
+        )
 
     window = {"start_date": None, "end_date": None}
     if gate_enabled():
         config = analysis_config(
-            req.exit_strategy, req.exit_params, req.max_bars, req.timeframe, datasource=req.source
+            req.exit_strategy,
+            req.exit_params,
+            req.max_bars,
+            req.timeframe,
+            datasource=req.source,
         )
         try:
             _, window = record_analysis(
-                req.research_id, config, [req.symbol.upper()], req.note, reason=req.reason
+                req.research_id,
+                config,
+                [req.symbol.upper()],
+                req.note,
+                reason=req.reason,
             )
         except GateDenied as exc:
             raise gate_refusal(denial_payload(exc.denials), "analysis") from None
 
     result = analyze_asset(
-        str(path), req.exit_strategy, req.exit_params, req.max_bars,
-        window["start_date"], window["end_date"],
+        str(path),
+        req.exit_strategy,
+        req.exit_params,
+        req.max_bars,
+        window["start_date"],
+        window["end_date"],
     )
 
     # Cache result to disk
@@ -95,14 +109,16 @@ def list_exit_optimizations():
         path = os.path.join(out_dir, f)
         with open(path) as fh:
             data = json.load(fh)
-        results.append({
-            "symbol": data.get("symbol"),
-            "timeframe": data.get("timeframe"),
-            "exit_strategy": data.get("exit_strategy"),
-            "analyzed_at": data.get("analyzed_at"),
-            "bars_analyzed": data.get("bars_analyzed"),
-            "suggested_grid": data.get("suggested_grid"),
-        })
+        results.append(
+            {
+                "symbol": data.get("symbol"),
+                "timeframe": data.get("timeframe"),
+                "exit_strategy": data.get("exit_strategy"),
+                "analyzed_at": data.get("analyzed_at"),
+                "bars_analyzed": data.get("bars_analyzed"),
+                "suggested_grid": data.get("suggested_grid"),
+            }
+        )
     return results
 
 
