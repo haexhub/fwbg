@@ -7,7 +7,6 @@ import os
 import pandas as pd
 import numpy as np
 
-from .config import TARGET_TZ
 from .macro_contract import RELEASE_COL, merge_respect_release
 
 log = logging.getLogger(__name__)
@@ -64,6 +63,7 @@ def _parse_timestamp_col(series):
     - ISO-Datetime-Strings ("2024-01-01 09:00:00")
     - Unix-Millisekunden (z.B. 1388534400000 — > 1e12)
     - Unix-Sekunden (z.B. 1388534400 — > 1e9)
+    - Strings mit UTC-Offset ("2024-07-01 10:00:00+02:00"), auch gemischt
     """
     sample = series.iloc[0]
     try:
@@ -74,7 +74,13 @@ def _parse_timestamp_col(series):
             return pd.to_datetime(series, unit="s")
     except (ValueError, TypeError):
         pass
-    return pd.to_datetime(series)
+    try:
+        return pd.to_datetime(series)
+    except ValueError as exc:
+        if "Mixed timezones" not in str(exc):
+            raise
+        # Offsets that differ within one column (a DST change): one common zone.
+        return pd.to_datetime(series, utc=True)
 
 
 def apply_date_window(
@@ -109,8 +115,8 @@ def apply_date_window(
     return df.loc[df.index < end]
 
 
-def load_data_aligned(path: str, is_sentiment: bool = False) -> pd.DataFrame | None:
-    """Lädt OHLC-Daten aus CSV mit Zeitzone-Alignment.
+def load_data_aligned(path: str) -> pd.DataFrame | None:
+    """Lädt OHLC-Daten aus CSV; der Index ist naive UTC.
 
     Returns None only for a missing or empty file; unreadable or invalid data
     (parse errors, non-numeric or non-positive OHLC) raises.
@@ -155,17 +161,12 @@ def load_data_aligned(path: str, is_sentiment: bool = False) -> pd.DataFrame | N
             df.columns = ["T", "C"]
             df["O"] = df["H"] = df["L"] = df["C"]
         df["T"] = _parse_timestamp_col(df["T"])
-        if is_sentiment:
-            if df["T"].dt.tz is None:
-                df["T"] = df["T"].dt.tz_localize("UTC")
-            df["T"] = df["T"].dt.tz_convert(TARGET_TZ)
-        else:
-            # Keine TZ-Lokalisierung - behandle Daten als naive Timestamps
-            # Das vermeidet DST-Probleme (ambiguous/nonexistent times)
-            pass
-        # Stelle sicher dass der Index keine TZ hat
+        # Timestamp convention (see fwbg.core.data_sources): naive timestamps are
+        # UTC and stay as they are, which also avoids DST problems (ambiguous /
+        # nonexistent local times). Values that carry a UTC offset are converted
+        # to UTC first, so the naive index is never local wall-clock time.
         if df["T"].dt.tz is not None:
-            df["T"] = df["T"].dt.tz_localize(None)
+            df["T"] = df["T"].dt.tz_convert("UTC").dt.tz_localize(None)
         df = df.set_index("T")
 
         # Validate OHLC data
