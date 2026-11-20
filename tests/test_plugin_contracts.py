@@ -84,7 +84,9 @@ def test_data_loader_falls_back_to_sdk_registry_when_name_is_ambiguous(monkeypat
     fake_registry.register(PipelineLoaderB, "package-b")
     monkeypatch.setattr(pipeline_registry, "get_registry", lambda: fake_registry)
     monkeypatch.setattr(core_registry, "_ensure_plugins_loaded", lambda: None)
-    monkeypatch.setitem(core_registry.DATA_LOADER_REGISTRY, "shared_loader", LegacyLoader)
+    monkeypatch.setitem(
+        core_registry.DATA_LOADER_REGISTRY, "shared_loader", LegacyLoader
+    )
 
     assert core_registry.get_data_loader("shared_loader") is LegacyLoader
 
@@ -94,9 +96,9 @@ def test_data_loading_orchestrator_executes_fqn_loader(premium_registry, tmp_pat
     from fwbg.data.loader import run_data_loading
 
     csv_path = tmp_path / "VIX_DAY.csv"
-    pd.DataFrame(
-        {"Date": ["2024-01-01", "2024-01-02"], "Close": [20.0, 21.0]}
-    ).to_csv(csv_path, index=False)
+    pd.DataFrame({"Date": ["2024-01-01", "2024-01-02"], "Close": [20.0, 21.0]}).to_csv(
+        csv_path, index=False
+    )
     register_csv_source("_contract_macro", tmp_path)
     try:
         frame = pd.DataFrame(

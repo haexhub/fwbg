@@ -1,4 +1,5 @@
 """Plugin registry with directory-based discovery and namespace support."""
+
 import importlib.util
 import inspect
 import json
@@ -146,11 +147,7 @@ class PluginRegistry:
             plugins = [p for p in plugins if p.startswith(f"{namespace}:")]
 
         if phase is not None:
-            plugins = [
-                name
-                for name in plugins
-                if self._plugins[name].phase == phase
-            ]
+            plugins = [name for name in plugins if self._plugins[name].phase == phase]
 
         return plugins
 
@@ -256,7 +253,17 @@ class PluginRegistry:
         self._package_manifests[namespace] = package_manifest
 
         # Scan for plugin categories
-        for category in ["data_loading", "indicators", "preprocessing", "feature_selection", "exit_strategies", "exit_modifiers", "entry_modifiers", "risk_management", "models"]:
+        for category in [
+            "data_loading",
+            "indicators",
+            "preprocessing",
+            "feature_selection",
+            "exit_strategies",
+            "exit_modifiers",
+            "entry_modifiers",
+            "risk_management",
+            "models",
+        ]:
             category_dir = package_dir / category
             if category_dir.is_dir():
                 discovered.extend(
@@ -324,7 +331,9 @@ class PluginRegistry:
                         discovered.append(registered_fqn)
                         # Propagate manifest attributes to plugin class
                         if "benefits_from_stationary" in manifest:
-                            attr.benefits_from_stationary = manifest["benefits_from_stationary"]
+                            attr.benefits_from_stationary = manifest[
+                                "benefits_from_stationary"
+                            ]
 
             except Exception as e:
                 logger.warning(f"Failed to load plugin from {plugin_dir}: {e}")
@@ -430,9 +439,7 @@ class PluginRegistry:
                 }
                 discovered.append(registered_fqn)
             except Exception as e:
-                logger.warning(
-                    f"Failed to register signal definition {sig_name}: {e}"
-                )
+                logger.warning(f"Failed to register signal definition {sig_name}: {e}")
 
         return discovered
 
@@ -520,13 +527,17 @@ class PluginRegistry:
                     seen_dirs.add(resolved)
                     if plugins_dir.is_dir():
                         for package_dir in plugins_dir.iterdir():
-                            if package_dir.is_dir() and (package_dir / "manifest.json").exists():
+                            if (
+                                package_dir.is_dir()
+                                and (package_dir / "manifest.json").exists()
+                            ):
                                 discovered.extend(self.discover_package(package_dir))
                 except Exception as e:
                     logger.warning(f"Failed to load plugin package '{ep.name}': {e}")
         except Exception:
             pass
         return discovered
+
 
 def get_user_plugins_dir() -> Path:
     """

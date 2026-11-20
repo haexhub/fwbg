@@ -14,6 +14,7 @@ Since the GridConfig removal, all grid params live in:
 - exit_params (tp_mult, sl_mult, timeout_bars, etc.)
 - optimization (ct, exit_modifier_params_grid, model_hyperparameters_grid)
 """
+
 import json
 import os
 import dataclasses
@@ -34,12 +35,14 @@ if _pdl_mod is None or _signal_mod is None:
 from fwbg_sdk.models import TrainingContext
 
 from fwbg.api.workspace import get_strategies_dir as _gsd
+
 PDHL_CONFIG_PATH = str(_gsd() / "pdhl_retest.json")
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def pdhl_config():
@@ -70,7 +73,9 @@ def _minimal_ctx(**overrides) -> SimulationContext:
         short_enabled=True,
         exit_strategy="orb_based",
         exit_params={
-            "atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12,
+            "atr_period": 14,
+            "min_tp_pips": 8,
+            "min_sl_pips": 12,
             "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
         },
         model_type="signal",
@@ -99,13 +104,17 @@ def _make_pdhl_bull_15min():
     # Day 0: establish range
     for i in range(96):
         h = idx[i].hour
-        close[i] = 100.0; opn[i] = 100.0
+        close[i] = 100.0
+        opn[i] = 100.0
         if h == 8 and idx[i].minute == 0:
-            high[i] = 100.5; low[i] = 90.0  # PDL
+            high[i] = 100.5
+            low[i] = 90.0  # PDL
         elif h == 11 and idx[i].minute == 0:
-            high[i] = 110.0; low[i] = 99.5  # PDH
+            high[i] = 110.0
+            low[i] = 99.5  # PDH
         else:
-            high[i] = 100.5; low[i] = 99.5
+            high[i] = 100.5
+            low[i] = 99.5
 
     # Day 1: breakout + retracement
     day1_start = 96
@@ -113,24 +122,45 @@ def _make_pdhl_bull_15min():
         h = idx[i].hour
         m = idx[i].minute
         if h < 9:
-            close[i] = 105.0; high[i] = 106.0; low[i] = 104.0; opn[i] = 105.0
+            close[i] = 105.0
+            high[i] = 106.0
+            low[i] = 104.0
+            opn[i] = 105.0
         elif h == 9 and m == 15:
             # Breakout bar: close > PDH=110
-            close[i] = 115.0; high[i] = 116.0; low[i] = 108.0; opn[i] = 108.0
+            close[i] = 115.0
+            high[i] = 116.0
+            low[i] = 108.0
+            opn[i] = 108.0
         elif h == 9 and m > 15 or h == 10 or h == 11:
-            close[i] = 112.0; high[i] = 113.0; low[i] = 111.0; opn[i] = 112.0
+            close[i] = 112.0
+            high[i] = 113.0
+            low[i] = 111.0
+            opn[i] = 112.0
         elif h == 12 and m == 0:
             # Retracement: Low touches retrace threshold, Close near midpoint
-            close[i] = 100.0; high[i] = 105.0; low[i] = 99.0; opn[i] = 105.0
+            close[i] = 100.0
+            high[i] = 105.0
+            low[i] = 99.0
+            opn[i] = 105.0
         elif h == 12 and m == 15:
-            close[i] = 101.0; high[i] = 102.0; low[i] = 100.0; opn[i] = 100.0
+            close[i] = 101.0
+            high[i] = 102.0
+            low[i] = 100.0
+            opn[i] = 100.0
         else:
             # After entry: strong rally to hit TP (needs to reach ~120)
-            close[i] = 125.0; high[i] = 130.0; low[i] = 106.0; opn[i] = 106.0
+            close[i] = 125.0
+            high[i] = 130.0
+            low[i] = 106.0
+            opn[i] = 106.0
 
     # Days 2-4: flat
     for i in range(day1_start + 96, n):
-        close[i] = 108.0; high[i] = 109.0; low[i] = 107.0; opn[i] = 108.0
+        close[i] = 108.0
+        high[i] = 109.0
+        low[i] = 107.0
+        opn[i] = 108.0
 
     return pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
 
@@ -151,13 +181,17 @@ def _make_overnight_breakout():
     # Day 0: establish range 90..110 during session (8-17)
     for i in range(96):
         h = idx[i].hour
-        close[i] = 100.0; opn[i] = 100.0
+        close[i] = 100.0
+        opn[i] = 100.0
         if h == 8 and idx[i].minute == 0:
-            high[i] = 100.5; low[i] = 90.0
+            high[i] = 100.5
+            low[i] = 90.0
         elif h == 11 and idx[i].minute == 0:
-            high[i] = 110.0; low[i] = 99.5
+            high[i] = 110.0
+            low[i] = 99.5
         else:
-            high[i] = 100.5; low[i] = 99.5
+            high[i] = 100.5
+            low[i] = 99.5
 
     # Day 1: overnight breakout at 03:00, retest at 05:00
     day1_start = 96
@@ -165,24 +199,45 @@ def _make_overnight_breakout():
         h = idx[i].hour
         m = idx[i].minute
         if h < 3:
-            close[i] = 105.0; high[i] = 106.0; low[i] = 104.0; opn[i] = 105.0
+            close[i] = 105.0
+            high[i] = 106.0
+            low[i] = 104.0
+            opn[i] = 105.0
         elif h == 3 and m == 0:
             # Breakout above PDH=110 at 03:00 (off-session!)
-            close[i] = 115.0; high[i] = 116.0; low[i] = 108.0; opn[i] = 108.0
+            close[i] = 115.0
+            high[i] = 116.0
+            low[i] = 108.0
+            opn[i] = 108.0
         elif h == 3 and m > 0 or h == 4:
-            close[i] = 112.0; high[i] = 113.0; low[i] = 111.0; opn[i] = 112.0
+            close[i] = 112.0
+            high[i] = 113.0
+            low[i] = 111.0
+            opn[i] = 112.0
         elif h == 5 and m == 0:
             # Retracement to midpoint at 05:00 (still off-session!)
-            close[i] = 100.0; high[i] = 105.0; low[i] = 99.0; opn[i] = 105.0
+            close[i] = 100.0
+            high[i] = 105.0
+            low[i] = 99.0
+            opn[i] = 105.0
         elif h == 5 and m == 15:
-            close[i] = 101.0; high[i] = 102.0; low[i] = 100.0; opn[i] = 100.0
+            close[i] = 101.0
+            high[i] = 102.0
+            low[i] = 100.0
+            opn[i] = 100.0
         else:
             # Strong rally to hit TP
-            close[i] = 125.0; high[i] = 130.0; low[i] = 106.0; opn[i] = 106.0
+            close[i] = 125.0
+            high[i] = 130.0
+            low[i] = 106.0
+            opn[i] = 106.0
 
     # Day 2: flat
     for i in range(day1_start + 96, n):
-        close[i] = 125.0; high[i] = 126.0; low[i] = 124.0; opn[i] = 125.0
+        close[i] = 125.0
+        high[i] = 126.0
+        low[i] = 124.0
+        opn[i] = 125.0
 
     return pd.DataFrame({"O": opn, "H": high, "L": low, "C": close}, index=idx)
 
@@ -190,6 +245,7 @@ def _make_overnight_breakout():
 # ===========================================================================
 # Test Class 1: Config Loading & Structure
 # ===========================================================================
+
 
 class TestConfigLoading:
     """Verify pdhl_retest.json loads correctly."""
@@ -249,13 +305,15 @@ class TestSignalModelHasNoHyperparameters:
 # Test Class 2: Indicator Configuration
 # ===========================================================================
 
+
 class TestPipelineConfig:
     """Verify the pdhl_v1 pipeline is correctly configured."""
 
     def test_resample_tf_is_null_in_pipeline(self, pdhl_config):
         """resample_tf must be None for native-bar breakout detection."""
         pdl_ind = next(
-            i for i in pdhl_config.pipeline["indicators"]
+            i
+            for i in pdhl_config.pipeline["indicators"]
             if i["name"] == "previous_day_levels"
         )
         assert pdl_ind["params"].get("resample_tf") is None, (
@@ -266,7 +324,8 @@ class TestPipelineConfig:
     def test_candle_span_and_range_scope(self, pdhl_config):
         """candle_span and range_scope must be configured correctly."""
         pdl_ind = next(
-            i for i in pdhl_config.pipeline["indicators"]
+            i
+            for i in pdhl_config.pipeline["indicators"]
             if i["name"] == "previous_day_levels"
         )
         assert pdl_ind["params"].get("candle_span") == "hl"
@@ -277,7 +336,8 @@ class TestPipelineConfig:
     def test_break_modes_all_hours(self, pdhl_config):
         """Break detection must use all_hours (not session_only)."""
         pdl_ind = next(
-            i for i in pdhl_config.pipeline["indicators"]
+            i
+            for i in pdhl_config.pipeline["indicators"]
             if i["name"] == "previous_day_levels"
         )
         assert "all_hours" in pdl_ind["params"].get("break_modes", [])
@@ -285,7 +345,8 @@ class TestPipelineConfig:
     def test_retest_modes_all_hours(self, pdhl_config):
         """Retest signals must fire in all_hours (24h trading)."""
         pdl_ind = next(
-            i for i in pdhl_config.pipeline["indicators"]
+            i
+            for i in pdhl_config.pipeline["indicators"]
             if i["name"] == "previous_day_levels"
         )
         assert "all_hours" in pdl_ind["params"].get("retest_modes", [])
@@ -306,6 +367,7 @@ class TestResampleTfDefault:
 # Test Class 3: Breakout Detection (native vs resampled)
 # ===========================================================================
 
+
 class TestNativeBarBreakout:
     """Verify breakout fires on native 15min bars when resample_tf=None."""
 
@@ -315,7 +377,6 @@ class TestNativeBarBreakout:
         ind = _pdl_mod.PreviousDayLevelsIndicator()
         result = ind.compute(
             df.copy(),
-
             skip_weekends=False,
             resample_tf=None,
         )
@@ -336,7 +397,6 @@ class TestNativeBarBreakout:
         # Native-bar result
         result_native = ind.compute(
             df.copy(),
-
             skip_weekends=False,
             resample_tf=None,
         )
@@ -344,7 +404,6 @@ class TestNativeBarBreakout:
         # Resampled result
         result_resampled = ind.compute(
             df.copy(),
-
             skip_weekends=False,
             resample_tf="1h",
         )
@@ -354,8 +413,12 @@ class TestNativeBarBreakout:
         day1_resamp = result_resampled.loc["2024-01-02"]
 
         col = "hl_ses_rl50_pdl_retest_bull"
-        native_signals = day1_native[col].dropna().sum() if col in day1_native.columns else 0
-        resamp_signals = day1_resamp[col].dropna().sum() if col in day1_resamp.columns else 0
+        native_signals = (
+            day1_native[col].dropna().sum() if col in day1_native.columns else 0
+        )
+        resamp_signals = (
+            day1_resamp[col].dropna().sum() if col in day1_resamp.columns else 0
+        )
 
         # Both should detect the signal, but resampled may miss it due to delay
         # The key test: with native bars, the signal should fire
@@ -368,6 +431,7 @@ class TestNativeBarBreakout:
 # Test Class 4: 24h Signal Generation
 # ===========================================================================
 
+
 class TestOvernightSignals:
     """Verify signals fire outside session hours (24h trading)."""
 
@@ -377,7 +441,6 @@ class TestOvernightSignals:
         ind = _pdl_mod.PreviousDayLevelsIndicator()
         result = ind.compute(
             df.copy(),
-
             skip_weekends=False,
             resample_tf=None,
             session_start_hour=8,
@@ -397,9 +460,7 @@ class TestOvernightSignals:
         # If neither fired, that's a problem
         available = [c for c in day1.columns if "retest_bull" in c]
         signals = {c: day1[c].dropna().sum() for c in available}
-        pytest.fail(
-            f"No overnight retest signal fired. Available columns: {signals}"
-        )
+        pytest.fail(f"No overnight retest signal fired. Available columns: {signals}")
 
     def test_signal_model_passes_all_composed_signals(self):
         """SignalModel v3 passes through all composed signals without filtering."""
@@ -407,7 +468,6 @@ class TestOvernightSignals:
         ind = _pdl_mod.PreviousDayLevelsIndicator()
         result = ind.compute(
             df.copy(),
-
             skip_weekends=False,
             resample_tf=None,
             session_start_hour=8,
@@ -417,7 +477,9 @@ class TestOvernightSignals:
             retest_modes=["all_hours"],
         )
 
-        feature_cols = [c for c in result.columns if c.startswith(("hl_ses_", "hl_all_"))]
+        feature_cols = [
+            c for c in result.columns if c.startswith(("hl_ses_", "hl_all_"))
+        ]
         features = result[feature_cols].fillna(0)
 
         # Create composed signal column from indicator column
@@ -428,7 +490,9 @@ class TestOvernightSignals:
             pytest.skip("Signal column not in indicator output")
 
         model = _signal_mod.SignalModel()
-        model.train(features, np.zeros(len(features)), TrainingContext(direction="long"))
+        model.train(
+            features, np.zeros(len(features)), TrainingContext(direction="long")
+        )
         probs = model.predict_probability(features)
 
         win_idx = np.where(model.trained_classes == 1)[0][0]
@@ -445,6 +509,7 @@ class TestOvernightSignals:
 # ===========================================================================
 # Test Class 5: Exit Strategy Dispatch
 # ===========================================================================
+
 
 class TestOrbBasedTrailingDispatch:
     """Verify orb_based exit strategy uses trailing kernel when configured."""
@@ -509,8 +574,12 @@ class TestOrbBasedTrailingDispatch:
             exit_modifier_params={"breakeven_trigger": 0.5, "trail_atr_mult": 1.0},
         )
 
-        targets_tight, _ = strategy.compute_targets(df, ctx_tight, tp_mult=4.0, sl_mult=1.0)
-        targets_wide, _ = strategy.compute_targets(df, ctx_wide, tp_mult=4.0, sl_mult=1.0)
+        targets_tight, _ = strategy.compute_targets(
+            df, ctx_tight, tp_mult=4.0, sl_mult=1.0
+        )
+        targets_wide, _ = strategy.compute_targets(
+            df, ctx_wide, tp_mult=4.0, sl_mult=1.0
+        )
 
         # Both code paths should run without error
         assert targets_tight is not None
@@ -539,13 +608,17 @@ class TestSlDistColumnFlow:
 
         ctx_rl50 = _minimal_ctx(
             exit_params={
-                "atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12,
+                "atr_period": 14,
+                "min_tp_pips": 8,
+                "min_sl_pips": 12,
                 "sl_dist_column": "hl_ses_rl50_pdl_sl_dist",
             },
         )
         ctx_rl38 = _minimal_ctx(
             exit_params={
-                "atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12,
+                "atr_period": 14,
+                "min_tp_pips": 8,
+                "min_sl_pips": 12,
                 "sl_dist_column": "hl_ses_rl38_pdl_sl_dist",
             },
         )
@@ -561,6 +634,7 @@ class TestSlDistColumnFlow:
 # ===========================================================================
 # Test Class 6: Grid Combo Creation
 # ===========================================================================
+
 
 class TestGridComboCreation:
     """Verify grid combo creation merges exit strategy config correctly."""
@@ -613,11 +687,19 @@ class TestGridComboCreation:
 # Test Class 7: Full Pipeline Integration
 # ===========================================================================
 
+
 class TestFullPipelineIntegration:
     """End-to-end: indicator -> SignalModel -> trade simulation."""
 
-    def _run_pipeline(self, df, composed_source_long, composed_source_short,
-                      sl_dist_col, exit_modifier=None, exit_modifier_params=None):
+    def _run_pipeline(
+        self,
+        df,
+        composed_source_long,
+        composed_source_short,
+        sl_dist_col,
+        exit_modifier=None,
+        exit_modifier_params=None,
+    ):
         """Run full indicator -> signal model -> trade simulation pipeline.
 
         composed_source_long/short: indicator column names that become
@@ -628,7 +710,6 @@ class TestFullPipelineIntegration:
         ind = _pdl_mod.PreviousDayLevelsIndicator()
         df_feat = ind.compute(
             df.copy(),
-
             skip_weekends=False,
             resample_tf=None,
             range_scope=["session", "all"],
@@ -641,8 +722,10 @@ class TestFullPipelineIntegration:
         dummy = np.zeros(len(features))
 
         # Create composed signal columns from indicator source columns
-        for direction, source_col in [("long", composed_source_long),
-                                       ("short", composed_source_short)]:
+        for direction, source_col in [
+            ("long", composed_source_long),
+            ("short", composed_source_short),
+        ]:
             if source_col in features.columns:
                 features[f"_composed_signal_{direction}"] = features[source_col]
             else:
@@ -662,7 +745,9 @@ class TestFullPipelineIntegration:
             exit_modifier=exit_modifier,
             exit_modifier_params=exit_modifier_params or {},
             exit_params={
-                "atr_period": 14, "min_tp_pips": 8, "min_sl_pips": 12,
+                "atr_period": 14,
+                "min_tp_pips": 8,
+                "min_sl_pips": 12,
                 "sl_dist_column": sl_dist_col,
             },
         )

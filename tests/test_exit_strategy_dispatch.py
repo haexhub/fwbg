@@ -10,6 +10,7 @@ Stellt sicher, dass:
 Diese Tests hätten den Bug erkannt, bei dem der Optimizer mit ATR-Exits
 alle Folds übersprang, weil select_features die falschen Distanzen berechnete.
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -19,12 +20,18 @@ from fwbg.plugins import import_plugin_module
 
 _fixed = import_plugin_module("fwbg-core", "exit_strategies", "fixed")
 _atr = import_plugin_module("fwbg-premium", "exit_strategies", "atr_based")
-import_plugin_module("fwbg-premium", "exit_strategies", "orb_based")  # registers via decorator
+import_plugin_module(
+    "fwbg-premium", "exit_strategies", "orb_based"
+)  # registers via decorator
 
 if _fixed is None:
-    pytest.skip("fwbg-core exit_strategies plugin not available", allow_module_level=True)
+    pytest.skip(
+        "fwbg-core exit_strategies plugin not available", allow_module_level=True
+    )
 if _atr is None:
-    pytest.skip("fwbg-premium exit_strategies plugin not available", allow_module_level=True)
+    pytest.skip(
+        "fwbg-premium exit_strategies plugin not available", allow_module_level=True
+    )
 
 FixedExitStrategy = _fixed.FixedExitStrategy
 AtrExitStrategy = _atr.AtrExitStrategy
@@ -32,16 +39,20 @@ AtrExitStrategy = _atr.AtrExitStrategy
 
 # --- Fixtures ---
 
+
 def _make_ohlc_df(n=100, base=1.1000, volatility=0.002):
     """OHLC-Daten mit kontrollierter Volatilität."""
     np.random.seed(42)
     closes = base + np.cumsum(np.random.normal(0, 0.0005, n))
-    df = pd.DataFrame({
-        "O": closes - np.random.uniform(0, volatility / 2, n),
-        "H": closes + np.abs(np.random.normal(0, volatility, n)),
-        "L": closes - np.abs(np.random.normal(0, volatility, n)),
-        "C": closes,
-    }, index=pd.date_range("2023-01-01", periods=n, freq="1h"))
+    df = pd.DataFrame(
+        {
+            "O": closes - np.random.uniform(0, volatility / 2, n),
+            "H": closes + np.abs(np.random.normal(0, volatility, n)),
+            "L": closes - np.abs(np.random.normal(0, volatility, n)),
+            "C": closes,
+        },
+        index=pd.date_range("2023-01-01", periods=n, freq="1h"),
+    )
     df["H"] = np.maximum(df["H"], df[["O", "C"]].max(axis=1))
     df["L"] = np.minimum(df["L"], df[["O", "C"]].min(axis=1))
     return df
@@ -49,28 +60,35 @@ def _make_ohlc_df(n=100, base=1.1000, volatility=0.002):
 
 def _make_fixed_ctx(spread=0.0001):
     return SimulationContext(
-        symbol="EURUSD", asset_class="forex",
-        spread=spread, point=0.00001,
-        min_trades=5, max_trade_bars=50,
+        symbol="EURUSD",
+        asset_class="forex",
+        spread=spread,
+        point=0.00001,
+        min_trades=5,
+        max_trade_bars=50,
         exit_strategy="fixed",
     )
 
 
 def _make_atr_ctx(spread=0.0001):
     return SimulationContext(
-        symbol="EURUSD", asset_class="forex",
-        spread=spread, point=0.00001,
-        min_trades=5, max_trade_bars=50,
+        symbol="EURUSD",
+        asset_class="forex",
+        spread=spread,
+        point=0.00001,
+        min_trades=5,
+        max_trade_bars=50,
         exit_strategy="atr_based",
         exit_params={
             "atr_period": 14,
             "min_tp_pips": 10,
             "min_sl_pips": 15,
-        }
+        },
     )
 
 
 # --- resolve_distances Tests ---
+
 
 class TestResolveDistancesFixed:
     """Tests für FixedExitStrategy.resolve_distances."""
@@ -108,6 +126,7 @@ class TestResolveDistancesATR:
     def test_returns_per_bar_arrays(self):
         """ATR-Distanzen müssen pro Bar variieren."""
         import ta
+
         df = _make_ohlc_df(n=100)
         df["_atr"] = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
@@ -119,17 +138,22 @@ class TestResolveDistancesATR:
 
         assert len(tp_dists) == len(df)
         # ATR-basiert: Distanzen müssen variieren (nicht alle gleich)
-        assert not np.all(tp_dists == tp_dists[20]), "ATR-Distanzen dürfen nicht konstant sein"
+        assert not np.all(tp_dists == tp_dists[20]), (
+            "ATR-Distanzen dürfen nicht konstant sein"
+        )
 
     def test_respects_min_distance(self):
         """Bei niedrigem ATR müssen Mindest-Distanzen eingehalten werden."""
         n = 50
-        df = pd.DataFrame({
-            "O": np.full(n, 1.1000),
-            "H": np.full(n, 1.1001),
-            "L": np.full(n, 1.0999),
-            "C": np.full(n, 1.1000),
-        }, index=pd.date_range("2023-01-01", periods=n, freq="1h"))
+        df = pd.DataFrame(
+            {
+                "O": np.full(n, 1.1000),
+                "H": np.full(n, 1.1001),
+                "L": np.full(n, 1.0999),
+                "C": np.full(n, 1.1000),
+            },
+            index=pd.date_range("2023-01-01", periods=n, freq="1h"),
+        )
         df["_atr"] = np.full(n, 0.000001)  # Winziger ATR
 
         ctx = _make_atr_ctx(spread=0.0001)
@@ -145,6 +169,7 @@ class TestResolveDistancesATR:
     def test_uses_vol_atr_column(self):
         """Muss vol_atr verwenden wenn _atr nicht vorhanden."""
         import ta
+
         df = _make_ohlc_df(n=50)
         df["vol_atr"] = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
@@ -184,6 +209,7 @@ class TestFixedVsATRDistances:
         wurden, was zu 0.5-Pip-Distanzen statt ~50-Pip-Distanzen führte.
         """
         import ta
+
         df = _make_ohlc_df(n=100)
         df["_atr"] = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
@@ -213,6 +239,7 @@ class TestFixedVsATRDistances:
 
 # --- Plugin Dispatch Tests ---
 
+
 class TestPluginDispatchConsistency:
     """Stellt sicher, dass compute_targets und _simulate_trades_core
     beide über das Plugin dispatchen — keine hardcodierten Fallbacks."""
@@ -222,6 +249,7 @@ class TestPluginDispatchConsistency:
         from fwbg.optimization.targets import compute_targets
 
         import ta
+
         df = _make_ohlc_df(n=100)
         df["_atr"] = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
@@ -229,7 +257,9 @@ class TestPluginDispatchConsistency:
 
         # Mit ATR-Context
         ctx = _make_atr_ctx(spread=0.0001)
-        targets_l, targets_s, has_l, has_s = compute_targets(df, tp=2.0, sl=1.5, ctx=ctx)
+        targets_l, targets_s, has_l, has_s = compute_targets(
+            df, tp=2.0, sl=1.5, ctx=ctx
+        )
 
         assert len(targets_l) == len(df)
         assert len(targets_s) == len(df)
@@ -248,6 +278,7 @@ class TestPluginDispatchConsistency:
         from fwbg.optimization.targets import compute_targets
 
         import ta
+
         df = _make_ohlc_df(n=200)
         df["_atr"] = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
@@ -261,7 +292,9 @@ class TestPluginDispatchConsistency:
         atr_ctx = _make_atr_ctx(spread=0.0001)
 
         # Fixed: tp=0.5 → spread * 0.5 = 0.00005 (~0.5 Pips) → fast alles Win
-        tgt_fixed_l, tgt_fixed_s, _, _ = compute_targets(df, tp=0.5, sl=0.5, ctx=fixed_ctx)
+        tgt_fixed_l, tgt_fixed_s, _, _ = compute_targets(
+            df, tp=0.5, sl=0.5, ctx=fixed_ctx
+        )
 
         # ATR: tp=0.5 → ATR * 0.5 ≈ 0.001 (~10 Pips) → realistischere Targets
         tgt_atr_l, tgt_atr_s, _, _ = compute_targets(df, tp=0.5, sl=0.5, ctx=atr_ctx)
@@ -289,6 +322,7 @@ class TestPluginDispatchConsistency:
         from fwbg.optimization.targets import _simulate_trades_core
 
         import ta
+
         df = _make_ohlc_df(n=200)
         df["_atr"] = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
@@ -305,9 +339,16 @@ class TestPluginDispatchConsistency:
         fixed_ctx.long_enabled = True
         fixed_ctx.short_enabled = False
         result_fixed = _simulate_trades_core(
-            df, probs_long, None, 1, None,
-            ct_long=0.5, ct_short=0.5,
-            tp=30, sl=20, ctx=fixed_ctx,
+            df,
+            probs_long,
+            None,
+            1,
+            None,
+            ct_long=0.5,
+            ct_short=0.5,
+            tp=30,
+            sl=20,
+            ctx=fixed_ctx,
         )
 
         # Simuliere mit ATR-Context
@@ -315,9 +356,16 @@ class TestPluginDispatchConsistency:
         atr_ctx.long_enabled = True
         atr_ctx.short_enabled = False
         result_atr = _simulate_trades_core(
-            df, probs_long, None, 1, None,
-            ct_long=0.5, ct_short=0.5,
-            tp=2.0, sl=1.5, ctx=atr_ctx,
+            df,
+            probs_long,
+            None,
+            1,
+            None,
+            ct_long=0.5,
+            ct_short=0.5,
+            tp=2.0,
+            sl=1.5,
+            ctx=atr_ctx,
         )
 
         # Beide sollten Trades produzieren
@@ -354,6 +402,7 @@ class TestFeatureSelectionWithATR:
         from fwbg.optimization.targets import compute_targets_cached
 
         import ta
+
         df = _make_ohlc_df(n=500)
         df["_atr"] = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
@@ -362,7 +411,10 @@ class TestFeatureSelectionWithATR:
         ctx = _make_atr_ctx(spread=0.0001)
 
         result = compute_targets_cached(
-            df, tp=0.5, sl=0.8, ctx=ctx,
+            df,
+            tp=0.5,
+            sl=0.8,
+            ctx=ctx,
             exit_strategy_mode="atr_based",
         )
         targets_l, targets_s = result[0], result[1]
@@ -384,6 +436,7 @@ class TestFeatureSelectionWithATR:
         from fwbg.optimization.targets import compute_targets_cached
 
         import ta
+
         df = _make_ohlc_df(n=500)
         df["_atr"] = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
@@ -392,7 +445,10 @@ class TestFeatureSelectionWithATR:
         ctx = _make_atr_ctx(spread=0.0001)
 
         result = compute_targets_cached(
-            df, tp=0.3, sl=0.5, ctx=ctx,
+            df,
+            tp=0.3,
+            sl=0.5,
+            ctx=ctx,
             exit_strategy_mode="atr_based",
         )
         targets_l, targets_s = result[0], result[1]
@@ -423,10 +479,15 @@ class TestSimulateProTradeDistances:
 
         # Direkte Distanz: 5 Pips TP, 10 Pips SL
         trade = simulate_pro_trade(
-            closes, highs, lows,
-            idx=0, direction=1,
-            tp_distance=0.0005, sl_distance=0.001,
-            spread=0.0001, opens=closes,
+            closes,
+            highs,
+            lows,
+            idx=0,
+            direction=1,
+            tp_distance=0.0005,
+            sl_distance=0.001,
+            spread=0.0001,
+            opens=closes,
         )
 
         assert trade is not None
@@ -450,6 +511,7 @@ class TestSimulateProTradeDistances:
 
 
 # --- Numba Compilation Smoke Tests ---
+
 
 class TestNumbaCompilation:
     """Stellt sicher, dass alle @njit-Funktionen der Exit-Strategien kompilierbar sind.
@@ -475,11 +537,18 @@ class TestNumbaCompilation:
 
         opens, closes, highs, lows = self._make_numba_arrays()
         result, exit_idx, exit_price, exit_reason = _simulate_trade_numba(
-            opens, closes, highs, lows,
-            idx=10, direction=1,
-            tp_distance=1.0, sl_distance=0.5,
-            spread=0.05, slippage=0.025,
-            max_bars=100, timeout_bars=0,
+            opens,
+            closes,
+            highs,
+            lows,
+            idx=10,
+            direction=1,
+            tp_distance=1.0,
+            sl_distance=0.5,
+            spread=0.05,
+            slippage=0.025,
+            max_bars=100,
+            timeout_bars=0,
         )
         assert result in (1.0, -1.0, 0.0)
 
@@ -488,17 +557,26 @@ class TestNumbaCompilation:
         opens, closes, highs, lows = self._make_numba_arrays()
 
         import ta
+
         atr_series = ta.volatility.average_true_range(
             pd.Series(highs), pd.Series(lows), pd.Series(closes), window=14
         )
         atr_values = np.nan_to_num(atr_series.values.astype(np.float64), nan=0.0)
 
         targets_l, targets_s, dur_l, dur_s = _atr._compute_targets_atr_numba(
-            opens, closes, highs, lows, atr_values,
-            tp_mult=2.0, sl_mult=1.5,
-            spread=0.05, slippage=0.025,
-            min_tp_distance=0.5, min_sl_distance=0.75,
-            max_bars=200, timeout_bars=0,
+            opens,
+            closes,
+            highs,
+            lows,
+            atr_values,
+            tp_mult=2.0,
+            sl_mult=1.5,
+            spread=0.05,
+            slippage=0.025,
+            min_tp_distance=0.5,
+            min_sl_distance=0.75,
+            max_bars=200,
+            timeout_bars=0,
         )
         assert len(targets_l) == len(closes)
         assert targets_l.sum() + targets_s.sum() > 0
@@ -510,25 +588,43 @@ class TestNumbaCompilation:
         opens, closes, highs, lows = self._make_numba_arrays()
 
         import ta
+
         atr_series = ta.volatility.average_true_range(
             pd.Series(highs), pd.Series(lows), pd.Series(closes), window=14
         )
         atr_values = np.nan_to_num(atr_series.values.astype(np.float64), nan=0.0)
-        atr_ma = pd.Series(atr_values).rolling(50, min_periods=1).mean().values.astype(np.float64)
+        atr_ma = (
+            pd.Series(atr_values)
+            .rolling(50, min_periods=1)
+            .mean()
+            .values.astype(np.float64)
+        )
 
-        targets_l, targets_s, dur_l, dur_s = _atr._compute_targets_atr_adaptive_timeout_numba(
-            opens, closes, highs, lows,
-            atr_values, atr_ma,
-            tp_mult=2.0, sl_mult=1.5,
-            spread=0.05, slippage=0.025,
-            min_tp_distance=0.5, min_sl_distance=0.75,
-            max_bars=200,
-            base_timeout=48, min_timeout=12, max_timeout=96,
+        targets_l, targets_s, dur_l, dur_s = (
+            _atr._compute_targets_atr_adaptive_timeout_numba(
+                opens,
+                closes,
+                highs,
+                lows,
+                atr_values,
+                atr_ma,
+                tp_mult=2.0,
+                sl_mult=1.5,
+                spread=0.05,
+                slippage=0.025,
+                min_tp_distance=0.5,
+                min_sl_distance=0.75,
+                max_bars=200,
+                base_timeout=48,
+                min_timeout=12,
+                max_timeout=96,
+            )
         )
         assert len(targets_l) == len(closes)
 
 
 # --- Strategy JSON End-to-End Tests ---
+
 
 class TestStrategyJsonEndToEnd:
     """Für jede Strategy-JSON-Datei: exit_strategy + compute_targets funktioniert.
@@ -542,6 +638,7 @@ class TestStrategyJsonEndToEnd:
     @staticmethod
     def _get_strategy_files():
         import glob
+
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return glob.glob(os.path.join(root, "strategies", "configs", "*.json"))
 
@@ -561,17 +658,21 @@ class TestStrategyJsonEndToEnd:
         n = 300
         np.random.seed(42)
         prices = 100.0 + np.cumsum(np.random.randn(n) * 0.5)
-        df = pd.DataFrame({
-            "O": prices + np.random.randn(n) * 0.1,
-            "H": prices + np.abs(np.random.randn(n) * 0.3),
-            "L": prices - np.abs(np.random.randn(n) * 0.3),
-            "C": prices + np.random.randn(n) * 0.05,
-        }, index=pd.date_range("2024-01-01", periods=n, freq="h"))
+        df = pd.DataFrame(
+            {
+                "O": prices + np.random.randn(n) * 0.1,
+                "H": prices + np.abs(np.random.randn(n) * 0.3),
+                "L": prices - np.abs(np.random.randn(n) * 0.3),
+                "C": prices + np.random.randn(n) * 0.05,
+            },
+            index=pd.date_range("2024-01-01", periods=n, freq="h"),
+        )
         df["H"] = np.maximum(df["H"], df[["O", "C"]].max(axis=1))
         df["L"] = np.minimum(df["L"], df[["O", "C"]].min(axis=1))
 
         # ATR-Spalte vorberechnen (für ATR-Strategies)
         import ta
+
         df["_atr"] = ta.volatility.average_true_range(
             df["H"], df["L"], df["C"], window=14
         )
@@ -580,6 +681,7 @@ class TestStrategyJsonEndToEnd:
 
         for path in strategy_files:
             from fwbg.core.config import StrategyConfig
+
             strategy = StrategyConfig.from_json_file(path)
             strategy_name = os.path.basename(path)
 
@@ -608,7 +710,9 @@ class TestStrategyJsonEndToEnd:
                     )
 
                     result = exit_strategy_inst.compute_targets(
-                        df, ctx, params=grid_params,
+                        df,
+                        ctx,
+                        params=grid_params,
                     )
                     targets_l, targets_s = result[0], result[1]
 
@@ -616,11 +720,12 @@ class TestStrategyJsonEndToEnd:
                         f"{strategy_name}: targets_long hat falsche Länge"
                     )
                 except Exception as e:
-                    failures.append(f"{strategy_name}/{exit_strategy_name} (tp={tp}, sl={sl}): {e}")
+                    failures.append(
+                        f"{strategy_name}/{exit_strategy_name} (tp={tp}, sl={sl}): {e}"
+                    )
 
-        assert not failures, (
-            f"Exit-Strategy-Fehler in Strategy-JSONs:\n" +
-            "\n".join(f"  - {f}" for f in failures)
+        assert not failures, f"Exit-Strategy-Fehler in Strategy-JSONs:\n" + "\n".join(
+            f"  - {f}" for f in failures
         )
 
 

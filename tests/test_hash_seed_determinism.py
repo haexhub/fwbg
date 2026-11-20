@@ -115,7 +115,9 @@ def _run_with_hash_seed(script: str, seed: str, params: dict, out_path) -> objec
 
 def test_opening_range_column_order_is_independent_of_the_hash_seed(tmp_path):
     orders = {
-        seed: _run_with_hash_seed(OPENING_RANGE_COLUMNS, seed, ORB_PARAMS, tmp_path / seed)
+        seed: _run_with_hash_seed(
+            OPENING_RANGE_COLUMNS, seed, ORB_PARAMS, tmp_path / seed
+        )
         for seed in SEEDS
     }
     assert orders["5"] == orders["0"]
@@ -127,10 +129,13 @@ def test_opening_range_column_order_is_independent_of_the_hash_seed(tmp_path):
 
 
 def test_orb_backtest_is_independent_of_the_hash_seed(tmp_path):
-    pytest.importorskip("fwbg_premium", reason="orb_based exit strategy is a premium plugin")
+    pytest.importorskip(
+        "fwbg_premium", reason="orb_based exit strategy is a premium plugin"
+    )
     params = {**ORB_PARAMS, "sessions": [0]}
     results = {
-        seed: _run_with_hash_seed(ORB_BACKTEST, seed, params, tmp_path / seed) for seed in SEEDS
+        seed: _run_with_hash_seed(ORB_BACKTEST, seed, params, tmp_path / seed)
+        for seed in SEEDS
     }
     assert results["0"][1] > 0
     assert results["5"] == results["0"]

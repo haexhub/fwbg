@@ -10,6 +10,7 @@ Covers:
 6. MacroDataLoader plugin computation
 7. StrategyConfig.get_data_loading()
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -20,11 +21,13 @@ from pathlib import Path
 # Step 1: LoadResult + load() on DataSourceConfig
 # ============================================================================
 
+
 class TestLoadResult:
     """LoadResult dataclass holds data + metadata from source loading."""
 
     def test_default_values(self):
         from fwbg.core.data_sources import LoadResult
+
         result = LoadResult()
         assert result.data == {}
         assert result.metadata == {}
@@ -32,6 +35,7 @@ class TestLoadResult:
 
     def test_with_data(self):
         from fwbg.core.data_sources import LoadResult
+
         df = pd.DataFrame({"Close": [100.0, 101.0]})
         result = LoadResult(data={"vix": df}, source_name="forexsb")
         assert "vix" in result.data
@@ -39,6 +43,7 @@ class TestLoadResult:
 
     def test_with_metadata(self):
         from fwbg.core.data_sources import LoadResult
+
         result = LoadResult(metadata={"api_calls": 3})
         assert result.metadata["api_calls"] == 3
 
@@ -51,10 +56,12 @@ class TestCSVSourceLoad:
 
         # Create test CSV
         csv_path = tmp_path / "VIX_DAY.csv"
-        df = pd.DataFrame({
-            "Date": pd.date_range("2024-01-01", periods=5, freq="D"),
-            "Close": [20.0, 21.0, 19.5, 22.0, 20.5],
-        })
+        df = pd.DataFrame(
+            {
+                "Date": pd.date_range("2024-01-01", periods=5, freq="D"),
+                "Close": [20.0, 21.0, 19.5, 22.0, 20.5],
+            }
+        )
         df.to_csv(csv_path, index=False)
 
         source = CSVSourceConfig(name="test", path=tmp_path)
@@ -77,10 +84,12 @@ class TestCSVSourceLoad:
         from fwbg.core.data_sources import CSVSourceConfig
 
         csv_path = tmp_path / "TNX_DAY.csv"
-        df = pd.DataFrame({
-            "Date": ["2024-01-01", "2024-01-02"],
-            "Close": [4.0, 4.1],
-        })
+        df = pd.DataFrame(
+            {
+                "Date": ["2024-01-01", "2024-01-02"],
+                "Close": [4.0, 4.1],
+            }
+        )
         df.to_csv(csv_path, index=False)
 
         source = CSVSourceConfig(name="test", path=tmp_path)
@@ -93,9 +102,12 @@ class TestCSVSourceLoad:
 
         for name, vals in [("VIX_DAY", [20.0]), ("TNX_DAY", [4.0])]:
             csv_path = tmp_path / f"{name}.csv"
-            pd.DataFrame({
-                "Date": ["2024-01-01"], "Close": vals,
-            }).to_csv(csv_path, index=False)
+            pd.DataFrame(
+                {
+                    "Date": ["2024-01-01"],
+                    "Close": vals,
+                }
+            ).to_csv(csv_path, index=False)
 
         source = CSVSourceConfig(name="test", path=tmp_path)
         result = source.load({"VIX_DAY": "vix", "TNX_DAY": "tnx"})
@@ -130,6 +142,7 @@ class TestWebSocketSourceLoad:
 # Step 2: DBSourceConfig
 # ============================================================================
 
+
 class TestDBSourceConfig:
     """DBSourceConfig for database data sources."""
 
@@ -151,6 +164,7 @@ class TestDBSourceConfig:
 
     def test_db_source_in_data_source_union(self):
         from fwbg.core.data_sources import DBSourceConfig, DataSource
+
         assert DBSourceConfig in DataSource.__args__
 
 
@@ -158,16 +172,19 @@ class TestDBSourceConfig:
 # Step 3: BaseDataLoader
 # ============================================================================
 
+
 class TestBaseDataLoader:
     """BaseDataLoader is the base class for data loading plugins."""
 
     def test_phase_is_data_loading(self):
         from fwbg_sdk import BaseDataLoader
         from fwbg_sdk import PluginPhase
+
         assert BaseDataLoader.phase == PluginPhase.DATA_LOADING
 
     def test_is_abstract(self):
         from fwbg_sdk import BaseDataLoader
+
         with pytest.raises(TypeError):
             BaseDataLoader()
 
@@ -191,6 +208,7 @@ class TestBaseDataLoader:
 
     def test_exported_from_plugins(self):
         from fwbg.plugins import BaseDataLoader
+
         assert BaseDataLoader is not None
 
 
@@ -198,11 +216,16 @@ class TestBaseDataLoader:
 # Step 4: DataLoader Registry
 # ============================================================================
 
+
 class TestDataLoaderRegistry:
     """DataLoader registry for registering and retrieving data loaders."""
 
     def test_register_and_get(self):
-        from fwbg.core.registry import register_data_loader, get_data_loader, DATA_LOADER_REGISTRY
+        from fwbg.core.registry import (
+            register_data_loader,
+            get_data_loader,
+            DATA_LOADER_REGISTRY,
+        )
         from fwbg_sdk import BaseDataLoader
         from fwbg_sdk import PipelineContext
 
@@ -210,6 +233,7 @@ class TestDataLoaderRegistry:
         class TestDL(BaseDataLoader):
             name = "test_dl_reg"
             version = "1.0.0"
+
             def execute(self, ctx, **params):
                 return ctx
 
@@ -221,6 +245,7 @@ class TestDataLoaderRegistry:
 
     def test_get_unknown_raises(self):
         from fwbg.core.registry import get_data_loader
+
         with pytest.raises(ValueError, match="Unknown data loader"):
             get_data_loader("nonexistent_loader")
 
@@ -233,6 +258,7 @@ class TestDataLoaderRegistry:
 
     def test_exported_from_core(self):
         from fwbg.core import register_data_loader, get_data_loader, list_data_loaders
+
         assert callable(register_data_loader)
         assert callable(get_data_loader)
         assert callable(list_data_loaders)
@@ -240,10 +266,12 @@ class TestDataLoaderRegistry:
     def test_pipeline_registry_discovers_data_loading(self):
         """Pipeline registry scans 'data_loading' category."""
         from fwbg.pipeline.registry import PluginRegistry
+
         registry = PluginRegistry()
         # Just verify the category is in the scan list
         # by checking the source — actual discovery needs plugin files
         import inspect
+
         source = inspect.getsource(registry.discover_package)
         assert "data_loading" in source
 
@@ -251,6 +279,7 @@ class TestDataLoaderRegistry:
 # ============================================================================
 # Step 5: Orchestrator run_data_loading()
 # ============================================================================
+
 
 class TestRunDataLoading:
     """run_data_loading() orchestrates DataSource I/O + Plugin computation."""
@@ -271,10 +300,12 @@ class TestRunDataLoading:
 
         # Create test CSV
         csv_path = tmp_path / "VIX_DAY.csv"
-        pd.DataFrame({
-            "Date": ["2024-01-01", "2024-01-02"],
-            "Close": [20.0, 21.0],
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "Date": ["2024-01-01", "2024-01-02"],
+                "Close": [20.0, 21.0],
+            }
+        ).to_csv(csv_path, index=False)
 
         register_csv_source(name="_test_orch", path=tmp_path)
 
@@ -284,10 +315,12 @@ class TestRunDataLoading:
                 index=pd.date_range("2024-01-01", periods=4, freq="6h"),
             )
 
-            configs = [{
-                "source": "_test_orch",
-                "params": {"indicators": {"VIX_DAY": "vix"}},
-            }]
+            configs = [
+                {
+                    "source": "_test_orch",
+                    "params": {"indicators": {"VIX_DAY": "vix"}},
+                }
+            ]
 
             result = run_data_loading(df, configs)
             assert "macro_vix" in result.columns
@@ -305,10 +338,12 @@ class TestRunDataLoading:
 
         # Daily macro data: Jan 1 = 100, Jan 2 = 200, Jan 3 = 300
         csv_path = tmp_path / "TEST_DAY.csv"
-        pd.DataFrame({
-            "Date": ["2024-01-01", "2024-01-02", "2024-01-03"],
-            "Close": [100.0, 200.0, 300.0],
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "Date": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                "Close": [100.0, 200.0, 300.0],
+            }
+        ).to_csv(csv_path, index=False)
 
         register_csv_source(name="_test_bias", path=tmp_path)
 
@@ -319,10 +354,12 @@ class TestRunDataLoading:
                 index=pd.date_range("2024-01-01", periods=72, freq="h"),
             )
 
-            configs = [{
-                "source": "_test_bias",
-                "params": {"indicators": {"TEST_DAY": "test"}},
-            }]
+            configs = [
+                {
+                    "source": "_test_bias",
+                    "params": {"indicators": {"TEST_DAY": "test"}},
+                }
+            ]
 
             result = run_data_loading(df, configs)
 
@@ -349,39 +386,63 @@ class TestRunDataLoading:
         from fwbg.data.loader import run_data_loading
         from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
 
-        pd.DataFrame({
-            "Date": ["2024-01-04", "2024-01-05", "2024-01-08", "2024-01-09"],  # Thu, Fri, Mon, Tue
-            "Close": [4.0, 5.0, 8.0, 9.0],
-        }).to_csv(tmp_path / "TEST_DAY.csv", index=False)
+        pd.DataFrame(
+            {
+                "Date": [
+                    "2024-01-04",
+                    "2024-01-05",
+                    "2024-01-08",
+                    "2024-01-09",
+                ],  # Thu, Fri, Mon, Tue
+                "Close": [4.0, 5.0, 8.0, 9.0],
+            }
+        ).to_csv(tmp_path / "TEST_DAY.csv", index=False)
         register_csv_source(name="_test_monday", path=tmp_path)
 
         try:
             daily = pd.DataFrame(
                 {"O": np.ones(4), "C": np.ones(4)},
-                index=pd.DatetimeIndex(["2024-01-04", "2024-01-05", "2024-01-08", "2024-01-09"]),
+                index=pd.DatetimeIndex(
+                    ["2024-01-04", "2024-01-05", "2024-01-08", "2024-01-09"]
+                ),
             )
-            configs = [{"source": "_test_monday", "params": {"indicators": {"TEST_DAY": "test"}}}]
+            configs = [
+                {
+                    "source": "_test_monday",
+                    "params": {"indicators": {"TEST_DAY": "test"}},
+                }
+            ]
             result = run_data_loading(daily, configs)
             assert np.isnan(result["macro_test"].iloc[0])  # nothing before Thursday
             assert result["macro_test"].tolist()[1:] == [4.0, 5.0, 8.0]
 
             hourly = pd.DataFrame(
                 {"O": np.ones(3), "C": np.ones(3)},
-                index=pd.DatetimeIndex(["2024-01-08 00:00", "2024-01-08 15:00", "2024-01-09 09:00"]),
+                index=pd.DatetimeIndex(
+                    ["2024-01-08 00:00", "2024-01-08 15:00", "2024-01-09 09:00"]
+                ),
             )
-            assert run_data_loading(hourly, configs)["macro_test"].tolist() == [5.0, 5.0, 8.0]
+            assert run_data_loading(hourly, configs)["macro_test"].tolist() == [
+                5.0,
+                5.0,
+                8.0,
+            ]
         finally:
             del _DATA_SOURCES["_test_monday"]
 
-    def test_asof_lookup_ignores_missing_dates_and_keeps_last_non_null_close(self, tmp_path):
+    def test_asof_lookup_ignores_missing_dates_and_keeps_last_non_null_close(
+        self, tmp_path
+    ):
         """Bad rows must not break as-of sorting or hide a date's last valid close."""
         from fwbg.data.loader import run_data_loading
         from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
 
-        pd.DataFrame({
-            "Date": ["2024-01-05", "2024-01-05", "", "2024-01-08"],
-            "Close": [5.0, np.nan, 999.0, 8.0],
-        }).to_csv(tmp_path / "TEST_DAY.csv", index=False)
+        pd.DataFrame(
+            {
+                "Date": ["2024-01-05", "2024-01-05", "", "2024-01-08"],
+                "Close": [5.0, np.nan, 999.0, 8.0],
+            }
+        ).to_csv(tmp_path / "TEST_DAY.csv", index=False)
         register_csv_source(name="_test_bad_rows", path=tmp_path)
 
         try:
@@ -389,7 +450,12 @@ class TestRunDataLoading:
                 {"O": np.ones(2), "C": np.ones(2)},
                 index=pd.DatetimeIndex(["2024-01-08", "2024-01-09"]),
             )
-            configs = [{"source": "_test_bad_rows", "params": {"indicators": {"TEST_DAY": "test"}}}]
+            configs = [
+                {
+                    "source": "_test_bad_rows",
+                    "params": {"indicators": {"TEST_DAY": "test"}},
+                }
+            ]
             assert run_data_loading(bars, configs)["macro_test"].tolist() == [5.0, 8.0]
         finally:
             del _DATA_SOURCES["_test_bad_rows"]
@@ -400,10 +466,12 @@ class TestRunDataLoading:
         from fwbg.data.loader import run_data_loading
         from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
 
-        pd.DataFrame({
-            "Date": [f"2024-01-0{d}{stamp}" for d in (1, 2, 3)],
-            "Close": [100.0, 200.0, 300.0],
-        }).to_csv(tmp_path / "TEST_DAY.csv", index=False)
+        pd.DataFrame(
+            {
+                "Date": [f"2024-01-0{d}{stamp}" for d in (1, 2, 3)],
+                "Close": [100.0, 200.0, 300.0],
+            }
+        ).to_csv(tmp_path / "TEST_DAY.csv", index=False)
         register_csv_source(name="_test_stamp", path=tmp_path)
 
         try:
@@ -411,10 +479,12 @@ class TestRunDataLoading:
                 {"O": np.ones(72), "C": np.ones(72)},
                 index=pd.date_range("2024-01-01", periods=72, freq="h"),
             )
-            configs = [{
-                "source": "_test_stamp",
-                "params": {"indicators": {"TEST_DAY": "test"}},
-            }]
+            configs = [
+                {
+                    "source": "_test_stamp",
+                    "params": {"indicators": {"TEST_DAY": "test"}},
+                }
+            ]
 
             result = run_data_loading(df, configs)
 
@@ -435,14 +505,16 @@ class TestRunDataLoading:
         from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
 
         csv_path = tmp_path / "COT_DEMO_DAY.csv"
-        pd.DataFrame({
-            "Datetime": ["2024-01-02", "2024-01-09"],  # report dates (Tue)
-            "Close": [100.0, 200.0],                   # net position
-            "release_date": [
-                "2024-01-05 21:00:00",                  # Fri after Jan-02 report
-                "2024-01-12 21:00:00",                  # Fri after Jan-09 report
-            ],
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "Datetime": ["2024-01-02", "2024-01-09"],  # report dates (Tue)
+                "Close": [100.0, 200.0],  # net position
+                "release_date": [
+                    "2024-01-05 21:00:00",  # Fri after Jan-02 report
+                    "2024-01-12 21:00:00",  # Fri after Jan-09 report
+                ],
+            }
+        ).to_csv(csv_path, index=False)
 
         register_csv_source(name="_test_release", path=tmp_path)
 
@@ -452,10 +524,12 @@ class TestRunDataLoading:
                 {"O": 1.0, "C": 1.0},
                 index=pd.date_range("2024-01-02", periods=24 * 7, freq="h"),
             )
-            configs = [{
-                "source": "_test_release",
-                "params": {"indicators": {"COT_DEMO_DAY": "cot_demo"}},
-            }]
+            configs = [
+                {
+                    "source": "_test_release",
+                    "params": {"indicators": {"COT_DEMO_DAY": "cot_demo"}},
+                }
+            ]
             result = run_data_loading(df, configs)
 
             # Tue 2024-01-02: report exists but not yet released → NaN.
@@ -478,17 +552,21 @@ class TestRunDataLoading:
         from the observation date."""
         from fwbg.data.loader import run_data_loading
         from fwbg.core.data_sources import register_csv_source, _DATA_SOURCES
+
         # scripts/ is not on the import path.
         import sys
+
         sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
         from fetch_macro_data import compute_oecd_release_date
 
         obs = pd.to_datetime(["2024-01-01", "2024-02-01"])
-        pd.DataFrame({
-            "Datetime": obs,
-            "Close": [2.0, 2.5],
-            "release_date": [compute_oecd_release_date(d) for d in obs],
-        }).to_csv(tmp_path / "DE10Y_DAY.csv", index=False)
+        pd.DataFrame(
+            {
+                "Datetime": obs,
+                "Close": [2.0, 2.5],
+                "release_date": [compute_oecd_release_date(d) for d in obs],
+            }
+        ).to_csv(tmp_path / "DE10Y_DAY.csv", index=False)
         register_csv_source(name="_test_oecd", path=tmp_path)
 
         try:
@@ -496,10 +574,12 @@ class TestRunDataLoading:
                 {"O": 1.0, "C": 1.0},
                 index=pd.date_range("2024-01-01", "2024-05-31", freq="D"),
             )
-            configs = [{
-                "source": "_test_oecd",
-                "params": {"indicators": {"DE10Y_DAY": "de10y"}},
-            }]
+            configs = [
+                {
+                    "source": "_test_oecd",
+                    "params": {"indicators": {"DE10Y_DAY": "de10y"}},
+                }
+            ]
             result = run_data_loading(df, configs)["macro_de10y"]
 
             # Mid reference month and the weeks after: nothing published yet.
@@ -523,6 +603,7 @@ class TestRunDataLoading:
 # Step 6: MacroDataLoader Plugin
 # ============================================================================
 
+
 class TestMacroDataLoader:
     """MacroDataLoader computes lookbacks, derived features, and rate diffs."""
 
@@ -531,33 +612,39 @@ class TestMacroDataLoader:
         """DataFrame with macro base columns (as loaded by orchestrator)."""
         n = 100
         index = pd.date_range("2024-01-01", periods=n, freq="h")
-        return pd.DataFrame({
-            "O": np.full(n, 1.0),
-            "H": np.full(n, 1.01),
-            "L": np.full(n, 0.99),
-            "C": np.full(n, 1.0),
-            "macro_vix": np.linspace(15, 25, n),
-            "macro_vvix": np.linspace(90, 110, n),
-            "macro_tnx": np.linspace(3.5, 4.5, n),
-            "macro_irx": np.full(n, 1.5),
-            "macro_fvx": np.full(n, 3.0),
-            "macro_spx": np.linspace(4900, 5100, n),
-            "macro_tlt": np.full(n, 100.0),
-            "macro_hyg": np.full(n, 80.0),
-            "macro_lqd": np.full(n, 110.0),
-            "macro_russell": np.full(n, 2000.0),
-            "macro_xlk": np.full(n, 200.0),
-            "macro_xlu": np.full(n, 70.0),
-        }, index=index)
+        return pd.DataFrame(
+            {
+                "O": np.full(n, 1.0),
+                "H": np.full(n, 1.01),
+                "L": np.full(n, 0.99),
+                "C": np.full(n, 1.0),
+                "macro_vix": np.linspace(15, 25, n),
+                "macro_vvix": np.linspace(90, 110, n),
+                "macro_tnx": np.linspace(3.5, 4.5, n),
+                "macro_irx": np.full(n, 1.5),
+                "macro_fvx": np.full(n, 3.0),
+                "macro_spx": np.linspace(4900, 5100, n),
+                "macro_tlt": np.full(n, 100.0),
+                "macro_hyg": np.full(n, 80.0),
+                "macro_lqd": np.full(n, 110.0),
+                "macro_russell": np.full(n, 2000.0),
+                "macro_xlk": np.full(n, 200.0),
+                "macro_xlu": np.full(n, 70.0),
+            },
+            index=index,
+        )
 
     def test_plugin_registered(self):
         from fwbg.plugins import import_plugin_module
+
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import DATA_LOADER_REGISTRY
+
         assert "macro_data" in DATA_LOADER_REGISTRY
 
     def test_hourly_lookbacks(self, macro_df):
         from fwbg.plugins import import_plugin_module
+
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
         from fwbg_sdk import PipelineContext
@@ -571,6 +658,7 @@ class TestMacroDataLoader:
 
     def test_daily_lookbacks(self, macro_df):
         from fwbg.plugins import import_plugin_module
+
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
         from fwbg_sdk import PipelineContext
@@ -583,6 +671,7 @@ class TestMacroDataLoader:
 
     def test_derived_features(self, macro_df):
         from fwbg.plugins import import_plugin_module
+
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
         from fwbg_sdk import PipelineContext
@@ -602,6 +691,7 @@ class TestMacroDataLoader:
 
     def test_empty_df_no_error(self):
         from fwbg.plugins import import_plugin_module
+
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
         from fwbg_sdk import PipelineContext
@@ -614,6 +704,7 @@ class TestMacroDataLoader:
 
     def test_default_params(self):
         from fwbg.plugins import import_plugin_module
+
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
 
@@ -626,6 +717,7 @@ class TestMacroDataLoader:
 
     def test_custom_lookbacks(self, macro_df):
         from fwbg.plugins import import_plugin_module
+
         import_plugin_module("fwbg-premium", "data_loading", "macro_data")
         from fwbg.core.registry import get_data_loader
         from fwbg_sdk import PipelineContext
@@ -644,16 +736,20 @@ class TestStrategyConfigDataLoading:
 
     def test_get_data_loading_empty_default(self):
         from fwbg.core.config import StrategyConfig
+
         config = StrategyConfig()
         assert config.get_data_loading() == []
 
     def test_get_data_loading_from_pipeline(self):
         from fwbg.core.config import StrategyConfig
-        config = StrategyConfig(pipeline={
-            "data_loading": [
-                {"name": "macro_data", "source": "forexsb", "params": {}}
-            ]
-        })
+
+        config = StrategyConfig(
+            pipeline={
+                "data_loading": [
+                    {"name": "macro_data", "source": "forexsb", "params": {}}
+                ]
+            }
+        )
         result = config.get_data_loading()
         assert len(result) == 1
         assert result[0]["name"] == "macro_data"
@@ -667,9 +763,11 @@ class TestStrategyConfigDataLoading:
             "name": "Test Strategy",
             "pipeline": {
                 "data_loading": [
-                    {"name": "macro_data", "source": "forexsb", "params": {
-                        "indicators": {"VIX_DAY": "vix"}
-                    }}
+                    {
+                        "name": "macro_data",
+                        "source": "forexsb",
+                        "params": {"indicators": {"VIX_DAY": "vix"}},
+                    }
                 ],
                 "indicators": [],
             },

@@ -1,4 +1,5 @@
 """Tests for entry_point-based plugin discovery (fwbg-premium separation)."""
+
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -23,20 +24,28 @@ def _create_plugin_package(base_dir: Path, pkg_name: str, plugin_name: str) -> P
     pkg_dir.mkdir(parents=True)
 
     # Package manifest
-    (pkg_dir / "manifest.json").write_text(json.dumps({
-        "name": pkg_name,
-        "version": "1.0.0",
-        "license": "Commercial",
-    }))
+    (pkg_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "name": pkg_name,
+                "version": "1.0.0",
+                "license": "Commercial",
+            }
+        )
+    )
 
     # Indicators category
     ind_dir = pkg_dir / "indicators" / plugin_name
     ind_dir.mkdir(parents=True)
 
-    (ind_dir / "manifest.json").write_text(json.dumps({
-        "name": plugin_name,
-        "version": "1.0.0",
-    }))
+    (ind_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "name": plugin_name,
+                "version": "1.0.0",
+            }
+        )
+    )
 
     (ind_dir / "__init__.py").write_text(f'''
 from fwbg_sdk import BasePlugin, PluginPhase, PipelineContext

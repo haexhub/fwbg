@@ -1,4 +1,5 @@
 """Feature utilities for the pipeline system."""
+
 from typing import List, Optional
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ def normalize_plugin_name(name: str) -> str:
     if ":" in name:
         return name
     from fwbg.pipeline.registry import get_registry
+
     registry = get_registry()
     registry.auto_discover()
     return registry.resolve_name(name)
@@ -63,6 +65,7 @@ def split_indicators_by_stationarity(
 # Feature Utility Functions
 # =============================================================================
 
+
 def get_feature_columns(df: pd.DataFrame) -> List[str]:
     """
     Get all feature columns (excluding internal columns).
@@ -78,14 +81,11 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
 
 
 # Regime bitmask constants (like Linux file permissions)
-REGIME_LONG = 4   # Bit 2: Long allowed
+REGIME_LONG = 4  # Bit 2: Long allowed
 REGIME_SHORT = 2  # Bit 1: Short allowed
 
 
-def compute_regime_bitmask(
-    df: pd.DataFrame,
-    regime_params=None
-) -> np.ndarray:
+def compute_regime_bitmask(df: pd.DataFrame, regime_params=None) -> np.ndarray:
     """
     Compute regime bitmask from conditions.
 
@@ -115,15 +115,21 @@ def compute_regime_bitmask(
             continue
 
         col = df[cond.column].values
-        ops = {">=": np.greater_equal, "<=": np.less_equal,
-               ">": np.greater, "<": np.less}
+        ops = {
+            ">=": np.greater_equal,
+            "<=": np.less_equal,
+            ">": np.greater,
+            "<": np.less,
+        }
         op_fn = ops.get(cond.operator)
         if op_fn is None:
             continue
 
         mask = op_fn(col, cond.value)
         # Where condition is True → directions, False → else_directions
-        cond_bitmask = np.where(mask, cond.directions, cond.else_directions).astype(np.int8)
+        cond_bitmask = np.where(mask, cond.directions, cond.else_directions).astype(
+            np.int8
+        )
         result = result & cond_bitmask
 
     return result
@@ -132,6 +138,7 @@ def compute_regime_bitmask(
 # =============================================================================
 # High-Level Compute Functions
 # =============================================================================
+
 
 def compute_indicator_pool(
     df: pd.DataFrame,
@@ -155,7 +162,11 @@ def compute_indicator_pool(
         DataFrame with computed features
     """
     from fwbg.pipeline import (
-        PipelineRunner, PipelineContext, PipelineConfig, PluginConfig, get_registry
+        PipelineRunner,
+        PipelineContext,
+        PipelineConfig,
+        PluginConfig,
+        get_registry,
     )
     from fwbg_sdk import PluginPhase
 
@@ -168,7 +179,8 @@ def compute_indicator_pool(
         # them from the convenience "all indicators" path keeps dashboards
         # and exploratory callers from fitting on an entire time series.
         indicator_names = [
-            name for name in registry.list_plugins(phase=PluginPhase.INDICATORS)
+            name
+            for name in registry.list_plugins(phase=PluginPhase.INDICATORS)
             if not registry.get(name).stateful
         ]
     else:
@@ -210,9 +222,7 @@ def compute_indicator_pool(
             + ", ".join(stateful_names)
         )
     if fit_df is not None and stateful_names:
-        fit_ctx = PipelineContext(
-            df=fit_df.copy(), symbol="", asset_class="FOREX"
-        )
+        fit_ctx = PipelineContext(df=fit_df.copy(), symbol="", asset_class="FOREX")
         runner.fit(fit_ctx)
 
     # Run pipeline
@@ -236,7 +246,10 @@ def _get_plateau_module():
     global _plateau_module
     if _plateau_module is None:
         from fwbg.plugins import import_plugin_module
-        _plateau_module = import_plugin_module("fwbg-premium", "feature_selection", "plateau")
+
+        _plateau_module = import_plugin_module(
+            "fwbg-premium", "feature_selection", "plateau"
+        )
     return _plateau_module
 
 

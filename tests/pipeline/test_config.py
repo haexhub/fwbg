@@ -1,5 +1,6 @@
 # tests/pipeline/test_config.py
 """Tests for PluginConfig and PipelineConfig parsers."""
+
 import pytest
 
 from fwbg.pipeline.config import PluginConfig, PipelineConfig, parse_pipeline_config
@@ -70,15 +71,15 @@ class TestPipelineConfig:
                 "feature_selection": [
                     {"name": "correlation_filter", "params": {"threshold": 0.9}}
                 ],
-                "labeling": [
-                    {"name": "binary_labeler", "params": {"horizon": 5}}
-                ],
+                "labeling": [{"name": "binary_labeler", "params": {"horizon": 5}}],
                 "model": [
-                    {"name": "xgboost", "params": {"n_estimators": 100}, "stateful": True}
+                    {
+                        "name": "xgboost",
+                        "params": {"n_estimators": 100},
+                        "stateful": True,
+                    }
                 ],
-                "validation": [
-                    {"name": "walk_forward", "params": {"n_splits": 5}}
-                ],
+                "validation": [{"name": "walk_forward", "params": {"n_splits": 5}}],
             }
         }
 
@@ -97,7 +98,8 @@ class TestPipelineConfig:
 
         assert len(config.feature_selection) == 1
         assert config.feature_selection[0].name in (
-            "correlation_filter", "fwbg-premium:correlation_filter"
+            "correlation_filter",
+            "fwbg-premium:correlation_filter",
         )
 
         assert len(config.labeling) == 1
@@ -121,13 +123,7 @@ class TestPipelineConfig:
 
     def test_pipeline_config_empty_phases(self):
         """Handle missing phases - should default to empty lists."""
-        data = {
-            "pipeline": {
-                "indicators": [
-                    {"name": "sma", "params": {"window": 20}}
-                ]
-            }
-        }
+        data = {"pipeline": {"indicators": [{"name": "sma", "params": {"window": 20}}]}}
 
         config = parse_pipeline_config(data)
 

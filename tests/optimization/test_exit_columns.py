@@ -16,19 +16,30 @@ from fwbg.optimization.robust_validation import WalkForwardFold
 from fwbg.optimization.signal_fold import prepare_signal_fold_data
 from fwbg.plugins import import_plugin_module
 
-pytest.importorskip("fwbg_premium", reason="orb_based exit strategy is a premium plugin")
+pytest.importorskip(
+    "fwbg_premium", reason="orb_based exit strategy is a premium plugin"
+)
 
 ASSET = AssetConfig(
-    symbol="EURUSD", asset_class="FOREX", spread=0.0002, point=0.0001, currencies=["EUR", "USD"]
+    symbol="EURUSD",
+    asset_class="FOREX",
+    spread=0.0002,
+    point=0.0001,
+    currencies=["EUR", "USD"],
 )
 
 
-def _context(exit_params: dict, required: tuple[str, ...] = ("feat1",)) -> SimulationContext:
+def _context(
+    exit_params: dict, required: tuple[str, ...] = ("feat1",)
+) -> SimulationContext:
     strategy = StrategyConfig.from_dict(
         {
             "model": {"type": "xgboost", "required_features": list(required)},
             "exit_strategies": [
-                {"name": "orb_based", "params": {"tp_mult": 1.0, "sl_mult": 2.0, **exit_params}}
+                {
+                    "name": "orb_based",
+                    "params": {"tp_mult": 1.0, "sl_mult": 2.0, **exit_params},
+                }
             ],
         }
     )
@@ -39,7 +50,9 @@ def _fold() -> WalkForwardFold:
     rows = 400
     rng = np.random.default_rng(42)
     price = 1.1 + np.cumsum(rng.normal(0, 0.0005, rows))
-    sparse = np.where(rng.random(rows) < 0.85, 20.0, np.nan)  # 15% NaN: dropped unless protected
+    sparse = np.where(
+        rng.random(rows) < 0.85, 20.0, np.nan
+    )  # 15% NaN: dropped unless protected
     df = pd.DataFrame(
         {
             "O": price,
@@ -95,7 +108,9 @@ def test_a_stop_column_pattern_survives_the_fold_clean_up():
 
 
 def _orb_exit():
-    return import_plugin_module("fwbg-premium", "exit_strategies", "orb_based").OrbExitStrategy()
+    return import_plugin_module(
+        "fwbg-premium", "exit_strategies", "orb_based"
+    ).OrbExitStrategy()
 
 
 def _signal_context(exit_params: dict) -> SimulationContext:
@@ -104,7 +119,10 @@ def _signal_context(exit_params: dict) -> SimulationContext:
             "model": {"type": "signal", "trade_directions": ["long", "short"]},
             "filters": {"allowed_hours": list(range(24))},
             "exit_strategies": [
-                {"name": "orb_based", "params": {"tp_mult": 1.0, "sl_mult": 2.0, **exit_params}}
+                {
+                    "name": "orb_based",
+                    "params": {"tp_mult": 1.0, "sl_mult": 2.0, **exit_params},
+                }
             ],
         }
     )
@@ -134,7 +152,9 @@ def _sparse_fold(column: str, values: float) -> WalkForwardFold:
 
 
 def test_signal_folds_do_not_zero_fill_a_named_level_column():
-    ctx = _signal_context({"sl_level": "or_low", "sl_level_column": "rb8_orb_s00_or_low"})
+    ctx = _signal_context(
+        {"sl_level": "or_low", "sl_level_column": "rb8_orb_s00_or_low"}
+    )
     _, test_df = _signal_fold_frames(_sparse_fold("rb8_orb_s00_or_low", 1.09), ctx)
     level = test_df["rb8_orb_s00_or_low"]
     assert level.isna().any()
@@ -145,19 +165,27 @@ def test_signal_fold_nan_stop_rows_fall_back_to_atr():
     ctx = _signal_context({"sl_dist_column": "rb8_orb_s00_sl_dist", "min_sl_pips": 1})
     fold = _sparse_fold("rb8_orb_s00_sl_dist", 0.004)
     _, test_df = _signal_fold_frames(fold, ctx)
-    exit_ctx = replace(ctx, exit_strategy="orb_based", exit_params=ctx.exit_strategies[0].params)
+    exit_ctx = replace(
+        ctx, exit_strategy="orb_based", exit_params=ctx.exit_strategies[0].params
+    )
     _, sl_dists = _orb_exit().resolve_distances(test_df, 1.0, 2.0, exit_ctx)
     nan_rows = fold.test_df["rb8_orb_s00_sl_dist"].isna().to_numpy()
-    atr = ta.volatility.average_true_range(test_df["H"], test_df["L"], test_df["C"], window=14)
+    atr = ta.volatility.average_true_range(
+        test_df["H"], test_df["L"], test_df["C"], window=14
+    )
     expected = np.maximum(np.nan_to_num(atr.to_numpy()) * 2.0, ctx.spread)
     np.testing.assert_allclose(sl_dists[nan_rows], expected[nan_rows])
 
 
-def test_a_fold_without_selected_features_is_skipped_not_trained_on_the_stop(monkeypatch):
+def test_a_fold_without_selected_features_is_skipped_not_trained_on_the_stop(
+    monkeypatch,
+):
     """The named stop column is no forced feature: with nothing selected the
     fold is skipped instead of training a model on the stop column alone."""
     monkeypatch.setattr(process_fold, "select_features", lambda *args: (None, None))
-    monkeypatch.setattr(process_fold, "run_grid_search", lambda *a, **k: pytest.fail("trained"))
+    monkeypatch.setattr(
+        process_fold, "run_grid_search", lambda *a, **k: pytest.fail("trained")
+    )
     ctx = _context({"sl_dist_column": "rb8_orb_s00_sl_dist"}, required=())
     result = process_single_fold(_fold(), 0, 1, [], None, None, ctx, "TEST", 0)
     assert result == (None, [])
