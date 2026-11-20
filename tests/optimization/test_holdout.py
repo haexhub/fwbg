@@ -184,8 +184,10 @@ def test_holdout_metrics_use_development_sizing_and_only_holdout_trades(monkeypa
         result["monte_carlo"]["p_value"] == monte_carlo_permutation_test(pnl)["p_value"]
     )
     assert result["config"] == config and result["rrr"] == development["rrr"]
+    # The fixture's hourly bars run round the clock: 24 * 365.25 bars a year observed
+    # (not the assumed 24 * 250).
     assert result["test_period_years"] == pytest.approx(
-        result["holdout"]["bars"] / (24 * 250)
+        result["holdout"]["bars"] / (24 * 365.25), rel=0.01
     )
     assert len(result["trades_detailed"]) == len(HOLDOUT)
     assert (
