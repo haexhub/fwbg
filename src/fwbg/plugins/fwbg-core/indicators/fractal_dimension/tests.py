@@ -1,4 +1,5 @@
 """Tests for Higuchi Fractal Dimension indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -79,8 +80,12 @@ class TestFeatureColumns:
 
     def test_all_columns_present(self, indicator, random_walk_df):
         result = indicator.compute(random_walk_df, windows=[50])
-        for suffix in ["higuchi_50", "higuchi_change_50",
-                       "complexity_ratio_50", "regime_50"]:
+        for suffix in [
+            "higuchi_50",
+            "higuchi_change_50",
+            "complexity_ratio_50",
+            "regime_50",
+        ]:
             col = f"fd_{suffix}"
             assert col in result.columns, f"Missing: {col}"
 
@@ -113,8 +118,12 @@ class TestNoLookahead:
 
     def test_first_row_is_nan(self, indicator, random_walk_df):
         result = indicator.compute(random_walk_df, windows=[50])
-        for col in ["fd_higuchi_50", "fd_higuchi_change_50",
-                     "fd_complexity_ratio_50", "fd_regime_50"]:
+        for col in [
+            "fd_higuchi_50",
+            "fd_higuchi_change_50",
+            "fd_complexity_ratio_50",
+            "fd_regime_50",
+        ]:
             assert pd.isna(result[col].iloc[0]), f"{col} first row should be NaN"
 
     def test_shift_by_one(self, indicator, random_walk_df):
@@ -276,6 +285,7 @@ class TestPluginIntegration:
 
     def test_plugin_importable(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:fractal_dimension")
@@ -283,6 +293,7 @@ class TestPluginIntegration:
 
     def test_benefits_from_stationary_false(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:fractal_dimension")

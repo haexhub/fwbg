@@ -12,6 +12,7 @@ Algorithm:
   3. Average over m: L(k) = mean(L_m(k))
   4. D = slope of log(L(k)) vs log(1/k)
 """
+
 from typing import List
 
 import numpy as np
@@ -92,7 +93,7 @@ def _rolling_higuchi(close: np.ndarray, window: int, k_max: int) -> np.ndarray:
     n = len(close)
     result = np.full(n, np.nan)
     for i in range(window - 1, n):
-        segment = close[i - window + 1: i + 1]
+        segment = close[i - window + 1 : i + 1]
         result[i] = _higuchi_fd(segment, k_max)
     return result
 
@@ -149,12 +150,14 @@ class FractalDimensionIndicator(BaseIndicator):
         windows = params["windows"]
         cols = []
         for w in windows:
-            cols.extend([
-                f"fd_higuchi_{w}",
-                f"fd_higuchi_change_{w}",
-                f"fd_complexity_ratio_{w}",
-                f"fd_regime_{w}",
-            ])
+            cols.extend(
+                [
+                    f"fd_higuchi_{w}",
+                    f"fd_higuchi_change_{w}",
+                    f"fd_complexity_ratio_{w}",
+                    f"fd_regime_{w}",
+                ]
+            )
         return cols
 
     def get_signal_columns(self) -> List[str]:
