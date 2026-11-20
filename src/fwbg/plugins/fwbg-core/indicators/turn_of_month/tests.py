@@ -17,7 +17,9 @@ def compute(dates, **params) -> pd.DataFrame:
     """Values for *dates*, after a warm-up bar the day before (the first row is NaN)."""
     index = pd.DatetimeIndex(pd.to_datetime(list(dates)))
     warm_up = index[:1] - pd.Timedelta(days=1)
-    return TurnOfMonthIndicator().compute(daily(warm_up.append(index)), **params).iloc[1:]
+    return (
+        TurnOfMonthIndicator().compute(daily(warm_up.append(index)), **params).iloc[1:]
+    )
 
 
 def test_first_row_is_nan():
@@ -27,7 +29,9 @@ def test_first_row_is_nan():
 
 def test_counts_follow_the_exchange_calendar():
     # March 2024: Good Friday (29th) is an NYSE holiday, so the 28th is the last trading day
-    out = compute(["2024-03-26", "2024-03-27", "2024-03-28", "2024-04-01", "2024-04-02"])
+    out = compute(
+        ["2024-03-26", "2024-03-27", "2024-03-28", "2024-04-01", "2024-04-02"]
+    )
     assert out["tom_days_left"].tolist()[:3] == [2.0, 1.0, 0.0]
     assert out["tom_day"].tolist() == [18.0, 19.0, 20.0, 1.0, 2.0]
     weekdays = compute(["2024-03-28"], calendar="weekdays")
@@ -38,7 +42,9 @@ def test_calendar_trading_week_controls_generated_dates(monkeypatch):
     # XSAU trades Sunday through Thursday; Friday is not a trading day.
     monkeypatch.setattr(mod, "CALENDARS", [*mod.CALENDARS, "XSAU"])
     monkeypatch.setattr(mod.holidays, "financial_holidays", lambda *args, **kwargs: {})
-    days = mod.trading_days("XSAU", pd.Timestamp("2024-09-01"), pd.Timestamp("2024-09-08"))
+    days = mod.trading_days(
+        "XSAU", pd.Timestamp("2024-09-01"), pd.Timestamp("2024-09-08")
+    )
     assert days.strftime("%Y-%m-%d").tolist()[:6] == [
         "2024-09-01",
         "2024-09-02",
@@ -58,12 +64,18 @@ def test_missing_bars_do_not_shift_the_counts():
 
 
 def test_entry_and_exit_flags():
-    out = compute(pd.bdate_range("2024-01-25", "2024-02-08"), entry_days_left=2, exit_day=4)
+    out = compute(
+        pd.bdate_range("2024-01-25", "2024-02-08"), entry_days_left=2, exit_day=4
+    )
     assert list(out.index[out["tom_entry_long"] == 1].strftime("%m-%d")) == ["01-29"]
     assert list(out.index[out["tom_exit_long"] == 1].strftime("%m-%d")) == ["02-06"]
     default = compute(pd.bdate_range("2024-01-25", "2024-02-08"))
-    assert list(default.index[default["tom_entry_long"] == 1].strftime("%m-%d")) == ["01-30"]
-    assert list(default.index[default["tom_exit_long"] == 1].strftime("%m-%d")) == ["02-05"]
+    assert list(default.index[default["tom_entry_long"] == 1].strftime("%m-%d")) == [
+        "01-30"
+    ]
+    assert list(default.index[default["tom_exit_long"] == 1].strftime("%m-%d")) == [
+        "02-05"
+    ]
 
 
 def test_bar_on_a_closed_day_counts_the_trading_days_before_it():
@@ -86,3 +98,26 @@ def test_unknown_calendar_and_empty_frame():
         compute(["2024-01-02"], calendar="MOON")
     empty = TurnOfMonthIndicator().compute(daily([]))
     assert list(empty.columns) == ["C", *mod.TOM_COLUMNS] and empty.empty
+
+
+def test_intraday_bars_repeat_the_flags_of_their_date():
+    # every hourly bar of Mon 2024-03-25 .. Thu 2024-03-28 carries its date's values
+    index = pd.date_range("2024-03-25 00:00", "2024-03-28 23:00", freq="h")
+    out = (
+        TurnOfMonthIndicator()
+        .compute(pd.DataFrame({"C": 1.0}, index=index), entry_days_left=0)
+        .iloc[1:]
+    )
+    last_day = out.loc["2024-03-28"]
+    assert (last_day["tom_days_left"] == 0.0).all()
+    assert (last_day["tom_entry_long"] == 1.0).all()  # 24 flagged bars, not one
+    assert (out.loc["2024-03-27", "tom_entry_long"] == 0.0).all()
+
+
+def test_month_position_pins_a_month_ending_on_a_sunday():
+    # 2023-04-30 is a Sunday: Fri Apr 28 is the last trading day (days_left 0);
+    # April 2023 has 19 trading days (Good Friday closed), May 2023 has 22
+    dates = pd.DatetimeIndex(["2023-04-27", "2023-04-28", "2023-04-30", "2023-05-01"])
+    day, left = mod.month_position("NYSE", dates)
+    assert day.tolist() == [18.0, 19.0, 19.0, 1.0]
+    assert left.tolist() == [1.0, 0.0, 0.0, 21.0]

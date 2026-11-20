@@ -1,6 +1,6 @@
 # Plugin Spec — rebalancing_pressure
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -19,6 +19,7 @@ Fixed-weight funds rebalance their stock/bond mix around month end: after stocks
 - `stock_columns` (list[string], default `["macro_spy"]`), `bond_columns` (list[string], default `["macro_tlt", "macro_ief"]`): each side's month-to-date return is the mean over its columns
 - `threshold` (float, default 0.02): minimum absolute drift for an entry
 - `entry_days_left` (int, default 3): entries are flagged on the bar with this many trading days left in the month
+- `inputs_lagged` (bool, default true): true when the columns already hold the previous trading day's close (the `data_loading` lag); false when they hold the bar's own close, in which case the indicator lags them by one bar itself (daily bars, one bar per date, else `ValueError`). The flag cannot be verified from the data and must match the source: unlagged inputs read as lagged leak the bar's own close
 - `calendar` (string, default `NYSE`): exchange calendar, as in `turn_of_month`
 
 ## Outputs
@@ -28,4 +29,4 @@ Fixed-weight funds rebalance their stock/bond mix around month end: after stocks
 - `rebal_entry_short`: 1 on the entry bar when `rebal_drift > threshold`
 - `rebal_exit`: 1 on the month's last trading day (exit column for `signal_exit`)
 
-Unshifted for a decision at the bar's close (the inputs already lag by a day); the first row is NaN. A missing input column logs a warning and leaves all values NaN. Values depend only on the bar and earlier bars of its month, so a prefix of the data gives the same values.
+Unshifted for a decision at the bar's close (the inputs lag by a day, from the loader or from `inputs_lagged=false`); the first row is NaN. A missing input column logs a warning and leaves all values NaN. Values depend only on the bar and earlier bars of its month, so a prefix of the data gives the same values.

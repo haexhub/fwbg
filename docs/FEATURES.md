@@ -22,7 +22,7 @@ Dieses Dokument beschreibt alle Features und Indikatoren, die dem ML-Modell zur 
 ### Zeit & Saisonalität
 8. [Zeit Features](#7-zeit-features-time_) — Intraday-Sessions
 9. [Saisonalität Features](#8-saisonalität-features-season_) — Kalender-Effekte
-10. [Calendar Event Features](#25-calendar-event-features-cal_) — Turn-of-Month, OpEx, FOMC
+10. [Calendar Event Features](#25-calendar-event-features-cal_) — Turn-of-Month, OpEx, NFP
 
 ### Dynamik & Meta-Features
 11. [Dynamik Features](#9-dynamik-features-dyn_) — Indikator-Änderungen
@@ -382,6 +382,8 @@ Zeit-Features kodieren Intraday-Muster und Trading-Sessions. Finanzmärkte zeige
 
 **Trading-Relevanz:** Session-Timing bestimmt Spread, Liquidität und Volatilität. Breakout-Strategien funktionieren besser am Session-Open, Mean-Reversion besser in ruhigen Phasen. Wochentags-Effekte (Montag-Reversals, Freitag-Profit-Taking) sind empirisch gut dokumentiert.
 
+Die Features sind nicht um einen Bar verschoben: jede Zeile beschreibt den eigenen Zeitstempel des Bars (Kalender und Session-Uhr stehen im Voraus fest), nur die erste Zeile ist NaN. Sessions gelten in UTC; `[start, end, "Area/City"]` wertet die Stunden in der lokalen Zeit der Zeitzone aus (Sommerzeit inklusive). Monats-/Quartalsende zählen Handelstage des Parameters `calendar` (Default `weekdays`).
+
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
 | `time_hour` | Stunde (0-23) | Session-Timing |
@@ -405,7 +407,7 @@ Saisonale Features erfassen kalendrische Muster über Tage, Wochen, Monate und Q
 | `season_month_sin/cos` | Zyklischer Monat | Für ML-Modelle |
 | `season_quarter` | Quartal (1-4) | Quartals-Effekte |
 | `season_quarter_sin/cos` | Zyklisches Quartal | Für ML-Modelle |
-| `season_week` | Kalenderwoche (1-52) | Wochen-Effekte |
+| `season_week` | Kalenderwoche (ISO, 1-53) | Wochen-Effekte |
 | `season_week_sin/cos` | Zyklische Woche | Für ML-Modelle |
 | `season_dayofmonth` | Tag im Monat (1-31) | Monatsanfang/-ende |
 | `season_dayofmonth_sin/cos` | Zyklischer Tag | Für ML-Modelle |
@@ -1135,17 +1137,17 @@ Event wenn S_pos > h·σ oder S_neg < -h·σ (dann Reset)
 
 ## 25. Calendar Event Features (`cal_`)
 
-Kalender-Anomalien die auf gut dokumentierten systematischen Markteffekten basieren. Alle Features werden deterministisch aus dem DatetimeIndex berechnet — keine Preisdaten nötig.
+Kalender-Anomalien die auf gut dokumentierten systematischen Markteffekten basieren. Alle Features werden deterministisch aus dem DatetimeIndex berechnet — keine Preisdaten nötig. Der Kalender steht im Voraus fest: jede Spalte beschreibt das eigene Datum des Bars und ist **nicht** um einen Bar verschoben (nur die erste Zeile ist NaN).
 
 ### Binäre Event-Features
 
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
-| `cal_turn_of_month` | Erste 3 / letzte 2 Tage des Monats | Turn-of-Month Effekt (~65% der monatlichen Returns) |
+| `cal_turn_of_month` | Erste 3 / letzte 2 Handelstage des Monats (Börsenkalender `calendar`, Default NYSE) | Turn-of-Month Effekt (~65% der monatlichen Returns) |
 | `cal_quarter_end` | Letzte 5 Tage von Mar/Jun/Sep/Dec | Portfolio-Rebalancing, Window Dressing |
 | `cal_triple_witching` | ±2 Tage um 3. Freitag von Mar/Jun/Sep/Dec | Triple Witching (Futures + Options Verfall) |
 | `cal_monthly_opex` | ±2 Tage um 3. Freitag jeden Monats | Monatlicher Options-Verfall |
-| `cal_nfp_week` | Erste 5 Tage jeden Monats | Non-Farm Payrolls Woche |
+| `cal_nfp_week` | Mo-Fr der Woche mit dem ersten Freitag des Monats (Näherung, keine Release-Ausnahmen) | Non-Farm Payrolls Woche |
 | `cal_year_boundary` | Letzte 5 Tage Dec / Erste 5 Tage Jan | January Effect, Year-End Rebalancing |
 
 ### Proximity-Features
@@ -1153,14 +1155,14 @@ Kalender-Anomalien die auf gut dokumentierten systematischen Markteffekten basie
 | Feature | Beschreibung | Interpretation |
 |---------|--------------|----------------|
 | `cal_days_to_month_end` | Tage bis Monatsende (normalisiert 0..1) | Nähe zum Monatsende |
-| `cal_fomc_proximity` | Zyklische Sinus-Approximation (~46-Tage FOMC Zyklus) | Nähe zum nächsten FOMC Meeting |
 | `cal_week_of_month` | Woche im Monat (normalisiert 0..1) | Position innerhalb des Monats |
 
 **Parameter:**
 - `include_binary` (default: true) — Binäre Event-Features einschließen
 - `include_proximity` (default: true) — Kontinuierliche Proximity-Features einschließen
+- `calendar` (default: `NYSE`) — Börsenkalender für die Handelstage von `cal_turn_of_month` (`weekdays` = jeder Wochentag)
 
-**Plugin:** `fwbg-core:calendar_events` | **Prefix:** `cal_` | **9 Features**
+**Plugin:** `fwbg-core:calendar_events` | **Prefix:** `cal_` | **8 Features**
 
 ---
 
@@ -1472,7 +1474,7 @@ Das Plugin-System ermöglicht modulare Konfiguration von Indikatoren. Jeder Indi
 | `opening_range` | orb | ~23 | Opening Range Breakout, Session-ORB |
 | `fair_value_gap` | fvg | 8 | Bull/Bear FVG, Distance, Size |
 | `cusum_events` | cusum | 6 | CUSUM Structural Breaks (AFML Ch. 2) |
-| `calendar_events` | calendar | 9 | Turn-of-Month, OpEx, FOMC, NFP |
+| `calendar_events` | calendar | 8 | Turn-of-Month, OpEx, NFP |
 | `fractal_dimension` | fractal | 12 | Higuchi FD, Komplexität, Regime |
 | `wavelets` | wavelets | 27 | DWT Energie, Frequenz-Ratios |
 | `autoencoder_features` | autoencoder | 10 | PCA Latent Features, Reconstruction Error |

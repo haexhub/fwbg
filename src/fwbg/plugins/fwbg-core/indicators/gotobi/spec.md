@@ -1,6 +1,6 @@
 # Plugin Spec — gotobi
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -16,14 +16,14 @@ Gotobi days are the 5th, 10th, 15th, 20th and 25th of each month and the month's
 
 ## Parameters
 
-- `entry_hour` (int, default 10): `gotobi_entry` marks the bar closing at this hour, Tokyo time
-- `exit_hour` (int, default 15): `gotobi_exit` marks the bar closing at this hour, Tokyo time
+- `entry_hour` (int, default 10) and `entry_minute` (int, default 0): `gotobi_entry` marks the bar closing at this time, Tokyo time; `entry_hour=9, entry_minute=55` with `bar_minutes=5` targets the 9:55 fixing (the bar starting 9:50 Tokyo)
+- `exit_hour` (int, default 15) and `exit_minute` (int, default 0): `gotobi_exit` marks the bar closing at this time, Tokyo time
 - `bar_minutes` (int, default 60): bar length; a bar closes at its start plus this
 
 ## Outputs
 
 - `gotobi_day`: 1 when the bar closes on a gotobi date (Tokyo)
-- `gotobi_entry`: 1 for the bar closing at `entry_hour`:00 Tokyo on a gotobi date
-- `gotobi_exit`: 1 for the bar closing at `exit_hour`:00 Tokyo on a gotobi date, an exit column for `signal_exit`
+- `gotobi_entry`: 1 for the bar closing at `entry_hour`:`entry_minute` Tokyo on a gotobi date
+- `gotobi_exit`: 1 for the bar closing at `exit_hour`:`exit_minute` Tokyo on a gotobi date, an exit column for `signal_exit`
 
 The settlement calendar is known in advance, so the columns are unshifted and meant for a decision at the bar's close (`entry_delay=0`). As for every indicator, the first row is NaN. Values depend only on a bar's own timestamp, so a prefix of the data gives the same values.

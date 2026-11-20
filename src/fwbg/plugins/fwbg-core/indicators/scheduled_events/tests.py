@@ -2,7 +2,6 @@
 
 import logging
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -38,7 +37,11 @@ def compute(dates, **params) -> pd.DataFrame:
     """Values for *dates*, after a warm-up bar the day before (the first row is NaN)."""
     index = pd.DatetimeIndex(pd.to_datetime(list(dates)))
     warm_up = index[:1] - pd.Timedelta(days=1)
-    return ScheduledEventsIndicator().compute(daily(warm_up.append(index)), **params).iloc[1:]
+    return (
+        ScheduledEventsIndicator()
+        .compute(daily(warm_up.append(index)), **params)
+        .iloc[1:]
+    )
 
 
 def test_first_row_is_nan(events):
@@ -85,13 +88,22 @@ def test_window_merges_clustered_events_and_marks_its_edges(events):
         "2024-01-22",
         "2024-01-23",
     ]
-    assert out.index[out["evt_window_start"] == 1].tolist() == ["2024-01-02", "2024-01-17"]
-    assert out.index[out["evt_window_end"] == 1].tolist() == ["2024-01-10", "2024-01-24"]
+    assert out.index[out["evt_window_start"] == 1].tolist() == [
+        "2024-01-02",
+        "2024-01-17",
+    ]
+    assert out.index[out["evt_window_end"] == 1].tolist() == [
+        "2024-01-10",
+        "2024-01-24",
+    ]
 
 
 def test_filter_selects_events(events):
     out = compute(
-        ["2024-01-09", "2024-01-12"], events_file=events, filter_column="kind", filter_values=["B"]
+        ["2024-01-09", "2024-01-12"],
+        events_file=events,
+        filter_column="kind",
+        filter_values=["B"],
     )
     # only Jan 11 and Feb 20 count
     assert out["evt_days_ahead"].tolist() == [2.0, 25.0]
@@ -108,20 +120,50 @@ def test_month_end_event_on_closed_day_maps_to_next_month_trading_day(tmp_path):
 
     out = compute(["2024-03-28"], events_file=str(path))
 
-    assert out["evt_days_ahead"].iloc[0] == 1.0  # Mar 29 is an NYSE holiday; next day is Apr 1
+    assert (
+        out["evt_days_ahead"].iloc[0] == 1.0
+    )  # Mar 29 is an NYSE holiday; next day is Apr 1
 
 
 def test_no_later_event_is_nan(events):
     out = compute(["2024-03-01"], events_file=events)
-    assert np.isnan(out["evt_days_ahead"].iloc[0]) and out["evt_window"].iloc[0] == 0.0
+    assert (
+        out[["evt_days_ahead", "evt_window", "evt_window_start", "evt_window_end"]]
+        .isna()
+        .all(axis=None)
+    )
+
+
+def test_window_is_nan_after_the_last_event_but_known_before_it(events):
+    # last event: 2024-02-20 (Tue). Feb 16 is 1 trading day before it (Feb 19 closed);
+    # Feb 21 and later have no known later event.
+    out = compute(bdays("2024-02-12", "2024-02-23"), events_file=events).set_index(
+        pd.Index(bdays("2024-02-12", "2024-02-23"))
+    )
+    assert out.loc["2024-02-14", "evt_window"] == 1.0  # 3 trading days ahead
+    assert out.loc["2024-02-16", "evt_window"] == 0.0  # 1 ahead, inside window_end
+    assert out.loc["2024-02-16", "evt_window_end"] == 1.0
+    assert out.loc["2024-02-20", "evt_window"] == 0.0  # event day, days_ahead 0
+    cols = mod.EVENT_COLUMNS
+    assert out.loc["2024-02-21":, cols].isna().all(axis=None)
+    assert out.loc[:"2024-02-20", cols].notna().all(axis=None)
 
 
 @pytest.mark.parametrize(
     "params",
-    [{}, {"events_file": "/nonexistent/events.csv"}, {"date_column": "when"}, {"date_column": ""}],
+    [
+        {},
+        {"events_file": "/nonexistent/events.csv"},
+        {"date_column": "when"},
+        {"date_column": ""},
+    ],
 )
 def test_missing_file_or_column_warns_and_gives_nan(events, caplog, params):
-    params = {"events_file": events, **params} if "events_file" not in params and params else params
+    params = (
+        {"events_file": events, **params}
+        if "events_file" not in params and params
+        else params
+    )
     with caplog.at_level(logging.WARNING):
         out = compute(["2024-01-09"], **params)
     assert out[mod.EVENT_COLUMNS].isna().all().all()
@@ -138,3 +180,42 @@ def test_a_prefix_of_the_data_gives_the_same_values(events):
     full = compute(dates, events_file=events)
     part = compute(dates[:20], events_file=events)
     pd.testing.assert_frame_equal(full.iloc[:20], part)
+
+
+def test_mixed_date_formats_are_all_read(tmp_path):
+    path = tmp_path / "mixed.csv"
+    pd.DataFrame(
+        {
+            "date": [
+                "2024-01-10",
+                "2024-01-11 14:00:00",
+                "Jan 12, 2024",
+                "2024/01/16",
+                "2024-01-17T00:00:00+02:00",
+                "",
+            ]
+        }
+    ).to_csv(path, index=False)
+
+    dates = mod.event_dates(str(path), "date")
+
+    assert dates.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-10",
+        "2024-01-11",
+        "2024-01-12",
+        "2024-01-16",
+        "2024-01-17",
+    ]
+
+
+def test_unparsable_date_raises_instead_of_dropping_the_row(tmp_path):
+    path = tmp_path / "bad.csv"
+    pd.DataFrame({"date": ["2024-01-10", "10th of Jan", "not a date"]}).to_csv(
+        path, index=False
+    )
+
+    with pytest.raises(mod.EventDateError, match="2 unparsable"):
+        mod.event_dates(str(path), "date")
+    # and the indicator does not turn it into an all-NaN warning
+    with pytest.raises(ValueError, match="unparsable"):
+        compute(["2024-01-09"], events_file=str(path))
