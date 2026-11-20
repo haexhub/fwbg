@@ -1,6 +1,8 @@
 """Safety contracts of the live/paper bot, with the broker adapter mocked."""
 
+import json
 import logging
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -132,3 +134,86 @@ def test_trade_is_refused_for_a_non_positive_point_value(tmp_path):
     bot._execute_signal("EURUSD", OrderSide.BUY, 0.9, bot.assets["EURUSD"])
 
     adapter.submit_order.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# A signal already acted on must not fire again after a restart
+# ---------------------------------------------------------------------------
+
+HOUR = datetime(2025, 3, 3, 12)  # naive UTC, like the bar index
+
+
+class _BuyModel:
+    def predict_probability(self, _features):
+        return np.array([[0.05, 0.95]])
+
+
+def _armed_bot(tmp_path, monkeypatch, hour=HOUR):
+    import fwbg.bot as bot_module
+
+    monkeypatch.setattr(bot_module, "_current_utc_hour", lambda: hour)
+    bot = _bot(_adapter(FILLED), tmp_path)
+    bot.models["EURUSD"] = _BuyModel()
+    bot.features_cache["EURUSD"] = pd.DataFrame(
+        {"C": np.full(120, 1.08)},
+        index=pd.date_range("2025-01-01", periods=120, freq="h"),
+    )
+    return bot
+
+
+def test_signal_hour_survives_a_restart(tmp_path, monkeypatch):
+    first = _armed_bot(tmp_path, monkeypatch)
+    first._check_signal("EURUSD")
+    first.adapter.submit_order.assert_called_once()
+
+    restarted = _armed_bot(tmp_path, monkeypatch)  # same stats_dir, fresh process
+    assert restarted.last_signal_hour == {"EURUSD": HOUR}
+    restarted._check_signal("EURUSD")
+    restarted.adapter.submit_order.assert_not_called()
+
+    next_hour = _armed_bot(tmp_path, monkeypatch, hour=HOUR + timedelta(hours=1))
+    next_hour._check_signal("EURUSD")
+    next_hour.adapter.submit_order.assert_called_once()
+
+
+def test_signal_hour_is_written_before_the_order_is_sent(tmp_path, monkeypatch):
+    bot = _armed_bot(tmp_path, monkeypatch)
+    seen = {}
+
+    def submit(**_kwargs):
+        seen["state"] = json.loads(bot._state_path().read_text())
+        return FILLED
+
+    bot.adapter.submit_order.side_effect = submit
+    bot._check_signal("EURUSD")
+
+    assert seen["state"] == {"last_signal_hour": {"EURUSD": HOUR.isoformat()}}
+
+
+def test_unreadable_state_blocks_signals_for_the_current_hour(tmp_path, monkeypatch):
+    state = tmp_path / "stats" / "acct" / "bot_state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{not json")
+
+    corrupt = _armed_bot(tmp_path, monkeypatch)
+    corrupt._check_signal("EURUSD")
+    corrupt.adapter.submit_order.assert_not_called()
+
+    import fwbg.bot as bot_module
+
+    monkeypatch.setattr(
+        bot_module, "_current_utc_hour", lambda: HOUR + timedelta(hours=1)
+    )
+    corrupt._check_signal("EURUSD")  # same process, one hour later
+    corrupt.adapter.submit_order.assert_called_once()
+
+
+def test_signal_is_not_executed_when_state_cannot_be_persisted(tmp_path, monkeypatch):
+    bot = _armed_bot(tmp_path, monkeypatch)
+    (tmp_path / "stats").mkdir()
+    (tmp_path / "stats" / "acct").write_text("a file where the directory should be")
+
+    bot._check_signal("EURUSD")
+
+    bot.adapter.submit_order.assert_not_called()
+    assert "EURUSD" not in bot.last_signal_hour

@@ -226,6 +226,84 @@ class TradingBot:
         self._equity_curve: List[Dict[str, Any]] = []
         self._starting_equity: float | None = None
 
+        # Restart safety: a signal already acted on in the current hour must not
+        # fire again after a restart.
+        self._load_state()
+
+    def _state_path(self) -> Path:
+        """File holding the bot state that must survive a restart."""
+        return Path(self.stats_dir) / self.account_id / "bot_state.json"
+
+    def _load_state(self) -> None:
+        """Restore ``last_signal_hour`` from the state file.
+
+        A missing file is a fresh start. An unreadable one is treated as
+        unknown: every asset counts as already signalled for the current hour,
+        so nothing can fire twice, and trading resumes with the next hour.
+        """
+        path = self._state_path()
+        try:
+            raw = path.read_text()
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            self._assume_signalled_this_hour(f"cannot read {path}: {exc}")
+            return
+        try:
+            hours = json.loads(raw)["last_signal_hour"]
+            self.last_signal_hour = {
+                str(symbol): datetime.fromisoformat(stamp)
+                for symbol, stamp in hours.items()
+            }
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            self._assume_signalled_this_hour(f"cannot parse {path}: {exc}")
+
+    def _assume_signalled_this_hour(self, reason: str) -> None:
+        logger.error(
+            f"❌ Bot state unreadable ({reason}); blocking new signals for the "
+            "current hour"
+        )
+        hour = _current_utc_hour()
+        self.last_signal_hour = {symbol: hour for symbol in self.assets}
+
+    def _save_state(self) -> bool:
+        """Atomically write the restart state; False if it could not be saved."""
+        path = self._state_path()
+        tmp = path.with_name(path.name + ".tmp")
+        payload = {
+            "last_signal_hour": {
+                symbol: hour.isoformat()
+                for symbol, hour in self.last_signal_hour.items()
+            }
+        }
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(tmp, "w") as f:
+                json.dump(payload, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+            return True
+        except OSError as exc:
+            logger.error(f"❌ Failed to persist bot state to {path}: {exc}")
+            return False
+
+    def _mark_signal_hour(self, symbol: str, hour: datetime) -> bool:
+        """Record (and persist) that ``symbol`` signalled in ``hour``.
+
+        Returns False, leaving the in-memory state unchanged, when it could not
+        be persisted: an unpersisted signal could fire again after a restart.
+        """
+        previous = self.last_signal_hour.get(symbol)
+        self.last_signal_hour[symbol] = hour
+        if self._save_state():
+            return True
+        if previous is None:
+            del self.last_signal_hour[symbol]
+        else:
+            self.last_signal_hour[symbol] = previous
+        return False
+
     def initialize(self) -> bool:
         """
         Initialisiert den Bot: Verbindung, Daten laden, Models trainieren.
@@ -549,7 +627,11 @@ class TradingBot:
                 direction = OrderSide.SELL
 
             if direction:
-                self.last_signal_hour[symbol] = current_hour
+                if not self._mark_signal_hour(symbol, current_hour):
+                    logger.error(
+                        f"❌ {symbol}: signal not executed, state could not be persisted"
+                    )
+                    return
                 self._execute_signal(symbol, direction, prob, cfg)
 
         except Exception as e:
