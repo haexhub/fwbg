@@ -32,6 +32,7 @@ import pandas as pd
 import ta
 
 from fwbg_sdk import BaseIndicator, EPSILON, register_indicator, shift_features
+from fwbg.utils.indicator_math import wilder_atr
 
 
 @register_indicator("pullback_momentum")
@@ -72,14 +73,10 @@ class PullbackMomentumIndicator(BaseIndicator):
         # EMA for trend filter
         ema = ta.trend.ema_indicator(pd.Series(closes), window=ema_period).values
 
-        # ATR for the SL buffer: NaN until the first full window (ta seeds the
-        # warm-up with 0.0, which would read as a valid zero-volatility buffer)
-        atr = np.full(n, np.nan)
-        if n >= atr_period:
-            atr = ta.volatility.average_true_range(
-                pd.Series(highs), pd.Series(lows), pd.Series(closes), window=atr_period
-            ).values.astype(np.float64)
-            atr[: atr_period - 1] = np.nan
+        # ATR for the SL buffer: NaN until the first full window
+        atr = wilder_atr(
+            pd.Series(highs), pd.Series(lows), pd.Series(closes), window=atr_period
+        ).to_numpy(dtype=np.float64)
 
         # Rolling swing extremes — no lookahead (window covers only past bars)
         swing_high = (

@@ -7,9 +7,9 @@ Verwendet fixe TP/SL-Werte basierend auf Spread-Multiplikatoren.
 from typing import Tuple, TYPE_CHECKING
 import numpy as np
 import pandas as pd
-import ta
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
+from fwbg.utils.indicator_math import wilder_atr
 from fwbg.simulation import compute_targets_numba
 
 if TYPE_CHECKING:
@@ -83,9 +83,7 @@ class FixedExitStrategy(BaseExitStrategy):
             elif "vol_atr" in df.columns:
                 atr_v = df["vol_atr"].values.astype(np.float64)
             else:
-                atr_series = ta.volatility.average_true_range(
-                    df["H"], df["L"], df["C"], window=14
-                )
+                atr_series = wilder_atr(df["H"], df["L"], df["C"], window=14)
                 atr_v = atr_series.values.astype(np.float64)
             atr_v = np.nan_to_num(atr_v, nan=0.0)
 

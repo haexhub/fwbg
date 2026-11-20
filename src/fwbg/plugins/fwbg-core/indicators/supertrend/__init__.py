@@ -12,9 +12,9 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-import ta
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide
+from fwbg.utils.indicator_math import wilder_atr
 
 
 def _supertrend(
@@ -44,9 +44,7 @@ def _supertrend(
     start = period - 1
 
     if n > start:
-        atr = ta.volatility.average_true_range(
-            high, low, close, window=period
-        ).to_numpy()
+        atr = wilder_atr(high, low, close, window=period).to_numpy()
         hl2 = ((high + low) / 2).to_numpy()
         px = close.to_numpy()
 
@@ -228,10 +226,7 @@ class SupertrendMTFIndicator(BaseIndicator):
                 htf_dir, htf_line = _supertrend(
                     bars["H"], bars["L"], bars["C"], period, multiplier
                 )
-                atr = ta.volatility.average_true_range(
-                    bars["H"], bars["L"], bars["C"], window=period
-                )
-                atr.iloc[: period - 1] = np.nan
+                atr = wilder_atr(bars["H"], bars["L"], bars["C"], window=period)
                 # Place each completed-candle value on its last base bar, then hold it.
                 direction, st_line, htf_atr = (
                     s.reindex(df.index).ffill() for s in (htf_dir, htf_line, atr)

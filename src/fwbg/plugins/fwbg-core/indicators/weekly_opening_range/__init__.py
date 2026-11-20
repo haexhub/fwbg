@@ -25,9 +25,9 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
-import ta
 
 from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide
+from fwbg.utils.indicator_math import wilder_atr
 
 
 # ── Naming helpers ──────────────────────────────────────────────────────────
@@ -39,7 +39,8 @@ def wor_col(rb: int, feature: str) -> str:
 
 
 def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
-    return ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=period)
+    """Wilder ATR, NaN until a full window exists (raw price, not percent)."""
+    return wilder_atr(df["H"], df["L"], df["C"], window=period)
 
 
 # A trading week starts at its first bar.  FX/CFD data reopens on Sunday evening,

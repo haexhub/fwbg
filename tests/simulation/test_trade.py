@@ -1349,3 +1349,17 @@ class TestAttachRegimeLabels:
         attach_regime_labels(trades, df)
         assert trades[0]["vol_regime"] in ("low", "medium", "high")
         assert trades[0]["trend_regime"] in ("ranging", "trending", "strong_trend")
+
+
+class TestAttachRegimeLabelsAtrWarmUp:
+    def test_entry_inside_the_atr_warm_up_gets_no_vol_regime(self):
+        # ta reports ATR 0.0 for the first 13 bars, which used to label an entry
+        # there "low" volatility; the shared helper leaves it unknown.
+        n = 60
+        rng = np.random.default_rng(42)
+        base = 1.0 + np.cumsum(rng.normal(0, 0.001, n))
+        df = pd.DataFrame({"O": base, "H": base + 0.002, "L": base - 0.002, "C": base})
+        trades = [{"entry_idx": 5}, {"entry_idx": 40}]
+        attach_regime_labels(trades, df)
+        assert trades[0]["vol_regime"] is None
+        assert trades[1]["vol_regime"] in ("low", "medium", "high")
