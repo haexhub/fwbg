@@ -10,15 +10,24 @@ from datetime import datetime
 from threading import Lock
 import logging
 import os
+import re
 import time
 import pandas as pd
 
 try:
     from trading_ig import IGService
+    from trading_ig.rest import IGException, TokenInvalidException
 
     IG_AVAILABLE = True
 except ImportError:
     IG_AVAILABLE = False
+
+    class IGException(Exception):  # type: ignore[no-redef]
+        """Placeholder so the error classifiers below work without trading_ig."""
+
+    class TokenInvalidException(Exception):  # type: ignore[no-redef]
+        """Placeholder so the error classifiers below work without trading_ig."""
+
 
 try:
     from trading_ig.stream import IGStreamService
@@ -59,6 +68,18 @@ from .mappings import (
 from .streaming import IGCandleListener
 
 log = logging.getLogger(__name__)
+
+_AUTH_ERROR_PATTERN = re.compile(
+    r"client-token-invalid|oauth-token-invalid|\b401\b|unauthori[sz]ed",
+    re.IGNORECASE,
+)
+
+
+def _is_auth_error(exc: BaseException) -> bool:
+    """True when ``exc`` says the IG session/token is expired or invalid."""
+    return isinstance(exc, TokenInvalidException) or bool(
+        _AUTH_ERROR_PATTERN.search(str(exc))
+    )
 
 
 class _IGCredentials:
@@ -162,6 +183,7 @@ class IGBrokerAdapter(BrokerAdapter):
         self._stream_service: Optional[Any] = None
         self._subscriptions: Dict[Symbol, Any] = {}
         self._lock = Lock()
+        self._reauth_lock = Lock()
         self._last_request_time = 0.0
 
     # =========================================================================
@@ -256,6 +278,44 @@ class IGBrokerAdapter(BrokerAdapter):
             time.sleep(self.rate_limit_delay - elapsed)
         self._last_request_time = time.time()
 
+    def _reauthenticate(self) -> bool:
+        """Open a fresh IG session after the broker rejected the old token.
+
+        Streaming subscriptions and bar callbacks are left untouched; only the
+        REST service is replaced.
+        """
+        with self._reauth_lock:
+            self.log_warning("IG session rejected, re-authenticating")
+            self._connected = False
+            return self.connect()
+
+    def _call_ig(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        """Call ``method`` on the IG service, re-authenticating once if the
+        session has expired.
+
+        All REST calls go through here so that an expired token never leaves
+        the adapter unable to read positions or close them (kill switch).
+        Only use it for calls that are safe to repeat; order creation is
+        deliberately not routed through the retry (see ``_submit_order_impl``).
+
+        Raises:
+            BrokerUnavailableError: not connected, or re-authentication failed.
+        """
+        for attempt in (1, 2):
+            ig = self._ig
+            if ig is None:
+                raise BrokerUnavailableError("IG service is not connected")
+            try:
+                return getattr(ig, method)(*args, **kwargs)
+            except Exception as exc:
+                if attempt == 2 or not _is_auth_error(exc):
+                    raise
+                if not self._reauthenticate():
+                    raise BrokerUnavailableError(
+                        "IG session expired and re-authentication failed"
+                    ) from exc
+        raise AssertionError("unreachable")  # pragma: no cover
+
     # =========================================================================
     # Symbol Mapping
     # =========================================================================
@@ -335,7 +395,8 @@ class IGBrokerAdapter(BrokerAdapter):
             try:
                 # Keep IG's raw price dicts; the default formatter returns a
                 # DataFrame that the parser below cannot iterate.
-                response = self._ig.fetch_historical_prices_by_epic(
+                response = self._call_ig(
+                    "fetch_historical_prices_by_epic",
                     epic=epic,
                     resolution=resolution,
                     numpoints=limit,
@@ -460,7 +521,7 @@ class IGBrokerAdapter(BrokerAdapter):
         self._rate_limit()
 
         try:
-            market_info = self._ig.fetch_market_by_epic(epic)
+            market_info = self._call_ig("fetch_market_by_epic", epic)
             if market_info:
                 snapshot = market_info.get("snapshot", {})
                 instrument = market_info.get("instrument", {})
@@ -618,7 +679,7 @@ class IGBrokerAdapter(BrokerAdapter):
                 deal_ref = response["dealReference"]
                 time.sleep(0.5)
                 self._rate_limit()
-                confirmation = self._ig.fetch_deal_by_deal_reference(deal_ref)
+                confirmation = self._call_ig("fetch_deal_by_deal_reference", deal_ref)
 
                 if confirmation:
                     return self._deal_result(
@@ -691,7 +752,7 @@ class IGBrokerAdapter(BrokerAdapter):
         self._rate_limit()
 
         try:
-            positions_df = self._ig.fetch_open_positions()
+            positions_df = self._call_ig("fetch_open_positions")
             if positions_df is None or len(positions_df) == 0:
                 return []
 
@@ -766,7 +827,8 @@ class IGBrokerAdapter(BrokerAdapter):
         )
         try:
             self._rate_limit()
-            response = self._ig.close_open_position(
+            response = self._call_ig(
+                "close_open_position",
                 deal_id=position_id,
                 direction=close_direction.value,
                 epic=epic,
@@ -819,7 +881,7 @@ class IGBrokerAdapter(BrokerAdapter):
         self._rate_limit()
 
         try:
-            accounts = self._ig.fetch_accounts()
+            accounts = self._call_ig("fetch_accounts")
             if accounts is not None and len(accounts) > 0:
                 return AccountInfo(
                     balance=float(accounts.loc[0, "balance"]),
@@ -844,7 +906,8 @@ class IGBrokerAdapter(BrokerAdapter):
         if not self._ig:
             return None
         try:
-            history = self._ig.fetch_transaction_history(
+            history = self._call_ig(
+                "fetch_transaction_history",
                 from_date=since,
                 to_date=until,
                 page_size=1000,

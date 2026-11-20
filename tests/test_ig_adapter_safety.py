@@ -85,3 +85,105 @@ def test_opt_in_yfinance_fallback_logs_a_warning(caplog):
 
     assert len(df) == 2
     assert any("falling back to yfinance" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Session expiry: every call re-authenticates, including the kill switch
+# ---------------------------------------------------------------------------
+
+_EURUSD_POSITION = {
+    "dealId": "D1",
+    "epic": "CS.D.EURUSD.CFD.IP",
+    "direction": "BUY",
+    "size": 1.0,
+    "openLevel": 1.1,
+    "level": 1.11,
+}
+
+
+def _expired_adapter() -> tuple[IGBrokerAdapter, MagicMock]:
+    """An adapter whose current service rejects every call as token-invalid."""
+    adapter = _adapter()
+    adapter.reconnect_delay_seconds = 0
+    expired = adapter._ig
+    for name in ("fetch_open_positions", "close_open_position", "fetch_accounts"):
+        getattr(expired, name).side_effect = TokenInvalidException()
+    return adapter, expired
+
+
+def test_kill_reauthenticates_and_closes_positions_after_token_expiry(tmp_path):
+    from fwbg.bot import TradingBot
+
+    adapter, expired = _expired_adapter()
+    fresh = create_autospec(IGService, instance=True)
+    fresh.fetch_open_positions.return_value = _positions_frame([_EURUSD_POSITION])
+    fresh.close_open_position.return_value = {
+        "dealStatus": "ACCEPTED",
+        "dealReference": "C1",
+        "level": 1.1,
+    }
+    bot = TradingBot(
+        adapter=adapter,
+        assets_config={},
+        account_config={"account_id": "t", "currency": "EUR"},
+        stats_dir=str(tmp_path),
+        use_streaming=False,
+    )
+
+    with patch(IG_CLASS, return_value=fresh) as service_class:
+        assert bot.kill(close_positions=True) is True
+
+    service_class.assert_called_once_with("u", "p", "k", "DEMO")
+    fresh.create_session.assert_called_once()
+    fresh.close_open_position.assert_called_once()
+    assert fresh.close_open_position.call_args.kwargs["deal_id"] == "D1"
+    expired.close_open_position.assert_not_called()
+
+
+def test_get_positions_and_account_info_reauthenticate():
+    adapter, _ = _expired_adapter()
+    fresh = create_autospec(IGService, instance=True)
+    fresh.fetch_open_positions.return_value = _positions_frame([_EURUSD_POSITION])
+    fresh.fetch_accounts.return_value = pd.DataFrame(
+        [{"balance": 1000.0, "profitLoss": 5.0, "deposit": 10.0, "available": 990.0}]
+    )
+
+    with patch(IG_CLASS, return_value=fresh):
+        positions = adapter.get_positions()
+        account = adapter.get_account_info()
+
+    assert [p.position_id for p in positions] == ["D1"]
+    assert account.balance == 1000.0
+    assert account.equity == 1005.0
+
+
+def test_failed_reauthentication_is_reported_not_swallowed():
+    adapter, _ = _expired_adapter()
+    with patch(IG_CLASS, side_effect=ConnectionError("down")):
+        with pytest.raises(BrokerUnavailableError):
+            adapter.get_positions()
+
+
+def test_non_auth_errors_are_not_retried():
+    adapter = _adapter()
+    adapter._ig.fetch_open_positions.side_effect = TimeoutError("read timed out")
+
+    with patch(IG_CLASS) as service_class:
+        with pytest.raises(BrokerUnavailableError):
+            adapter.get_positions()
+
+    service_class.assert_not_called()
+    assert adapter._ig.fetch_open_positions.call_count == 1
+
+
+def test_reauthentication_is_attempted_only_once_per_call():
+    adapter, _ = _expired_adapter()
+    still_expired = create_autospec(IGService, instance=True)
+    still_expired.fetch_open_positions.side_effect = TokenInvalidException()
+
+    with patch(IG_CLASS, return_value=still_expired) as service_class:
+        with pytest.raises(BrokerUnavailableError):
+            adapter.get_positions()
+
+    service_class.assert_called_once()
+    assert still_expired.fetch_open_positions.call_count == 1
