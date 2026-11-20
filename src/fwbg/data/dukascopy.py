@@ -21,6 +21,8 @@ from pathlib import Path
 import dukascopy_python as dk
 import dukascopy_python.instruments as dk_instruments
 
+from fwbg.data.atomic import write_csv_atomic, write_text_atomic
+
 log = logging.getLogger(__name__)
 
 
@@ -71,8 +73,15 @@ TIMEFRAMES: dict[str, tuple[str, str]] = {
     "DAY_1": (dk.INTERVAL_DAY_1, "DAY_1"),
 }
 
+
 def _normalize(symbol: str) -> str:
-    return symbol.replace("/", "").replace("_", "").replace("-", "").replace(".", "").upper()
+    return (
+        symbol.replace("/", "")
+        .replace("_", "")
+        .replace("-", "")
+        .replace(".", "")
+        .upper()
+    )
 
 
 def _build_instrument_index() -> dict[str, str]:
@@ -277,7 +286,9 @@ def _fetch_with_progress(instrument, interval, side, start, end, on_frac):
         on_frac(1.0)
         return df
     except Exception:  # noqa: BLE001 — degrade gracefully if lib internals change
-        log.warning("dukascopy: streaming progress failed, using plain fetch", exc_info=True)
+        log.warning(
+            "dukascopy: streaming progress failed, using plain fetch", exc_info=True
+        )
         df = dk.fetch(instrument, interval, side, start, end)
         on_frac(1.0)
         return df
@@ -350,23 +361,42 @@ def download(
                 }
             )
 
-        log.info("dukascopy: fetching %s %s %s..%s (bid+ask)", instrument, timeframe, start, end)
+        log.info(
+            "dukascopy: fetching %s %s %s..%s (bid+ask)",
+            instrument,
+            timeframe,
+            start,
+            end,
+        )
         # bid ≈ first 45% of this symbol, ask the next 45%, write/spread the last 10%.
         report(0.0, "bid")
         bid = _fetch_with_progress(
-            instrument, interval, dk.OFFER_SIDE_BID, start, end,
+            instrument,
+            interval,
+            dk.OFFER_SIDE_BID,
+            start,
+            end,
             lambda f: report(0.45 * f, "bid"),
         )
         report(0.45, "ask")
         ask = _fetch_with_progress(
-            instrument, interval, dk.OFFER_SIDE_ASK, start, end,
+            instrument,
+            interval,
+            dk.OFFER_SIDE_ASK,
+            start,
+            end,
             lambda f: report(0.45 + 0.45 * f, "ask"),
         )
         report(0.9, "write")
 
         if bid is None or bid.empty or ask is None or ask.empty:
             results.append(
-                {"symbol": clean, "file": filename, "rows": 0, "warning": "no data in range"}
+                {
+                    "symbol": clean,
+                    "file": filename,
+                    "rows": 0,
+                    "warning": "no data in range",
+                }
             )
             continue
 
@@ -374,8 +404,12 @@ def download(
         bid, ask = bid.align(ask, join="inner", axis=0)
         if bid.empty:
             results.append(
-                {"symbol": clean, "file": filename, "rows": 0,
-                 "warning": "no overlapping bid/ask bars"}
+                {
+                    "symbol": clean,
+                    "file": filename,
+                    "rows": 0,
+                    "warning": "no overlapping bid/ask bars",
+                }
             )
             continue
 
@@ -401,7 +435,7 @@ def download(
                 "V": volume,
             }
         )
-        out.to_csv(dest, index=False)
+        write_csv_atomic(out, dest, index=False)
 
         # Conservative spread: 90th percentile of the per-bar ask-bid close gap.
         gap = ask["close"].to_numpy() - bid["close"].to_numpy()
@@ -414,16 +448,28 @@ def download(
             save_asset_spread(clean, float(manual_spread), manual=True)
 
         quality_df = pd.DataFrame(
-            {"O": mid["open"], "H": mid["high"], "L": mid["low"], "C": mid["close"], "V": volume},
+            {
+                "O": mid["open"],
+                "H": mid["high"],
+                "L": mid["low"],
+                "C": mid["close"],
+                "V": volume,
+            },
             index=ts,
         )
-        report = assess_bars(quality_df, timeframe=timeframe, requested_start=start, requested_end=end)
+        report = assess_bars(
+            quality_df, timeframe=timeframe, requested_start=start, requested_end=end
+        )
         report["spread_p90"] = spread
-        dest.with_suffix(".quality.json").write_text(json.dumps(report, indent=2))
+        write_text_atomic(
+            dest.with_suffix(".quality.json"), json.dumps(report, indent=2)
+        )
         for warning in report["warnings"]:
             log.warning("dukascopy: %s: %s", clean, warning)
 
-        log.info("dukascopy: wrote %s (%d bars, spread_p90=%.6g)", dest, len(out), spread)
+        log.info(
+            "dukascopy: wrote %s (%d bars, spread_p90=%.6g)", dest, len(out), spread
+        )
         result = {
             "symbol": clean,
             "file": filename,

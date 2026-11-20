@@ -1,10 +1,14 @@
 """API endpoints for MFE/MAE exit optimization."""
 
+import hashlib
 import json
 import os
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from fwbg.api._paths import validate_id
 
 router = APIRouter(tags=["exit-optimization"])
 
@@ -21,6 +25,30 @@ class ExitOptimizationRequest(BaseModel):
     research_id: str | None = None
     note: str | None = None
     reason: str | None = None
+
+
+def _cache_key(
+    req: "ExitOptimizationRequest",
+    data_path: str,
+    window: dict[str, str | None],
+) -> str:
+    """Cache file stem for one analysis: symbol and timeframe plus a digest of everything
+    else that changes the result (datasource, exit strategy and params, forward bars,
+    the data window read, and the data file's size and modification time as its version).
+    """
+    stat = os.stat(data_path)
+    identity: dict[str, Any] = {
+        "source": req.source,
+        "exit_strategy": req.exit_strategy,
+        "exit_params": req.exit_params,
+        "max_bars": req.max_bars,
+        "window": [window["start_date"], window["end_date"]],
+        "data": [stat.st_size, stat.st_mtime_ns],
+    }
+    digest = hashlib.sha256(
+        json.dumps(identity, sort_keys=True, default=str).encode()
+    ).hexdigest()[:12]
+    return f"{req.symbol}_{req.timeframe}_{digest}"
 
 
 @router.post("")
@@ -51,29 +79,44 @@ def run_exit_optimization(req: ExitOptimizationRequest):
     except ValueError as e:
         raise HTTPException(400, str(e))
     if not path.exists():
-        raise HTTPException(404, f"Data file not found: {req.symbol}_{req.timeframe} in {req.source}")
+        raise HTTPException(
+            404, f"Data file not found: {req.symbol}_{req.timeframe} in {req.source}"
+        )
 
     window = {"start_date": None, "end_date": None}
     if gate_enabled():
         config = analysis_config(
-            req.exit_strategy, req.exit_params, req.max_bars, req.timeframe, datasource=req.source
+            req.exit_strategy,
+            req.exit_params,
+            req.max_bars,
+            req.timeframe,
+            datasource=req.source,
         )
         try:
             _, window = record_analysis(
-                req.research_id, config, [req.symbol.upper()], req.note, reason=req.reason
+                req.research_id,
+                config,
+                [req.symbol.upper()],
+                req.note,
+                reason=req.reason,
             )
         except GateDenied as exc:
             raise gate_refusal(denial_payload(exc.denials), "analysis") from None
 
     result = analyze_asset(
-        str(path), req.exit_strategy, req.exit_params, req.max_bars,
-        window["start_date"], window["end_date"],
+        str(path),
+        req.exit_strategy,
+        req.exit_params,
+        req.max_bars,
+        window["start_date"],
+        window["end_date"],
     )
 
     # Cache result to disk
     out_dir = os.path.join(get_test_results_dir(), "exploration")
     os.makedirs(out_dir, exist_ok=True)
-    cache_key = f"{req.symbol}_{req.timeframe}"
+    cache_key = _cache_key(req, str(path), window)
+    result["cache_key"] = cache_key
     write_json(result, os.path.join(out_dir, f"{cache_key}.json"))
 
     return result
@@ -95,28 +138,50 @@ def list_exit_optimizations():
         path = os.path.join(out_dir, f)
         with open(path) as fh:
             data = json.load(fh)
-        results.append({
-            "symbol": data.get("symbol"),
-            "timeframe": data.get("timeframe"),
-            "exit_strategy": data.get("exit_strategy"),
-            "analyzed_at": data.get("analyzed_at"),
-            "bars_analyzed": data.get("bars_analyzed"),
-            "suggested_grid": data.get("suggested_grid"),
-        })
+        results.append(
+            {
+                "symbol": data.get("symbol"),
+                "timeframe": data.get("timeframe"),
+                "exit_strategy": data.get("exit_strategy"),
+                "analyzed_at": data.get("analyzed_at"),
+                "exit_params": data.get("exit_params"),
+                "max_bars_forward": data.get("max_bars_forward"),
+                "window": data.get("window"),
+                "cache_key": data.get("cache_key"),
+                "bars_analyzed": data.get("bars_analyzed"),
+                "suggested_grid": data.get("suggested_grid"),
+            }
+        )
     return results
 
 
 @router.get("/{symbol}")
-def get_exit_optimization(symbol: str):
-    """Get cached exit optimization result for a symbol."""
+def get_exit_optimization(symbol: str, timeframe: str | None = None):
+    """Get the most recent cached exit optimization result for a symbol.
+
+    Several results can exist per symbol (one per timeframe, exit strategy,
+    parameters and data window); pass ``timeframe`` to narrow them down.
+    """
     from fwbg.api.deps import get_test_results_dir
 
+    validate_id(symbol, "symbol")
     out_dir = os.path.join(get_test_results_dir(), "exploration")
-    # Try exact match, then with _HOUR suffix
-    for candidate in [f"{symbol}.json", f"{symbol}_HOUR.json"]:
-        path = os.path.join(out_dir, candidate)
-        if os.path.exists(path):
-            with open(path) as fh:
-                return json.load(fh)
-
-    raise HTTPException(404, f"No exit optimization found for {symbol}")
+    best: tuple[tuple[str, int], dict] | None = None
+    if os.path.isdir(out_dir):
+        for name in sorted(os.listdir(out_dir)):
+            if not name.endswith(".json") or not name.startswith(f"{symbol}_"):
+                continue
+            file_path = os.path.join(out_dir, name)
+            with open(file_path) as fh:
+                data = json.load(fh)
+            if data.get("symbol") != symbol:
+                continue
+            if timeframe is not None and data.get("timeframe") != timeframe:
+                continue
+            # analyzed_at has second resolution; the file time breaks ties.
+            stamp = (data.get("analyzed_at") or "", os.stat(file_path).st_mtime_ns)
+            if best is None or stamp >= best[0]:
+                best = (stamp, data)
+    if best is None:
+        raise HTTPException(404, f"No exit optimization found for {symbol}")
+    return best[1]

@@ -15,6 +15,11 @@ from fwbg.portfolio.overlay import change_over_weeks, exposure_mask
 __all__ = ["change_over_weeks", "exposure_mask", "monthly_position"]
 
 
+def _wall_clock(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """Drop the timezone but keep the local wall-clock time (and so the date)."""
+    return index.tz_localize(None) if index.tz is not None else index
+
+
 def monthly_position(condition: pd.Series, index: pd.DatetimeIndex) -> pd.Series:
     """Return the 0/1 position that earns each day's return under a monthly rule.
 
@@ -29,6 +34,9 @@ def monthly_position(condition: pd.Series, index: pd.DatetimeIndex) -> pd.Series
     the preceding session is not part of ``index``; it is taken to be the previous
     business day, so the position carries over a decision that executed before the
     window. That is exact unless that business day was an exchange holiday.
+
+    Either argument may be tz-aware; the rule is evaluated on local calendar dates and
+    the result carries ``index`` unchanged.
     """
     if not isinstance(condition.index, pd.DatetimeIndex) or not isinstance(
         index, pd.DatetimeIndex
@@ -36,6 +44,13 @@ def monthly_position(condition: pd.Series, index: pd.DatetimeIndex) -> pd.Series
         raise ValueError("condition and index must be DatetimeIndex-based")
     if index.empty:
         return pd.Series(dtype=float, index=index)
-    previous = index[0] - pd.offsets.BDay(1)
-    mask = exposure_mask(condition.dropna().astype(bool), index.insert(0, previous))
-    return mask.shift(1).iloc[1:].fillna(False).astype(float)
+    # Month ends and sessions are calendar dates: compare them as local wall-clock
+    # dates, so a tz-aware index (or condition) behaves like its naive counterpart.
+    sessions = _wall_clock(index)
+    decisions = condition.dropna().astype(bool)
+    decisions.index = _wall_clock(decisions.index)
+    previous = sessions[0] - pd.offsets.BDay(1)
+    mask = exposure_mask(decisions, sessions.insert(0, previous))
+    position = mask.shift(1).iloc[1:].fillna(False).astype(float)
+    position.index = index
+    return position

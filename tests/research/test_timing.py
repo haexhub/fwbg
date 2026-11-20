@@ -106,3 +106,21 @@ def test_window_starting_on_the_executing_session_is_not_yet_invested():
 def test_empty_index_gives_an_empty_position():
     empty = SESSIONS[:0]
     assert monthly_position(condition(True), empty).empty
+
+
+@pytest.mark.parametrize("zone", ["UTC", "America/New_York", "Asia/Tokyo"])
+@pytest.mark.parametrize("condition_aware", [False, True])
+def test_tz_aware_index_gives_the_same_positions_as_a_naive_one(zone, condition_aware):
+    """A tz-aware daily index (and/or condition) must not change the rule's semantics."""
+    monthly = condition(True, False, True, True)
+    expected = monthly_position(monthly, SESSIONS)
+    aware_sessions = SESSIONS.tz_localize(zone)
+    aware_monthly = monthly.copy()
+    if condition_aware:
+        aware_monthly.index = aware_monthly.index.tz_localize(zone)
+
+    got = monthly_position(aware_monthly, aware_sessions)
+
+    assert got.index.equals(aware_sessions)
+    assert got.to_numpy().tolist() == expected.to_numpy().tolist()
+    assert got.loc["2020-02-03"] == 0 and got.loc["2020-02-04"] == 1

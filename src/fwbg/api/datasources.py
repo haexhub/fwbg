@@ -12,7 +12,9 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 from fwbg.api._paths import validate_id
+from fwbg.data.atomic import write_csv_atomic
 from fwbg.core.data_sources import (
+    utc_timestamps,
     _DATA_SOURCES,
     AssetInfo,
     CSVSourceConfig,
@@ -471,15 +473,15 @@ def process_raw_file(name: str, req: ProcessRequest):
 
     df = df[list(col_map.keys())].rename(columns=col_map)
 
-    # Timestamp conversion
-    if req.timestamp_format in ("unix_s", "unix_ms"):
-        unit = "s" if req.timestamp_format == "unix_s" else "ms"
-        ts = pd.to_datetime(df["DATE"], unit=unit, utc=True)
-        if req.timezone:
-            ts = ts.dt.tz_convert(req.timezone)
-        df["DATE"] = ts.dt.strftime("%Y-%m-%d %H:%M:%S")
-    else:
-        df["DATE"] = pd.to_datetime(df["DATE"])
+    # Timestamp conversion: stored as naive UTC (see fwbg.core.data_sources);
+    # req.timezone names the zone of string timestamps, epochs are UTC already.
+    unit = {"unix_s": "s", "unix_ms": "ms"}.get(req.timestamp_format, "")
+    try:
+        df = utc_timestamps(
+            df, "DATE", unit, req.timezone, label=f"process {req.filename}"
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid timestamps: {exc}")
 
     df = df.set_index("DATE").sort_index()
 
@@ -487,7 +489,7 @@ def process_raw_file(name: str, req: ProcessRequest):
     ds_path.mkdir(parents=True, exist_ok=True)
 
     out_filename = f"{req.symbol}_{req.timeframe}.csv"
-    df.to_csv(ds_path / out_filename)
+    write_csv_atomic(df, ds_path / out_filename)
 
     return {"output": out_filename, "rows": len(df)}
 

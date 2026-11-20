@@ -1,6 +1,7 @@
 """
 Tests für den Data Loader - insbesondere CSV-Format-Erkennung.
 """
+
 import os
 import tempfile
 import pytest
@@ -50,7 +51,9 @@ class TestLoadMacroCsv:
     def test_time_column(self, tmp_path):
         """Testet Laden von CSVs mit 'Time' Spalte."""
         csv_path = tmp_path / "test_time.csv"
-        csv_path.write_text("Time,Close\n2024-01-01 10:00,100.0\n2024-01-01 11:00,101.5\n")
+        csv_path.write_text(
+            "Time,Close\n2024-01-01 10:00,100.0\n2024-01-01 11:00,101.5\n"
+        )
 
         df = load_macro_csv(str(csv_path))
 
@@ -122,9 +125,7 @@ class TestLoadDataAligned:
         """Testet Close-only Format (wie VIX)."""
         csv_path = tmp_path / "test_close.csv"
         csv_path.write_text(
-            "Time,Close\n"
-            "2024-01-01 10:00,100.0\n"
-            "2024-01-01 11:00,101.5\n"
+            "Time,Close\n2024-01-01 10:00,100.0\n2024-01-01 11:00,101.5\n"
         )
 
         df = load_data_aligned(str(csv_path))
@@ -204,10 +205,7 @@ class TestRealDataFormats:
         """Testet yfinance Makro-Daten Format."""
         csv_path = tmp_path / "yfinance_macro.csv"
         csv_path.write_text(
-            "Datetime,Close\n"
-            "2024-01-01,100.0\n"
-            "2024-01-02,101.5\n"
-            "2024-01-03,99.8\n"
+            "Datetime,Close\n2024-01-01,100.0\n2024-01-02,101.5\n2024-01-03,99.8\n"
         )
 
         df = load_macro_csv(str(csv_path))
@@ -220,3 +218,82 @@ class TestRealDataFormats:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestLoadDataAlignedErrors:
+    """Only a missing/empty file means "no data"; other problems must surface."""
+
+    def test_missing_file_is_no_data(self, tmp_path):
+        assert load_data_aligned(str(tmp_path / "nope_HOUR_1.csv")) is None
+
+    def test_empty_file_is_no_data(self, tmp_path):
+        path = tmp_path / "EMPTY_HOUR_1.csv"
+        path.write_text("")
+        assert load_data_aligned(str(path)) is None
+
+    def test_header_only_file_is_no_data(self, tmp_path):
+        path = tmp_path / "HDR_HOUR_1.csv"
+        path.write_text("Time,Open,High,Low,Close,Volume\n")
+        assert load_data_aligned(str(path)) is None
+
+    def test_non_positive_prices_raise(self, tmp_path):
+        path = tmp_path / "BAD_HOUR_1.csv"
+        path.write_text(
+            "Time,Open,High,Low,Close,Volume\n"
+            "2024-01-01 10:00,100.0,101.0,0.0,100.5,1000\n"
+        )
+        with pytest.raises(ValueError, match="non-positive"):
+            load_data_aligned(str(path))
+
+    def test_non_numeric_prices_raise(self, tmp_path):
+        path = tmp_path / "TXT_HOUR_1.csv"
+        path.write_text(
+            "Time,Open,High,Low,Close,Volume\n"
+            "2024-01-01 10:00,abc,101.0,99.0,100.5,1000\n"
+        )
+        with pytest.raises(ValueError, match="not numeric"):
+            load_data_aligned(str(path))
+
+    def test_unparseable_timestamps_raise(self, tmp_path):
+        path = tmp_path / "TS_HOUR_1.csv"
+        path.write_text(
+            "Time,Open,High,Low,Close,Volume\nnot-a-date,100.0,101.0,99.0,100.5,1000\n"
+        )
+        with pytest.raises(ValueError):
+            load_data_aligned(str(path))
+
+
+class TestTimestampConvention:
+    """The loaded index is naive UTC: naive input is kept, offsets are converted."""
+
+    def _load(self, tmp_path, stamps):
+        path = tmp_path / "TZ_HOUR_1.csv"
+        rows = "".join(f"{t},1.0,1.1,0.9,1.0,10\n" for t in stamps)
+        path.write_text("Time,Open,High,Low,Close,Volume\n" + rows)
+        return load_data_aligned(str(path))
+
+    def test_naive_timestamps_are_kept_as_they_are(self, tmp_path):
+        df = self._load(tmp_path, ["2024-07-01 10:00:00"])
+        assert list(df.index) == [pd.Timestamp("2024-07-01 10:00:00")]
+        assert df.index.tz is None
+
+    def test_offset_timestamps_are_converted_to_utc(self, tmp_path):
+        df = self._load(tmp_path, ["2024-07-01 10:00:00+02:00"])
+        assert list(df.index) == [pd.Timestamp("2024-07-01 08:00:00")]
+        assert df.index.tz is None
+
+    def test_mixed_offsets_across_a_dst_change_become_one_utc_index(self, tmp_path):
+        df = self._load(
+            tmp_path,
+            [
+                "2024-10-27 01:00:00+02:00",
+                "2024-10-27 02:00:00+02:00",
+                "2024-10-27 02:00:00+01:00",
+            ],
+        )
+        assert list(df.index) == [
+            pd.Timestamp("2024-10-26 23:00:00"),
+            pd.Timestamp("2024-10-27 00:00:00"),
+            pd.Timestamp("2024-10-27 01:00:00"),
+        ]
+        assert df.index.is_unique
