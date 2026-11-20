@@ -13,6 +13,9 @@ private research register in `$FWBG_WORKSPACE/research`.
   `--research-id`/`--note`/`--reason`, reads only data before the card's cutoff
   and is recorded too; so does `POST /api/exploration/exit-optimization`
   (`research_id`, `note`, `reason` in the body).
+- `python -m fwbg.portfolio.cli run|search|swing-study` and
+  `POST /api/runs/preview` are gated the same way (`--research-id`/`--note`,
+  `research_id`/`note` in the body); each reads only data before the cutoff.
 - A holdout look (`--holdout`) evaluates the frozen setting once on data after
   the card's cutoff; use it when iterating is done. A further look needs `--reason`.
 - Scripts that evaluate strategies outside `python -m fwbg.cli` record every

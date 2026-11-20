@@ -59,6 +59,15 @@ Backtests read only local inputs and do not download or silently refresh data.
 The downloader is an optional fixed-universe example, not a general market-data
 service. It downloads ETF prices and EUR/USD valuation rates only.
 
+`run`, `search` and `swing-study` are gated by the research register like a
+backtest: pass `--research-id S-NNNN` and `--note "<what changed and why>"`
+(`--reason` for an identical repeat). The command is recorded before it reads
+prices. `run` and `search` drop prices on or after the card's holdout cutoff;
+`swing-study` states its window in the protocol and is refused if
+`evaluation_end` lies on or after the cutoff. The register's duplicate check
+fingerprints the config (without its name), cost multiplier and a digest of the
+price file.
+
 ## Macro overlays
 
 A config may add an `overlay` block that sets the whole book to cash for the

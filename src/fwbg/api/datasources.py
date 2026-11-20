@@ -1,4 +1,5 @@
 """REST API for data source management."""
+
 import logging
 import os
 import re
@@ -79,7 +80,9 @@ def _check_source_paths(body: dict, current: Optional[dict] = None) -> None:
         if not value or (current is not None and str(value) == current.get(key)):
             continue
         if not Path(value).resolve().is_relative_to(root):
-            raise HTTPException(status_code=400, detail=f"{key} must be inside the data root")
+            raise HTTPException(
+                status_code=400, detail=f"{key} must be inside the data root"
+            )
 
 
 def _raw_dir(name: str) -> Path:
@@ -99,9 +102,66 @@ def _file_info(path: Path) -> dict:
     return {"name": path.name, "size": stat.st_size, "modified": stat.st_mtime}
 
 
+# Placeholder shown instead of stored secrets. A client that sends it back
+# unchanged (GET, edit, PUT) keeps the stored value.
+SECRET_MASK = "********"
+
+_SECRET_HEADER_HINTS = ("auth", "key", "token", "secret", "cookie", "password")
+_CREDENTIALS_IN_URL_RE = re.compile(r"(://[^:/@\s]*:)[^@/\s]*(@)")
+
+
+def _is_secret_header(header: str) -> bool:
+    lowered = header.lower()
+    return any(hint in lowered for hint in _SECRET_HEADER_HINTS)
+
+
+def _mask_secrets(d: dict) -> dict:
+    """Return a copy of a serialized source config with secrets replaced by SECRET_MASK."""
+    masked = dict(d)
+    if masked.get("api_key"):
+        masked["api_key"] = SECRET_MASK
+    if masked.get("connection_string"):
+        masked["connection_string"] = _CREDENTIALS_IN_URL_RE.sub(
+            rf"\g<1>{SECRET_MASK}\g<2>", masked["connection_string"]
+        )
+    if isinstance(masked.get("headers"), dict):
+        masked["headers"] = {
+            k: (SECRET_MASK if v and _is_secret_header(k) else v)
+            for k, v in masked["headers"].items()
+        }
+    return masked
+
+
+def _restore_masked_secrets(body: dict, current: dict) -> None:
+    """Replace mask placeholders in an update body by the stored values (in place)."""
+    if body.get("api_key") == SECRET_MASK:
+        body["api_key"] = current.get("api_key", "")
+    conn = body.get("connection_string")
+    if isinstance(conn, str) and SECRET_MASK in conn:
+        stored = current.get("connection_string", "")
+        if _mask_secrets({"connection_string": stored})["connection_string"] == conn:
+            body["connection_string"] = stored
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="connection_string contains the secret mask placeholder",
+            )
+    headers = body.get("headers")
+    if isinstance(headers, dict):
+        stored_headers = current.get("headers") or {}
+        for key, value in list(headers.items()):
+            if value == SECRET_MASK:
+                if key not in stored_headers:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"header {key!r} contains the secret mask placeholder",
+                    )
+                headers[key] = stored_headers[key]
+
+
 def _source_to_response(name: str) -> dict:
     source = _DATA_SOURCES[name]
-    d = source.to_dict()
+    d = _mask_secrets(source.to_dict())
 
     if isinstance(source, CSVSourceConfig):
         ds_path = source.path
@@ -113,7 +173,9 @@ def _source_to_response(name: str) -> dict:
 
         raw_files = []
         if raw_path.exists():
-            raw_files = [_file_info(f) for f in sorted(raw_path.iterdir()) if f.is_file()]
+            raw_files = [
+                _file_info(f) for f in sorted(raw_path.iterdir()) if f.is_file()
+            ]
 
         d["files"] = files
         d["file_count"] = len(files)
@@ -124,6 +186,7 @@ def _source_to_response(name: str) -> dict:
 
 
 # ── Asset discovery ───────────────────────────────────────────────────────────
+
 
 def _asset_to_dict(a: AssetInfo) -> dict:
     return {
@@ -161,6 +224,7 @@ def list_available_assets():
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
+
 
 @router.get("/datasources")
 def list_sources():
@@ -228,6 +292,7 @@ def update_source(name: str, body: dict):
     body.pop("name", None)
     body.pop("type", None)
     _check_source_paths(body, current)
+    _restore_masked_secrets(body, current)
     current.update(body)
     current["name"] = name
 
@@ -242,6 +307,7 @@ def update_source(name: str, body: dict):
 
 
 # ── Raw files ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/datasources/{name}/raw")
 def list_raw_files(name: str):
@@ -266,7 +332,9 @@ def _store_upload(file: UploadFile, dest: Path, display_name: str) -> None:
             while chunk := file.file.read(_UPLOAD_CHUNK_SIZE):
                 size += len(chunk)
                 if size > MAX_UPLOAD_SIZE:
-                    raise HTTPException(status_code=413, detail=f"File too large: {display_name}")
+                    raise HTTPException(
+                        status_code=413, detail=f"File too large: {display_name}"
+                    )
                 out.write(chunk)
         os.replace(temp, dest)
     finally:
@@ -305,6 +373,7 @@ def delete_raw_file(name: str, filename: str):
 
 # ── Datasource files ──────────────────────────────────────────────────────────
 
+
 @router.get("/datasources/{name}/datasource")
 def list_datasource_files(name: str):
     if name not in _DATA_SOURCES:
@@ -329,6 +398,7 @@ def delete_datasource_file(name: str, filename: str):
 
 # ── ETL ───────────────────────────────────────────────────────────────────────
 
+
 @router.get("/datasources/{name}/raw/{filename}/preview")
 def preview_raw_file(name: str, filename: str, rows: int = 5):
     if name not in _DATA_SOURCES:
@@ -338,6 +408,7 @@ def preview_raw_file(name: str, filename: str, rows: int = 5):
         raise HTTPException(status_code=404, detail=f"File not found: {filename}")
     try:
         import pandas as pd
+
         df = pd.read_csv(f, nrows=rows + 1)
         return {
             "columns": list(df.columns),
@@ -358,7 +429,7 @@ class ProcessRequest(BaseModel):
     close_col: str
     volume_col: Optional[str] = None
     timestamp_format: str = ""  # "", "unix_s", "unix_ms"
-    timezone: str = ""          # IANA timezone
+    timezone: str = ""  # IANA timezone
 
 
 @router.post("/datasources/{name}/process")
@@ -371,10 +442,13 @@ def process_raw_file(name: str, req: ProcessRequest):
     validate_id(req.symbol, "symbol")
     validate_id(req.timeframe, "timeframe")
     if not raw_file.exists():
-        raise HTTPException(status_code=404, detail=f"Raw file not found: {req.filename}")
+        raise HTTPException(
+            status_code=404, detail=f"Raw file not found: {req.filename}"
+        )
 
     try:
         import pandas as pd
+
         df = pd.read_csv(raw_file)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to read file: {e}")
@@ -391,7 +465,9 @@ def process_raw_file(name: str, req: ProcessRequest):
 
     for col in col_map:
         if col not in df.columns:
-            raise HTTPException(status_code=400, detail=f"Column not found in file: {col!r}")
+            raise HTTPException(
+                status_code=400, detail=f"Column not found in file: {col!r}"
+            )
 
     df = df[list(col_map.keys())].rename(columns=col_map)
 
@@ -418,9 +494,10 @@ def process_raw_file(name: str, req: ProcessRequest):
 
 # ── Batch prepare (async) ────────────────────────────────────────────────────
 
+
 class PrepareRequest(BaseModel):
-    glob_pattern: str = ""       # Optional override for raw_pattern
-    excludes: List[str] = []     # Filenames to exclude from processing
+    glob_pattern: str = ""  # Optional override for raw_pattern
+    excludes: List[str] = []  # Filenames to exclude from processing
 
 
 @router.post("/datasources/{name}/prepare", status_code=202)
@@ -430,7 +507,9 @@ def start_prepare(name: str, req: PrepareRequest):
         raise HTTPException(status_code=404, detail=f"Source not found: {name}")
     source = _DATA_SOURCES[name]
     if not isinstance(source, CSVSourceConfig):
-        raise HTTPException(status_code=400, detail="prepare is only supported for CSV sources")
+        raise HTTPException(
+            status_code=400, detail="prepare is only supported for CSV sources"
+        )
 
     task_id = uuid.uuid4().hex[:12]
     with _tasks_lock:
@@ -438,7 +517,9 @@ def start_prepare(name: str, req: PrepareRequest):
 
     def run():
         try:
-            converted = source.prepare(glob_override=req.glob_pattern, excludes=req.excludes)
+            converted = source.prepare(
+                glob_override=req.glob_pattern, excludes=req.excludes
+            )
             with _tasks_lock:
                 _prepare_tasks[task_id]["result"] = converted
                 _prepare_tasks[task_id]["status"] = "done"
@@ -463,6 +544,7 @@ def prepare_status(name: str, task_id: str):
 
 
 # ── Dukascopy ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/dukascopy/instruments")
 def dukascopy_instruments():
@@ -508,10 +590,12 @@ _download_tasks: Dict[str, dict] = {}
 class DukascopyRequest(BaseModel):
     symbols: List[str]
     timeframe: str = "HOUR_1"
-    start: str                 # ISO date/datetime, e.g. "2023-01-01"
+    start: str  # ISO date/datetime, e.g. "2023-01-01"
     end: str
-    offer_side: str = "bid"    # deprecated/ignored: OHLC is now mid = (bid+ask)/2
-    spread: Optional[float] = None  # manual backtest spread override (else p90 measured)
+    offer_side: str = "bid"  # deprecated/ignored: OHLC is now mid = (bid+ask)/2
+    spread: Optional[float] = (
+        None  # manual backtest spread override (else p90 measured)
+    )
 
 
 @router.post("/datasources/{name}/dukascopy", status_code=202)
@@ -529,7 +613,8 @@ def start_dukascopy(name: str, req: DukascopyRequest):
     source = _DATA_SOURCES[name]
     if not isinstance(source, CSVSourceConfig):
         raise HTTPException(
-            status_code=400, detail="dukascopy download is only supported for CSV sources"
+            status_code=400,
+            detail="dukascopy download is only supported for CSV sources",
         )
     if not req.symbols:
         raise HTTPException(status_code=400, detail="symbols must not be empty")
@@ -544,7 +629,12 @@ def start_dukascopy(name: str, req: DukascopyRequest):
 
     task_id = uuid.uuid4().hex[:12]
     with _tasks_lock:
-        _download_tasks[task_id] = {"status": "running", "result": None, "error": None, "progress": None}
+        _download_tasks[task_id] = {
+            "status": "running",
+            "result": None,
+            "error": None,
+            "progress": None,
+        }
 
     def run():
         try:
