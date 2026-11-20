@@ -251,4 +251,87 @@ class TestPluginIntegration:
 
     def test_name_and_version(self, indicator):
         assert indicator.name == "wavelets"
-        assert indicator.version == "2.0.0"
+        assert indicator.version == "2.1.0"
+
+
+# --- Band energy shares from full-window coefficients ---
+
+
+def _white_noise_df(n=5000, seed=3):
+    rng = np.random.default_rng(seed)
+    close = 100 * np.exp(np.cumsum(rng.normal(0, 0.005, n)))
+    return _make_ohlc(close)
+
+
+class TestBandEnergyShares:
+    def test_white_noise_detail1_share_is_one_half(self, indicator):
+        """White noise puts half of its energy into the finest detail band.
+
+        Taking the end sample of a reconstruction instead gave ~0.05.
+        """
+        out = indicator.compute(_white_noise_df(), levels=3, dwt_window=256)
+        # independent (non-overlapping) trailing windows
+        r1 = out["wt_detail_ratio_1"].dropna().iloc[::256]
+        r2 = out["wt_detail_ratio_2"].dropna().iloc[::256]
+        r3 = out["wt_detail_ratio_3"].dropna().iloc[::256]
+        assert r1.mean() == pytest.approx(0.5, abs=0.05)
+        assert r2.mean() == pytest.approx(0.25, abs=0.05)
+        assert r3.mean() == pytest.approx(0.125, abs=0.05)
+
+    def test_matches_reference_coefficient_shares(self, indicator):
+        import pywt
+
+        df = _white_noise_df(n=600)
+        out = indicator.compute(df, levels=3, dwt_window=256)
+        close = df["C"].to_numpy()
+        lr = np.diff(np.log(close))  # lr[j] is the return of bar j+1
+        for i in (300, 450, 598):
+            seg = lr[i - 256 : i]  # bars i-255..i
+            coeffs = pywt.wavedec(seg, "db4", level=3, mode="periodization")
+            e = [float(np.sum(c * c)) for c in coeffs]
+            tot = sum(e)
+            # row i+1 holds the features of bar i (shift by one)
+            for lvl in (1, 2, 3):
+                assert out[f"wt_detail_ratio_{lvl}"].iloc[i + 1] == pytest.approx(
+                    e[4 - lvl] / tot, rel=1e-9
+                )
+
+    def test_shares_plus_approx_sum_to_one_and_power_matches(self, indicator):
+        import pywt
+
+        df = _white_noise_df(n=400)
+        out = indicator.compute(df, levels=3, windows=[5], dwt_window=128)
+        close = df["C"].to_numpy()
+        lr = np.diff(np.log(close))
+        i = 350
+        powers = []
+        for j in range(i - 4, i + 1):
+            seg = lr[j - 128 : j]
+            coeffs = pywt.wavedec(seg, "db4", level=3, mode="periodization")
+            powers.append([float(np.sum(c * c)) / 128 for c in coeffs])
+        expected = np.mean(powers, axis=0)
+        assert out["wt_approx_energy_5"].iloc[i + 1] == pytest.approx(expected[0])
+        for lvl in (1, 2, 3):
+            assert out[f"wt_detail_{lvl}_energy_5"].iloc[i + 1] == pytest.approx(
+                expected[4 - lvl]
+            )
+        # Parseval: band powers add up to the mean squared return of the window
+        seg = lr[i - 128 : i]
+        assert sum(powers[-1]) == pytest.approx(float(np.mean(seg**2)))
+
+    def test_warmup_is_nan_until_all_levels_fit(self, indicator):
+        out = indicator.compute(_white_noise_df(n=200), levels=3, dwt_window=128)
+        # db4 needs (8 - 1) * 2**3 = 56 bars; returns start at bar 1
+        ratio = out["wt_detail_ratio_1"]
+        assert ratio.iloc[:57].isna().all()
+        assert ratio.iloc[57:].notna().all()
+
+    def test_infeasible_levels_raise(self, indicator):
+        with pytest.raises(ValueError, match="dwt_window"):
+            indicator.compute(_white_noise_df(n=100), levels=6, dwt_window=64)
+
+    def test_get_feature_columns_with_params(self, indicator):
+        cols = indicator.get_feature_columns({"levels": 2, "windows": [7]})
+        assert "wt_detail_2_energy_7" in cols
+        assert "wt_detail_3_energy_7" not in cols
+        assert "wt_detail_ratio_2" in cols
