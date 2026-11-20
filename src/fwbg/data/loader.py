@@ -307,11 +307,16 @@ def run_data_loading(df, data_loading_configs):
         if plugin_name:
             try:
                 cls = get_data_loader(plugin_name)
-            except ValueError:
-                log.debug(f"DataLoader plugin '{plugin_name}' not found, skipping")
-            else:
-                ctx = PipelineContext(df=df, symbol="", asset_class="")
-                ctx = cls().execute(ctx, **params)
-                df = ctx.df
+            except ValueError as exc:
+                # A configured loader that cannot be resolved must not be dropped
+                # silently: the strategy would run without the features it asks for.
+                raise ValueError(
+                    f"DataLoader plugin '{plugin_name}' is not available. If it "
+                    f"belongs to an optional plugin package, that package must be "
+                    f"installed in this environment. ({exc})"
+                ) from exc
+            ctx = PipelineContext(df=df, symbol="", asset_class="")
+            ctx = cls().execute(ctx, **params)
+            df = ctx.df
 
     return df

@@ -237,35 +237,44 @@ def compute_indicator_pool(
 # =============================================================================
 # These are NOT feature selection — they score TP/SL/CT parameter candidates.
 # Using lazy loading to avoid circular imports.
+# The plateau plugin ships in the optional, separately installed
+# ``fwbg-premium`` plugin package; without it these wrappers raise ImportError.
 
 _plateau_module = None
 
 
+_PLATEAU_MISSING = (
+    "Plugin 'fwbg-premium:plateau' is not installed. It is provided by the optional "
+    "'fwbg-premium' plugin package, which must be installed separately."
+)
+
+
 def _get_plateau_module():
-    """Lazy-load plateau module to avoid circular imports."""
+    """Lazy-load plateau module to avoid circular imports.
+
+    Raises:
+        ImportError: If the plugin package providing the plateau plugin is not installed.
+    """
     global _plateau_module
     if _plateau_module is None:
         from fwbg.plugins import import_plugin_module
 
-        _plateau_module = import_plugin_module(
-            "fwbg-premium", "feature_selection", "plateau"
-        )
+        module = import_plugin_module("fwbg-premium", "feature_selection", "plateau")
+        if module is None:
+            raise ImportError(_PLATEAU_MISSING)
+        _plateau_module = module
     return _plateau_module
 
 
 def calculate_param_plateau_score(*args, **kwargs):
     """Wrapper for plateau.calculate_param_plateau_score."""
     module = _get_plateau_module()
-    if module is None:
-        raise ImportError("Plugin 'fwbg-premium:plateau' not installed")
     return module.calculate_param_plateau_score(*args, **kwargs)
 
 
 def select_best_plateau_candidate(*args, **kwargs):
     """Wrapper for plateau.select_best_plateau_candidate."""
     module = _get_plateau_module()
-    if module is None:
-        raise ImportError("Plugin 'fwbg-premium:plateau' not installed")
     return module.select_best_plateau_candidate(*args, **kwargs)
 
 

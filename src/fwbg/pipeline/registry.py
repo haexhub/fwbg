@@ -98,12 +98,31 @@ class PluginRegistry:
             ValueError: If name is not fully qualified (missing namespace)
         """
         if ":" not in name:
+            hint = ""
+            if not any(fqn.split(":", 1)[1] == name for fqn in self._plugins):
+                hint = (
+                    f" No installed plugin package provides a plugin named "
+                    f"'{name}'; if it belongs to an optional plugin package, "
+                    f"that package is not installed."
+                )
             raise ValueError(
                 f"Plugin name '{name}' must be fully qualified with namespace "
                 f"(e.g., 'fwbg-core:{name}'). Available: {self.list_plugins()}"
+                f"{hint}"
             )
 
         if name not in self._plugins:
+            namespace = name.split(":", 1)[0]
+            known = set(self._package_manifests) | {
+                fqn.split(":", 1)[0] for fqn in self._plugins
+            }
+            if namespace not in known:
+                raise PluginNotFoundError(
+                    f"Plugin '{name}' not found in registry: plugin package "
+                    f"'{namespace}' is not installed. Install the package that "
+                    f"provides it (registered under the 'fwbg.plugin_packages' "
+                    f"entry point group). Installed packages: {sorted(known)}"
+                )
             raise PluginNotFoundError(f"Plugin '{name}' not found in registry")
         return self._plugins[name]
 
@@ -474,7 +493,7 @@ class PluginRegistry:
 
         Discovers plugins from:
         1. Built-in packages (fwbg-core) in plugins/
-        2. Installed packages via entry_points (fwbg-premium etc.)
+        2. Installed packages via entry_points (separately installed plugin packages)
         3. User packages (~/.fwbg/plugins/)
 
         Returns:
