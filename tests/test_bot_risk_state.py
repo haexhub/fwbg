@@ -90,12 +90,15 @@ def test_unknown_and_stale_state_block_trading():
     assert state.can_trade(now) is False
     assert state.observe(1000.0, None, observed_at=now, now=now) is False
     assert state.can_trade(now) is False
-    assert state.observe(
-        1000.0,
-        [],
-        observed_at=now - timedelta(seconds=31),
-        now=now,
-    ) is False
+    assert (
+        state.observe(
+            1000.0,
+            [],
+            observed_at=now - timedelta(seconds=31),
+            now=now,
+        )
+        is False
+    )
 
 
 def test_restart_replay_preserves_idempotent_state():
@@ -175,9 +178,13 @@ def test_minimum_lot_is_not_allowed_to_exceed_risk_budget():
 
 
 @pytest.mark.parametrize("close_ok, signal_kept", [(True, False), (False, True)])
-def test_kill_signal_is_kept_until_positions_are_closed(tmp_path, close_ok, signal_kept):
+def test_kill_signal_is_kept_until_positions_are_closed(
+    tmp_path, close_ok, signal_kept
+):
     adapter = MagicMock()
-    adapter.close_all_positions.return_value = [MagicMock(success=close_ok, message="x")]
+    adapter.close_all_positions.return_value = [
+        MagicMock(success=close_ok, message="x")
+    ]
     bot = _make_bot(adapter)
     bot.stats_dir = str(tmp_path)
     (tmp_path / "kill_signal").touch()
