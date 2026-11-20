@@ -19,8 +19,13 @@ for a decision at that close, e.g. ``entry_delay=0``):
   and on every bar outside the session
 
 The index is read as UTC (naive timestamps are UTC, as the loader provides them)
-and converted to ``session_tz``; a bar is labelled by its start time.
+and converted to ``session_tz``; a bar is labelled by its start time. The bar
+grid must fit the session (bars start at ``session_open``, the last one ends at
+``session_close``, bars shorter than the session): otherwise no band can be
+built, a warning is logged and every column is NaN.
 """
+
+import logging
 from typing import List
 
 import numpy as np
@@ -28,9 +33,16 @@ import pandas as pd
 
 from fwbg_sdk import BaseIndicator, register_indicator
 
+logger = logging.getLogger(__name__)
+
 NB_COLUMNS = [
-    "nb_upper", "nb_lower", "nb_vwap",
-    "nb_long", "nb_short", "nb_exit_long", "nb_exit_short",
+    "nb_upper",
+    "nb_lower",
+    "nb_vwap",
+    "nb_long",
+    "nb_short",
+    "nb_exit_long",
+    "nb_exit_short",
 ]
 NB_SIGNAL_COLUMNS = ["nb_long", "nb_short", "nb_exit_long", "nb_exit_short"]
 
@@ -43,7 +55,9 @@ def _minutes(hhmm: str) -> int:
 def _bar_length(index: pd.DatetimeIndex) -> pd.Timedelta:
     steps = pd.Series(index).diff().dropna()
     if steps.empty:
-        raise ValueError("noise_boundary needs at least two bars to infer the bar length")
+        raise ValueError(
+            "noise_boundary needs at least two bars to infer the bar length"
+        )
     return steps.mode().iloc[0]
 
 
@@ -52,7 +66,7 @@ class NoiseBoundaryIndicator(BaseIndicator):
     """Time-of-day noise bands around the session open with entry and exit flags."""
 
     name = "noise_boundary"
-    version = "1.0.0"
+    version = "1.1.0"
     group = "session"
     benefits_from_stationary = False
 
@@ -70,20 +84,61 @@ class NoiseBoundaryIndicator(BaseIndicator):
         **params,
     ) -> pd.DataFrame:
         if df.empty:
-            return pd.concat([df, pd.DataFrame(index=df.index, columns=NB_COLUMNS, dtype=float)], axis=1)
-        utc = df.index.tz_localize("UTC") if df.index.tz is None else df.index.tz_convert("UTC")
+            return pd.concat(
+                [df, pd.DataFrame(index=df.index, columns=NB_COLUMNS, dtype=float)],
+                axis=1,
+            )
+        utc = (
+            df.index.tz_localize("UTC")
+            if df.index.tz is None
+            else df.index.tz_convert("UTC")
+        )
         bar = _bar_length(df.index)
         end = (utc + bar).tz_convert(session_tz)
         end_min = np.asarray(end.hour * 60 + end.minute)
         open_min, close_min = _minutes(session_open), _minutes(session_close)
-        in_session = (end_min > open_min) & (end_min <= close_min) & np.asarray(end.dayofweek < 5)
+        in_session = (
+            (end_min > open_min)
+            & (end_min <= close_min)
+            & np.asarray(end.dayofweek < 5)
+        )
+        bar_minutes = bar / pd.Timedelta(minutes=1)
+        observed = end_min[in_session]
+        problem = None
+        if bar_minutes > close_min - open_min:
+            problem = (
+                f"bars of {bar} are not shorter than the session "
+                f"{session_open}-{session_close}; the indicator needs intraday bars"
+            )
+        elif ((open_min + bar_minutes - observed) % bar_minutes != 0).any() or (
+            (close_min - observed) % bar_minutes != 0
+        ).any():
+            problem = (
+                f"the {bar} bar grid does not match the session "
+                f"{session_open}-{session_close} ({session_tz}): the first bar of "
+                f"the session must start at session_open and the last must end at "
+                f"session_close"
+            )
+        if problem is not None:
+            # No band can be built. Warn instead of raising so that a pool of all
+            # indicators on other bar sizes still computes; columns stay NaN.
+            logger.warning("noise_boundary: %s; returning NaN columns", problem)
+            return pd.concat(
+                [df, pd.DataFrame(index=df.index, columns=NB_COLUMNS, dtype=float)],
+                axis=1,
+            )
 
-        frame = pd.DataFrame({
-            "day": np.asarray(end.tz_localize(None).normalize()),
-            "tod": end_min,
-            "O": df["O"].values, "H": df["H"].values, "L": df["L"].values, "C": df["C"].values,
-            "V": df["V"].values if "V" in df.columns else np.zeros(len(df)),
-        })
+        frame = pd.DataFrame(
+            {
+                "day": np.asarray(end.tz_localize(None).normalize()),
+                "tod": end_min,
+                "O": df["O"].values,
+                "H": df["H"].values,
+                "L": df["L"].values,
+                "C": df["C"].values,
+                "V": df["V"].values if "V" in df.columns else np.zeros(len(df)),
+            }
+        )
         session = frame[in_session]
 
         first_end = open_min + int(bar / pd.Timedelta(minutes=1))
@@ -98,8 +153,12 @@ class NoiseBoundaryIndicator(BaseIndicator):
 
         open_of_bar = session["day"].map(session_open_px)
         move = (session["C"] / open_of_bar - 1).abs()
-        move_table = pd.DataFrame({"day": session["day"], "tod": session["tod"], "move": move})
-        move_table = move_table.dropna().pivot_table(index="day", columns="tod", values="move", aggfunc="last")
+        move_table = pd.DataFrame(
+            {"day": session["day"], "tod": session["tod"], "move": move}
+        )
+        move_table = move_table.dropna().pivot_table(
+            index="day", columns="tod", values="move", aggfunc="last"
+        )
         # Per time of day, the mean of its last observations before the session:
         # a session missing that bar (half day, dropped flat bar) is skipped, not
         # a gap that blanks the slot for the next lookback_sessions sessions.
@@ -107,10 +166,18 @@ class NoiseBoundaryIndicator(BaseIndicator):
             lambda slot: slot.dropna().rolling(lookback_sessions).mean().shift(1)
         )
         noise_long = noise.stack().rename("noise").reset_index()
-        sigma = session[["day", "tod"]].merge(noise_long, on=["day", "tod"], how="left")["noise"].values
+        sigma = (
+            session[["day", "tod"]]
+            .merge(noise_long, on=["day", "tod"], how="left")["noise"]
+            .values
+        )
 
-        hi_anchor = np.maximum(open_of_bar.values, session["day"].map(prev_close).values)
-        lo_anchor = np.minimum(open_of_bar.values, session["day"].map(prev_close).values)
+        hi_anchor = np.maximum(
+            open_of_bar.values, session["day"].map(prev_close).values
+        )
+        lo_anchor = np.minimum(
+            open_of_bar.values, session["day"].map(prev_close).values
+        )
         upper = hi_anchor * (1 + sigma)
         lower = lo_anchor * (1 - sigma)
 
@@ -118,7 +185,9 @@ class NoiseBoundaryIndicator(BaseIndicator):
         volume = session["V"].clip(lower=0)
         cum_v = volume.groupby(session["day"]).cumsum()
         cum_pv = (typical * volume).groupby(session["day"]).cumsum()
-        equal_vwap = typical.groupby(session["day"]).cumsum() / typical.groupby(session["day"]).cumcount().add(1)
+        equal_vwap = typical.groupby(session["day"]).cumsum() / typical.groupby(
+            session["day"]
+        ).cumcount().add(1)
         vwap = np.where(cum_v > 0, cum_pv / cum_v.where(cum_v > 0, 1.0), equal_vwap)
 
         tod = session["tod"].values
@@ -127,7 +196,8 @@ class NoiseBoundaryIndicator(BaseIndicator):
             (tod % check_every_minutes == 0)
             & (tod >= _minutes(first_check))
             & (tod <= _minutes(last_check))
-            & np.isfinite(upper) & np.isfinite(lower)
+            & np.isfinite(upper)
+            & np.isfinite(lower)
         )
         above_vwap = (close > vwap) if use_vwap else np.ones(len(close), dtype=bool)
         below_vwap = (close < vwap) if use_vwap else np.ones(len(close), dtype=bool)
@@ -147,7 +217,9 @@ class NoiseBoundaryIndicator(BaseIndicator):
             "nb_exit_short": (check & (close > short_trail)) | last_bar,
         }
         for column, values in flags.items():
-            out[column] = 1.0 if column.startswith("nb_exit") else 0.0  # outside the session: flat
+            out[column] = (
+                1.0 if column.startswith("nb_exit") else 0.0
+            )  # outside the session: flat
             out.iloc[rows, out.columns.get_loc(column)] = values.astype(float)
         # Until the first band exists nothing can be entered, so there is nothing to
         # flag either: the warm-up stays NaN like any indicator without history.
@@ -177,20 +249,52 @@ class NoiseBoundaryIndicator(BaseIndicator):
     @classmethod
     def get_param_schema(cls) -> dict:
         return {
-            "session_tz": {"type": "string", "default": "America/New_York",
-                           "description": "IANA time zone of the session clock times"},
-            "session_open": {"type": "string", "default": "09:30", "description": "Session open (HH:MM, session_tz)"},
-            "session_close": {"type": "string", "default": "16:00", "description": "Session close (HH:MM, session_tz)"},
-            "first_check": {"type": "string", "default": "10:00",
-                            "description": "First bar close (HH:MM) at which entries and trailing exits are checked"},
-            "last_check": {"type": "string", "default": "15:30",
-                           "description": "Last bar close (HH:MM) at which entries and trailing exits are checked"},
-            "check_every_minutes": {"type": "int", "default": 30, "min": 5, "max": 120, "step": 5,
-                                    "description": "Checks happen at bar closes whose minute of day is a multiple of this"},
-            "lookback_sessions": {"type": "int", "default": 14, "min": 2, "max": 100, "step": 1,
-                                  "description": "Sessions averaged for the time-of-day noise band"},
-            "use_vwap": {"type": "bool", "default": True,
-                         "description": "Require the close beyond the session VWAP for entries and trail at band/VWAP"},
+            "session_tz": {
+                "type": "string",
+                "default": "America/New_York",
+                "description": "IANA time zone of the session clock times",
+            },
+            "session_open": {
+                "type": "string",
+                "default": "09:30",
+                "description": "Session open (HH:MM, session_tz)",
+            },
+            "session_close": {
+                "type": "string",
+                "default": "16:00",
+                "description": "Session close (HH:MM, session_tz)",
+            },
+            "first_check": {
+                "type": "string",
+                "default": "10:00",
+                "description": "First bar close (HH:MM) at which entries and trailing exits are checked",
+            },
+            "last_check": {
+                "type": "string",
+                "default": "15:30",
+                "description": "Last bar close (HH:MM) at which entries and trailing exits are checked",
+            },
+            "check_every_minutes": {
+                "type": "int",
+                "default": 30,
+                "min": 5,
+                "max": 120,
+                "step": 5,
+                "description": "Checks happen at bar closes whose minute of day is a multiple of this",
+            },
+            "lookback_sessions": {
+                "type": "int",
+                "default": 14,
+                "min": 2,
+                "max": 100,
+                "step": 1,
+                "description": "Sessions averaged for the time-of-day noise band",
+            },
+            "use_vwap": {
+                "type": "bool",
+                "default": True,
+                "description": "Require the close beyond the session VWAP for entries and trail at band/VWAP",
+            },
         }
 
 

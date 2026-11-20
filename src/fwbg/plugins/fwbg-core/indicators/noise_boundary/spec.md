@@ -1,6 +1,6 @@
 # Plugin Spec — noise_boundary
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -12,7 +12,7 @@ Converts the UTC bar index to a session time zone, anchors each session at max/m
 
 ## Inputs
 
-- df: OHLC (O, H, L, C) with optional V; naive index read as UTC, bars labelled by start time
+- df: OHLC (O, H, L, C) with optional V; naive index read as UTC, bars labelled by start time. The bar grid must fit the session (first bar starts at `session_open`, last ends at `session_close`, bars shorter than the session); otherwise a warning is logged and every column is NaN.
 
 ## Parameters
 

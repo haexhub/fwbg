@@ -1,6 +1,6 @@
 # Plugin Spec — pullback_momentum
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -56,11 +56,10 @@ Three-step trend/pullback/momentum-break entry indicator. Uses an EMA trend filt
 
 ## Edge Cases
 
-- Bars where the EMA is still warming up (NaN) produce no entries and set both trend_ok flags to 0.
-- ATR values of NaN are coerced to 0; when atr <= EPSILON on a bar, an internal floor of 1e-5 is used so sl_buffer computations remain finite.
+- Bars where the EMA is still warming up (NaN) produce no entries; every feature column is NaN there (no fabricated 0.0 flags).
+- The ATR is NaN until its first full window; no entry fires while it is NaN (the setup stays tracked). When atr <= EPSILON on a bar, an internal floor of 1e-5 is used so sl_buffer computations remain finite.
 - Impulse range <= EPSILON leaves pullback fraction at 0 for that bar, preventing division-by-zero and blocking entry.
 - When the computed structural SL distance is non-positive, it is replaced by atr * 0.5 so tpm_sl_dist_* is always positive on entry bars.
-- First bar (i=0) is skipped by the loop; all features on that bar retain their initial values (zeros or NaN for sl_dist_*).
 - Long and short state machines run independently on the same bar, so both in_pullback_long and in_pullback_short can be active simultaneously.
 - A new BOS during an active pullback refreshes the impulse rather than firing a duplicate entry or resetting to SCANNING.
 - pullback_pct is clipped to [0, 2] to bound the feature when retracements overshoot the impulse range.
