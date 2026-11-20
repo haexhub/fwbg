@@ -56,7 +56,7 @@ class FairValueGapIndicator(BaseIndicator):
     """Fair Value Gap features for ML trading."""
 
     name = "fair_value_gap"
-    version = "1.0.0"
+    version = "1.1.0"
 
     _FEATURES = [
         "fvg_bull_active",
@@ -140,22 +140,30 @@ class FairValueGapIndicator(BaseIndicator):
                 surviving.append(fvg)
             active_fvgs = surviving
 
-            # Check for engulfing confirmation at active FVGs
-            # Bullish engulfing: green candle whose body engulfs the previous candle's body
-            # while price is in the bull FVG zone (confirms gap as support).
-            # Bearish engulfing: same for bear FVGs.
+            # Check for engulfing confirmation at active FVGs.
+            # Canonical engulfing: the current candle's real body fully covers
+            # the previous candle's real body and has the opposite colour.
+            # A gap can only be confirmed by a retest, i.e. by a bar after the
+            # one that created it (on the creation bar the candle trivially
+            # "reaches into" the gap it just opened).
             if i > 0:
+                prev_red = close[i - 1] < opens[i - 1]
+                prev_green = close[i - 1] > opens[i - 1]
                 is_bull_engulf = (
-                    close[i] > opens[i]  # green candle
-                    and close[i] > opens[i - 1]  # close above prev open
-                    and opens[i] < close[i - 1]  # open below prev close
+                    prev_red
+                    and close[i] > opens[i]  # green candle
+                    and opens[i] <= close[i - 1]  # body starts at/below prev body low
+                    and close[i] >= opens[i - 1]  # body ends at/above prev body high
                 )
                 is_bear_engulf = (
-                    close[i] < opens[i]  # red candle
-                    and close[i] < opens[i - 1]  # close below prev open
-                    and opens[i] > close[i - 1]  # open above prev close
+                    prev_green
+                    and close[i] < opens[i]  # red candle
+                    and opens[i] >= close[i - 1]  # body starts at/above prev body high
+                    and close[i] <= opens[i - 1]  # body ends at/below prev body low
                 )
                 for fvg in active_fvgs:
+                    if fvg["bar"] >= i:
+                        continue
                     if not fvg["confirmed"]:
                         if fvg["type"] == "bullish" and is_bull_engulf:
                             if lows[i] <= fvg["top"]:  # candle reaches into the gap

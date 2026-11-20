@@ -328,3 +328,63 @@ class TestFVGConfirmation:
         assert result["fvg_bull_confirmed"].iloc[5] == 1.0
         # FVG filled at bar 5 (L=98 <= bottom=100) → result.iloc[6] = 0
         assert result["fvg_bull_confirmed"].iloc[6] == 0.0
+
+
+class TestFVGConfirmationCanonical:
+    """Confirmation needs a retest bar and a canonical engulfing candle."""
+
+    def test_creation_bar_never_confirms(self):
+        """A green candle that creates the gap must not confirm it.
+
+        Bars 0-2 form a bullish FVG [100, 102]. Bar 2 is green and engulfs the
+        red bar 1, so the old rule confirmed the gap on its creation bar.
+        """
+        data = {
+            "O": [97, 104, 102.5, 109, 110, 111],
+            "H": [100, 104, 110, 110, 111, 112],
+            "L": [96, 101, 102, 108, 109, 110],
+            "C": [99, 103, 109, 109.5, 110.5, 111.5],
+            "V": [100] * 6,
+        }
+        df = pd.DataFrame(data, index=pd.date_range("2024-01-01", periods=6, freq="h"))
+        # bar 2 is a green engulfing candle and creates the gap
+        assert df["C"].iloc[2] > df["O"].iloc[2]
+        assert df["O"].iloc[2] <= df["C"].iloc[1] and df["C"].iloc[2] >= df["O"].iloc[1]
+        result = _fvg.FairValueGapIndicator().compute(df)
+        assert result["fvg_bull_active"].iloc[3] == 1.0  # gap exists after creation
+        assert result["fvg_bull_confirmed"].fillna(0).sum() == 0.0
+
+    def test_same_colour_overlap_is_not_engulfing(self):
+        """Green candle after a green candle is not an engulfing pattern.
+
+        Bullish FVG [100, 103] created at bar 2 (green). Bar 3 is green too and
+        reaches into the gap. The previous non-canonical rule (close > prev open,
+        open < prev close) accepted it; the canonical rule needs a red previous
+        candle.
+        """
+        data = {
+            "O": [97, 99, 103, 102, 108],
+            "H": [100, 101, 110, 109, 110],
+            "L": [96, 99, 103, 102, 107],
+            "C": [99, 101, 109, 108, 109],
+            "V": [100] * 5,
+        }
+        df = pd.DataFrame(data, index=pd.date_range("2024-01-01", periods=5, freq="h"))
+        result = _fvg.FairValueGapIndicator().compute(df)
+        assert result["fvg_bull_confirmed"].fillna(0).sum() == 0.0
+
+    def test_bear_creation_bar_never_confirms(self):
+        # Bearish FVG [108, 109] created at bar 2 by a red candle engulfing green bar 1.
+        data = {
+            "O": [109.5, 105, 107.5, 100, 99, 98],
+            "H": [110, 108, 108, 101, 100, 99],
+            "L": [109, 104, 101, 99, 98, 97],
+            "C": [109.2, 107, 102, 99.5, 98.5, 97.5],
+            "V": [100] * 6,
+        }
+        df = pd.DataFrame(data, index=pd.date_range("2024-01-01", periods=6, freq="h"))
+        assert df["C"].iloc[2] < df["O"].iloc[2]
+        assert df["O"].iloc[2] >= df["C"].iloc[1] and df["C"].iloc[2] <= df["O"].iloc[1]
+        result = _fvg.FairValueGapIndicator().compute(df)
+        assert result["fvg_bear_active"].iloc[3] == 1.0
+        assert result["fvg_bear_confirmed"].fillna(0).sum() == 0.0
