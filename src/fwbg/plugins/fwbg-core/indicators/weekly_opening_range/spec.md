@@ -1,6 +1,6 @@
 # Plugin Spec — weekly_opening_range
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -8,7 +8,7 @@ Computes weekly opening range features (range, position, breakout flags, ATR-nor
 
 ## Summary
 
-Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative to the opening range defined by the first `range_bars` bars of each trading week (Monday), and — when enabled — rolling statistics (avg range, range-vs-avg, breakout rate) over the previous `stat_window` weeks. Supports single or multiple `range_bars` values (emits a `wor_rb{N}_` column set per value). Skips daily/weekly timeframes (returns df unchanged when the median bar spacing is >= 20 hours).
+Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative to the opening range defined by the first `range_bars` bar periods of each trading week (the week starts at its first bar: Sunday evening for FX, Monday for exchanges; the week key is the ISO week of `timestamp + 12h`), and — when enabled — rolling statistics (avg range, range-vs-avg, breakout rate) over the previous `stat_window` weeks. Supports single or multiple `range_bars` values (emits a `wor_rb{N}_` column set per value). Skips daily/weekly timeframes (returns df unchanged when the median bar spacing is >= 20 hours).
 
 ## Inputs
 
@@ -19,7 +19,7 @@ Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative
 
 ## Parameters
 
-- `range_bars` (list[int], default=2): Number of bars defining the Weekly Opening Range. On M15: 2 = first 30 min of Monday (scalping default), 4 = first hour (more stable, fewer trades). Accepts a list (e.g. [2, 4]) to emit multiple wor_rb{N}_ column sets.
+- `range_bars` (list[int], default=2): Number of bars defining the Weekly Opening Range. On M15: 2 = first 30 min of the trading week (scalping default), 4 = first hour (more stable, fewer trades). Accepts a list (e.g. [2, 4]) to emit multiple wor_rb{N}_ column sets.
 - `atr_period` (int, default=14): ATR period used to normalize WOR size, distance-to-boundary features, and the reload zone.
 - `stat_window` (int, default=12): Rolling window (in weeks) for statistic features. 12 ≈ 3 months, 26 ≈ 6 months. Only past weeks contribute (shifted by 1 to avoid lookahead).
 - `enable_stats` (bool, default=True): Enable historical statistics features (wor_stat_avg_range, wor_stat_range_vs_avg, wor_stat_breakout_rate).
@@ -42,8 +42,8 @@ Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative
 
 - AC-001: All emitted feature columns are shifted by one bar via `shift_features` before being concatenated to the returned DataFrame (no lookahead).
 - AC-002: For each `rb` in `range_bars`, emits exactly the 8 columns: wor_rb{rb}_{range, position, breakout_up, breakout_down, range_vs_atr, dist_to_high, dist_to_low, sl_dist}.
-- AC-003: WOR high/low per week are computed as the max H / min L over the first `range_bars` bars of that ISO week; features are NaN for bar positions < range_bars within the week.
-- AC-004: When `enable_stats=True`, adds wor_stat_avg_range, wor_stat_range_vs_avg, wor_stat_breakout_rate whose rolling window uses `stat_window` past weeks and is shifted by 1 week (excludes current week).
+- AC-003: WOR high/low per week are computed as the max H / min L over the time window `[first bar of the trading week, + range_bars * bar_step)` (a missing bar shrinks the range); features are NaN until that window has ended. Sunday-evening FX bars belong to the week that starts on Monday, not to the previous ISO week.
+- AC-004: When `enable_stats=True`, adds wor_stat_avg_range, wor_stat_range_vs_avg, wor_stat_breakout_rate whose rolling window uses `stat_window` past weeks and is shifted by 1 week (excludes current week). The weekly range used by the statistics is the same `range_bars` window as the features (the first value when `range_bars` is a list); the breakout flag looks at closes after that window.
 - AC-005: Signal columns are the subset of feature columns ending in `_breakout_up` or `_breakout_down` (per `WOR_SIGNAL_SUFFIXES`).
 - AC-006: `get_feature_columns()` and `get_signal_columns()` return the cached lists after `compute()` runs; when called with explicit `params` (or before compute), they reconstruct the column names from `range_bars` and `enable_stats`.
 - AC-007: Raises `ValueError` when the input DataFrame does not have a `DatetimeIndex`.
@@ -55,7 +55,7 @@ Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative
 
 - DataFrame without a DatetimeIndex → raises ValueError.
 - Daily or weekly bars (median index diff >= 20h) → returns the input DataFrame unchanged, adding no features.
-- Bars whose position within the week is < `range_bars` → all wor_rb{N}_* features are NaN for that bar.
+- Bars inside the range window of the week → all wor_rb{N}_* features are NaN for that bar.
 - First week(s) in the data → wor_stat_* features are NaN until the rolling window has at least `max(1, stat_window // 2)` prior weeks.
 - `range_bars` passed as an int vs a list → both are accepted; a list produces one column set per element.
 - Zero-width opening range (or_high == or_low) → safe_divide yields NaN/0 instead of raising; `wor_position` becomes NaN.
@@ -65,10 +65,9 @@ Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative
 ## Assumptions
 
 - Input DataFrame has columns H, L, C (OHLC convention used elsewhere in the SDK).
-- The DatetimeIndex is timezone-consistent so ISO week/year grouping identifies trading weeks correctly.
+- The DatetimeIndex is timezone-consistent; the 12-hour rollover assumes the weekend gap contains Saturday (data on UTC or exchange time).
 - Intraday timeframe (M1–H4) as documented; behavior on exotic spacings (e.g. 12h bars) is untested but the 20h guard treats them as intraday.
 
 ## Needs Clarification
 
 - [NEEDS CLARIFICATION: Docstring mentions a 'Reload-Zone' feature (price returning to the WOR boundary after breakout), but no dedicated reload-zone column is emitted by the current implementation — is this intentional or a missing feature?]
-- [NEEDS CLARIFICATION: In `_weekly_stat_features`, the local `_broke_out` expression uses `df['H'].max()` / `df['L'].min()` (global scalars) and is assigned but never used — appears to be dead code; confirm it is safe to ignore for the spec.]
