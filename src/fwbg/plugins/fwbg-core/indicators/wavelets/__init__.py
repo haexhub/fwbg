@@ -18,6 +18,7 @@ Implementation note:
 DWT is applied in a rolling window (causal) to avoid lookahead bias.
 A global DWT would use future bars to compute past features.
 """
+
 from typing import List
 
 import numpy as np
@@ -52,7 +53,7 @@ def _reconstruct_level(
 
 def _rolling_energy(signal: np.ndarray, window: int) -> np.ndarray:
     """Rolling sum-of-squares (energy) over a window."""
-    sq = signal ** 2
+    sq = signal**2
     s = pd.Series(sq)
     return s.rolling(window, min_periods=1).mean().values
 
@@ -87,7 +88,7 @@ def _compute_causal_dwt_signals(
         Values are NaN until enough bars have accumulated (2**levels minimum).
     """
     n = len(log_returns)
-    min_samples = 2 ** levels
+    min_samples = 2**levels
 
     approx_signal = np.full(n, np.nan)
     detail_signals = {lvl: np.full(n, np.nan) for lvl in range(1, levels + 1)}
@@ -229,9 +230,21 @@ class WaveletsIndicator(BaseIndicator):
                 "default": "db4",
                 "description": "Wavelet family for the Discrete Wavelet Transform. Daubechies wavelets (db1-db20) are most common for financial data. db4 provides a good balance between time and frequency localization. Haar (db1) is simplest, higher-order wavelets are smoother.",
                 "choices": [
-                    "db1", "db2", "db3", "db4", "db5", "db6", "db8", "db10",
-                    "sym2", "sym3", "sym4", "sym5",
-                    "coif1", "coif2", "coif3",
+                    "db1",
+                    "db2",
+                    "db3",
+                    "db4",
+                    "db5",
+                    "db6",
+                    "db8",
+                    "db10",
+                    "sym2",
+                    "sym3",
+                    "sym4",
+                    "sym5",
+                    "coif1",
+                    "coif2",
+                    "coif3",
                 ],
             },
             "levels": {

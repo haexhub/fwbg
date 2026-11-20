@@ -1,4 +1,5 @@
 """Tests for wavelet decomposition indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -228,6 +229,7 @@ class TestPluginIntegration:
 
     def test_plugin_importable(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:wavelets")
@@ -235,6 +237,7 @@ class TestPluginIntegration:
 
     def test_benefits_from_stationary_false(self):
         from fwbg.pipeline import get_registry
+
         registry = get_registry()
         registry.auto_discover()
         plugin_cls = registry.get("fwbg-core:wavelets")
