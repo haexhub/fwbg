@@ -22,15 +22,18 @@ The index is read as UTC (naive timestamps are UTC, as the loader provides them)
 and converted to ``session_tz``; a bar is labelled by its start time. The bar
 grid must fit the session (bars start at ``session_open``, the last one ends at
 ``session_close``, bars shorter than the session): otherwise no band can be
-built and ``compute`` raises ``ValueError`` instead of returning NaN columns.
+built, a warning is logged and every column is NaN.
 """
 
+import logging
 from typing import List
 
 import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseIndicator, register_indicator
+
+logger = logging.getLogger(__name__)
 
 NB_COLUMNS = [
     "nb_upper",
@@ -100,20 +103,29 @@ class NoiseBoundaryIndicator(BaseIndicator):
             & np.asarray(end.dayofweek < 5)
         )
         bar_minutes = bar / pd.Timedelta(minutes=1)
+        observed = end_min[in_session]
+        problem = None
         if bar_minutes > close_min - open_min:
-            raise ValueError(
-                f"noise_boundary: bars of {bar} are not shorter than the session "
+            problem = (
+                f"bars of {bar} are not shorter than the session "
                 f"{session_open}-{session_close}; the indicator needs intraday bars"
             )
-        observed = end_min[in_session]
-        if ((open_min + bar_minutes - observed) % bar_minutes != 0).any() or (
+        elif ((open_min + bar_minutes - observed) % bar_minutes != 0).any() or (
             (close_min - observed) % bar_minutes != 0
         ).any():
-            raise ValueError(
-                f"noise_boundary: the {bar} bar grid does not match the session "
-                f"{session_open}-{session_close} ({session_tz}): bars are labelled by "
-                f"their start time and the first bar of the session must start at "
-                f"session_open and the last must end at session_close"
+            problem = (
+                f"the {bar} bar grid does not match the session "
+                f"{session_open}-{session_close} ({session_tz}): the first bar of "
+                f"the session must start at session_open and the last must end at "
+                f"session_close"
+            )
+        if problem is not None:
+            # No band can be built. Warn instead of raising so that a pool of all
+            # indicators on other bar sizes still computes; columns stay NaN.
+            logger.warning("noise_boundary: %s; returning NaN columns", problem)
+            return pd.concat(
+                [df, pd.DataFrame(index=df.index, columns=NB_COLUMNS, dtype=float)],
+                axis=1,
             )
 
         frame = pd.DataFrame(

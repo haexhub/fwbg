@@ -8,6 +8,7 @@ from fwbg.plugins import import_plugin_module
 
 _mod = import_plugin_module("fwbg-core", "indicators", "noise_boundary")
 NoiseBoundaryIndicator = _mod.NoiseBoundaryIndicator
+NB_COLUMNS = _mod.NB_COLUMNS
 
 BARS_PER_SESSION = 26  # 09:30-16:00 New York in 15-minute bars
 SIGNALS = ["nb_long", "nb_short", "nb_exit_long", "nb_exit_short"]
@@ -154,10 +155,13 @@ def _hourly_us_bars(start_minute):
     return pd.concat(frames)
 
 
-def test_bar_grid_that_does_not_match_session_open_is_an_error():
+def test_bar_grid_that_does_not_match_session_open_warns_and_stays_nan(caplog):
     # hourly bars start on the hour but the session opens at 09:30
-    with pytest.raises(ValueError, match="bar grid does not match the session"):
-        NoiseBoundaryIndicator().compute(_hourly_us_bars(0))
+    with caplog.at_level("WARNING"):
+        out = NoiseBoundaryIndicator().compute(_hourly_us_bars(0))
+    assert "bar grid does not match the session" in caplog.text
+    assert list(out.columns[-7:]) == NB_COLUMNS
+    assert out[NB_COLUMNS].isna().all().all()
 
 
 def test_bars_aligned_to_session_open_and_close_are_accepted():
@@ -173,17 +177,23 @@ def test_bars_aligned_to_session_open_and_close_are_accepted():
     assert out["nb_upper"].notna().any()
 
 
-def test_daily_bars_are_an_error():
+def test_daily_bars_warn_and_stay_nan(caplog):
     df = pd.DataFrame(
         {"O": 1.0, "H": 1.1, "L": 0.9, "C": 1.0, "V": 1.0},
         index=pd.bdate_range("2025-01-01", periods=30),
     )
-    with pytest.raises(ValueError, match="not shorter than the session"):
-        NoiseBoundaryIndicator().compute(df)
+    with caplog.at_level("WARNING"):
+        out = NoiseBoundaryIndicator().compute(df)
+    assert "not shorter than the session" in caplog.text
+    assert out[NB_COLUMNS].isna().all().all()
 
 
-def test_grid_check_does_not_reject_a_slice_that_misses_the_open(breakout_day):
+def test_grid_check_does_not_warn_for_a_slice_that_misses_the_open(
+    breakout_day, caplog
+):
     df, _ = breakout_day
-    # a trailing window starting mid-session still fits the grid: NaN, not an error
-    out = NoiseBoundaryIndicator().compute(df.iloc[10:20])
+    # a trailing window starting mid-session still fits the grid: NaN without a warning
+    with caplog.at_level("WARNING"):
+        out = NoiseBoundaryIndicator().compute(df.iloc[10:20])
+    assert "bar grid" not in caplog.text
     assert out["nb_upper"].isna().all()
