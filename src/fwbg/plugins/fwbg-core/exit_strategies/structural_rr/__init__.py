@@ -13,6 +13,7 @@ TP = SL × r_multiple  (default: 2.0, i.e. 2R)
 The r_multiple is the primary optimization parameter and maps to `tp_value` in
 the grid system (set "tp": <value> in the exit strategy config params).
 """
+
 from typing import Tuple, TYPE_CHECKING
 
 import numpy as np
@@ -105,9 +106,16 @@ class StructuralRRExitStrategy(BaseExitStrategy):
         timeout_val = timeout_bars if timeout_bars else 0
 
         result = compute_targets_numba(
-            opn_v, cls_v, hgh_v, low_v,
-            tp_dist_arr, sl_dist_arr, ctx.spread, slippage,
-            max_bars, timeout_val,
+            opn_v,
+            cls_v,
+            hgh_v,
+            low_v,
+            tp_dist_arr,
+            sl_dist_arr,
+            ctx.spread,
+            slippage,
+            max_bars,
+            timeout_val,
         )
         if return_durations:
             return result  # (tgt_l, tgt_s, dur_l, dur_s)
