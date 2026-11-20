@@ -33,7 +33,12 @@ from fwbg.simulation.trade import calculate_calmar_from_returns, calculate_sharp
 from fwbg.utils.logging import log
 from fwbg.utils.progress import report_done, report_phase
 
-from .causal_reporting import equity_replay, monte_carlo_summary, sized_returns, slim_trades
+from .causal_reporting import (
+    equity_replay,
+    monte_carlo_summary,
+    sized_returns,
+    slim_trades,
+)
 from .indicator_grid import expand_indicator_grid
 from .process import load_symbol_frame, process_symbol
 from .process_fold import precompute_indicators
@@ -48,7 +53,15 @@ from .unified_simulation import run_unified_simulation
 # Statuses the holdout phase itself assigns (a development that is not "ok"
 # passes its own status through).
 HOLDOUT_STATUSES = frozenset(
-    {"ok", "not_significant", "no_unified_trades", "insufficient_data", "no_data", "data_invalid", "error"}
+    {
+        "ok",
+        "not_significant",
+        "no_unified_trades",
+        "insufficient_data",
+        "no_data",
+        "data_invalid",
+        "error",
+    }
 )
 _DEVELOPMENT_KEYS = (
     "status",
@@ -181,7 +194,9 @@ def _run_frozen(
     sym = development["symbol"]
     n_dev = 0 if df is None else int(df.index.searchsorted(pd.Timestamp(cutoff)))
     if df is None or n_dev == len(df):
-        return _not_evaluated(development, cutoff, "no data after the cutoff", status="no_data")
+        return _not_evaluated(
+            development, cutoff, "no data after the cutoff", status="no_data"
+        )
 
     variant = _variant(strategy, development.get("indicator_variant"))
     ctx = SimulationContext.create(get_asset(sym), variant)
@@ -209,7 +224,10 @@ def _run_frozen(
     )
     if not evaluations:
         return _not_evaluated(
-            development, cutoff, "holdout window too short to evaluate", status="insufficient_data"
+            development,
+            cutoff,
+            "holdout window too short to evaluate",
+            status="insufficient_data",
         )
     return fold, evaluations[0], ctx.embargo_bars
 
@@ -225,7 +243,9 @@ def _variant(strategy: StrategyConfig, label: str | None) -> StrategyConfig:
     raise ValueError(f"indicator variant {label!r} not in the grid")
 
 
-def _look(fold: WalkForwardFold, evaluation: dict, cutoff: str | None, embargo: int) -> dict:
+def _look(
+    fold: WalkForwardFold, evaluation: dict, cutoff: str | None, embargo: int
+) -> dict:
     """What the holdout look touched: its windows, trades and the features it could not use."""
     return {
         "cutoff": cutoff,
@@ -250,7 +270,10 @@ def _holdout_result(
     trades = evaluation["trades"]
     detailed = evaluation.get("trades_detailed") or []
     returns, pnl, taken = sized_returns(
-        trades, config["risk_per_trade"], config["circuit_breaker"], development["tr_trace"]
+        trades,
+        config["risk_per_trade"],
+        config["circuit_breaker"],
+        development["tr_trace"],
     )
     years = len(fold.test_df) / (data_config.tf_cfg["bars_per_hour"] * 24 * 250)
     holdout["sized_trades"] = len(pnl)
@@ -268,7 +291,11 @@ def _holdout_result(
         returns, trades_per_year=len(pnl) / years if years > 0 else len(pnl)
     )
     aligned = len(detailed) == len(trades) and all(t.get("exit_time") for t in detailed)
-    equity = equity_replay([detailed[i]["exit_time"] for i in taken], returns) if aligned else None
+    equity = (
+        equity_replay([detailed[i]["exit_time"] for i in taken], returns)
+        if aligned
+        else None
+    )
     status = "ok" if mc["is_significant"] else "not_significant"
     win_rate = sum(1 for t in trades if t["result"] == 1.0) / len(trades)
     log(
@@ -291,8 +318,15 @@ def _holdout_result(
         "currencies": development["currencies"],
         "monte_carlo": mc,
         "return_stats": return_statistics(returns),
-        "reporting": {"causal": True, "n_trades": len(pnl), "pnl_trace": pnl, "equity": equity},
-        "trades_detailed": slim_trades(detailed) if len(detailed) == len(trades) else [],
+        "reporting": {
+            "causal": True,
+            "n_trades": len(pnl),
+            "pnl_trace": pnl,
+            "equity": equity,
+        },
+        "trades_detailed": slim_trades(detailed)
+        if len(detailed) == len(trades)
+        else [],
         "holdout": holdout,
         "development": development_summary(development),
     }
