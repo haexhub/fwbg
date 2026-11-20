@@ -1,4 +1,5 @@
 """Tests for Opening Range Breakout indicator plugin."""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -16,12 +17,15 @@ def _make_ohlc_15min(n=2000, seed=42):
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.001, n)))
     idx = pd.date_range("2024-01-01", periods=n, freq="15min")
 
-    df = pd.DataFrame({
-        "O": close * (1 + rng.normal(0, 0.001, n)),
-        "H": close * (1 + np.abs(rng.normal(0, 0.003, n))),
-        "L": close * (1 - np.abs(rng.normal(0, 0.003, n))),
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * (1 + rng.normal(0, 0.001, n)),
+            "H": close * (1 + np.abs(rng.normal(0, 0.003, n))),
+            "L": close * (1 - np.abs(rng.normal(0, 0.003, n))),
+            "C": close,
+        },
+        index=idx,
+    )
     # Ensure H >= max(O,C) and L <= min(O,C)
     df["H"] = df[["O", "H", "C"]].max(axis=1)
     df["L"] = df[["O", "L", "C"]].min(axis=1)
@@ -34,12 +38,15 @@ def _make_ohlc_hourly(n=2000, seed=42):
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.002, n)))
     idx = pd.date_range("2024-01-01", periods=n, freq="h")
 
-    df = pd.DataFrame({
-        "O": close * (1 + rng.normal(0, 0.001, n)),
-        "H": close * (1 + np.abs(rng.normal(0, 0.005, n))),
-        "L": close * (1 - np.abs(rng.normal(0, 0.005, n))),
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * (1 + rng.normal(0, 0.001, n)),
+            "H": close * (1 + np.abs(rng.normal(0, 0.005, n))),
+            "L": close * (1 - np.abs(rng.normal(0, 0.005, n))),
+            "C": close,
+        },
+        index=idx,
+    )
     df["H"] = df[["O", "H", "C"]].max(axis=1)
     df["L"] = df[["O", "L", "C"]].min(axis=1)
     return df
@@ -51,12 +58,15 @@ def _make_ohlc_daily(n=500, seed=42):
     close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, n)))
     idx = pd.date_range("2024-01-01", periods=n, freq="D")
 
-    df = pd.DataFrame({
-        "O": close * (1 + rng.normal(0, 0.005, n)),
-        "H": close * (1 + np.abs(rng.normal(0, 0.01, n))),
-        "L": close * (1 - np.abs(rng.normal(0, 0.01, n))),
-        "C": close,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "O": close * (1 + rng.normal(0, 0.005, n)),
+            "H": close * (1 + np.abs(rng.normal(0, 0.01, n))),
+            "L": close * (1 - np.abs(rng.normal(0, 0.01, n))),
+            "C": close,
+        },
+        index=idx,
+    )
     df["H"] = df[["O", "H", "C"]].max(axis=1)
     df["L"] = df[["O", "L", "C"]].min(axis=1)
     return df
@@ -77,8 +87,13 @@ class TestSessionORB:
 
         for h in [8, 9, 14, 15]:
             prefix = f"rb1_orb_s{h:02d}"
-            for suffix in ["_range", "_position", "_breakout_up",
-                           "_breakout_down", "_range_vs_atr"]:
+            for suffix in [
+                "_range",
+                "_position",
+                "_breakout_up",
+                "_breakout_down",
+                "_range_vs_atr",
+            ]:
                 col = f"{prefix}{suffix}"
                 assert col in result.columns, f"Missing column: {col}"
 
@@ -228,8 +243,12 @@ class TestRangeBarsListMode:
         df = _make_ohlc_15min(n=3000)
         result = ind.compute(df, range_bars=[1, 2], sessions=[8])
 
-        assert "rb1_orb_s08_range" in result.columns, "rb1_ prefix missing for range_bars=1"
-        assert "rb2_orb_s08_range" in result.columns, "rb2_ prefix missing for range_bars=2"
+        assert "rb1_orb_s08_range" in result.columns, (
+            "rb1_ prefix missing for range_bars=1"
+        )
+        assert "rb2_orb_s08_range" in result.columns, (
+            "rb2_ prefix missing for range_bars=2"
+        )
 
     def test_list_mode_both_rb_variants_have_breakout_signals(self):
         """Both rb1 and rb2 variants must produce non-empty breakout signals."""
@@ -249,11 +268,15 @@ class TestRangeBarsListMode:
         df = _make_ohlc_15min(n=3000)
         result = ind.compute(df, range_bars=[1, 2], sessions=[8])
 
-        assert "rb1_orb_s08_range" in result.columns or "rb1_orb_s08_range" in result.columns, \
-            "Session column must exist in list mode (with or without rb prefix)"
+        assert (
+            "rb1_orb_s08_range" in result.columns
+            or "rb1_orb_s08_range" in result.columns
+        ), "Session column must exist in list mode (with or without rb prefix)"
         # Verify at least one rb-prefixed session column exists
         rb_session_cols = [c for c in result.columns if "s08" in c]
-        assert len(rb_session_cols) > 0, "No session columns found for hour 8 in list mode"
+        assert len(rb_session_cols) > 0, (
+            "No session columns found for hour 8 in list mode"
+        )
 
 
 class TestBreakoutEventFeature:
@@ -309,7 +332,9 @@ class TestBreakoutEventFeature:
             # bar+3: persistent — stays 1
             assert result["rb1_orb_s08_breakout_up"].iloc[base + 3] == 1.0
             # Use diff() to find the first firing: only one transition from 0->1
-            session_region = result["rb1_orb_s08_breakout_up"].iloc[base:base + 6].dropna()
+            session_region = (
+                result["rb1_orb_s08_breakout_up"].iloc[base : base + 6].dropna()
+            )
             transitions = session_region.diff().fillna(0)
             first_fires = (transitions == 1.0).sum()
             assert first_fires == 1, (
@@ -362,10 +387,10 @@ class TestBreakoutEventFeature:
 
         b = n_warmup
         high[b] = 101.0
-        low[b] = 99.0   # range bar
-        close[b + 1] = 102.0              # first upward crossing
-        close[b + 2] = 98.0              # reversal: first downward crossing
-        close[b + 3] = 97.0              # sustained below
+        low[b] = 99.0  # range bar
+        close[b + 1] = 102.0  # first upward crossing
+        close[b + 2] = 98.0  # reversal: first downward crossing
+        close[b + 3] = 97.0  # sustained below
 
         high = np.maximum(high, close)
         low = np.minimum(low, close)
@@ -378,9 +403,13 @@ class TestBreakoutEventFeature:
         bd = result["rb1_orb_s05_breakout_down"]
 
         # bar1 (b+1): C=102 > or_high=101 -> breakout_up = 1
-        assert bu.iloc[b + 1] == 1.0, f"bar1 upward crossing must fire (got {bu.iloc[b+1]})"
+        assert bu.iloc[b + 1] == 1.0, (
+            f"bar1 upward crossing must fire (got {bu.iloc[b + 1]})"
+        )
         # bar2 (b+2): C=98 < or_low=99 -> breakout_down = 1
-        assert bd.iloc[b + 2] == 1.0, f"bar2 downward crossing must fire (got {bd.iloc[b+2]})"
+        assert bd.iloc[b + 2] == 1.0, (
+            f"bar2 downward crossing must fire (got {bd.iloc[b + 2]})"
+        )
         # Persistent: breakout_up stays 1 even after price reversed
         assert bu.iloc[b + 2] == 1.0, "breakout_up persists (cummax)"
         assert bu.iloc[b + 3] == 1.0, "breakout_up persists on subsequent bars"
@@ -402,7 +431,9 @@ class TestORBSLDist:
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
         result = ind.compute(df, sessions=[8])
-        assert "rb1_orb_s08_sl_dist" in result.columns, "rb1_orb_s08_sl_dist column missing from session ORB output"
+        assert "rb1_orb_s08_sl_dist" in result.columns, (
+            "rb1_orb_s08_sl_dist column missing from session ORB output"
+        )
 
     def test_session_sl_dist_positive(self):
         ind = _get_indicator()
@@ -419,7 +450,9 @@ class TestORBPocDist:
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
         result = ind.compute(df, sessions=[8])
-        assert "rb1_orb_s08_poc_dist" in result.columns, "rb1_orb_s08_poc_dist column missing from session ORB output"
+        assert "rb1_orb_s08_poc_dist" in result.columns, (
+            "rb1_orb_s08_poc_dist column missing from session ORB output"
+        )
 
     def test_poc_dist_zero_at_midpoint(self):
         """When C equals the ORB midpoint exactly, orb_s08_poc_dist must be 0."""
@@ -432,7 +465,7 @@ class TestORBPocDist:
         low = close - 0.5
         b = n_warmup
         high[b] = 103.0
-        low[b] = 97.0   # midpoint = (103+97)/2 = 100.0
+        low[b] = 97.0  # midpoint = (103+97)/2 = 100.0
         # bar b+1: C = 100.0 -> exactly at midpoint -> poc_dist = 0/ATR = 0
         high = np.maximum(high, close)
         low = np.minimum(low, close)
@@ -468,10 +501,10 @@ class TestORBPostBreakoutState:
         high[b] = 103.0
         low[b] = 97.0
         # b+1: close stays 100 (no breakout)
-        close[b + 2] = 104.0   # upside breakout
-        close[b + 3] = 100.0   # retrace to midpoint
-        close[b + 4] = 98.0    # near or_low, still valid (98 > 97)
-        close[b + 5] = 96.0    # below or_low (thesis invalidated)
+        close[b + 2] = 104.0  # upside breakout
+        close[b + 3] = 100.0  # retrace to midpoint
+        close[b + 4] = 98.0  # near or_low, still valid (98 > 97)
+        close[b + 5] = 96.0  # below or_low (thesis invalidated)
         high = np.maximum(high, close)
         low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
@@ -483,7 +516,9 @@ class TestORBPostBreakoutState:
         df, b = self._make_session_df()
         assert df.index[b].hour == 8, "Range bar must be at session hour 8"
         result = ind.compute(df, sessions=[8])
-        assert "rb1_orb_s08_post_bull" in result.columns, "rb1_orb_s08_post_bull column missing"
+        assert "rb1_orb_s08_post_bull" in result.columns, (
+            "rb1_orb_s08_post_bull column missing"
+        )
         # Bar b+1 (C=100, no breakout yet): computed post_bull=0 -> result.iloc[b+2]
         val = result["rb1_orb_s08_post_bull"].iloc[b + 2]
         assert val == 0.0, f"post_bull should be 0 before any breakout, got {val}"
@@ -495,7 +530,9 @@ class TestORBPostBreakoutState:
         result = ind.compute(df, sessions=[8])
         # Bar b+2 (C=104 > or_high=103): post_bull becomes 1 -> result.iloc[b+3]
         val_at_breakout = result["rb1_orb_s08_post_bull"].iloc[b + 3]
-        assert val_at_breakout == 1.0, f"post_bull should be 1 at breakout bar, got {val_at_breakout}"
+        assert val_at_breakout == 1.0, (
+            f"post_bull should be 1 at breakout bar, got {val_at_breakout}"
+        )
         # Bar b+3 (C=100, retrace): post_bull must STAY 1 (state, not event) -> result.iloc[b+4]
         val_after_retrace = result["rb1_orb_s08_post_bull"].iloc[b + 4]
         assert val_after_retrace == 1.0, (
@@ -513,9 +550,11 @@ class TestORBPostBreakoutState:
 
         hours = pd.DatetimeIndex(idx).hour
         session_bars = np.where(hours == 8)[0]
-        assert len(session_bars) >= 5, "Need at least 2 session starts (5 bars each at hour 8)"
-        b1 = session_bars[0]   # first 08:00
-        b2 = session_bars[4]   # second 08:00 (next day)
+        assert len(session_bars) >= 5, (
+            "Need at least 2 session starts (5 bars each at hour 8)"
+        )
+        b1 = session_bars[0]  # first 08:00
+        b2 = session_bars[4]  # second 08:00 (next day)
 
         # First session: upside breakout
         high[b1] = 103.0
@@ -550,24 +589,32 @@ class TestORBPostBreakoutState:
         b = 32  # bar 32 = 08:00
         high[b] = 103.0
         low[b] = 97.0
-        close[b + 1] = 100.0   # no breakout
-        close[b + 2] = 96.0    # downside breakout (C=96 < or_low=97)
-        close[b + 3] = 100.0   # retrace
+        close[b + 1] = 100.0  # no breakout
+        close[b + 2] = 96.0  # downside breakout (C=96 < or_low=97)
+        close[b + 3] = 100.0  # retrace
         high = np.maximum(high, close)
         low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8])
 
-        assert "rb1_orb_s08_post_bear" in result.columns, "rb1_orb_s08_post_bear column missing"
+        assert "rb1_orb_s08_post_bear" in result.columns, (
+            "rb1_orb_s08_post_bear column missing"
+        )
         # Bar b+1 (no breakout): post_bear = 0 -> result.iloc[b+2]
         val_before = result["rb1_orb_s08_post_bear"].iloc[b + 2]
-        assert val_before == 0.0, f"post_bear before breakout should be 0, got {val_before}"
+        assert val_before == 0.0, (
+            f"post_bear before breakout should be 0, got {val_before}"
+        )
         # Bar b+2 (C=96 < or_low=97): post_bear = 1 -> result.iloc[b+3]
         val_at_breakout = result["rb1_orb_s08_post_bear"].iloc[b + 3]
-        assert val_at_breakout == 1.0, f"post_bear should be 1 at downside breakout, got {val_at_breakout}"
+        assert val_at_breakout == 1.0, (
+            f"post_bear should be 1 at downside breakout, got {val_at_breakout}"
+        )
         # Bar b+3 (retrace): post_bear stays 1 -> result.iloc[b+4]
         val_after = result["rb1_orb_s08_post_bear"].iloc[b + 4]
-        assert val_after == 1.0, f"post_bear should stay 1 after retrace, got {val_after}"
+        assert val_after == 1.0, (
+            f"post_bear should stay 1 after retrace, got {val_after}"
+        )
 
 
 class TestORBRetestEntry:
@@ -592,9 +639,9 @@ class TestORBRetestEntry:
         b = n_pre_hour_bars
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 106.0   # upside breakout
-        close[b + 2] = 100.0   # retrace to midpoint
-        close[b + 3] = 95.0    # below or_low (invalidated)
+        close[b + 1] = 106.0  # upside breakout
+        close[b + 2] = 100.0  # retrace to midpoint
+        close[b + 3] = 95.0  # below or_low (invalidated)
         high = np.maximum(high, close)
         low = np.minimum(low, close)
         # Breakout bar: L must stay above entry level (100) so retest fires on retrace bar, not breakout bar
@@ -606,13 +653,17 @@ class TestORBRetestEntry:
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
         result = ind.compute(df, sessions=[8])
-        assert "rb1_orb_s08_rl50_retest_bull" in result.columns, "rb1_orb_s08_rl50_retest_bull column missing"
+        assert "rb1_orb_s08_rl50_retest_bull" in result.columns, (
+            "rb1_orb_s08_rl50_retest_bull column missing"
+        )
 
     def test_retest_bear_column_exists(self):
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
         result = ind.compute(df, sessions=[8])
-        assert "rb1_orb_s08_rl50_retest_bear" in result.columns, "rb1_orb_s08_rl50_retest_bear column missing"
+        assert "rb1_orb_s08_rl50_retest_bear" in result.columns, (
+            "rb1_orb_s08_rl50_retest_bear column missing"
+        )
 
     def test_retest_bull_requires_post_breakout_state(self):
         """rl50_retest_bull = 0 when there is no prior upside breakout (post_bull = 0)."""
@@ -622,8 +673,10 @@ class TestORBRetestEntry:
         df = df.copy()
         df.loc[df.index[b + 1], "C"] = 100.0
         df.loc[df.index[b + 1], "H"] = 103.0
-        result = ind.compute(df, sessions=[8],
-)
+        result = ind.compute(
+            df,
+            sessions=[8],
+        )
         # Bar b+2 is at midpoint (C=100) but no breakout -> rl50_retest_bull must be 0
         # After shift: result.iloc[b+3]
         val = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 3]
@@ -667,7 +720,9 @@ class TestORBRetestEntry:
         # Signal columns are NOT shifted.
         # b+2 (first touch): fires
         val_first = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 2]
-        assert val_first == 1.0, f"rl50_retest_bull first touch should be 1, got {val_first}"
+        assert val_first == 1.0, (
+            f"rl50_retest_bull first touch should be 1, got {val_first}"
+        )
         # b+3 (still in zone, same price): must NOT fire again
         val_second = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 3]
         assert val_second == 0.0, (
@@ -693,12 +748,12 @@ class TestORBRetestEntry:
         high[b] = 104.0
         low[b] = 96.0
         close[b + 1] = 106.0  # bull breakout
-        close[b + 2] = 94.0   # bear breakout
+        close[b + 2] = 94.0  # bear breakout
         close[b + 3] = 100.0  # midpoint — both retests fire
         high = np.maximum(high, close)
         low = np.minimum(low, close)
-        low[b + 1] = 105.0   # bull breakout bar: L stays above entry
-        high[b + 2] = 95.0   # bear breakout bar: H stays below entry
+        low[b + 1] = 105.0  # bull breakout bar: L stays above entry
+        high[b + 2] = 95.0  # bear breakout bar: H stays below entry
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8])
         # Signal columns are NOT shifted. Both retests fire at b+3 (midpoint bar).
@@ -715,8 +770,10 @@ class TestORBRetestEntry:
         """rl50_retest_bull = 0 on subsequent bars after signal already fired."""
         ind = _get_indicator()
         df, b = self._make_retest_df()
-        result = ind.compute(df, sessions=[8],
-)
+        result = ind.compute(
+            df,
+            sessions=[8],
+        )
         # rl50_retest_bull fires at b+2 (C=100, midpoint). At b+3 (C=95), already retested -> 0.
         # After shift: result.iloc[b+4]
         val = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 4]
@@ -736,11 +793,11 @@ class TestORBRetestEntry:
         # H/L range: or_high=104, or_low=96, midpoint=100, range=8
         high[b] = 104.0
         low[b] = 96.0
-        close[b + 1] = 94.0   # downside breakout
+        close[b + 1] = 94.0  # downside breakout
         close[b + 2] = 100.0  # retrace to midpoint — rl50_retest_bear SHOULD fire
         high = np.maximum(high, close)
         low = np.minimum(low, close)
-        high[b + 1] = 95.0   # breakout bar: H stays below entry level
+        high[b + 1] = 95.0  # breakout bar: H stays below entry level
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8])
         assert "rb1_orb_s08_rl50_retest_bear" in result.columns
@@ -777,8 +834,7 @@ class TestORBRetestEntry:
         high = np.maximum(high, close)
         low = np.minimum(low, close)
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
-        result = ind.compute(df, sessions=[8],
-                             range_bars=2)
+        result = ind.compute(df, sessions=[8], range_bars=2)
         # With rb=2: range = bars b,b+1; first valid = b+2.
         # Features are shifted by 1, so b+2 data appears at b+3 in the result.
         post_bull_b2 = result["rb2_orb_s08_post_bull"].iloc[b + 3]
@@ -817,8 +873,12 @@ class TestORBRetestEntry:
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
         result = ind.compute(df, sessions=[8])
         # Signal columns are NOT shifted.
-        val_first = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 2]   # first touch at b+2
-        val_reentry = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 4]  # re-entry at b+4
+        val_first = result["rb1_orb_s08_rl50_retest_bull"].iloc[
+            b + 2
+        ]  # first touch at b+2
+        val_reentry = result["rb1_orb_s08_rl50_retest_bull"].iloc[
+            b + 4
+        ]  # re-entry at b+4
         assert val_first == 1.0, f"first touch should fire (=1), got {val_first}"
         assert val_reentry == 0.0, (
             f"re-entry into zone after exit must NOT fire again (expected 0), got {val_reentry}"
@@ -872,8 +932,7 @@ class TestCarryForwardDays:
         # Day 1: session range [98, 102]
         self._set_session_range(df, 1, 8, 102.0, 98.0)
 
-        result = ind.compute(df.copy(), sessions=[8],
-                             carry_forward_days=0)
+        result = ind.compute(df.copy(), sessions=[8], carry_forward_days=0)
 
         # Day 1's range should be its own (not carried from day 0)
         # sl_dist = or_range = (102-98) = 4.0
@@ -894,8 +953,7 @@ class TestCarryForwardDays:
         # Day 1: narrow range [99, 101] — should be REPLACED by carried [95, 105]
         self._set_session_range(df, 1, 8, 101.0, 99.0)
 
-        result = ind.compute(df.copy(), sessions=[8],
-                             carry_forward_days=1)
+        result = ind.compute(df.copy(), sessions=[8], carry_forward_days=1)
 
         # Day 1 should have sl_dist = 10.0 (carried range = (105-95)), not 2.0 (its own)
         # Find a valid bar in day 1's session (after range period)
@@ -923,8 +981,7 @@ class TestCarryForwardDays:
         # Day 2: range [98, 102] — should use OWN range (carry chain broken)
         self._set_session_range(df, 2, 8, 102.0, 98.0)
 
-        result = ind.compute(df.copy(), sessions=[8],
-                             carry_forward_days=2)
+        result = ind.compute(df.copy(), sessions=[8], carry_forward_days=2)
 
         # Day 2 should use its own range (4.0), not the carried one (10.0)
         day2_post_range = df.index[0] + pd.Timedelta(days=2, hours=8, minutes=15)
@@ -946,8 +1003,7 @@ class TestCarryForwardDays:
         # Day 2: [98, 102] -> carry_forward_days=1, so carry should have expired
         self._set_session_range(df, 2, 8, 102.0, 98.0)
 
-        result = ind.compute(df.copy(), sessions=[8],
-                             carry_forward_days=1)
+        result = ind.compute(df.copy(), sessions=[8], carry_forward_days=1)
 
         # Day 2 should use its own range (4.0), carry expired after 1 day
         day2_post_range = df.index[0] + pd.Timedelta(days=2, hours=8, minutes=15)
@@ -967,8 +1023,7 @@ class TestCarryForwardDays:
         # Day 1: will be carried
         self._set_session_range(df, 1, 8, 101.0, 99.0)
 
-        result = ind.compute(df.copy(), sessions=[8],
-                             carry_forward_days=1)
+        result = ind.compute(df.copy(), sessions=[8], carry_forward_days=1)
 
         # In a normal (non-carried) session, the range bar at 08:00 has NaN features.
         # For a carried session, the range is pre-established -> 08:00 bar should be valid.
@@ -1022,8 +1077,7 @@ class TestPreRangeBars:
         df.loc[pre_bar, "H"] = 110.0
         df.loc[pre_bar, "L"] = 90.0
 
-        result = ind.compute(df.copy(), sessions=[8],
-                             pre_range_bars=0)
+        result = ind.compute(df.copy(), sessions=[8], pre_range_bars=0)
 
         # Range should be 103 - 97 = 6.0 (pre-session bar ignored)
         post_range = df.index[0] + pd.Timedelta(hours=8, minutes=15)
@@ -1047,8 +1101,7 @@ class TestPreRangeBars:
         df.loc[pre_bar1, "H"] = 106.0
         df.loc[pre_bar1, "L"] = 99.0
 
-        result = ind.compute(df.copy(), sessions=[8],
-                             pre_range_bars=2)
+        result = ind.compute(df.copy(), sessions=[8], pre_range_bars=2)
 
         # Range should be 106 - 97 = 9.0 (expanded high from pre-bar)
         post_range = df.index[0] + pd.Timedelta(hours=8, minutes=15)
@@ -1071,8 +1124,7 @@ class TestPreRangeBars:
         df.loc[pre_bar1, "H"] = 101.0
         df.loc[pre_bar1, "L"] = 94.0
 
-        result = ind.compute(df.copy(), sessions=[8],
-                             pre_range_bars=2)
+        result = ind.compute(df.copy(), sessions=[8], pre_range_bars=2)
 
         # Range should be 103 - 94 = 9.0 (expanded low from pre-bar)
         post_range = df.index[0] + pd.Timedelta(hours=8, minutes=15)
@@ -1095,8 +1147,7 @@ class TestPreRangeBars:
         df.loc[pre_bar1, "H"] = 101.0
         df.loc[pre_bar1, "L"] = 99.0
 
-        result = ind.compute(df.copy(), sessions=[8],
-                             pre_range_bars=2)
+        result = ind.compute(df.copy(), sessions=[8], pre_range_bars=2)
 
         # Range should still be 103 - 97 = 6.0
         post_range = df.index[0] + pd.Timedelta(hours=8, minutes=15)
@@ -1120,7 +1171,6 @@ class TestPreRangeBars:
         assert schema["pre_range_bars"]["default"] == 0
 
 
-
 class TestCfPrbListPrefixes:
     """Tests for carry_forward_days / pre_range_bars list parameter prefix generation."""
 
@@ -1128,8 +1178,7 @@ class TestCfPrbListPrefixes:
         """Scalar cf=0, prb=0 -> no cf/prb prefix on session columns."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
-        result = ind.compute(df, sessions=[8],
-                             carry_forward_days=0, pre_range_bars=0)
+        result = ind.compute(df, sessions=[8], carry_forward_days=0, pre_range_bars=0)
 
         # Should have unprefixed session columns
         assert "rb1_orb_s08_range" in result.columns
@@ -1141,9 +1190,9 @@ class TestCfPrbListPrefixes:
         """carry_forward_days=[0, 1] -> rb1_cf0_ and rb1_cf1_ columns (prb omitted, default 0)."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
-        result = ind.compute(df, sessions=[8],
-                             carry_forward_days=[0, 1],
-                             pre_range_bars=0)
+        result = ind.compute(
+            df, sessions=[8], carry_forward_days=[0, 1], pre_range_bars=0
+        )
 
         assert "rb1_cf0_orb_s08_range" in result.columns, (
             f"Missing rb1_cf0_ prefix. Columns: {[c for c in result.columns if 'orb_s08' in c]}"
@@ -1156,9 +1205,9 @@ class TestCfPrbListPrefixes:
         """pre_range_bars=[0, 1] -> rb1_prb0_ and rb1_prb1_ columns (cf omitted, default 0)."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
-        result = ind.compute(df, sessions=[8],
-                             carry_forward_days=0,
-                             pre_range_bars=[0, 1])
+        result = ind.compute(
+            df, sessions=[8], carry_forward_days=0, pre_range_bars=[0, 1]
+        )
 
         assert "rb1_prb0_orb_s08_range" in result.columns
         assert "rb1_prb1_orb_s08_range" in result.columns
@@ -1167,11 +1216,16 @@ class TestCfPrbListPrefixes:
         """cf=[0,1], prb=[0,1] -> 4 variant sets (cartesian product)."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
-        result = ind.compute(df, sessions=[8],
-                             carry_forward_days=[0, 1],
-                             pre_range_bars=[0, 1])
+        result = ind.compute(
+            df, sessions=[8], carry_forward_days=[0, 1], pre_range_bars=[0, 1]
+        )
 
-        expected_prefixes = ["rb1_cf0_prb0_", "rb1_cf0_prb1_", "rb1_cf1_prb0_", "rb1_cf1_prb1_"]
+        expected_prefixes = [
+            "rb1_cf0_prb0_",
+            "rb1_cf0_prb1_",
+            "rb1_cf1_prb0_",
+            "rb1_cf1_prb1_",
+        ]
         for prefix in expected_prefixes:
             col = f"{prefix}orb_s08_range"
             assert col in result.columns, (
@@ -1182,8 +1236,13 @@ class TestCfPrbListPrefixes:
         """range_bars=[1,2] + cf=[0,1] -> rb1_cf0_, rb1_cf1_, rb2_cf0_, rb2_cf1_ (prb omitted)."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
-        result = ind.compute(df, sessions=[8], range_bars=[1, 2],
-                             carry_forward_days=[0, 1], pre_range_bars=0)
+        result = ind.compute(
+            df,
+            sessions=[8],
+            range_bars=[1, 2],
+            carry_forward_days=[0, 1],
+            pre_range_bars=0,
+        )
 
         # Should have combined rb + cf prefixes (prb omitted, default 0)
         assert "rb1_cf0_orb_s08_range" in result.columns
@@ -1195,9 +1254,9 @@ class TestCfPrbListPrefixes:
         """cf=0 (scalar) + prb=[0,1] (list) -> prefix active (len(prb_list) > 1)."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
-        result = ind.compute(df, sessions=[8],
-                             carry_forward_days=0,
-                             pre_range_bars=[0, 1])
+        result = ind.compute(
+            df, sessions=[8], carry_forward_days=0, pre_range_bars=[0, 1]
+        )
 
         # Even though cf is scalar, prb being a list triggers prb prefix
         assert "rb1_prb0_orb_s08_range" in result.columns
@@ -1207,9 +1266,13 @@ class TestCfPrbListPrefixes:
         """Retest signal columns (rl50_retest_bull, rl50_retest_bear) get cf prefix when cf active."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
-        result = ind.compute(df, sessions=[8],
-                             enable_retracement=True,
-                             carry_forward_days=[0, 1], pre_range_bars=0)
+        result = ind.compute(
+            df,
+            sessions=[8],
+            enable_retracement=True,
+            carry_forward_days=[0, 1],
+            pre_range_bars=0,
+        )
 
         assert "rb1_cf0_orb_s08_rl50_retest_bull" in result.columns
         assert "rb1_cf1_orb_s08_rl50_retest_bull" in result.columns
@@ -1220,9 +1283,9 @@ class TestCfPrbListPrefixes:
         """Number of session variant sets = len(cf_list) x len(prb_list)."""
         ind = _get_indicator()
         df = _make_ohlc_15min(n=2000)
-        result = ind.compute(df, sessions=[8],
-                             carry_forward_days=[0, 1, 2],
-                             pre_range_bars=[0, 1])
+        result = ind.compute(
+            df, sessions=[8], carry_forward_days=[0, 1, 2], pre_range_bars=[0, 1]
+        )
 
         # 3 cf x 2 prb = 6 variants; each has orb_s08_range
         range_cols = [c for c in result.columns if c.endswith("_orb_s08_range")]
@@ -1242,6 +1305,7 @@ class TestStrategyConfigSignalColumnIntegration:
     @staticmethod
     def _load_json(path):
         import json
+
         with open(path) as f:
             return json.load(f)
 
@@ -1284,6 +1348,7 @@ class TestStrategyConfigSignalColumnIntegration:
         if pipeline_cfg:
             from fwbg.plugins import import_plugin_module
             from fwbg_sdk import BaseIndicator as _BaseInd
+
             for ind_cfg in pipeline_cfg.get("indicators", []):
                 name = ind_cfg.get("name")
                 if name == "opening_range":
@@ -1295,8 +1360,11 @@ class TestStrategyConfigSignalColumnIntegration:
                 ind_cls = None
                 for attr_name in dir(mod):
                     cls = getattr(mod, attr_name, None)
-                    if (isinstance(cls, type) and issubclass(cls, _BaseInd)
-                            and cls is not _BaseInd):
+                    if (
+                        isinstance(cls, type)
+                        and issubclass(cls, _BaseInd)
+                        and cls is not _BaseInd
+                    ):
                         ind_cls = cls
                         break
                 if ind_cls is None:
@@ -1312,9 +1380,19 @@ class TestStrategyConfigSignalColumnIntegration:
     @pytest.fixture
     def strategy_dir(self):
         import os
-        return os.path.normpath(os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "strategies",
-        ))
+
+        return os.path.normpath(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "..",
+                "..",
+                "..",
+                "..",
+                "..",
+                "strategies",
+            )
+        )
 
     def _run_config_check(self, strategy_dir, strategy_file, pipeline_name):
         """Core check: compute indicator with pipeline params, verify all signal columns exist."""
@@ -1353,7 +1431,9 @@ class TestStrategyConfigSignalColumnIntegration:
 
     def test_orb_pdhl_scalping_signal_columns(self, strategy_dir):
         """All signal columns in orb_pdhl_scalping.json exist in orb_scalping_v1 output."""
-        self._run_config_check(strategy_dir, "orb_pdhl_scalping.json", "orb_scalping_v1")
+        self._run_config_check(
+            strategy_dir, "orb_pdhl_scalping.json", "orb_scalping_v1"
+        )
 
     def test_deep_orb_index_signal_columns(self, strategy_dir):
         """All signal columns in deep_orb_index.json exist in orb_simple_v1 output."""
@@ -1362,6 +1442,7 @@ class TestStrategyConfigSignalColumnIntegration:
     def test_signal_model_nonzero_predictions_with_prefixed_column(self):
         """SignalModel with a valid prefixed signal column produces non-zero predictions."""
         from fwbg.plugins import import_plugin_module
+
         signal_mod = import_plugin_module("fwbg-core", "models", "signal")
         if signal_mod is None:
             pytest.skip("signal model plugin not available")
@@ -1369,9 +1450,12 @@ class TestStrategyConfigSignalColumnIntegration:
         ind = _get_indicator()
         df = _make_ohlc_15min(n=3000)
         result = ind.compute(
-            df, range_bars=[1, 2], sessions=[8],
+            df,
+            range_bars=[1, 2],
+            sessions=[8],
             enable_retracement=True,
-            carry_forward_days=[0, 1, 2], pre_range_bars=[0, 1],
+            carry_forward_days=[0, 1, 2],
+            pre_range_bars=[0, 1],
         )
 
         signal_col = "rb1_cf0_prb0_orb_s08_rl50_retest_bull"
@@ -1382,6 +1466,7 @@ class TestStrategyConfigSignalColumnIntegration:
 
         model = signal_mod.SignalModel()
         from fwbg_sdk.models import TrainingContext
+
         ctx = TrainingContext(direction="long")
         features_df = result[[signal_col]].fillna(0)
         targets = np.zeros(len(result))
@@ -1405,9 +1490,19 @@ class TestStrategyConfigSignalColumnIntegration:
         """required_features auto-collected from model_hyperparameters_grid
         must all exist in indicator output."""
         import os
-        strategy_dir = os.path.normpath(os.path.join(
-            os.path.dirname(__file__), "..", "..", "..", "..", "..", "..", "strategies",
-        ))
+
+        strategy_dir = os.path.normpath(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "..",
+                "..",
+                "..",
+                "..",
+                "..",
+                "strategies",
+            )
+        )
         strategy_path = os.path.join(strategy_dir, "configs", "orb_pdhl_scalping.json")
         pipeline_path = os.path.join(strategy_dir, "pipelines", "orb_scalping_v1.json")
 
@@ -1504,7 +1599,9 @@ class TestBodyBasedRange:
         # _range feature is now raw (not normalized by close).
         # After shift: result.iloc[b+3] has the value for bar b+2
         range_val = result["rb2_orb_s08_range"].iloc[b + 3]
-        assert not np.isnan(range_val), "rb2_orb_s08_range should not be NaN for post-range bar"
+        assert not np.isnan(range_val), (
+            "rb2_orb_s08_range should not be NaN for post-range bar"
+        )
         expected = 4.0  # raw body range
         assert abs(range_val - expected) < 0.1, (
             f"Expected raw body range {expected}, "
@@ -1712,8 +1809,7 @@ class TestMinRetracement:
             lo[i] = 102.0
 
         df = pd.DataFrame({"O": o, "H": h, "L": lo, "C": c}, index=idx)
-        result = ind.compute(df, sessions=[8],
-                             min_retracement=0.3)
+        result = ind.compute(df, sessions=[8], min_retracement=0.3)
 
         # Signal columns are NOT shifted. Check bar b+2 (the retrace bar).
         val = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 2]
@@ -1739,8 +1835,7 @@ class TestMinRetracement:
         low = np.minimum(low, close)
         low[b + 1] = 105.0  # breakout bar: L stays above entry level
         df = pd.DataFrame({"O": close, "H": high, "L": low, "C": close}, index=idx)
-        result = ind.compute(df, sessions=[8],
-                             min_retracement=0.0)
+        result = ind.compute(df, sessions=[8], min_retracement=0.0)
 
         # Signal columns are NOT shifted.
         val = result["rb1_orb_s08_rl50_retest_bull"].iloc[b + 2]
@@ -1772,7 +1867,9 @@ class TestCrossHourRangeBars:
         """
         bars_per_hour = 4
         n = n_hours * bars_per_hour
-        idx = pd.date_range(f"2024-01-01 {session_hour:02d}:00", periods=n, freq="15min")
+        idx = pd.date_range(
+            f"2024-01-01 {session_hour:02d}:00", periods=n, freq="15min"
+        )
 
         # Ascending H: bar 0 → H=101, bar 1 → H=102, ... bar 5 → H=106
         # Descending L: bar 0 → L=99, bar 1 → L=98, ... bar 5 → L=94
@@ -1781,15 +1878,20 @@ class TestCrossHourRangeBars:
         c_vals = np.full(n, 100.0)
         o_vals = np.full(n, 100.0)
 
-        return pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        return pd.DataFrame(
+            {"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx
+        )
 
     def test_range_bars_6_includes_bars_across_hour_boundary(self):
         """With range_bars=6 on 15m data, or_high must include bar 5 (hour+1)."""
         df = self._make_controlled_15m(n_hours=4, session_hour=0)
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="hl",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="hl",
         )
         col = "rb6_orb_s00_range"
         assert col in result.columns, f"Expected column {col} not found"
@@ -1814,8 +1916,11 @@ class TestCrossHourRangeBars:
         df = self._make_controlled_15m(n_hours=4, session_hour=0)
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=4, sessions=[0],
-            enable_retracement=False, candle_span="hl",
+            df,
+            range_bars=4,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="hl",
         )
         col = "rb4_orb_s00_range"
         after_range = result.iloc[4:]
@@ -1833,8 +1938,11 @@ class TestCrossHourRangeBars:
         df.iloc[7, df.columns.get_loc("C")] = 105.0
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="hl",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="hl",
         )
         bu_col = "rb6_orb_s00_breakout_up"
         # Bar 7 close=105 < or_high=106 → no breakout
@@ -1850,8 +1958,11 @@ class TestCrossHourRangeBars:
         df.iloc[7, df.columns.get_loc("C")] = 107.0
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="hl",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="hl",
         )
         bu_col = "rb6_orb_s00_breakout_up"
         # shift_features shifts by 1 bar → breakout at bar 7 appears at bar 8
@@ -1867,8 +1978,11 @@ class TestCrossHourRangeBars:
         df = self._make_controlled_15m(n_hours=4, session_hour=0)
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="hl",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="hl",
         )
         col = "rb6_orb_s00_position"
         # Bars 0-6 should be NaN (range period 0-5 + 1 bar shift)
@@ -1877,7 +1991,9 @@ class TestCrossHourRangeBars:
                 f"Bar {i} should be masked but has value {result[col].iloc[i]}"
             )
         # Bar 7 should have a valid value (first bar after range + shift)
-        assert pd.notna(result[col].iloc[7]), "Bar 7 should be valid (first bar after range period + shift)"
+        assert pd.notna(result[col].iloc[7]), (
+            "Bar 7 should be valid (first bar after range period + shift)"
+        )
 
     def test_body_candle_span_cross_hour(self):
         """candle_span='body' with range_bars=6 must use O/C of ALL range bars."""
@@ -1891,13 +2007,18 @@ class TestCrossHourRangeBars:
         # Bar 0: O=98, bar 3: C=107 (highest body in range), bar 5: C=95 (lowest)
         o_vals[0] = 98.0
         c_vals[3] = 107.0  # intermediate bar — must be included!
-        c_vals[5] = 95.0   # across hour boundary — must be included!
-        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        c_vals[5] = 95.0  # across hour boundary — must be included!
+        df = pd.DataFrame(
+            {"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx
+        )
 
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="body",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="body",
         )
         col = "rb6_orb_s00_range"
         after_range = result.iloc[7:]  # +1 for shift_features
@@ -1919,8 +2040,11 @@ class TestCrossHourRangeBars:
         # All O/C are 100.0, so body range should be 0.
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=4, sessions=[0],
-            enable_retracement=False, candle_span="body",
+            df,
+            range_bars=4,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="body",
         )
         col = "rb4_orb_s00_range"
         after_range = result.iloc[5:]  # 4 range bars + 1 shift
@@ -1936,8 +2060,11 @@ class TestCrossHourRangeBars:
         df = self._make_controlled_15m(n_hours=4, session_hour=0)
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="hl",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="hl",
         )
         zones = ind._range_zones
         assert len(zones) > 0, "No range zones produced"
@@ -1963,18 +2090,23 @@ class TestCrossHourRangeBars:
         o_vals = np.full(n, 100.0)
         c_vals = np.full(n, 100.0)
         h_vals = np.full(n, 110.0)  # wicks extend to 110
-        l_vals = np.full(n, 90.0)   # wicks extend to 90
+        l_vals = np.full(n, 90.0)  # wicks extend to 90
         # Range bars: all bodies at 100, wicks at 90-110
         # Body range: or_high = 100, or_low = 100, range = 0
         # Set bar 2 O=97, bar 4 C=103 (body range becomes 97-103)
         o_vals[2] = 97.0
         c_vals[4] = 103.0
-        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        df = pd.DataFrame(
+            {"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx
+        )
 
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="body",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="body",
         )
         zones = ind._range_zones
         assert len(zones) > 0
@@ -2010,7 +2142,7 @@ class TestCrossHourRangeBars:
         # Range bars 0-5: body = 100 (flat), so or_high=100, or_low=100
         # Set one range bar slightly higher to create a range
         c_vals[0] = 102.0  # or_high = 102
-        o_vals[1] = 98.0   # or_low = 98
+        o_vals[1] = 98.0  # or_low = 98
 
         # Post-range bars: simulate oscillation around the upper boundary
         # Bar 7: close=103 -> above or_high=102 -> breakout_up fires (persists)
@@ -2020,11 +2152,16 @@ class TestCrossHourRangeBars:
         # Bar 9: close=104 -> above again, stays 1
         c_vals[9] = 104.0
 
-        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        df = pd.DataFrame(
+            {"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx
+        )
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="body",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="body",
         )
         bu_col = "rb6_orb_s00_breakout_up"
         # Signal columns are NOT shifted. Breakout at bar 7 appears at bar 7.
@@ -2051,7 +2188,7 @@ class TestCrossHourRangeBars:
         h_vals = np.full(n, 110.0)
         l_vals = np.full(n, 90.0)
         c_vals[0] = 102.0  # or_high = 102
-        o_vals[1] = 98.0   # or_low = 98
+        o_vals[1] = 98.0  # or_low = 98
 
         # Bar 7: close=97 -> below or_low=98 -> breakout_down fires (persists)
         c_vals[7] = 97.0
@@ -2060,11 +2197,16 @@ class TestCrossHourRangeBars:
         # Bar 9: close=96 -> below again, stays 1
         c_vals[9] = 96.0
 
-        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        df = pd.DataFrame(
+            {"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx
+        )
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="body",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="body",
         )
         bd_col = "rb6_orb_s00_breakout_down"
         # Signal columns are NOT shifted. Breakout uses cummax (persistent).
@@ -2094,11 +2236,16 @@ class TestCrossHourRangeBars:
         # Bar 8: close=106.5 → above threshold(106) → breakout
         c_vals[8] = 106.5
 
-        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        df = pd.DataFrame(
+            {"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx
+        )
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="body",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="body",
             breakout_threshold=0.1,
         )
         bu_col = "rb6_orb_s00_breakout_up"
@@ -2132,11 +2279,16 @@ class TestCrossHourRangeBars:
         # Bar 8: close=107.5 → above abs threshold(107) → breakout
         c_vals[8] = 107.5
 
-        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        df = pd.DataFrame(
+            {"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx
+        )
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="body",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="body",
             breakout_threshold=0.1,
             breakout_threshold_abs=2.0,
         )
@@ -2169,11 +2321,16 @@ class TestCrossHourRangeBars:
         # Bar 8: close=93.5 → below threshold(94) → breakout_down
         c_vals[8] = 93.5
 
-        df = pd.DataFrame({"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx)
+        df = pd.DataFrame(
+            {"O": o_vals, "H": h_vals, "L": l_vals, "C": c_vals}, index=idx
+        )
         ind = _get_indicator()
         result = ind.compute(
-            df, range_bars=6, sessions=[0],
-            enable_retracement=False, candle_span="body",
+            df,
+            range_bars=6,
+            sessions=[0],
+            enable_retracement=False,
+            candle_span="body",
             breakout_threshold=0.1,
         )
         bd_col = "rb6_orb_s00_breakout_down"
@@ -2181,6 +2338,4 @@ class TestCrossHourRangeBars:
         assert result[bd_col].iloc[7] != 1.0, (
             "C=94.5 above threshold (or_low - 1 = 94), should not fire"
         )
-        assert result[bd_col].iloc[8] == 1.0, (
-            "C=93.5 below threshold (94), should fire"
-        )
+        assert result[bd_col].iloc[8] == 1.0, "C=93.5 below threshold (94), should fire"

@@ -18,14 +18,25 @@ Prefix-Abkürzungen:
 
 cf/prb erscheinen nur im Prefix wenn sie konfiguriert sind (Wert != 0 oder Liste).
 """
+
 from typing import Dict, List, Union
 
 import numpy as np
 import pandas as pd
 import ta
 
-from fwbg_sdk import BaseIndicator, register_indicator, shift_features, safe_divide, rl_tag
-from fwbg_sdk.retest import apply_breakout_threshold, compute_break_state, compute_retest_signals
+from fwbg_sdk import (
+    BaseIndicator,
+    register_indicator,
+    shift_features,
+    safe_divide,
+    rl_tag,
+)
+from fwbg_sdk.retest import (
+    apply_breakout_threshold,
+    compute_break_state,
+    compute_retest_signals,
+)
 
 
 # ── Naming helpers ──────────────────────────────────────────────────────────
@@ -54,10 +65,16 @@ def orb_col(rb: int, cf, prb, session: int, feature: str) -> str:
 
 
 ORB_BASE_FEATURES = [
-    "range", "position", "breakout_up", "breakout_down",
+    "range",
+    "position",
+    "breakout_up",
+    "breakout_down",
     "breakout_dist",
-    "range_vs_atr", "poc_dist", "sl_dist",
-    "post_bull", "post_bear",
+    "range_vs_atr",
+    "poc_dist",
+    "sl_dist",
+    "post_bull",
+    "post_bear",
 ]
 
 ORB_SIGNAL_SUFFIXES = ("_breakout_up", "_breakout_down", "_retest_bull", "_retest_bear")
@@ -199,7 +216,9 @@ def _session_orb_features(
 
                     # Check breakout against carried range
                     sess_close = close_vals[sess_mask]
-                    had_breakout = (sess_close > carry_h).any() or (sess_close < carry_l).any()
+                    had_breakout = (sess_close > carry_h).any() or (
+                        sess_close < carry_l
+                    ).any()
 
                     if had_breakout:
                         carry_remaining = 0
@@ -212,7 +231,9 @@ def _session_orb_features(
 
                     if not np.isnan(own_h):
                         sess_close = close_vals[sess_mask]
-                        had_breakout = (sess_close > own_h).any() or (sess_close < own_l).any()
+                        had_breakout = (sess_close > own_h).any() or (
+                            sess_close < own_l
+                        ).any()
 
                         if not had_breakout:
                             carry_remaining = carry_forward_days
@@ -239,13 +260,15 @@ def _session_orb_features(
             # Use or_high/or_low which already respect candle_span
             zone_h = float(h_val)
             zone_l = float(l_val)
-            zones.append({
-                "start_ts": int(df.index[zone_start].timestamp() * 1000),
-                "end_ts": int(df.index[zone_end].timestamp() * 1000),
-                "high": zone_h,
-                "low": zone_l,
-                "session": f"s{session_hour:02d}",
-            })
+            zones.append(
+                {
+                    "start_ts": int(df.index[zone_start].timestamp() * 1000),
+                    "end_ts": int(df.index[zone_end].timestamp() * 1000),
+                    "high": zone_h,
+                    "low": zone_l,
+                    "session": f"s{session_hour:02d}",
+                }
+            )
 
         # Valid: after first session, not within the opening range bars themselves
         # For carried sessions, range is pre-established → no range period masking
@@ -282,9 +305,9 @@ def _session_orb_features(
             signal_valid = signal_valid & ~range_too_small
 
         features[f"{prefix}_range"] = or_range.where(valid, np.nan)
-        features[f"{prefix}_position"] = safe_divide(
-            df["C"] - or_low, or_range
-        ).where(valid, np.nan)
+        features[f"{prefix}_position"] = safe_divide(df["C"] - or_low, or_range).where(
+            valid, np.nan
+        )
 
         # Breakout signal: persistent 1 from the first bar closing above/below
         # the range until end of session.  This allows the simulation to enter
@@ -301,11 +324,11 @@ def _session_orb_features(
             below_valid = ((df["C"] < or_low) & signal_valid).astype(np.int8)
         ever_above = above_valid.groupby(session_id).cummax()
         ever_below = below_valid.groupby(session_id).cummax()
-        features[f"{prefix}_breakout_up"] = (
-            ever_above.astype(float).where(signal_valid, np.nan)
+        features[f"{prefix}_breakout_up"] = ever_above.astype(float).where(
+            signal_valid, np.nan
         )
-        features[f"{prefix}_breakout_down"] = (
-            ever_below.astype(float).where(signal_valid, np.nan)
+        features[f"{prefix}_breakout_down"] = ever_below.astype(float).where(
+            signal_valid, np.nan
         )
 
         # Breakout distance: how far price is from the range edge,
@@ -314,9 +337,7 @@ def _session_orb_features(
         # We take the max of both (whichever side is active).
         dist_above = (df["C"] - or_high).clip(lower=0)
         dist_below = (or_low - df["C"]).clip(lower=0)
-        breakout_dist = safe_divide(
-            np.maximum(dist_above, dist_below), or_range
-        )
+        breakout_dist = safe_divide(np.maximum(dist_above, dist_below), or_range)
         features[f"{prefix}_breakout_dist"] = breakout_dist.where(signal_valid, np.nan)
 
         features[f"{prefix}_range_vs_atr"] = safe_divide(or_range, atr).where(
@@ -324,9 +345,9 @@ def _session_orb_features(
         )
 
         # POC proxy: normalized distance from close to ORB midpoint
-        features[f"{prefix}_poc_dist"] = safe_divide(
-            df["C"] - or_midpoint, atr
-        ).where(valid, np.nan)
+        features[f"{prefix}_poc_dist"] = safe_divide(df["C"] - or_midpoint, atr).where(
+            valid, np.nan
+        )
 
         # SL distance: full range (breakout entry at boundary → SL at opposite boundary)
         # sl_mult in exit strategy controls buffer: 1.0 = exact boundary, >1.0 = beyond
@@ -352,28 +373,42 @@ def _session_orb_features(
         sid_vals = session_id.values
 
         above_raw, below_raw = apply_breakout_threshold(
-            close_vals, or_high_vals, or_low_vals, or_range_vals,
-            breakout_threshold, breakout_threshold_abs,
+            close_vals,
+            or_high_vals,
+            or_low_vals,
+            or_range_vals,
+            breakout_threshold,
+            breakout_threshold_abs,
         )
         # Mask out range-period + pre-range bars
         above_masked = above_raw & signal_valid_vals
         below_masked = below_raw & signal_valid_vals
 
-        _, _, post_bull_arr, post_bear_arr, broke_high_arr, broke_low_arr = \
+        _, _, post_bull_arr, post_bear_arr, broke_high_arr, broke_low_arr = (
             compute_break_state(
-                above_masked, below_masked, or_high_vals,
-                sid_vals, len(df),
+                above_masked,
+                below_masked,
+                or_high_vals,
+                sid_vals,
+                len(df),
             )
+        )
         features[f"{prefix}_post_bull"] = pd.Series(
-            post_bull_arr, index=df.index,
+            post_bull_arr,
+            index=df.index,
         ).where(signal_valid, np.nan)
         features[f"{prefix}_post_bear"] = pd.Series(
-            post_bear_arr, index=df.index,
+            post_bear_arr,
+            index=df.index,
         ).where(signal_valid, np.nan)
 
         if enable_retracement:
             # Retest signals per retracement level
-            rl_list = [retracement_levels] if isinstance(retracement_levels, (int, float)) else list(retracement_levels)
+            rl_list = (
+                [retracement_levels]
+                if isinstance(retracement_levels, (int, float))
+                else list(retracement_levels)
+            )
 
             for rl in rl_list:
                 rl_pfx = f"{rl_tag(rl)}_"
@@ -395,10 +430,12 @@ def _session_orb_features(
                     min_retracement=min_retracement,
                 )
                 features[f"{prefix}_{rl_pfx}retest_bull"] = pd.Series(
-                    retest_result["retest_bull"], index=df.index,
+                    retest_result["retest_bull"],
+                    index=df.index,
                 ).where(signal_valid, np.nan)
                 features[f"{prefix}_{rl_pfx}retest_bear"] = pd.Series(
-                    retest_result["retest_bear"], index=df.index,
+                    retest_result["retest_bear"],
+                    index=df.index,
                 ).where(signal_valid, np.nan)
 
                 # SL: entry to opposite boundary
@@ -456,8 +493,16 @@ class OpeningRangeIndicator(BaseIndicator):
 
         # Normalisiere Parameter zu Listen
         rb_list = [range_bars] if isinstance(range_bars, int) else list(range_bars)
-        cf_list = [carry_forward_days] if isinstance(carry_forward_days, int) else list(carry_forward_days)
-        prb_list = [pre_range_bars] if isinstance(pre_range_bars, int) else list(pre_range_bars)
+        cf_list = (
+            [carry_forward_days]
+            if isinstance(carry_forward_days, int)
+            else list(carry_forward_days)
+        )
+        prb_list = (
+            [pre_range_bars]
+            if isinstance(pre_range_bars, int)
+            else list(pre_range_bars)
+        )
 
         features: Dict[str, Union[pd.Series, np.ndarray]] = {}
         all_zones: List[dict] = []
@@ -476,13 +521,24 @@ class OpeningRangeIndicator(BaseIndicator):
                     if include_prb:
                         pfx += f"prb{prb}_"
                     session_features, session_zones = _session_orb_features(
-                        df, sessions, rb, atr, enable_retracement,
-                        cf, prb, candle_span,
-                        breakout_threshold, breakout_threshold_abs,
-                        retracement_levels, min_retracement,
-                        min_range_height, min_range_height_atr,
+                        df,
+                        sessions,
+                        rb,
+                        atr,
+                        enable_retracement,
+                        cf,
+                        prb,
+                        candle_span,
+                        breakout_threshold,
+                        breakout_threshold_abs,
+                        retracement_levels,
+                        min_retracement,
+                        min_range_height,
+                        min_range_height_atr,
                     )
-                    features.update({f"{pfx}{k}": v for k, v in session_features.items()})
+                    features.update(
+                        {f"{pfx}{k}": v for k, v in session_features.items()}
+                    )
                     all_zones.extend(session_zones)
 
         self._range_zones = all_zones
@@ -506,7 +562,8 @@ class OpeningRangeIndicator(BaseIndicator):
         # on PYTHONHASHSEED. orb_based refuses several *_sl_dist candidates
         # unless exit_params names one, but other consumers still see the order.
         no_shift = [
-            k for k in features
+            k
+            for k in features
             if any(k.endswith(s) for s in ORB_SIGNAL_SUFFIXES + ORB_STRUCTURAL_SUFFIXES)
         ]
         shifted = {k: v for k, v in features.items() if k not in no_shift}
@@ -524,7 +581,11 @@ class OpeningRangeIndicator(BaseIndicator):
     @staticmethod
     def _rl_prefixes(retracement_levels) -> List[str]:
         """Build rl{N}_ prefixes from retracement_levels param."""
-        rl_list = [retracement_levels] if isinstance(retracement_levels, (int, float)) else list(retracement_levels)
+        rl_list = (
+            [retracement_levels]
+            if isinstance(retracement_levels, (int, float))
+            else list(retracement_levels)
+        )
         return [f"{rl_tag(rl)}_" for rl in rl_list]
 
     def _resolve_col_params(self, params=None):
@@ -549,7 +610,9 @@ class OpeningRangeIndicator(BaseIndicator):
     def get_feature_columns(self, params=None) -> List[str]:
         if self._feature_columns and not params:
             return self._feature_columns
-        rb_list, cf_list, prb_list, include_cf, include_prb, sessions, rl_pfxs = self._resolve_col_params(params)
+        rb_list, cf_list, prb_list, include_cf, include_prb, sessions, rl_pfxs = (
+            self._resolve_col_params(params)
+        )
         cols = []
         for rb in rb_list:
             for cf_val in cf_list:
@@ -568,7 +631,9 @@ class OpeningRangeIndicator(BaseIndicator):
     def get_signal_columns(self, params=None) -> List[str]:
         if self._signal_columns and not params:
             return self._signal_columns
-        rb_list, cf_list, prb_list, include_cf, include_prb, sessions, rl_pfxs = self._resolve_col_params(params)
+        rb_list, cf_list, prb_list, include_cf, include_prb, sessions, rl_pfxs = (
+            self._resolve_col_params(params)
+        )
         signals = []
         for rb in rb_list:
             for cf_val in cf_list:
@@ -576,15 +641,19 @@ class OpeningRangeIndicator(BaseIndicator):
                     cf = cf_val if include_cf else None
                     prb = prb_val if include_prb else None
                     for h in sessions:
-                        signals.extend([
-                            orb_col(rb, cf, prb, h, "breakout_up"),
-                            orb_col(rb, cf, prb, h, "breakout_down"),
-                        ])
+                        signals.extend(
+                            [
+                                orb_col(rb, cf, prb, h, "breakout_up"),
+                                orb_col(rb, cf, prb, h, "breakout_down"),
+                            ]
+                        )
                         for rl_pfx in rl_pfxs:
-                            signals.extend([
-                                orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bull"),
-                                orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bear"),
-                            ])
+                            signals.extend(
+                                [
+                                    orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bull"),
+                                    orb_col(rb, cf, prb, h, f"{rl_pfx}retest_bear"),
+                                ]
+                            )
         return signals
 
     @classmethod
