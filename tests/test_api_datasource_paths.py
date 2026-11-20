@@ -31,8 +31,14 @@ def source(monkeypatch, tmp_path):
 
 def _process_body(**overrides):
     body = {
-        "filename": "raw.csv", "symbol": "EURUSD", "timeframe": "HOUR",
-        "date_col": "d", "open_col": "o", "high_col": "h", "low_col": "l", "close_col": "c",
+        "filename": "raw.csv",
+        "symbol": "EURUSD",
+        "timeframe": "HOUR",
+        "date_col": "d",
+        "open_col": "o",
+        "high_col": "h",
+        "low_col": "l",
+        "close_col": "c",
     }
     body.update(overrides)
     return body
@@ -46,12 +52,15 @@ def test_get_file_path_rejects_escaping_symbol(tmp_path):
             src.get_file_path(bad, "HOUR")
 
 
-@pytest.mark.parametrize("override", [
-    {"filename": "/etc/passwd"},
-    {"filename": "../config.json"},
-    {"symbol": "/tmp/evil"},
-    {"timeframe": "../x"},
-])
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"filename": "/etc/passwd"},
+        {"filename": "../config.json"},
+        {"symbol": "/tmp/evil"},
+        {"timeframe": "../x"},
+    ],
+)
 def test_process_rejects_paths_outside_source(client, source, tmp_path, override):
     outside = tmp_path / "outside.csv"
     outside.write_text("d,o,h,l,c\n2024-01-01,1,1,1,1\n")
@@ -72,13 +81,17 @@ def test_update_rejects_path_outside_data_root(client, source, tmp_path):
 
 
 def test_update_keeps_unchanged_path(client, source):
-    r = client.put("/api/datasources/t1", json={"path": str(source.path), "description": "x"})
+    r = client.put(
+        "/api/datasources/t1", json={"path": str(source.path), "description": "x"}
+    )
 
     assert r.status_code == 200
 
 
 @pytest.mark.parametrize("name", [".", ".."])
-def test_create_source_rejects_dot_segments_before_creating_dirs(client, monkeypatch, tmp_path, name):
+def test_create_source_rejects_dot_segments_before_creating_dirs(
+    client, monkeypatch, tmp_path, name
+):
     root = tmp_path / "data"
     monkeypatch.setattr(ds_api, "get_data_root", lambda: root)
 
@@ -117,7 +130,9 @@ class _CountingReader(io.BytesIO):
         return chunk
 
 
-def test_oversized_upload_is_rejected_before_it_is_read_whole(source, tmp_path, monkeypatch):
+def test_oversized_upload_is_rejected_before_it_is_read_whole(
+    source, tmp_path, monkeypatch
+):
     monkeypatch.setattr(ds_api, "MAX_UPLOAD_SIZE", 1024)
     upload = _CountingReader(b"x" * (8 * 1024 * 1024))
 
@@ -127,3 +142,48 @@ def test_oversized_upload_is_rejected_before_it_is_read_whole(source, tmp_path, 
     assert exc_info.value.status_code == 413
     assert upload.bytes_read < len(upload.getvalue())
     assert list((tmp_path / "data" / "t1" / "raw").iterdir()) == []
+
+
+def _raw_body(**overrides):
+    return _process_body(volume_col="", **overrides)
+
+
+def test_process_stores_epoch_timestamps_as_utc_even_with_timezone(
+    client, source, tmp_path
+):
+    raw = tmp_path / "data" / "t1" / "raw" / "raw.csv"
+    raw.write_text("d,o,h,l,c\n1388534400000,1,2,0.5,1\n1388535300000,1,2,0.5,1\n")
+
+    r = client.post(
+        "/api/datasources/t1/process",
+        json=_raw_body(timestamp_format="unix_ms", timezone="Europe/Berlin"),
+    )
+
+    assert r.status_code == 200
+    lines = (source.path / "EURUSD_HOUR.csv").read_text().splitlines()
+    assert [row.split(",")[0] for row in lines[1:]] == [
+        "2014-01-01 00:00:00",
+        "2014-01-01 00:15:00",
+    ]
+
+
+def test_process_keeps_both_hours_of_the_dst_fallback(client, source, tmp_path):
+    raw = tmp_path / "data" / "t1" / "raw" / "raw.csv"
+    wall = ["01:00", "02:00", "02:00", "03:00"]  # 02:00 happens twice in Berlin
+    raw.write_text(
+        "d,o,h,l,c\n" + "".join(f"2024-10-27 {t}:00,1,2,0.5,1\n" for t in wall)
+    )
+
+    r = client.post(
+        "/api/datasources/t1/process", json=_raw_body(timezone="Europe/Berlin")
+    )
+
+    assert r.status_code == 200
+    assert r.json()["rows"] == 4
+    lines = (source.path / "EURUSD_HOUR.csv").read_text().splitlines()
+    assert [row.split(",")[0] for row in lines[1:]] == [
+        "2024-10-26 23:00:00",
+        "2024-10-27 00:00:00",
+        "2024-10-27 01:00:00",
+        "2024-10-27 02:00:00",
+    ]

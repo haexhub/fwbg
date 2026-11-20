@@ -73,3 +73,6 @@ docker-compose.override.yml
 .spaex/manifest.json.lock
 .spaex/composer.log
 .spaex/.stale
+
+# Claude Code personal overrides
+.claude/settings.local.json
