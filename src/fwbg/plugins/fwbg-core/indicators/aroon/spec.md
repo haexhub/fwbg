@@ -1,6 +1,6 @@
 # Plugin Spec — aroon
 
-**Kind**: indicator  •  **Version**: 1.0.0
+**Kind**: indicator  •  **Version**: 1.1.0
 
 ## Capability
 
@@ -8,7 +8,7 @@ Computes Aroon Up and Aroon Down oscillators measuring the number of bars since 
 
 ## Summary
 
-Wraps `ta.trend.AroonIndicator` over the H/L columns with a configurable `period` (default 25) to produce two 0-100 features, `aroon_up` and `aroon_down`, shifted by one bar to prevent lookahead bias.
+Computes Aroon over the H/L columns (most recent extreme wins on ties, unlike ta, which takes the oldest) with a configurable `period` (default 25) to produce two 0-100 features, `aroon_up` and `aroon_down`, shifted by one bar to prevent lookahead bias.
 
 ## Inputs
 
@@ -37,7 +37,7 @@ Wraps `ta.trend.AroonIndicator` over the H/L columns with a configurable `period
 
 ## Edge Cases
 
-- DataFrame shorter than `period` rows: leading rows produce NaN values in aroon_up/aroon_down (delegated to ta.trend.AroonIndicator).
+- DataFrame with `period` rows or fewer: aroon_up/aroon_down are all NaN; otherwise the first `period` rows are NaN (a window needs `period + 1` bars).
 - First row after shift is always NaN due to shift_features by one bar.
 - Constant H/L series (no new highs/lows within window): behaviour delegated to ta library — values remain within [0, 100].
 - Very large period (up to schema max of 200) yields more NaN leading rows but no error.
