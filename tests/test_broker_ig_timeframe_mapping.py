@@ -7,6 +7,7 @@ denselben Patch, ist aber weder in ``pyproject.toml``s ``testpaths`` noch in
 der Dev-/CI-Umgebung installiert (nur im Docker-Image, siehe Dockerfile) und
 hat keine eigenen Tests — außerhalb des Scopes dieser Änderung.
 """
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -41,7 +42,7 @@ class TestAdapterFailsLoudOnUnmappedTimeframe:
 
     def _adapter(self, monkeypatch):
         adapter = ig_adapter_module.IGBrokerAdapter(
-            username="u", password="p", api_key="k"
+            username="u", password="p", api_key="k", use_yfinance_fallback=True
         )
         monkeypatch.setattr(adapter, "_ensure_session_valid", lambda: True)
         adapter._ig = MagicMock()
