@@ -8,6 +8,7 @@ Verifies:
 4. Strategy JSONs work with condition_grids format
 5. Bitmask encoding: Long=4, Short=2, Sideways=1 (0-7)
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -18,15 +19,18 @@ class TestRegimeConditionBitmask:
 
     def test_default_directions(self):
         from fwbg.core.config import RegimeCondition
+
         cond = RegimeCondition(column="adx", operator=">=", value=25)
-        assert cond.directions == 6       # Long+Short
+        assert cond.directions == 6  # Long+Short
         assert cond.else_directions == 0  # blocked
 
     def test_custom_directions(self):
         from fwbg.core.config import RegimeCondition
-        cond = RegimeCondition(column="ema_diff", operator=">", value=0,
-                               directions=4, else_directions=2)
-        assert cond.directions == 4       # Long only
+
+        cond = RegimeCondition(
+            column="ema_diff", operator=">", value=0, directions=4, else_directions=2
+        )
+        assert cond.directions == 4  # Long only
         assert cond.else_directions == 2  # Short only
 
 
@@ -35,22 +39,35 @@ class TestRegimeFilterConfig:
 
     def test_default_has_no_conditions(self):
         from fwbg.core.config import RegimeFilterConfig
+
         config = RegimeFilterConfig()
         assert config.conditions == []
 
     def test_from_dict_none_returns_empty(self):
         from fwbg.core.config import RegimeFilterConfig
+
         config = RegimeFilterConfig.from_dict(None)
         assert config.conditions == []
 
     def test_from_dict_with_conditions_and_directions(self):
         from fwbg.core.config import RegimeFilterConfig
+
         data = {
             "conditions": [
-                {"column": "adx_14", "operator": ">=", "value": 25,
-                 "directions": 6, "else_directions": 0},
-                {"column": "ema_diff", "operator": ">", "value": 0,
-                 "directions": 4, "else_directions": 2},
+                {
+                    "column": "adx_14",
+                    "operator": ">=",
+                    "value": 25,
+                    "directions": 6,
+                    "else_directions": 0,
+                },
+                {
+                    "column": "ema_diff",
+                    "operator": ">",
+                    "value": 0,
+                    "directions": 4,
+                    "else_directions": 2,
+                },
             ]
         }
         config = RegimeFilterConfig.from_dict(data)
@@ -65,6 +82,7 @@ class TestRegimeFilterGridConfig:
 
     def test_default_produces_one_combination(self):
         from fwbg.core.config import RegimeFilterGridConfig
+
         config = RegimeFilterGridConfig()
         combos = config.get_combinations()
         assert len(combos) == 1
@@ -72,25 +90,46 @@ class TestRegimeFilterGridConfig:
 
     def test_condition_grids_produce_combinations(self):
         from fwbg.core.config import RegimeFilterGridConfig
-        config = RegimeFilterGridConfig.from_dict({
-            "condition_grids": [
-                {"column": "adx_14", "operator": ">=", "values": [None, 25],
-                 "directions": 6, "else_directions": 0},
-                {"column": "macro_vix", "operator": "<=", "values": [None, 30],
-                 "directions": 6, "else_directions": 0},
-            ]
-        })
+
+        config = RegimeFilterGridConfig.from_dict(
+            {
+                "condition_grids": [
+                    {
+                        "column": "adx_14",
+                        "operator": ">=",
+                        "values": [None, 25],
+                        "directions": 6,
+                        "else_directions": 0,
+                    },
+                    {
+                        "column": "macro_vix",
+                        "operator": "<=",
+                        "values": [None, 30],
+                        "directions": 6,
+                        "else_directions": 0,
+                    },
+                ]
+            }
+        )
         combos = config.get_combinations()
         assert len(combos) == 4  # 2 x 2
 
     def test_null_value_means_no_condition(self):
         from fwbg.core.config import RegimeFilterGridConfig
-        config = RegimeFilterGridConfig.from_dict({
-            "condition_grids": [
-                {"column": "adx_14", "operator": ">=", "values": [None, 25],
-                 "directions": 6, "else_directions": 0},
-            ]
-        })
+
+        config = RegimeFilterGridConfig.from_dict(
+            {
+                "condition_grids": [
+                    {
+                        "column": "adx_14",
+                        "operator": ">=",
+                        "values": [None, 25],
+                        "directions": 6,
+                        "else_directions": 0,
+                    },
+                ]
+            }
+        )
         combos = config.get_combinations()
         assert len(combos) == 2
         assert combos[0]["conditions"] == []
@@ -100,27 +139,53 @@ class TestRegimeFilterGridConfig:
 
     def test_total_combinations_matches(self):
         from fwbg.core.config import RegimeFilterGridConfig
-        config = RegimeFilterGridConfig.from_dict({
-            "condition_grids": [
-                {"column": "adx_14", "operator": ">=", "values": [None, 25],
-                 "directions": 6, "else_directions": 0},
-                {"column": "macro_vix", "operator": "<=", "values": [None, 30],
-                 "directions": 6, "else_directions": 0},
-                {"column": "regime_hurst_100", "operator": ">=", "values": [None, 0.45],
-                 "directions": 6, "else_directions": 0},
-            ]
-        })
+
+        config = RegimeFilterGridConfig.from_dict(
+            {
+                "condition_grids": [
+                    {
+                        "column": "adx_14",
+                        "operator": ">=",
+                        "values": [None, 25],
+                        "directions": 6,
+                        "else_directions": 0,
+                    },
+                    {
+                        "column": "macro_vix",
+                        "operator": "<=",
+                        "values": [None, 30],
+                        "directions": 6,
+                        "else_directions": 0,
+                    },
+                    {
+                        "column": "regime_hurst_100",
+                        "operator": ">=",
+                        "values": [None, 0.45],
+                        "directions": 6,
+                        "else_directions": 0,
+                    },
+                ]
+            }
+        )
         assert config.total_combinations() == 8
         assert config.total_combinations() == len(config.get_combinations())
 
     def test_directions_propagated_to_combinations(self):
         from fwbg.core.config import RegimeFilterGridConfig
-        config = RegimeFilterGridConfig.from_dict({
-            "condition_grids": [
-                {"column": "ema_diff", "operator": ">", "values": [None, 0],
-                 "directions": 4, "else_directions": 2},
-            ]
-        })
+
+        config = RegimeFilterGridConfig.from_dict(
+            {
+                "condition_grids": [
+                    {
+                        "column": "ema_diff",
+                        "operator": ">",
+                        "values": [None, 0],
+                        "directions": 4,
+                        "else_directions": 2,
+                    },
+                ]
+            }
+        )
         combos = config.get_combinations()
         assert combos[1]["conditions"][0]["directions"] == 4
         assert combos[1]["conditions"][0]["else_directions"] == 2
@@ -132,35 +197,49 @@ class TestComputeRegimeBitmask:
     @pytest.fixture
     def df_with_indicators(self):
         n = 100
-        return pd.DataFrame({
-            "O": np.full(n, 100.0),
-            "H": np.full(n, 101.0),
-            "L": np.full(n, 99.0),
-            "C": np.full(n, 100.0),
-            "adx_14": np.linspace(10, 40, n),
-            "macro_vix": np.linspace(15, 35, n),
-            "regime_hurst_100": np.linspace(0.3, 0.7, n),
-        })
+        return pd.DataFrame(
+            {
+                "O": np.full(n, 100.0),
+                "H": np.full(n, 101.0),
+                "L": np.full(n, 99.0),
+                "C": np.full(n, 100.0),
+                "adx_14": np.linspace(10, 40, n),
+                "macro_vix": np.linspace(15, 35, n),
+                "regime_hurst_100": np.linspace(0.3, 0.7, n),
+            }
+        )
 
     def test_no_conditions_returns_all_allowed(self, df_with_indicators):
         from fwbg.pipeline.features import compute_regime_bitmask
         from fwbg.core.config import RegimeFilterConfig
-        result = compute_regime_bitmask(df_with_indicators, regime_params=RegimeFilterConfig())
+
+        result = compute_regime_bitmask(
+            df_with_indicators, regime_params=RegimeFilterConfig()
+        )
         assert (result == 7).all()
         assert result.dtype == np.int8
 
     def test_none_params_returns_all_allowed(self, df_with_indicators):
         from fwbg.pipeline.features import compute_regime_bitmask
+
         result = compute_regime_bitmask(df_with_indicators, regime_params=None)
         assert (result == 7).all()
 
     def test_gte_condition_produces_bitmask(self, df_with_indicators):
         from fwbg.pipeline.features import compute_regime_bitmask
         from fwbg.core.config import RegimeFilterConfig, RegimeCondition
-        config = RegimeFilterConfig(conditions=[
-            RegimeCondition(column="adx_14", operator=">=", value=25.0,
-                           directions=6, else_directions=0)
-        ])
+
+        config = RegimeFilterConfig(
+            conditions=[
+                RegimeCondition(
+                    column="adx_14",
+                    operator=">=",
+                    value=25.0,
+                    directions=6,
+                    else_directions=0,
+                )
+            ]
+        )
         result = compute_regime_bitmask(df_with_indicators, regime_params=config)
         # Where ADX >= 25: 6 (Long+Short), where ADX < 25: 0 (blocked)
         assert (result[result > 0] == 6).all()
@@ -171,12 +250,20 @@ class TestComputeRegimeBitmask:
         """EMA diff > 0 → Long only (4), otherwise Short only (2)."""
         from fwbg.pipeline.features import compute_regime_bitmask
         from fwbg.core.config import RegimeFilterConfig, RegimeCondition
+
         df = df_with_indicators.copy()
         df["ema_diff"] = np.linspace(-1, 1, len(df))
-        config = RegimeFilterConfig(conditions=[
-            RegimeCondition(column="ema_diff", operator=">", value=0,
-                           directions=4, else_directions=2)
-        ])
+        config = RegimeFilterConfig(
+            conditions=[
+                RegimeCondition(
+                    column="ema_diff",
+                    operator=">",
+                    value=0,
+                    directions=4,
+                    else_directions=2,
+                )
+            ]
+        )
         result = compute_regime_bitmask(df, regime_params=config)
         # First half: ema_diff <= 0 → 2 (Short only)
         # Second half: ema_diff > 0 → 4 (Long only)
@@ -186,27 +273,50 @@ class TestComputeRegimeBitmask:
     def test_multiple_conditions_and_combine(self, df_with_indicators):
         from fwbg.pipeline.features import compute_regime_bitmask
         from fwbg.core.config import RegimeFilterConfig, RegimeCondition
-        config = RegimeFilterConfig(conditions=[
-            RegimeCondition(column="adx_14", operator=">=", value=25.0,
-                           directions=6, else_directions=0),
-            RegimeCondition(column="macro_vix", operator="<=", value=25.0,
-                           directions=6, else_directions=0),
-        ])
+
+        config = RegimeFilterConfig(
+            conditions=[
+                RegimeCondition(
+                    column="adx_14",
+                    operator=">=",
+                    value=25.0,
+                    directions=6,
+                    else_directions=0,
+                ),
+                RegimeCondition(
+                    column="macro_vix",
+                    operator="<=",
+                    value=25.0,
+                    directions=6,
+                    else_directions=0,
+                ),
+            ]
+        )
         result = compute_regime_bitmask(df_with_indicators, regime_params=config)
         # Both must pass → more restrictive than single
-        single = RegimeFilterConfig(conditions=[
-            RegimeCondition(column="adx_14", operator=">=", value=25.0,
-                           directions=6, else_directions=0),
-        ])
+        single = RegimeFilterConfig(
+            conditions=[
+                RegimeCondition(
+                    column="adx_14",
+                    operator=">=",
+                    value=25.0,
+                    directions=6,
+                    else_directions=0,
+                ),
+            ]
+        )
         result_single = compute_regime_bitmask(df_with_indicators, regime_params=single)
         assert (result > 0).sum() <= (result_single > 0).sum()
 
     def test_missing_column_keeps_all_allowed(self, df_with_indicators):
         from fwbg.pipeline.features import compute_regime_bitmask
         from fwbg.core.config import RegimeFilterConfig, RegimeCondition
-        config = RegimeFilterConfig(conditions=[
-            RegimeCondition(column="nonexistent_col", operator=">=", value=25.0)
-        ])
+
+        config = RegimeFilterConfig(
+            conditions=[
+                RegimeCondition(column="nonexistent_col", operator=">=", value=25.0)
+            ]
+        )
         result = compute_regime_bitmask(df_with_indicators, regime_params=config)
         assert (result == 7).all()
 
@@ -215,14 +325,23 @@ class TestComputeRegimeBitmask:
         AND result: only Long (4)."""
         from fwbg.pipeline.features import compute_regime_bitmask
         from fwbg.core.config import RegimeFilterConfig, RegimeCondition
-        df = pd.DataFrame({
-            "a": [30.0],
-            "b": [1.0],
-        })
-        config = RegimeFilterConfig(conditions=[
-            RegimeCondition(column="a", operator=">=", value=20, directions=6, else_directions=0),
-            RegimeCondition(column="b", operator=">", value=0, directions=4, else_directions=2),
-        ])
+
+        df = pd.DataFrame(
+            {
+                "a": [30.0],
+                "b": [1.0],
+            }
+        )
+        config = RegimeFilterConfig(
+            conditions=[
+                RegimeCondition(
+                    column="a", operator=">=", value=20, directions=6, else_directions=0
+                ),
+                RegimeCondition(
+                    column="b", operator=">", value=0, directions=4, else_directions=2
+                ),
+            ]
+        )
         result = compute_regime_bitmask(df, regime_params=config)
         assert result[0] == 4  # 6 & 4 = 4 (Long only)
 
@@ -233,6 +352,7 @@ class TestStrategyJsonNewFormat:
     def test_exploration_json_loads(self):
         import os
         from fwbg.core.config import StrategyConfig
+
         path = "strategies/configs/exploration.json"
         if not os.path.exists(path):
             pytest.skip(f"{path} not found")
@@ -242,6 +362,7 @@ class TestStrategyJsonNewFormat:
     def test_exploration_atr_loads(self):
         import os
         from fwbg.core.config import StrategyConfig
+
         path = "strategies/configs/exploration_atr.json"
         if not os.path.exists(path):
             pytest.skip(f"{path} not found")
@@ -251,6 +372,7 @@ class TestStrategyJsonNewFormat:
     def test_exploration_fast_loads(self):
         import os
         from fwbg.core.config import StrategyConfig
+
         path = "strategies/configs/exploration_fast.json"
         if not os.path.exists(path):
             pytest.skip(f"{path} not found")
@@ -260,6 +382,7 @@ class TestStrategyJsonNewFormat:
     def test_combinations_have_directions(self):
         import os
         from fwbg.core.config import StrategyConfig
+
         path = "strategies/configs/exploration.json"
         if not os.path.exists(path):
             pytest.skip(f"{path} not found")
