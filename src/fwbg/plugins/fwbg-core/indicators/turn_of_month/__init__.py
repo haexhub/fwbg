@@ -11,7 +11,10 @@ the data, so a missing bar does not shift them. The exchange calendar is
 published in advance, so the columns are unshifted: each refers to the bar's own
 trading date and is meant for a decision at that bar's close (``entry_delay=0``).
 As for every indicator, the first row is NaN. Bars are expected to be daily bars
-labelled with their trading date.
+labelled with their trading date. Intraday bars work too, but every bar of a date
+carries that date's values: the flags repeat on each bar of the day (24 hourly bars
+of the last trading day all have ``tom_entry_long = 1``), so a rule that must act
+once a day should also condition on a time of day.
 
 Columns:
 
@@ -37,12 +40,16 @@ CALENDARS = [WEEKDAYS, *sorted(holidays.list_supported_financial())]
 TRADING_WEEKMASKS = {"XSAU": "Sun Mon Tue Wed Thu"}
 
 
-def trading_days(calendar: str, first: pd.Timestamp, last: pd.Timestamp) -> pd.DatetimeIndex:
+def trading_days(
+    calendar: str, first: pd.Timestamp, last: pd.Timestamp
+) -> pd.DatetimeIndex:
     """Trading dates of *calendar* covering the whole months from *first* to *last*."""
     start = first.normalize().replace(day=1)
     end = last.normalize() + pd.offsets.MonthEnd(0)
     if calendar != WEEKDAYS and calendar not in CALENDARS:
-        raise ValueError(f"turn_of_month: unknown calendar {calendar!r}; use one of {CALENDARS}")
+        raise ValueError(
+            f"turn_of_month: unknown calendar {calendar!r}; use one of {CALENDARS}"
+        )
     weekmask = TRADING_WEEKMASKS.get(calendar, "Mon Tue Wed Thu Fri")
     days = pd.date_range(
         start,
@@ -51,8 +58,32 @@ def trading_days(calendar: str, first: pd.Timestamp, last: pd.Timestamp) -> pd.D
     )
     if calendar == WEEKDAYS:
         return days
-    closed = holidays.financial_holidays(calendar, years=range(start.year, end.year + 1))
+    closed = holidays.financial_holidays(
+        calendar, years=range(start.year, end.year + 1)
+    )
     return days[~days.isin(pd.DatetimeIndex(list(closed.keys())))]
+
+
+def month_position(
+    calendar: str, dates: pd.DatetimeIndex
+) -> tuple[np.ndarray, np.ndarray]:
+    """Trading day of the month and trading days left for each of *dates*.
+
+    *dates* are naive, normalized dates. The first array counts trading days from 1
+    on the month's first trading day (0 for a date before it); the second counts the
+    trading days left in the month after the date (0 on its last trading day). A
+    date on a closed day takes the position of the last trading day before it.
+    """
+    open_days = trading_days(calendar, dates.min(), dates.max())
+    positions = pd.Series(np.arange(len(open_days)), index=open_days.to_period("M"))
+    by_month = positions.groupby(level=0)
+    bar_months = dates.to_period("M")
+    first = by_month.min().reindex(bar_months).to_numpy()
+    last = by_month.max().reindex(bar_months).to_numpy()
+    # last trading day on or before the date (a date on a closed day counts the
+    # trading days before it)
+    pos = open_days.searchsorted(dates, side="right") - 1
+    return np.clip(pos - first + 1, 0, None).astype(float), (last - pos).astype(float)
 
 
 @register_indicator("turn_of_month")
@@ -73,18 +104,10 @@ class TurnOfMonthIndicator(BaseIndicator):
         if len(df):
             dates = df.index.tz_localize(None) if df.index.tz is not None else df.index
             dates = dates.normalize()
-            open_days = trading_days(p["calendar"], dates.min(), dates.max())
-            positions = pd.Series(np.arange(len(open_days)), index=open_days.to_period("M"))
-            by_month = positions.groupby(level=0)
-            bar_months = dates.to_period("M")
-            first = by_month.min().reindex(bar_months).to_numpy()
-            last = by_month.max().reindex(bar_months).to_numpy()
-            # last trading day on or before the bar's date (a bar on a closed day
-            # counts the trading days before it)
-            pos = open_days.searchsorted(dates, side="right") - 1
-            out["tom_day"] = np.clip(pos - first + 1, 0, None).astype(float)
-            out["tom_days_left"] = (last - pos).astype(float)
-            out["tom_entry_long"] = (out["tom_days_left"] == p["entry_days_left"]).astype(float)
+            out["tom_day"], out["tom_days_left"] = month_position(p["calendar"], dates)
+            out["tom_entry_long"] = (
+                out["tom_days_left"] == p["entry_days_left"]
+            ).astype(float)
             out["tom_exit_long"] = (out["tom_day"] == p["exit_day"]).astype(float)
             out.iloc[0] = np.nan  # indicator contract: the first row is NaN
         return pd.concat([df, out], axis=1)
@@ -131,4 +154,4 @@ class TurnOfMonthIndicator(BaseIndicator):
         }
 
 
-__all__ = ["TurnOfMonthIndicator", "TOM_COLUMNS", "trading_days"]
+__all__ = ["TurnOfMonthIndicator", "TOM_COLUMNS", "trading_days", "month_position"]
