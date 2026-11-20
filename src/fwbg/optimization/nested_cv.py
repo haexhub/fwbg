@@ -119,6 +119,21 @@ def nested_cv_split(
     }
 
 
+def _trim_leading_nan(frame: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+    """Drop the leading rows in which any of *columns* is NaN; keep the index contiguous.
+
+    Only the warm-up block at the start goes: rows after the first complete row stay
+    even when a column is NaN there, so no bar is removed from the middle.
+    """
+    present = [c for c in columns if c in frame.columns]
+    if not present or frame.empty:
+        return frame
+    complete = frame[present].notna().all(axis=1).to_numpy()
+    if not complete.any():
+        return frame.iloc[0:0]
+    return frame.iloc[int(complete.argmax()) :]
+
+
 def refit_stateful_features(
     inner_folds: List[Tuple[pd.DataFrame, pd.DataFrame]],
 ) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
@@ -145,10 +160,12 @@ def refit_stateful_features(
             indicators=configs,
             fit_df=train_base,
         )
-        # The first row of each transform is shifted by design.  Drop rows
-        # consistently before targets and model arrays are built.
-        train_refit = train_refit.dropna()
-        val_refit = val_refit.dropna()
+        # The first row of each transform is shifted by design.  Trim that leading
+        # warm-up block (stateful output columns only) before targets and model
+        # arrays are built.  A frame-wide dropna() would also remove interior rows
+        # and leave holes in the bar sequence the trade simulation walks over.
+        train_refit = _trim_leading_nan(train_refit, output_columns)
+        val_refit = _trim_leading_nan(val_refit, output_columns)
         train_refit.attrs.update(train_df.attrs)
         val_refit.attrs.update(val_df.attrs)
         refit_folds.append((train_refit, val_refit))
