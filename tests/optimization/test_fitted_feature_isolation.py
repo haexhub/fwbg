@@ -90,14 +90,14 @@ def test_inner_refit_uses_only_inner_training_rows():
         part.attrs["fwbg_stateful_indicator_configs"] = configs
         part.attrs["fwbg_stateful_output_columns"] = output_columns
 
-    baseline_train, baseline_val = refit_stateful_features(
-        [(inner_train, inner_val)]
-    )[0]
+    baseline_train, baseline_val = refit_stateful_features([(inner_train, inner_val)])[
+        0
+    ]
     mutated_val = inner_val.copy()
     mutated_val.iloc[20:, mutated_val.columns.get_loc("feature_0")] += 10_000.0
-    changed_train, changed_val = refit_stateful_features(
-        [(inner_train, mutated_val)]
-    )[0]
+    changed_train, changed_val = refit_stateful_features([(inner_train, mutated_val)])[
+        0
+    ]
 
     np.testing.assert_allclose(
         baseline_train[["ae_latent_0", "ae_reconstruction_error"]],
