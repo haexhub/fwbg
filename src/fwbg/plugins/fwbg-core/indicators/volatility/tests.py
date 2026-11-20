@@ -410,3 +410,223 @@ def test_rv_rejects_invalid_bars_per_day(bars_per_day):
     )
     with pytest.raises(ValueError, match="bars_per_day"):
         ind.compute(df, bars_per_day=bars_per_day)
+
+
+# -- regression tests: bars per day, Yang-Zhang, ATR warm-up, column list -----
+
+
+def _vol_indicator():
+    return _vol.VolatilityIndicators()
+
+
+def _ohlc_from_closes(close, index, gap=0.0, spread=0.004):
+    """OHLC bars whose open sits ``gap`` away from the previous close."""
+    close = np.asarray(close, dtype=float)
+    open_ = np.concatenate([[close[0]], close[:-1]]) * (1 + gap)
+    high = np.maximum(open_, close) * (1 + spread)
+    low = np.minimum(open_, close) * (1 - spread)
+    return pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=index)
+
+
+def _reference_rv(close, window_bars, bars_per_day):
+    """Annualised close-to-close vol of the window ending at the last bar (percent)."""
+    log_ret = np.diff(np.log(close))
+    return log_ret[-window_bars:].std(ddof=1) * np.sqrt(252 * bars_per_day) * 100
+
+
+class TestRealizedVolBarsPerDay:
+    def test_daily_bars_default_uses_20_bar_window_and_sqrt_252(self):
+        rng = np.random.default_rng(1)
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, 120)))
+        df = _ohlc_from_closes(close, pd.bdate_range("2024-01-01", periods=120))
+        rv = _vol_indicator().compute(df)["vol_rv_20"]
+        # value of row i uses bars <= i - 1 (shifted by one bar)
+        assert rv.iloc[-1] == pytest.approx(_reference_rv(close[:-1], 20, 1), rel=1e-9)
+        # old default (24 bars per day) needed 240 bars before the first value
+        assert rv.iloc[30:].notna().all()
+
+    def test_hourly_bars_default_uses_480_bar_window_and_sqrt_252_24(self):
+        rng = np.random.default_rng(2)
+        n = 1500
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 0.002, n)))
+        df = _ohlc_from_closes(close, pd.date_range("2024-01-01", periods=n, freq="h"))
+        rv = _vol_indicator().compute(df)["vol_rv_20"]
+        assert rv.iloc[-1] == pytest.approx(
+            _reference_rv(close[:-1], 480, 24), rel=1e-9
+        )
+
+    def test_explicit_bars_per_day_overrides_inference(self):
+        rng = np.random.default_rng(3)
+        n = 400
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 0.002, n)))
+        df = _ohlc_from_closes(close, pd.date_range("2024-01-01", periods=n, freq="h"))
+        rv = _vol_indicator().compute(df, bars_per_day=7)["vol_rv_20"]
+        assert rv.iloc[-1] == pytest.approx(_reference_rv(close[:-1], 140, 7), rel=1e-9)
+
+    @pytest.mark.parametrize(
+        "index, expected",
+        [
+            (pd.bdate_range("2024-01-01", periods=60), 1.0),
+            (pd.date_range("2024-01-01", periods=60, freq="D"), 1.0),
+            (pd.date_range("2024-01-01", periods=240, freq="h"), 24.0),
+            (pd.date_range("2024-01-01", periods=960, freq="15min"), 96.0),
+            (pd.date_range("2024-01-01", periods=30, freq="W-FRI"), 0.2),
+        ],
+    )
+    def test_infer_bars_per_day(self, index, expected):
+        assert _vol._infer_bars_per_day(index) == pytest.approx(expected)
+
+    def test_infer_bars_per_day_for_a_seven_hour_session(self):
+        days = pd.bdate_range("2024-01-01", periods=10)
+        index = pd.DatetimeIndex(
+            [d + pd.Timedelta(hours=h) for d in days for h in range(8, 15)]
+        )
+        assert _vol._infer_bars_per_day(index) == 7.0
+
+
+def _reference_yang_zhang(open_, high, low, close, window):
+    """Yang-Zhang volatility of the window ending at the last bar, from the formula."""
+    o, h, lo, c = (
+        np.asarray(x, dtype=float)[-window:] for x in (open_, high, low, close)
+    )
+    prev_c = np.asarray(close, dtype=float)[-window - 1 : -1]
+    overnight = np.log(o / prev_c)
+    open_close = np.log(c / o)
+    rs = np.log(h / o) * np.log(h / c) + np.log(lo / o) * np.log(lo / c)
+    k = 0.34 / (1.34 + (window + 1) / (window - 1))
+    var = overnight.var(ddof=1) + k * open_close.var(ddof=1) + (1 - k) * rs.mean()
+    return np.sqrt(var)
+
+
+class TestYangZhang:
+    def _frame(self, n=120, gap=0.01, seed=4):
+        rng = np.random.default_rng(seed)
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, n)))
+        open_ = np.concatenate([[100.0], close[:-1]]) * np.exp(rng.normal(0, gap, n))
+        high = np.maximum(open_, close) * (1 + rng.uniform(0, 0.01, n))
+        low = np.minimum(open_, close) * (1 - rng.uniform(0, 0.01, n))
+        index = pd.bdate_range("2024-01-01", periods=n)
+        return pd.DataFrame({"O": open_, "H": high, "L": low, "C": close}, index=index)
+
+    @pytest.mark.parametrize("window", [20, 50])
+    def test_matches_hand_computed_reference_with_gaps(self, window):
+        df = self._frame()
+        out = _vol_indicator().compute(df, vol_est_windows=[window, 20])
+        # row of the last bar holds the estimate of the window ending one bar earlier
+        expected = _reference_yang_zhang(
+            df["O"][:-1], df["H"][:-1], df["L"][:-1], df["C"][:-1], window
+        )
+        assert out[f"vol_yz_{window}"].iloc[-1] == pytest.approx(expected, rel=1e-6)
+
+    def test_overnight_variance_is_not_counted_twice(self):
+        """Without gaps the open-to-close and close-to-close terms coincide; with gaps
+        the estimate must follow the open-to-close term (old code used close-to-close)."""
+        df = self._frame(gap=0.02)
+        out = _vol_indicator().compute(df)
+        window = 20
+        d = df.iloc[:-1]
+        log_cc = np.log(d["C"] / d["C"].shift(1)).iloc[-window:]
+        o = np.log(d["O"] / d["C"].shift(1)).iloc[-window:]
+        co = np.log(d["C"] / d["O"]).iloc[-window:]
+        rs = (
+            np.log(d["H"] / d["O"]) * np.log(d["H"] / d["C"])
+            + np.log(d["L"] / d["O"]) * np.log(d["L"] / d["C"])
+        ).iloc[-window:]
+        k = 0.34 / (1.34 + (window + 1) / (window - 1))
+        wrong = np.sqrt(o.var() + k * log_cc.var() + (1 - k) * rs.mean())
+        right = np.sqrt(o.var() + k * co.var() + (1 - k) * rs.mean())
+        assert right != pytest.approx(wrong, rel=1e-3)
+        assert out["vol_yz_20"].iloc[-1] == pytest.approx(right, rel=1e-6)
+
+
+def _reference_atr(high, low, close, window):
+    """Wilder ATR: mean of the first ``window`` true ranges, then the recursion."""
+    high, low, close = (np.asarray(x, dtype=float) for x in (high, low, close))
+    tr = high - low
+    tr[1:] = np.maximum.reduce(
+        [
+            high[1:] - low[1:],
+            np.abs(high[1:] - close[:-1]),
+            np.abs(low[1:] - close[:-1]),
+        ]
+    )
+    atr = np.full(len(close), np.nan)
+    atr[window - 1] = tr[:window].mean()
+    for i in range(window, len(close)):
+        atr[i] = (atr[i - 1] * (window - 1) + tr[i]) / window
+    return atr
+
+
+class TestATRWarmup:
+    def _df(self, n=300):
+        rng = np.random.default_rng(5)
+        close = 100 * np.exp(np.cumsum(rng.normal(0, 0.01, n)))
+        return _ohlc_from_closes(
+            close, pd.date_range("2024-01-01", periods=n, freq="h")
+        )
+
+    def test_atr_is_nan_until_first_full_window_and_matches_wilder(self):
+        df = self._df()
+        out = _vol_indicator().compute(df)
+        expected = _reference_atr(df["H"], df["L"], df["C"], 14)
+        # shifted by one bar: first value (ATR of bar 13) sits in row 14
+        for col in ("vol_atr", "_atr"):
+            assert out[col].iloc[:14].isna().all()
+            np.testing.assert_allclose(
+                out[col].iloc[14:].values, expected[13:-1], rtol=1e-9
+            )
+
+    @pytest.mark.parametrize("period", [7, 14, 21])
+    def test_atr_pct_has_nan_warmup(self, period):
+        df = self._df()
+        out = _vol_indicator().compute(df)
+        col = out[f"vol_atr_pct_{period}"]
+        assert col.iloc[:period].isna().all()
+        expected = _reference_atr(df["H"], df["L"], df["C"], period) / df["C"].values
+        np.testing.assert_allclose(
+            col.iloc[period:].values, expected[period - 1 : -1], rtol=1e-9
+        )
+
+    def test_compression_and_ranks_are_nan_during_warmup(self):
+        out = _vol_indicator().compute(self._df(400))
+        # ranks need compression_lookback // 2 = 50 valid values after the ATR warm-up
+        assert out["vol_atr_pct_14_rank"].iloc[:60].isna().all()
+        assert out["vol_compression"].iloc[:60].isna().all()
+        assert out["vol_compression"].iloc[100:].isin([0.0, 1.0]).all()
+
+    def test_series_shorter_than_window_gives_nan_not_error(self):
+        df = self._df(10)
+        out = _vol_indicator().compute(df)
+        assert out["vol_atr"].isna().all()
+
+
+class TestFeatureColumnsFollowParams:
+    def test_default_columns_are_all_produced(self):
+        ind = _vol_indicator()
+        df = _make_ohlc_with_macro(400)
+        assert set(ind.get_feature_columns()) <= set(ind.compute(df).columns)
+        assert ind.get_feature_columns() == ind.get_feature_columns({})
+
+    def test_custom_params_columns_match_compute(self):
+        ind = _vol_indicator()
+        params = {
+            "atr_periods": [5, 14],
+            "bb_period": 30,
+            "vol_est_windows": [10, 20],
+            "rv_window": 10,
+        }
+        result = ind.compute(_make_ohlc_with_macro(400), **params)
+        cols = ind.get_feature_columns(params)
+        assert set(cols) <= set(result.columns)
+        produced = {c for c in result.columns if c.startswith("vol_")}
+        assert produced == set(cols)
+
+    def test_no_20_window_and_no_atr14_drop_dependent_columns(self):
+        ind = _vol_indicator()
+        params = {"atr_periods": [7, 21], "vol_est_windows": [30]}
+        cols = ind.get_feature_columns(params)
+        assert "vol_yz_atr_ratio" not in cols
+        assert "vol_compression" not in cols
+        result = ind.compute(_make_ohlc_with_macro(400), **params)
+        assert set(cols) <= set(result.columns)
+        assert "vol_compression" not in result.columns

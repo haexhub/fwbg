@@ -52,22 +52,34 @@ def _parkinson(high: pd.Series, low: pd.Series, window: int) -> pd.Series:
 
 
 def _yang_zhang(
-    high: pd.Series, low: pd.Series, open_: pd.Series, close: pd.Series, window: int
+    high: pd.Series,
+    low: pd.Series,
+    open_: pd.Series,
+    close: pd.Series,
+    window: int,
 ) -> pd.Series:
     """
-    Yang-Zhang Volatility Estimator.
+    Yang-Zhang volatility estimator (Yang and Zhang, 2000).
 
-    Kombiniert Overnight, Close-to-Close und Rogers-Satchell Varianz.
-    Robustester OHLC-basierter Schätzer.
-    σ²_YZ = σ²_O + k*σ²_C + (1-k)*σ²_RS
+    sigma^2_YZ = sigma^2_overnight + k * sigma^2_open-close + (1 - k) * sigma^2_RS
+
+    - overnight: sample variance of ln(O_t / C_{t-1})
+    - open-close: sample variance of ln(C_t / O_t)
+    - RS: mean of the Rogers-Satchell term
+    - k = 0.34 / (1.34 + (n + 1) / (n - 1))
+
+    The open-to-close term (not close-to-close) keeps the overnight move out of
+    the second component, so it is counted once.
     """
+    min_periods = max(2, window // 2)
+
     # Overnight variance: ln(O_t / C_{t-1})
     log_oc = np.log(open_ / (close.shift(1) + EPSILON))
-    var_o = log_oc.rolling(window, min_periods=max(1, window // 2)).var()
+    var_o = log_oc.rolling(window, min_periods=min_periods).var()
 
-    # Close-to-close variance: ln(C_t / C_{t-1})
-    log_cc = np.log(close / (close.shift(1) + EPSILON))
-    var_c = log_cc.rolling(window, min_periods=max(1, window // 2)).var()
+    # Open-to-close variance: ln(C_t / O_t)
+    log_co = np.log(close / (open_ + EPSILON))
+    var_c = log_co.rolling(window, min_periods=min_periods).var()
 
     # Rogers-Satchell variance
     log_ho = np.log(high / (open_ + EPSILON))
@@ -75,11 +87,44 @@ def _yang_zhang(
     log_lo = np.log(low / (open_ + EPSILON))
     log_lc = np.log(low / (close + EPSILON))
     rs = log_ho * log_hc + log_lo * log_lc
-    var_rs = rs.rolling(window, min_periods=max(1, window // 2)).mean()
+    var_rs = rs.rolling(window, min_periods=min_periods).mean()
 
     k = 0.34 / (1.34 + (window + 1) / (window - 1))
     yz = var_o + k * var_c + (1 - k) * var_rs
     return np.sqrt(yz.clip(lower=0))
+
+
+def _atr(high: pd.Series, low: pd.Series, close: pd.Series, window: int) -> pd.Series:
+    """
+    Wilder ATR with a NaN warm-up.
+
+    ``ta`` seeds the first ``window - 1`` rows with 0.0, which looks like a valid
+    "zero volatility" reading to every consumer (percent ranks, compression flag,
+    ATR based exits). The values from the first full window on are unchanged.
+    """
+    if len(close) < window:
+        return pd.Series(np.nan, index=close.index)
+    atr = ta.volatility.average_true_range(high, low, close, window=window)
+    atr.iloc[: window - 1] = np.nan
+    return atr
+
+
+def _infer_bars_per_day(index: pd.Index) -> float:
+    """
+    Bars per trading day, read from the bar spacing of the index.
+
+    - Intraday bars: median number of bars per calendar date that has data
+      (24 for hourly bars around the clock, 7 for hourly bars of a 7 hour
+      session, 96 for M15 around the clock).
+    - Daily or coarser bars: one bar per ``max(1, round(spacing_days * 5 / 7))``
+      trading days, so 1 for daily bars and 1/5 for weekly bars.
+    """
+    if not isinstance(index, pd.DatetimeIndex) or len(index) < 2:
+        return 1.0
+    spacing = pd.Series(index).diff().dropna().median()
+    if spacing >= pd.Timedelta(days=1):
+        return 1.0 / max(1, round(spacing / pd.Timedelta(days=1) * 5 / 7))
+    return float(pd.Series(index.normalize()).value_counts().median())
 
 
 @register_indicator("volatility")
@@ -90,7 +135,7 @@ class VolatilityIndicators(BaseIndicator):
     Features:
     - ATR (7, 14, 21 Perioden) - als Prozent vom Preis
     - Bollinger Bands (20 Perioden) - pband, wband
-    - Keltner Channel - pband, wband
+    - Keltner Channel (original 1960 SMA/range version) - pband, wband
     - Donchian Channel - pband, wband
     - Garman-Klass Volatility (effizientere OHLC-basierte Vol)
     - Parkinson Volatility (High-Low basierte Vol)
@@ -99,7 +144,7 @@ class VolatilityIndicators(BaseIndicator):
 
     # Required attributes
     name = "volatility"
-    version = "3.0.0"
+    version = "3.1.0"
 
     def compute(
         self,
@@ -126,15 +171,13 @@ class VolatilityIndicators(BaseIndicator):
         features = {}
 
         # ATR (für interne Nutzung und als Feature)
-        atr_14 = ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=14)
+        atr_14 = _atr(df["H"], df["L"], df["C"], window=14)
         features["_atr"] = atr_14
         features["vol_atr"] = atr_14
 
         # ATR als Prozent vom Preis
         for period in atr_periods:
-            atr = ta.volatility.average_true_range(
-                df["H"], df["L"], df["C"], window=period
-            )
+            atr = _atr(df["H"], df["L"], df["C"], window=period)
             features[f"vol_atr_pct_{period}"] = safe_divide(atr, df["C"])
 
         # Bollinger Bands
@@ -142,8 +185,12 @@ class VolatilityIndicators(BaseIndicator):
         features[f"vol_bb_pband_{bb_period}"] = bb.bollinger_pband()
         features[f"vol_bb_wband_{bb_period}"] = bb.bollinger_wband()
 
-        # Keltner Channel
-        kc = ta.volatility.KeltnerChannel(df["H"], df["L"], df["C"])
+        # Keltner Channel: the original 1960 construction (ta's default
+        # original_version=True), a 10-bar SMA of the typical price with a
+        # range-based envelope, not the EMA(20) +/- 2 ATR(10) variant.
+        kc = ta.volatility.KeltnerChannel(
+            df["H"], df["L"], df["C"], original_version=True
+        )
         features["vol_kc_pband"] = kc.keltner_channel_pband()
         features["vol_kc_wband"] = kc.keltner_channel_wband()
 
@@ -194,15 +241,22 @@ class VolatilityIndicators(BaseIndicator):
         atr_rank = features.get("vol_atr_pct_14_rank")
         bb_rank = features.get(f"{bb_wband_key}_rank")
         if atr_rank is not None and bb_rank is not None:
-            features["vol_compression"] = ((atr_rank < 0.2) & (bb_rank < 0.2)).astype(
-                float
+            # NaN while either rank is still warming up (a comparison against
+            # NaN is False and would read as "not compressed").
+            features["vol_compression"] = (
+                ((atr_rank < 0.2) & (bb_rank < 0.2))
+                .astype(float)
+                .where(atr_rank.notna() & bb_rank.notna())
             )
 
         # === Realized Vol vs Implied Vol (VIX) ===
         rv_window = params.get("rv_window", 20)
         # rv_window counts days; bars_per_day converts it to bars and annualises
-        # (24 = hourly bars around the clock, 1 = daily or session bars).
-        bars_per_day = params.get("bars_per_day", 24)
+        # (24 = hourly bars around the clock, 1 = daily bars). Without an explicit
+        # value it is read from the index spacing.
+        bars_per_day = params.get("bars_per_day")
+        if bars_per_day is None:
+            bars_per_day = _infer_bars_per_day(df.index)
         if (
             isinstance(bars_per_day, bool)
             or not isinstance(bars_per_day, (int, float))
@@ -228,42 +282,32 @@ class VolatilityIndicators(BaseIndicator):
 
         return pd.concat([df, features_df], axis=1)
 
-    def get_feature_columns(self) -> List[str]:
-        """Gibt Liste aller Volatilitäts-Feature-Spalten zurück."""
-        return [
-            # ATR
-            "vol_atr",
-            "vol_atr_pct_7",
-            "vol_atr_pct_14",
-            "vol_atr_pct_21",
-            # Bollinger
-            "vol_bb_pband_20",
-            "vol_bb_wband_20",
-            # Keltner
-            "vol_kc_pband",
-            "vol_kc_wband",
-            # Donchian
-            "vol_dc_pband",
-            "vol_dc_wband",
-            # OHLC Volatility Estimators
-            "vol_gk_20",
-            "vol_gk_50",
-            "vol_parkinson_20",
-            "vol_parkinson_50",
-            "vol_yz_20",
-            "vol_yz_50",
-            "vol_yz_atr_ratio",
-            # Compression (Percentile Rankings)
-            "vol_atr_pct_7_rank",
-            "vol_atr_pct_14_rank",
-            "vol_atr_pct_21_rank",
-            "vol_bb_wband_20_rank",
-            "vol_compression",
-            # Realized vs Implied Vol
-            "vol_rv_20",
-            "vol_rv_iv_spread",
-            "vol_rv_iv_ratio",
-        ]
+    def get_feature_columns(self, params=None) -> List[str]:
+        """Feature columns compute() produces for ``params`` (defaults when None).
+
+        ``vol_rv_iv_spread`` / ``vol_rv_iv_ratio`` are only produced when the
+        frame has a ``macro_vix`` column; they are always advertised.
+        """
+        params = params or {}
+        atr_periods = params.get("atr_periods") or [7, 14, 21]
+        bb_period = params.get("bb_period") or 20
+        windows = params.get("vol_est_windows") or [20, 50]
+        rv_window = params.get("rv_window") or 20
+
+        cols = ["vol_atr"]
+        cols += [f"vol_atr_pct_{p}" for p in atr_periods]
+        cols += [f"vol_bb_pband_{bb_period}", f"vol_bb_wband_{bb_period}"]
+        cols += ["vol_kc_pband", "vol_kc_wband", "vol_dc_pband", "vol_dc_wband"]
+        for w in windows:
+            cols += [f"vol_gk_{w}", f"vol_parkinson_{w}", f"vol_yz_{w}"]
+        if 20 in windows:
+            cols.append("vol_yz_atr_ratio")
+        cols += [f"vol_atr_pct_{p}_rank" for p in atr_periods]
+        cols.append(f"vol_bb_wband_{bb_period}_rank")
+        if 14 in atr_periods:
+            cols.append("vol_compression")
+        cols += [f"vol_rv_{rv_window}", "vol_rv_iv_spread", "vol_rv_iv_ratio"]
+        return cols
 
     def get_signal_columns(self) -> List[str]:
         return ["vol_compression"]
@@ -274,7 +318,7 @@ class VolatilityIndicators(BaseIndicator):
             "atr_periods": [7, 14, 21],
             "bb_period": 20,
             "vol_est_windows": [20, 50],
-            "bars_per_day": 24,
+            "bars_per_day": None,
         }
 
     @classmethod
@@ -304,8 +348,8 @@ class VolatilityIndicators(BaseIndicator):
             },
             "bars_per_day": {
                 "type": "float",
-                "default": 24,
-                "description": "Bars per trading day for the realised volatility vol_rv_20 (20 days): 24 for hourly bars around the clock, 96 for M15, 1 for daily or session bars. Sets the rolling window in bars and the annualisation.",
+                "default": None,
+                "description": "Bars per trading day for the realised volatility vol_rv_20 (20 days): 24 for hourly bars around the clock, 7 for hourly bars of a 7 hour session, 96 for M15, 1 for daily bars. Sets the rolling window in bars and the annualisation. Empty: inferred from the bar spacing of the index.",
                 "min": 0.1,
                 "max": 1440,
             },
