@@ -4,6 +4,7 @@ Scales position size per trade based on realized volatility:
 low RV → bigger position, high RV → smaller position.
 Smooths equity curve and improves risk-adjusted returns.
 """
+
 from typing import Dict, Any, List, Optional
 
 import numpy as np
@@ -34,7 +35,7 @@ class VolTargetedKellyRiskManager(BaseRiskManager):
         min_scale: float = 0.25,
         max_scale: float = 2.0,
         rv_values: Optional[List[float]] = None,
-        **params
+        **params,
     ) -> Dict[str, Any]:
         # Base Kelly
         full_kelly = (win_rate * rrr - (1 - win_rate)) / rrr if rrr > 0 else 0
@@ -46,10 +47,14 @@ class VolTargetedKellyRiskManager(BaseRiskManager):
                 "is_profitable": False,
                 "full_kelly": full_kelly,
                 "circuit_breaker": {
-                    "pause_after_losses": 0, "pause_bars": 0, "enabled": False,
+                    "pause_after_losses": 0,
+                    "pause_bars": 0,
+                    "enabled": False,
                 },
                 "risk_adjustment": {
-                    "original_risk": 0, "scale_factor": 1.0, "target_dd": target_max_dd,
+                    "original_risk": 0,
+                    "scale_factor": 1.0,
+                    "target_dd": target_max_dd,
                 },
             }
 
@@ -62,7 +67,9 @@ class VolTargetedKellyRiskManager(BaseRiskManager):
 
         # Circuit breaker
         cb = find_optimal_circuit_breaker(
-            trades, fk, rrr,
+            trades,
+            fk,
+            rrr,
             loss_range=circuit_breaker_loss_range,
             pause_range=circuit_breaker_pause_range,
         )
@@ -78,7 +85,8 @@ class VolTargetedKellyRiskManager(BaseRiskManager):
             },
             "risk_adjustment": {
                 "original_risk": kelly_adj["adjusted_risk"] / kelly_adj["scale_factor"]
-                    if kelly_adj["scale_factor"] > 0 else fk,
+                if kelly_adj["scale_factor"] > 0
+                else fk,
                 "scale_factor": kelly_adj["scale_factor"],
                 "target_dd": target_max_dd,
             },
@@ -87,11 +95,12 @@ class VolTargetedKellyRiskManager(BaseRiskManager):
         # Vol targeting: per-trade position scaling
         if rv_values and len(rv_values) == len(trades):
             rv_arr = np.array(rv_values, dtype=float)
-            scales = np.clip(target_vol / np.clip(rv_arr, 1e-6, None), min_scale, max_scale)
+            scales = np.clip(
+                target_vol / np.clip(rv_arr, 1e-6, None), min_scale, max_scale
+            )
 
             result["trade_returns"] = [
-                fk * s * rrr if t > 0 else -fk * s
-                for t, s in zip(trades, scales)
+                fk * s * rrr if t > 0 else -fk * s for t, s in zip(trades, scales)
             ]
             result["vol_targeting"] = {
                 "target_vol": target_vol,
