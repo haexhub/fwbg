@@ -10,6 +10,7 @@ data with variant-specific TP/SL distances.
 At inference, all RRR variants are scored and the best one is selected
 per sample.
 """
+
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, Optional
@@ -116,7 +117,10 @@ class XGBoostRRRModel(BaseStackedXGBoostModel):
     ) -> np.ndarray:
         if train_df is not None:
             return _compute_binary_targets(
-                train_df, variant, self._base_sl_atr, direction,
+                train_df,
+                variant,
+                self._base_sl_atr,
+                direction,
             )
         return fallback_targets.copy()
 
