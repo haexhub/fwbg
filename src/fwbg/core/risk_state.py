@@ -39,7 +39,9 @@ class RiskState:
     max_observation_age_seconds: int = 300
 
     known: bool = field(default=False, init=False)
-    unknown_reason: str | None = field(default="broker state has not been observed", init=False)
+    unknown_reason: str | None = field(
+        default="broker state has not been observed", init=False
+    )
     observed_at: datetime | None = field(default=None, init=False)
     daily_start_balance: float = field(default=0.0, init=False)
     active_day: date | None = field(default=None, init=False)
@@ -188,11 +190,17 @@ class RiskState:
             return False
         if (
             self.daily_start_balance > 0
-            and -self.daily_pnl / self.daily_start_balance >= self.max_daily_loss_percent
+            and -self.daily_pnl / self.daily_start_balance
+            >= self.max_daily_loss_percent
         ):
-            self.pause_until = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+            self.pause_until = now.replace(
+                hour=23, minute=59, second=59, microsecond=999999
+            )
             return False
-        if self.pause_after_consecutive_losses > 0 and self.consecutive_losses >= self.pause_after_consecutive_losses:
+        if (
+            self.pause_after_consecutive_losses > 0
+            and self.consecutive_losses >= self.pause_after_consecutive_losses
+        ):
             self.pause_until = now + timedelta(minutes=self.pause_duration_minutes)
             return False
         return True
