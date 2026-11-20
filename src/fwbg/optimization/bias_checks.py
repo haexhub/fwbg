@@ -20,6 +20,12 @@ except ImportError:
     SampleBiasDetector = None
 
 
+# Test/inner PnL ratio below which the inner score is flagged as optimistic.
+LOW_BIAS_ISSUE = 0.5
+LOW_BIAS_WARNING = 0.7
+LOW_FOLD_RATIO = 0.25
+
+
 def fold_bias_ratios(fold_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Test/inner PnL ratio per fold, defined only where the inner PnL is positive.
 
@@ -124,11 +130,23 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
     if n_folds < 5:
         issues.append(f"Only {n_folds} folds (need >=5)")
 
-    # Check 2: Mean Bias Ratio (None: no fold has a positive inner PnL)
+    # Check 2: Mean Bias Ratio (None: no fold has a positive inner PnL). Two-sided:
+    # a ratio far above 1 means the test beat the inner windows (leakage suspect), a
+    # ratio far below 1 means the inner score overstates what held out (the usual
+    # selection optimism).
     if mean_bias is not None and mean_bias > 1.5:
         issues.append(f"Mean bias ratio {mean_bias:.2f}x > 1.5x (systematic bias!)")
     elif mean_bias is not None and mean_bias > 1.3:
         warnings.append(f"Mean bias ratio {mean_bias:.2f}x > 1.3x (monitor)")
+    elif mean_bias is not None and mean_bias < LOW_BIAS_ISSUE:
+        issues.append(
+            f"Mean bias ratio {mean_bias:.2f}x < {LOW_BIAS_ISSUE}x "
+            "(inner score overstates the held-out PnL)"
+        )
+    elif mean_bias is not None and mean_bias < LOW_BIAS_WARNING:
+        warnings.append(
+            f"Mean bias ratio {mean_bias:.2f}x < {LOW_BIAS_WARNING}x (inner score optimistic, monitor)"
+        )
     if without_ratio:
         warnings.append(
             f"{without_ratio}/{n_folds} folds without bias ratio (inner PnL <= 0)"
@@ -139,6 +157,13 @@ def check_asset_bias(result: Dict[str, Any], verbose: bool = True) -> Dict[str, 
     if len(extreme_folds) > 0:
         warnings.append(
             f"{len(extreme_folds)}/{n_folds} folds have >2.0x bias: {[f'{r:.2f}' for r in extreme_folds]}"
+        )
+
+    weak_folds = [r for r in bias_ratios if r < LOW_FOLD_RATIO]
+    if weak_folds:
+        warnings.append(
+            f"{len(weak_folds)}/{n_folds} folds kept < {LOW_FOLD_RATIO}x of their inner PnL: "
+            f"{[f'{r:.2f}' for r in weak_folds]}"
         )
 
     # Check 4: Win-Rate Konsistenz (None: no fold traded)
@@ -248,7 +273,7 @@ def check_systematic_bias(
                     "bias_ratios": wf.get("bias_ratios", []),
                 }
             )
-        elif mean_bias > 1.3:
+        elif mean_bias > 1.3 or mean_bias < LOW_BIAS_WARNING:
             warned_assets.append({"symbol": symbol, "mean_bias": mean_bias})
         else:
             ok_count += 1

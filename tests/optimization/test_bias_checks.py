@@ -141,3 +141,30 @@ def test_an_undefined_mean_prints_n_a_on_the_ok_branch(capsys):
 
 def test_fold_bias_ratios_is_exported():
     assert "fold_bias_ratios" in bias_checks.__all__
+
+
+def test_a_test_pnl_far_below_the_inner_pnl_is_flagged():
+    """Selection optimism shows as a LOW test/inner ratio; only >1.5x used to be flagged."""
+    check = check_asset_bias(_result([0.3, 0.4], 0.35, 0), verbose=False)
+    assert check["bias_check"] == "critical"
+    assert any("overstates" in issue for issue in check["issues"])
+
+
+def test_a_moderately_low_ratio_is_a_warning_and_a_weak_fold_is_listed():
+    check = check_asset_bias(_result([0.6, 0.65, 0.1], 0.6, 0), verbose=False)
+    assert check["bias_check"] == "warning"
+    assert any("optimistic" in w for w in check["warnings"])
+    assert any("< 0.25x of their inner PnL" in w for w in check["warnings"])
+
+
+def test_a_ratio_around_one_stays_ok():
+    assert (
+        check_asset_bias(_result([0.9, 1.1], 1.0, 0), verbose=False)["bias_check"]
+        == "ok"
+    )
+
+
+def test_systematic_check_warns_on_a_low_mean_instead_of_counting_it_ok():
+    check = check_systematic_bias([_result([0.3], 0.3, 0)], verbose=False)
+    assert check["ok_assets"] == 0
+    assert check["warned_assets"] == 1
