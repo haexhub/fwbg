@@ -4,7 +4,7 @@ FWBG - Forex/Trading Strategy Optimizer.
 Plugin-basierte Architektur für Trading-Strategien.
 """
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 
 from .core.registry import discover_plugins
 
