@@ -36,7 +36,7 @@ from fwbg.research.dsr import return_statistics
 from fwbg.utils.progress import report_done, report_phase
 from fwbg.utils.logging import log, start_log_capture, stop_log_capture
 from .robust_validation import create_walk_forward_folds, plan_walk_forward
-from .bias_checks import check_asset_bias, fold_bias_ratios
+from .bias_checks import INNER_MODEL_NOTE, check_asset_bias, fold_bias_ratios
 from .annualization import bars_per_year as _bars_per_year
 from .causal_reporting import equity_replay, monte_carlo_summary, slim_trades
 from .causal_variants import (
@@ -883,7 +883,8 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
         log(
             1,
             f"  Bias Ratios: {[f'{r:.2f}x' for r in bias_ratios]}"
-            f" ({bias['folds_without_bias_ratio']} folds without: inner PnL <= 0)",
+            f" ({bias['folds_without_bias_ratio']} folds without: inner PnL <= 0;"
+            f" {INNER_MODEL_NOTE})",
             sym,
         )
 
