@@ -186,10 +186,6 @@ class FractalDimensionIndicator(BaseIndicator):
             )
         return cols
 
-    def get_signal_columns(self, params=None) -> List[str]:
-        windows = {**self.get_default_params(), **(params or {})}["windows"]
-        return [f"fd_regime_{w}" for w in windows]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {

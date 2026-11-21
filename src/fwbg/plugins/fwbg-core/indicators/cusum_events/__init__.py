@@ -10,6 +10,7 @@ filter. Instead of hard-filtering bars, produces ML features that encode:
 The ML model learns when these events are predictive in combination with
 other indicators, rather than us imposing hard rules.
 """
+
 from typing import List
 
 import numpy as np
@@ -111,8 +112,8 @@ class CusumEventsIndicator(BaseIndicator):
         # Threshold = h * rolling_std
         h = threshold * rolling_std
 
-        pos_events, neg_events, s_pos, s_neg, intensity, bars_since = (
-            _compute_cusum(log_returns, expected, h)
+        pos_events, neg_events, s_pos, s_neg, intensity, bars_since = _compute_cusum(
+            log_returns, expected, h
         )
 
         # Normalize cumulative values by threshold for scale-independence
@@ -137,9 +138,6 @@ class CusumEventsIndicator(BaseIndicator):
 
     def get_feature_columns(self) -> List[str]:
         return self._FEATURES
-
-    def get_signal_columns(self) -> List[str]:
-        return ["cusum_pos_event", "cusum_neg_event"]
 
     @classmethod
     def get_default_params(cls) -> dict:

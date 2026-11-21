@@ -199,6 +199,10 @@ class ScheduledEventsIndicator(BaseIndicator):
         """Return the entry and exit signal column names."""
         return ["evt_window_start", "evt_window_end"]
 
+    def get_calendar_columns(self, params=None) -> List[str]:
+        """The windows follow the event dates and the exchange calendar alone."""
+        return self.get_signal_columns(params)
+
     @classmethod
     def get_default_params(cls) -> dict:
         """Return the default parameters."""

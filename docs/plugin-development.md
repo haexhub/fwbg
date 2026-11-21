@@ -136,6 +136,7 @@ class BaseIndicator(BasePlugin, ABC):
 **Required:**
 - `shift_features()` at the end of `compute()` — 1-bar shift to prevent lookahead bias (exception: columns that depend only on the bar's own timestamp and a calendar fixed in advance, such as `calendar_events`, are unshifted and leave only the first row `NaN`; see `docs/phases/3-indicators.md`)
 - `safe_divide()` for all divisions — NaN instead of inf on division by ~0
+- `get_signal_columns(params)` lists every column that is **not** shifted because it is a decision at the bar's own close (`ibs`, `zscore_*`, breakout flags built from the bar's close). Leave out columns that go through `shift_features()`, even when their values are discrete. The model feature pool excludes the declared columns (or offers `<col>_prev` with `signal_columns_as_features: true`). Columns known before the bar opens (timestamp plus a calendar fixed in advance) are also listed in `get_calendar_columns(params)` and stay in the pool. See "Signal columns and the ML feature pool" in `docs/phases/3-indicators.md`; `tests/test_signal_column_classification.py` checks the declaration against the indicator's behaviour.
 
 **Key attributes:**
 - `benefits_from_stationary = False` → compute once on raw OHLC, cached

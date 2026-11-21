@@ -704,6 +704,11 @@ def process_symbol(csv_path: str, strategy: StrategyConfig) -> dict:
                 }
                 return result
 
+        # entry_delay=0 on a decision taken at the signal bar's close: say so once.
+        from fwbg.signals.timing import warn_close_decisions
+
+        warn_close_decisions(ctx, sym)
+
         # === WALK-FORWARD FOLDS ERSTELLEN ===
         # Fold-Dimensionen adaptiv an die tatsächlich vorhandene Historie
         # anpassen: die Test-Fenster füllen die verfügbaren Daten, bei knapper

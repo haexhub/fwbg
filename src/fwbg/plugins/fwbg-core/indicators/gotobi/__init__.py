@@ -106,6 +106,9 @@ class GotobiIndicator(BaseIndicator):
     def get_signal_columns(self, params=None) -> List[str]:
         return list(GOTOBI_COLUMNS)
 
+    def get_calendar_columns(self, params=None) -> List[str]:
+        return list(GOTOBI_COLUMNS)
+
     @classmethod
     def get_default_params(cls) -> dict:
         return {

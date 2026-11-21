@@ -38,9 +38,6 @@ def wor_col(rb: int, feature: str) -> str:
     return f"wor_rb{rb}_{feature}"
 
 
-WOR_SIGNAL_SUFFIXES = ("_breakout_up", "_breakout_down")
-
-
 def _compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
     return ta.volatility.average_true_range(df["H"], df["L"], df["C"], window=period)
 
@@ -282,9 +279,6 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
             return df
 
         self._feature_columns = list(features.keys())
-        self._signal_columns = [
-            k for k in features if any(k.endswith(s) for s in WOR_SIGNAL_SUFFIXES)
-        ]
 
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
@@ -322,20 +316,6 @@ class WeeklyOpeningRangeIndicator(BaseIndicator):
                 ]
             )
         return cols
-
-    def get_signal_columns(self, params=None) -> List[str]:
-        if self._signal_columns and not params:
-            return self._signal_columns
-        rb_list = self._resolve_range_bars(params)
-        signals = []
-        for rb in rb_list:
-            signals.extend(
-                [
-                    wor_col(rb, "breakout_up"),
-                    wor_col(rb, "breakout_down"),
-                ]
-            )
-        return signals
 
     @classmethod
     def get_default_params(cls) -> dict:
