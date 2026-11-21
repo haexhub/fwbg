@@ -40,8 +40,8 @@ class TestComputeBinaryTargets:
             df, rrr=2.0, base_sl_atr=1.0, direction="long"
         )
         assert targets.shape == (100,)
-        assert set(np.unique(targets)).issubset({0, 1})
-        assert targets[-1] == 0
+        assert set(np.unique(targets[~np.isnan(targets)])).issubset({0, 1})
+        assert np.isnan(targets[-1])  # the last bar has no entry: unknown
 
     def test_basic_short_targets(self):
         df = _make_ohlc_df(100)
@@ -49,15 +49,15 @@ class TestComputeBinaryTargets:
             df, rrr=2.0, base_sl_atr=1.0, direction="short"
         )
         assert targets.shape == (100,)
-        assert set(np.unique(targets)).issubset({0, 1})
+        assert set(np.unique(targets[~np.isnan(targets)])).issubset({0, 1})
 
     def test_higher_rrr_fewer_wins(self):
         """Higher RRR (larger TP) should produce fewer or equal wins."""
         df = _make_ohlc_df(500, seed=123)
-        wins_low = np.sum(
+        wins_low = np.nansum(
             _compute_binary_targets(df, rrr=1.0, base_sl_atr=1.0, direction="long")
         )
-        wins_high = np.sum(
+        wins_high = np.nansum(
             _compute_binary_targets(df, rrr=5.0, base_sl_atr=1.0, direction="long")
         )
         assert wins_high <= wins_low
@@ -67,7 +67,7 @@ class TestComputeBinaryTargets:
         df = _make_ohlc_df(300, seed=99)
         t1 = _compute_binary_targets(df, rrr=1.5, base_sl_atr=2.0, direction="long")
         t2 = _compute_binary_targets(df, rrr=4.0, base_sl_atr=2.0, direction="long")
-        assert not np.array_equal(t1, t2), (
+        assert not np.array_equal(t1, t2, equal_nan=True), (
             "Different RRR must produce different targets"
         )
 

@@ -12,7 +12,7 @@ import numpy as np
 from numba import njit, prange
 
 # Bump this whenever a @njit function signature/return type or kernel behaviour changes.
-_CACHE_VERSION = "9"
+_CACHE_VERSION = "10"
 
 _THIS_DIR = pathlib.Path(__file__).resolve().parent
 _STAMP_FILE = _THIS_DIR / "__pycache__" / ".numba_cache_version"
@@ -89,6 +89,19 @@ def _entry_levels(direction, entry_price, spread, slippage, tp_distance, sl_dist
         return entry, entry + tp_distance, entry - sl_distance
     entry = entry_price - spread - slippage
     return entry, entry - tp_distance, entry + sl_distance
+
+
+@njit(cache=True)
+def _entry_price(opens, closes, idx, entry_delay):
+    """Fill price of a trade signalled at bar *idx*.
+
+    ``entry_delay=1`` fills at the next bar's open, ``entry_delay=0`` at the
+    signal bar's close (decisions taken at the close).  Exits are checked from
+    bar ``idx + 1`` either way, as in ``simulate_pro_trade``.
+    """
+    if entry_delay == 0:
+        return closes[idx]
+    return opens[idx + 1]
 
 
 @njit(cache=True)
@@ -190,13 +203,14 @@ def _simulate_trade_numba(
     slippage: float,
     max_bars: int,
     timeout_bars: int,
+    entry_delay: int = 1,
 ) -> tuple:
     """
     Numba-optimierte Trade-Simulation (Kern-Loop).
 
     Args:
         opens, closes, highs, lows: OHLC-Arrays
-        idx: Signal-Index (Entry bei idx+1)
+        idx: Signal-Index (Exits ab idx+1)
         direction: 1=Long, -1=Short
         tp_distance: Take-Profit Distanz in Preiseinheiten
         sl_distance: Stop-Loss Distanz in Preiseinheiten
@@ -204,6 +218,7 @@ def _simulate_trade_numba(
         slippage: Slippage-Kosten
         max_bars: Maximale Simulation-Länge
         timeout_bars: Trade schließen nach X Bars (0 = kein Timeout)
+        entry_delay: 1 = Entry zum Open von idx+1, 0 = zum Close von idx
 
     Returns:
         (result, exit_idx, exit_price, exit_reason)
@@ -217,7 +232,12 @@ def _simulate_trade_numba(
         return 0.0, -1, 0.0, -1
 
     entry, tp, sl = _entry_levels(
-        direction, opens[entry_idx], spread, slippage, tp_distance, sl_distance
+        direction,
+        _entry_price(opens, closes, idx, entry_delay),
+        spread,
+        slippage,
+        tp_distance,
+        sl_distance,
     )
     end_idx = min(entry_idx + max_bars, n)
     timeout_idx = _timeout_index(entry_idx, timeout_bars, n)
@@ -252,6 +272,7 @@ def _simulate_trade_session_numba(
     max_bars: int,
     timeout_bars: int,
     in_session: np.ndarray,
+    entry_delay: int = 1,
 ) -> tuple:
     """
     Session-aware trade simulation: exits only during session hours.
@@ -261,6 +282,7 @@ def _simulate_trade_session_numba(
 
     Args:
         in_session: boolean array (len n). True = bar is within trading session.
+        entry_delay: as in _simulate_trade_numba.
         Other args identical to _simulate_trade_numba.
 
     Returns:
@@ -273,7 +295,12 @@ def _simulate_trade_session_numba(
         return 0.0, -1, 0.0, -1
 
     entry, tp, sl = _entry_levels(
-        direction, opens[entry_idx], spread, slippage, tp_distance, sl_distance
+        direction,
+        _entry_price(opens, closes, idx, entry_delay),
+        spread,
+        slippage,
+        tp_distance,
+        sl_distance,
     )
     end_idx = min(entry_idx + max_bars, n)
     session_bars_elapsed = 0
@@ -314,6 +341,7 @@ def _simulate_trade_trailing_numba(
     trail_distance: float,
     trail_tp_dist: float,
     breakeven_offset: float = 0.0,
+    entry_delay: int = 1,
 ) -> tuple:
     """
     Single-trade simulation with breakeven and trailing stop.
@@ -325,6 +353,7 @@ def _simulate_trade_trailing_numba(
                            0.0 = no trailing.
         trail_tp_dist:     Absolute trailing TP distance from best price.
                            0.0 = no trailing TP.
+        entry_delay:       1 = fill at the next open, 0 = at the signal bar's close.
         breakeven_offset:  Fraction of tp_distance to add above entry when breakeven
                            triggers. E.g. 0.1 = SL moves to entry + 10% of TP distance
                            (guarantees profit). 0.0 = SL moves exactly to entry.
@@ -341,7 +370,12 @@ def _simulate_trade_trailing_numba(
         return 0.0, -1, 0.0, -1
 
     entry, tp, sl = _entry_levels(
-        direction, opens[entry_idx], spread, slippage, tp_distance, sl_distance
+        direction,
+        _entry_price(opens, closes, idx, entry_delay),
+        spread,
+        slippage,
+        tp_distance,
+        sl_distance,
     )
     be_trigger_price = entry + direction * tp_distance * breakeven_trigger
     be_sl = entry + direction * breakeven_offset * tp_distance
@@ -399,6 +433,7 @@ def _simulate_trade_scale_in_numba(
     breakeven_trigger: float,
     trail_distance: float,
     trail_tp_dist: float,
+    entry_delay: int = 1,
 ) -> tuple:
     """
     Trade simulation with scale-in (multiple entries at retracement levels).
@@ -415,6 +450,7 @@ def _simulate_trade_scale_in_numba(
         breakeven_trigger: fraction of tp_distance; 0.0 = off
         trail_distance: absolute trailing stop distance; 0.0 = off
         trail_tp_dist:  absolute trailing TP distance; 0.0 = off
+        entry_delay:    1 = fill at the next open, 0 = at the signal bar's close
 
     Returns:
         (result, exit_idx, exit_price, exit_reason, avg_price, total_qty, n_fills)
@@ -428,7 +464,12 @@ def _simulate_trade_scale_in_numba(
         return 0.0, -1, 0.0, -1, 0.0, 0.0, 0
 
     entry, tp, sl = _entry_levels(
-        direction, opens[entry_idx], spread, slippage, tp_distance, sl_distance
+        direction,
+        _entry_price(opens, closes, idx, entry_delay),
+        spread,
+        slippage,
+        tp_distance,
+        sl_distance,
     )
 
     # --- Scale-in preparation ---
@@ -525,6 +566,7 @@ def compute_targets_numba(
     max_bars: int,
     timeout_bars: int,
     nan_incomplete: bool = False,
+    entry_delay: int = 1,
 ) -> tuple:
     """
     Berechnet Long/Short Targets und Durations für alle Bars.
@@ -540,6 +582,8 @@ def compute_targets_numba(
             hinausreicht, ohne dass TP/SL vorher getroffen wurde; ebenso der
             letzte Bar, der keinen Entry hat. Ausgang unbekannt, daher nicht
             als Verlust labeln. Default False (altes Verhalten: 0.0).
+        entry_delay: 1 = Entry zum Open des Folgebars, 0 = zum Close des
+            Signal-Bars (wie ``simulate_pro_trade``); Exits ab dem Folgebar.
 
     Returns:
         (targets_long, targets_short, durations_long, durations_short)
@@ -564,13 +608,14 @@ def compute_targets_numba(
             slippage,
             max_bars,
             timeout_bars,
+            entry_delay,
         )
-        if result_long == 1.0:
-            targets_long[i] = 1.0
-        elif nan_incomplete and _window_incomplete(
+        if nan_incomplete and _window_incomplete(
             i + 1, n, max_bars, timeout_bars, reason_long
         ):
             targets_long[i] = np.nan
+        elif result_long == 1.0:
+            targets_long[i] = 1.0
         durations_long[i] = (exit_long - i) if exit_long >= 0 else max_bars
 
         result_short, exit_short, _, reason_short = _simulate_trade_numba(
@@ -586,13 +631,14 @@ def compute_targets_numba(
             slippage,
             max_bars,
             timeout_bars,
+            entry_delay,
         )
-        if result_short == 1.0:
-            targets_short[i] = 1.0
-        elif nan_incomplete and _window_incomplete(
+        if nan_incomplete and _window_incomplete(
             i + 1, n, max_bars, timeout_bars, reason_short
         ):
             targets_short[i] = np.nan
+        elif result_short == 1.0:
+            targets_short[i] = 1.0
         durations_short[i] = (exit_short - i) if exit_short >= 0 else max_bars
 
     if nan_incomplete and n > 0:

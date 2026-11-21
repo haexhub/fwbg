@@ -42,6 +42,7 @@ Exit strategy that reads a pre-computed structural stop-loss distance from indic
 - AC-005: Parameter resolution order: `params.tp_value` (grid) → `kwargs['r_multiple']` overrides for `r_multiple`; `kwargs` overrides for column names and pip floors; default `r_multiple = 2.0`.
 - AC-006: `resolve_distances` uses `tp` as the R multiple (falling back to 2.0 when falsy) and ignores the `sl` argument, reading column/floor settings from `ctx.exit_params`.
 - AC-007: Cache key is formed as `structural_rr_r{r_multiple}_to{timeout_bars or 'none'}`.
+- AC-009: Labels whose TP/SL/timeout window is cut by the end of the data, and the last bar, are NaN (`nan_incomplete`), not losses; training drops them. The fill follows `exit_params['entry_delay']` (default 1: next open, 0: signal bar close), as in the trade evaluator.
 - AC-008: When `return_durations=True`, `compute_targets` returns the full 4-tuple `(tgt_l, tgt_s, dur_l, dur_s)` from the numba kernel; otherwise it returns `(tgt_l, tgt_s)`.
 
 ## Edge Cases

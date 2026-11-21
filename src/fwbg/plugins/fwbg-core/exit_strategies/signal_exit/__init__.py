@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from fwbg_sdk import BaseExitStrategy, register_exit_strategy
+from fwbg.simulation.trade import DEFAULT_ENTRY_DELAY, resolve_entry_delay
 
 if TYPE_CHECKING:
     from fwbg.core.context import SimulationContext
@@ -48,9 +49,7 @@ class SignalExitStrategy(BaseExitStrategy):
         """
         exit_params = dict(params.extra) if params is not None else dict(kwargs)
         closes = df["C"].values.astype(np.float64)
-        entry_delay = exit_params.get("entry_delay", 0)
-        if entry_delay not in (0, 1):
-            raise ValueError("signal_exit entry_delay must be 0 or 1")
+        entry_delay = resolve_entry_delay(exit_params)
         entries = closes.copy()
         valid_entry = np.ones(len(df), dtype=bool)
         if entry_delay == 1:
@@ -104,7 +103,7 @@ class SignalExitStrategy(BaseExitStrategy):
         return {
             "exit_signal_long_column": None,
             "exit_signal_short_column": None,
-            "entry_delay": 0,
+            "entry_delay": DEFAULT_ENTRY_DELAY,
         }
 
     @classmethod
@@ -122,11 +121,12 @@ class SignalExitStrategy(BaseExitStrategy):
             },
             "entry_delay": {
                 "type": "int",
-                "default": 0,
+                "default": DEFAULT_ENTRY_DELAY,
                 "description": (
-                    "0 = enter at the signal bar's close (the signal columns are "
-                    "unshifted decisions taken at that close, e.g. market-on-close "
-                    "rules), 1 = at the next bar's open"
+                    "1 = enter at the next bar's open (default, as in the trade "
+                    "simulation), 0 = at the signal bar's close (the signal columns "
+                    "are unshifted decisions taken at that close, e.g. "
+                    "market-on-close rules)"
                 ),
                 "min": 0,
                 "max": 1,
