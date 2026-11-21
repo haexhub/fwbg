@@ -125,9 +125,6 @@ class SupertrendIndicator(BaseIndicator):
     def get_feature_columns(self, params=None) -> List[str]:
         return ["st_direction", "st_flip"]
 
-    def get_signal_columns(self, params=None) -> List[str]:
-        return ["st_direction", "st_flip"]
-
     def get_overlay_columns(self, params=None) -> List[str]:
         return ["_st_line"]
 
@@ -253,9 +250,6 @@ class SupertrendMTFIndicator(BaseIndicator):
 
     def get_feature_columns(self, params=None) -> List[str]:
         return ["st_d1_direction", "st_d1_dist_atr"]
-
-    def get_signal_columns(self, params=None) -> List[str]:
-        return ["st_d1_direction"]
 
     def get_overlay_columns(self, params=None) -> List[str]:
         return ["_st_d1_line"]

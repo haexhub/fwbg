@@ -50,7 +50,7 @@ VWAP indicator with configurable session-reset (session_start_hour), rolling z-s
 - AC-008: vwap_band_pos = safe_divide(C - (vwap - vwap_std), 2 * vwap_std).
 - AC-009: vwap_above = 1.0 when C > vwap else 0.0 (float dtype).
 - AC-010: All emitted feature columns are shifted by one bar via shift_features before being concatenated, so row i features depend only on data up to and including row i-1 in the produced frame.
-- AC-011: get_feature_columns(params) returns the columns compute() produces for the same params (ten by default); get_signal_columns() returns ['vwap_above']; get_default_params() returns session_start_hour=9, session_tz='UTC', zscore_windows=[20,50], band_multipliers=[1.0,2.0].
+- AC-011: get_feature_columns(params) returns the columns compute() produces for the same params (ten by default); get_signal_columns() returns an empty list (vwap_above is shifted); get_default_params() returns session_start_hour=9, session_tz='UTC', zscore_windows=[20,50], band_multipliers=[1.0,2.0].
 
 ## Edge Cases
 

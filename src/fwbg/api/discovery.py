@@ -28,7 +28,7 @@ from fastapi.responses import StreamingResponse
 
 from fwbg.api._paths import safe_load_json, safe_results_path, validate_id
 from fwbg.data import load_data_aligned
-from fwbg.pipeline.features import compute_indicator_pool
+from fwbg.pipeline.features import compute_indicator_pool, indicator_signal_columns
 
 log = logging.getLogger(__name__)
 
@@ -698,8 +698,17 @@ async def _discovery_stream(
         if all_new_cols:
             df_full = pd.concat([df, *all_new_cols.values()], axis=1)
 
+        # Unshifted signal columns carry the entry bar's own close: not candidate
+        # features for what separates wins from losses at entry.
+        unshifted = {
+            col
+            for ind_name in all_new_cols
+            for col in indicator_signal_columns(ind_name, pipeline_params.get(ind_name))
+        }
         feature_cols = [
-            c for c in df_full.columns if c not in base_cols and not c.startswith("_")
+            c
+            for c in df_full.columns
+            if c not in base_cols and not c.startswith("_") and c not in unshifted
         ]
 
         # ── Statistical analysis (single pass) ──

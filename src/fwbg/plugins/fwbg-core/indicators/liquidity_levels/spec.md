@@ -46,7 +46,7 @@ Scans swing highs/lows within a rolling lookback window, groups them into cluste
 - AC-007: liq_eqh_count / liq_eql_count report the touch count of that nearest cluster; liq_eqh_active / liq_eql_active are 1.0 when such a cluster exists and 0.0 otherwise. A swept level sweeps once and is then gone.
 - AC-008: liq_sweep_up is 1.0 when H exceeds the nearest equal-high above but C closes back below it; liq_sweep_down is 1.0 when L pierces the nearest equal-low below but C closes back above it.
 - AC-009: ATR is computed as a rolling mean of true range over a full atr_period window (rows before that are warm-up), with a floor of 1.0 substituted when ATR falls below EPSILON to avoid division blow-ups.
-- AC-010: get_feature_columns() returns exactly the eight liq_* columns; get_signal_columns() returns the four active/sweep flags.
+- AC-010: get_feature_columns() returns exactly the eight liq_* columns; get_signal_columns() returns an empty list (the flags are shifted).
 
 ## Edge Cases
 

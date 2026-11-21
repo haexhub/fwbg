@@ -259,9 +259,6 @@ class PullbackMomentumIndicator(BaseIndicator):
     def get_feature_columns(self, params=None) -> List[str]:
         return list(self._FEATURES)
 
-    def get_signal_columns(self) -> List[str]:
-        return ["tpm_entry_long", "tpm_entry_short"]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {

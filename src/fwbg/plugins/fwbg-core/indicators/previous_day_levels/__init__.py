@@ -556,18 +556,6 @@ class PreviousDayLevelsIndicator(BaseIndicator):
     benefits_from_stationary = False
     group = "session"
 
-    PDL_SIGNAL_SUFFIXES = (
-        "_above_high",
-        "_below_low",
-        "_high_break",
-        "_low_break",
-        "_post_bull",
-        "_post_bear",
-        "_retest_bull",
-        "_retest_bear",
-        "_day_range_expanding",
-    )
-
     # Base features per (candle_span, range_scope, break/retest_mode) variant — no rl prefix
     _BASE_FEATURES = [
         "pdl_high_dist",
@@ -588,17 +576,6 @@ class PreviousDayLevelsIndicator(BaseIndicator):
     _RL_FEATURES = ["pdl_retest_bull", "pdl_retest_bear", "pdl_sl_dist"]
     # Retest columns only exist when enable_retest is on (sl_dist always does)
     _RETEST_FEATURES = ("pdl_retest_bull", "pdl_retest_bear")
-    # Signals (subset of base + rl features)
-    _BASE_SIGNAL_SUFFIXES = (
-        "pdl_above_high",
-        "pdl_below_low",
-        "pdl_high_break",
-        "pdl_low_break",
-        "pdl_post_bull",
-        "pdl_post_bear",
-        "pdl_day_range_expanding",
-    )
-    _RL_SIGNAL_SUFFIXES = ("pdl_retest_bull", "pdl_retest_bear")
 
     def compute(
         self,
@@ -655,16 +632,13 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             return df
 
         self._feature_columns = list(features.keys())
-        self._signal_columns = [
-            k for k in features if any(k.endswith(s) for s in self.PDL_SIGNAL_SUFFIXES)
-        ]
 
         features_df = shift_features(features, df.index)
         return pd.concat([df, features_df], axis=1)
 
     @classmethod
-    def _default_fallback_columns(cls, params=None) -> Tuple[List[str], List[str]]:
-        """Build feature/signal column lists from params (or defaults)."""
+    def _default_fallback_columns(cls, params=None) -> List[str]:
+        """Build the feature column list from params (or defaults)."""
         d = {**cls.get_default_params(), **(params or {})}
         rl_vals = d["retracement_levels"]
         rl_list = [rl_vals] if isinstance(rl_vals, (int, float)) else list(rl_vals)
@@ -694,7 +668,6 @@ class PreviousDayLevelsIndicator(BaseIndicator):
             )
 
         features = []
-        signals = []
 
         for scope in range_scope:
             scope_pfx = _RANGE_SCOPE_PREFIX[scope]
@@ -704,8 +677,6 @@ class PreviousDayLevelsIndicator(BaseIndicator):
 
                 for f in cls._BASE_FEATURES:
                     features.append(f"{combined_pfx}{f}")
-                for f in cls._BASE_SIGNAL_SUFFIXES:
-                    signals.append(f"{combined_pfx}{f}")
 
                 for rl in rl_list:
                     rl_pfx_str = f"{rl_tag(rl)}_"
@@ -716,21 +687,13 @@ class PreviousDayLevelsIndicator(BaseIndicator):
                             if f in cls._RETEST_FEATURES and not d["enable_retest"]:
                                 continue
                             features.append(f"{full_pfx}{f}")
-                        if d["enable_retest"]:
-                            for f in cls._RL_SIGNAL_SUFFIXES:
-                                signals.append(f"{full_pfx}{f}")
 
-        return features, signals
+        return features
 
     def get_feature_columns(self, params=None) -> List[str]:
         if self._feature_columns and not params:
             return self._feature_columns
-        return self._default_fallback_columns(params)[0]
-
-    def get_signal_columns(self, params=None) -> List[str]:
-        if self._signal_columns and not params:
-            return self._signal_columns
-        return self._default_fallback_columns(params)[1]
+        return self._default_fallback_columns(params)
 
     @classmethod
     def get_default_params(cls) -> dict:

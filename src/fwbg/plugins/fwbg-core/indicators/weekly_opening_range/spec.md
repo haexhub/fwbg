@@ -44,8 +44,8 @@ Weekly Opening Range (WOR) intraday indicator: derives per-bar features relative
 - AC-002: For each `rb` in `range_bars`, emits exactly the 8 columns: wor_rb{rb}_{range, position, breakout_up, breakout_down, range_vs_atr, dist_to_high, dist_to_low, sl_dist}.
 - AC-003: WOR high/low per week are computed as the max H / min L over the time window `[first bar of the trading week, + range_bars * bar_step)` (a missing bar shrinks the range); features are NaN until that window has ended. Sunday-evening FX bars belong to the week that starts on Monday, not to the previous ISO week.
 - AC-004: When `enable_stats=True`, adds wor_stat_avg_range, wor_stat_range_vs_avg, wor_stat_breakout_rate whose rolling window uses `stat_window` past weeks and is shifted by 1 week (excludes current week). The weekly range used by the statistics is the same `range_bars` window as the features (the first value when `range_bars` is a list); the breakout flag looks at closes after that window.
-- AC-005: Signal columns are the subset of feature columns ending in `_breakout_up` or `_breakout_down` (per `WOR_SIGNAL_SUFFIXES`).
-- AC-006: `get_feature_columns()` and `get_signal_columns()` return the cached lists after `compute()` runs; when called with explicit `params` (or before compute), they reconstruct the column names from `range_bars` and `enable_stats`.
+- AC-005: get_signal_columns() returns an empty list: the `_breakout_up` / `_breakout_down` columns are shifted like every feature.
+- AC-006: `get_feature_columns()` returns the cached list after `compute()` runs; when called with explicit `params` (or before compute), they reconstruct the column names from `range_bars` and `enable_stats`.
 - AC-007: Raises `ValueError` when the input DataFrame does not have a `DatetimeIndex`.
 - AC-008: Returns the input DataFrame unchanged when the median index spacing is >= 20 hours (daily / weekly bars).
 - AC-009: Uses `safe_divide` for all normalizations to avoid division-by-zero.

@@ -43,7 +43,7 @@ Finds N-bar swing highs and lows as candidate resistance/support zones. When clo
 - AC-006: Zones (resistance, support, and flip) older than zone_expiry bars are dropped; the active flip-zone list is truncated to the last max_active_zones after each bar.
 - AC-007: For each bar, sdf_bull_dist/sdf_bear_dist report the ATR-normalized distance to the nearest flip zone on the corresponding side (bull below price, bear above price); sdf_bull_active/sdf_bear_active are 1.0 when such a zone exists and 0.0 otherwise.
 - AC-008: sdf_bull_strength/sdf_bear_strength/sdf_bull_touches/sdf_bear_touches carry the strength and touch count of that nearest flip zone (NaN for strength/dist when no zone is active, 0 for active and touches).
-- AC-009: get_feature_columns() returns the eight sdf_* columns; get_signal_columns() returns [sdf_bull_active, sdf_bear_active].
+- AC-009: get_feature_columns() returns the eight sdf_* columns; get_signal_columns() returns an empty list (the flags are shifted).
 
 ## Edge Cases
 

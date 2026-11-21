@@ -309,9 +309,6 @@ class VolatilityIndicators(BaseIndicator):
         cols += [f"vol_rv_{rv_window}", "vol_rv_iv_spread", "vol_rv_iv_ratio"]
         return cols
 
-    def get_signal_columns(self) -> List[str]:
-        return ["vol_compression"]
-
     @classmethod
     def get_default_params(cls) -> dict:
         return {
